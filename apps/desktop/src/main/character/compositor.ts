@@ -20,11 +20,10 @@ import type { CharacterAssets } from "@/shared/ipc-registry";
 //                       sprite exactly.
 // ---------------------------------------------------------------------------
 
-// The paid Limezu packs live (gitignored) at <repo>/reference; in dev the app
-// runs from <repo>/apps/desktop so the default resolves two levels up.
-// Override with IDLEBIZ_REFERENCE_DIR (e.g. for a packaged build).
-const REFERENCE_DIR = process.env["IDLEBIZ_REFERENCE_DIR"] ?? join(app.getAppPath(), "..", "..", "reference");
-const PREMADE_DIR = join(REFERENCE_DIR, "moderninteriors-win/2_Characters/Character_Generator/0_Premade_Characters/32x32");
+// The 20 premade sheets ship with the app (copied from the Limezu pack).
+// app.getAppPath() = apps/desktop in dev; a packaged build must include
+// resources/ (electron-builder files config) for this to keep resolving.
+const PREMADE_DIR = join(app.getAppPath(), "resources", "premades");
 
 // Limezu 32px-tier sheet layout. Frames are 32w x 64h. Animation bands stack at
 // 64px; the walk band sits at y=128. Within a band the 24 frames are grouped by
