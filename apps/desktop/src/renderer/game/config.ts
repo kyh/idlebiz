@@ -51,7 +51,10 @@ export const TIERS: ReadonlyArray<OfficeTier> = [
       { tx: 5, ty: 3 },
       { tx: 8, ty: 3 },
     ],
-    plants: [{ tx: 10, ty: 6 }, { tx: 1, ty: 6 }],
+    plants: [
+      { tx: 10, ty: 6 },
+      { tx: 1, ty: 6 },
+    ],
     spawn: { x: 6 * TILE + 16, y: 6 * TILE },
   },
   {
@@ -66,7 +69,11 @@ export const TIERS: ReadonlyArray<OfficeTier> = [
       { tx: 5, ty: 7 },
       { tx: 8, ty: 7 },
     ],
-    plants: [{ tx: 14, ty: 8 }, { tx: 1, ty: 8 }, { tx: 14, ty: 3 }],
+    plants: [
+      { tx: 14, ty: 8 },
+      { tx: 1, ty: 8 },
+      { tx: 14, ty: 3 },
+    ],
     spawn: { x: 8 * TILE, y: 9 * TILE },
   },
   {
@@ -85,7 +92,12 @@ export const TIERS: ReadonlyArray<OfficeTier> = [
       { tx: 11, ty: 8 },
       { tx: 14, ty: 8 },
     ],
-    plants: [{ tx: 18, ty: 10 }, { tx: 1, ty: 10 }, { tx: 18, ty: 3 }, { tx: 18, ty: 6 }],
+    plants: [
+      { tx: 18, ty: 10 },
+      { tx: 1, ty: 10 },
+      { tx: 18, ty: 3 },
+      { tx: 18, ty: 6 },
+    ],
     spawn: { x: 10 * TILE, y: 11 * TILE },
   },
 ] as const;

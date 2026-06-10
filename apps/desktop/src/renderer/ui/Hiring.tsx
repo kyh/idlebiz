@@ -37,7 +37,8 @@ export function Hiring({ onClose }: { onClose: () => void }) {
           <div>
             <div className="text-[16px]">Recruiting</div>
             <div className="text-[11px] text-[#c4c9dd]">
-              {employees.length} on the team · ${HIRE_COST} per hire · ${Math.floor(company.cash)} in the bank
+              {employees.length} on the team · ${HIRE_COST} per hire · ${Math.floor(company.cash)}{" "}
+              in the bank
             </div>
           </div>
           <button onClick={onClose} className="px-btn text-[13px]">
@@ -79,7 +80,13 @@ function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }
   const hire = async () => {
     setState("hiring");
     try {
-      const emp = await hireEmployee({ name: c.name, role: c.role, title: c.title, persona: c.persona, spriteSeed: c.spriteSeed });
+      const emp = await hireEmployee({
+        name: c.name,
+        role: c.role,
+        title: c.title,
+        persona: c.persona,
+        spriteSeed: c.spriteSeed,
+      });
       setState(emp ? "hired" : "failed");
     } catch {
       setState("failed");
@@ -90,9 +97,17 @@ function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }
     <div className="px-inset flex flex-col p-3">
       <div className="flex items-center gap-3">
         {portrait ? (
-          <img src={portrait} alt={c.name} className="h-16 w-16 [image-rendering:pixelated]" style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }} />
+          <img
+            src={portrait}
+            alt={c.name}
+            className="h-16 w-16 [image-rendering:pixelated]"
+            style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
+          />
         ) : (
-          <div className="h-16 w-16" style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }} />
+          <div
+            className="h-16 w-16"
+            style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
+          />
         )}
         <div>
           <div className="text-[14px] text-[var(--text)]">{c.name}</div>
@@ -107,7 +122,15 @@ function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }
         className={(state === "hired" ? "px-btn" : "px-btn-accent px-btn") + " mt-3 text-[13px]"}
         style={state === "hired" ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
       >
-        {state === "hired" ? "✓ Hired" : state === "hiring" ? "Hiring…" : state === "failed" ? "Couldn't hire" : canAfford ? `Hire ($${HIRE_COST})` : "Not enough cash"}
+        {state === "hired"
+          ? "✓ Hired"
+          : state === "hiring"
+            ? "Hiring…"
+            : state === "failed"
+              ? "Couldn't hire"
+              : canAfford
+                ? `Hire ($${HIRE_COST})`
+                : "Not enough cash"}
       </button>
     </div>
   );

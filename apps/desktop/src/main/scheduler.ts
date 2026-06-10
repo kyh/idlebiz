@@ -35,7 +35,8 @@ export class Scheduler {
       if (r.lastRunAt !== null && now - r.lastRunAt < r.intervalHours * 3_600_000) continue;
       const idle = employees.filter((e) => e.status === "idle" && !this.busy.has(e.id));
       const assignee =
-        (r.role && idle.find((e) => `${e.role} ${e.title}`.toLowerCase().includes(r.role ?? ""))) || idle[0];
+        (r.role && idle.find((e) => `${e.role} ${e.title}`.toLowerCase().includes(r.role ?? ""))) ||
+        idle[0];
       if (!assignee) continue;
       store.markRoutineRun(company.id, r.id);
       const task = store.createTask({
@@ -62,10 +63,18 @@ export class Scheduler {
     for (const emp of employees) {
       if (this.active.size >= GLOBAL_CONCURRENCY_CAP) break;
       if (emp.status !== "idle" || this.busy.has(emp.id)) continue;
-      const open = store.listTasksForEmployee(emp.id).some((t) => t.status === "queued" || t.status === "running");
+      const open = store
+        .listTasksForEmployee(emp.id)
+        .some((t) => t.status === "queued" || t.status === "running");
       if (open) continue;
       const brief = this.autonomousBrief(company, emp, employees);
-      const task = store.createTask({ companyId: company.id, title: brief.title, description: brief.description, priority: "medium", assigneeId: emp.id });
+      const task = store.createTask({
+        companyId: company.id,
+        title: brief.title,
+        description: brief.description,
+        priority: "medium",
+        assigneeId: emp.id,
+      });
       try {
         this.assign(task.id, emp.id);
       } catch {
@@ -75,10 +84,22 @@ export class Scheduler {
   }
 
   /** Prompt for an employee's next autonomous move, grounded in team context. */
-  private autonomousBrief(company: Company, emp: Employee, employees: Employee[]): { title: string; description: string } {
+  private autonomousBrief(
+    company: Company,
+    emp: Employee,
+    employees: Employee[],
+  ): { title: string; description: string } {
     const roster = employees.map((e) => `${e.name} (${e.title})`).join(", ");
-    const chat = store.recentActivity(company.id, "chat", 8).map((c) => `- ${c.message ?? ""}`).join("\n") || "(no messages yet)";
-    const ships = store.recentActivity(company.id, "ship", 6).map((s) => `- ${s.message ?? ""}`).join("\n") || "(nothing shipped yet)";
+    const chat =
+      store
+        .recentActivity(company.id, "chat", 8)
+        .map((c) => `- ${c.message ?? ""}`)
+        .join("\n") || "(no messages yet)";
+    const ships =
+      store
+        .recentActivity(company.id, "ship", 6)
+        .map((s) => `- ${s.message ?? ""}`)
+        .join("\n") || "(nothing shipped yet)";
     const description = [
       `You are operating autonomously to grow ${company.name}.`,
       `Mission: ${company.mission}`,
@@ -109,13 +130,31 @@ export class Scheduler {
         const want = role.toLowerCase();
         const mate = store
           .listEmployees(company.id)
-          .find((e) => e.id !== emp.id && (e.role.toLowerCase() === want || e.title.toLowerCase().includes(want)));
+          .find(
+            (e) =>
+              e.id !== emp.id &&
+              (e.role.toLowerCase() === want || e.title.toLowerCase().includes(want)),
+          );
         if (!mate) {
-          this.emit({ employeeId: emp.id, kind: "chat", message: `(no "${role}" to delegate "${title}" to)` });
+          this.emit({
+            employeeId: emp.id,
+            kind: "chat",
+            message: `(no "${role}" to delegate "${title}" to)`,
+          });
           return;
         }
-        const t = store.createTask({ companyId: company.id, title, description, priority: "medium", assigneeId: mate.id });
-        this.emit({ employeeId: emp.id, kind: "chat", message: `→ ${mate.name} (${mate.title}): ${title}` });
+        const t = store.createTask({
+          companyId: company.id,
+          title,
+          description,
+          priority: "medium",
+          assigneeId: mate.id,
+        });
+        this.emit({
+          employeeId: emp.id,
+          kind: "chat",
+          message: `→ ${mate.name} (${mate.title}): ${title}`,
+        });
         try {
           this.assign(t.id, mate.id);
         } catch {
@@ -203,7 +242,13 @@ export class Scheduler {
         break;
       case "message_end":
         if (ev.role === "assistant" && ev.text) {
-          this.emit({ runId, taskId: task.id, employeeId: emp.id, kind: "message", message: ev.text.slice(0, 2000) });
+          this.emit({
+            runId,
+            taskId: task.id,
+            employeeId: emp.id,
+            kind: "message",
+            message: ev.text.slice(0, 2000),
+          });
         }
         break;
       default:
@@ -215,11 +260,24 @@ export class Scheduler {
     runId: string,
     task: Task,
     emp: Employee,
-    r: { ok: boolean; error?: string; summary: string; usage: { inputTokens: number; outputTokens: number; cachedTokens: number }; sessionId?: string; blockedQuestion?: string },
+    r: {
+      ok: boolean;
+      error?: string;
+      summary: string;
+      usage: { inputTokens: number; outputTokens: number; cachedTokens: number };
+      sessionId?: string;
+      blockedQuestion?: string;
+    },
   ): void {
     const taskStatus: TaskStatus = r.blockedQuestion ? "blocked" : r.ok ? "done" : "failed";
 
-    store.releaseTask(task.id, runId, taskStatus, r.summary || r.error || null, r.blockedQuestion ?? null);
+    store.releaseTask(
+      task.id,
+      runId,
+      taskStatus,
+      r.summary || r.error || null,
+      r.blockedQuestion ?? null,
+    );
     store.setEmployeeStatus(emp.id, "idle");
     if (r.sessionId) store.setEmployeeSession(emp.id, r.sessionId);
 
@@ -229,7 +287,14 @@ export class Scheduler {
       if (c) {
         const boost = simulatedMetrics.onShip(c);
         store.recordShip(task.companyId, boost.usersDelta, boost.cashDelta);
-        this.emit({ runId, taskId: task.id, employeeId: emp.id, kind: "ship", message: (r.summary || "shipped work").slice(0, 200), payload: boost });
+        this.emit({
+          runId,
+          taskId: task.id,
+          employeeId: emp.id,
+          kind: "ship",
+          message: (r.summary || "shipped work").slice(0, 200),
+          payload: boost,
+        });
       }
     }
 

@@ -6,7 +6,19 @@ function fmt(n: number): string {
   return String(n);
 }
 
-function Stat({ label, value, sub, accent, onClick }: { label: string; value: string; sub?: string; accent?: string; onClick?: () => void }) {
+function Stat({
+  label,
+  value,
+  sub,
+  accent,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: string;
+  onClick?: () => void;
+}) {
   const body = (
     <>
       <div className="text-[9px] uppercase tracking-wide text-[#aab0c8]">{label}</div>
@@ -18,7 +30,11 @@ function Stat({ label, value, sub, accent, onClick }: { label: string; value: st
   );
   if (onClick) {
     return (
-      <button onClick={onClick} className="px-plate pointer-events-auto min-w-[58px] cursor-pointer px-3 py-1.5 text-center" title="Open the shipping log">
+      <button
+        onClick={onClick}
+        className="px-plate pointer-events-auto min-w-[58px] cursor-pointer px-3 py-1.5 text-center"
+        title="Open the shipping log"
+      >
         {body}
       </button>
     );
@@ -26,7 +42,15 @@ function Stat({ label, value, sub, accent, onClick }: { label: string; value: st
   return <div className="px-plate min-w-[58px] px-3 py-1.5 text-center">{body}</div>;
 }
 
-export function Hud({ onHire, onShips, onInbox }: { onHire: () => void; onShips: () => void; onInbox: () => void }) {
+export function Hud({
+  onHire,
+  onShips,
+  onInbox,
+}: {
+  onHire: () => void;
+  onShips: () => void;
+  onInbox: () => void;
+}) {
   const { company, employees, liveMetrics, pendingAsks } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
@@ -40,23 +64,47 @@ export function Hud({ onHire, onShips, onInbox }: { onHire: () => void; onShips:
       </div>
 
       <div className="flex items-stretch gap-2">
-        <Stat label={liveMetrics ? "cash ⚡" : "cash"} value={`$${fmt(Math.floor(company.cash))}`} accent="#9fe6b0" sub={liveMetrics ? "real" : undefined} />
-        <Stat label={liveMetrics ? "users ⚡" : "users"} value={fmt(company.users)} accent="#86c0ee" sub={liveMetrics ? "real" : undefined} />
+        <Stat
+          label={liveMetrics ? "cash ⚡" : "cash"}
+          value={`$${fmt(Math.floor(company.cash))}`}
+          accent="#9fe6b0"
+          sub={liveMetrics ? "real" : undefined}
+        />
+        <Stat
+          label={liveMetrics ? "users ⚡" : "users"}
+          value={fmt(company.users)}
+          accent="#86c0ee"
+          sub={liveMetrics ? "real" : undefined}
+        />
         <Stat label="shipped" value={String(company.ships)} sub={version} onClick={onShips} />
-        <Stat label="team" value={String(employees.length)} sub={working > 0 ? `${working} working` : "idle"} />
+        <Stat
+          label="team"
+          value={String(employees.length)}
+          sub={working > 0 ? `${working} working` : "idle"}
+        />
         <button
           onClick={onInbox}
           className="px-btn pointer-events-auto px-3 text-[12px]"
-          style={pendingAsks.length > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
+          style={
+            pendingAsks.length > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined
+          }
           title="Questions waiting on your call"
         >
-          {pendingAsks.length > 0 ? <span className="px-live-dot">❗ {pendingAsks.length}</span> : "📥"}
+          {pendingAsks.length > 0 ? (
+            <span className="px-live-dot">❗ {pendingAsks.length}</span>
+          ) : (
+            "📥"
+          )}
         </button>
         <button
           onClick={() => void setAutopilot(!company.autopilot)}
           className="px-btn pointer-events-auto px-3 text-[12px]"
           style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
-          title={company.autopilot ? "Autopilot on — the team works on its own. Click to pause." : "Autopilot paused. Click to resume."}
+          title={
+            company.autopilot
+              ? "Autopilot on — the team works on its own. Click to pause."
+              : "Autopilot paused. Click to resume."
+          }
         >
           {company.autopilot ? "● LIVE" : "⏸ Paused"}
         </button>

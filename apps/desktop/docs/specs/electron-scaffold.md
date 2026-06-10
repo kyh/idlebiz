@@ -8,7 +8,7 @@ Got the catalog versions. I have all the source I need. Producing the blueprint.
 
 Based on `inteligir/apps/desktop`. Stripped of voice/dispatch/agent/executor/widget specifics. One deviation flagged up front:
 
-> **zod vs typebox.** You asked for zod schemas. Inteligir uses `@sinclair/typebox` (`Value.Check`) for IPC validation, not zod. The registry *pattern* (single source of truth → derives bridge type + handler signatures + preload wiring) is what matters and ports 1:1 to zod. Below I give you the pattern in **zod** as requested. If you'd rather keep inteligir's exact code, swap `z.infer` → `Static`, `schema.safeParse` → `Value.Check`, and the dep `zod` → `@sinclair/typebox`. Everything else is identical.
+> **zod vs typebox.** You asked for zod schemas. Inteligir uses `@sinclair/typebox` (`Value.Check`) for IPC validation, not zod. The registry _pattern_ (single source of truth → derives bridge type + handler signatures + preload wiring) is what matters and ports 1:1 to zod. Below I give you the pattern in **zod** as requested. If you'd rather keep inteligir's exact code, swap `z.infer` → `Static`, `schema.safeParse` → `Value.Check`, and the dep `zod` → `@sinclair/typebox`. Everything else is identical.
 
 ---
 
@@ -31,13 +31,13 @@ Inteligir pins React/TS/Vite/Tailwind via a pnpm `catalog:`. Resolved actual val
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .cache .output",
-    "release": "electron-vite build && electron-builder --mac dmg --publish never"
+    "release": "electron-vite build && electron-builder --mac dmg --publish never",
   },
   "dependencies": {
     "phaser": "^4.0.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
@@ -51,12 +51,13 @@ Inteligir pins React/TS/Vite/Tailwind via a pnpm `catalog:`. Resolved actual val
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14"
-  }
+    "vite": "^8.0.14",
+  },
 }
 ```
 
 Notes:
+
 - **Drop**: `electron-updater`, `sherpa-onnx-*`, `ai`, `croner`, `react-grid-layout`, `react-router`, `zustand`, `@json-render/*`, all `@repo/*` workspace pkgs. Add back `react-router`/`zustand` only if you want routing/state — not required for a single-game window.
 - Tailwind is optional. Inteligir uses it (`@tailwindcss/vite` plugin + `@import` in CSS). Keep it for the React overlay UI; it does not touch the Phaser canvas. If you skip Tailwind, drop both `tailwindcss` and `@tailwindcss/vite` and the `tailwindcss()` plugin call.
 - Inteligir's `vite` is on the v8 catalog line and `typescript` on v6 — those are bleeding-edge in this monorepo. If you want a more conservative footing, `vite@^7`, `typescript@^5.7` also work with `electron-vite@5`.
@@ -168,8 +169,8 @@ tsconfig.json (inteligir's, with the `@repo/ui` path dropped):
   "compilerOptions": {
     "jsx": "react-jsx",
     "types": ["electron-vite/node"],
-    "paths": { "@/*": ["./src/*"] }
-  }
+    "paths": { "@/*": ["./src/*"] },
+  },
 }
 ```
 
@@ -194,20 +195,45 @@ type Invoke<S extends z.ZodTypeAny, R> = {
   readonly payload: S;
   readonly _result: R;
 };
-type InvokeVoid<R> = { readonly kind: "invoke-void"; readonly channel: string; readonly _result: R };
-type Send<S extends z.ZodTypeAny> = { readonly kind: "send"; readonly channel: string; readonly payload: S };
+type InvokeVoid<R> = {
+  readonly kind: "invoke-void";
+  readonly channel: string;
+  readonly _result: R;
+};
+type Send<S extends z.ZodTypeAny> = {
+  readonly kind: "send";
+  readonly channel: string;
+  readonly payload: S;
+};
 type Event<E> = { readonly kind: "event"; readonly channel: string; readonly _event: E };
 
-type IpcEntry = Invoke<z.ZodTypeAny, unknown> | InvokeVoid<unknown> | Send<z.ZodTypeAny> | Event<unknown>;
+type IpcEntry =
+  | Invoke<z.ZodTypeAny, unknown>
+  | InvokeVoid<unknown>
+  | Send<z.ZodTypeAny>
+  | Event<unknown>;
 
-const invoke = <S extends z.ZodTypeAny, R>(channel: string, payload: S): Invoke<S, R> =>
-  ({ kind: "invoke", channel, payload, _result: undefined as never });
-const invokeVoid = <R>(channel: string): InvokeVoid<R> =>
-  ({ kind: "invoke-void", channel, _result: undefined as never });
-const send = <S extends z.ZodTypeAny>(channel: string, payload: S): Send<S> =>
-  ({ kind: "send", channel, payload });
-const event = <E>(channel: string): Event<E> =>
-  ({ kind: "event", channel, _event: undefined as never });
+const invoke = <S extends z.ZodTypeAny, R>(channel: string, payload: S): Invoke<S, R> => ({
+  kind: "invoke",
+  channel,
+  payload,
+  _result: undefined as never,
+});
+const invokeVoid = <R>(channel: string): InvokeVoid<R> => ({
+  kind: "invoke-void",
+  channel,
+  _result: undefined as never,
+});
+const send = <S extends z.ZodTypeAny>(channel: string, payload: S): Send<S> => ({
+  kind: "send",
+  channel,
+  payload,
+});
+const event = <E>(channel: string): Event<E> => ({
+  kind: "event",
+  channel,
+  _event: undefined as never,
+});
 
 // ---- THE REGISTRY: every channel that crosses the boundary ----------------
 export const IPC = {
@@ -224,21 +250,28 @@ export type IpcMethod = keyof IpcRegistry;
 
 // ---- derivations ----------------------------------------------------------
 type MethodToFn<E extends IpcEntry> =
-  E extends Invoke<infer S, infer R> ? (payload: z.infer<S>) => Promise<R>
-  : E extends InvokeVoid<infer R> ? () => Promise<R>
-  : E extends Send<infer S> ? (payload: z.infer<S>) => void
-  : E extends Event<infer V> ? (listener: (event: V) => void) => () => void
-  : never;
+  E extends Invoke<infer S, infer R>
+    ? (payload: z.infer<S>) => Promise<R>
+    : E extends InvokeVoid<infer R>
+      ? () => Promise<R>
+      : E extends Send<infer S>
+        ? (payload: z.infer<S>) => void
+        : E extends Event<infer V>
+          ? (listener: (event: V) => void) => () => void
+          : never;
 
 /** Shape exposed on window.appBridge. */
 export type AppBridge = { [K in IpcMethod]: MethodToFn<IpcRegistry[K]> };
 
 /** Handler signature main must implement for method K. */
 export type IpcHandler<K extends IpcMethod> =
-  IpcRegistry[K] extends Invoke<infer S, infer R> ? (payload: z.infer<S>) => R | Promise<R>
-  : IpcRegistry[K] extends InvokeVoid<infer R> ? () => R | Promise<R>
-  : IpcRegistry[K] extends Send<infer S> ? (payload: z.infer<S>) => void
-  : never;
+  IpcRegistry[K] extends Invoke<infer S, infer R>
+    ? (payload: z.infer<S>) => R | Promise<R>
+    : IpcRegistry[K] extends InvokeVoid<infer R>
+      ? () => R | Promise<R>
+      : IpcRegistry[K] extends Send<infer S>
+        ? (payload: z.infer<S>) => void
+        : never;
 
 /** Broadcast payload type for an event method. */
 export type IpcEvent<K extends IpcMethod> = IpcRegistry[K] extends Event<infer V> ? V : never;
@@ -279,10 +312,18 @@ contextBridge.exposeInMainWorld("appBridge", appBridge);
 import { ipcMain } from "electron";
 import { IPC, type IpcHandler, type IpcMethod } from "@/shared/ipc-registry";
 
-function parsePayload(method: IpcMethod, schema: { safeParse: (v: unknown) => { success: boolean; error?: { message: string }; data?: unknown } }, raw: unknown): unknown {
+function parsePayload(
+  method: IpcMethod,
+  schema: {
+    safeParse: (v: unknown) => { success: boolean; error?: { message: string }; data?: unknown };
+  },
+  raw: unknown,
+): unknown {
   const result = schema.safeParse(raw);
   if (!result.success) {
-    throw new Error(`[ipc:${method}] payload validation failed — ${result.error?.message ?? "shape mismatch"}`);
+    throw new Error(
+      `[ipc:${method}] payload validation failed — ${result.error?.message ?? "shape mismatch"}`,
+    );
   }
   return result.data;
 }
@@ -292,15 +333,19 @@ export function handle<K extends IpcMethod>(method: K, fn: IpcHandler<K>): void 
   switch (def.kind) {
     case "invoke":
       ipcMain.handle(def.channel, (_e, raw: unknown) =>
-        (fn as (p: unknown) => unknown)(parsePayload(method, def.payload, raw)));
+        (fn as (p: unknown) => unknown)(parsePayload(method, def.payload, raw)),
+      );
       return;
     case "invoke-void":
       ipcMain.handle(def.channel, () => (fn as () => unknown)());
       return;
     case "send":
       ipcMain.on(def.channel, (_e, raw: unknown) => {
-        try { (fn as (p: unknown) => void)(parsePayload(method, def.payload, raw)); }
-        catch (err) { console.error(`[ipc] send "${method}" failed:`, err); }
+        try {
+          (fn as (p: unknown) => void)(parsePayload(method, def.payload, raw));
+        } catch (err) {
+          console.error(`[ipc] send "${method}" failed:`, err);
+        }
       });
       return;
     case "event":
@@ -315,7 +360,9 @@ export function handle<K extends IpcMethod>(method: K, fn: IpcHandler<K>): void 
 import { BrowserWindow } from "electron";
 import { IPC, type IpcEvent, type IpcMethod } from "@/shared/ipc-registry";
 
-type EventMethod = { [K in IpcMethod]: (typeof IPC)[K] extends { kind: "event" } ? K : never }[IpcMethod];
+type EventMethod = {
+  [K in IpcMethod]: (typeof IPC)[K] extends { kind: "event" } ? K : never;
+}[IpcMethod];
 
 export function broadcast<K extends EventMethod>(method: K, data: IpcEvent<K>): void {
   const def = IPC[method];
@@ -336,7 +383,10 @@ const res = await window.appBridge?.saveGame({ slot: 1, data: "..." }); // res: 
 
 ```ts
 // src/main/index.ts — inside registerIpcHandlers()
-handle("saveGame", ({ slot, data }) => { writeSlot(slot, data); return { ok: true }; });
+handle("saveGame", ({ slot, data }) => {
+  writeSlot(slot, data);
+  return { ok: true };
+});
 ```
 
 **(b) main broadcasts an event:**
@@ -366,16 +416,24 @@ const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 
 function registerIpcHandlers(): void {
-  handle("saveGame", ({ slot, data }) => { /* writeSlot */ return { ok: true }; });
+  handle("saveGame", ({ slot, data }) => {
+    /* writeSlot */ return { ok: true };
+  });
   handle("loadGame", (slot) => ({ data: /* readSlot(slot) */ null }));
 }
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1280, height: 800, show: false, backgroundColor: "#000000",
+    width: 1280,
+    height: 800,
+    show: false,
+    backgroundColor: "#000000",
     webPreferences: {
       preload: path.join(moduleDir, "../preload/index.js"),
-      contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
     },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -383,9 +441,12 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
   win.once("ready-to-show", () => win.show());
-  if (isDev && process.env["ELECTRON_RENDERER_URL"]) void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+  if (isDev && process.env["ELECTRON_RENDERER_URL"])
+    void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   else void win.loadFile(path.join(moduleDir, "../renderer/index.html"));
-  win.on("closed", () => { if (mainWindow === win) mainWindow = null; });
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
   return win;
 }
 
@@ -393,7 +454,9 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   mainWindow = createWindow();
 });
-app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
 ```
 
 ---
@@ -421,14 +484,14 @@ export function PhaserGame() {
       parent: containerRef.current,
       width: 1280,
       height: 800,
-      pixelArt: true,                       // crisp Limezu pixel tiles, no smoothing
+      pixelArt: true, // crisp Limezu pixel tiles, no smoothing
       scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
       scene: [MainScene],
     });
     gameRef.current = game;
 
     return () => {
-      game.destroy(true);                   // remove canvas + free WebGL context
+      game.destroy(true); // remove canvas + free WebGL context
       gameRef.current = null;
     };
   }, []);
@@ -452,7 +515,9 @@ export function PhaserGame() {
 import Phaser from "phaser";
 
 export class MainScene extends Phaser.Scene {
-  constructor() { super("main"); }
+  constructor() {
+    super("main");
+  }
 
   preload() {
     this.load.image("tiles", "assets/tilesets/limezu-interior.png");
@@ -471,7 +536,9 @@ Mount it from `app.tsx` (replacing inteligir's router/shell):
 
 ```tsx
 import { PhaserGame } from "@/renderer/game/PhaserGame";
-export function App() { return <PhaserGame />; }
+export function App() {
+  return <PhaserGame />;
+}
 ```
 
 `main.tsx` stays inteligir's shape minus the router/flush-bridge:
@@ -483,7 +550,12 @@ import { App } from "@/renderer/app";
 import "./styles.css";
 
 const root = document.getElementById("root");
-if (root) createRoot(root).render(<StrictMode><App /></StrictMode>);
+if (root)
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
 ```
 
 `index.html` unchanged from inteligir (`<div id="root">` + `<script type="module" src="./main.tsx">`). Keep `styles.css`'s `html,body,#root { width/height:100%; overflow:hidden }` — Phaser needs a sized parent.
@@ -492,7 +564,9 @@ Bridge typing — `src/renderer/env.d.ts`:
 
 ```ts
 declare module "*.css";
-interface Window { appBridge?: import("@/shared/ipc-registry").AppBridge; }
+interface Window {
+  appBridge?: import("@/shared/ipc-registry").AppBridge;
+}
 ```
 
 ---
@@ -537,7 +611,7 @@ files:
 mac:
   category: public.app-category.games
   icon: resources/icon.icns
-npmRebuild: false   # no native modules → nothing to rebuild
+npmRebuild: false # no native modules → nothing to rebuild
 ```
 
 (`phaser`, `react`, `zod` are all pure JS and get tree-shaken into the bundle by electron-vite, so they never need to live in `node_modules` at runtime — hence no `node_modules` entry in `files:` at all.)

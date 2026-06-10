@@ -139,10 +139,11 @@ export type AppBridge = {
 };
 
 // ---- derived: handler signature main must implement ------------------------
-export type IpcHandler<M extends IpcMethod> = IpcKind<M> extends "invoke-void"
-  ? () => Contract[M]["result"] | Promise<Contract[M]["result"]>
-  : IpcKind<M> extends "invoke"
-    ? (payload: Contract[M]["payload"]) => Contract[M]["result"] | Promise<Contract[M]["result"]>
-    : IpcKind<M> extends "send"
-      ? (payload: Contract[M]["payload"]) => void
-      : never;
+export type IpcHandler<M extends IpcMethod> =
+  IpcKind<M> extends "invoke-void"
+    ? () => Contract[M]["result"] | Promise<Contract[M]["result"]>
+    : IpcKind<M> extends "invoke"
+      ? (payload: Contract[M]["payload"]) => Contract[M]["result"] | Promise<Contract[M]["result"]>
+      : IpcKind<M> extends "send"
+        ? (payload: Contract[M]["payload"]) => void
+        : never;

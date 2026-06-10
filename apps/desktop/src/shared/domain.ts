@@ -13,7 +13,14 @@ export const DEFAULT_AGENT_MODEL = `${DEFAULT_PROVIDER}/${DEFAULT_MODEL_ID}`;
 /** What hiring one employee costs after the founding team. */
 export const HIRE_COST = 150;
 
-export type TaskStatus = "todo" | "queued" | "running" | "blocked" | "done" | "failed" | "cancelled";
+export type TaskStatus =
+  | "todo"
+  | "queued"
+  | "running"
+  | "blocked"
+  | "done"
+  | "failed"
+  | "cancelled";
 export type TaskPriority = "low" | "medium" | "high";
 export type EmployeeStatus = "idle" | "working";
 
@@ -76,7 +83,15 @@ export interface Routine {
   lastRunAt: number | null;
 }
 
-export type ActivityKind = "log" | "tool_call" | "status" | "lifecycle" | "thinking" | "message" | "chat" | "ship";
+export type ActivityKind =
+  | "log"
+  | "tool_call"
+  | "status"
+  | "lifecycle"
+  | "thinking"
+  | "message"
+  | "chat"
+  | "ship";
 
 export interface ActivityEvent {
   id?: number;

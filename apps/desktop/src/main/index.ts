@@ -46,7 +46,10 @@ function registerIpcHandlers(): void {
 
   handle("generateHires", async ({ companyName, mission }) => {
     const candidates = await generateCandidates({ companyName, mission });
-    return candidates.map((c, i) => ({ ...c, spriteSeed: `${c.role}-${c.name}-${Date.now().toString(36)}-${i}` }));
+    return candidates.map((c, i) => ({
+      ...c,
+      spriteSeed: `${c.role}-${c.name}-${Date.now().toString(36)}-${i}`,
+    }));
   });
 
   handle("batchHire", ({ companyId, hires }) =>
@@ -91,7 +94,8 @@ function registerIpcHandlers(): void {
     // founding hires (pre-onboarding) are free; later hires cost real (in-game) money
     const company = store.getCompany(p.companyId);
     if (company?.onboarded) {
-      if (company.cash < HIRE_COST) throw new Error(`Hiring costs $${HIRE_COST} — you have $${company.cash.toFixed(0)}.`);
+      if (company.cash < HIRE_COST)
+        throw new Error(`Hiring costs $${HIRE_COST} — you have $${company.cash.toFixed(0)}.`);
       store.adjustCash(p.companyId, -HIRE_COST);
     }
     return store.createEmployee({
@@ -123,7 +127,8 @@ function registerIpcHandlers(): void {
 
   handle("answerQuestion", ({ taskId, answer }) => {
     const continuation = store.resolveBlockedWithAnswer(taskId, answer);
-    if (!continuation || !continuation.assigneeId) throw new Error("task is not awaiting an answer");
+    if (!continuation || !continuation.assigneeId)
+      throw new Error("task is not awaiting an answer");
     return scheduler.assign(continuation.id, continuation.assigneeId);
   });
 
@@ -133,7 +138,8 @@ function registerIpcHandlers(): void {
     if (!company) throw new Error("company not found");
     const root = path.resolve(company.workspaceDir);
     const target = path.resolve(root, rel === "" ? "." : rel);
-    if (target !== root && !target.startsWith(root + path.sep)) throw new Error("path escapes the workspace");
+    if (target !== root && !target.startsWith(root + path.sep))
+      throw new Error("path escapes the workspace");
     const err = await shell.openPath(target);
     if (err) throw new Error(err);
   };
@@ -222,14 +228,24 @@ app.whenReady().then(() => {
       void fetchRealMetrics(cfg).then((snap) => {
         const live = snap.users !== null || snap.revenue !== null;
         if (live) store.setRealMetrics(company.id, snap);
-        broadcast("onActivity", { kind: "lifecycle", message: "metrics.pulse", payload: { ...snap, real: live }, createdAt: Date.now() });
+        broadcast("onActivity", {
+          kind: "lifecycle",
+          message: "metrics.pulse",
+          payload: { ...snap, real: live },
+          createdAt: Date.now(),
+        });
       });
       return;
     }
     const p = simulatedMetrics.pulse(company);
     if (p.usersDelta === 0 && p.cashDelta === 0) return;
     store.applyPulse(company.id, p.usersDelta, p.cashDelta);
-    broadcast("onActivity", { kind: "lifecycle", message: "metrics.pulse", payload: p, createdAt: Date.now() });
+    broadcast("onActivity", {
+      kind: "lifecycle",
+      message: "metrics.pulse",
+      payload: p,
+      createdAt: Date.now(),
+    });
   }, PULSE_MS);
 
   mainWindow = createWindow();

@@ -14,8 +14,8 @@ Distilled from Paperclip's control plane. Paperclip is a Postgres + Drizzle mult
 
 **Storage recommendation: `better-sqlite3`.**
 
-- **vs `node:sqlite`**: builtin is still flagged experimental (Node 22/24) and its API surface keeps shifting. In Electron the more pressing problem: Electron ships its *own* Node, so a builtin tied to your local Node version isn't guaranteed to match Electron's runtime. Don't bet your save format on an experimental API.
-- **vs JSON-file stores (inteligir approach)**: fine for config, wrong for this. You have concurrent writers — 3 runs finishing simultaneously each appending events + cost rows. JSON stores force you to hand-roll read-modify-write locking and you lose atomic conditional updates. The single-assignee checkout (the one piece of correctness that actually matters) is *literally one SQL UPDATE...WHERE...RETURNING* in SQLite and a race-condition minefield in JSON.
+- **vs `node:sqlite`**: builtin is still flagged experimental (Node 22/24) and its API surface keeps shifting. In Electron the more pressing problem: Electron ships its _own_ Node, so a builtin tied to your local Node version isn't guaranteed to match Electron's runtime. Don't bet your save format on an experimental API.
+- **vs JSON-file stores (inteligir approach)**: fine for config, wrong for this. You have concurrent writers — 3 runs finishing simultaneously each appending events + cost rows. JSON stores force you to hand-roll read-modify-write locking and you lose atomic conditional updates. The single-assignee checkout (the one piece of correctness that actually matters) is _literally one SQL UPDATE...WHERE...RETURNING_ in SQLite and a race-condition minefield in JSON.
 - **`better-sqlite3`**: synchronous (no async ceremony in main-process transaction logic), battle-tested, fast. The only real cost is the native module. Solve it once: `electron-rebuild` (or `@electron/rebuild`) in postinstall, list it as an `asarUnpack` external. This is a known, paved path — every serious Electron app with a DB does it. Pay it once at setup; never think about it again.
 
 Verdict: native-module pain is a one-time build-config tax. JSON-store pain is a permanent concurrency tax on the hot path. Take the one-time tax.
@@ -96,6 +96,7 @@ CREATE INDEX activity_run_idx    ON activity_log(run_id, id);
 ```
 
 **What I cut from Paperclip's schemas and why:**
+
 - `agents`: dropped `budgetMonthlyCents`, `permissions`, `reportsTo`, `defaultEnvironmentId`, `adapterConfig`/`runtimeConfig` jsonb blobs (flattened to `model`/`thinking`/`session_id`). Kept `status` and session.
 - `issues` (84 columns!): kept ~10. Dropped every `monitor*`, `origin*`, `executionWorkspace*`, `requestDepth`, `billingCode`, `sourceTrust`, `parentId`, projects/goals FKs. Folded `checkoutRunId` + `executionRunId` into one `run_id` lock.
 - `heartbeat_runs` (50 columns): kept the run identity + usage + outcome. Dropped all `liveness*`, `process*`, `scheduledRetry*`, `log*` (store excerpts inline), `continuationAttempt`.
@@ -118,20 +119,27 @@ const GLOBAL_CONCURRENCY_CAP = 3;
 
 export class Scheduler {
   private active = new Map<string, AbortController>(); // runId -> ctrl
-  private busyEmployees = new Set<string>();           // per-employee single-active lock
-  readonly events = new EventEmitter();                // renderer subscribes via IPC
+  private busyEmployees = new Set<string>(); // per-employee single-active lock
+  readonly events = new EventEmitter(); // renderer subscribes via IPC
 
-  constructor(private db: Database.Database, private pi: PiAdapter) {}
+  constructor(
+    private db: Database.Database,
+    private pi: PiAdapter,
+  ) {}
 
   // ---- 1. ASSIGN + ENQUEUE (player clicks "assign task to Alice") ----
   assign(taskId: string, employeeId: string) {
     // Single-assignee checkout: atomic conditional update (see §4).
-    const claimed = this.db.prepare(`
+    const claimed = this.db
+      .prepare(
+        `
       UPDATE task SET assignee_id = ?, status = 'queued'
       WHERE id = ? AND status IN ('todo','blocked','failed')
             AND (assignee_id IS NULL OR assignee_id = ?)
       RETURNING id
-    `).get(employeeId, taskId, employeeId);
+    `,
+      )
+      .get(employeeId, taskId, employeeId);
     if (!claimed) throw new Error("task not assignable");
     this.log({ taskId, employeeId, kind: "status", message: "queued" });
     this.tick(); // try to start something
@@ -141,14 +149,18 @@ export class Scheduler {
   tick() {
     while (this.active.size < GLOBAL_CONCURRENCY_CAP) {
       // pick highest-priority queued task whose employee isn't already busy
-      const next = this.db.prepare(`
+      const next = this.db
+        .prepare(
+          `
         SELECT t.* FROM task t
         WHERE t.status = 'queued'
           AND t.assignee_id NOT IN (${[...this.busyEmployees].map(() => "?").join(",") || "''"})
         ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
                  t.created_at
         LIMIT 1
-      `).get(...this.busyEmployees) as TaskRow | undefined;
+      `,
+        )
+        .get(...this.busyEmployees) as TaskRow | undefined;
       if (!next) break;
       this.startRun(next);
     }
@@ -161,19 +173,33 @@ export class Scheduler {
     const ctrl = new AbortController();
 
     // acquire execution lock: stamp run_id onto task atomically
-    const locked = this.db.prepare(`
+    const locked = this.db
+      .prepare(
+        `
       UPDATE task SET status='running', run_id=?, started_at=?
       WHERE id=? AND status='queued' AND run_id IS NULL
       RETURNING id
-    `).get(runId, Date.now(), task.id);
+    `,
+      )
+      .get(runId, Date.now(), task.id);
     if (!locked) return; // lost the race; another tick handles it
 
-    this.db.prepare(`INSERT INTO run (id,task_id,employee_id,status,started_at)
-                     VALUES (?,?,?,'running',?)`).run(runId, task.id, employee.id, Date.now());
+    this.db
+      .prepare(
+        `INSERT INTO run (id,task_id,employee_id,status,started_at)
+                     VALUES (?,?,?,'running',?)`,
+      )
+      .run(runId, task.id, employee.id, Date.now());
     this.db.prepare(`UPDATE employee SET status='working' WHERE id=?`).run(employee.id);
     this.active.set(runId, ctrl);
     this.busyEmployees.add(employee.id);
-    this.emit({ runId, taskId: task.id, employeeId: employee.id, kind: "lifecycle", message: "run.start" });
+    this.emit({
+      runId,
+      taskId: task.id,
+      employeeId: employee.id,
+      kind: "lifecycle",
+      message: "run.start",
+    });
 
     // fire-and-forget; completion handled in .then/.catch
     void this.execute(runId, task, employee, ctrl)
@@ -192,16 +218,30 @@ export class Scheduler {
       runId,
       model: emp.model,
       thinking: emp.thinking,
-      sessionId: emp.session_id,           // resume employee's session if present
+      sessionId: emp.session_id, // resume employee's session if present
       prompt: `${task.title}\n\n${task.description ?? ""}`,
       signal: ctrl.signal,
       // stream callbacks -> activity_log + EventEmitter -> renderer
       onLog: (stream, chunk) =>
-        this.emit({ runId, taskId: task.id, employeeId: emp.id, seq: seq++,
-                    kind: "log", stream, message: chunk }),
+        this.emit({
+          runId,
+          taskId: task.id,
+          employeeId: emp.id,
+          seq: seq++,
+          kind: "log",
+          stream,
+          message: chunk,
+        }),
       onToolCall: (tool) =>
-        this.emit({ runId, taskId: task.id, employeeId: emp.id, seq: seq++,
-                    kind: "tool_call", message: tool.name, payload: tool }),
+        this.emit({
+          runId,
+          taskId: task.id,
+          employeeId: emp.id,
+          seq: seq++,
+          kind: "tool_call",
+          message: tool.name,
+          payload: tool,
+        }),
     });
 
     // ---- 5. POST-EXEC: derive outcome (mirrors heartbeat lines 8865-8870) ----
@@ -212,8 +252,8 @@ export class Scheduler {
       error: result.errorMessage,
       summary: result.summary,
       sessionId: result.sessionId,
-      usage: result.usage,        // { inputTokens, outputTokens, cachedTokens }
-      costUsd: result.costUsd,    // pi reports this directly (see §5)
+      usage: result.usage, // { inputTokens, outputTokens, cachedTokens }
+      costUsd: result.costUsd, // pi reports this directly (see §5)
     });
   }
 
@@ -225,36 +265,71 @@ export class Scheduler {
     const taskStatus = r.failed ? (this.looksBlocked(r) ? "blocked" : "failed") : "done";
 
     this.db.transaction(() => {
-      this.db.prepare(`UPDATE run SET status=?, error=?, summary IS summary,
+      this.db
+        .prepare(
+          `UPDATE run SET status=?, error=?, summary IS summary,
         input_tokens=?, output_tokens=?, cached_tokens=?, cost_cents=?,
-        session_id=?, finished_at=? WHERE id=?`)
-        .run(runStatus, r.error ?? null,
-             r.usage?.inputTokens ?? 0, r.usage?.outputTokens ?? 0,
-             r.usage?.cachedTokens ?? 0, costCents, r.sessionId ?? null, Date.now(), runId);
+        session_id=?, finished_at=? WHERE id=?`,
+        )
+        .run(
+          runStatus,
+          r.error ?? null,
+          r.usage?.inputTokens ?? 0,
+          r.usage?.outputTokens ?? 0,
+          r.usage?.cachedTokens ?? 0,
+          costCents,
+          r.sessionId ?? null,
+          Date.now(),
+          runId,
+        );
 
-      this.db.prepare(`UPDATE task SET status=?, summary=?, run_id=NULL,
-        completed_at=? WHERE id=? AND run_id=?`)             // release lock only if we own it
+      this.db
+        .prepare(
+          `UPDATE task SET status=?, summary=?, run_id=NULL,
+        completed_at=? WHERE id=? AND run_id=?`,
+        ) // release lock only if we own it
         .run(taskStatus, r.summary ?? null, Date.now(), task.id, runId);
 
-      this.db.prepare(`UPDATE employee SET status='idle', session_id=? WHERE id=?`)
+      this.db
+        .prepare(`UPDATE employee SET status='idle', session_id=? WHERE id=?`)
         .run(r.sessionId ?? emp.session_id, emp.id);
 
-      this.db.prepare(`UPDATE company SET spent_cents = spent_cents + ? WHERE id='default'`)
+      this.db
+        .prepare(`UPDATE company SET spent_cents = spent_cents + ? WHERE id='default'`)
         .run(costCents);
     })();
 
-    this.emit({ runId, taskId: task.id, employeeId: emp.id, kind: "cost",
-                payload: { costCents, ...r.usage } });
+    this.emit({
+      runId,
+      taskId: task.id,
+      employeeId: emp.id,
+      kind: "cost",
+      payload: { costCents, ...r.usage },
+    });
     this.emit({ runId, taskId: task.id, employeeId: emp.id, kind: "status", message: taskStatus });
   }
 
-  private emit(e: ActivityEvent) { this.log(e); this.events.emit("activity", e); }
+  private emit(e: ActivityEvent) {
+    this.log(e);
+    this.events.emit("activity", e);
+  }
   private log(e: ActivityEvent) {
-    this.db.prepare(`INSERT INTO activity_log
+    this.db
+      .prepare(
+        `INSERT INTO activity_log
       (run_id,task_id,employee_id,kind,stream,message,payload,created_at)
-      VALUES (?,?,?,?,?,?,?,?)`).run(
-      e.runId??null, e.taskId??null, e.employeeId??null, e.kind,
-      e.stream??null, e.message??null, e.payload?JSON.stringify(e.payload):null, Date.now());
+      VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        e.runId ?? null,
+        e.taskId ?? null,
+        e.employeeId ?? null,
+        e.kind,
+        e.stream ?? null,
+        e.message ?? null,
+        e.payload ? JSON.stringify(e.payload) : null,
+        Date.now(),
+      );
   }
 }
 ```
@@ -281,6 +356,7 @@ args:
 ```
 
 It streams by **buffering stdout into complete lines** and emitting each line via `onLog`. After exit, `parsePiJsonl(stdout)` walks the JSONL events:
+
 - `turn_end` carries `message.usage` → `{ input, output, cacheRead }` and `usage.cost.total` (**pi computes the dollar cost itself**).
 - `tool_execution_start`/`_end` → tool calls.
 - `agent_end`/`turn_end` last assistant text → `finalMessage` (= run summary).
@@ -289,6 +365,7 @@ It streams by **buffering stdout into complete lines** and emitting each line vi
 Session resume: pass the saved session file path back via `--session`. Pi validates the cwd in the session header; on mismatch or "unknown session" error it retries fresh. **For the game, sessions are how an employee "remembers" prior tasks** — keep it, store the path on `employee.session_id`.
 
 **inteligir's in-process approach vs spawn:** inteligir runs the agent loop in-process (SDK calls inside the same Node runtime). Tempting for an Electron app — no child processes, direct streaming, no CLI dependency. **But: don't.** For multi-employee concurrency you want each pi run as an isolated child process because:
+
 1. **Isolation** — a hung/looping agent is one `AbortController`/`SIGTERM` away from death without touching your main process or the other 2 runs.
 2. **Crash containment** — an OOM or unhandled throw in agent code doesn't take down the Electron main process (which owns your DB and all windows).
 3. **The tooling already exists** — pi's `read,bash,edit,write,...` toolset, sandboxing, and JSONL protocol are done. Reimplementing in-process means rebuilding the entire agent harness.
@@ -345,11 +422,12 @@ UPDATE task SET status=?, run_id=NULL WHERE id=? AND run_id=?;
 ```
 
 Rules, total:
+
 - Only `todo`/`blocked`/`failed` are assignable (re-try a stuck task).
 - `queued→running` requires `run_id IS NULL` (the lock).
 - Terminal-from-run: `done` | `blocked` | `failed` | `timed_out→failed`.
 - `cancelled` reachable from `queued`/`running` (player abort → `ctrl.abort()`).
-- Per-employee single-active enforced in the scheduler via `busyEmployees` Set *and* defended by the DB lock (the Set is the fast path, the SQL `WHERE run_id IS NULL` is the source of truth across a restart).
+- Per-employee single-active enforced in the scheduler via `busyEmployees` Set _and_ defended by the DB lock (the Set is the fast path, the SQL `WHERE run_id IS NULL` is the source of truth across a restart).
 
 Paperclip's `assertTransition` is essentially a no-op (just validates the target is a known status) — the real invariants live in the conditional UPDATEs, not a transition table. Copy that philosophy: **enforce state in the WHERE clause, not in branching code.** Makes illegal states unwritable.
 
@@ -365,6 +443,7 @@ Paperclip's pipeline (verified in `heartbeat.ts` + `costs.ts`):
 4. `agentRuntimeState` accumulates `totalInputTokens/Output/Cached/CostCents` via `col + delta`.
 
 **For the game's meter, you need exactly:**
+
 - Per-run snapshot: `run.{input_tokens, output_tokens, cached_tokens, cost_cents}` — already in §1.
 - Running total: `company.spent_cents += costCents` in `finishRun` — the meter reads this one integer.
 - Live tick: emit a `kind:'cost'` activity event so the meter animates as runs finish.
@@ -382,6 +461,7 @@ That's the whole cost system. If pi ever returns `costUsd: 0` (some providers/lo
 ## 6. Drop vs Keep
 
 **DROP (sandbox = no need):**
+
 - **Approvals / governance** — `approvals`, `issue_approvals`, board-approval-for-agents, `principal_permission_grants`, `agent_memberships`. No human-in-loop gate; the player IS the authority.
 - **Budgets as hard-stops** — `budget_policies`, `budget_incidents`, `budgetMonthlyCents` enforcement, `getAgentInvokability` budget checks. Track cost for the meter; never block on it.
 - **Multi-company isolation** — single hardcoded `company` row. Drop `companyId` FKs everywhere they exist purely for tenancy (keep one for the meter rollup).
@@ -393,6 +473,7 @@ That's the whole cost system. If pi ever returns `costUsd: 0` (some providers/lo
 - The 11k-line `heartbeat.ts` orchestration, `routines.ts` (8k), all `plugin_*` tables.
 
 **KEEP (the load-bearing core):**
+
 - **Atomic single-assignee checkout** via conditional UPDATE + `run_id` lock (§4). This is the one correctness primitive that matters.
 - **Concurrency-capped scheduler** — global cap (Paperclip's `maxConcurrentRuns`) + per-employee single-active (§2).
 - **pi-local spawn + JSONL parse** — `--mode json -p`, line-buffered streaming, `parsePiJsonl` (copy nearly verbatim), session resume via `--session` (§3).
@@ -406,13 +487,14 @@ That's the whole cost system. If pi ever returns `costUsd: 0` (some providers/lo
 ## My take / friction
 
 - **You're asking the right question** by anchoring on the algorithm not the schema — Paperclip's value is the checkout-lock + adapter-stream patterns, and they're tiny once extracted. The 17k lines of service code is 95% multi-tenant/governance/remote-exec scaffolding you don't have.
-- **One thing to reconsider: `blocked` vs `failed`.** I split them (blocked = retryable soft-fail, failed = hard). But pi's `-p` non-interactive mode can't actually *ask* for input mid-run — it just exits. So "blocked" can only mean "the agent's final message said it's stuck." That's a heuristic (`looksBlocked` parsing the summary), which is fuzzy. Cleaner game design: **drop `blocked`, make every non-zero exit `failed`, and let the player re-assign (which routes failed→todo→queued).** One less status, no summary-parsing heuristic. I'd cut it unless "blocked" is a deliberate game mechanic.
+- **One thing to reconsider: `blocked` vs `failed`.** I split them (blocked = retryable soft-fail, failed = hard). But pi's `-p` non-interactive mode can't actually _ask_ for input mid-run — it just exits. So "blocked" can only mean "the agent's final message said it's stuck." That's a heuristic (`looksBlocked` parsing the summary), which is fuzzy. Cleaner game design: **drop `blocked`, make every non-zero exit `failed`, and let the player re-assign (which routes failed→todo→queued).** One less status, no summary-parsing heuristic. I'd cut it unless "blocked" is a deliberate game mechanic.
 - **Sessions are a game mechanic in disguise.** `employee.session_id` resume means an employee accumulates context across tasks — they get "smarter"/cheaper (cache hits) the more they work in one area. That's free emergent progression. Worth surfacing in the UI.
 - **The native-module decision is the only one with real downside.** If `electron-rebuild` friction scares you, the honest fallback is `node:sqlite` (accept experimental-API churn) — but **not** JSON stores, which break the concurrency model. Don't compromise the checkout lock to dodge a build-config step.
 
 **Unresolved questions:**
+
 1. Keep `blocked` status, or collapse to `failed` + re-assign? (I lean collapse.)
 2. One shared cwd for all employees, or per-employee dir? (Per-employee = isolation + session-cwd-match safety.)
 3. Token-price fallback table now, or wait until a model returns `costUsd: 0`?
 4. Cancellation policy: `SIGTERM` + grace then `SIGKILL` (Paperclip's `graceSec`), or hard kill immediately?
-5. Do employees ever run *unprompted* (idle "they keep working" loop), or strictly player-assigned tasks? Changes whether you need a heartbeat-style poll loop at all.
+5. Do employees ever run _unprompted_ (idle "they keep working" loop), or strictly player-assigned tasks? Changes whether you need a heartbeat-style poll loop at all.

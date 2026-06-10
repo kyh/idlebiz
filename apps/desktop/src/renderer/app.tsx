@@ -39,7 +39,11 @@ export function App() {
         {booted && company && company.onboarded && !authed ? <AuthGate /> : null}
         {booted && company && company.onboarded ? (
           <>
-            <Hud onHire={() => setHiring(true)} onShips={() => setShips(true)} onInbox={() => setInbox(true)} />
+            <Hud
+              onHire={() => setHiring(true)}
+              onShips={() => setShips(true)}
+              onInbox={() => setInbox(true)}
+            />
             <CompanyFeed />
             <Dialogue />
             {hiring && <Hiring onClose={() => setHiring(false)} />}

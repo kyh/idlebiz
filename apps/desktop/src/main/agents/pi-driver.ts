@@ -11,7 +11,13 @@ import type { AgentSession, ToolDefinition } from "@mariozechner/pi-coding-agent
 import { getModels } from "@mariozechner/pi-ai";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { Type, type Static } from "@sinclair/typebox";
-import { AUTH_PATH, PI_AGENT_DIR, companyWorkspace, employeeAgentDir, employeeSessionDir } from "@/main/paths";
+import {
+  AUTH_PATH,
+  PI_AGENT_DIR,
+  companyWorkspace,
+  employeeAgentDir,
+  employeeSessionDir,
+} from "@/main/paths";
 import { parsePiEvent, type PiEvent } from "@/main/agents/event-parser";
 import type { Company, Employee } from "@/shared/domain";
 
@@ -96,7 +102,9 @@ class PiDriver {
   }
 
   private askBossTool(employeeId: string): ToolDefinition<ReturnType<typeof Type.Object>> {
-    const schema = Type.Object({ question: Type.String({ description: "A concise question for the founder." }) });
+    const schema = Type.Object({
+      question: Type.String({ description: "A concise question for the founder." }),
+    });
     const tool: ToolDefinition<typeof schema> = {
       name: "ask_boss",
       label: "ask the boss",
@@ -106,7 +114,15 @@ class PiDriver {
       execute: async (_id: string, params: Static<typeof schema>) => {
         const rt = this.employees.get(employeeId);
         if (rt?.live) rt.live.blockedQuestion = params.question;
-        return { content: [{ type: "text", text: "Your question was sent to the founder. Note it and continue with anything you can still do." }], details: {} };
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Your question was sent to the founder. Note it and continue with anything you can still do.",
+            },
+          ],
+          details: {},
+        };
       },
     };
     // schema generic is invariant in the lib's type; the runtime shape is correct.
@@ -114,11 +130,14 @@ class PiDriver {
   }
 
   private messageTeamTool(employeeId: string): ToolDefinition<ReturnType<typeof Type.Object>> {
-    const schema = Type.Object({ text: Type.String({ description: "A short update for your teammates." }) });
+    const schema = Type.Object({
+      text: Type.String({ description: "A short update for your teammates." }),
+    });
     const tool: ToolDefinition<typeof schema> = {
       name: "message_team",
       label: "message the team",
-      description: "Post a short update to the company team channel so teammates can coordinate — share progress, a decision, or an ask. Keep it to one line.",
+      description:
+        "Post a short update to the company team channel so teammates can coordinate — share progress, a decision, or an ask. Keep it to one line.",
       parameters: schema,
       execute: async (_id: string, params: Static<typeof schema>) => {
         this.employees.get(employeeId)?.live?.hooks?.messageTeam(params.text);
@@ -130,18 +149,27 @@ class PiDriver {
 
   private delegateTool(employeeId: string): ToolDefinition<ReturnType<typeof Type.Object>> {
     const schema = Type.Object({
-      role: Type.String({ description: "Teammate role to hand this to (e.g. engineer, designer, pm, qa, researcher, writer, analyst, editor)." }),
+      role: Type.String({
+        description:
+          "Teammate role to hand this to (e.g. engineer, designer, pm, qa, researcher, writer, analyst, editor).",
+      }),
       title: Type.String({ description: "Short task title." }),
       description: Type.String({ description: "Concretely what they should do." }),
     });
     const tool: ToolDefinition<typeof schema> = {
       name: "delegate",
       label: "delegate to a teammate",
-      description: "Create a task for a teammate of a given role when the work is better owned by them. They'll pick it up autonomously.",
+      description:
+        "Create a task for a teammate of a given role when the work is better owned by them. They'll pick it up autonomously.",
       parameters: schema,
       execute: async (_id: string, params: Static<typeof schema>) => {
-        this.employees.get(employeeId)?.live?.hooks?.delegate(params.role, params.title, params.description);
-        return { content: [{ type: "text", text: `Delegated "${params.title}" to a ${params.role}.` }], details: {} };
+        this.employees
+          .get(employeeId)
+          ?.live?.hooks?.delegate(params.role, params.title, params.description);
+        return {
+          content: [{ type: "text", text: `Delegated "${params.title}" to a ${params.role}.` }],
+          details: {},
+        };
       },
     };
     return tool as unknown as ToolDefinition<ReturnType<typeof Type.Object>>;
@@ -173,7 +201,11 @@ class PiDriver {
       thinkingLevel: (emp.thinking as "off" | "low" | "medium" | "high" | undefined) ?? "off",
       sessionManager: SessionManager.continueRecent(cwd, sessionDir),
       settingsManager: SettingsManager.create(cwd, agentDir),
-      customTools: [this.askBossTool(emp.id), this.messageTeamTool(emp.id), this.delegateTool(emp.id)],
+      customTools: [
+        this.askBossTool(emp.id),
+        this.messageTeamTool(emp.id),
+        this.delegateTool(emp.id),
+      ],
     });
 
     const rt: EmployeeRuntime = { session, live: null, unsub: () => {} };
@@ -201,7 +233,8 @@ class PiDriver {
         break;
       case "message_end":
         if (ev.text) live.sawOutput = true;
-        if (ev.stopReason === "error" || ev.errorMessage) live.error = ev.errorMessage ?? "agent error";
+        if (ev.stopReason === "error" || ev.errorMessage)
+          live.error = ev.errorMessage ?? "agent error";
         if (ev.usage) this.addUsage(live, ev.usage);
         break;
       case "turn_end":
@@ -218,7 +251,10 @@ class PiDriver {
     }
   }
 
-  private addUsage(live: LiveRun, u: { inputTokens: number; outputTokens: number; cachedTokens: number }): void {
+  private addUsage(
+    live: LiveRun,
+    u: { inputTokens: number; outputTokens: number; cachedTokens: number },
+  ): void {
     live.usage.inputTokens += u.inputTokens;
     live.usage.outputTokens += u.outputTokens;
     live.usage.cachedTokens += u.cachedTokens;

@@ -24,7 +24,7 @@ const config: Phaser.Types.Core.GameConfig = {
   parent: "game",
   backgroundColor: "#1c2030",
   scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
-  pixelArt: true,          // crisp Limezu pixels
+  pixelArt: true, // crisp Limezu pixels
   roundPixels: true,
   physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
   scene: [BootScene, OfficeScene, HudScene],
@@ -40,11 +40,11 @@ new Phaser.Game(config);
 `config.ts` constants (farm pattern — note source art is 16px there; for Limezu use **16**, see §7):
 
 ```ts
-export const TILE = 16;          // Limezu Modern Office is 16px-native
+export const TILE = 16; // Limezu Modern Office is 16px-native
 export const ZOOM = 3.25;
-export const MAP_W = 30;         // office room in tiles
+export const MAP_W = 30; // office room in tiles
 export const MAP_H = 20;
-export const WALK_SPEED = 62;    // px/sec pre-zoom
+export const WALK_SPEED = 62; // px/sec pre-zoom
 export const DEPTH = { ground: 0, decalLow: 3, entityBase: 10, ui: 1_000_000 } as const;
 ```
 
@@ -54,23 +54,23 @@ export const DEPTH = { ground: 0, decalLow: 3, entityBase: 10, ui: 1_000_000 } a
 
 You have raw PNG tilesets/singles, no Tiled JSON. Three options:
 
-| Approach | Verdict for a small office |
-|---|---|
-| Hand-author Tiled JSON | Overkill. Requires opening Tiled, slicing the Limezu sheet into a `.tsx`, painting, exporting, matching layer names. High friction for one room. |
-| `createBlankLayer` + `putTileAt` (needs a single sliced tileset PNG via `load.spritesheet`) | Viable if you slice Limezu into one indexed sheet. Gives you real `TilemapLayer` + `setCollisionByExclusion`. |
-| **2D-array → blit `add.image` per cell + a `solid` Set** | **Recommended.** Matches farm exactly, zero tooling, works with Limezu "singles" PNGs, trivial collision. |
+| Approach                                                                                    | Verdict for a small office                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Hand-author Tiled JSON                                                                      | Overkill. Requires opening Tiled, slicing the Limezu sheet into a `.tsx`, painting, exporting, matching layer names. High friction for one room. |
+| `createBlankLayer` + `putTileAt` (needs a single sliced tileset PNG via `load.spritesheet`) | Viable if you slice Limezu into one indexed sheet. Gives you real `TilemapLayer` + `setCollisionByExclusion`.                                    |
+| **2D-array → blit `add.image` per cell + a `solid` Set**                                    | **Recommended.** Matches farm exactly, zero tooling, works with Limezu "singles" PNGs, trivial collision.                                        |
 
 Use the array approach. Load each office tile as its own image (like farm loads `t-grass0..5`, `t-water`), define the room as a char grid, blit, and record solid cells:
 
 ```ts
 // BootScene.preload() — load office singles (16x16 each)
 this.load.image("floor", "assets/tiles/floor.png");
-this.load.image("rug",   "assets/tiles/rug.png");
-this.load.image("wall",  "assets/tiles/wall.png");        // single tile or top-of-wall
+this.load.image("rug", "assets/tiles/rug.png");
+this.load.image("wall", "assets/tiles/wall.png"); // single tile or top-of-wall
 this.load.image("wall-top", "assets/tiles/wall_top.png");
-this.load.image("desk",  "assets/props/desk.png");        // 16x16 or multi-tile prop
+this.load.image("desk", "assets/props/desk.png"); // 16x16 or multi-tile prop
 this.load.image("plant", "assets/props/plant.png");
-this.load.image("printer","assets/props/printer.png");
+this.load.image("printer", "assets/props/printer.png");
 ```
 
 ```ts
@@ -134,9 +134,9 @@ Farm uses **one omnidirectional sheet flipped horizontally** (no separate up/dow
 
 ```ts
 // preload — Limezu char walk sheets, 16x16 frames (see §7)
-const f = { frameWidth: 16, frameHeight: 32 };  // Limezu chars are 16w x 32h
+const f = { frameWidth: 16, frameHeight: 32 }; // Limezu chars are 16w x 32h
 this.load.spritesheet("p-down", "assets/char/player_down.png", f);
-this.load.spritesheet("p-up",   "assets/char/player_up.png",   f);
+this.load.spritesheet("p-up", "assets/char/player_up.png", f);
 this.load.spritesheet("p-side", "assets/char/player_side.png", f);
 
 // create — quoted shape from bomberman BootScene.create()
@@ -144,14 +144,15 @@ const mk = (key: string, sheet: string) =>
   this.anims.create({
     key,
     frames: this.anims.generateFrameNumbers(sheet, { start: 0, end: 3 }),
-    frameRate: 9, repeat: -1,
+    frameRate: 9,
+    repeat: -1,
   });
 mk("walk-down", "p-down");
 mk("walk-up", "p-up");
 mk("walk-side", "p-side");
 ```
 
-**Free movement + manual collision + camera** (adapted from farm GameScene `handleMovement`/`moveResolved`/camera setup — farm uses manual AABB, *not* arcade colliders, even though arcade is enabled):
+**Free movement + manual collision + camera** (adapted from farm GameScene `handleMovement`/`moveResolved`/camera setup — farm uses manual AABB, _not_ arcade colliders, even though arcade is enabled):
 
 ```ts
 // create()
@@ -222,15 +223,38 @@ Farm's `NpcManager` (entities/npcs.ts) is the template. NPCs are plain `add.spri
 export type NpcId = "ada" | "rob" | "mei";
 export type NpcState = "working" | "idle" | "blocked";
 export type NpcDef = {
-  id: NpcId; name: string; role: string;
+  id: NpcId;
+  name: string;
+  role: string;
   homeTile: { tx: number; ty: number };
-  deskFacing: { x: number; y: number };   // which way they sit
+  deskFacing: { x: number; y: number }; // which way they sit
   lines: string[];
 };
 export const NPCS: Record<NpcId, NpcDef> = {
-  ada: { id: "ada", name: "Ada", role: "Backend",  homeTile: { tx: 6,  ty: 4 }, deskFacing: {x:0,y:1}, lines:["Deploy's green.","CI is flaky again."] },
-  rob: { id: "rob", name: "Rob", role: "Design",   homeTile: { tx: 14, ty: 4 }, deskFacing: {x:0,y:1}, lines:["Reviewing the new flow."] },
-  mei: { id: "mei", name: "Mei", role: "PM",       homeTile: { tx: 22, ty: 4 }, deskFacing: {x:0,y:1}, lines:["Standup in 5."] },
+  ada: {
+    id: "ada",
+    name: "Ada",
+    role: "Backend",
+    homeTile: { tx: 6, ty: 4 },
+    deskFacing: { x: 0, y: 1 },
+    lines: ["Deploy's green.", "CI is flaky again."],
+  },
+  rob: {
+    id: "rob",
+    name: "Rob",
+    role: "Design",
+    homeTile: { tx: 14, ty: 4 },
+    deskFacing: { x: 0, y: 1 },
+    lines: ["Reviewing the new flow."],
+  },
+  mei: {
+    id: "mei",
+    name: "Mei",
+    role: "PM",
+    homeTile: { tx: 22, ty: 4 },
+    deskFacing: { x: 0, y: 1 },
+    lines: ["Standup in 5."],
+  },
 };
 export const NPC_IDS = Object.keys(NPCS) as NpcId[];
 ```
@@ -238,7 +262,12 @@ export const NPC_IDS = Object.keys(NPCS) as NpcId[];
 **Manager** (adapted from farm entities/npcs.ts — `spawnAll`, `update`, `tryTalk`):
 
 ```ts
-type Live = { id: NpcId; spr: Phaser.GameObjects.Sprite; emote?: Phaser.GameObjects.Sprite; state: NpcState };
+type Live = {
+  id: NpcId;
+  spr: Phaser.GameObjects.Sprite;
+  emote?: Phaser.GameObjects.Sprite;
+  state: NpcState;
+};
 
 export class NpcManager {
   private live: Live[] = [];
@@ -247,7 +276,8 @@ export class NpcManager {
   spawnAll(): void {
     for (const id of NPC_IDS) {
       const def = NPCS[id];
-      const x = def.homeTile.tx * TILE + 8, y = def.homeTile.ty * TILE + 14;
+      const x = def.homeTile.tx * TILE + 8,
+        y = def.homeTile.ty * TILE + 14;
       const spr = this.scene.add.sprite(x, y, "npc-idle", 0).setOrigin(0.5, 0.9);
       spr.setDepth(DEPTH.entityBase + y);
       this.live.push({ id, spr, state: "idle" });
@@ -257,13 +287,18 @@ export class NpcManager {
   // adapted from farm tryTalk(): adjacency to the tile the player FACES
   tryInteract(tx: number, ty: number): boolean {
     for (const l of this.live) {
-      const nx = Math.floor(l.spr.x / TILE), ny = Math.floor((l.spr.y - 1) / TILE);
+      const nx = Math.floor(l.spr.x / TILE),
+        ny = Math.floor((l.spr.y - 1) / TILE);
       if (Math.abs(nx - tx) <= 1 && Math.abs(ny - ty) <= 1) {
-        l.spr.setFlipX(this.scene.player.x < l.spr.x);    // NPC turns to face player
+        l.spr.setFlipX(this.scene.player.x < l.spr.x); // NPC turns to face player
         const def = NPCS[l.id];
-        this.scene.events.emit("npc-interact", {           // -> Phaser EventEmitter (see below)
-          id: l.id, name: def.name, role: def.role,
-          text: def.lines[0] ?? "Hi.", state: l.state,
+        this.scene.events.emit("npc-interact", {
+          // -> Phaser EventEmitter (see below)
+          id: l.id,
+          name: def.name,
+          role: def.role,
+          text: def.lines[0] ?? "Hi.",
+          state: l.state,
         });
         return true;
       }
@@ -309,6 +344,7 @@ Note: farm binds movement to `A` (strafe-left). If you want a dedicated press-A 
 // inside a scene: bubble the event to the global game emitter
 this.game.events.emit("npc-interact", payload);
 ```
+
 ```tsx
 // React side
 import { useEffect, useState } from "react";
@@ -320,7 +356,9 @@ export function useNpcDialogue(game: Game | null) {
     if (!game) return;
     const on = (p: { name: string; text: string }) => setDialogue(p);
     game.events.on("npc-interact", on);
-    return () => { game.events.off("npc-interact", on); };
+    return () => {
+      game.events.off("npc-interact", on);
+    };
   }, [game]);
   return dialogue;
 }
@@ -338,8 +376,18 @@ Farm tints NPCs from data (`spr.setTint(def.tint)`) and swaps anims by comparing
 // preload: Limezu UI emote sheet (speech bubbles/alerts). 16x16 frames typical.
 this.load.spritesheet("emotes", "assets/ui/emotes.png", { frameWidth: 16, frameHeight: 16 });
 // in BootScene.create(): typing loop + alert pulse
-this.anims.create({ key: "npc-typing", frames: this.anims.generateFrameNumbers("npc-work", {}), frameRate: 8, repeat: -1 });
-this.anims.create({ key: "npc-idle-a", frames: this.anims.generateFrameNumbers("npc-idle", {}), frameRate: 4, repeat: -1 });
+this.anims.create({
+  key: "npc-typing",
+  frames: this.anims.generateFrameNumbers("npc-work", {}),
+  frameRate: 8,
+  repeat: -1,
+});
+this.anims.create({
+  key: "npc-idle-a",
+  frames: this.anims.generateFrameNumbers("npc-idle", {}),
+  frameRate: 4,
+  repeat: -1,
+});
 ```
 
 ```ts
@@ -391,13 +439,16 @@ Call `npcs.setState("ada", "working")` from your external data sync (React effec
 **`vg new <slug>`** (default `--engine phaser`) runs `tiged("phaserjs/template-vite-ts")` — the official Phaser 4 + Vite + TS starter (package.json pins `phaser@^4` despite the upstream README still saying "Phaser 3"). After fetch it: rewrites `package.json` name, writes `vibedgames.json` (`{ slug, name }`), appends a Vibedgames deploy footer to README.
 
 Commands:
+
 ```sh
 vg new office                       # Phaser 4 + Vite + TS (default)
 vg new office --here                # scaffold into current dir
 vg new office --engine none         # minimal Vite+TS canvas (offline)
 vg new office --template owner/repo  # any degit spec
 ```
+
 Resulting layout (upstream `phaserjs/template-vite-ts` + vg post-processing):
+
 ```
 office/
 ├── index.html
@@ -412,6 +463,7 @@ office/
     ├── main.ts            # new Phaser.Game(config)
     └── scenes/            # Boot/Preloader/MainMenu/Game — replace with Office scenes
 ```
+
 Deploy: `npm install && npm run dev`, then `npm run build && vg deploy ./dist` → `office.vibedgames.com`.
 
 **`vg generate`** (subcommand surface; agents must pass `--json`). It's a fal model runner, not a sprite tool — use it to generate **missing** assets (a player avatar, a prop), not to slice Limezu sheets:
@@ -428,6 +480,7 @@ SUBMIT=$(vg generate run <endpoint> --prompt "..." --async --json)
 REQ=$(echo "$SUBMIT" | jq -r '.request_id')
 vg generate status <endpoint> "$REQ" --download "./public/assets/{request_id}.{ext}" --json
 ```
+
 Subcommands: `run`, `status`, `models`, `schema`, `pricing`, `docs`, `upload`. Rule from the skill: never invent endpoint IDs — `models` to discover, `schema` to verify, then `run`.
 
 For **slicing the raw Limezu sheets** (not generation), there's a separate `asset-pipeline` skill with `scripts/` to probe sheets for non-empty 16×16 grid frames and emit frame/size metadata — use that to figure out frame indices, then load with `load.spritesheet`.
@@ -440,8 +493,11 @@ Limezu "Modern Office" (Serene Village family) is **16px-native**. Critical: cha
 
 ```ts
 // Tiles / props (16x16 grid, no margin/spacing in Limezu packs)
-this.load.spritesheet("office-tiles", "assets/tiles/office.png", { frameWidth: 16, frameHeight: 16 });
-this.load.image("desk", "assets/props/desk.png");                  // singles via load.image
+this.load.spritesheet("office-tiles", "assets/tiles/office.png", {
+  frameWidth: 16,
+  frameHeight: 16,
+});
+this.load.image("desk", "assets/props/desk.png"); // singles via load.image
 
 // Characters — 16 wide, 32 tall (TALLER than the tile)
 this.load.spritesheet("p-down", "assets/char/down.png", { frameWidth: 16, frameHeight: 32 });
@@ -451,8 +507,9 @@ this.load.spritesheet("emotes", "assets/ui/emotes.png", { frameWidth: 16, frameH
 ```
 
 Conventions (from the SKILL spritesheet ref + farm/bomberman):
+
 - **Measure, never guess.** Verify: `imageWidth = frameWidth*cols + spacing*(cols-1) + margin*2`. Limezu packs are usually `margin:0, spacing:0`, so `cols = imageWidth/16`.
-- **`generateFrameNumbers(sheet, {})`** (empty config) uses the whole sheet in order — farm relies on this so frame *count* lives in the sheet, not the code (`mk("p-walk", "p-walk", 12, -1)`).
+- **`generateFrameNumbers(sheet, {})`** (empty config) uses the whole sheet in order — farm relies on this so frame _count_ lives in the sheet, not the code (`mk("p-walk", "p-walk", 12, -1)`).
 - **Char origin** should be bottom-ish, not center: farm uses `setOrigin(0.5, 0.82)`, bomberman effectively bottom-anchors. For 16×32 Limezu chars use `setOrigin(0.5, 0.9)` so the feet sit on the tile and y-sort/depth math (`DEPTH.entityBase + sprite.y`) puts them correctly behind/in front of desks.
 - **Set `pixelArt: true` + `roundPixels: true`** in config (farm does) and `image-rendering: pixelated` in CSS, or 16px tiles shimmer at zoom 3.25.
 - **Left-facing = flip the side sheet** (`setFlipX(true)`), don't author a 4th sheet — both farm and bomberman do this.
@@ -460,12 +517,14 @@ Conventions (from the SKILL spritesheet ref + farm/bomberman):
 ---
 
 ### My take / friction to flag
-- **Biggest decision is collision.** Farm enables arcade physics in config but never uses colliders — all movement is manual AABB against `isSolidTile`. For a one-room office this is the path of least resistance and what I coded above. Don't half-adopt arcade (enabling `body.setVelocity` *and* manual resolution will fight).
-- **`vg generate` won't slice Limezu.** It generates *new* art via fal. For the actual Limezu sheets, lean on the `asset-pipeline` skill's frame-probing scripts to get exact indices — guessing frame dims is the #1 silent-corruption source per the Phaser skill.
+
+- **Biggest decision is collision.** Farm enables arcade physics in config but never uses colliders — all movement is manual AABB against `isSolidTile`. For a one-room office this is the path of least resistance and what I coded above. Don't half-adopt arcade (enabling `body.setVelocity` _and_ manual resolution will fight).
+- **`vg generate` won't slice Limezu.** It generates _new_ art via fal. For the actual Limezu sheets, lean on the `asset-pipeline` skill's frame-probing scripts to get exact indices — guessing frame dims is the #1 silent-corruption source per the Phaser skill.
 - **Press-A clash.** A is WASD-strafe in farm. For "press A to interact" either move strafe off A or use Space/E. I'd ship Space/E for interact and reserve a dedicated key — cleaner than overloading A.
 - **NPCs as plain sprites (no bodies)** is correct here — farm proves you don't need physics NPCs for adjacency-based talk; it's just integer-tile distance checks, which also makes the `working/idle/blocked` external-state drive trivial.
 
 Relevant files I read (all absolute):
+
 - `/Users/kyh/Documents/Projects/vibedgames/games/farm/src/main.ts`, `/config.ts`, `/scenes/BootScene.ts`, `/scenes/GameScene.ts`, `/scenes/HudScene.ts`, `/world/world.ts`, `/world/mapgen.ts`, `/entities/npcs.ts`, `/data/npcs.ts`, `/index.html`, `/package.json`
 - `/Users/kyh/Documents/Projects/vibedgames/games/bomberman/src/scenes/BootScene.ts`, `/scenes/GameScene.ts`, `/shared/constants.ts`, `/index.html`
 - `/Users/kyh/Documents/Projects/vibedgames/plugins/game-engines/skills/phaser/SKILL.md` + `references/spritesheets-and-textures.md`, `references/tilemaps.md`

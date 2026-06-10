@@ -13,7 +13,16 @@ interface State {
   game: Phaser.Game | null;
 }
 
-let state: State = { booted: false, authed: true, liveMetrics: false, company: null, employees: [], activity: [], pendingAsks: [], game: null };
+let state: State = {
+  booted: false,
+  authed: true,
+  liveMetrics: false,
+  company: null,
+  employees: [],
+  activity: [],
+  pendingAsks: [],
+  game: null,
+};
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<State>): void {
@@ -83,14 +92,29 @@ function onActivity(e: ActivityEvent): void {
   // live-patch employee status from run status events (keeps HUD + dialogue badge live)
   let employees = state.employees;
   if (e.kind === "status" && e.employeeId && typeof e.message === "string") {
-    const next = e.message === "running" ? "working" : ["done", "failed", "cancelled", "blocked"].includes(e.message) ? "idle" : null;
-    if (next) employees = employees.map((emp) => (emp.id === e.employeeId ? { ...emp, status: next } : emp));
+    const next =
+      e.message === "running"
+        ? "working"
+        : ["done", "failed", "cancelled", "blocked"].includes(e.message)
+          ? "idle"
+          : null;
+    if (next)
+      employees = employees.map((emp) =>
+        emp.id === e.employeeId ? { ...emp, status: next } : emp,
+      );
   }
   set({ activity, employees });
-  if (e.kind === "lifecycle" && e.message === "metrics.pulse" && e.payload && typeof e.payload === "object" && "real" in e.payload) {
+  if (
+    e.kind === "lifecycle" &&
+    e.message === "metrics.pulse" &&
+    e.payload &&
+    typeof e.payload === "object" &&
+    "real" in e.payload
+  ) {
     set({ liveMetrics: (e.payload as { real?: unknown }).real === true });
   }
-  if (e.kind === "lifecycle" && (e.message === "run.end" || e.message === "metrics.pulse")) void refresh();
+  if (e.kind === "lifecycle" && (e.message === "run.end" || e.message === "metrics.pulse"))
+    void refresh();
 }
 
 // ---- actions ---------------------------------------------------------------
@@ -128,10 +152,20 @@ export async function hireEmployee(input: {
   return emp;
 }
 
-export async function assignWork(employeeId: string, title: string, description: string): Promise<Task | null> {
+export async function assignWork(
+  employeeId: string,
+  title: string,
+  description: string,
+): Promise<Task | null> {
   const company = state.company;
   if (!company) return null;
-  const task = await bridge().createTask({ companyId: company.id, title, description, priority: "high", assigneeId: employeeId });
+  const task = await bridge().createTask({
+    companyId: company.id,
+    title,
+    description,
+    priority: "high",
+    assigneeId: employeeId,
+  });
   const assigned = await bridge().assignTask({ taskId: task.id, employeeId });
   await refresh();
   return assigned;

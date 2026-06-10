@@ -40,7 +40,10 @@ function useTypewriter(text: string): { shown: string; done: boolean; skip: () =
 function Narrator({ text }: { text: string }) {
   const { shown, done, skip } = useTypewriter(text);
   return (
-    <div className="min-h-[44px] cursor-pointer text-[14px] leading-relaxed text-[var(--text)]" onClick={skip}>
+    <div
+      className="min-h-[44px] cursor-pointer text-[14px] leading-relaxed text-[var(--text)]"
+      onClick={skip}
+    >
       {shown}
       {!done ? <span className="px-live-dot">▌</span> : null}
     </div>
@@ -151,13 +154,17 @@ export function PokeOnboarding() {
   }, [next]);
 
   const narration: Record<Step, string> = {
-    intro: "Welcome to IDLEBIZ! You're about to found a startup staffed by real AI employees — they write real code and real docs in a real folder on your computer.",
+    intro:
+      "Welcome to IDLEBIZ! You're about to found a startup staffed by real AI employees — they write real code and real docs in a real folder on your computer.",
     auth: "First things first: connect your OpenAI account. It's what powers your employees — no connection, no workforce.",
     founder: "Let's get you on payroll. What's your name, founder?",
     look: "Pick your look. This is how you'll appear around the office.",
     company: "Now the fun part. What's your company called?",
     pitch: `What is ${companyName.trim() || "your company"} building? Be specific — your team will literally start working on this.`,
-    team: hires === null ? "Putting out the job posting… reviewing resumes…" : "Here's your founding team. Uncheck anyone you don't want — then let's open the office!",
+    team:
+      hires === null
+        ? "Putting out the job posting… reviewing resumes…"
+        : "Here's your founding team. Uncheck anyone you don't want — then let's open the office!",
     finalize: "Signing the lease… assembling desks… your office is ready!",
   };
 
@@ -168,7 +175,9 @@ export function PokeOnboarding() {
         <div className="text-6xl text-[#f5f3ea]" style={{ textShadow: "4px 4px 0 #1d2136" }}>
           IDLEBIZ
         </div>
-        <div className="mt-2 text-[12px] tracking-wide text-[#8a90ab]">a startup that runs itself</div>
+        <div className="mt-2 text-[12px] tracking-wide text-[#8a90ab]">
+          a startup that runs itself
+        </div>
       </div>
 
       {/* step content above the battle box */}
@@ -186,7 +195,11 @@ export function PokeOnboarding() {
                   boxShadow: look === i ? "0 0 0 2px var(--accent-hi)" : "none",
                 }}
               >
-                <img src={ch.portraitDataUrl} alt={`look ${i + 1}`} className="h-14 w-14 [image-rendering:pixelated]" />
+                <img
+                  src={ch.portraitDataUrl}
+                  alt={`look ${i + 1}`}
+                  className="h-14 w-14 [image-rendering:pixelated]"
+                />
               </button>
             ))}
           </div>
@@ -211,7 +224,8 @@ export function PokeOnboarding() {
                 <Portrait seed={h.spriteSeed} />
                 <span>
                   <span className="block text-[13px] text-[var(--text)]">
-                    {picked.has(i) ? "☑" : "☐"} {h.name} · <span className="text-[var(--accent-lo)]">{h.title}</span>
+                    {picked.has(i) ? "☑" : "☐"} {h.name} ·{" "}
+                    <span className="text-[var(--accent-lo)]">{h.title}</span>
                   </span>
                   <span className="block text-[10px] text-[var(--text-dim)]">{h.blurb}</span>
                 </span>
@@ -220,7 +234,9 @@ export function PokeOnboarding() {
           </div>
         ) : null}
 
-        {step === "team" && hires === null && !error ? <div className="px-live-dot text-4xl">📋</div> : null}
+        {step === "team" && hires === null && !error ? (
+          <div className="px-live-dot text-4xl">📋</div>
+        ) : null}
       </div>
 
       {/* the battle box */}
@@ -271,15 +287,29 @@ export function PokeOnboarding() {
                 disabled={authBusy}
                 className="px-btn-accent px-btn ml-auto text-[13px]"
               >
-                {authBusy ? "Waiting for authorization…" : authUrl ? "Try again" : "Connect OpenAI account"}
+                {authBusy
+                  ? "Waiting for authorization…"
+                  : authUrl
+                    ? "Try again"
+                    : "Connect OpenAI account"}
               </button>
             </div>
           ) : null}
 
           {step === "founder" ? (
             <>
-              <input value={founderName} onChange={(e) => setFounderName(e.target.value)} placeholder="Ada" className="px-field flex-1 text-[14px]" autoFocus />
-              <button onClick={next} disabled={!founderName.trim()} className="px-btn-accent px-btn text-[13px]">
+              <input
+                value={founderName}
+                onChange={(e) => setFounderName(e.target.value)}
+                placeholder="Ada"
+                className="px-field flex-1 text-[14px]"
+                autoFocus
+              />
+              <button
+                onClick={next}
+                disabled={!founderName.trim()}
+                className="px-btn-accent px-btn text-[13px]"
+              >
                 That's me
               </button>
             </>
@@ -293,8 +323,18 @@ export function PokeOnboarding() {
 
           {step === "company" ? (
             <>
-              <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme AI" className="px-field flex-1 text-[14px]" autoFocus />
-              <button onClick={next} disabled={!companyName.trim()} className="px-btn-accent px-btn text-[13px]">
+              <input
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Acme AI"
+                className="px-field flex-1 text-[14px]"
+                autoFocus
+              />
+              <button
+                onClick={next}
+                disabled={!companyName.trim()}
+                className="px-btn-accent px-btn text-[13px]"
+              >
                 Register it
               </button>
             </>
@@ -310,15 +350,22 @@ export function PokeOnboarding() {
                 className="px-field w-full resize-none text-[13px]"
                 autoFocus
               />
-              <button onClick={next} disabled={!pitch.trim()} className="px-btn-accent px-btn ml-auto text-[13px]">
+              <button
+                onClick={next}
+                disabled={!pitch.trim()}
+                className="px-btn-accent px-btn ml-auto text-[13px]"
+              >
                 That's the vision
               </button>
             </div>
           ) : null}
 
-
           {step === "team" && hires ? (
-            <button onClick={() => void finalize()} disabled={picked.size === 0 || finalizing} className="px-btn-accent px-btn ml-auto text-[13px]">
+            <button
+              onClick={() => void finalize()}
+              disabled={picked.size === 0 || finalizing}
+              className="px-btn-accent px-btn ml-auto text-[13px]"
+            >
               Hire {picked.size} & open the office →
             </button>
           ) : null}
@@ -340,8 +387,16 @@ function Portrait({ seed }: { seed: string }) {
     };
   }, [seed]);
   return url ? (
-    <img src={url} alt="" className="h-12 w-12 shrink-0 [image-rendering:pixelated]" style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }} />
+    <img
+      src={url}
+      alt=""
+      className="h-12 w-12 shrink-0 [image-rendering:pixelated]"
+      style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
+    />
   ) : (
-    <span className="h-12 w-12 shrink-0" style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }} />
+    <span
+      className="h-12 w-12 shrink-0"
+      style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
+    />
   );
 }

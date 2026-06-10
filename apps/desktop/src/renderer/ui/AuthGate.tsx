@@ -42,7 +42,8 @@ export function AuthGate() {
     <div className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-[#10121b]/90 p-6">
       <div className="px-battle w-full max-w-lg p-4">
         <div className="text-[14px] leading-relaxed text-[var(--text)]">
-          Your team can't work — the OpenAI connection is missing. Reconnect to get the office moving again.
+          Your team can't work — the OpenAI connection is missing. Reconnect to get the office
+          moving again.
         </div>
         {lines.length > 0 ? (
           <div className="px-inset mt-2 max-h-20 overflow-y-auto p-2 text-[11px] text-[var(--text-dim)]">
@@ -53,7 +54,12 @@ export function AuthGate() {
         ) : null}
         {url ? (
           <div className="mt-2 flex gap-2">
-            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="…or paste the code from the browser" className="px-field flex-1 text-[12px]" />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="…or paste the code from the browser"
+              className="px-field flex-1 text-[12px]"
+            />
             <button
               onClick={() => {
                 if (code.trim()) void window.appBridge?.submitAuthCode({ code: code.trim() });

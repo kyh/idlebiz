@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useStore, getPortrait, assignWork, setModalOpen, listTasksFor } from "@/renderer/state/store";
+import {
+  useStore,
+  getPortrait,
+  assignWork,
+  setModalOpen,
+  listTasksFor,
+} from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
 import type { ActivityEvent, Employee, Task } from "@/shared/domain";
 
@@ -15,13 +21,43 @@ const short = (s: string, n = 22): string => (s.length > n ? `${s.slice(0, n - 1
 /** A role-flavored action so every employee's menu feels like THEIR menu. */
 function roleOption(emp: Employee): ChatOption {
   const r = `${emp.role} ${emp.title}`.toLowerCase();
-  if (/(engineer|dev|program|code)/.test(r)) return { label: "Fix something", instr: "Find the most broken or fragile thing in the product right now and fix it properly." };
-  if (/(design|art|pixel|ux|ui)/.test(r)) return { label: "Polish the look", instr: "Do a visual polish pass on the product: pick the roughest-looking part and make it feel great." };
-  if (/(market|growth|community|social|brand)/.test(r)) return { label: "Draft launch post", instr: "Draft a launch/update post for the product as it exists today. Punchy, honest, ready to publish." };
-  if (/(pm|product manager|producer|lead|ops)/.test(r)) return { label: "Reprioritize", instr: "Review the current state of the business and team output; write a short prioritized plan for what the team should do next, then delegate the top item." };
-  if (/(audio|sound|music)/.test(r)) return { label: "Improve audio", instr: "Improve the product's sound: pick the most impactful audio gap and address it." };
-  if (/(write|edit|research|content|doc)/.test(r)) return { label: "Write next piece", instr: "Write the next most valuable piece of content for the business, ready to publish." };
-  return { label: "Improve product", instr: "Pick the most valuable improvement to the product you can finish now and do it." };
+  if (/(engineer|dev|program|code)/.test(r))
+    return {
+      label: "Fix something",
+      instr: "Find the most broken or fragile thing in the product right now and fix it properly.",
+    };
+  if (/(design|art|pixel|ux|ui)/.test(r))
+    return {
+      label: "Polish the look",
+      instr:
+        "Do a visual polish pass on the product: pick the roughest-looking part and make it feel great.",
+    };
+  if (/(market|growth|community|social|brand)/.test(r))
+    return {
+      label: "Draft launch post",
+      instr:
+        "Draft a launch/update post for the product as it exists today. Punchy, honest, ready to publish.",
+    };
+  if (/(pm|product manager|producer|lead|ops)/.test(r))
+    return {
+      label: "Reprioritize",
+      instr:
+        "Review the current state of the business and team output; write a short prioritized plan for what the team should do next, then delegate the top item.",
+    };
+  if (/(audio|sound|music)/.test(r))
+    return {
+      label: "Improve audio",
+      instr: "Improve the product's sound: pick the most impactful audio gap and address it.",
+    };
+  if (/(write|edit|research|content|doc)/.test(r))
+    return {
+      label: "Write next piece",
+      instr: "Write the next most valuable piece of content for the business, ready to publish.",
+    };
+  return {
+    label: "Improve product",
+    instr: "Pick the most valuable improvement to the product you can finish now and do it.",
+  };
 }
 
 /** Options shaped by what this employee is actually doing right now. */
@@ -42,8 +78,18 @@ function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
     });
   }
   out.push(roleOption(emp));
-  if (out.length < 4) out.push({ label: "Daily standup", instr: "Give a brief standup: what you did recently, what you're doing next, and any blockers." });
-  if (out.length < 4) out.push({ label: "Set direction", instr: "Step back and decide the most valuable thing to build next for the company, then start it." });
+  if (out.length < 4)
+    out.push({
+      label: "Daily standup",
+      instr:
+        "Give a brief standup: what you did recently, what you're doing next, and any blockers.",
+    });
+  if (out.length < 4)
+    out.push({
+      label: "Set direction",
+      instr:
+        "Step back and decide the most valuable thing to build next for the company, then start it.",
+    });
   return out.slice(0, 4);
 }
 
@@ -60,7 +106,10 @@ export function Dialogue() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const emp = useMemo(() => employees.find((e) => e.id === openId) ?? null, [employees, openId]);
-  const blocked = useMemo(() => tasks.find((t) => t.status === "blocked" && t.blockedQuestion) ?? null, [tasks]);
+  const blocked = useMemo(
+    () => tasks.find((t) => t.status === "blocked" && t.blockedQuestion) ?? null,
+    [tasks],
+  );
   const options = useMemo(() => (emp ? buildOptions(emp, tasks) : []), [emp, tasks]);
   const talkIndex = options.length; // trailing "Talk…" command
 
@@ -192,12 +241,22 @@ export function Dialogue() {
                 style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }}
               />
             ) : (
-              <div className="h-16 w-16" style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }} />
+              <div
+                className="h-16 w-16"
+                style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }}
+              />
             )}
             <div className="flex-1">
               <div className="text-[16px] uppercase tracking-wide">{emp.name}</div>
               <div className="text-[11px] text-[var(--accent-lo)]">{emp.title || emp.role}</div>
-              <span className="px-badge mt-1 inline-block" style={working ? { background: "var(--warn)", color: "#3a2c0a" } : { background: "#d8d4c4", color: "var(--text)" }}>
+              <span
+                className="px-badge mt-1 inline-block"
+                style={
+                  working
+                    ? { background: "var(--warn)", color: "#3a2c0a" }
+                    : { background: "#d8d4c4", color: "var(--text)" }
+                }
+              >
                 {working ? <span className="px-live-dot">● working</span> : "idle"}
               </span>
             </div>
@@ -223,7 +282,11 @@ export function Dialogue() {
                   className="px-field flex-1 text-[12px]"
                   autoFocus
                 />
-                <button onClick={() => void sendAnswer()} disabled={!answer.trim()} className="px-btn-accent px-btn text-[12px]">
+                <button
+                  onClick={() => void sendAnswer()}
+                  disabled={!answer.trim()}
+                  className="px-btn-accent px-btn text-[12px]"
+                >
                   Answer
                 </button>
               </div>
@@ -246,19 +309,34 @@ export function Dialogue() {
               <>
                 <div className="mb-1 grid flex-1 grid-cols-2 content-start gap-x-1 gap-y-0.5">
                   {options.map((q, i) => (
-                    <button key={q.label} data-sel={sel === i} onMouseEnter={() => setSel(i)} onClick={() => choose(i)} className="px-cmd text-[12px]">
+                    <button
+                      key={q.label}
+                      data-sel={sel === i}
+                      onMouseEnter={() => setSel(i)}
+                      onClick={() => choose(i)}
+                      className="px-cmd text-[12px]"
+                    >
                       {q.label}
                     </button>
                   ))}
-                  <button data-sel={sel === talkIndex} onMouseEnter={() => setSel(talkIndex)} onClick={() => choose(talkIndex)} className="px-cmd text-[12px]">
+                  <button
+                    data-sel={sel === talkIndex}
+                    onMouseEnter={() => setSel(talkIndex)}
+                    onClick={() => choose(talkIndex)}
+                    className="px-cmd text-[12px]"
+                  >
                     Talk…
                   </button>
                 </div>
-                <div className="text-right text-[9px] text-[var(--text-dim)]">↑↓←→ select · ⏎ · esc</div>
+                <div className="text-right text-[9px] text-[var(--text-dim)]">
+                  ↑↓←→ select · ⏎ · esc
+                </div>
               </>
             ) : (
               <div className="flex h-full flex-col gap-2">
-                <div className="text-[11px] text-[var(--text-dim)]">Tell {emp.name} what to do:</div>
+                <div className="text-[11px] text-[var(--text-dim)]">
+                  Tell {emp.name} what to do:
+                </div>
                 <input
                   ref={inputRef}
                   value={input}
@@ -276,17 +354,26 @@ export function Dialogue() {
                   <button onClick={() => setMode("menu")} className="px-btn flex-1 text-[12px]">
                     Back
                   </button>
-                  <button onClick={() => submitTalk()} disabled={!input.trim()} className="px-btn-accent px-btn flex-1 text-[12px]">
+                  <button
+                    onClick={() => submitTalk()}
+                    disabled={!input.trim()}
+                    className="px-btn-accent px-btn flex-1 text-[12px]"
+                  >
                     Send
                   </button>
                 </div>
               </div>
             )}
           </div>
-          {note ? <div className="mt-1 text-center text-[11px] text-[var(--ok)]">{note}</div> : null}
+          {note ? (
+            <div className="mt-1 text-center text-[11px] text-[var(--ok)]">{note}</div>
+          ) : null}
         </div>
 
-        <button onClick={close} className="absolute right-2 top-1 text-[14px] text-[var(--text-dim)] hover:text-[var(--text)]">
+        <button
+          onClick={close}
+          className="absolute right-2 top-1 text-[14px] text-[var(--text-dim)] hover:text-[var(--text)]"
+        >
           ✕
         </button>
       </div>
@@ -296,9 +383,27 @@ export function Dialogue() {
 
 function FeedLine({ e, companyId }: { e: ActivityEvent; companyId: string }) {
   const color =
-    e.kind === "tool_call" ? "#2f6fb0" : e.kind === "message" ? "#2b2f46" : e.kind === "ship" ? "#2e8a4e" : e.kind === "chat" ? "#5a4fae" : "#6d7187";
+    e.kind === "tool_call"
+      ? "#2f6fb0"
+      : e.kind === "message"
+        ? "#2b2f46"
+        : e.kind === "ship"
+          ? "#2e8a4e"
+          : e.kind === "chat"
+            ? "#5a4fae"
+            : "#6d7187";
   const prefix =
-    e.kind === "tool_call" ? "⚙ " : e.kind === "message" ? "💬 " : e.kind === "ship" ? "📦 " : e.kind === "chat" ? "🗨 " : e.kind === "status" ? "› " : "· ";
+    e.kind === "tool_call"
+      ? "⚙ "
+      : e.kind === "message"
+        ? "💬 "
+        : e.kind === "ship"
+          ? "📦 "
+          : e.kind === "chat"
+            ? "🗨 "
+            : e.kind === "status"
+              ? "› "
+              : "· ";
   return (
     <div className="break-words" style={{ color }}>
       {prefix}

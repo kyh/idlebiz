@@ -41,7 +41,11 @@ export const idleFrame = (dir: Dir): number => DIR_START[dir];
  * Compose a character in main, load its walk sheet into the scene, register
  * anims. Returns the assets (portrait etc.) for UI use. Texture key == seed-derived.
  */
-export async function loadCharacter(scene: Phaser.Scene, key: string, seed: string): Promise<CharacterAssets> {
+export async function loadCharacter(
+  scene: Phaser.Scene,
+  key: string,
+  seed: string,
+): Promise<CharacterAssets> {
   const bridge = window.appBridge;
   if (!bridge) throw new Error("appBridge unavailable");
   const assets = await bridge.composeCharacter({ seed });

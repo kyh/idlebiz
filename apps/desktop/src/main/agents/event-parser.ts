@@ -13,10 +13,23 @@ export type PiEvent =
   | { type: "agent_start" }
   | { type: "agent_end" }
   | { type: "message_update"; delta: string }
-  | { type: "message_end"; role: string; text: string; stopReason?: string; errorMessage?: string; usage?: PiUsage }
+  | {
+      type: "message_end";
+      role: string;
+      text: string;
+      stopReason?: string;
+      errorMessage?: string;
+      usage?: PiUsage;
+    }
   | { type: "turn_end"; usage?: PiUsage }
   | { type: "tool_start"; toolCallId: string; toolName: string; args: unknown }
-  | { type: "tool_end"; toolCallId: string; toolName?: string; isError: boolean; resultText: string };
+  | {
+      type: "tool_end";
+      toolCallId: string;
+      toolName?: string;
+      isError: boolean;
+      resultText: string;
+    };
 
 // ---- safe accessors (single parse-boundary narrowing) ----------------------
 function obj(v: unknown): Record<string, unknown> {
@@ -31,7 +44,7 @@ function extractText(content: unknown): string {
     return content
       .map((b) => {
         const o = obj(b);
-        return o.type === "text" ? s(o.text) ?? "" : "";
+        return o.type === "text" ? (s(o.text) ?? "") : "";
       })
       .join("");
   }
@@ -75,7 +88,12 @@ export function parsePiEvent(raw: unknown): PiEvent | null {
     case "turn_end":
       return { type: "turn_end", usage: extractUsage(e.message) };
     case "tool_execution_start":
-      return { type: "tool_start", toolCallId: s(e.toolCallId) ?? "", toolName: s(e.toolName) ?? "tool", args: e.args };
+      return {
+        type: "tool_start",
+        toolCallId: s(e.toolCallId) ?? "",
+        toolName: s(e.toolName) ?? "tool",
+        args: e.args,
+      };
     case "tool_execution_end":
       return {
         type: "tool_end",

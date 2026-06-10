@@ -1,5 +1,15 @@
 import Phaser from "phaser";
-import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS, TIERS, tierIndexForHeadcount, type OfficeTier, type FloorKind } from "@/renderer/game/config";
+import {
+  TILE,
+  WALK_SPEED,
+  ZOOM,
+  DEPTH,
+  COLORS,
+  TIERS,
+  tierIndexForHeadcount,
+  type OfficeTier,
+  type FloorKind,
+} from "@/renderer/game/config";
 import { loadCharacter, ensureWalkAnims, idleFrame, type Dir } from "@/renderer/game/characters";
 import { NpcManager, type NpcState, type Seat, type PathProvider } from "@/renderer/game/npcs";
 import type { ActivityEvent, Employee } from "@/shared/domain";
@@ -11,12 +21,30 @@ const FACING_OFFSET: Record<Dir, { x: number; y: number }> = {
   right: { x: 1, y: 0 },
 };
 
-const FLOOR_KEY: Record<FloorKind, string> = { carpet: "floor_carpet", tile: "floor_tile", wood: "floor_wood" };
+const FLOOR_KEY: Record<FloorKind, string> = {
+  carpet: "floor_carpet",
+  tile: "floor_tile",
+  wood: "floor_wood",
+};
 const PROPS = [
-  "desk", "monitor", "chair", "plant_tall",
-  "floor_carpet", "floor_tile", "floor_wood",
-  "tv", "board_chart", "board_pie", "teamphoto", "cert", "art_a", "art_b",
-  "shelf_books", "watercooler", "vending", "printer",
+  "desk",
+  "monitor",
+  "chair",
+  "plant_tall",
+  "floor_carpet",
+  "floor_tile",
+  "floor_wood",
+  "tv",
+  "board_chart",
+  "board_pie",
+  "teamphoto",
+  "cert",
+  "art_a",
+  "art_b",
+  "shelf_books",
+  "watercooler",
+  "vending",
+  "printer",
 ] as const;
 
 // wall palette (matches the Limezu Office_Design_2 look)
@@ -69,7 +97,10 @@ export class OfficeScene extends Phaser.Scene {
 
   preload() {
     for (const k of PROPS) this.load.image(k, `assets/office3/${k}.png`);
-    this.load.spritesheet("emotes", "assets/office/emotes.png", { frameWidth: 32, frameHeight: 32 });
+    this.load.spritesheet("emotes", "assets/office/emotes.png", {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
   }
 
   create() {
@@ -118,7 +149,8 @@ export class OfficeScene extends Phaser.Scene {
   private async boot(): Promise<void> {
     const bridge = window.appBridge;
     const company = bridge ? await bridge.getCompany() : null;
-    const employees = company && bridge ? await bridge.listEmployees({ companyId: company.id }) : [];
+    const employees =
+      company && bridge ? await bridge.listEmployees({ companyId: company.id }) : [];
     this.founderSeed = company?.founderSpriteSeed ?? "founder-player-001";
 
     this.tierIndex = tierIndexForHeadcount(employees.length);
@@ -143,7 +175,8 @@ export class OfficeScene extends Phaser.Scene {
     if (company && bridge) {
       const tasks = await bridge.listTasks({ companyId: company.id });
       for (const t of tasks) {
-        if (t.status === "blocked" && t.assigneeId && t.blockedQuestion) this.npcs.setState(t.assigneeId, "blocked");
+        if (t.status === "blocked" && t.assigneeId && t.blockedQuestion)
+          this.npcs.setState(t.assigneeId, "blocked");
       }
     }
 
@@ -195,12 +228,21 @@ export class OfficeScene extends Phaser.Scene {
       const deskBottom = d.ty * TILE + DESK_H;
       const cx = d.tx * TILE + DESK_W / 2;
       // desk surface (2 tiles wide)
-      this.add.image(d.tx * TILE, deskBottom, "desk").setOrigin(0, 1).setDepth(DEPTH.entityBase + deskBottom);
+      this.add
+        .image(d.tx * TILE, deskBottom, "desk")
+        .setOrigin(0, 1)
+        .setDepth(DEPTH.entityBase + deskBottom);
       // monitor sits on the desk (render just in front of the surface)
-      this.add.image(cx, d.ty * TILE + 28, "monitor").setOrigin(0.5, 1).setDepth(DEPTH.entityBase + deskBottom + 1);
+      this.add
+        .image(cx, d.ty * TILE + 28, "monitor")
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH.entityBase + deskBottom + 1);
       // chair below the desk — NO hitbox; y-sorted so it occludes whoever sits/walks behind it
       const chairBottom = deskBottom + CHAIR_DROP;
-      this.add.image(cx, chairBottom, "chair").setOrigin(0.5, 1).setDepth(DEPTH.entityBase + chairBottom);
+      this.add
+        .image(cx, chairBottom, "chair")
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH.entityBase + chairBottom);
       // desk tiles are solid; chair tiles are not
       this.markSolid(d.tx, d.ty);
       this.markSolid(d.tx + 1, d.ty);
@@ -211,7 +253,10 @@ export class OfficeScene extends Phaser.Scene {
     for (const p of tier.plants) {
       const px = p.tx * TILE + TILE / 2;
       const py = (p.ty + 1) * TILE;
-      this.add.image(px, py, "plant_tall").setOrigin(0.5, 1).setDepth(DEPTH.entityBase + py);
+      this.add
+        .image(px, py, "plant_tall")
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH.entityBase + py);
       this.markSolid(p.tx, p.ty);
     }
 
@@ -220,15 +265,19 @@ export class OfficeScene extends Phaser.Scene {
 
   /** Wall fixtures hang on the north face, spread to fit the room width. */
   private hangFixtures(W: number, bandH: number): void {
-    const fixtures = this.cols >= 16
-      ? ["teamphoto", "tv", "cert", "board_chart", "art_a", "board_pie"]
-      : ["teamphoto", "tv", "board_chart"];
+    const fixtures =
+      this.cols >= 16
+        ? ["teamphoto", "tv", "cert", "board_chart", "art_a", "board_pie"]
+        : ["teamphoto", "tv", "board_chart"];
     const margin = 2.2 * TILE;
     const span = W - margin * 2;
     const y = bandH - 6;
     fixtures.forEach((key, i) => {
       const x = fixtures.length === 1 ? W / 2 : margin + (span * i) / (fixtures.length - 1);
-      this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(DEPTH.wall + 1);
+      this.add
+        .image(x, y, key)
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH.wall + 1);
     });
   }
 
@@ -237,7 +286,10 @@ export class OfficeScene extends Phaser.Scene {
     const stand = (key: string, tx: number, ty: number, wide = 1): void => {
       const x = tx * TILE + (wide * TILE) / 2;
       const y = (ty + 1) * TILE;
-      this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(DEPTH.entityBase + y);
+      this.add
+        .image(x, y, key)
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH.entityBase + y);
       for (let i = 0; i < wide; i++) this.markSolid(tx + i, ty);
     };
     const right = this.cols - 2;
@@ -262,7 +314,16 @@ export class OfficeScene extends Phaser.Scene {
       const tx = Math.floor(px / TILE);
       const ty = Math.floor(py / TILE);
       if (walkable(tx, ty)) return { tx, ty };
-      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
+      for (const [dx, dy] of [
+        [0, 1],
+        [0, -1],
+        [1, 0],
+        [-1, 0],
+        [1, 1],
+        [-1, 1],
+        [1, -1],
+        [-1, -1],
+      ] as const) {
         if (walkable(tx + dx, ty + dy)) return { tx: tx + dx, ty: ty + dy };
       }
       return null;
@@ -280,7 +341,12 @@ export class OfficeScene extends Phaser.Scene {
         while (queue.length > 0 && !found) {
           const cur = queue.shift();
           if (!cur) break;
-          for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+          for (const [dx, dy] of [
+            [0, 1],
+            [0, -1],
+            [1, 0],
+            [-1, 0],
+          ] as const) {
             const nx = cur.tx + dx;
             const ny = cur.ty + dy;
             const nk = this.key(nx, ny);
@@ -393,7 +459,10 @@ export class OfficeScene extends Phaser.Scene {
     const hw = 8;
     const hh = 5;
     const hit = (px: number, py: number) =>
-      this.solidAtPx(px - hw, py - hh) || this.solidAtPx(px + hw, py - hh) || this.solidAtPx(px - hw, py + hh) || this.solidAtPx(px + hw, py + hh);
+      this.solidAtPx(px - hw, py - hh) ||
+      this.solidAtPx(px + hw, py - hh) ||
+      this.solidAtPx(px - hw, py + hh) ||
+      this.solidAtPx(px + hw, py + hh);
     const nx = player.x + mx;
     if (!hit(nx, player.y)) player.x = nx;
     const ny = player.y + my;

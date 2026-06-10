@@ -19,7 +19,9 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
       <button onClick={() => setOpen(!open)} className="flex w-full items-baseline gap-2 text-left">
         <span className="text-[11px] text-[var(--text-dim)]">{open ? "▼" : "▶"}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] text-[var(--text)]">📦 {firstLine || t.title}</span>
+          <span className="block truncate text-[13px] text-[var(--text)]">
+            📦 {firstLine || t.title}
+          </span>
         </span>
         <span className="shrink-0 text-[10px] text-[var(--text-dim)]">
           {by} · {new Date(t.completedAt ?? t.createdAt).toLocaleDateString()}
@@ -81,7 +83,11 @@ export function Ships({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => void open("")} className="px-btn text-[12px]" title="Reveal the real folder where the team works">
+            <button
+              onClick={() => void open("")}
+              className="px-btn text-[12px]"
+              title="Reveal the real folder where the team works"
+            >
               📁 Workspace
             </button>
             <button
@@ -110,9 +116,15 @@ export function Ships({ onClose }: { onClose: () => void }) {
           {ships === null ? (
             <div className="text-[12px] text-[var(--text-dim)]">Loading…</div>
           ) : ships.length === 0 ? (
-            <div className="text-[12px] text-[var(--text-dim)]">Nothing shipped yet — the team is just getting started.</div>
+            <div className="text-[12px] text-[var(--text-dim)]">
+              Nothing shipped yet — the team is just getting started.
+            </div>
           ) : (
-            [...ships].reverse().map((t) => <ShipRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />)
+            [...ships]
+              .reverse()
+              .map((t) => (
+                <ShipRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
+              ))
           )}
         </div>
       </div>

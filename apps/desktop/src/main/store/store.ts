@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+  appendFileSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import {
   ROOT_DIR,
@@ -31,7 +39,15 @@ import {
   type Scalar,
 } from "@/main/store/frontmatter";
 import { DEFAULT_AGENT_MODEL } from "@/shared/domain";
-import type { ActivityEvent, Company, Employee, Routine, Task, TaskPriority, TaskStatus } from "@/shared/domain";
+import type {
+  ActivityEvent,
+  Company,
+  Employee,
+  Routine,
+  Task,
+  TaskPriority,
+  TaskStatus,
+} from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
 // Disk store: every company is an agentcompanies/v1 package under ~/.idlebiz.
@@ -244,7 +260,15 @@ function taskToDoc(t: Task): FrontmatterDoc {
   };
 }
 
-const TASK_STATUSES: ReadonlyArray<TaskStatus> = ["todo", "queued", "running", "blocked", "done", "failed", "cancelled"];
+const TASK_STATUSES: ReadonlyArray<TaskStatus> = [
+  "todo",
+  "queued",
+  "running",
+  "blocked",
+  "done",
+  "failed",
+  "cancelled",
+];
 
 function docToTask(doc: FrontmatterDoc, companyId: string): Task {
   const f = doc.fields;
@@ -290,7 +314,14 @@ const ACTIVITY_RING = 600;
 // ---- boot -------------------------------------------------------------------
 export function initStore(): void {
   ensureAppDirs();
-  const loaded: Cache = { companies: new Map(), employees: new Map(), tasks: new Map(), routines: new Map(), activity: [], nextActivityId: 1 };
+  const loaded: Cache = {
+    companies: new Map(),
+    employees: new Map(),
+    tasks: new Map(),
+    routines: new Map(),
+    activity: [],
+    nextActivityId: 1,
+  };
 
   for (const entry of safeReaddir(ROOT_DIR)) {
     if (entry.startsWith(".")) continue;
@@ -404,7 +435,8 @@ function loadRecentActivity(loaded: Cache, companyId: string): void {
         /* skip bad line */
       }
     }
-    if (loaded.activity.length > ACTIVITY_RING) loaded.activity = loaded.activity.slice(-ACTIVITY_RING);
+    if (loaded.activity.length > ACTIVITY_RING)
+      loaded.activity = loaded.activity.slice(-ACTIVITY_RING);
   } catch {
     /* no log yet */
   }
@@ -475,11 +507,25 @@ function seedDefaultRoutines(companyId: string): void {
   });
 }
 
-export function createRoutine(input: { companyId: string; name: string; instruction: string; intervalHours: number; role: string | null }): Routine {
+export function createRoutine(input: {
+  companyId: string;
+  name: string;
+  instruction: string;
+  intervalHours: number;
+  role: string | null;
+}): Routine {
   const list = c().routines.get(input.companyId);
   if (!list) throw new Error(`company ${input.companyId} not found`);
   const id = uniqueSlug(input.name, (s) => list.some((r) => r.id === s));
-  const routine: Routine = { id, companyId: input.companyId, name: input.name, instruction: input.instruction, intervalHours: input.intervalHours, role: input.role, lastRunAt: null };
+  const routine: Routine = {
+    id,
+    companyId: input.companyId,
+    name: input.name,
+    instruction: input.instruction,
+    intervalHours: input.intervalHours,
+    role: input.role,
+    lastRunAt: null,
+  };
   saveRoutine(routine);
   list.push(routine);
   return routine;
@@ -550,7 +596,10 @@ export function applyPulse(id: string, usersDelta: number, cashDelta: number): C
   });
 }
 /** Overwrite with REAL absolute numbers from configured metrics sources. */
-export function setRealMetrics(id: string, snapshot: { users: number | null; revenue: number | null }): Company | null {
+export function setRealMetrics(
+  id: string,
+  snapshot: { users: number | null; revenue: number | null },
+): Company | null {
   const co = c().companies.get(id);
   if (!co) return null;
   const patch: Partial<Company> = {};
@@ -574,7 +623,10 @@ export function createEmployee(input: {
 }): Employee {
   const list = c().employees.get(input.companyId);
   if (!list) throw new Error(`company ${input.companyId} not found`);
-  const id = uniqueSlug(input.name, (s) => list.some((e) => e.id === s) || existsSync(employeeAgentDir(input.companyId, s)));
+  const id = uniqueSlug(
+    input.name,
+    (s) => list.some((e) => e.id === s) || existsSync(employeeAgentDir(input.companyId, s)),
+  );
   const e: Employee = {
     id,
     companyId: input.companyId,
@@ -640,7 +692,10 @@ export function createTask(t: {
 }): Task {
   const list = c().tasks.get(t.companyId);
   if (!list) throw new Error(`company ${t.companyId} not found`);
-  const id = uniqueSlug(t.title, (s) => list.some((x) => x.id === s) || existsSync(join(tasksDir(t.companyId), s)));
+  const id = uniqueSlug(
+    t.title,
+    (s) => list.some((x) => x.id === s) || existsSync(join(tasksDir(t.companyId), s)),
+  );
   const task: Task = {
     id,
     companyId: t.companyId,
@@ -676,13 +731,15 @@ export function listTasks(companyId: string): Task[] {
 
 export function listTasksForEmployee(employeeId: string): Task[] {
   const out: Task[] = [];
-  for (const list of c().tasks.values()) for (const t of list) if (t.assigneeId === employeeId) out.push(t);
+  for (const list of c().tasks.values())
+    for (const t of list) if (t.assigneeId === employeeId) out.push(t);
   return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function listQueuedTasks(): Task[] {
   const out: Task[] = [];
-  for (const list of c().tasks.values()) for (const t of list) if (t.status === "queued") out.push(t);
+  for (const list of c().tasks.values())
+    for (const t of list) if (t.status === "queued") out.push(t);
   const prio = (p: TaskPriority): number => (p === "high" ? 0 : p === "medium" ? 1 : 2);
   return out.sort((a, b) => prio(a.priority) - prio(b.priority) || a.createdAt - b.createdAt);
 }
@@ -719,7 +776,13 @@ export function lockTaskForRun(taskId: string, runId: string): Task | null {
 }
 
 /** Release lock at run end — only the owning run may release. */
-export function releaseTask(taskId: string, runId: string, status: TaskStatus, summary: string | null, blockedQuestion: string | null): void {
+export function releaseTask(
+  taskId: string,
+  runId: string,
+  status: TaskStatus,
+  summary: string | null,
+  blockedQuestion: string | null,
+): void {
   const t = getTask(taskId);
   if (!t || t.runId !== runId) return;
   patchTask(taskId, { status, summary, blockedQuestion, runId: null, completedAt: Date.now() });
@@ -733,7 +796,12 @@ export function releaseTask(taskId: string, runId: string, status: TaskStatus, s
 export function resolveBlockedWithAnswer(taskId: string, answer: string): Task | null {
   const t = getTask(taskId);
   if (!t || t.status !== "blocked" || !t.assigneeId) return null;
-  patchTask(taskId, { status: "done", summary: `Founder answered: ${answer}`, blockedQuestion: null, completedAt: Date.now() });
+  patchTask(taskId, {
+    status: "done",
+    summary: `Founder answered: ${answer}`,
+    blockedQuestion: null,
+    completedAt: Date.now(),
+  });
   return createTask({
     companyId: t.companyId,
     title: `Continue: ${t.title.slice(0, 60)}`,
@@ -751,7 +819,9 @@ export function logActivity(e: ActivityEvent): number {
   if (c().activity.length > ACTIVITY_RING) c().activity = c().activity.slice(-ACTIVITY_RING);
 
   // append to the owning company's activity.jsonl (employee → company, else default)
-  const companyId = entry.employeeId ? getEmployee(entry.employeeId)?.companyId : getDefaultCompany()?.id;
+  const companyId = entry.employeeId
+    ? getEmployee(entry.employeeId)?.companyId
+    : getDefaultCompany()?.id;
   if (companyId) {
     const { id: _drop, ...persisted } = entry;
     try {

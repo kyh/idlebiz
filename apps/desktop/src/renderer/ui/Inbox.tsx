@@ -14,7 +14,8 @@ export function Inbox({ onClose }: { onClose: () => void }) {
   }, []);
 
   if (!company) return null;
-  const nameOf = (id: string | null): string => employees.find((e) => e.id === id)?.name ?? "someone";
+  const nameOf = (id: string | null): string =>
+    employees.find((e) => e.id === id)?.name ?? "someone";
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
@@ -22,7 +23,9 @@ export function Inbox({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Inbox</div>
-            <div className="text-[11px] text-[#c4c9dd]">{pendingAsks.length} waiting on your call</div>
+            <div className="text-[11px] text-[#c4c9dd]">
+              {pendingAsks.length} waiting on your call
+            </div>
           </div>
           <button onClick={onClose} className="px-btn text-[13px]">
             Done
@@ -30,9 +33,13 @@ export function Inbox({ onClose }: { onClose: () => void }) {
         </div>
         <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
           {pendingAsks.length === 0 ? (
-            <div className="text-[12px] text-[var(--text-dim)]">All clear — nobody's waiting on you.</div>
+            <div className="text-[12px] text-[var(--text-dim)]">
+              All clear — nobody's waiting on you.
+            </div>
           ) : (
-            pendingAsks.map((t) => <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />)
+            pendingAsks.map((t) => (
+              <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
+            ))
           )}
         </div>
       </div>
@@ -75,7 +82,11 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
           className="px-field flex-1 text-[12px]"
           disabled={sent}
         />
-        <button onClick={() => void send()} disabled={!answer.trim() || sent} className="px-btn-accent px-btn text-[12px]">
+        <button
+          onClick={() => void send()}
+          disabled={!answer.trim() || sent}
+          className="px-btn-accent px-btn text-[12px]"
+        >
           {sent ? "Sent ✓" : "Answer"}
         </button>
       </div>

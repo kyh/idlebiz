@@ -30,7 +30,14 @@ export function exportSecretsToEnv(): Record<string, string> {
     try {
       writeFileSync(
         SECRETS_PATH,
-        JSON.stringify({ _readme: "Founder secrets. String values are exported as env vars to your employees and the metrics providers. e.g. STRIPE_SECRET_KEY, PLAUSIBLE_API_KEY." }, null, 2),
+        JSON.stringify(
+          {
+            _readme:
+              "Founder secrets. String values are exported as env vars to your employees and the metrics providers. e.g. STRIPE_SECRET_KEY, PLAUSIBLE_API_KEY.",
+          },
+          null,
+          2,
+        ),
         { mode: 0o600 },
       );
     } catch {

@@ -32,7 +32,11 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
   try {
     await piDriver.getAuth().login(DEFAULT_PROVIDER, {
       onAuth: (info: { url: string; instructions?: string }) => {
-        emit({ type: "url", url: info.url, instructions: info.instructions ?? "Authorize in your browser, then come back." });
+        emit({
+          type: "url",
+          url: info.url,
+          instructions: info.instructions ?? "Authorize in your browser, then come back.",
+        });
         void shell.openExternal(info.url);
       },
       // fallback prompt if both the callback server and manual input stall —
@@ -95,12 +99,19 @@ function pickModel(): Model<Api> {
 
 function extractText(content: ReadonlyArray<{ type: string }>): string {
   return content
-    .map((b) => ("text" in b && typeof (b as { text?: unknown }).text === "string" ? (b as { text: string }).text : ""))
+    .map((b) =>
+      "text" in b && typeof (b as { text?: unknown }).text === "string"
+        ? (b as { text: string }).text
+        : "",
+    )
     .join("");
 }
 
 /** Generate a founding team tailored to the player's pitch (one cheap LLM call). */
-export async function generateCandidates(input: { companyName: string; mission: string }): Promise<HireCandidate[]> {
+export async function generateCandidates(input: {
+  companyName: string;
+  mission: string;
+}): Promise<HireCandidate[]> {
   const apiKey = await piDriver.getAuth().getApiKey(DEFAULT_PROVIDER);
   if (!apiKey) throw new Error("not authenticated");
 

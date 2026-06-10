@@ -23,10 +23,13 @@ export const AUTH_PATH = join(ROOT_DIR, "auth.json");
 export const PI_AGENT_DIR = join(ROOT_DIR, "pi");
 
 export const companyDir = (companySlug: string): string => join(ROOT_DIR, companySlug);
-export const companyFile = (companySlug: string): string => join(companyDir(companySlug), "COMPANY.md");
+export const companyFile = (companySlug: string): string =>
+  join(companyDir(companySlug), "COMPANY.md");
 /** Shared workspace where all of a company's employees do real work together. */
-export const companyWorkspace = (companySlug: string): string => join(companyDir(companySlug), "workspace");
-export const activityFile = (companySlug: string): string => join(companyDir(companySlug), "activity.jsonl");
+export const companyWorkspace = (companySlug: string): string =>
+  join(companyDir(companySlug), "workspace");
+export const activityFile = (companySlug: string): string =>
+  join(companyDir(companySlug), "activity.jsonl");
 
 export const agentsDir = (companySlug: string): string => join(companyDir(companySlug), "agents");
 /** Per-employee package dir; doubles as the pi agentDir (AGENTS.md lives here). */
@@ -40,9 +43,11 @@ export const employeeSessionDir = (companySlug: string, employeeSlug: string): s
   join(employeeAgentDir(companySlug, employeeSlug), "sessions");
 
 export const tasksDir = (companySlug: string): string => join(companyDir(companySlug), "tasks");
-export const taskFile = (companySlug: string, taskSlug: string): string => join(tasksDir(companySlug), taskSlug, "TASK.md");
+export const taskFile = (companySlug: string, taskSlug: string): string =>
+  join(tasksDir(companySlug), taskSlug, "TASK.md");
 
-export const routinesDir = (companySlug: string): string => join(companyDir(companySlug), "routines");
+export const routinesDir = (companySlug: string): string =>
+  join(companyDir(companySlug), "routines");
 export const routineFile = (companySlug: string, routineSlug: string): string =>
   join(routinesDir(companySlug), routineSlug, "ROUTINE.md");
 

@@ -65,7 +65,9 @@ export interface RealSnapshot {
 
 export function readMetricsConfig(companyId: string): MetricsConfig | null {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(join(companyDir(companyId), "metrics.json"), "utf8"));
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(companyDir(companyId), "metrics.json"), "utf8"),
+    );
     if (!parsed || typeof parsed !== "object") return null;
     const cfg = parsed as MetricsConfig;
     if (!cfg.stripe && !cfg.plausible && !cfg.custom) return null;
@@ -87,11 +89,25 @@ async function stripeRevenue(): Promise<number | null> {
   const key = process.env["STRIPE_SECRET_KEY"];
   if (!key) return null;
   try {
-    const data = await getJson("https://api.stripe.com/v1/charges?limit=100", { Authorization: `Bearer ${key}` });
-    if (!data || typeof data !== "object" || !("data" in data) || !Array.isArray((data as { data: unknown }).data)) return null;
+    const data = await getJson("https://api.stripe.com/v1/charges?limit=100", {
+      Authorization: `Bearer ${key}`,
+    });
+    if (
+      !data ||
+      typeof data !== "object" ||
+      !("data" in data) ||
+      !Array.isArray((data as { data: unknown }).data)
+    )
+      return null;
     let cents = 0;
     for (const c of (data as { data: unknown[] }).data) {
-      if (c && typeof c === "object" && "amount" in c && "paid" in c && (c as { paid: unknown }).paid === true) {
+      if (
+        c &&
+        typeof c === "object" &&
+        "amount" in c &&
+        "paid" in c &&
+        (c as { paid: unknown }).paid === true
+      ) {
         const amount = (c as { amount: unknown }).amount;
         if (typeof amount === "number") cents += amount;
       }

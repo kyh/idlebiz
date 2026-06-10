@@ -14,7 +14,12 @@ export interface Seat {
 /** Pathfinding services the scene provides (BFS over its collision grid). */
 export interface PathProvider {
   /** Waypoints (px) from → to, or null if unreachable. */
-  findPath(fromX: number, fromY: number, toX: number, toY: number): Array<{ x: number; y: number }> | null;
+  findPath(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+  ): Array<{ x: number; y: number }> | null;
   /** A random walkable point within radius of (x, y), or null. */
   randomFloor(x: number, y: number, radius: number): { x: number; y: number } | null;
 }
@@ -84,7 +89,12 @@ export class NpcManager {
     sprite.setDepth(DEPTH.entityBase + seat.y);
 
     const label = this.scene.add
-      .text(seat.x, seat.y - 52, emp.name, { fontFamily: "monospace", fontSize: "10px", color: "#ffffff", backgroundColor: "#000000aa" })
+      .text(seat.x, seat.y - 52, emp.name, {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: "#ffffff",
+        backgroundColor: "#000000aa",
+      })
       .setOrigin(0.5, 1)
       .setPadding(3, 1, 3, 1)
       .setDepth(DEPTH.emote);
@@ -112,7 +122,8 @@ export class NpcManager {
     if (state === "blocked") this.showEmote(npc, EMOTE_FRAME.alert);
     else this.clearEmote(npc);
     // working/blocked employees head back to their desk
-    if (state !== "idle" && !npc.plan && !this.atSeat(npc)) this.walkTo(npc, npc.seat.x, npc.seat.y);
+    if (state !== "idle" && !npc.plan && !this.atSeat(npc))
+      this.walkTo(npc, npc.seat.x, npc.seat.y);
     if (!npc.plan) this.applySeatedLook(npc);
   }
 
@@ -123,7 +134,8 @@ export class NpcManager {
   private applySeatedLook(npc: Npc): void {
     const upAnim = `${npc.key}-walk-up`;
     if (npc.state === "working" && this.atSeat(npc)) {
-      if (npc.sprite.anims.currentAnim?.key !== upAnim || !npc.sprite.anims.isPlaying) npc.sprite.play(upAnim, true);
+      if (npc.sprite.anims.currentAnim?.key !== upAnim || !npc.sprite.anims.isPlaying)
+        npc.sprite.play(upAnim, true);
     } else {
       npc.sprite.anims.stop();
       npc.sprite.setFrame(idleFrame("up"));
@@ -145,7 +157,10 @@ export class NpcManager {
     if (!npc) return;
 
     const target =
-      (targetName && [...this.npcs.values()].find((n) => n.id !== employeeId && n.name.toLowerCase() === targetName.toLowerCase())) ||
+      (targetName &&
+        [...this.npcs.values()].find(
+          (n) => n.id !== employeeId && n.name.toLowerCase() === targetName.toLowerCase(),
+        )) ||
       [...this.npcs.values()].find((n) => n.id !== employeeId);
 
     // already busy walking (or nobody to visit) → just speak in place
@@ -176,8 +191,17 @@ export class NpcManager {
   // ---- visuals ---------------------------------------------------------------
   private showEmote(npc: Npc, frame: number): void {
     if (!npc.emote) {
-      const e = this.scene.add.sprite(npc.sprite.x, npc.sprite.y - 58, "emotes", frame).setDepth(DEPTH.emote);
-      this.scene.tweens.add({ targets: e, y: "-=4", duration: 480, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+      const e = this.scene.add
+        .sprite(npc.sprite.x, npc.sprite.y - 58, "emotes", frame)
+        .setDepth(DEPTH.emote);
+      this.scene.tweens.add({
+        targets: e,
+        y: "-=4",
+        duration: 480,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.InOut",
+      });
       npc.emote = e;
     }
     npc.emote.setFrame(frame).setVisible(true);
@@ -204,7 +228,10 @@ export class NpcManager {
     g.fillRoundedRect(-w / 2, -h - 4, w, h, 5).strokeRoundedRect(-w / 2, -h - 4, w, h, 5);
     g.fillTriangle(-4, -5, 4, -5, 0, 1).lineStyle(2, 0x1d2136, 1);
     text.setY(-9);
-    const root = this.scene.add.container(npc.sprite.x, npc.sprite.y - 56, [g, text]).setDepth(DEPTH.emote + 1).setAlpha(0);
+    const root = this.scene.add
+      .container(npc.sprite.x, npc.sprite.y - 56, [g, text])
+      .setDepth(DEPTH.emote + 1)
+      .setAlpha(0);
     this.scene.tweens.add({ targets: root, alpha: 1, duration: 140 });
     npc.bubble = { root, until: this.scene.time.now + BUBBLE_MS };
   }
@@ -224,7 +251,12 @@ export class NpcManager {
         if (now > npc.bubble.until) {
           const b = npc.bubble.root;
           npc.bubble = undefined;
-          this.scene.tweens.add({ targets: b, alpha: 0, duration: 180, onComplete: () => b.destroy() });
+          this.scene.tweens.add({
+            targets: b,
+            alpha: 0,
+            duration: 180,
+            onComplete: () => b.destroy(),
+          });
         }
       }
 
@@ -247,7 +279,8 @@ export class NpcManager {
           } else {
             npc.sprite.x += (dx / dist) * step;
             npc.sprite.y += (dy / dist) * step;
-            const dir: Dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+            const dir: Dir =
+              Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
             npc.sprite.play(`${npc.key}-walk-${dir}`, true);
           }
         }

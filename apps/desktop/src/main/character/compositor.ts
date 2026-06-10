@@ -90,7 +90,12 @@ async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
     }
   }
   return sharp({
-    create: { width: FRAME_W * WALK_FRAMES, height: FRAME_H * OUT_ROWS.length, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    create: {
+      width: FRAME_W * WALK_FRAMES,
+      height: FRAME_H * OUT_ROWS.length,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
   })
     .composite(tiles)
     .png()
