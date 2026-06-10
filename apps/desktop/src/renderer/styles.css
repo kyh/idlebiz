@@ -1,0 +1,276 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "VG5000";
+  src: url("/fonts/vg5000.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #12141c;
+}
+
+canvas {
+  image-rendering: pixelated;
+  display: block;
+}
+
+:root {
+  /* ---- Modern-UI (Style 2) pixel palette ---- */
+  --ink: #1d2136; /* darkest outline */
+  --edge: #525c84; /* mid border line */
+  --chrome: #44507a; /* window title bar / chrome */
+  --chrome-hi: #66739f;
+  --chrome-lo: #313a5e;
+  --face: #ece7d8; /* cream content panel */
+  --face-hi: #fbf9f1;
+  --face-lo: #d3cdb9;
+  --text: #2b2f46; /* dark text on cream */
+  --text-dim: #6d7187;
+  --light: #f5f3ea; /* light text on chrome/accent */
+  --accent: #4f9dde; /* primary blue */
+  --accent-hi: #86c0ee;
+  --accent-lo: #336fae;
+  --ok: #57b86c;
+  --warn: #e8b04b;
+  --danger: #d9645a;
+
+  font-family: "VG5000", ui-monospace, Menlo, monospace;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+/* ---- pixel-UI kit -------------------------------------------------------- */
+
+/* a beveled window/dialog: dark outline + inner light/dark bevel + drop */
+.px-window {
+  background: var(--face);
+  border: 3px solid var(--ink);
+  box-shadow:
+    inset 0 0 0 1px var(--edge),
+    inset 3px 3px 0 0 var(--face-hi),
+    inset -3px -3px 0 0 var(--face-lo),
+    0 5px 0 0 rgba(0, 0, 0, 0.32),
+    0 10px 22px 0 rgba(0, 0, 0, 0.45);
+  image-rendering: pixelated;
+}
+
+/* a slate title bar that sits inside a window */
+.px-titlebar {
+  background: var(--chrome);
+  color: var(--light);
+  border-bottom: 3px solid var(--ink);
+  box-shadow:
+    inset 0 2px 0 0 var(--chrome-hi),
+    inset 0 -2px 0 0 var(--chrome-lo);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* inset sub-panel (e.g. activity feed, list area) carved into the cream */
+.px-inset {
+  background: #f6f3e9;
+  border: 2px solid var(--ink);
+  box-shadow:
+    inset 2px 2px 0 0 var(--face-lo),
+    inset -1px -1px 0 0 var(--face-hi);
+}
+
+/* generic raised button */
+.px-btn {
+  font-family: inherit;
+  color: var(--text);
+  background: var(--face);
+  border: 3px solid var(--ink);
+  box-shadow:
+    inset 2px 2px 0 0 var(--face-hi),
+    inset -2px -2px 0 0 var(--face-lo),
+    0 3px 0 0 rgba(0, 0, 0, 0.3);
+  padding: 8px 14px;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.4);
+  transition: none;
+}
+.px-btn:hover:not(:disabled) {
+  background: var(--face-hi);
+}
+.px-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 2px 2px 0 0 var(--face-lo),
+    inset -2px -2px 0 0 var(--face-hi);
+}
+.px-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* primary (accent blue) button */
+.px-btn-accent {
+  color: var(--light);
+  background: var(--accent);
+  border-color: var(--ink);
+  box-shadow:
+    inset 2px 2px 0 0 var(--accent-hi),
+    inset -2px -2px 0 0 var(--accent-lo),
+    0 3px 0 0 rgba(0, 0, 0, 0.3);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+}
+.px-btn-accent:hover:not(:disabled) {
+  background: #5aa9e8;
+}
+.px-btn-accent:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 2px 2px 0 0 var(--accent-lo),
+    inset -2px -2px 0 0 var(--accent-hi);
+}
+
+/* selectable option (toggle) */
+.px-opt {
+  font-family: inherit;
+  color: var(--text);
+  background: #e2ddcd;
+  border: 3px solid var(--ink);
+  box-shadow: inset 2px 2px 0 0 var(--face-lo);
+  cursor: pointer;
+  padding: 10px;
+}
+.px-opt[data-sel="true"] {
+  background: var(--accent);
+  color: var(--light);
+  box-shadow:
+    inset 2px 2px 0 0 var(--accent-lo),
+    inset -2px -2px 0 0 var(--accent-hi);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* text input / textarea carved inset */
+.px-field {
+  font-family: inherit;
+  color: var(--text);
+  background: #f8f5ec;
+  border: 3px solid var(--ink);
+  box-shadow: inset 2px 2px 0 0 var(--face-lo);
+  padding: 8px 10px;
+  outline: none;
+}
+.px-field::placeholder {
+  color: #9a967f;
+}
+.px-field:focus {
+  box-shadow:
+    inset 2px 2px 0 0 var(--face-lo),
+    inset 0 0 0 2px var(--accent);
+}
+
+/* a small chip (quick actions) */
+.px-chip {
+  font-family: inherit;
+  color: var(--text);
+  background: #e6e1d1;
+  border: 2px solid var(--ink);
+  box-shadow: inset 1px 1px 0 0 var(--face-hi);
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.px-chip:hover {
+  background: var(--accent);
+  color: var(--light);
+}
+
+/* status badge */
+.px-badge {
+  border: 2px solid var(--ink);
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+/* a HUD plate (compact info box, slate) */
+.px-plate {
+  background: var(--chrome);
+  color: var(--light);
+  border: 3px solid var(--ink);
+  box-shadow:
+    inset 2px 2px 0 0 var(--chrome-hi),
+    inset -2px -2px 0 0 var(--chrome-lo),
+    0 3px 0 0 rgba(0, 0, 0, 0.3);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Pokémon-style battle/dialog box: rounded cream panel with a double outline */
+.px-battle {
+  background: var(--face);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 3px var(--face-hi),
+    0 0 0 6px var(--ink),
+    inset 0 0 0 2px var(--accent-lo),
+    inset 4px 4px 0 0 var(--face-hi),
+    inset -4px -4px 0 0 var(--face-lo),
+    0 10px 26px rgba(0, 0, 0, 0.5);
+  image-rendering: pixelated;
+}
+
+/* a battle command-menu option with an animated ▶ pointer when selected */
+.px-cmd {
+  font-family: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  padding: 5px 8px 5px 24px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.4);
+}
+.px-cmd:hover {
+  color: var(--accent-lo);
+}
+.px-cmd[data-sel="true"] {
+  color: var(--accent-lo);
+}
+.px-cmd[data-sel="true"]::before {
+  content: "▶";
+  position: absolute;
+  left: 7px;
+  top: 5px;
+  color: var(--accent-lo);
+  animation: px-blink 0.7s steps(1, start) infinite;
+}
+@keyframes px-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* a soft blink for "working" indicators */
+.px-live-dot {
+  animation: px-pulse 1s ease-in-out infinite;
+}
+@keyframes px-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.px-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.px-scroll::-webkit-scrollbar-track {
+  background: var(--face-lo);
+}
+.px-scroll::-webkit-scrollbar-thumb {
+  background: var(--edge);
+  border: 2px solid var(--ink);
+}

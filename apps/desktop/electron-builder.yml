@@ -1,0 +1,14 @@
+appId: com.office.desktop
+productName: Office
+directories:
+  buildResources: resources
+  output: .output/bin
+files:
+  - .output/app/**/*
+  - package.json
+asarUnpack:
+  - node_modules/sharp/**/*
+  - node_modules/@img/**/*
+mac:
+  category: public.app-category.games
+npmRebuild: false

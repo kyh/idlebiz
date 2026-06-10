@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxc/json-schema-for-oxfmt/npm/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    "dist",
+    "dist-electron",
+    "node_modules",
+    "pnpm-lock.yaml",
+    "*.tsbuildinfo",
+    ".next",
+    ".expo",
+    ".wxt",
+    ".output",
+    "out"
+  ],
+  "plugins": ["eslint", "typescript", "unicorn", "react", "nextjs", "oxc", "node", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "react/react-in-jsx-scope": "off",
+    "eslint/no-shadow": "off",
+    "eslint/no-await-in-loop": "off",
+    // expo-status-bar's StatusBar takes `style` as a string variant, not CSS.
+    "react/style-prop-object": ["error", { "allow": ["StatusBar"] }],
+    // Render props (React Navigation headerRight, FlatList renderItem) are legit.
+    "react/no-unstable-nested-components": ["error", { "allowAsProps": true }]
+  },
+  "overrides": [
+    {
+      // Dependency boundary: agent/ must stay main-free. Capabilities are
+      // injected as AgentPorts from main/lib/agent-lifecycle.ts.
+      "files": ["apps/desktop/src/agent/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/main", "@/main/**", "**/main/**"],
+                "message": "agent/ must not import from main/ — inject via AgentPorts (main/lib/agent-lifecycle.ts)"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
