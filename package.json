@@ -7,6 +7,7 @@
     "clean:workspaces": "turbo run clean",
     "dev": "turbo watch dev --continue",
     "dev:desktop": "turbo watch dev -F @repo/desktop...",
+    "dev:web": "turbo watch dev -F @repo/web...",
     "lint": "oxlint --report-unused-disable-directives",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --check",

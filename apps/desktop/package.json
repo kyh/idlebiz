@@ -1,6 +1,6 @@
 {
   "name": "@repo/desktop",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "IdleBiz desktop app",
   "author": "kyh",
@@ -10,18 +10,21 @@
     "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
+    "release:publish": "GH_TOKEN=$(gh auth token) pnpm with-env electron-vite build && GH_TOKEN=$(gh auth token) pnpm with-env electron-builder --mac --publish always",
+    "with-env": "dotenv -e .env --",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .cache .output"
   },
   "dependencies": {
+    "@mariozechner/pi-ai": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
+    "@sinclair/typebox": "^0.34.0",
     "phaser": "^4.0.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "sharp": "^0.34.2",
-    "zod": "^4.4.3",
-    "@mariozechner/pi-ai": "^0.73.1",
-    "@mariozechner/pi-coding-agent": "^0.73.1",
-    "@sinclair/typebox": "^0.34.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -29,6 +32,7 @@
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "dotenv-cli": "^11.0.0",
     "electron": "^42.2.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",

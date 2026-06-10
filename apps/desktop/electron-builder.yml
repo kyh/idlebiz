@@ -1,5 +1,5 @@
-appId: com.office.desktop
-productName: Office
+appId: com.idlebiz.desktop
+productName: IdleBiz
 directories:
   buildResources: resources
   output: .output/bin
@@ -7,8 +7,26 @@ files:
   - .output/app/**/*
   - package.json
 asarUnpack:
+  - resources/**
   - node_modules/sharp/**/*
   - node_modules/@img/**/*
 mac:
+  # zip alongside dmg so electron-updater (latest-mac.yml) works when we add it
+  target:
+    - dmg
+    - zip
+  artifactName: IdleBiz-${version}-${arch}-mac.${ext}
   category: public.app-category.games
+  icon: resources/icon.icns
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  hardenedRuntime: true
+  notarize: true
+dmg:
+  artifactName: IdleBiz-${version}-${arch}.${ext}
 npmRebuild: false
+publish:
+  provider: github
+  owner: kyh
+  repo: idlebiz
+  releaseType: release

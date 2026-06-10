@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "VG5000";
+  src: url("/fonts/vg5000.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+
+:root {
+  /* ---- Modern-UI (Style 2) pixel palette — mirrors the game ---- */
+  --ink: #1d2136;
+  --edge: #525c84;
+  --chrome: #44507a;
+  --chrome-hi: #66739f;
+  --chrome-lo: #313a5e;
+  --face: #ece7d8;
+  --face-hi: #fbf9f1;
+  --face-lo: #d3cdb9;
+  --text: #2b2f46;
+  --text-dim: #6d7187;
+  --light: #f5f3ea;
+  --accent: #4f9dde;
+  --accent-hi: #86c0ee;
+  --accent-lo: #336fae;
+  --ok: #57b86c;
+  --warn: #e8b04b;
+  --danger: #d9645a;
+
+  font-family: "VG5000", ui-monospace, Menlo, monospace;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  letter-spacing: 0.02em;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #12141c;
+  color: var(--light);
+}
+
+img {
+  image-rendering: pixelated;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--light);
+}
+
+/* faint office floor grid on the dark backdrop */
+.px-floor {
+  background-image:
+    linear-gradient(rgba(82, 92, 132, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(82, 92, 132, 0.12) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ---- pixel-UI kit (ported from the game) ---------------------------------- */
+
+.px-window {
+  background: var(--face);
+  border: 3px solid var(--ink);
+  box-shadow:
+    inset 0 0 0 1px var(--edge),
+    inset 3px 3px 0 0 var(--face-hi),
+    inset -3px -3px 0 0 var(--face-lo),
+    0 5px 0 0 rgba(0, 0, 0, 0.32),
+    0 10px 22px 0 rgba(0, 0, 0, 0.45);
+  image-rendering: pixelated;
+}
+
+.px-titlebar {
+  background: var(--chrome);
+  color: var(--light);
+  border-bottom: 3px solid var(--ink);
+  box-shadow:
+    inset 0 2px 0 0 var(--chrome-hi),
+    inset 0 -2px 0 0 var(--chrome-lo);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.px-inset {
+  background: #f6f3e9;
+  border: 2px solid var(--ink);
+  box-shadow:
+    inset 2px 2px 0 0 var(--face-lo),
+    inset -1px -1px 0 0 var(--face-hi);
+}
+
+.px-btn-accent {
+  font-family: inherit;
+  color: var(--light);
+  background: var(--accent);
+  border: 3px solid var(--ink);
+  box-shadow:
+    inset 2px 2px 0 0 var(--accent-hi),
+    inset -2px -2px 0 0 var(--accent-lo),
+    0 3px 0 0 rgba(0, 0, 0, 0.3);
+  padding: 8px 14px;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+  transition: none;
+}
+.px-btn-accent:hover {
+  background: #5aa9e8;
+}
+.px-btn-accent:active {
+  transform: translateY(3px);
+  box-shadow:
+    inset 2px 2px 0 0 var(--accent-lo),
+    inset -2px -2px 0 0 var(--accent-hi);
+}
+
+/* Pokémon-style battle/dialog box: rounded cream panel with a double outline */
+.px-battle {
+  background: var(--face);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 3px var(--face-hi),
+    0 0 0 6px var(--ink),
+    inset 0 0 0 2px var(--accent-lo),
+    inset 4px 4px 0 0 var(--face-hi),
+    inset -4px -4px 0 0 var(--face-lo);
+  image-rendering: pixelated;
+}
+
+.px-badge {
+  border: 2px solid var(--ink);
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.px-blink {
+  animation: px-blink 0.7s steps(1, start) infinite;
+}
+@keyframes px-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.px-live-dot {
+  animation: px-pulse 1s ease-in-out infinite;
+}
+@keyframes px-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

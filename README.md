@@ -11,13 +11,27 @@ the dashboard can read your actual Stripe revenue and analytics.
   Character sprites generate from the premade sheets bundled at
   `apps/desktop/resources/premades` (derived from the paid Limezu pack — keep
   this repo private).
+- `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
+  Download button resolves the latest `.dmg` from GitHub releases.
 
 ## Develop
 
 ```sh
 pnpm install
 pnpm dev:desktop
+pnpm dev:web
 ```
+
+## Release (desktop)
+
+```sh
+pnpm -F @repo/desktop release          # build + sign + notarize locally
+pnpm -F @repo/desktop release:publish  # same, then publish to GitHub releases
+```
+
+Needs `apps/desktop/.env` (Apple notarization creds) and the `AuthKey_*.p8` at
+the repo root — both gitignored. Bump `version` in `apps/desktop/package.json`
+before publishing; electron-builder tags the release `v<version>`.
 
 Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
 agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, workspace/).

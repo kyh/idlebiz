@@ -35,3 +35,7 @@ yarn-error.log*
 
 # claude
 .claude/worktrees
+
+# next.js
+.next/
+next-env.d.ts
