@@ -10,6 +10,10 @@
         "src/renderer/main.tsx"
       ],
       "project": ["src/**/*.{ts,tsx,css}"]
+    },
+    "packages/pi-driver": {
+      "entry": ["src/*.ts"],
+      "project": ["src/**/*.ts"]
     }
   }
 }

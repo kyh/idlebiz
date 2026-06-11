@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
+import type { PiEvent, PiUsage } from "@repo/pi-driver/events";
 import * as store from "@/main/store/store";
 import { piDriver } from "@/main/agents/pi-driver";
 import { simulatedMetrics } from "@/main/metrics";
-import type { PiEvent } from "@/main/agents/event-parser";
+import { businessTypeById, isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent, Company, Employee, Task, TaskStatus } from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
@@ -25,6 +26,23 @@ export class Scheduler {
     if (this.timer) return;
     this.timer = setInterval(() => this.tickAutopilot(), AUTOPILOT_TICK_MS);
     this.tickAutopilot();
+  }
+
+  /** Stop the loop (reset teardown). In-flight runs settle on their own. */
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /** Out-of-budget halt: pause autopilot once and tell the founder why. */
+  private haltForBudget(company: Company): void {
+    if (!company.autopilot) return;
+    store.setAutopilot(company.id, false);
+    this.emit({
+      kind: "lifecycle",
+      message: "budget.exhausted",
+      payload: { spentUsd: company.spentUsd, budget: company.budget },
+    });
   }
 
   /** Fire any routine whose cadence is due, assigned to a matching idle employee. */
@@ -58,6 +76,10 @@ export class Scheduler {
   private tickAutopilot(): void {
     const company = store.getDefaultCompany();
     if (!company || !company.autopilot) return;
+    if (isOutOfBudget(company)) {
+      this.haltForBudget(company);
+      return;
+    }
     const employees = store.listEmployees(company.id);
     this.fireDueRoutines(company, employees);
     for (const emp of employees) {
@@ -103,6 +125,7 @@ export class Scheduler {
     const description = [
       `You are operating autonomously to grow ${company.name}.`,
       `Mission: ${company.mission}`,
+      `Business type: ${businessTypeById(company.businessType).label}.`,
       `Your role: ${emp.title}.`,
       `Teammates: ${roster}.`,
       ``,
@@ -166,6 +189,11 @@ export class Scheduler {
 
   /** Player assigns a task to an employee, then we try to run it. */
   assign(taskId: string, employeeId: string): Task {
+    const task = store.getTask(taskId);
+    const company = task ? store.getCompany(task.companyId) : null;
+    if (company && isOutOfBudget(company)) {
+      throw new Error("Out of budget — raise the budget in the HUD to assign work.");
+    }
     const claimed = store.claimTask(taskId, employeeId);
     if (!claimed) throw new Error("task is not assignable");
     this.emit({ taskId, employeeId, kind: "status", message: "queued" });
@@ -207,7 +235,7 @@ export class Scheduler {
           ok: false,
           error: err instanceof Error ? err.message : String(err),
           summary: "",
-          usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 },
+          usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 },
         });
       })
       .finally(() => {
@@ -264,7 +292,7 @@ export class Scheduler {
       ok: boolean;
       error?: string;
       summary: string;
-      usage: { inputTokens: number; outputTokens: number; cachedTokens: number };
+      usage: PiUsage;
       sessionId?: string;
       blockedQuestion?: string;
     },
@@ -280,6 +308,15 @@ export class Scheduler {
     );
     store.setEmployeeStatus(emp.id, "idle");
     if (r.sessionId) store.setEmployeeSession(emp.id, r.sessionId);
+
+    // real AI spend drains the founder's budget (once per run, not per token)
+    if (r.usage.costUsd > 0) {
+      const before = store.getCompany(task.companyId);
+      const after = store.recordSpend(task.companyId, r.usage.costUsd);
+      if (before && after && !isOutOfBudget(before) && isOutOfBudget(after)) {
+        this.haltForBudget(after);
+      }
+    }
 
     // business metrics: a completed task ships work, drives adoption + revenue
     if (taskStatus === "done") {

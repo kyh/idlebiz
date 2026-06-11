@@ -1,0 +1,22 @@
+{
+  "name": "@repo/pi-driver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin wrapper around pi-coding-agent: auth, models, sessions, event parsing",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .cache .turbo"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.9.0"
+  }
+}

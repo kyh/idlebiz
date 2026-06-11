@@ -7,6 +7,8 @@ export interface PiUsage {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  /** Real USD cost as computed by pi-ai from its model registry rates. */
+  costUsd: number;
 }
 
 export type PiEvent =
@@ -58,6 +60,7 @@ function extractUsage(message: unknown): PiUsage | undefined {
     inputTokens: n(u.input ?? u.inputTokens ?? u.prompt_tokens),
     outputTokens: n(u.output ?? u.outputTokens ?? u.completion_tokens),
     cachedTokens: n(u.cacheRead ?? u.cachedInputTokens ?? u.cached_tokens),
+    costUsd: n(obj(u.cost).total),
   };
 }
 

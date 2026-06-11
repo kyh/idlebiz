@@ -19,6 +19,7 @@
   "dependencies": {
     "@mariozechner/pi-ai": "^0.73.1",
     "@mariozechner/pi-coding-agent": "^0.73.1",
+    "@repo/pi-driver": "workspace:*",
     "@sinclair/typebox": "^0.34.0",
     "phaser": "^4.0.0",
     "react": "^19.2.6",

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
@@ -11,12 +11,70 @@ import { scheduler } from "@/main/scheduler";
 import { startLogin, submitAuthCode, generateCandidates } from "@/main/agents/onboarding";
 import { simulatedMetrics, readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
 import { exportSecretsToEnv } from "@/main/secrets";
-import { DEFAULT_AGENT_MODEL, HIRE_COST } from "@/shared/domain";
+import {
+  initStripeConnect,
+  beginConnect,
+  disconnectStripe,
+  getStripeStatus,
+  markAuthError,
+} from "@/main/stripe-connect";
+import { ROOT_DIR } from "@/main/paths";
+import { DEFAULT_AGENT_MODEL, HIRE_COST, isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent } from "@/shared/domain";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
+let metricsTimer: ReturnType<typeof setInterval> | null = null;
+
+/** One pulse of the business metrics loop (also fired on demand, e.g. Stripe connect). */
+function runMetricsPulse(): void {
+  const company = store.getDefaultCompany();
+  if (!company || !company.onboarded) return;
+  const cfg = readMetricsConfig(company.id);
+  if (cfg) {
+    void fetchRealMetrics(cfg).then((snap) => {
+      const live = snap.users !== null || snap.revenue !== null;
+      if (live) store.setRealMetrics(company.id, snap);
+      if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
+      broadcast("onActivity", {
+        kind: "lifecycle",
+        message: "metrics.pulse",
+        payload: { users: snap.users, revenue: snap.revenue, real: live },
+        createdAt: Date.now(),
+      });
+    });
+    return;
+  }
+  const p = simulatedMetrics.pulse(company);
+  if (p.usersDelta === 0 && p.cashDelta === 0) return;
+  store.applyPulse(company.id, p.usersDelta, p.cashDelta);
+  broadcast("onActivity", {
+    kind: "lifecycle",
+    message: "metrics.pulse",
+    payload: p,
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Full reset: stop every writer, abort live agent runs, then wipe ~/.idlebiz
+ * (companies, workspaces, auth, secrets) and relaunch into onboarding.
+ * Order matters — suspend writes BEFORE disposing so settling runs can't
+ * resurrect files after the rm.
+ */
+async function resetGame(): Promise<{ ok: boolean }> {
+  scheduler.stop();
+  if (metricsTimer) clearInterval(metricsTimer);
+  store.suspendWrites();
+  await piDriver.disposeAll();
+  rmSync(ROOT_DIR, { recursive: true, force: true });
+  setImmediate(() => {
+    app.relaunch();
+    app.exit(0);
+  });
+  return { ok: true };
+}
 
 function registerIpcHandlers(): void {
   handle("hasAuth", () => ({ ok: piDriver.hasAuth() }));
@@ -44,8 +102,8 @@ function registerIpcHandlers(): void {
     );
   });
 
-  handle("generateHires", async ({ companyName, mission }) => {
-    const candidates = await generateCandidates({ companyName, mission });
+  handle("generateHires", async ({ companyName, mission, businessType }) => {
+    const candidates = await generateCandidates({ companyName, mission, businessType });
     return candidates.map((c, i) => ({
       ...c,
       spriteSeed: `${c.role}-${c.name}-${Date.now().toString(36)}-${i}`,
@@ -77,8 +135,8 @@ function registerIpcHandlers(): void {
 
   handle("getCompany", () => store.getDefaultCompany());
 
-  handle("createCompany", ({ name, mission, founderName, founderSpriteSeed }) =>
-    store.createCompany({ name, mission, founderName, founderSpriteSeed }),
+  handle("createCompany", ({ name, mission, businessType, founderName, founderSpriteSeed }) =>
+    store.createCompany({ name, mission, businessType, founderName, founderSpriteSeed }),
   );
 
   handle("setAutopilot", ({ companyId, running }) => {
@@ -87,6 +145,34 @@ function registerIpcHandlers(): void {
     if (!company) throw new Error("company not found");
     return company;
   });
+
+  handle("setBudget", ({ companyId, budget }) => {
+    const company = store.setBudget(companyId, budget);
+    // setting a cap below what's already spent pauses the office immediately
+    if (isOutOfBudget(company) && company.autopilot) {
+      store.setAutopilot(companyId, false);
+      const e: ActivityEvent = {
+        kind: "lifecycle",
+        message: "budget.exhausted",
+        payload: { spentUsd: company.spentUsd, budget: company.budget },
+        createdAt: Date.now(),
+      };
+      store.logActivity(e);
+      broadcast("onActivity", e);
+    }
+    return store.getCompany(companyId) ?? company;
+  });
+
+  handle("resetSpend", ({ companyId }) => store.resetSpend(companyId));
+
+  handle("resetGame", () => resetGame());
+
+  handle("stripeStatus", () => {
+    const company = store.getDefaultCompany();
+    return company ? getStripeStatus(company.id) : { state: "disconnected" };
+  });
+  handle("stripeConnect", ({ companyId }) => beginConnect(companyId));
+  handle("stripeDisconnect", ({ companyId }) => disconnectStripe(companyId));
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
 
@@ -218,35 +304,14 @@ app.whenReady().then(() => {
   scheduler.start();
 
   // periodic business pulse. With a metrics.json configured the REAL providers
-  // (Stripe revenue, Plausible visitors, custom endpoint) overwrite the numbers;
-  // otherwise the light simulation ticks. (Pulse events aren't logged to disk.)
-  setInterval(() => {
-    const company = store.getDefaultCompany();
-    if (!company || !company.onboarded) return;
-    const cfg = readMetricsConfig(company.id);
-    if (cfg) {
-      void fetchRealMetrics(cfg).then((snap) => {
-        const live = snap.users !== null || snap.revenue !== null;
-        if (live) store.setRealMetrics(company.id, snap);
-        broadcast("onActivity", {
-          kind: "lifecycle",
-          message: "metrics.pulse",
-          payload: { ...snap, real: live },
-          createdAt: Date.now(),
-        });
-      });
-      return;
-    }
-    const p = simulatedMetrics.pulse(company);
-    if (p.usersDelta === 0 && p.cashDelta === 0) return;
-    store.applyPulse(company.id, p.usersDelta, p.cashDelta);
-    broadcast("onActivity", {
-      kind: "lifecycle",
-      message: "metrics.pulse",
-      payload: p,
-      createdAt: Date.now(),
-    });
-  }, PULSE_MS);
+  // (Stripe revenue + customers, Plausible visitors, custom endpoint) overwrite
+  // the numbers; otherwise the light simulation ticks. (Not logged to disk.)
+  metricsTimer = setInterval(runMetricsPulse, PULSE_MS);
+
+  initStripeConnect({
+    notify: (status) => broadcast("onStripeStatus", status),
+    onConnected: () => runMetricsPulse(), // ⚡ flips without waiting 30s
+  });
 
   mainWindow = createWindow();
 

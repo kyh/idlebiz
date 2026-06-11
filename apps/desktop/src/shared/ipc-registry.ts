@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { CHANNELS, type IpcMethod, type IpcKind } from "@/shared/ipc-channels";
-import type { ActivityEvent, Company, Employee, Task } from "@/shared/domain";
+import type {
+  ActivityEvent,
+  Budget,
+  BusinessTypeId,
+  Company,
+  Employee,
+  Task,
+} from "@/shared/domain";
 
 export { CHANNELS };
 export type { IpcMethod };
@@ -26,6 +33,13 @@ export type HireProposal = {
 /** A founder appearance option for onboarding. */
 export type FounderChoice = { seed: string; portraitDataUrl: string };
 
+/** Stripe Connect link state, streamed to the renderer. */
+export type StripeStatus =
+  | { state: "disconnected" }
+  | { state: "connecting" }
+  | { state: "connected"; accountId: string; livemode: boolean }
+  | { state: "error"; message: string };
+
 /** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
 export type CharacterAssets = {
   seed: string;
@@ -37,9 +51,32 @@ export type CharacterAssets = {
 };
 
 // ---- zod payload schemas (validation in main; keyed by method) --------------
+const BusinessTypeSchema = z.enum(["software", "game-studio", "vc", "ecommerce", "custom"]);
+// compile-time guarantee: the zod enum and the domain union stay in sync
+type _AssertBizSchemaCoversDomain =
+  BusinessTypeId extends z.infer<typeof BusinessTypeSchema> ? true : never;
+type _AssertBizDomainCoversSchema =
+  z.infer<typeof BusinessTypeSchema> extends BusinessTypeId ? true : never;
+const _bizCheck: _AssertBizSchemaCoversDomain & _AssertBizDomainCoversSchema = true;
+void _bizCheck;
+
+const BudgetSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("infinite") }),
+  z.object({ mode: z.literal("capped"), capUsd: z.number().nonnegative() }),
+]);
+type _AssertBudgetSchema =
+  Budget extends z.infer<typeof BudgetSchema>
+    ? z.infer<typeof BudgetSchema> extends Budget
+      ? true
+      : never
+    : never;
+const _budgetCheck: _AssertBudgetSchema = true;
+void _budgetCheck;
+
 const CreateCompanySchema = z.object({
   name: z.string(),
   mission: z.string(),
+  businessType: BusinessTypeSchema,
   founderName: z.string(),
   founderSpriteSeed: z.string(),
 });
@@ -84,9 +121,17 @@ export const SCHEMAS = {
   answerQuestion: z.object({ taskId: z.string(), answer: z.string() }),
   openCompanyPath: z.object({ companyId: z.string(), rel: z.string() }),
   openProduct: z.object({ companyId: z.string() }),
-  generateHires: z.object({ companyName: z.string(), mission: z.string() }),
+  generateHires: z.object({
+    companyName: z.string(),
+    mission: z.string(),
+    businessType: BusinessTypeSchema,
+  }),
   batchHire: z.object({ companyId: z.string(), hires: z.array(HireProposalSchema) }),
   completeOnboarding: z.object({ companyId: z.string() }),
+  setBudget: z.object({ companyId: z.string(), budget: BudgetSchema }),
+  resetSpend: z.object({ companyId: z.string() }),
+  stripeConnect: z.object({ companyId: z.string() }),
+  stripeDisconnect: z.object({ companyId: z.string() }),
 } satisfies Partial<Record<IpcMethod, z.ZodTypeAny>>;
 
 // ---- per-method contract: payload + result/event types ---------------------
@@ -98,13 +143,25 @@ export interface Contract {
   onAuthEvent: { payload: void; result: AuthFlowEvent };
   composeCharacter: { payload: { seed: string }; result: CharacterAssets };
   getFounderChoices: { payload: void; result: FounderChoice[] };
-  generateHires: { payload: { companyName: string; mission: string }; result: HireProposal[] };
+  generateHires: {
+    payload: { companyName: string; mission: string; businessType: BusinessTypeId };
+    result: HireProposal[];
+  };
   batchHire: { payload: { companyId: string; hires: HireProposal[] }; result: Employee[] };
   completeOnboarding: { payload: { companyId: string }; result: Company };
 
   getCompany: { payload: void; result: Company | null };
   createCompany: { payload: z.infer<typeof CreateCompanySchema>; result: Company };
   setAutopilot: { payload: { companyId: string; running: boolean }; result: Company };
+  setBudget: { payload: { companyId: string; budget: Budget }; result: Company };
+  resetSpend: { payload: { companyId: string }; result: Company };
+
+  resetGame: { payload: void; result: { ok: boolean } };
+
+  stripeStatus: { payload: void; result: StripeStatus };
+  stripeConnect: { payload: { companyId: string }; result: { started: boolean } };
+  stripeDisconnect: { payload: { companyId: string }; result: { ok: boolean } };
+  onStripeStatus: { payload: void; result: StripeStatus };
 
   listEmployees: { payload: { companyId: string }; result: Employee[] };
   createEmployee: { payload: z.infer<typeof CreateEmployeeSchema>; result: Employee };

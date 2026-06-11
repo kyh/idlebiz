@@ -17,6 +17,15 @@ export const CHANNELS = {
   getCompany: { channel: "company:get", kind: "invoke-void" },
   createCompany: { channel: "company:create", kind: "invoke" },
   setAutopilot: { channel: "company:autopilot", kind: "invoke" },
+  setBudget: { channel: "company:budget", kind: "invoke" },
+  resetSpend: { channel: "company:reset-spend", kind: "invoke" },
+
+  resetGame: { channel: "app:reset", kind: "invoke-void" },
+
+  stripeStatus: { channel: "stripe:status", kind: "invoke-void" },
+  stripeConnect: { channel: "stripe:connect", kind: "invoke" },
+  stripeDisconnect: { channel: "stripe:disconnect", kind: "invoke" },
+  onStripeStatus: { channel: "stripe:event", kind: "event" },
 
   listEmployees: { channel: "employee:list", kind: "invoke" },
   createEmployee: { channel: "employee:create", kind: "invoke" },

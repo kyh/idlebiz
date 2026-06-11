@@ -20,7 +20,11 @@ export function Hiring({ onClose }: { onClose: () => void }) {
     const bridge = window.appBridge;
     if (!bridge) return;
     void bridge
-      .generateHires({ companyName: company.name, mission: company.mission })
+      .generateHires({
+        companyName: company.name,
+        mission: company.mission,
+        businessType: company.businessType,
+      })
       .then((c) => alive && setCandidates(c))
       .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
     return () => {

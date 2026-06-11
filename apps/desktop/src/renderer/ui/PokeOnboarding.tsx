@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setModalOpen, refresh, getPortrait } from "@/renderer/state/store";
+import { BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
+import type { BusinessTypeId } from "@/shared/domain";
 import type { AuthFlowEvent, FounderChoice, HireProposal } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
 // Pokémon-style first-run onboarding: one battle box, a narrator, and a step
-// machine — auth → founder → look → company → pitch → team → office.
+// machine — auth → founder → look → company → biztype → pitch → team → office.
 // ---------------------------------------------------------------------------
 
-type Step = "intro" | "auth" | "founder" | "look" | "company" | "pitch" | "team" | "finalize";
+type Step =
+  | "intro"
+  | "auth"
+  | "founder"
+  | "look"
+  | "company"
+  | "biztype"
+  | "pitch"
+  | "team"
+  | "finalize";
 
 const bridge = () => {
   const b = window.appBridge;
@@ -61,6 +72,7 @@ export function PokeOnboarding() {
   const [choices, setChoices] = useState<FounderChoice[]>([]);
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
+  const [biz, setBiz] = useState<BusinessTypeId | null>(null);
   const [pitch, setPitch] = useState("");
   const [hires, setHires] = useState<HireProposal[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -104,19 +116,24 @@ export function PokeOnboarding() {
     if (step === "intro") setStep(authed ? "founder" : "auth");
     else if (step === "founder" && founderName.trim()) setStep("look");
     else if (step === "look") setStep("company");
-    else if (step === "company" && companyName.trim()) setStep("pitch");
+    else if (step === "company" && companyName.trim()) setStep("biztype");
+    else if (step === "biztype" && biz !== null) setStep("pitch");
     else if (step === "pitch" && pitch.trim()) {
       setStep("team");
       setHires(null);
       void bridge()
-        .generateHires({ companyName: companyName.trim(), mission: pitch.trim() })
+        .generateHires({
+          companyName: companyName.trim(),
+          mission: pitch.trim(),
+          businessType: biz ?? "custom",
+        })
         .then((h) => {
           setHires(h);
           setPicked(new Set(h.map((_, i) => i)));
         })
         .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
     }
-  }, [step, authed, founderName, companyName, pitch]);
+  }, [step, authed, founderName, companyName, biz, pitch]);
 
   const finalize = async () => {
     if (!hires || picked.size === 0 || finalizing) return;
@@ -127,6 +144,7 @@ export function PokeOnboarding() {
       const co = await bridge().createCompany({
         name: companyName.trim(),
         mission: pitch.trim(),
+        businessType: biz ?? "custom",
         founderName: founderName.trim(),
         founderSpriteSeed: seed,
       });
@@ -160,6 +178,7 @@ export function PokeOnboarding() {
     founder: "Let's get you on payroll. What's your name, founder?",
     look: "Pick your look. This is how you'll appear around the office.",
     company: "Now the fun part. What's your company called?",
+    biztype: `What kind of company is ${companyName.trim() || "this"} going to be?`,
     pitch: `What is ${companyName.trim() || "your company"} building? Be specific — your team will literally start working on this.`,
     team:
       hires === null
@@ -278,21 +297,30 @@ export function PokeOnboarding() {
                   </button>
                 </div>
               ) : null}
-              <button
-                onClick={() => {
-                  setAuthBusy(true);
-                  setAuthLines([]);
-                  void bridge().startLogin();
-                }}
-                disabled={authBusy}
-                className="px-btn-accent px-btn ml-auto text-[13px]"
-              >
-                {authBusy
-                  ? "Waiting for authorization…"
-                  : authUrl
-                    ? "Try again"
-                    : "Connect OpenAI account"}
-              </button>
+              <div className="flex items-center">
+                <button
+                  onClick={() => void bridge().resetGame()}
+                  className="cursor-pointer border-none bg-transparent text-[11px] text-[var(--text-dim)] hover:text-[var(--danger)]"
+                  title="Wipe everything in ~/.idlebiz and restart"
+                >
+                  ↺ start over
+                </button>
+                <button
+                  onClick={() => {
+                    setAuthBusy(true);
+                    setAuthLines([]);
+                    void bridge().startLogin();
+                  }}
+                  disabled={authBusy}
+                  className="px-btn-accent px-btn ml-auto text-[13px]"
+                >
+                  {authBusy
+                    ? "Waiting for authorization…"
+                    : authUrl
+                      ? "Try again"
+                      : "Connect OpenAI account"}
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -340,13 +368,37 @@ export function PokeOnboarding() {
             </>
           ) : null}
 
+          {step === "biztype" ? (
+            <div className="flex w-full flex-col gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {BUSINESS_TYPES.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => setBiz(b.id)}
+                    data-sel={biz === b.id}
+                    className="px-opt text-left text-[13px]"
+                  >
+                    {b.emoji} {b.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={next}
+                disabled={biz === null}
+                className="px-btn-accent px-btn ml-auto text-[13px]"
+              >
+                That's the plan →
+              </button>
+            </div>
+          ) : null}
+
           {step === "pitch" ? (
             <div className="flex w-full flex-col gap-2">
               <textarea
                 value={pitch}
                 onChange={(e) => setPitch(e.target.value)}
                 rows={3}
-                placeholder="A delightful to-do app that makes planning feel effortless."
+                placeholder={businessTypeById(biz ?? "custom").pitchPlaceholder}
                 className="px-field w-full resize-none text-[13px]"
                 autoFocus
               />

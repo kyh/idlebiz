@@ -51,3 +51,34 @@ export function exportSecretsToEnv(): Record<string, string> {
   }
   return secrets;
 }
+
+export function getSecret(key: string): string | null {
+  return loadSecrets()[key] ?? null;
+}
+
+/** Read-modify-write a single secret (file mode 0600) and sync process.env. */
+export function setSecret(key: string, value: string): void {
+  const raw: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(SECRETS_PATH, "utf8"));
+    if (parsed && typeof parsed === "object") Object.assign(raw, parsed);
+  } catch {
+    /* fresh file */
+  }
+  raw[key] = value;
+  writeFileSync(SECRETS_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
+  if (!key.startsWith("_")) process.env[key] = value;
+}
+
+export function deleteSecret(key: string): void {
+  const raw: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(SECRETS_PATH, "utf8"));
+    if (parsed && typeof parsed === "object") Object.assign(raw, parsed);
+  } catch {
+    return;
+  }
+  delete raw[key];
+  writeFileSync(SECRETS_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
+  delete process.env[key];
+}

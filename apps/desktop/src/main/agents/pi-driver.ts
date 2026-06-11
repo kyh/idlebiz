@@ -1,16 +1,16 @@
-import { mkdirSync } from "node:fs";
-import {
-  createAgentSession,
-  DefaultResourceLoader,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
-  AuthStorage,
-} from "@mariozechner/pi-coding-agent";
-import type { AgentSession, ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { getModels } from "@mariozechner/pi-ai";
-import type { Api, Model } from "@mariozechner/pi-ai";
 import { Type, type Static } from "@sinclair/typebox";
+import { createAuthStorage, hasProviderAuth } from "@repo/pi-driver/auth";
+import { resolveModel, resolveModelLoose } from "@repo/pi-driver/model";
+import { registryFor } from "@repo/pi-driver/registry";
+import { createPiSession } from "@repo/pi-driver/session";
+import { parsePiEvent, type PiEvent, type PiUsage } from "@repo/pi-driver/events";
+import type {
+  AgentSession,
+  AuthStorage,
+  ToolDefinition,
+  Api,
+  Model,
+} from "@repo/pi-driver/pi-types";
 import {
   AUTH_PATH,
   PI_AGENT_DIR,
@@ -18,7 +18,6 @@ import {
   employeeAgentDir,
   employeeSessionDir,
 } from "@/main/paths";
-import { parsePiEvent, type PiEvent } from "@/main/agents/event-parser";
 import type { Company, Employee } from "@/shared/domain";
 
 import { DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from "@/shared/domain";
@@ -27,7 +26,7 @@ export interface RunResult {
   ok: boolean;
   error?: string;
   summary: string;
-  usage: { inputTokens: number; outputTokens: number; cachedTokens: number };
+  usage: PiUsage;
   sessionId?: string;
   blockedQuestion?: string;
 }
@@ -45,40 +44,31 @@ interface LiveRun {
   sawOutput: boolean;
   error?: string;
   blockedQuestion?: string;
-  usage: { inputTokens: number; outputTokens: number; cachedTokens: number };
+  usage: PiUsage;
+  model: Model<Api>;
   hooks: RunHooks | null;
 }
 
 interface EmployeeRuntime {
   session: AgentSession;
   unsub: () => void;
+  model: Model<Api>;
   live: LiveRun | null;
-}
-
-// getModels types its arg as a provider union; we hold runtime strings (validated
-// by the lookup below), so narrow at this single boundary.
-type KnownProvider = Parameters<typeof getModels>[0];
-function resolveModel(provider: string, id: string): Model<Api> {
-  const m = getModels(provider as KnownProvider).find((x) => x.id === id);
-  if (!m) throw new Error(`Model "${provider}/${id}" not found`);
-  return m;
 }
 
 class PiDriver {
   private auth: AuthStorage | null = null;
-  private registry: ModelRegistry | null = null;
   private model: Model<Api> | null = null;
   private employees = new Map<string, EmployeeRuntime>();
 
   init(): void {
     if (!process.env["PI_CODING_AGENT_DIR"]) process.env["PI_CODING_AGENT_DIR"] = PI_AGENT_DIR;
-    this.auth = AuthStorage.create(AUTH_PATH);
-    this.registry = ModelRegistry.create(this.auth);
+    this.auth = createAuthStorage(AUTH_PATH);
     this.model = resolveModel(DEFAULT_PROVIDER, DEFAULT_MODEL_ID);
   }
 
   hasAuth(): boolean {
-    return !!this.auth && this.auth.hasAuth(DEFAULT_PROVIDER);
+    return !!this.auth && hasProviderAuth(this.auth, DEFAULT_PROVIDER);
   }
 
   /** The shared AuthStorage (login flows, one-off completions). */
@@ -93,7 +83,7 @@ class PiDriver {
     const slash = emp.model.indexOf("/");
     if (slash > 0) {
       try {
-        return resolveModel(emp.model.slice(0, slash), emp.model.slice(slash + 1));
+        return resolveModelLoose(emp.model.slice(0, slash), emp.model.slice(slash + 1));
       } catch {
         return fallback;
       }
@@ -101,7 +91,7 @@ class PiDriver {
     return fallback;
   }
 
-  private askBossTool(employeeId: string): ToolDefinition<ReturnType<typeof Type.Object>> {
+  private askBossTool(employeeId: string): ToolDefinition {
     const schema = Type.Object({
       question: Type.String({ description: "A concise question for the founder." }),
     });
@@ -126,10 +116,10 @@ class PiDriver {
       },
     };
     // schema generic is invariant in the lib's type; the runtime shape is correct.
-    return tool as unknown as ToolDefinition<ReturnType<typeof Type.Object>>;
+    return tool as unknown as ToolDefinition;
   }
 
-  private messageTeamTool(employeeId: string): ToolDefinition<ReturnType<typeof Type.Object>> {
+  private messageTeamTool(employeeId: string): ToolDefinition {
     const schema = Type.Object({
       text: Type.String({ description: "A short update for your teammates." }),
     });
@@ -144,10 +134,10 @@ class PiDriver {
         return { content: [{ type: "text", text: "Posted to the team channel." }], details: {} };
       },
     };
-    return tool as unknown as ToolDefinition<ReturnType<typeof Type.Object>>;
+    return tool as unknown as ToolDefinition;
   }
 
-  private delegateTool(employeeId: string): ToolDefinition<ReturnType<typeof Type.Object>> {
+  private delegateTool(employeeId: string): ToolDefinition {
     const schema = Type.Object({
       role: Type.String({
         description:
@@ -172,35 +162,25 @@ class PiDriver {
         };
       },
     };
-    return tool as unknown as ToolDefinition<ReturnType<typeof Type.Object>>;
+    return tool as unknown as ToolDefinition;
   }
 
   async ensureEmployee(emp: Employee, company: Company): Promise<EmployeeRuntime> {
     const existing = this.employees.get(emp.id);
     if (existing) return existing;
-    if (!this.auth || !this.registry) throw new Error("pi driver not initialized");
+    if (!this.auth) throw new Error("pi driver not initialized");
 
     // The agent's package dir IS its pi agentDir: the canonical agents/<slug>/AGENTS.md
     // (written by the store at hire time) doubles as the agent's instructions.
-    const cwd = companyWorkspace(company.id);
-    const agentDir = employeeAgentDir(company.id, emp.id);
-    const sessionDir = employeeSessionDir(company.id, emp.id);
-    mkdirSync(cwd, { recursive: true });
-    mkdirSync(sessionDir, { recursive: true });
-
-    const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [] });
-    await resourceLoader.reload();
-
-    const { session } = await createAgentSession({
-      cwd,
-      agentDir,
+    const model = this.modelFor(emp);
+    const session = await createPiSession({
+      cwd: companyWorkspace(company.id),
+      agentDir: employeeAgentDir(company.id, emp.id),
+      sessionDir: employeeSessionDir(company.id, emp.id),
       authStorage: this.auth,
-      modelRegistry: this.registry,
-      resourceLoader,
-      model: this.modelFor(emp),
+      modelRegistry: registryFor(this.auth),
+      model,
       thinkingLevel: (emp.thinking as "off" | "low" | "medium" | "high" | undefined) ?? "off",
-      sessionManager: SessionManager.continueRecent(cwd, sessionDir),
-      settingsManager: SettingsManager.create(cwd, agentDir),
       customTools: [
         this.askBossTool(emp.id),
         this.messageTeamTool(emp.id),
@@ -208,7 +188,7 @@ class PiDriver {
       ],
     });
 
-    const rt: EmployeeRuntime = { session, live: null, unsub: () => {} };
+    const rt: EmployeeRuntime = { session, model, live: null, unsub: () => {} };
     rt.unsub = session.subscribe((raw: unknown) => this.handleEvent(emp.id, raw));
     this.employees.set(emp.id, rt);
     return rt;
@@ -235,9 +215,8 @@ class PiDriver {
         if (ev.text) live.sawOutput = true;
         if (ev.stopReason === "error" || ev.errorMessage)
           live.error = ev.errorMessage ?? "agent error";
-        if (ev.usage) this.addUsage(live, ev.usage);
-        break;
-      case "turn_end":
+        // Accumulate usage HERE only: turn_end carries the same assistant
+        // message, so counting both would double the spend.
         if (ev.usage) this.addUsage(live, ev.usage);
         break;
       case "tool_start":
@@ -251,13 +230,21 @@ class PiDriver {
     }
   }
 
-  private addUsage(
-    live: LiveRun,
-    u: { inputTokens: number; outputTokens: number; cachedTokens: number },
-  ): void {
+  private addUsage(live: LiveRun, u: PiUsage): void {
     live.usage.inputTokens += u.inputTokens;
     live.usage.outputTokens += u.outputTokens;
     live.usage.cachedTokens += u.cachedTokens;
+    live.usage.costUsd += u.costUsd;
+  }
+
+  /** Fallback pricing from the registry's $/MTok rates when pi didn't compute cost. */
+  private costFromTokens(model: Model<Api>, usage: PiUsage): number {
+    return (
+      (usage.inputTokens * model.cost.input +
+        usage.outputTokens * model.cost.output +
+        usage.cachedTokens * model.cost.cacheRead) /
+      1_000_000
+    );
   }
 
   private settle(employeeId: string, extra?: { error?: string }): void {
@@ -274,6 +261,10 @@ class PiDriver {
     }
     let error = extra?.error ?? live.error;
     if (!error && !live.sawOutput) error = "No output produced (likely an auth or model failure).";
+
+    if (live.usage.costUsd === 0 && live.usage.inputTokens + live.usage.outputTokens > 0) {
+      live.usage.costUsd = this.costFromTokens(live.model, live.usage);
+    }
 
     rt.live = null;
     live.resolve({
@@ -302,7 +293,8 @@ class PiDriver {
         resolve,
         settled: false,
         sawOutput: false,
-        usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 },
+        usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 },
+        model: rt.model,
         hooks: hooks ?? null,
       };
       const prompt = `${task.title}\n\n${task.description ?? ""}`.trim();

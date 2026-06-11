@@ -1,11 +1,20 @@
 import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
-import type { ActivityEvent, Company, Employee, Task } from "@/shared/domain";
+import type {
+  ActivityEvent,
+  Budget,
+  BusinessTypeId,
+  Company,
+  Employee,
+  Task,
+} from "@/shared/domain";
+import type { StripeStatus } from "@/shared/ipc-registry";
 
 interface State {
   booted: boolean;
   authed: boolean;
   liveMetrics: boolean; // true when real-world providers (Stripe/analytics) feed the numbers
+  stripeStatus: StripeStatus;
   company: Company | null;
   employees: Employee[];
   activity: ActivityEvent[];
@@ -17,6 +26,7 @@ let state: State = {
   booted: false,
   authed: true,
   liveMetrics: false,
+  stripeStatus: { state: "disconnected" },
   company: null,
   employees: [],
   activity: [],
@@ -63,7 +73,11 @@ export function initStore(): void {
   void bridge()
     .hasAuth()
     .then((r) => set({ authed: r.ok }));
+  void bridge()
+    .stripeStatus()
+    .then((s) => set({ stripeStatus: s }));
   bridge().onActivity((e: ActivityEvent) => onActivity(e));
+  bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
 }
 
 export function setAuthed(ok: boolean): void {
@@ -121,6 +135,7 @@ function onActivity(e: ActivityEvent): void {
 export async function createCompany(input: {
   name: string;
   mission: string;
+  businessType: BusinessTypeId;
   founderName: string;
   founderSpriteSeed: string;
 }): Promise<Company> {
@@ -134,6 +149,36 @@ export async function setAutopilot(running: boolean): Promise<void> {
   if (!c) return;
   const updated = await bridge().setAutopilot({ companyId: c.id, running });
   set({ company: updated });
+}
+
+export async function setBudget(budget: Budget): Promise<void> {
+  const c = state.company;
+  if (!c) return;
+  const updated = await bridge().setBudget({ companyId: c.id, budget });
+  set({ company: updated });
+}
+
+export async function resetSpend(): Promise<void> {
+  const c = state.company;
+  if (!c) return;
+  const updated = await bridge().resetSpend({ companyId: c.id });
+  set({ company: updated });
+}
+
+export async function connectStripe(): Promise<void> {
+  const c = state.company;
+  if (!c) return;
+  await bridge().stripeConnect({ companyId: c.id });
+}
+
+export async function disconnectStripe(): Promise<void> {
+  const c = state.company;
+  if (!c) return;
+  await bridge().stripeDisconnect({ companyId: c.id });
+}
+
+export async function resetGame(): Promise<void> {
+  await bridge().resetGame();
 }
 
 export async function hireEmployee(input: {

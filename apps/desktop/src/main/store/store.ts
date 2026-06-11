@@ -38,9 +38,11 @@ import {
   type FrontmatterDoc,
   type Scalar,
 } from "@/main/store/frontmatter";
-import { DEFAULT_AGENT_MODEL } from "@/shared/domain";
+import { DEFAULT_AGENT_MODEL, BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
 import type {
   ActivityEvent,
+  Budget,
+  BusinessTypeId,
   Company,
   Employee,
   Routine,
@@ -99,7 +101,15 @@ function c(): Cache {
   return cache;
 }
 
+// Reset gate: once suspended, no disk write may land — an in-flight run settling
+// after ~/.idlebiz is deleted would otherwise resurrect files mid-teardown.
+let writesSuspended = false;
+export function suspendWrites(): void {
+  writesSuspended = true;
+}
+
 function atomicWrite(path: string, content: string): void {
+  if (writesSuspended) return;
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, content);
@@ -119,15 +129,31 @@ function companyToDoc(co: Company): FrontmatterDoc {
     metadata: {
       founderName: co.founderName,
       founderSpriteSeed: co.founderSpriteSeed,
+      businessType: co.businessType,
       autopilot: co.autopilot,
       cash: co.cash,
       ships: co.ships,
       users: co.users,
+      budgetMode: co.budget.mode,
+      ...(co.budget.mode === "capped" ? { budgetCapUsd: co.budget.capUsd } : {}),
+      spentUsd: co.spentUsd,
       onboarded: co.onboarded,
       createdAt: co.createdAt,
     },
     body: `# ${co.name}\n\n${co.mission}\n`,
   };
+}
+
+function parseBusinessType(raw: string | null): BusinessTypeId {
+  const found = BUSINESS_TYPES.find((b) => b.id === raw);
+  return found ? found.id : "custom";
+}
+
+function parseBudget(m: FrontmatterDoc["metadata"]): Budget {
+  if (optStr(m, "budgetMode") === "capped") {
+    return { mode: "capped", capUsd: Math.max(0, optNum(m, "budgetCapUsd", 0)) };
+  }
+  return { mode: "infinite" };
 }
 
 function docToCompany(doc: FrontmatterDoc): Company {
@@ -138,6 +164,7 @@ function docToCompany(doc: FrontmatterDoc): Company {
     id,
     name: reqStr(f, "name"),
     mission: optStr(f, "description") ?? "",
+    businessType: parseBusinessType(optStr(m, "businessType")),
     workspaceDir: companyWorkspace(id),
     founderName: optStr(m, "founderName") ?? "Founder",
     founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? "founder-player-001",
@@ -145,6 +172,8 @@ function docToCompany(doc: FrontmatterDoc): Company {
     cash: optNum(m, "cash", 0),
     ships: optNum(m, "ships", 0),
     users: optNum(m, "users", 0),
+    budget: parseBudget(m),
+    spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
     onboarded: optBool(m, "onboarded", false),
     createdAt: reqNum(m, "createdAt"),
   };
@@ -403,7 +432,7 @@ export function initStore(): void {
   for (const co of loaded.companies.values()) {
     if ((loaded.routines.get(co.id) ?? []).length === 0) {
       try {
-        seedDefaultRoutines(co.id);
+        seedDefaultRoutines(co.id, co.businessType);
       } catch {
         /* non-fatal */
       }
@@ -457,6 +486,7 @@ function uniqueSlug(base: string, taken: (slug: string) => boolean): string {
 export function createCompany(input: {
   name: string;
   mission: string;
+  businessType: BusinessTypeId;
   founderName: string;
   founderSpriteSeed: string;
 }): Company {
@@ -465,6 +495,7 @@ export function createCompany(input: {
     id,
     name: input.name,
     mission: input.mission,
+    businessType: input.businessType,
     workspaceDir: companyWorkspace(id),
     founderName: input.founderName,
     founderSpriteSeed: input.founderSpriteSeed,
@@ -472,6 +503,8 @@ export function createCompany(input: {
     cash: 1000,
     ships: 0,
     users: 0,
+    budget: { mode: "infinite" },
+    spentUsd: 0,
     onboarded: false,
     createdAt: Date.now(),
   };
@@ -483,12 +516,12 @@ export function createCompany(input: {
   c().employees.set(id, []);
   c().tasks.set(id, []);
   c().routines.set(id, []);
-  seedDefaultRoutines(id);
+  seedDefaultRoutines(id, input.businessType);
   return co;
 }
 
-/** Every new company starts with a real operating cadence. */
-function seedDefaultRoutines(companyId: string): void {
+/** Every new company starts with a real operating cadence (+ one per business type). */
+function seedDefaultRoutines(companyId: string, businessType: BusinessTypeId): void {
   createRoutine({
     companyId,
     name: "Business review",
@@ -505,6 +538,16 @@ function seedDefaultRoutines(companyId: string): void {
     instruction:
       "Produce one real piece of marketing for the product as it exists today: a launch/update post, landing copy, or outreach draft. Make it concrete and ready to publish. Ask the founder via ask_boss before posting anywhere public.",
   });
+  const preset = businessTypeById(businessType).routine;
+  if (preset) {
+    createRoutine({
+      companyId,
+      name: preset.name,
+      intervalHours: preset.intervalHours,
+      role: preset.role,
+      instruction: preset.instruction,
+    });
+  }
 }
 
 export function createRoutine(input: {
@@ -585,6 +628,20 @@ export function adjustCash(id: string, delta: number): Company {
   const co = c().companies.get(id);
   if (!co) throw new Error(`company ${id} not found`);
   return patchCompany(id, { cash: Math.round((co.cash + delta) * 100) / 100 });
+}
+/** Accumulate real AI spend (USD) from a finished run. */
+export function recordSpend(id: string, costUsd: number): Company | null {
+  const co = c().companies.get(id);
+  if (!co) return null;
+  const spent = Math.round((co.spentUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
+  return patchCompany(id, { spentUsd: spent });
+}
+export function setBudget(id: string, budget: Budget): Company {
+  return patchCompany(id, { budget });
+}
+/** Founder zeroes the spend meter (budget unchanged). */
+export function resetSpend(id: string): Company {
+  return patchCompany(id, { spentUsd: 0 });
 }
 /** Apply a periodic metrics pulse (revenue trickle + organic growth). */
 export function applyPulse(id: string, usersDelta: number, cashDelta: number): Company | null {
@@ -822,7 +879,7 @@ export function logActivity(e: ActivityEvent): number {
   const companyId = entry.employeeId
     ? getEmployee(entry.employeeId)?.companyId
     : getDefaultCompany()?.id;
-  if (companyId) {
+  if (companyId && !writesSuspended) {
     const { id: _drop, ...persisted } = entry;
     try {
       appendFileSync(activityFile(companyId), JSON.stringify(persisted) + "\n");

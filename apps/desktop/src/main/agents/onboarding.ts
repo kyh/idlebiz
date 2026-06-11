@@ -1,9 +1,11 @@
 import { shell } from "electron";
-import { completeSimple, getModels } from "@mariozechner/pi-ai";
-import type { Api, Model } from "@mariozechner/pi-ai";
 import { z } from "zod";
+import { loginWithProvider } from "@repo/pi-driver/auth";
+import { completeText } from "@repo/pi-driver/complete";
+import { resolveModel } from "@repo/pi-driver/model";
 import { piDriver } from "@/main/agents/pi-driver";
-import { DEFAULT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_AGENT_MODEL } from "@/shared/domain";
+import { DEFAULT_PROVIDER, DEFAULT_MODEL_ID, businessTypeById } from "@/shared/domain";
+import type { BusinessTypeId } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
 // First-run onboarding backend: in-game OpenAI OAuth + LLM-generated hires.
@@ -30,7 +32,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
   }
   loginRunning = true;
   try {
-    await piDriver.getAuth().login(DEFAULT_PROVIDER, {
+    await loginWithProvider(piDriver.getAuth(), DEFAULT_PROVIDER, {
       onAuth: (info: { url: string; instructions?: string }) => {
         emit({
           type: "url",
@@ -91,34 +93,19 @@ const CandidateSchema = z.object({
 });
 const CandidatesSchema = z.array(CandidateSchema).min(3).max(8);
 
-function pickModel(): Model<Api> {
-  const m = getModels(DEFAULT_PROVIDER).find((x) => x.id === DEFAULT_MODEL_ID);
-  if (!m) throw new Error(`model ${DEFAULT_AGENT_MODEL} not found`);
-  return m;
-}
-
-function extractText(content: ReadonlyArray<{ type: string }>): string {
-  return content
-    .map((b) =>
-      "text" in b && typeof (b as { text?: unknown }).text === "string"
-        ? (b as { text: string }).text
-        : "",
-    )
-    .join("");
-}
-
 /** Generate a founding team tailored to the player's pitch (one cheap LLM call). */
 export async function generateCandidates(input: {
   companyName: string;
   mission: string;
+  businessType: BusinessTypeId;
 }): Promise<HireCandidate[]> {
-  const apiKey = await piDriver.getAuth().getApiKey(DEFAULT_PROVIDER);
-  if (!apiKey) throw new Error("not authenticated");
-
+  const biz = businessTypeById(input.businessType);
+  const typeHint =
+    input.businessType === "custom" ? "" : `\nBusiness type: ${biz.label}. ${biz.hireHint}`;
   const prompt = `You are casting the founding team of a startup for a business-sim game.
 
 Company: ${input.companyName}
-Pitch: ${input.mission}
+Pitch: ${input.mission}${typeHint}
 
 Invent 5 distinct hires tailored to THIS pitch — whatever business it is. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; an investment firm needs sourcing + analysis + IR; a shop needs product + ops + marketing). Each person gets:
 - name: a memorable first name (diverse, varied)
@@ -129,12 +116,11 @@ Invent 5 distinct hires tailored to THIS pitch — whatever business it is. Mix 
 
 Reply with ONLY a JSON array of 5 objects with keys name, role, title, persona, blurb. No markdown fence, no commentary.`;
 
-  const msg = await completeSimple(
-    pickModel(),
-    { messages: [{ role: "user", content: prompt, timestamp: Date.now() }] },
-    { apiKey },
+  const raw = await completeText(
+    piDriver.getAuth(),
+    resolveModel(DEFAULT_PROVIDER, DEFAULT_MODEL_ID),
+    prompt,
   );
-  const raw = extractText(msg.content);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
   const parsed: unknown = JSON.parse(jsonText);
   return CandidatesSchema.parse(parsed);

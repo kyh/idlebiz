@@ -1,4 +1,5 @@
 import { useStore, setAutopilot } from "@/renderer/state/store";
+import { isOutOfBudget } from "@/shared/domain";
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -46,15 +47,25 @@ export function Hud({
   onHire,
   onShips,
   onInbox,
+  onBudget,
+  onSettings,
 }: {
   onHire: () => void;
   onShips: () => void;
   onInbox: () => void;
+  onBudget: () => void;
+  onSettings: () => void;
 }) {
   const { company, employees, liveMetrics, pendingAsks } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
+  const out = isOutOfBudget(company);
+  const budgetValue = out
+    ? "OUT"
+    : company.budget.mode === "infinite"
+      ? "∞"
+      : `$${(company.budget.capUsd - company.spentUsd).toFixed(2)}`;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-3">
@@ -81,6 +92,13 @@ export function Hud({
           label="team"
           value={String(employees.length)}
           sub={working > 0 ? `${working} working` : "idle"}
+        />
+        <Stat
+          label="budget"
+          value={budgetValue}
+          accent={out ? "var(--danger)" : "#e8d28a"}
+          sub={`spent $${company.spentUsd.toFixed(2)}`}
+          onClick={onBudget}
         />
         <button
           onClick={onInbox}
@@ -110,6 +128,13 @@ export function Hud({
         </button>
         <button onClick={onHire} className="px-btn-accent px-btn pointer-events-auto text-[14px]">
           + Hire
+        </button>
+        <button
+          onClick={onSettings}
+          className="px-btn pointer-events-auto px-3 text-[12px]"
+          title="Settings"
+        >
+          ⚙
         </button>
       </div>
     </div>
