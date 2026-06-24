@@ -7,6 +7,8 @@ import type {
   Company,
   Employee,
   Task,
+  Team,
+  TeamMessage,
 } from "@/shared/domain";
 import type { StripeStatus } from "@/shared/ipc-registry";
 
@@ -17,8 +19,10 @@ interface State {
   stripeStatus: StripeStatus;
   company: Company | null;
   employees: Employee[];
+  teams: Team[];
   activity: ActivityEvent[];
   pendingAsks: Task[]; // blocked tasks awaiting the founder's answer
+  stuckTasks: Task[]; // dead-lettered / failed tasks needing attention
   game: Phaser.Game | null;
 }
 
@@ -29,8 +33,10 @@ let state: State = {
   stripeStatus: { state: "disconnected" },
   company: null,
   employees: [],
+  teams: [],
   activity: [],
   pendingAsks: [],
+  stuckTasks: [],
   game: null,
 };
 const listeners = new Set<() => void>();
@@ -96,9 +102,16 @@ export function setModalOpen(open: boolean): void {
 export async function refresh(): Promise<void> {
   const company = await bridge().getCompany();
   const employees = company ? await bridge().listEmployees({ companyId: company.id }) : [];
+  const teams = company ? await bridge().listTeams({ companyId: company.id }) : [];
   const tasks = company ? await bridge().listTasks({ companyId: company.id }) : [];
   const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blockedQuestion !== null);
-  set({ booted: true, company, employees, pendingAsks });
+  const stuckTasks = tasks.filter((t) => t.status === "dead" || t.status === "failed");
+  set({ booted: true, company, employees, teams, pendingAsks, stuckTasks });
+}
+
+/** Fetch a team's chat-room messages on demand (for the Teams panel). */
+export async function teamMessages(teamId: string, limit = 30): Promise<TeamMessage[]> {
+  return bridge().teamMessages({ teamId, limit });
 }
 
 function onActivity(e: ActivityEvent): void {
@@ -109,7 +122,7 @@ function onActivity(e: ActivityEvent): void {
     const next =
       e.message === "running"
         ? "working"
-        : ["done", "failed", "cancelled", "blocked"].includes(e.message)
+        : ["done", "failed", "cancelled", "blocked", "dead", "queued"].includes(e.message)
           ? "idle"
           : null;
     if (next)
@@ -214,6 +227,13 @@ export async function assignWork(
   const assigned = await bridge().assignTask({ taskId: task.id, employeeId });
   await refresh();
   return assigned;
+}
+
+/** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
+export async function retryTask(task: Task): Promise<void> {
+  if (!task.assigneeId) return;
+  await bridge().assignTask({ taskId: task.id, employeeId: task.assigneeId });
+  await refresh();
 }
 
 export async function listTasksFor(employeeId: string): Promise<Task[]> {

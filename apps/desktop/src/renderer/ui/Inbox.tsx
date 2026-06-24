@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { useStore, setModalOpen, refresh } from "@/renderer/state/store";
+import { useStore, setModalOpen, refresh, retryTask } from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
 import type { Task } from "@/shared/domain";
 
-/** The founder's inbox: every pending ask from the team, answerable in one place
- *  (walking up to the "!" in the office still works — this is the fast path). */
+/** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
+ *  place (walking up to the "!" in the office still works — this is the fast path). */
 export function Inbox({ onClose }: { onClose: () => void }) {
-  const { company, employees, pendingAsks } = useStore();
+  const { company, employees, pendingAsks, stuckTasks } = useStore();
 
   useEffect(() => {
     setModalOpen(true);
@@ -24,7 +24,8 @@ export function Inbox({ onClose }: { onClose: () => void }) {
           <div>
             <div className="text-[16px]">Inbox</div>
             <div className="text-[11px] text-[#c4c9dd]">
-              {pendingAsks.length} waiting on your call
+              {pendingAsks.length} question{pendingAsks.length === 1 ? "" : "s"} ·{" "}
+              {stuckTasks.length} stuck
             </div>
           </div>
           <button onClick={onClose} className="px-btn text-[13px]">
@@ -32,16 +33,52 @@ export function Inbox({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
-          {pendingAsks.length === 0 ? (
+          {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
             <div className="text-[12px] text-[var(--text-dim)]">
               All clear — nobody's waiting on you.
             </div>
-          ) : (
-            pendingAsks.map((t) => (
-              <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
-            ))
-          )}
+          ) : null}
+          {pendingAsks.map((t) => (
+            <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
+          ))}
+          {stuckTasks.length > 0 ? (
+            <div className="pt-1 text-[9px] uppercase tracking-wide text-[#8a90ab]">
+              Stuck — needs a retry
+            </div>
+          ) : null}
+          {stuckTasks.map((t) => (
+            <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
+          ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StuckRow({ t, by }: { t: Task; by: string }) {
+  const [retried, setRetried] = useState(false);
+  const retry = async () => {
+    if (retried || !t.assigneeId) return;
+    setRetried(true);
+    await retryTask(t);
+  };
+  return (
+    <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
+      <div className="text-[11px] text-[var(--danger)]">
+        {t.status === "dead" ? "💀" : "⚠"} {by} ·{" "}
+        <span className="text-[var(--text-dim)]">{t.title}</span>
+      </div>
+      {t.lastError ? (
+        <div className="mt-1 text-[11px] leading-snug text-[var(--text-dim)]">{t.lastError}</div>
+      ) : null}
+      <div className="mt-2 flex justify-end">
+        <button
+          onClick={() => void retry()}
+          disabled={retried || !t.assigneeId}
+          className="px-btn-accent px-btn text-[12px]"
+        >
+          {retried ? "Retrying…" : "Retry"}
+        </button>
       </div>
     </div>
   );

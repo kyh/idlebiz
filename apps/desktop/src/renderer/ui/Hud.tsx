@@ -49,14 +49,16 @@ export function Hud({
   onInbox,
   onBudget,
   onSettings,
+  onTeams,
 }: {
   onHire: () => void;
   onShips: () => void;
   onInbox: () => void;
   onBudget: () => void;
   onSettings: () => void;
+  onTeams: () => void;
 }) {
-  const { company, employees, liveMetrics, pendingAsks } = useStore();
+  const { company, employees, teams, liveMetrics, pendingAsks, stuckTasks } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
@@ -91,7 +93,14 @@ export function Hud({
         <Stat
           label="team"
           value={String(employees.length)}
-          sub={working > 0 ? `${working} working` : "idle"}
+          sub={
+            teams.length > 0
+              ? `${teams.length} team${teams.length === 1 ? "" : "s"}`
+              : working > 0
+                ? `${working} working`
+                : "idle"
+          }
+          onClick={onTeams}
         />
         <Stat
           label="budget"
@@ -104,12 +113,14 @@ export function Hud({
           onClick={onInbox}
           className="px-btn pointer-events-auto px-3 text-[12px]"
           style={
-            pendingAsks.length > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined
+            pendingAsks.length + stuckTasks.length > 0
+              ? { background: "var(--warn)", color: "#3a2c0a" }
+              : undefined
           }
-          title="Questions waiting on your call"
+          title="Questions and stuck tasks waiting on you"
         >
-          {pendingAsks.length > 0 ? (
-            <span className="px-live-dot">❗ {pendingAsks.length}</span>
+          {pendingAsks.length + stuckTasks.length > 0 ? (
+            <span className="px-live-dot">❗ {pendingAsks.length + stuckTasks.length}</span>
           ) : (
             "📥"
           )}

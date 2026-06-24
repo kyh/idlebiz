@@ -7,6 +7,8 @@ import type {
   Company,
   Employee,
   Task,
+  Team,
+  TeamMessage,
 } from "@/shared/domain";
 
 export { CHANNELS };
@@ -114,6 +116,8 @@ export const SCHEMAS = {
   setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
   listEmployees: z.object({ companyId: z.string() }),
   createEmployee: CreateEmployeeSchema,
+  listTeams: z.object({ companyId: z.string() }),
+  teamMessages: z.object({ teamId: z.string(), limit: z.number().int().optional() }),
   listTasks: z.object({ companyId: z.string() }),
   createTask: CreateTaskSchema,
   assignTask: z.object({ taskId: z.string(), employeeId: z.string() }),
@@ -165,6 +169,9 @@ export interface Contract {
 
   listEmployees: { payload: { companyId: string }; result: Employee[] };
   createEmployee: { payload: z.infer<typeof CreateEmployeeSchema>; result: Employee };
+
+  listTeams: { payload: { companyId: string }; result: Team[] };
+  teamMessages: { payload: { teamId: string; limit?: number }; result: TeamMessage[] };
 
   listTasks: { payload: { companyId: string }; result: Task[] };
   createTask: { payload: z.infer<typeof CreateTaskSchema>; result: Task };

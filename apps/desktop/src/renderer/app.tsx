@@ -8,6 +8,7 @@ import { Dialogue } from "@/renderer/ui/Dialogue";
 import { Hiring } from "@/renderer/ui/Hiring";
 import { Ships } from "@/renderer/ui/Ships";
 import { Inbox } from "@/renderer/ui/Inbox";
+import { Teams } from "@/renderer/ui/Teams";
 import { BudgetModal } from "@/renderer/ui/BudgetModal";
 import { Settings } from "@/renderer/ui/Settings";
 import { CompanyFeed } from "@/renderer/ui/CompanyFeed";
@@ -17,6 +18,7 @@ export function App() {
   const [hiring, setHiring] = useState(false);
   const [ships, setShips] = useState(false);
   const [inbox, setInbox] = useState(false);
+  const [teams, setTeams] = useState(false);
   const [budget, setBudget] = useState(false);
   const [settings, setSettings] = useState(false);
 
@@ -49,12 +51,14 @@ export function App() {
               onInbox={() => setInbox(true)}
               onBudget={() => setBudget(true)}
               onSettings={() => setSettings(true)}
+              onTeams={() => setTeams(true)}
             />
             <CompanyFeed />
             <Dialogue />
             {hiring && <Hiring onClose={() => setHiring(false)} />}
             {ships && <Ships onClose={() => setShips(false)} />}
             {inbox && <Inbox onClose={() => setInbox(false)} />}
+            {teams && <Teams onClose={() => setTeams(false)} />}
             {budget && <BudgetModal onClose={() => setBudget(false)} />}
             {settings && <Settings onClose={() => setSettings(false)} />}
             <Hint />
