@@ -68,13 +68,8 @@ export function Hud({
       : `$${(company.budget.capUsd - company.spentUsd).toFixed(2)}`;
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-3">
-      <div className="px-plate max-w-[20rem] px-3 py-2">
-        <div className="text-[15px]">{company.name}</div>
-        <div className="truncate text-[11px] text-[#c4c9dd]">{company.mission}</div>
-      </div>
-
-      <div className="flex items-stretch gap-2">
+    <div className="pointer-events-none absolute top-3 right-3 z-10 flex max-w-[34rem] flex-col items-end gap-2">
+      <div className="flex flex-wrap items-stretch justify-end gap-2">
         <Stat
           label={liveMetrics ? "cash ⚡" : "cash"}
           value={`$${fmt(Math.floor(company.cash))}`}

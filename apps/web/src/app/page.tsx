@@ -41,7 +41,7 @@ function OfficeScene() {
   return (
     <div className="flex items-end justify-center gap-4" aria-hidden>
       <Image
-        src="/assets/plant_tall.png"
+        src="/workspace-kit/plant_tall.png"
         alt=""
         width={32}
         height={64}
@@ -50,7 +50,7 @@ function OfficeScene() {
       />
       <div className="relative">
         <Image
-          src="/assets/monitor.png"
+          src="/workspace-kit/monitor.png"
           alt=""
           width={30}
           height={30}
@@ -58,7 +58,7 @@ function OfficeScene() {
           className="absolute -top-[52px] left-1/2 h-[60px] w-auto -translate-x-1/2"
         />
         <Image
-          src="/assets/desk.png"
+          src="/workspace-kit/desk.png"
           alt=""
           width={64}
           height={38}
@@ -67,7 +67,7 @@ function OfficeScene() {
         />
       </div>
       <Image
-        src="/assets/chair.png"
+        src="/workspace-kit/chair.png"
         alt=""
         width={32}
         height={46}
@@ -75,7 +75,7 @@ function OfficeScene() {
         className="h-[92px] w-auto"
       />
       <Image
-        src="/assets/watercooler.png"
+        src="/workspace-kit/watercooler.png"
         alt=""
         width={28}
         height={60}

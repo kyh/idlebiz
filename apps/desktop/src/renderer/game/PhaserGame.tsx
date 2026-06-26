@@ -18,12 +18,14 @@ export function PhaserGame({ onGame }: { onGame?: (game: Phaser.Game) => void })
       roundPixels: true,
       // dev-only: lets CDP/snapshot tooling capture the WebGL canvas for visual QA
       render: { preserveDrawingBuffer: import.meta.env.DEV },
+      audio: { noAudio: true },
       scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
       physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
       scene: [BootScene, OfficeScene],
     });
     gameRef.current = game;
-    window.__game = game; // debug/test handle
+    // Debug/test handle for CDP probes.
+    void Reflect.set(window, "__game", game);
     onGame?.(game);
 
     return () => {

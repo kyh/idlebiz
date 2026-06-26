@@ -1,17 +1,25 @@
 import Phaser from "phaser";
-import {
-  TILE,
-  WALK_SPEED,
-  ZOOM,
-  DEPTH,
-  COLORS,
-  TIERS,
-  tierIndexForHeadcount,
-  type OfficeTier,
-  type FloorKind,
-} from "@/renderer/game/config";
+import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import { loadCharacter, ensureWalkAnims, idleFrame, type Dir } from "@/renderer/game/characters";
 import { NpcManager, type NpcState, type Seat, type PathProvider } from "@/renderer/game/npcs";
+import {
+  OFFICE_CELL,
+  OFFICE_COLS,
+  OFFICE_FLOOR_ZONES,
+  OFFICE_H,
+  OFFICE_OBJECT_PLACEMENTS,
+  OFFICE_ROWS,
+  OFFICE_SOLID_GRID,
+  OFFICE_SPAWN,
+  OFFICE_TILE_ASSETS,
+  OFFICE_WALL_RECTS,
+  OFFICE_W,
+  OFFICE_WORK_SEATS,
+  officeSolidAt,
+  tileKeyForFloor,
+  tileKeyForWall,
+  type PixelPoint,
+} from "@/renderer/game/office-layout";
 import type { ActivityEvent, Employee } from "@/shared/domain";
 
 const FACING_OFFSET: Record<Dir, { x: number; y: number }> = {
@@ -21,60 +29,52 @@ const FACING_OFFSET: Record<Dir, { x: number; y: number }> = {
   right: { x: 1, y: 0 },
 };
 
-const FLOOR_KEY: Record<FloorKind, string> = {
-  carpet: "floor_carpet",
-  tile: "floor_tile",
-  wood: "floor_wood",
-};
-const PROPS = [
-  "desk",
-  "monitor",
-  "chair",
-  "plant_tall",
-  "floor_carpet",
-  "floor_tile",
-  "floor_wood",
-  "tv",
-  "board_chart",
-  "board_pie",
-  "teamphoto",
-  "cert",
-  "art_a",
-  "art_b",
-  "shelf_books",
-  "watercooler",
-  "vending",
-  "printer",
-] as const;
+const WORKSPACE_KIT_PATH = "workspace-kit";
+const PATH_STEP = TILE / 2;
+const BODY_HALF_WIDTH = 8;
+const BODY_HALF_HEIGHT = 6;
+const PATH_SEARCH_RADIUS = 6;
 
-// wall palette (matches the Limezu Office_Design_2 look)
-const WALL_CAP = 0x3a3f54; // dark navy top edge / exterior walls
-const WALL_FACE = 0xf2f0f6; // interior wall face
-const WALL_FACE_SHADE = 0xe3e0ea;
-const WALL_BASE = 0xc9c5d6; // baseboard
-const WALL_LINE = 0x23273a;
+const CARDINAL_STEPS: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [0, -1],
+  [1, 0],
+  [-1, 0],
+];
 
-// Furniture geometry (px), derived from the trimmed sprite sizes.
-const DESK_W = 64;
-const DESK_H = 38;
-const CHAIR_DROP = 30; // how far the chair sits below the desk's front edge
+interface PathTile {
+  readonly tx: number;
+  readonly ty: number;
+}
 
-/**
- * Top-down office COMPOSED from individual Limezu sprites. Desks/chairs/plants
- * are real y-sorted objects: chairs have no hitbox and occlude whoever stands
- * behind them, and the room grows in tiers as the company hires.
- */
+interface PathTarget {
+  readonly tile: PathTile;
+  readonly point: PixelPoint;
+}
+
+function parseTileKey(tileKey: string): PathTile {
+  const comma = tileKey.indexOf(",");
+  return {
+    tx: Number(tileKey.slice(0, comma)),
+    ty: Number(tileKey.slice(comma + 1)),
+  };
+}
+
+function samePoint(a: PixelPoint, b: PixelPoint): boolean {
+  return Math.hypot(a.x - b.x, a.y - b.y) < 1;
+}
+
+/** Tiled office assembled from Modern Office object sprites. */
 export class OfficeScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Sprite;
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+  private keys?: Record<string, Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
   private founderSeed = "founder-player-001";
   private playerKey = "player";
-  private tierIndex = 0;
-  private solid = new Set<string>(); // "tx,ty"
-  private cols = 0;
-  private rows = 0;
+  private debugGfx?: Phaser.GameObjects.Graphics;
+  private pathCols = Math.ceil(OFFICE_W / PATH_STEP);
+  private pathRows = Math.ceil(OFFICE_H / PATH_STEP);
   private npcs?: NpcManager;
   private activityUnsub?: () => void;
 
@@ -85,19 +85,29 @@ export class OfficeScene extends Phaser.Scene {
   private key(tx: number, ty: number): string {
     return `${tx},${ty}`;
   }
-  private markSolid(tx: number, ty: number): void {
-    this.solid.add(this.key(tx, ty));
-  }
+
   private solidAtPx(x: number, y: number): boolean {
-    const tx = Math.floor(x / TILE);
-    const ty = Math.floor(y / TILE);
-    if (tx < 0 || ty < 0 || tx >= this.cols || ty >= this.rows) return true;
-    return this.solid.has(this.key(tx, ty));
+    return officeSolidAt(x, y);
+  }
+
+  private bodyBlockedAt(x: number, y: number): boolean {
+    return (
+      this.solidAtPx(x - BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
+      this.solidAtPx(x + BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
+      this.solidAtPx(x - BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT) ||
+      this.solidAtPx(x + BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT)
+    );
   }
 
   preload() {
-    for (const k of PROPS) this.load.image(k, `assets/office3/${k}.png`);
-    this.load.spritesheet("emotes", "assets/office/emotes.png", {
+    for (const tile of OFFICE_TILE_ASSETS) this.load.image(tile.key, tile.path);
+    const loaded = new Set<string>();
+    for (const placement of OFFICE_OBJECT_PLACEMENTS) {
+      if (loaded.has(placement.key)) continue;
+      loaded.add(placement.key);
+      this.load.image(placement.key, placement.path);
+    }
+    this.load.spritesheet("emotes", `${WORKSPACE_KIT_PATH}/emotes.png`, {
       frameWidth: 32,
       frameHeight: 32,
     });
@@ -108,70 +118,64 @@ export class OfficeScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     if (!kb) throw new Error("keyboard input unavailable");
     this.cursors = kb.createCursorKeys();
-    this.keys = kb.addKeys("W,A,S,D") as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = {
+      W: kb.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      A: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      S: kb.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      D: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on("down", () => this.tryAction());
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.E).on("down", () => this.tryAction());
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.G).on("down", () => this.toggleCollisionOverlay());
 
     void this.boot();
+    this.exposeDebug();
 
-    // a hire that crosses the tier threshold moves everyone into a bigger office
-    const onSpawn = (emp: Employee) => {
-      const headcount = (this.npcs ? this.npcs.size() : 0) + 1;
-      if (tierIndexForHeadcount(headcount) !== this.tierIndex) {
-        this.scene.restart();
-        return;
-      }
-      void this.npcs?.spawn(emp);
-    };
+    const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp);
     const onModal = (open: boolean) => {
       if (this.input.keyboard) this.input.keyboard.enabled = !open;
     };
-    // onboarding just finished → rebuild the room for the new team size + spawn everyone
     const onCompanyReady = () => this.scene.restart();
     this.game.events.on("spawn-employee", onSpawn);
     this.game.events.on("ui-modal", onModal);
     this.game.events.on("company-ready", onCompanyReady);
     this.subscribeActivity();
 
-    window.__game = this.game;
+    void Reflect.set(window, "__game", this.game);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.activityUnsub?.();
       this.game.events.off("spawn-employee", onSpawn);
       this.game.events.off("ui-modal", onModal);
       this.game.events.off("company-ready", onCompanyReady);
       this.npcs?.destroy();
-      this.solid.clear();
+      this.debugGfx?.destroy();
+      this.debugGfx = undefined;
       this.npcs = undefined;
       this.player = undefined;
+      Reflect.deleteProperty(window, "__officeDebug");
     });
   }
 
   private async boot(): Promise<void> {
+    const seats = this.buildRoom();
+
+    const cam = this.cameras.main;
+    cam.removeBounds();
+    cam.setZoom(ZOOM);
+    cam.setRoundPixels(true);
+    this.centerCameraOn(OFFICE_SPAWN);
+
+    this.npcs = new NpcManager(this, seats, this.makePathProvider());
+
     const bridge = window.appBridge;
     const company = bridge ? await bridge.getCompany() : null;
     const employees =
       company && bridge ? await bridge.listEmployees({ companyId: company.id }) : [];
     this.founderSeed = company?.founderSpriteSeed ?? "founder-player-001";
 
-    this.tierIndex = tierIndexForHeadcount(employees.length);
-    const tier = TIERS[this.tierIndex] ?? TIERS[0]!;
-    this.cols = tier.cols;
-    this.rows = tier.rows;
-    const seats = this.buildRoom(tier);
-
-    const cam = this.cameras.main;
-    cam.setBounds(0, 0, this.cols * TILE, this.rows * TILE);
-    // fit the room to the viewport width (no letterbox margins); follows vertically
-    const fit = this.scale.width > 0 ? this.scale.width / (this.cols * TILE) : ZOOM;
-    cam.setZoom(Phaser.Math.Clamp(fit, 1.8, 3.4));
-    cam.setRoundPixels(true);
-
-    this.npcs = new NpcManager(this, seats, this.makePathProvider());
-
-    await this.spawnPlayer(tier.spawn);
+    await this.spawnPlayer(OFFICE_SPAWN);
     for (const emp of employees) await this.npcs.spawn(emp);
 
-    // restore "!" markers for questions asked before this launch
     if (company && bridge) {
       const tasks = await bridge.listTasks({ companyId: company.id });
       for (const t of tasks) {
@@ -183,170 +187,134 @@ export class OfficeScene extends Phaser.Scene {
     this.game.events.emit("office-ready");
   }
 
-  // ---- room construction ---------------------------------------------------
-  /** Build floor, walls, desks/chairs/plants. Returns the NPC seat positions. */
-  private buildRoom(tier: OfficeTier): Seat[] {
-    const W = this.cols * TILE;
-    const H = this.rows * TILE;
-
-    // floor fills the whole room
-    this.add.tileSprite(0, 0, W, H, FLOOR_KEY[tier.floor]).setOrigin(0, 0).setDepth(DEPTH.ground);
-
-    // walls (drawn): north face with cap + baseboard, thin dark exterior elsewhere
-    const g = this.add.graphics().setDepth(DEPTH.wall);
-    const bandH = 2 * TILE;
-    g.fillStyle(WALL_FACE, 1).fillRect(0, 0, W, bandH);
-    g.fillStyle(WALL_FACE_SHADE, 1).fillRect(0, 14, W, 2); // subtle panel seam
-    g.fillStyle(WALL_CAP, 1).fillRect(0, 0, W, 10); // crown cap
-    g.fillStyle(WALL_BASE, 1).fillRect(0, bandH - 7, W, 7); // baseboard
-    g.fillStyle(WALL_LINE, 1).fillRect(0, bandH - 1, W, 1); // base line
-    // soft shadow the wall throws on the floor
-    g.fillStyle(0x000000, 0.12).fillRect(0, bandH, W, 5);
-    // exterior walls: dark caps on left/right/bottom
-    const side = 12;
-    g.fillStyle(WALL_CAP, 1);
-    g.fillRect(0, 0, side, H);
-    g.fillRect(W - side, 0, side, H);
-    g.fillRect(0, H - side, W, side);
-    g.lineStyle(2, WALL_LINE, 1).strokeRect(1, 1, W - 2, H - 2);
-
-    for (let tx = 0; tx < this.cols; tx++) {
-      this.markSolid(tx, 0);
-      this.markSolid(tx, 1);
-      this.markSolid(tx, this.rows - 1);
-    }
-    for (let ty = 0; ty < this.rows; ty++) {
-      this.markSolid(0, ty);
-      this.markSolid(this.cols - 1, ty);
-    }
-
-    this.hangFixtures(W, bandH);
-    this.placeFloorProps();
-
-    const seats: Seat[] = [];
-    for (const d of tier.desks) {
-      const deskBottom = d.ty * TILE + DESK_H;
-      const cx = d.tx * TILE + DESK_W / 2;
-      // desk surface (2 tiles wide)
+  private buildRoom(): Seat[] {
+    for (const zone of OFFICE_FLOOR_ZONES) {
       this.add
-        .image(d.tx * TILE, deskBottom, "desk")
-        .setOrigin(0, 1)
-        .setDepth(DEPTH.entityBase + deskBottom);
-      // monitor sits on the desk (render just in front of the surface)
-      this.add
-        .image(cx, d.ty * TILE + 28, "monitor")
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.entityBase + deskBottom + 1);
-      // chair below the desk — NO hitbox; y-sorted so it occludes whoever sits/walks behind it
-      const chairBottom = deskBottom + CHAIR_DROP;
-      this.add
-        .image(cx, chairBottom, "chair")
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.entityBase + chairBottom);
-      // desk tiles are solid; chair tiles are not
-      this.markSolid(d.tx, d.ty);
-      this.markSolid(d.tx + 1, d.ty);
-      // seat: NPC sits just behind the chair (chair occludes their lower body)
-      seats.push({ x: cx, y: chairBottom - 8 });
+        .tileSprite(zone.x, zone.y, zone.w, zone.h, tileKeyForFloor(zone.kind))
+        .setOrigin(0, 0)
+        .setDepth(DEPTH.ground);
     }
-
-    for (const p of tier.plants) {
-      const px = p.tx * TILE + TILE / 2;
-      const py = (p.ty + 1) * TILE;
+    for (const rect of OFFICE_WALL_RECTS) {
       this.add
-        .image(px, py, "plant_tall")
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.entityBase + py);
-      this.markSolid(p.tx, p.ty);
+        .tileSprite(rect.x, rect.y, rect.w, rect.h, tileKeyForWall(rect.kind))
+        .setOrigin(0, 0)
+        .setDepth(DEPTH.wall);
     }
-
-    return seats;
+    for (const placement of OFFICE_OBJECT_PLACEMENTS) {
+      this.add.image(placement.x, placement.y, placement.key).setOrigin(0, 0).setDepth(placement.depth);
+    }
+    return OFFICE_WORK_SEATS.map((seat) => ({ x: seat.x, y: seat.y }));
   }
 
-  /** Wall fixtures hang on the north face, spread to fit the room width. */
-  private hangFixtures(W: number, bandH: number): void {
-    const fixtures =
-      this.cols >= 16
-        ? ["teamphoto", "tv", "cert", "board_chart", "art_a", "board_pie"]
-        : ["teamphoto", "tv", "board_chart"];
-    const margin = 2.2 * TILE;
-    const span = W - margin * 2;
-    const y = bandH - 6;
-    fixtures.forEach((key, i) => {
-      const x = fixtures.length === 1 ? W / 2 : margin + (span * i) / (fixtures.length - 1);
-      this.add
-        .image(x, y, key)
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.wall + 1);
-    });
+  /** Toggle (G) a red overlay of the authored collision grid for debugging. */
+  private toggleCollisionOverlay(): void {
+    if (this.debugGfx) {
+      this.debugGfx.destroy();
+      this.debugGfx = undefined;
+      return;
+    }
+    const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
+    gfx.fillStyle(0xff3366, 0.35);
+    for (let r = 0; r < OFFICE_ROWS; r++) {
+      for (let c = 0; c < OFFICE_COLS; c++) {
+        if (OFFICE_SOLID_GRID[r]?.[c]) gfx.fillRect(c * OFFICE_CELL, r * OFFICE_CELL, OFFICE_CELL, OFFICE_CELL);
+      }
+    }
+    this.debugGfx = gfx;
   }
 
-  /** Standing props along the walls: shelves, water cooler, vending, printer, plants. */
-  private placeFloorProps(): void {
-    const stand = (key: string, tx: number, ty: number, wide = 1): void => {
-      const x = tx * TILE + (wide * TILE) / 2;
-      const y = (ty + 1) * TILE;
-      this.add
-        .image(x, y, key)
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.entityBase + y);
-      for (let i = 0; i < wide; i++) this.markSolid(tx + i, ty);
+  private exposeDebug(): void {
+    const api = {
+      bodyBlockedAt: (x: number, y: number) => this.bodyBlockedAt(x, y),
+      solidAtPx: (x: number, y: number) => this.solidAtPx(x, y),
+      snapshot: () => ({
+        camera: {
+          x: this.cameras.main.scrollX,
+          y: this.cameras.main.scrollY,
+          zoom: this.cameras.main.zoom,
+        },
+        objects: OFFICE_OBJECT_PLACEMENTS.length,
+        player: {
+          x: this.player?.x ?? null,
+          y: this.player?.y ?? null,
+        },
+        seats: OFFICE_WORK_SEATS.length,
+        world: {
+          h: OFFICE_H,
+          w: OFFICE_W,
+        },
+      }),
+      probeMove: (start: PixelPoint, delta: PixelPoint) => this.probeMove(start, delta),
     };
-    const right = this.cols - 2;
-    const bottom = this.rows - 2;
-    // against the north wall, clear of the fixtures' sight-lines
-    stand("shelf_books", right - 1, 2, 2);
-    stand("watercooler", 1, 2);
-    // along the side/bottom walls
-    stand("vending", right, Math.floor(this.rows / 2), 1);
-    stand("printer", 1, bottom - 1, 2);
-    if (this.cols >= 16) {
-      stand("plant_tall", 1, Math.floor(this.rows / 2));
-      stand("plant_tall", right, 2);
-    }
+    void Reflect.set(window, "__officeDebug", api);
   }
 
-  /** BFS over the tile grid; waypoints are tile centres plus the exact endpoint. */
+  private probeMove(start: PixelPoint, delta: PixelPoint) {
+    const player = this.player;
+    if (!player) return null;
+    const original = { x: player.x, y: player.y };
+    player.setPosition(start.x, start.y);
+    this.moveResolved(delta.x, delta.y);
+    const result = { x: player.x, y: player.y };
+    player.setPosition(original.x, original.y);
+    return result;
+  }
+
+  /** BFS over a half-tile grid; collision itself uses the authored grid. */
   private makePathProvider(): PathProvider {
-    const walkable = (tx: number, ty: number): boolean =>
-      tx >= 0 && ty >= 0 && tx < this.cols && ty < this.rows && !this.solid.has(this.key(tx, ty));
-    const toTile = (px: number, py: number): { tx: number; ty: number } | null => {
-      const tx = Math.floor(px / TILE);
-      const ty = Math.floor(py / TILE);
+    const nodePx = (gx: number, gy: number): { x: number; y: number } => ({
+      x: gx * PATH_STEP + PATH_STEP / 2,
+      y: gy * PATH_STEP + PATH_STEP / 2,
+    });
+    const walkable = (gx: number, gy: number): boolean => {
+      if (gx < 0 || gy < 0 || gx >= this.pathCols || gy >= this.pathRows) return false;
+      const pt = nodePx(gx, gy);
+      return !this.bodyBlockedAt(pt.x, pt.y);
+    };
+    const nearestWalkable = (tx: number, ty: number): PathTile | null => {
       if (walkable(tx, ty)) return { tx, ty };
-      for (const [dx, dy] of [
-        [0, 1],
-        [0, -1],
-        [1, 0],
-        [-1, 0],
-        [1, 1],
-        [-1, 1],
-        [1, -1],
-        [-1, -1],
-      ] as const) {
-        if (walkable(tx + dx, ty + dy)) return { tx: tx + dx, ty: ty + dy };
+      for (let radius = 1; radius <= PATH_SEARCH_RADIUS; radius += 1) {
+        for (let oy = -radius; oy <= radius; oy += 1) {
+          for (let ox = -radius; ox <= radius; ox += 1) {
+            if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
+            const nx = tx + ox;
+            const ny = ty + oy;
+            if (walkable(nx, ny)) return { tx: nx, ty: ny };
+          }
+        }
       }
       return null;
+    };
+    const toTile = (px: number, py: number): PathTile | null => {
+      const tx = Math.floor(px / PATH_STEP);
+      const ty = Math.floor(py / PATH_STEP);
+      return nearestWalkable(tx, ty);
+    };
+    const toTarget = (px: number, py: number): PathTarget | null => {
+      const tile = toTile(px, py);
+      if (!tile) return null;
+      const exactPoint = { x: px, y: py };
+      return {
+        tile,
+        point: this.bodyBlockedAt(px, py) ? nodePx(tile.tx, tile.ty) : exactPoint,
+      };
     };
     return {
       findPath: (fromX, fromY, toX, toY) => {
         const start = toTile(fromX, fromY);
-        const goal = toTile(toX, toY);
+        const goal = toTarget(toX, toY);
         if (!start || !goal) return null;
         const startKey = this.key(start.tx, start.ty);
-        const goalKey = this.key(goal.tx, goal.ty);
+        const goalKey = this.key(goal.tile.tx, goal.tile.ty);
         const parent = new Map<string, string | null>([[startKey, null]]);
         const queue: Array<{ tx: number; ty: number }> = [start];
+        let cursor = 0;
         let found = startKey === goalKey;
-        while (queue.length > 0 && !found) {
-          const cur = queue.shift();
+        while (cursor < queue.length && !found) {
+          const cur = queue[cursor];
+          cursor += 1;
           if (!cur) break;
-          for (const [dx, dy] of [
-            [0, 1],
-            [0, -1],
-            [1, 0],
-            [-1, 0],
-          ] as const) {
+          for (const [dx, dy] of CARDINAL_STEPS) {
             const nx = cur.tx + dx;
             const ny = cur.ty + dy;
             const nk = this.key(nx, ny);
@@ -361,24 +329,30 @@ export class OfficeScene extends Phaser.Scene {
         }
         if (!found) return null;
         const tiles: string[] = [];
-        let cursor: string | null = goalKey;
-        while (cursor) {
-          tiles.unshift(cursor);
-          cursor = parent.get(cursor) ?? null;
+        let parentCursor: string | null = goalKey;
+        while (parentCursor) {
+          tiles.unshift(parentCursor);
+          parentCursor = parent.get(parentCursor) ?? null;
         }
-        const pts = tiles.map((k) => {
-          const [txs, tys] = k.split(",");
-          return { x: Number(txs) * TILE + TILE / 2, y: Number(tys) * TILE + TILE / 2 };
+        const pts = tiles.map((tileKey) => {
+          const tile = parseTileKey(tileKey);
+          return nodePx(tile.tx, tile.ty);
         });
-        pts.shift(); // current tile centre — already (roughly) here
-        pts.push({ x: toX, y: toY });
+        pts.shift();
+        const last = pts[pts.length - 1];
+        if (!last || !samePoint(last, goal.point)) pts.push(goal.point);
         return pts;
+      },
+      nearestFloor: (x, y) => {
+        const tile = toTile(x, y);
+        if (!tile) return null;
+        return nodePx(tile.tx, tile.ty);
       },
       randomFloor: (x, y, radius) => {
         for (let i = 0; i < 24; i++) {
-          const tx = Math.floor((x + (Math.random() * 2 - 1) * radius) / TILE);
-          const ty = Math.floor((y + (Math.random() * 2 - 1) * radius) / TILE);
-          if (walkable(tx, ty)) return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+          const tx = Math.floor((x + (Math.random() * 2 - 1) * radius) / PATH_STEP);
+          const ty = Math.floor((y + (Math.random() * 2 - 1) * radius) / PATH_STEP);
+          if (walkable(tx, ty)) return nodePx(tx, ty);
         }
         return null;
       },
@@ -391,7 +365,6 @@ export class OfficeScene extends Phaser.Scene {
     this.activityUnsub = bridge.onActivity((e: ActivityEvent) => {
       if (!e.employeeId) return;
       if (e.kind === "chat" && typeof e.message === "string") {
-        // delegate messages look like "→ Name (Title): task" — walk to that teammate
         const m = /^→ ([^(]+) \(/.exec(e.message);
         this.npcs?.onChat(e.employeeId, e.message, m?.[1]?.trim() ?? null);
         return;
@@ -423,21 +396,23 @@ export class OfficeScene extends Phaser.Scene {
     ensureWalkAnims(this, key);
     this.playerKey = key;
     const player = this.add.sprite(spawn.x, spawn.y, key, idleFrame("down")).setOrigin(0.5, 0.86);
+    player.setDepth(DEPTH.entityBase + player.y);
     this.player = player;
-    this.cameras.main.startFollow(player, true, 0.12, 0.12);
+    this.centerCameraOn(player);
   }
 
-  // ---- movement ------------------------------------------------------------
   override update(_t: number, dms: number): void {
     const player = this.player;
-    if (!player) return;
+    const keys = this.keys;
+    const cursors = this.cursors;
+    if (!player || !keys || !cursors) return;
     const dt = Math.min(dms, 50) / 1000;
     let dx = 0;
     let dy = 0;
-    if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
-    if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
-    if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
-    if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
+    if (keys.A.isDown || cursors.left.isDown) dx -= 1;
+    if (keys.D.isDown || cursors.right.isDown) dx += 1;
+    if (keys.W.isDown || cursors.up.isDown) dy -= 1;
+    if (keys.S.isDown || cursors.down.isDown) dy += 1;
 
     if (dx !== 0 || dy !== 0) {
       if (dx !== 0) this.facing = dx < 0 ? "left" : "right";
@@ -450,22 +425,21 @@ export class OfficeScene extends Phaser.Scene {
       player.setFrame(idleFrame(this.facing));
     }
     player.setDepth(DEPTH.entityBase + player.y);
+    this.centerCameraOn(player);
     this.npcs?.update();
   }
 
   private moveResolved(mx: number, my: number): void {
     const player = this.player;
     if (!player) return;
-    const hw = 8;
-    const hh = 5;
-    const hit = (px: number, py: number) =>
-      this.solidAtPx(px - hw, py - hh) ||
-      this.solidAtPx(px + hw, py - hh) ||
-      this.solidAtPx(px - hw, py + hh) ||
-      this.solidAtPx(px + hw, py + hh);
     const nx = player.x + mx;
-    if (!hit(nx, player.y)) player.x = nx;
+    if (!this.bodyBlockedAt(nx, player.y)) player.x = nx;
     const ny = player.y + my;
-    if (!hit(player.x, ny)) player.y = ny;
+    if (!this.bodyBlockedAt(player.x, ny)) player.y = ny;
+  }
+
+  /** Keep the player dead-centre always (no clamping to the room edges). */
+  private centerCameraOn(point: PixelPoint): void {
+    this.cameras.main.centerOn(point.x, point.y);
   }
 }

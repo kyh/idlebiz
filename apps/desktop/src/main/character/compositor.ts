@@ -5,11 +5,11 @@ import { app } from "electron";
 import type { CharacterAssets } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
-// Build a unique employee sprite from Limezu's pre-assembled "Premade" character
-// sheets. We deliberately use the premades rather than compositing the modular
+// Build a unique employee sprite from bundled artist-assembled character
+// sheets. We deliberately use these sheets rather than compositing the modular
 // Body/Eyes/Outfit/Hair layers: the standalone Bodies sheets (1854px wide) are a
 // different export version than the Eyes/Outfits/Hairstyles (1792px), so layering
-// them misaligns into "bobbleheads". The premades are artist-assembled, pixel-
+// them misaligns into "bobbleheads". These sheets are pixel-
 // perfect, and varied — guaranteed correct.
 //
 // Output (both base64 data URLs, no disk writes):
@@ -20,12 +20,12 @@ import type { CharacterAssets } from "@/shared/ipc-registry";
 //                       sprite exactly.
 // ---------------------------------------------------------------------------
 
-// The 20 premade sheets ship with the app (copied from the Limezu pack).
+// The 20 employee sheets ship with the app as curated runtime assets.
 // app.getAppPath() = apps/desktop in dev; a packaged build must include
 // resources/ (electron-builder files config) for this to keep resolving.
-const PREMADE_DIR = join(app.getAppPath(), "resources", "premades");
+const EMPLOYEE_SHEET_DIR = join(app.getAppPath(), "resources", "employee-sheets");
 
-// Limezu 32px-tier sheet layout. Frames are 32w x 64h. Animation bands stack at
+// 32px-tier sheet layout. Frames are 32w x 64h. Animation bands stack at
 // 64px; the walk band sits at y=128. Within a band the 24 frames are grouped by
 // direction (6 each). Verified against the real pixels: cols 0-5 face RIGHT,
 // 6-11 UP, 12-17 LEFT, 18-23 DOWN. (Earlier we had left/right swapped, which made
@@ -42,16 +42,18 @@ const OUT_ROWS: ReadonlyArray<readonly [string, number]> = [
   ["up", 6],
 ];
 
-let premadePaths: string[] | null = null;
+let employeeSheetPaths: string[] | null = null;
 
-async function listPremades(): Promise<string[]> {
-  const files = await readdir(PREMADE_DIR);
+async function listEmployeeSheets(): Promise<string[]> {
+  const files = await readdir(EMPLOYEE_SHEET_DIR);
   const sheets = files
     .map((f) => f.trim())
-    .filter((f) => /^Premade_Character_32x32_\d+\.png$/.test(f))
-    .sort()
-    .map((f) => join(PREMADE_DIR, f));
-  if (sheets.length === 0) throw new Error(`no premade character sheets found in ${PREMADE_DIR}`);
+    .filter((f) => /^employee-sheet-\d{2}\.png$/.test(f))
+    .toSorted()
+    .map((f) => join(EMPLOYEE_SHEET_DIR, f));
+  if (sheets.length === 0) {
+    throw new Error(`no employee character sheets found in ${EMPLOYEE_SHEET_DIR}`);
+  }
   return sheets;
 }
 
@@ -74,12 +76,12 @@ function makeRng(seed: string): () => number {
 
 const toDataUrl = (buf: Buffer): string => `data:image/png;base64,${buf.toString("base64")}`;
 
-/** Re-pack a premade sheet's walk band into the 192x256 4-dir x 6-frame layout. */
+/** Re-pack a source sheet's walk band into the 192x256 4-dir x 6-frame layout. */
 async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
   const sheet = sharp(sheetPath);
   const tiles: sharp.OverlayOptions[] = [];
-  for (let row = 0; row < OUT_ROWS.length; row++) {
-    const startCol = OUT_ROWS[row]![1];
+  for (const [row, direction] of OUT_ROWS.entries()) {
+    const startCol = direction[1];
     for (let f = 0; f < WALK_FRAMES; f++) {
       const col = startCol + f;
       const cell = await sheet
@@ -117,9 +119,9 @@ async function buildPortrait(sheetPath: string): Promise<Buffer> {
     .toBuffer();
 }
 
-/** Seeds of the form "premade:<n>" pin an exact sheet (used by the founder picker). */
+/** Seeds of the form "employee-sheet:<n>" pin an exact sheet. */
 function indexForSeed(seed: string, count: number): number {
-  const pinned = /^premade:(\d+)$/.exec(seed);
+  const pinned = /^employee-sheet:(\d+)$/.exec(seed);
   if (pinned && pinned[1]) {
     const n = Number(pinned[1]);
     if (Number.isInteger(n) && n >= 1 && n <= count) return n - 1;
@@ -129,18 +131,20 @@ function indexForSeed(seed: string, count: number): number {
 
 /** Distinct, deterministic founder appearance choices for onboarding. */
 export async function listFounderChoices(n: number): Promise<string[]> {
-  const sheets = (premadePaths ??= await listPremades());
+  const sheets = (employeeSheetPaths ??= await listEmployeeSheets());
   const step = Math.max(1, Math.floor(sheets.length / n));
   const seeds: string[] = [];
-  for (let i = 0; i < n && i * step < sheets.length; i++) seeds.push(`premade:${i * step + 1}`);
+  for (let i = 0; i < n && i * step < sheets.length; i++) {
+    seeds.push(`employee-sheet:${i * step + 1}`);
+  }
   return seeds;
 }
 
 export async function composeCharacter(seed: string): Promise<CharacterAssets> {
-  const sheets = (premadePaths ??= await listPremades());
+  const sheets = (employeeSheetPaths ??= await listEmployeeSheets());
   const idx = indexForSeed(seed, sheets.length);
   const sheetPath = sheets[idx];
-  if (!sheetPath) throw new Error(`no premade sheet at index ${idx}`);
+  if (!sheetPath) throw new Error(`no employee sheet at index ${idx}`);
 
   const [walk, portrait] = await Promise.all([buildWalkSheet(sheetPath), buildPortrait(sheetPath)]);
 
@@ -148,6 +152,6 @@ export async function composeCharacter(seed: string): Promise<CharacterAssets> {
     seed,
     walkSheetDataUrl: toDataUrl(walk),
     portraitDataUrl: toDataUrl(portrait),
-    parts: { premadeIndex: idx + 1 },
+    parts: { sheetIndex: idx + 1 },
   };
 }

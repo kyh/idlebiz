@@ -20,6 +20,8 @@ export interface PathProvider {
     toX: number,
     toY: number,
   ): Array<{ x: number; y: number }> | null;
+  /** Nearest walkable point to (x, y), or null if none exists nearby. */
+  nearestFloor(x: number, y: number): { x: number; y: number } | null;
   /** A random walkable point within radius of (x, y), or null. */
   randomFloor(x: number, y: number, radius: number): { x: number; y: number } | null;
 }
@@ -53,6 +55,13 @@ const EMOTE_FRAME: Record<"alert" | "think", number> = { alert: 0, think: 1 };
 const NPC_SPEED = 64; // px/s
 const INTERACT_RADIUS = 38;
 const BUBBLE_MS = 3200;
+const IDLE_CHAT_LINES: readonly string[] = [
+  "quick sync",
+  "looks good",
+  "ship it",
+  "coffee?",
+  "backlog?",
+];
 
 /** Hired employees as living NPCs: they sit to work, wander when idle, walk to
  *  teammates to deliver real team-chat messages, and raise "!" when blocked. */
@@ -82,7 +91,7 @@ export class NpcManager {
     await loadCharacter(this.scene, key, emp.spriteSeed);
     ensureWalkAnims(this.scene, key);
 
-    const seat = this.seats[emp.deskIndex % this.seats.length];
+    const seat = this.pickSeat(emp);
     if (!seat) return;
 
     const sprite = this.scene.add.sprite(seat.x, seat.y, key, idleFrame("up")).setOrigin(0.5, 0.82);
@@ -97,7 +106,8 @@ export class NpcManager {
       })
       .setOrigin(0.5, 1)
       .setPadding(3, 1, 3, 1)
-      .setDepth(DEPTH.emote);
+      .setDepth(DEPTH.emote)
+      .setVisible(false);
 
     const npc: Npc = {
       id: emp.id,
@@ -119,12 +129,43 @@ export class NpcManager {
     const npc = this.npcs.get(id);
     if (!npc) return;
     npc.state = state;
+    this.clearPending(npc);
     if (state === "blocked") this.showEmote(npc, EMOTE_FRAME.alert);
     else this.clearEmote(npc);
-    // working/blocked employees head back to their desk
-    if (state !== "idle" && !npc.plan && !this.atSeat(npc))
-      this.walkTo(npc, npc.seat.x, npc.seat.y);
-    if (!npc.plan) this.applySeatedLook(npc);
+
+    if (state === "idle") {
+      npc.nextWanderAt = this.scene.time.now + 700 + Math.random() * 1800;
+      if (!npc.plan) this.applySeatedLook(npc);
+      return;
+    }
+
+    // working/blocked employees stay at their computer.
+    npc.plan = null;
+    npc.sprite.setPosition(npc.seat.x, npc.seat.y);
+    this.applySeatedLook(npc);
+  }
+
+  private pickSeat(emp: Employee): Seat | null {
+    if (this.seats.length === 0) return null;
+    const occupied = new Set<string>();
+    for (const npc of this.npcs.values()) occupied.add(this.seatKey(npc.seat));
+
+    const preferred = this.seats[emp.deskIndex % this.seats.length];
+    if (preferred && !occupied.has(this.seatKey(preferred))) return preferred;
+
+    for (const seat of this.seats) {
+      if (!occupied.has(this.seatKey(seat))) return seat;
+    }
+    return preferred ?? null;
+  }
+
+  private seatKey(seat: Seat): string {
+    return `${seat.x},${seat.y}`;
+  }
+
+  private clearPending(npc: Npc): void {
+    npc.pendingTimer?.remove();
+    npc.pendingTimer = undefined;
   }
 
   private atSeat(npc: Npc): boolean {
@@ -138,12 +179,17 @@ export class NpcManager {
         npc.sprite.play(upAnim, true);
     } else {
       npc.sprite.anims.stop();
-      npc.sprite.setFrame(idleFrame("up"));
+      npc.sprite.setFrame(idleFrame(npc.state === "idle" ? "down" : "up"));
     }
   }
 
   // ---- movement --------------------------------------------------------------
   private walkTo(npc: Npc, x: number, y: number, onArrive?: () => void): boolean {
+    const start = this.paths.nearestFloor(npc.sprite.x, npc.sprite.y);
+    if (!start) return false;
+    if (Math.hypot(npc.sprite.x - start.x, npc.sprite.y - start.y) > 2) {
+      npc.sprite.setPosition(start.x, start.y);
+    }
     const path = this.paths.findPath(npc.sprite.x, npc.sprite.y, x, y);
     if (!path || path.length === 0) return false;
     npc.plan = { path, onArrive };
@@ -155,6 +201,11 @@ export class NpcManager {
   onChat(employeeId: string, message: string, targetName: string | null): void {
     const npc = this.npcs.get(employeeId);
     if (!npc) return;
+
+    if (npc.state !== "idle") {
+      this.showBubble(npc, message);
+      return;
+    }
 
     const target =
       (targetName &&
@@ -169,10 +220,10 @@ export class NpcManager {
       return;
     }
 
-    const ok = this.walkTo(npc, target.seat.x + 26, target.seat.y + 6, () => {
+    const ok = this.walkTo(npc, target.sprite.x + 26, target.sprite.y + 6, () => {
       this.showBubble(npc, message);
       npc.pendingTimer = this.scene.time.delayedCall(BUBBLE_MS - 400, () => {
-        this.walkTo(npc, npc.seat.x, npc.seat.y);
+        this.stepAway(npc);
       });
     });
     if (!ok) this.showBubble(npc, message);
@@ -285,20 +336,55 @@ export class NpcManager {
           }
         }
       } else if (npc.state === "idle" && now >= npc.nextWanderAt) {
-        // idle wander: stroll somewhere nearby, pause, come home
-        npc.nextWanderAt = now + 9000 + Math.random() * 14000;
-        const spot = this.paths.randomFloor(npc.seat.x, npc.seat.y, 140);
-        if (spot && Math.random() < 0.8) {
-          this.walkTo(npc, spot.x, spot.y, () => {
-            npc.pendingTimer = this.scene.time.delayedCall(1500 + Math.random() * 2500, () => {
-              if (!npc.plan && npc.state === "idle") this.walkTo(npc, npc.seat.x, npc.seat.y);
-            });
-          });
+        npc.nextWanderAt = now + 5000 + Math.random() * 9000;
+        const startedChat = this.startIdleChat(npc);
+        if (!startedChat) {
+          const spot =
+            this.paths.randomFloor(npc.sprite.x, npc.sprite.y, 180) ??
+            this.paths.randomFloor(npc.seat.x, npc.seat.y + 128, 240);
+          if (spot && Math.random() < 0.85) this.walkTo(npc, spot.x, spot.y);
         }
       }
 
       npc.sprite.setDepth(DEPTH.entityBase + npc.sprite.y);
     }
+  }
+
+  private startIdleChat(npc: Npc): boolean {
+    if (Math.random() > 0.68) return false;
+    const target = this.pickIdlePartner(npc);
+    if (!target) return false;
+    const nearTarget = this.paths.randomFloor(target.sprite.x, target.sprite.y, 48) ?? {
+      x: target.sprite.x + 26,
+      y: target.sprite.y + 6,
+    };
+
+    return this.walkTo(npc, nearTarget.x, nearTarget.y, () => {
+      this.showIdleBubble(npc);
+      if (target.state === "idle") this.showIdleBubble(target);
+      npc.pendingTimer = this.scene.time.delayedCall(1700 + Math.random() * 1800, () => {
+        if (!npc.plan && npc.state === "idle") this.stepAway(npc);
+      });
+    });
+  }
+
+  private pickIdlePartner(npc: Npc): Npc | null {
+    const choices: Npc[] = [];
+    for (const candidate of this.npcs.values()) {
+      if (candidate.id !== npc.id && candidate.state === "idle") choices.push(candidate);
+    }
+    if (choices.length === 0) return null;
+    return choices[Math.floor(Math.random() * choices.length)] ?? null;
+  }
+
+  private stepAway(npc: Npc): void {
+    const spot = this.paths.randomFloor(npc.sprite.x, npc.sprite.y, 96);
+    if (spot) this.walkTo(npc, spot.x, spot.y);
+  }
+
+  private showIdleBubble(npc: Npc): void {
+    const line = IDLE_CHAT_LINES[Math.floor(Math.random() * IDLE_CHAT_LINES.length)] ?? "ok";
+    this.showBubble(npc, line);
   }
 
   destroy(): void {

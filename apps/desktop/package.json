@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
+    "generate:office-objects": "node scripts/generate-office-object-catalog.cjs",
+    "generate:office-tiles": "node scripts/generate-office-tiles.cjs",
     "start": "electron-vite preview",
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
     "release:publish": "GH_TOKEN=$(gh auth token) pnpm with-env electron-vite build && GH_TOKEN=$(gh auth token) pnpm with-env electron-builder --mac --publish always",

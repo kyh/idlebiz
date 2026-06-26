@@ -1,0 +1,860 @@
+{
+  "tile": 32,
+  "width": 512,
+  "height": 544,
+  "cell": 16,
+  "cols": 32,
+  "rows": 34,
+  "spawn": {
+    "x": 256,
+    "y": 344
+  },
+  "floorZones": [
+    {
+      "x": 0,
+      "y": 32,
+      "w": 512,
+      "h": 352,
+      "kind": "gray"
+    },
+    {
+      "x": 0,
+      "y": 384,
+      "w": 256,
+      "h": 160,
+      "kind": "plank"
+    },
+    {
+      "x": 256,
+      "y": 384,
+      "w": 256,
+      "h": 160,
+      "kind": "wood"
+    }
+  ],
+  "wallRects": [
+    {
+      "x": 0,
+      "y": 0,
+      "w": 512,
+      "h": 32,
+      "kind": "paper"
+    },
+    {
+      "x": 0,
+      "y": 368,
+      "w": 512,
+      "h": 16,
+      "kind": "brick"
+    }
+  ],
+  "objects": [
+    {
+      "id": "office-object-282",
+      "x": 86,
+      "y": 384,
+      "layer": "floor",
+      "anchorY": 479
+    },
+    {
+      "id": "office-object-163",
+      "x": 12,
+      "y": -50,
+      "layer": "object",
+      "anchorY": 21
+    },
+    {
+      "id": "office-object-099",
+      "x": 392,
+      "y": -40,
+      "layer": "object",
+      "anchorY": 35
+    },
+    {
+      "id": "office-object-097",
+      "x": 90,
+      "y": -44,
+      "layer": "object",
+      "anchorY": 37
+    },
+    {
+      "id": "office-object-156",
+      "x": 452,
+      "y": -54,
+      "layer": "object",
+      "anchorY": 37
+    },
+    {
+      "id": "office-object-170",
+      "x": 168,
+      "y": -44,
+      "layer": "object",
+      "anchorY": 47
+    },
+    {
+      "id": "office-object-171",
+      "x": 298,
+      "y": -44,
+      "layer": "object",
+      "anchorY": 47
+    },
+    {
+      "id": "office-object-144",
+      "x": 188,
+      "y": 4,
+      "layer": "object",
+      "anchorY": 71
+    },
+    {
+      "id": "office-object-144",
+      "x": 468,
+      "y": 4,
+      "layer": "object",
+      "anchorY": 71
+    },
+    {
+      "id": "office-object-208",
+      "x": 22,
+      "y": 0,
+      "layer": "object",
+      "anchorY": 73
+    },
+    {
+      "id": "office-object-208",
+      "x": 94,
+      "y": 0,
+      "layer": "object",
+      "anchorY": 73
+    },
+    {
+      "id": "office-object-208",
+      "x": 186,
+      "y": 0,
+      "layer": "object",
+      "anchorY": 73
+    },
+    {
+      "id": "office-object-208",
+      "x": 258,
+      "y": 0,
+      "layer": "object",
+      "anchorY": 73
+    },
+    {
+      "id": "office-object-208",
+      "x": 350,
+      "y": 0,
+      "layer": "object",
+      "anchorY": 73
+    },
+    {
+      "id": "office-object-208",
+      "x": 422,
+      "y": 0,
+      "layer": "object",
+      "anchorY": 73
+    },
+    {
+      "id": "office-object-231",
+      "x": 96,
+      "y": 6,
+      "layer": "object",
+      "anchorY": 85
+    },
+    {
+      "id": "office-object-231",
+      "x": 260,
+      "y": 6,
+      "layer": "object",
+      "anchorY": 85
+    },
+    {
+      "id": "office-object-231",
+      "x": 424,
+      "y": 6,
+      "layer": "object",
+      "anchorY": 85
+    },
+    {
+      "id": "office-object-230",
+      "x": 24,
+      "y": 8,
+      "layer": "object",
+      "anchorY": 91
+    },
+    {
+      "id": "office-object-230",
+      "x": 188,
+      "y": 8,
+      "layer": "object",
+      "anchorY": 91
+    },
+    {
+      "id": "office-object-230",
+      "x": 352,
+      "y": 8,
+      "layer": "object",
+      "anchorY": 91
+    },
+    {
+      "id": "office-object-207",
+      "x": 15,
+      "y": 24,
+      "layer": "object",
+      "anchorY": 119
+    },
+    {
+      "id": "office-object-207",
+      "x": 131,
+      "y": 24,
+      "layer": "object",
+      "anchorY": 119
+    },
+    {
+      "id": "office-object-207",
+      "x": 179,
+      "y": 24,
+      "layer": "object",
+      "anchorY": 119
+    },
+    {
+      "id": "office-object-207",
+      "x": 295,
+      "y": 24,
+      "layer": "object",
+      "anchorY": 119
+    },
+    {
+      "id": "office-object-207",
+      "x": 343,
+      "y": 24,
+      "layer": "object",
+      "anchorY": 119
+    },
+    {
+      "id": "office-object-207",
+      "x": 459,
+      "y": 24,
+      "layer": "object",
+      "anchorY": 119
+    },
+    {
+      "id": "office-object-106",
+      "x": 112,
+      "y": 38,
+      "layer": "object",
+      "anchorY": 129
+    },
+    {
+      "id": "office-object-106",
+      "x": 276,
+      "y": 38,
+      "layer": "object",
+      "anchorY": 129
+    },
+    {
+      "id": "office-object-106",
+      "x": 440,
+      "y": 38,
+      "layer": "object",
+      "anchorY": 129
+    },
+    {
+      "id": "office-object-105",
+      "x": 18,
+      "y": 44,
+      "layer": "object",
+      "anchorY": 135
+    },
+    {
+      "id": "office-object-105",
+      "x": 182,
+      "y": 44,
+      "layer": "object",
+      "anchorY": 135
+    },
+    {
+      "id": "office-object-105",
+      "x": 346,
+      "y": 44,
+      "layer": "object",
+      "anchorY": 135
+    },
+    {
+      "id": "office-object-338",
+      "x": 116,
+      "y": 54,
+      "layer": "object",
+      "anchorY": 149
+    },
+    {
+      "id": "office-object-137",
+      "x": 230,
+      "y": 72,
+      "layer": "object",
+      "anchorY": 151
+    },
+    {
+      "id": "office-object-144",
+      "x": 188,
+      "y": 114,
+      "layer": "object",
+      "anchorY": 181
+    },
+    {
+      "id": "office-object-144",
+      "x": 468,
+      "y": 114,
+      "layer": "object",
+      "anchorY": 181
+    },
+    {
+      "id": "office-object-208",
+      "x": 22,
+      "y": 110,
+      "layer": "object",
+      "anchorY": 183
+    },
+    {
+      "id": "office-object-208",
+      "x": 94,
+      "y": 110,
+      "layer": "object",
+      "anchorY": 183
+    },
+    {
+      "id": "office-object-208",
+      "x": 186,
+      "y": 110,
+      "layer": "object",
+      "anchorY": 183
+    },
+    {
+      "id": "office-object-208",
+      "x": 258,
+      "y": 110,
+      "layer": "object",
+      "anchorY": 183
+    },
+    {
+      "id": "office-object-208",
+      "x": 350,
+      "y": 110,
+      "layer": "object",
+      "anchorY": 183
+    },
+    {
+      "id": "office-object-208",
+      "x": 422,
+      "y": 110,
+      "layer": "object",
+      "anchorY": 183
+    },
+    {
+      "id": "office-object-231",
+      "x": 96,
+      "y": 116,
+      "layer": "object",
+      "anchorY": 195
+    },
+    {
+      "id": "office-object-231",
+      "x": 260,
+      "y": 116,
+      "layer": "object",
+      "anchorY": 195
+    },
+    {
+      "id": "office-object-231",
+      "x": 424,
+      "y": 116,
+      "layer": "object",
+      "anchorY": 195
+    },
+    {
+      "id": "office-object-230",
+      "x": 24,
+      "y": 118,
+      "layer": "object",
+      "anchorY": 201
+    },
+    {
+      "id": "office-object-230",
+      "x": 188,
+      "y": 118,
+      "layer": "object",
+      "anchorY": 201
+    },
+    {
+      "id": "office-object-230",
+      "x": 352,
+      "y": 118,
+      "layer": "object",
+      "anchorY": 201
+    },
+    {
+      "id": "office-object-207",
+      "x": 15,
+      "y": 134,
+      "layer": "object",
+      "anchorY": 229
+    },
+    {
+      "id": "office-object-207",
+      "x": 131,
+      "y": 134,
+      "layer": "object",
+      "anchorY": 229
+    },
+    {
+      "id": "office-object-207",
+      "x": 179,
+      "y": 134,
+      "layer": "object",
+      "anchorY": 229
+    },
+    {
+      "id": "office-object-207",
+      "x": 295,
+      "y": 134,
+      "layer": "object",
+      "anchorY": 229
+    },
+    {
+      "id": "office-object-207",
+      "x": 343,
+      "y": 134,
+      "layer": "object",
+      "anchorY": 229
+    },
+    {
+      "id": "office-object-207",
+      "x": 459,
+      "y": 134,
+      "layer": "object",
+      "anchorY": 229
+    },
+    {
+      "id": "office-object-106",
+      "x": 112,
+      "y": 148,
+      "layer": "object",
+      "anchorY": 239
+    },
+    {
+      "id": "office-object-106",
+      "x": 276,
+      "y": 148,
+      "layer": "object",
+      "anchorY": 239
+    },
+    {
+      "id": "office-object-106",
+      "x": 440,
+      "y": 148,
+      "layer": "object",
+      "anchorY": 239
+    },
+    {
+      "id": "office-object-105",
+      "x": 18,
+      "y": 154,
+      "layer": "object",
+      "anchorY": 245
+    },
+    {
+      "id": "office-object-105",
+      "x": 182,
+      "y": 154,
+      "layer": "object",
+      "anchorY": 245
+    },
+    {
+      "id": "office-object-105",
+      "x": 346,
+      "y": 154,
+      "layer": "object",
+      "anchorY": 245
+    },
+    {
+      "id": "office-object-338",
+      "x": 356,
+      "y": 152,
+      "layer": "object",
+      "anchorY": 247
+    },
+    {
+      "id": "office-object-144",
+      "x": 188,
+      "y": 224,
+      "layer": "object",
+      "anchorY": 291
+    },
+    {
+      "id": "office-object-144",
+      "x": 468,
+      "y": 224,
+      "layer": "object",
+      "anchorY": 291
+    },
+    {
+      "id": "office-object-208",
+      "x": 22,
+      "y": 220,
+      "layer": "object",
+      "anchorY": 293
+    },
+    {
+      "id": "office-object-208",
+      "x": 94,
+      "y": 220,
+      "layer": "object",
+      "anchorY": 293
+    },
+    {
+      "id": "office-object-208",
+      "x": 186,
+      "y": 220,
+      "layer": "object",
+      "anchorY": 293
+    },
+    {
+      "id": "office-object-208",
+      "x": 258,
+      "y": 220,
+      "layer": "object",
+      "anchorY": 293
+    },
+    {
+      "id": "office-object-208",
+      "x": 350,
+      "y": 220,
+      "layer": "object",
+      "anchorY": 293
+    },
+    {
+      "id": "office-object-208",
+      "x": 422,
+      "y": 220,
+      "layer": "object",
+      "anchorY": 293
+    },
+    {
+      "id": "office-object-231",
+      "x": 96,
+      "y": 226,
+      "layer": "object",
+      "anchorY": 305
+    },
+    {
+      "id": "office-object-231",
+      "x": 260,
+      "y": 226,
+      "layer": "object",
+      "anchorY": 305
+    },
+    {
+      "id": "office-object-231",
+      "x": 424,
+      "y": 226,
+      "layer": "object",
+      "anchorY": 305
+    },
+    {
+      "id": "office-object-230",
+      "x": 24,
+      "y": 228,
+      "layer": "object",
+      "anchorY": 311
+    },
+    {
+      "id": "office-object-230",
+      "x": 188,
+      "y": 228,
+      "layer": "object",
+      "anchorY": 311
+    },
+    {
+      "id": "office-object-230",
+      "x": 352,
+      "y": 228,
+      "layer": "object",
+      "anchorY": 311
+    },
+    {
+      "id": "office-object-207",
+      "x": 15,
+      "y": 244,
+      "layer": "object",
+      "anchorY": 339
+    },
+    {
+      "id": "office-object-207",
+      "x": 131,
+      "y": 244,
+      "layer": "object",
+      "anchorY": 339
+    },
+    {
+      "id": "office-object-207",
+      "x": 179,
+      "y": 244,
+      "layer": "object",
+      "anchorY": 339
+    },
+    {
+      "id": "office-object-207",
+      "x": 295,
+      "y": 244,
+      "layer": "object",
+      "anchorY": 339
+    },
+    {
+      "id": "office-object-207",
+      "x": 343,
+      "y": 244,
+      "layer": "object",
+      "anchorY": 339
+    },
+    {
+      "id": "office-object-207",
+      "x": 459,
+      "y": 244,
+      "layer": "object",
+      "anchorY": 339
+    },
+    {
+      "id": "office-object-106",
+      "x": 112,
+      "y": 258,
+      "layer": "object",
+      "anchorY": 349
+    },
+    {
+      "id": "office-object-106",
+      "x": 276,
+      "y": 258,
+      "layer": "object",
+      "anchorY": 349
+    },
+    {
+      "id": "office-object-106",
+      "x": 440,
+      "y": 258,
+      "layer": "object",
+      "anchorY": 349
+    },
+    {
+      "id": "office-object-105",
+      "x": 18,
+      "y": 264,
+      "layer": "object",
+      "anchorY": 355
+    },
+    {
+      "id": "office-object-105",
+      "x": 182,
+      "y": 264,
+      "layer": "object",
+      "anchorY": 355
+    },
+    {
+      "id": "office-object-105",
+      "x": 346,
+      "y": 264,
+      "layer": "object",
+      "anchorY": 355
+    },
+    {
+      "id": "office-object-335",
+      "x": 262,
+      "y": 350,
+      "layer": "object",
+      "anchorY": 431
+    },
+    {
+      "id": "office-object-130",
+      "x": 322,
+      "y": 344,
+      "layer": "object",
+      "anchorY": 439
+    },
+    {
+      "id": "office-object-175",
+      "x": 4,
+      "y": 382,
+      "layer": "object",
+      "anchorY": 459
+    },
+    {
+      "id": "office-object-140",
+      "x": 100,
+      "y": 400,
+      "layer": "object",
+      "anchorY": 479
+    },
+    {
+      "id": "office-object-300",
+      "x": 300,
+      "y": 392,
+      "layer": "object",
+      "anchorY": 487
+    },
+    {
+      "id": "office-object-220",
+      "x": 100,
+      "y": 414,
+      "layer": "object",
+      "anchorY": 509
+    },
+    {
+      "id": "office-object-147",
+      "x": 330,
+      "y": 444,
+      "layer": "object",
+      "anchorY": 511
+    },
+    {
+      "id": "office-object-099",
+      "x": 456,
+      "y": 444,
+      "layer": "object",
+      "anchorY": 519
+    },
+    {
+      "id": "office-object-099",
+      "x": 206,
+      "y": 452,
+      "layer": "object",
+      "anchorY": 527
+    },
+    {
+      "id": "office-object-142",
+      "x": 102,
+      "y": 470,
+      "layer": "object",
+      "anchorY": 537
+    },
+    {
+      "id": "office-object-137",
+      "x": 12,
+      "y": 466,
+      "layer": "object",
+      "anchorY": 545
+    }
+  ],
+  "collision": [
+    "11111111111111111111111111111111",
+    "11111111111111111111111111111111",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "01100011110110001111101100111110",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "11111110000111111111110000111111",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "01110000000000000000000000000000",
+    "01110000000000000001111000000000",
+    "00000000000000000001111000000000",
+    "00000011100000000001111000000000",
+    "00000011100000000001111000000000",
+    "00000011100000000000000000000000",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000"
+  ],
+  "workSeats": [
+    {
+      "x": 34,
+      "y": 140
+    },
+    {
+      "x": 128,
+      "y": 134
+    },
+    {
+      "x": 198,
+      "y": 140
+    },
+    {
+      "x": 292,
+      "y": 134
+    },
+    {
+      "x": 362,
+      "y": 140
+    },
+    {
+      "x": 456,
+      "y": 134
+    },
+    {
+      "x": 34,
+      "y": 250
+    },
+    {
+      "x": 128,
+      "y": 244
+    },
+    {
+      "x": 198,
+      "y": 250
+    },
+    {
+      "x": 292,
+      "y": 244
+    },
+    {
+      "x": 362,
+      "y": 250
+    },
+    {
+      "x": 456,
+      "y": 244
+    },
+    {
+      "x": 34,
+      "y": 360
+    },
+    {
+      "x": 128,
+      "y": 354
+    },
+    {
+      "x": 198,
+      "y": 360
+    },
+    {
+      "x": 292,
+      "y": 354
+    },
+    {
+      "x": 362,
+      "y": 360
+    },
+    {
+      "x": 456,
+      "y": 354
+    },
+    {
+      "x": 316,
+      "y": 534
+    }
+  ]
+}

@@ -38,7 +38,7 @@ One Electron app, three layers:
   - `agents/pi-driver.ts` — one in-process `PiAgent` per employee (shared `AuthStorage`/`ModelRegistry`/`Model`, per-employee cwd/agentDir/session), plus an `ask_boss` tool.
   - `agents/event-parser.ts` — flattens pi events (reads `stopReason`/`errorMessage`/`usage` off `message`).
   - `scheduler.ts` — async run loop: concurrency cap 3 + per-employee single-active, streams events to `activity_log` + renderer.
-  - `character/compositor.ts` — composites Limezu modular layers into a 32×64 walk spritesheet + 64×64 portrait (sharp), returned as base64.
+  - `character/compositor.ts` — builds employee walk spritesheets + portraits (sharp), returned as base64.
 - **IPC** (`src/shared/`) — `ipc-channels.ts` (plain, zod-free, safe for the sandboxed preload) + `ipc-registry.ts` (zod schemas + typed `Contract`/`AppBridge`).
 
 ## Data model (SQLite, `~/.office/office.db`)
@@ -47,7 +47,9 @@ One Electron app, three layers:
 
 ## Assets
 
-Art is from **Limezu**'s Modern Interiors / Modern Office / Modern UI packs (commercial use OK, **credit Limezu**, don't redistribute the raw packs). Office tiles + props are staged in `public/assets/office/`; character + portrait layers are composited at runtime from the source packs.
+Runtime assets are curated PNGs in `public/workspace-kit/` and
+`resources/employee-sheets/`. Source asset workspace lives outside the repo at
+`/Users/kyh/Desktop/vg/office`.
 
 ## Notes / next steps
 

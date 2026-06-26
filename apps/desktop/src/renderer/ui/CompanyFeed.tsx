@@ -11,7 +11,7 @@ export function CompanyFeed() {
   const feed = activity.filter((a) => a.kind === "chat" || a.kind === "ship").slice(-7);
 
   return (
-    <div className="px-window pointer-events-none absolute bottom-12 left-3 z-10 w-72">
+    <div className="px-window pointer-events-none absolute right-3 bottom-14 z-10 w-72">
       <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[11px]">
         <span>Team channel</span>
         <span className="text-[10px] text-[#aab0c8]">

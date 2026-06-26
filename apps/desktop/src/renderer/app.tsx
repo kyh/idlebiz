@@ -11,6 +11,8 @@ import { Inbox } from "@/renderer/ui/Inbox";
 import { BudgetModal } from "@/renderer/ui/BudgetModal";
 import { Settings } from "@/renderer/ui/Settings";
 import { CompanyFeed } from "@/renderer/ui/CompanyFeed";
+import { OfficeObjectCatalog } from "@/renderer/ui/OfficeObjectCatalog";
+import { OfficeBuilder } from "@/renderer/ui/OfficeBuilder";
 
 export function App() {
   const { booted, authed, company, game } = useStore();
@@ -19,6 +21,13 @@ export function App() {
   const [inbox, setInbox] = useState(false);
   const [budget, setBudget] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [route, setRoute] = useState(() => window.location.hash);
+
+  useEffect(() => {
+    const updateRoute = () => setRoute(window.location.hash);
+    window.addEventListener("hashchange", updateRoute);
+    return () => window.removeEventListener("hashchange", updateRoute);
+  }, []);
 
   useEffect(() => {
     initStore();
@@ -34,9 +43,17 @@ export function App() {
 
   const needsOnboarding = booted && (!company || !company.onboarded);
 
+  if (route === "#/office-assets") {
+    return <OfficeObjectCatalog />;
+  }
+
+  if (route === "#/ui") {
+    return <OfficeBuilder />;
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <PhaserGame onGame={setGame} />
+      <PhaserGame key="office-game" onGame={setGame} />
 
       <div className="pointer-events-none absolute inset-0">
         {needsOnboarding ? <PokeOnboarding /> : null}
@@ -57,7 +74,6 @@ export function App() {
             {inbox && <Inbox onClose={() => setInbox(false)} />}
             {budget && <BudgetModal onClose={() => setBudget(false)} />}
             {settings && <Settings onClose={() => setSettings(false)} />}
-            <Hint />
           </>
         ) : null}
       </div>
@@ -65,10 +81,3 @@ export function App() {
   );
 }
 
-function Hint() {
-  return (
-    <div className="px-plate absolute bottom-3 left-3 px-2.5 py-1 text-[11px]">
-      WASD / arrows to move · walk up to someone and press E
-    </div>
-  );
-}

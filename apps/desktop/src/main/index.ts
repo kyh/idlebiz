@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
@@ -18,7 +18,7 @@ import {
   getStripeStatus,
   markAuthError,
 } from "@/main/stripe-connect";
-import { ROOT_DIR } from "@/main/paths";
+import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
 import { DEFAULT_AGENT_MODEL, HIRE_COST, isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent } from "@/shared/domain";
 
@@ -166,6 +166,20 @@ function registerIpcHandlers(): void {
   handle("resetSpend", ({ companyId }) => store.resetSpend(companyId));
 
   handle("resetGame", () => resetGame());
+
+  // The office builder (#/ui) persists the layout to ~/.idlebiz, recovered at next
+  // launch (see store.refresh → applyOfficeLayout). Survives rebuilds + packaging.
+  handle("saveOfficeDesign", ({ json }) => {
+    const parsed: unknown = JSON.parse(json); // reject malformed before writing
+    mkdirSync(ROOT_DIR, { recursive: true });
+    writeFileSync(OFFICE_DESIGN_PATH, `${JSON.stringify(parsed, null, 2)}\n`);
+    return { ok: true };
+  });
+  handle("loadOfficeDesign", () => {
+    if (!existsSync(OFFICE_DESIGN_PATH)) return { layout: null };
+    const layout: unknown = JSON.parse(readFileSync(OFFICE_DESIGN_PATH, "utf8"));
+    return { layout };
+  });
 
   handle("stripeStatus", () => {
     const company = store.getDefaultCompany();

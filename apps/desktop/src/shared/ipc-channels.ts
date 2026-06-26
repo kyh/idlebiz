@@ -38,6 +38,9 @@ export const CHANNELS = {
   openProduct: { channel: "company:open-product", kind: "invoke" },
 
   onActivity: { channel: "activity:event", kind: "event" },
+
+  saveOfficeDesign: { channel: "office:save-design", kind: "invoke" },
+  loadOfficeDesign: { channel: "office:load-design", kind: "invoke-void" },
 } as const;
 
 export type Channels = typeof CHANNELS;

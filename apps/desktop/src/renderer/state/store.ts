@@ -9,6 +9,7 @@ import type {
   Task,
 } from "@/shared/domain";
 import type { StripeStatus } from "@/shared/ipc-registry";
+import { applyOfficeLayout } from "@/renderer/game/office-layout";
 
 interface State {
   booted: boolean;
@@ -94,6 +95,14 @@ export function setModalOpen(open: boolean): void {
 }
 
 export async function refresh(): Promise<void> {
+  // Recover the player's saved office from disk before the Phaser scene boots; a
+  // malformed/old-schema file falls back to the bundled default.
+  try {
+    const office = await bridge().loadOfficeDesign();
+    if (office.layout) applyOfficeLayout(office.layout);
+  } catch {
+    // keep the bundled default layout
+  }
   const company = await bridge().getCompany();
   const employees = company ? await bridge().listEmployees({ companyId: company.id }) : [];
   const tasks = company ? await bridge().listTasks({ companyId: company.id }) : [];

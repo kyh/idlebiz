@@ -31,8 +31,28 @@ export function Settings({ onClose }: { onClose: () => void }) {
               Company
             </div>
             <div className="mt-1">{company.name}</div>
-            <div className="truncate text-[11px] text-[var(--text-dim)]">
+            <div className="text-[11px] text-[var(--text-dim)]">{company.mission}</div>
+            <div className="mt-1 truncate text-[11px] text-[var(--text-dim)]">
               {company.workspaceDir}
+            </div>
+          </div>
+
+          <div className="px-inset p-3 text-[12px] text-[var(--text)]">
+            <div className="text-[11px] uppercase tracking-wide text-[var(--text-dim)]">Controls</div>
+            <div className="mt-1 text-[11px] text-[var(--text-dim)]">
+              WASD / arrows to move · walk up to someone and press E
+            </div>
+          </div>
+
+          <div className="px-inset p-3 text-[12px] text-[var(--text)]">
+            <div className="text-[11px] uppercase tracking-wide text-[var(--text-dim)]">Tools</div>
+            <div className="mt-2 flex gap-2">
+              <a href="#/ui" className="px-btn text-[12px]">
+                Open office builder
+              </a>
+              <a href="#/office-assets" className="px-btn text-[12px]">
+                Asset catalog
+              </a>
             </div>
           </div>
 

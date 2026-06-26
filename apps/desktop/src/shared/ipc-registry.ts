@@ -46,7 +46,7 @@ export type CharacterAssets = {
   walkSheetDataUrl: string; // 192x256 PNG, 32x64 frames (down 0-5, left 6-11, right 12-17, up 18-23)
   portraitDataUrl: string; // 64x64 PNG
   parts: {
-    premadeIndex: number; // 1..N — which Limezu premade sheet this character uses
+    sheetIndex: number; // 1..N — which bundled employee sheet this character uses
   };
 };
 
@@ -132,6 +132,7 @@ export const SCHEMAS = {
   resetSpend: z.object({ companyId: z.string() }),
   stripeConnect: z.object({ companyId: z.string() }),
   stripeDisconnect: z.object({ companyId: z.string() }),
+  saveOfficeDesign: z.object({ json: z.string() }),
 } satisfies Partial<Record<IpcMethod, z.ZodTypeAny>>;
 
 // ---- per-method contract: payload + result/event types ---------------------
@@ -174,6 +175,9 @@ export interface Contract {
   openProduct: { payload: { companyId: string }; result: { ok: boolean; opened: string } };
 
   onActivity: { payload: void; result: ActivityEvent };
+
+  saveOfficeDesign: { payload: { json: string }; result: { ok: boolean } };
+  loadOfficeDesign: { payload: void; result: { layout: unknown } };
 }
 
 // compile-time guarantee: Contract keys == channel keys

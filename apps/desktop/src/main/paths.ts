@@ -18,6 +18,8 @@ import { mkdirSync } from "node:fs";
 // OAuth flow during onboarding).
 export const ROOT_DIR = join(homedir(), ".idlebiz");
 export const AUTH_PATH = join(ROOT_DIR, "auth.json");
+/** The player's saved office layout (built in #/ui). Overrides the bundled default. */
+export const OFFICE_DESIGN_PATH = join(ROOT_DIR, "office-design.json");
 
 /** Global pi fallback dir (set once via env before any agent starts). */
 export const PI_AGENT_DIR = join(ROOT_DIR, "pi");

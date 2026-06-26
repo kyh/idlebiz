@@ -8,11 +8,12 @@ the dashboard can read your actual Stripe revenue and analytics.
 ## Layout
 
 - `apps/desktop` — the Electron game (electron-vite + React + Phaser + pi agents).
-  Character sprites generate from the premade sheets bundled at
-  `apps/desktop/resources/premades` (derived from the paid Limezu pack — keep
-  this repo private).
+  Character sprites generate from bundled employee sheets at
+  `apps/desktop/resources/employee-sheets`.
 - `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
   Download button resolves the latest `.dmg` from GitHub releases.
+
+Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
 ## Develop
 
