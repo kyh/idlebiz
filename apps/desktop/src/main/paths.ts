@@ -53,6 +53,13 @@ export const routinesDir = (companySlug: string): string =>
 export const routineFile = (companySlug: string, routineSlug: string): string =>
   join(routinesDir(companySlug), routineSlug, "ROUTINE.md");
 
+export const teamsDir = (companySlug: string): string => join(companyDir(companySlug), "teams");
+export const teamFile = (companySlug: string, teamSlug: string): string =>
+  join(teamsDir(companySlug), teamSlug, "TEAM.md");
+/** Append-only per-team chat room (the room agents read + post to during runs). */
+export const teamChatFile = (companySlug: string, teamSlug: string): string =>
+  join(teamsDir(companySlug), teamSlug, "chat.jsonl");
+
 export function ensureAppDirs(): void {
   mkdirSync(ROOT_DIR, { recursive: true });
   mkdirSync(PI_AGENT_DIR, { recursive: true });

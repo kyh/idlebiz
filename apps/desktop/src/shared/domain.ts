@@ -20,9 +20,23 @@ export type TaskStatus =
   | "blocked"
   | "done"
   | "failed"
+  | "dead" // dead-letter: failed maxAttempts times, no longer auto-retried
   | "cancelled";
 export type TaskPriority = "low" | "medium" | "high";
 export type EmployeeStatus = "idle" | "working";
+
+// ---- queue reliability (TinyAGI-style retry/dead-letter) --------------------
+
+/** How many times a task may run before it is dead-lettered. */
+export const MAX_TASK_ATTEMPTS = 5;
+const RETRY_BASE_MS = 15_000;
+const RETRY_CAP_MS = 10 * 60_000;
+
+/** Exponential backoff for the Nth failed attempt (1-based), capped. */
+export function retryDelayMs(attempt: number): number {
+  const d = RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1);
+  return Math.min(d, RETRY_CAP_MS);
+}
 
 // ---- business types (onboarding presets) -----------------------------------
 
@@ -151,7 +165,32 @@ export interface Employee {
   sessionId: string | null;
   spriteSeed: string; // deterministic sprite + portrait
   deskIndex: number; // which desk slot in the office
+  teamId: string | null; // which team this employee belongs to (TinyAGI-style)
   status: EmployeeStatus;
+  createdAt: number;
+}
+
+/**
+ * A named group of employees with a designated leader (TinyAGI-style team).
+ * The leader receives direction and fans work out to / chains it through members;
+ * everyone shares a persistent chat room they read and post to during runs.
+ */
+export interface Team {
+  id: string; // slug (folder name under teams/)
+  companyId: string;
+  name: string;
+  purpose: string; // what this team owns
+  leaderId: string | null; // employee id of the team lead
+  memberIds: string[]; // employee ids on this team (includes the leader)
+  createdAt: number;
+}
+
+/** One message in a team's chat room. */
+export interface TeamMessage {
+  id?: number;
+  teamId: string;
+  fromEmployeeId: string | null; // null = system/founder
+  text: string;
   createdAt: number;
 }
 
@@ -167,6 +206,9 @@ export interface Task {
   summary: string | null;
   blockedQuestion: string | null;
   artifacts: string[]; // file paths the agent reported
+  attempts: number; // failed runs so far (drives retry/dead-letter)
+  nextAttemptAt: number | null; // earliest time a backoff retry may start
+  lastError: string | null; // most recent failure message
   createdAt: number;
   startedAt: number | null;
   completedAt: number | null;

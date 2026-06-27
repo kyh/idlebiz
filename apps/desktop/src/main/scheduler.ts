@@ -2,9 +2,12 @@ import { EventEmitter } from "node:events";
 import type { PiEvent, PiUsage } from "@repo/pi-driver/events";
 import * as store from "@/main/store/store";
 import { piDriver } from "@/main/agents/pi-driver";
+import type { RunHooks } from "@/main/agents/pi-driver";
+import { pluginHost } from "@/main/plugins";
+import type { RunContext, RunOutcome } from "@/main/plugins";
 import { simulatedMetrics } from "@/main/metrics";
-import { businessTypeById, isOutOfBudget } from "@/shared/domain";
-import type { ActivityEvent, Company, Employee, Task, TaskStatus } from "@/shared/domain";
+import { MAX_TASK_ATTEMPTS, businessTypeById, isOutOfBudget, retryDelayMs } from "@/shared/domain";
+import type { ActivityEvent, Company, Employee, Task } from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -24,7 +27,16 @@ export class Scheduler {
   /** Begin the idle-game loop: idle employees self-direct work while autopilot is on. */
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => this.tickAutopilot(), AUTOPILOT_TICK_MS);
+    this.timer = setInterval(() => this.onTick(), AUTOPILOT_TICK_MS);
+    this.onTick();
+  }
+
+  /**
+   * One scheduler beat. Always drain the queue first so backoff retries resume
+   * even with autopilot off; then self-direct idle employees if autopilot is on.
+   */
+  private onTick(): void {
+    this.tick();
     this.tickAutopilot();
   }
 
@@ -105,65 +117,111 @@ export class Scheduler {
     }
   }
 
-  /** Prompt for an employee's next autonomous move, grounded in team context. */
+  /**
+   * The per-employee heartbeat: prompt for their next autonomous move, grounded
+   * in the team room, recent ships, and recent failures. The team leader is asked
+   * to coordinate (chain / fan out) while members execute and report back.
+   */
   private autonomousBrief(
     company: Company,
     emp: Employee,
     employees: Employee[],
   ): { title: string; description: string } {
-    const roster = employees.map((e) => `${e.name} (${e.title})`).join(", ");
-    const chat =
-      store
-        .recentActivity(company.id, "chat", 8)
-        .map((c) => `- ${c.message ?? ""}`)
-        .join("\n") || "(no messages yet)";
+    const team = store.teamForEmployee(emp.id);
+    const isLeader = team?.leaderId === emp.id;
+    const teammates = team ? employees.filter((e) => e.teamId === team.id) : employees;
+    const roster =
+      teammates
+        .map((e) => `${e.name} (${e.title})${team?.leaderId === e.id ? " — lead" : ""}`)
+        .join(", ") || "(just you)";
+
+    const room =
+      (team
+        ? store
+            .recentTeamMessages(team.id, 12)
+            .map(
+              (m) =>
+                `- ${m.fromEmployeeId ? this.empName(m.fromEmployeeId) : "founder"}: ${m.text}`,
+            )
+            .join("\n")
+        : "") || "(no messages yet)";
     const ships =
       store
         .recentActivity(company.id, "ship", 6)
         .map((s) => `- ${s.message ?? ""}`)
         .join("\n") || "(nothing shipped yet)";
+    const problems =
+      store
+        .listTasks(company.id)
+        .filter((t) => t.status === "dead" || t.status === "failed")
+        .slice(0, 5)
+        .map((t) => `- ${t.title}${t.lastError ? ` (last error: ${t.lastError})` : ""}`)
+        .join("\n") || "(none)";
+
+    const coordinate = isLeader
+      ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — call delegate(role, title, description) once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.`
+      : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${this.empName(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with delegate(role, title, description).`;
+
     const description = [
       `You are operating autonomously to grow ${company.name}.`,
       `Mission: ${company.mission}`,
       `Business type: ${businessTypeById(company.businessType).label}.`,
       `Your role: ${emp.title}.`,
-      `Teammates: ${roster}.`,
+      `Your team: ${roster}.`,
       ``,
-      `Recent team chat:`,
-      chat,
+      `Recent team room:`,
+      room,
       ``,
       `Recently shipped:`,
       ships,
       ``,
-      `Decide the single most valuable next step for the business and DO IT concretely in the shared workspace — build or improve the actual product, fix a real issue, prepare or execute marketing, move toward a public launch. Keep it to one focused chunk you can finish now; build on what the team already did rather than repeating it.`,
+      `Recent failures to consider fixing or unblocking:`,
+      problems,
+      ``,
+      coordinate,
       `Make it real: products should end up runnable, and when ready, published (ask the founder via ask_boss before anything outward-facing like deploying or posting).`,
-      `Coordinate: if another role should own something, call delegate(role, title, description). When you finish, post a one-line update with message_team(text).`,
+      `When you finish, post a one-line update to the team room with message_team(text).`,
       `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
     ].join("\n");
     return { title: `Advance ${company.name}`, description };
   }
 
+  /** Resolve an employee id to a display name for briefs/feeds. */
+  private empName(id: string): string {
+    return store.getEmployee(id)?.name ?? "someone";
+  }
+
   /** Tools the running agent can call to operate the business with teammates. */
-  private hooksFor(emp: Employee, company: Company) {
+  private hooksFor(emp: Employee, company: Company): RunHooks {
+    const team = store.teamForEmployee(emp.id);
+
+    /** Mirror a line into the team room (if any) and the company activity feed. */
+    const post = (text: string): void => {
+      if (team) store.postTeamMessage(team.id, emp.id, text);
+      this.emit({ employeeId: emp.id, kind: "chat", message: text });
+    };
+
     return {
-      messageTeam: (text: string): void => {
-        this.emit({ employeeId: emp.id, kind: "chat", message: text.slice(0, 400) });
+      messageTeam: (text: string): void => post(text.slice(0, 400)),
+      readTeam: (): string => {
+        if (!team) return "";
+        return store
+          .recentTeamMessages(team.id, 15)
+          .map(
+            (m) => `- ${m.fromEmployeeId ? this.empName(m.fromEmployeeId) : "founder"}: ${m.text}`,
+          )
+          .join("\n");
       },
       delegate: (role: string, title: string, description: string): void => {
         const want = role.toLowerCase();
-        const mate = store
-          .listEmployees(company.id)
-          .find(
-            (e) =>
-              e.id !== emp.id &&
-              (e.role.toLowerCase() === want || e.title.toLowerCase().includes(want)),
-          );
+        const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
+        const matches = (e: Employee): boolean =>
+          e.role.toLowerCase() === want || e.title.toLowerCase().includes(want);
+        // prefer a teammate on the same team, then anyone in the company
+        const sameTeam = team ? pool.filter((e) => e.teamId === team.id) : [];
+        const mate = sameTeam.find(matches) ?? pool.find(matches);
         if (!mate) {
-          this.emit({
-            employeeId: emp.id,
-            kind: "chat",
-            message: `(no "${role}" to delegate "${title}" to)`,
-          });
+          post(`(no "${role}" to delegate "${title}" to)`);
           return;
         }
         const t = store.createTask({
@@ -173,11 +231,7 @@ export class Scheduler {
           priority: "medium",
           assigneeId: mate.id,
         });
-        this.emit({
-          employeeId: emp.id,
-          kind: "chat",
-          message: `→ ${mate.name} (${mate.title}): ${title}`,
-        });
+        post(`→ ${mate.name} (${mate.title}): ${title}`);
         try {
           this.assign(t.id, mate.id);
         } catch {
@@ -246,10 +300,14 @@ export class Scheduler {
   }
 
   private async execute(runId: string, task: Task, emp: Employee, company: Company): Promise<void> {
+    // pre-run plugin hook: let plugins append extra instructions to the brief
+    const ctx: RunContext = { company, employee: emp, task };
+    const extra = pluginHost.collectRunStart(ctx);
+    const description = extra ? `${task.description ?? ""}\n\n${extra}`.trim() : task.description;
     const result = await piDriver.runTask(
       emp,
       company,
-      { title: task.title, description: task.description },
+      { title: task.title, description },
       (ev: PiEvent) => this.onPiEvent(runId, task, emp, ev),
       this.hooksFor(emp, company),
     );
@@ -297,15 +355,29 @@ export class Scheduler {
       blockedQuestion?: string;
     },
   ): void {
-    const taskStatus: TaskStatus = r.blockedQuestion ? "blocked" : r.ok ? "done" : "failed";
+    // Decide the outcome. A failed run is retried with exponential backoff up to
+    // MAX_TASK_ATTEMPTS, then dead-lettered rather than silently abandoned.
+    let taskStatus: RunOutcome["status"];
+    let retryAt: number | null = null;
+    if (r.blockedQuestion) {
+      taskStatus = "blocked";
+      store.releaseTask(task.id, runId, "blocked", r.summary || null, r.blockedQuestion);
+    } else if (r.ok) {
+      taskStatus = "done";
+      store.releaseTask(task.id, runId, "done", r.summary || null, null);
+    } else {
+      const attempts = task.attempts + 1;
+      const err = r.error || "run failed";
+      if (attempts >= MAX_TASK_ATTEMPTS) {
+        taskStatus = "dead";
+        store.deadLetterTask(task.id, runId, attempts, err);
+      } else {
+        taskStatus = "queued"; // back on the queue, gated by the backoff window
+        retryAt = Date.now() + retryDelayMs(attempts);
+        store.requeueForRetry(task.id, runId, attempts, retryAt, err);
+      }
+    }
 
-    store.releaseTask(
-      task.id,
-      runId,
-      taskStatus,
-      r.summary || r.error || null,
-      r.blockedQuestion ?? null,
-    );
     store.setEmployeeStatus(emp.id, "idle");
     if (r.sessionId) store.setEmployeeSession(emp.id, r.sessionId);
 
@@ -335,6 +407,32 @@ export class Scheduler {
       }
     }
 
+    // surface a failed run's fate so the feed shows the retry / give-up, not silence
+    if (taskStatus === "queued" && retryAt !== null) {
+      this.emit({
+        runId,
+        taskId: task.id,
+        employeeId: emp.id,
+        kind: "lifecycle",
+        message: "task.retry",
+        payload: {
+          attempts: task.attempts + 1,
+          maxAttempts: MAX_TASK_ATTEMPTS,
+          retryAt,
+          error: r.error,
+        },
+      });
+    } else if (taskStatus === "dead") {
+      this.emit({
+        runId,
+        taskId: task.id,
+        employeeId: emp.id,
+        kind: "lifecycle",
+        message: "task.dead",
+        payload: { attempts: task.attempts + 1, error: r.error },
+      });
+    }
+
     this.emit({ runId, taskId: task.id, employeeId: emp.id, kind: "status", message: taskStatus });
     this.emit({
       runId,
@@ -344,12 +442,26 @@ export class Scheduler {
       message: "run.end",
       payload: { summary: r.summary, blockedQuestion: r.blockedQuestion, error: r.error },
     });
+
+    // post-run plugin hook
+    const co = store.getCompany(task.companyId);
+    if (co) {
+      const ctx: RunContext = { company: co, employee: emp, task };
+      pluginHost.dispatchRunEnd(ctx, {
+        ok: taskStatus === "done",
+        status: taskStatus,
+        summary: r.summary,
+        error: r.error,
+      });
+    }
   }
 
   private emit(e: Omit<ActivityEvent, "createdAt" | "id">): void {
     const full: ActivityEvent = { ...e, createdAt: Date.now() };
     const id = store.logActivity(full);
-    this.events.emit("activity", { ...full, id });
+    const withId: ActivityEvent = { ...full, id };
+    pluginHost.dispatchActivity(withId); // event listeners
+    this.events.emit("activity", withId);
   }
 }
 

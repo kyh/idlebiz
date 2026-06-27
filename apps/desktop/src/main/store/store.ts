@@ -24,6 +24,9 @@ import {
   taskFile,
   routinesDir,
   routineFile,
+  teamsDir,
+  teamFile,
+  teamChatFile,
 } from "@/main/paths";
 import {
   parseDoc,
@@ -38,7 +41,12 @@ import {
   type FrontmatterDoc,
   type Scalar,
 } from "@/main/store/frontmatter";
-import { DEFAULT_AGENT_MODEL, BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
+import {
+  DEFAULT_AGENT_MODEL,
+  BUSINESS_TYPES,
+  MAX_TASK_ATTEMPTS,
+  businessTypeById,
+} from "@/shared/domain";
 import type {
   ActivityEvent,
   Budget,
@@ -49,6 +57,8 @@ import type {
   Task,
   TaskPriority,
   TaskStatus,
+  Team,
+  TeamMessage,
 } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
@@ -63,8 +73,11 @@ interface Cache {
   employees: Map<string, Employee[]>; // companyId -> employees
   tasks: Map<string, Task[]>; // companyId -> tasks
   routines: Map<string, Routine[]>; // companyId -> routines
+  teams: Map<string, Team[]>; // companyId -> teams
+  teamChat: Map<string, TeamMessage[]>; // teamId -> recent room messages (ring)
   activity: ActivityEvent[]; // ring buffer across companies (UI stream)
   nextActivityId: number;
+  nextTeamMessageId: number;
 }
 
 let cache: Cache | null = null;
@@ -94,6 +107,35 @@ function docToRoutine(doc: FrontmatterDoc, companyId: string): Routine {
 
 function saveRoutine(r: Routine): void {
   atomicWrite(routineFile(r.companyId, r.id), serializeDoc(routineToDoc(r)));
+}
+
+function teamToDoc(t: Team): FrontmatterDoc {
+  const metadata: Record<string, Scalar> = {
+    memberIds: JSON.stringify(t.memberIds),
+    createdAt: t.createdAt,
+  };
+  if (t.leaderId !== null) metadata.leaderId = t.leaderId;
+  return {
+    fields: { schema: "agentcompanies/v1", kind: "team", slug: t.id, name: t.name },
+    metadata,
+    body: `${t.purpose}\n`,
+  };
+}
+
+function docToTeam(doc: FrontmatterDoc, companyId: string): Team {
+  return {
+    id: reqStr(doc.fields, "slug"),
+    companyId,
+    name: reqStr(doc.fields, "name"),
+    purpose: doc.body.trim(),
+    leaderId: optStr(doc.metadata, "leaderId"),
+    memberIds: strArray(doc.metadata, "memberIds"),
+    createdAt: optNum(doc.metadata, "createdAt", Date.now()),
+  };
+}
+
+function saveTeam(t: Team): void {
+  atomicWrite(teamFile(t.companyId, t.id), serializeDoc(teamToDoc(t)));
 }
 
 function c(): Cache {
@@ -199,9 +241,9 @@ ${co.mission}
 
 ## Working with your team
 - You operate autonomously to grow the business — you don't wait to be told what to do.
-- Post short progress updates and decisions to the team channel with the \`message_team\` tool so teammates can build on your work.
-- When something is better owned by another role, hand it off with the \`delegate\` tool (give the role, a title, and what to do).
-- Read recent team chat in your task brief and build on it rather than duplicating work.
+- You belong to a team with a designated lead. Catch up on what teammates are doing with the \`read_team_chat\` tool before you start, so you build on their work instead of duplicating it.
+- Post short progress updates, decisions, and handoffs to your team's shared room with the \`message_team\` tool so teammates can see them live.
+- When work is better owned by another role, hand it off with the \`delegate\` tool (give the role, a title, and what to do) — call it once for a single handoff, or several times to fan work out across the team in parallel. If you lead the team, coordinating and delegating is your main job.
 
 ## Make the business REAL
 - The goal is a real product with real users, not documents about one. Bias toward a runnable, shippable thing.
@@ -231,6 +273,7 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
   };
   if (e.thinking !== null) metadata.thinking = e.thinking;
   if (e.sessionId !== null) metadata.sessionId = e.sessionId;
+  if (e.teamId !== null) metadata.teamId = e.teamId;
   return {
     fields: {
       schema: "agentcompanies/v1",
@@ -259,6 +302,7 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
     sessionId: optStr(m, "sessionId"),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     deskIndex: optNum(m, "deskIndex", 0),
+    teamId: optStr(m, "teamId"),
     status: optStr(m, "status") === "working" ? "working" : "idle",
     createdAt: optNum(m, "createdAt", Date.now()),
   };
@@ -275,6 +319,9 @@ function taskToDoc(t: Task): FrontmatterDoc {
   if (t.summary !== null) metadata.summary = t.summary;
   if (t.blockedQuestion !== null) metadata.blockedQuestion = t.blockedQuestion;
   if (t.artifacts.length > 0) metadata.artifacts = JSON.stringify(t.artifacts);
+  if (t.attempts > 0) metadata.attempts = t.attempts;
+  if (t.nextAttemptAt !== null) metadata.nextAttemptAt = t.nextAttemptAt;
+  if (t.lastError !== null) metadata.lastError = t.lastError;
   if (t.startedAt !== null) metadata.startedAt = t.startedAt;
   if (t.completedAt !== null) metadata.completedAt = t.completedAt;
   return {
@@ -296,6 +343,7 @@ const TASK_STATUSES: ReadonlyArray<TaskStatus> = [
   "blocked",
   "done",
   "failed",
+  "dead",
   "cancelled",
 ];
 
@@ -319,6 +367,9 @@ function docToTask(doc: FrontmatterDoc, companyId: string): Task {
     summary: optStr(m, "summary"),
     blockedQuestion: optStr(m, "blockedQuestion"),
     artifacts: strArray(m, "artifacts"),
+    attempts: optNum(m, "attempts", 0),
+    nextAttemptAt: m.nextAttemptAt === undefined ? null : optNum(m, "nextAttemptAt", 0),
+    lastError: optStr(m, "lastError"),
     createdAt: optNum(m, "createdAt", Date.now()),
     startedAt: m.startedAt === undefined ? null : optNum(m, "startedAt", 0),
     completedAt: m.completedAt === undefined ? null : optNum(m, "completedAt", 0),
@@ -348,8 +399,11 @@ export function initStore(): void {
     employees: new Map(),
     tasks: new Map(),
     routines: new Map(),
+    teams: new Map(),
+    teamChat: new Map(),
     activity: [],
     nextActivityId: 1,
+    nextTeamMessageId: 1,
   };
 
   for (const entry of safeReaddir(ROOT_DIR)) {
@@ -386,11 +440,29 @@ export function initStore(): void {
         }
       }
       tasks.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-      // recover runs that died with the previous process
+      // recover runs that died with the previous process. A run that was
+      // mid-flight counts as a failed attempt: requeue it (or dead-letter once
+      // exhausted) so it resumes instead of being silently orphaned.
       for (const t of tasks) {
-        if (t.status === "running" || t.status === "queued") {
-          t.status = "todo";
+        if (t.status === "running") {
+          const attempts = t.attempts + 1;
           t.runId = null;
+          if (!t.assigneeId) {
+            t.status = "todo";
+          } else if (attempts >= MAX_TASK_ATTEMPTS) {
+            t.status = "dead";
+            t.attempts = attempts;
+            t.lastError = "Interrupted by app restart (max attempts reached)";
+            t.completedAt = Date.now();
+          } else {
+            t.status = "queued";
+            t.attempts = attempts;
+            t.nextAttemptAt = null;
+            t.lastError = "Interrupted by app restart";
+          }
+          saveTask(t);
+        } else if (t.status === "queued" && t.runId !== null) {
+          t.runId = null; // drop a stale lock on a task that never actually started
           saveTask(t);
         }
       }
@@ -407,6 +479,20 @@ export function initStore(): void {
         }
       }
       loaded.routines.set(co.id, routines);
+
+      const teams: Team[] = [];
+      for (const slug of safeReaddir(teamsDir(co.id))) {
+        const tf = teamFile(co.id, slug);
+        if (!existsSync(tf)) continue;
+        try {
+          teams.push(docToTeam(parseDoc(readFileSync(tf, "utf8")), co.id));
+        } catch {
+          /* skip corrupt team */
+        }
+      }
+      teams.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+      loaded.teams.set(co.id, teams);
+      for (const t of teams) loadRecentTeamChat(loaded, co.id, t.id);
 
       loadRecentActivity(loaded, co.id);
     } catch {
@@ -438,6 +524,38 @@ export function initStore(): void {
       }
     }
   }
+
+  // companies created before teams existed get a founding team (all hires, led)
+  for (const co of loaded.companies.values()) {
+    const emps = loaded.employees.get(co.id) ?? [];
+    if (emps.length > 0 && (loaded.teams.get(co.id) ?? []).length === 0) {
+      try {
+        foundingTeamFor(co);
+      } catch {
+        /* non-fatal */
+      }
+    }
+  }
+}
+
+const LEADER_RX = /(ceo|founder|chief|head|lead|manager|principal|director|\bpm\b|product)/i;
+
+/** Heuristic leader pick: a managerial role/title, else the first hire. */
+function pickLeaderId(emps: Employee[]): string | null {
+  const byRole = emps.find((e) => LEADER_RX.test(`${e.role} ${e.title}`));
+  return (byRole ?? emps[0])?.id ?? null;
+}
+
+/** Create the single founding team containing every current employee. */
+export function foundingTeamFor(co: Company): Team {
+  const emps = listEmployees(co.id);
+  return createTeam({
+    companyId: co.id,
+    name: `${co.name} core team`,
+    purpose: "The founding team building, shipping, and growing the company together.",
+    leaderId: pickLeaderId(emps),
+    memberIds: emps.map((e) => e.id),
+  });
 }
 
 function safeReaddir(dir: string): string[] {
@@ -469,6 +587,32 @@ function loadRecentActivity(loaded: Cache, companyId: string): void {
   } catch {
     /* no log yet */
   }
+}
+
+const TEAM_CHAT_RING = 200;
+
+function loadRecentTeamChat(loaded: Cache, companyId: string, teamId: string): void {
+  const msgs: TeamMessage[] = [];
+  try {
+    const text = readFileSync(teamChatFile(companyId, teamId), "utf8");
+    for (const line of text.split("\n").slice(-TEAM_CHAT_RING)) {
+      if (line.trim() === "") continue;
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (parsed && typeof parsed === "object" && "text" in parsed && "createdAt" in parsed) {
+          const m = parsed as TeamMessage;
+          m.id = loaded.nextTeamMessageId++;
+          m.teamId = teamId;
+          msgs.push(m);
+        }
+      } catch {
+        /* skip bad line */
+      }
+    }
+  } catch {
+    /* no chat yet */
+  }
+  loaded.teamChat.set(teamId, msgs);
 }
 
 // ---- slug allocation ---------------------------------------------------------
@@ -516,6 +660,7 @@ export function createCompany(input: {
   c().employees.set(id, []);
   c().tasks.set(id, []);
   c().routines.set(id, []);
+  c().teams.set(id, []);
   seedDefaultRoutines(id, input.businessType);
   return co;
 }
@@ -584,6 +729,108 @@ export function markRoutineRun(companyId: string, routineId: string): void {
   if (!r) return;
   r.lastRunAt = Date.now();
   saveRoutine(r);
+}
+
+// ---- teams -----------------------------------------------------------------
+function createTeam(input: {
+  companyId: string;
+  name: string;
+  purpose: string;
+  leaderId: string | null;
+  memberIds: string[];
+}): Team {
+  const list = c().teams.get(input.companyId);
+  if (!list) throw new Error(`company ${input.companyId} not found`);
+  const id = uniqueSlug(input.name, (s) => list.some((t) => t.id === s));
+  const team: Team = {
+    id,
+    companyId: input.companyId,
+    name: input.name,
+    purpose: input.purpose,
+    leaderId: input.leaderId,
+    memberIds: [...new Set(input.memberIds)],
+    createdAt: Date.now(),
+  };
+  saveTeam(team);
+  list.push(team);
+  c().teamChat.set(id, []);
+  // stamp each member's teamId so the office + scheduler can group them
+  for (const mid of team.memberIds) patchEmployee(mid, { teamId: id });
+  return team;
+}
+
+export function listTeams(companyId: string): Team[] {
+  return [...(c().teams.get(companyId) ?? [])];
+}
+
+function getTeam(teamId: string): Team | null {
+  for (const list of c().teams.values()) {
+    const found = list.find((t) => t.id === teamId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function patchTeam(teamId: string, patch: Partial<Team>): Team | null {
+  for (const list of c().teams.values()) {
+    const idx = list.findIndex((t) => t.id === teamId);
+    if (idx >= 0) {
+      const cur = list[idx];
+      if (!cur) return null;
+      const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
+      list[idx] = next;
+      saveTeam(next);
+      return next;
+    }
+  }
+  return null;
+}
+
+export function addTeamMember(teamId: string, employeeId: string): Team | null {
+  const t = getTeam(teamId);
+  if (!t) return null;
+  const memberIds = t.memberIds.includes(employeeId) ? t.memberIds : [...t.memberIds, employeeId];
+  patchEmployee(employeeId, { teamId });
+  return patchTeam(teamId, { memberIds });
+}
+
+/** The team an employee belongs to, if any. */
+export function teamForEmployee(employeeId: string): Team | null {
+  const emp = getEmployee(employeeId);
+  if (!emp || !emp.teamId) return null;
+  return getTeam(emp.teamId);
+}
+
+// ---- team chat room --------------------------------------------------------
+/** Post a message to a team's persistent chat room (read by teammates mid-run). */
+export function postTeamMessage(
+  teamId: string,
+  fromEmployeeId: string | null,
+  text: string,
+): TeamMessage {
+  const msg: TeamMessage = { teamId, fromEmployeeId, text, createdAt: Date.now() };
+  const ring = c().teamChat.get(teamId) ?? [];
+  const stored: TeamMessage = { ...msg, id: c().nextTeamMessageId++ };
+  ring.push(stored);
+  if (ring.length > TEAM_CHAT_RING) ring.splice(0, ring.length - TEAM_CHAT_RING);
+  c().teamChat.set(teamId, ring);
+  const team = getTeam(teamId);
+  if (team && !writesSuspended) {
+    const { id: _drop, ...persisted } = stored;
+    try {
+      appendFileSync(teamChatFile(team.companyId, teamId), JSON.stringify(persisted) + "\n");
+    } catch {
+      /* chat loss is acceptable */
+    }
+  }
+  return stored;
+}
+
+/** Recent room messages, optionally only those after a given timestamp. */
+export function recentTeamMessages(teamId: string, limit = 20, since = 0): TeamMessage[] {
+  const ring = c().teamChat.get(teamId) ?? [];
+  const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
+  return filtered.slice(-limit);
 }
 
 export function getCompany(id: string): Company | null {
@@ -696,6 +943,7 @@ export function createEmployee(input: {
     sessionId: null,
     spriteSeed: input.spriteSeed,
     deskIndex: input.deskIndex,
+    teamId: null,
     status: "idle",
     createdAt: Date.now(),
   };
@@ -765,6 +1013,9 @@ export function createTask(t: {
     summary: null,
     blockedQuestion: null,
     artifacts: [],
+    attempts: 0,
+    nextAttemptAt: null,
+    lastError: null,
     createdAt: Date.now(),
     startedAt: null,
     completedAt: null,
@@ -793,10 +1044,14 @@ export function listTasksForEmployee(employeeId: string): Task[] {
   return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
 export function listQueuedTasks(): Task[] {
+  const now = Date.now();
   const out: Task[] = [];
   for (const list of c().tasks.values())
-    for (const t of list) if (t.status === "queued") out.push(t);
+    for (const t of list)
+      if (t.status === "queued" && (t.nextAttemptAt === null || t.nextAttemptAt <= now))
+        out.push(t);
   const prio = (p: TaskPriority): number => (p === "high" ? 0 : p === "medium" ? 1 : 2);
   return out.sort((a, b) => prio(a.priority) - prio(b.priority) || a.createdAt - b.createdAt);
 }
@@ -816,19 +1071,30 @@ function patchTask(id: string, patch: Partial<Task>): Task | null {
   return null;
 }
 
-/** Atomic assign: only todo/blocked/failed are claimable. Returns task or null on conflict. */
+/**
+ * Atomic assign: only todo/blocked/failed/dead are claimable. A manual claim of
+ * a failed/dead task is the founder reviving it, so the retry counter resets.
+ * Returns task or null on conflict.
+ */
 export function claimTask(taskId: string, employeeId: string): Task | null {
   const t = getTask(taskId);
   if (!t) return null;
-  const claimable = t.status === "todo" || t.status === "blocked" || t.status === "failed";
+  const claimable =
+    t.status === "todo" || t.status === "blocked" || t.status === "failed" || t.status === "dead";
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) return null;
-  return patchTask(taskId, { assigneeId: employeeId, status: "queued" });
+  const revived = t.status === "failed" || t.status === "dead";
+  return patchTask(taskId, {
+    assigneeId: employeeId,
+    status: "queued",
+    ...(revived ? { attempts: 0, nextAttemptAt: null, lastError: null } : {}),
+  });
 }
 
-/** Acquire execution lock: queued -> running, stamp runId. Null if lost race. */
+/** Acquire execution lock: queued -> running, stamp runId. Null if lost race or backing off. */
 export function lockTaskForRun(taskId: string, runId: string): Task | null {
   const t = getTask(taskId);
   if (!t || t.status !== "queued" || t.runId !== null) return null;
+  if (t.nextAttemptAt !== null && t.nextAttemptAt > Date.now()) return null;
   return patchTask(taskId, { status: "running", runId, startedAt: Date.now() });
 }
 
@@ -843,6 +1109,41 @@ export function releaseTask(
   const t = getTask(taskId);
   if (!t || t.runId !== runId) return;
   patchTask(taskId, { status, summary, blockedQuestion, runId: null, completedAt: Date.now() });
+}
+
+/**
+ * A failed run that still has attempts left: bump the counter, schedule a
+ * backoff retry, and put the task back on the queue. Only the owning run may.
+ */
+export function requeueForRetry(
+  taskId: string,
+  runId: string,
+  attempts: number,
+  nextAttemptAt: number,
+  lastError: string | null,
+): void {
+  const t = getTask(taskId);
+  if (!t || t.runId !== runId) return;
+  patchTask(taskId, { status: "queued", runId: null, attempts, nextAttemptAt, lastError });
+}
+
+/** A failed run that exhausted its attempts: dead-letter it. Only the owning run may. */
+export function deadLetterTask(
+  taskId: string,
+  runId: string,
+  attempts: number,
+  lastError: string | null,
+): void {
+  const t = getTask(taskId);
+  if (!t || t.runId !== runId) return;
+  patchTask(taskId, {
+    status: "dead",
+    runId: null,
+    attempts,
+    lastError,
+    summary: lastError,
+    completedAt: Date.now(),
+  });
 }
 
 /**

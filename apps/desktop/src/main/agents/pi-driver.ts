@@ -35,6 +35,8 @@ export interface RunResult {
 export interface RunHooks {
   messageTeam(text: string): void;
   delegate(role: string, title: string, description: string): void;
+  /** Read the latest messages in the team's chat room (live poll during a run). */
+  readTeam(): string;
 }
 
 interface LiveRun {
@@ -127,11 +129,30 @@ class PiDriver {
       name: "message_team",
       label: "message the team",
       description:
-        "Post a short update to the company team channel so teammates can coordinate — share progress, a decision, or an ask. Keep it to one line.",
+        "Post a message to your team's shared chat room so teammates can see it live and coordinate — share progress, a decision, an ask, or a handoff. Keep it to one line.",
       parameters: schema,
       execute: async (_id: string, params: Static<typeof schema>) => {
         this.employees.get(employeeId)?.live?.hooks?.messageTeam(params.text);
-        return { content: [{ type: "text", text: "Posted to the team channel." }], details: {} };
+        return { content: [{ type: "text", text: "Posted to the team room." }], details: {} };
+      },
+    };
+    return tool as unknown as ToolDefinition;
+  }
+
+  private readTeamTool(employeeId: string): ToolDefinition {
+    const schema = Type.Object({});
+    const tool: ToolDefinition<typeof schema> = {
+      name: "read_team_chat",
+      label: "read the team room",
+      description:
+        "Read the latest messages in your team's shared chat room. Use this to catch up on what teammates are doing before you act, so you build on their work instead of duplicating it.",
+      parameters: schema,
+      execute: async (_id: string, _params: Static<typeof schema>) => {
+        const text = this.employees.get(employeeId)?.live?.hooks?.readTeam() ?? "";
+        return {
+          content: [{ type: "text", text: text || "(the team room is empty so far)" }],
+          details: {},
+        };
       },
     };
     return tool as unknown as ToolDefinition;
@@ -150,7 +171,7 @@ class PiDriver {
       name: "delegate",
       label: "delegate to a teammate",
       description:
-        "Create a task for a teammate of a given role when the work is better owned by them. They'll pick it up autonomously.",
+        "Hand work to a teammate of a given role when they should own it. Call it once to chain a single handoff, or several times to fan work out across the team in parallel. They'll pick it up autonomously and report back in the team room.",
       parameters: schema,
       execute: async (_id: string, params: Static<typeof schema>) => {
         this.employees
@@ -184,6 +205,7 @@ class PiDriver {
       customTools: [
         this.askBossTool(emp.id),
         this.messageTeamTool(emp.id),
+        this.readTeamTool(emp.id),
         this.delegateTool(emp.id),
       ],
     });

@@ -10,6 +10,8 @@ import { piDriver } from "@/main/agents/pi-driver";
 import { scheduler } from "@/main/scheduler";
 import { startLogin, submitAuthCode, generateCandidates } from "@/main/agents/onboarding";
 import { simulatedMetrics, readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { pluginHost } from "@/main/plugins";
+import type { IdleBizPlugin } from "@/main/plugins";
 import { exportSecretsToEnv } from "@/main/secrets";
 import {
   initStripeConnect,
@@ -76,6 +78,30 @@ async function resetGame(): Promise<{ ok: boolean }> {
   return { ok: true };
 }
 
+/**
+ * Register the built-in plugins. Plugins observe the activity stream and hook
+ * the run lifecycle (see main/plugins.ts); this is the seam third-party hooks
+ * would extend. The shipped example celebrates shipping milestones in the room.
+ */
+function registerBuiltinPlugins(): void {
+  const shipMilestones: IdleBizPlugin = {
+    name: "ship-milestones",
+    onActivity: (e) => {
+      if (e.kind !== "ship" || !e.employeeId) return;
+      const co = store.getDefaultCompany();
+      const team = store.teamForEmployee(e.employeeId);
+      if (co && team && co.ships > 0 && co.ships % 10 === 0) {
+        store.postTeamMessage(
+          team.id,
+          null,
+          `🎉 Milestone: ${co.ships} things shipped — keep going!`,
+        );
+      }
+    },
+  };
+  pluginHost.register(shipMilestones);
+}
+
 function registerIpcHandlers(): void {
   handle("hasAuth", () => ({ ok: piDriver.hasAuth() }));
 
@@ -110,8 +136,8 @@ function registerIpcHandlers(): void {
     }));
   });
 
-  handle("batchHire", ({ companyId, hires }) =>
-    hires.map((h, i) =>
+  handle("batchHire", ({ companyId, hires }) => {
+    hires.forEach((h, i) =>
       store.createEmployee({
         companyId,
         name: h.name,
@@ -123,8 +149,12 @@ function registerIpcHandlers(): void {
         spriteSeed: h.spriteSeed,
         deskIndex: i,
       }),
-    ),
-  );
+    );
+    // form the founding team (leader + all hires) once the roster exists
+    const company = store.getCompany(companyId);
+    if (company && store.listTeams(companyId).length === 0) store.foundingTeamFor(company);
+    return store.listEmployees(companyId);
+  });
 
   handle("completeOnboarding", ({ companyId }) => {
     store.setCompanyOnboarded(companyId, true);
@@ -198,7 +228,7 @@ function registerIpcHandlers(): void {
         throw new Error(`Hiring costs $${HIRE_COST} — you have $${company.cash.toFixed(0)}.`);
       store.adjustCash(p.companyId, -HIRE_COST);
     }
-    return store.createEmployee({
+    const emp = store.createEmployee({
       companyId: p.companyId,
       name: p.name,
       role: p.role,
@@ -209,7 +239,18 @@ function registerIpcHandlers(): void {
       spriteSeed: p.spriteSeed,
       deskIndex: p.deskIndex,
     });
+    // a new hire joins the founding team so they share its chat room + leader
+    const team = store.listTeams(p.companyId)[0];
+    if (team) {
+      const withMember = store.addTeamMember(team.id, emp.id);
+      return withMember ? (store.getEmployee(emp.id) ?? emp) : emp;
+    }
+    return emp;
   });
+
+  handle("listTeams", ({ companyId }) => store.listTeams(companyId));
+
+  handle("teamMessages", ({ teamId, limit }) => store.recentTeamMessages(teamId, limit ?? 30));
 
   handle("listTasks", ({ companyId }) => store.listTasks(companyId));
 
@@ -310,6 +351,7 @@ app.whenReady().then(() => {
   initStore();
   exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
   piDriver.init();
+  registerBuiltinPlugins();
   registerIpcHandlers();
 
   // stream scheduler activity to all windows

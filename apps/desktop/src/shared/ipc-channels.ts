@@ -30,6 +30,9 @@ export const CHANNELS = {
   listEmployees: { channel: "employee:list", kind: "invoke" },
   createEmployee: { channel: "employee:create", kind: "invoke" },
 
+  listTeams: { channel: "team:list", kind: "invoke" },
+  teamMessages: { channel: "team:messages", kind: "invoke" },
+
   listTasks: { channel: "task:list", kind: "invoke" },
   createTask: { channel: "task:create", kind: "invoke" },
   assignTask: { channel: "task:assign", kind: "invoke" },
