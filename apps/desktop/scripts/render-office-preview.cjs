@@ -53,19 +53,6 @@ async function main() {
   objLayers.sort((a, b) => a.depth - b.depth);
   layers.push(...objLayers);
 
-  // room shell outlines (drawn on top), matches drawOfficeShell
-  const shellSvg = [`<svg width="${W}" height="${H}">`];
-  for (const room of layout.shellRooms || []) {
-    shellSvg.push(
-      `<rect x="${room.x}" y="${room.y}" width="${room.w}" height="${room.h}" fill="none" stroke="#1d2136" stroke-width="4"/>`,
-      `<rect x="${room.x + 6}" y="${room.y + 6}" width="${room.w - 12}" height="${room.h - 12}" fill="none" stroke="#f7f4fb" stroke-width="2"/>`,
-    );
-  }
-  shellSvg.push(`</svg>`);
-  if ((layout.shellRooms || []).length) {
-    layers.push({ depth: Number.MAX_SAFE_INTEGER, input: Buffer.from(shellSvg.join("")), left: 0, top: 0 });
-  }
-
   const composite = layers
     .toSorted((a, b) => a.depth - b.depth)
     .map(({ input, left, top }) => ({ input, left: Math.round(left), top: Math.round(top) }));
