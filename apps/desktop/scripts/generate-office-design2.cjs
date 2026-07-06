@@ -40,24 +40,7 @@ const CELL16 = 16; // decomposition cell at source scale
 const W16 = 256;
 const H16 = 272; // content height at source scale (drop the blank canvas tail)
 
-async function loadRaw(file) {
-  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  return { data, w: info.width, h: info.height };
-}
-
-function opaqueBounds(img) {
-  let minX = img.w, minY = img.h, maxX = -1, maxY = -1;
-  for (let y = 0; y < img.h; y++) {
-    for (let x = 0; x < img.w; x++) {
-      if (img.data[(y * img.w + x) * 4 + 3] === 0) continue;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
-  }
-  return maxX < minX ? { x: 0, y: 0, w: img.w, h: img.h } : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
-}
+const { loadRaw, opaqueBounds } = require("./lib/pixels.cjs");
 
 function nearest2x(img) {
   const out = Buffer.alloc(img.w * 2 * img.h * 2 * 4);

@@ -17,6 +17,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const sharp = require("sharp");
+const { loadRaw } = require("./lib/pixels.cjs");
 
 const VG = "/Users/kyh/Desktop/vg/office";
 const PACK = path.join(VG, "Modern_Office_Revamped_v1.2");
@@ -48,11 +49,6 @@ const MIN_EXACT = 0.88; // ≥88% of opaque pixels exact (tolerates palette drif
 const OBJ_MIN_FRESH_FRAC = 0.35; // objects: enough fresh evidence to kill ghosts
 const TILE_MIN_FRESH_FRAC = 0.04; // tiles: floors legitimately peek through gaps
 const MIN_FRESH_PX = 12;
-
-async function loadRaw(file) {
-  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  return { data, w: info.width, h: info.height };
-}
 
 function rgbEq(a, ao, b, bo) {
   return a[ao] === b[bo] && a[ao + 1] === b[bo + 1] && a[ao + 2] === b[bo + 2];

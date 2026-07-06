@@ -1,7 +1,7 @@
 // Standalone compositor: renders the office layout to a flat 512x544 PNG that
 // can be diffed directly against 6_Office_Designs/Office_Design_2.gif.
-// Mirrors OfficeScene rendering: floor/wall tiles, then objects y-sorted by the
-// bottom edge of their opaque content. No Electron / Phaser required.
+// Mirrors the office scene rendering: placed objects y-sorted exactly like
+// depthFor in office-layout.ts. No Electron / Phaser required.
 //
 // Usage: node scripts/render-office-preview.cjs [out.png] [--layout path.json]
 const fs = require("node:fs");
@@ -20,25 +20,12 @@ const outPath = path.resolve(
   args.find((a, i) => !a.startsWith("--") && i !== layoutFlag + 1) || "/tmp/office_render.png",
 );
 
+const { loadRaw, opaqueBounds } = require("./lib/pixels.cjs");
+
 const boundsCache = new Map();
 async function objectBounds(file) {
   if (boundsCache.has(file)) return boundsCache.get(file);
-  const img = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width: w, height: h } = img.info;
-  let minX = w,
-    minY = h,
-    maxX = -1,
-    maxY = -1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (img.data[(y * w + x) * 4 + 3] === 0) continue;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
-  }
-  const b = maxX < minX ? { x: 0, y: 0, w, h } : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  const b = opaqueBounds(await loadRaw(file));
   boundsCache.set(file, b);
   return b;
 }

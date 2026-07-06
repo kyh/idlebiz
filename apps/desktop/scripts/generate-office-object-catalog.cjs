@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const sharp = require("sharp");
+const { loadRaw, opaqueBounds } = require("./lib/pixels.cjs");
 
 const repoRoot = path.resolve(__dirname, "../../..");
 const defaultSource =
@@ -32,33 +33,8 @@ function targetFile(scale, id) {
   return `modern-office-${scale}-${String(id).padStart(3, "0")}.png`;
 }
 
-async function imageBounds(filePath) {
-  const image = await sharp(filePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const w = image.info.width;
-  const h = image.info.height;
-  if (!w || !h) fail(`Missing image size: ${filePath}`);
-
-  let minX = w;
-  let minY = h;
-  let maxX = -1;
-  let maxY = -1;
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      const offset = (y * w + x) * 4;
-      if (image.data[offset + 3] === 0) continue;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
-  }
-
-  if (maxX < minX || maxY < minY) return { x: 0, y: 0, w, h };
-  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
-}
-
 async function copyImage(sourcePath, targetPath) {
-  const bounds = await imageBounds(sourcePath);
+  const bounds = opaqueBounds(await loadRaw(sourcePath));
   const metadata = await sharp(sourcePath).metadata();
   if (!metadata.width || !metadata.height) fail(`Missing image size: ${sourcePath}`);
   await sharp(sourcePath).png().toFile(targetPath);
