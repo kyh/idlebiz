@@ -80,15 +80,17 @@ async function main() {
   for (const r of layout.wallRects) {
     layers.push({ depth: 5, input: await tiledRect(wallTile(r.kind), r.w, r.h), left: r.x, top: r.y });
   }
-  // objects: depth from authored layer + floor-contact anchor (see generator).
-  const band = { floor: 1, object: 1000, overhead: 1_000_000 };
+  // objects: depth mirrors office-layout.ts depthFor exactly (floor decals
+  // scale anchorY by 1e-4 so boosted anchors can never cross into the object
+  // band; the +0.5 biases furniture to win ties against actors).
   const objLayers = [];
   for (const o of layout.objects) {
     const file = o.path ? path.join(appRoot, "public", o.path) : objectPath(o.id);
     const b = await objectBounds(file);
     const anchor = typeof o.anchorY === "number" ? o.anchorY : o.y + b.y + b.h;
-    const base = band[o.layer] ?? 1000;
-    objLayers.push({ depth: base + anchor, input: file, left: o.x, top: o.y });
+    const depth =
+      o.layer === "floor" ? 10 + anchor * 1e-4 : o.layer === "overhead" ? 1_000_000 + anchor : 1000 + anchor + 0.5;
+    objLayers.push({ depth, input: file, left: o.x, top: o.y });
   }
   objLayers.sort((a, b) => a.depth - b.depth);
   layers.push(...objLayers);
