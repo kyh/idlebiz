@@ -46,6 +46,6 @@ export const CHANNELS = {
   loadOfficeDesign: { channel: "office:load-design", kind: "invoke-void" },
 } as const;
 
-export type Channels = typeof CHANNELS;
+type Channels = typeof CHANNELS;
 export type IpcMethod = keyof Channels;
 export type IpcKind<M extends IpcMethod> = Channels[M]["kind"];

@@ -23,7 +23,7 @@ export type TaskStatus =
   | "dead" // dead-letter: failed maxAttempts times, no longer auto-retried
   | "cancelled";
 export type TaskPriority = "low" | "medium" | "high";
-export type EmployeeStatus = "idle" | "working";
+type EmployeeStatus = "idle" | "working";
 
 // ---- queue reliability (TinyAGI-style retry/dead-letter) --------------------
 
@@ -225,7 +225,7 @@ export interface Routine {
   lastRunAt: number | null;
 }
 
-export type ActivityKind =
+type ActivityKind =
   | "log"
   | "tool_call"
   | "status"

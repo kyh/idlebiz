@@ -1,19 +1,27 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
-    ".": {},
     "apps/desktop": {
       "entry": [
         "src/main/index.ts",
         "src/preload/index.ts",
-        "src/renderer/index.html",
-        "src/renderer/main.tsx"
+        "src/renderer/main.tsx",
+        "scripts/*.cjs"
       ],
-      "project": ["src/**/*.{ts,tsx,css}"]
-    },
-    "packages/pi-driver": {
-      "entry": ["src/*.ts"],
-      "project": ["src/**/*.ts"]
+      "project": [
+        "src/**",
+        "scripts/**"
+      ],
+      "ignoreDependencies": [
+        "@mariozechner/pi-ai",
+        "@mariozechner/pi-coding-agent",
+        "@tailwindcss/vite",
+        "@vitejs/plugin-react",
+        "electron-builder"
+      ],
+      "ignoreBinaries": [
+        "gh"
+      ]
     }
   }
 }

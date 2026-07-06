@@ -15,14 +15,12 @@ import {
 import { ROOM_BUILDER_TILES, type RoomBuilderTile } from "@/renderer/game/room-builder-tiles.generated";
 
 export type Tool = "select" | "place" | "spawn" | "seat" | "block" | "clear";
-export type FloorKind = "gray" | "wood" | "plank";
-export type WallKind = "paper" | "brick";
 
-export interface Pt {
+interface Pt {
   x: number;
   y: number;
 }
-export interface Rect {
+interface Rect {
   x: number;
   y: number;
   w: number;
@@ -49,8 +47,6 @@ export interface EditableLayout {
   cols: number;
   rows: number;
   spawn: Pt;
-  floorZones: (Rect & { kind: FloorKind })[];
-  wallRects: (Rect & { kind: WallKind })[];
   workSeats: Pt[];
   objects: EditableObject[];
   collision: string[]; // authored grid; preserved on save, re-derived on demand
@@ -136,8 +132,6 @@ export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableL
     cols: r.cols,
     rows: r.rows,
     spawn: { x: r.spawn.x, y: r.spawn.y },
-    floorZones: r.floorZones.map((z) => ({ x: z.x, y: z.y, w: z.w, h: z.h, kind: z.kind })),
-    wallRects: r.wallRects.map((w) => ({ x: w.x, y: w.y, w: w.w, h: w.h, kind: w.kind })),
     workSeats: r.workSeats.map((s) => ({ x: s.x, y: s.y })),
     objects,
     collision: [...r.collision],
@@ -171,15 +165,16 @@ function inferSolid(
 }
 
 // --- serialize --------------------------------------------------------------
-/** Re-derive the collision grid from the placed furniture (desks solid, aisles clear). */
+/** Re-derive the collision grid from the placed pieces: floor-layer tiles carve
+ * walkable space, solid furniture paints back solid, seats stay reachable. */
 export function deriveCollision(L: EditableLayout): string[] {
-  const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 0));
-  const inFloor = (x: number, y: number) =>
-    L.floorZones.some((z) => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h);
-  for (let r = 0; r < L.rows; r++)
-    for (let c = 0; c < L.cols; c++)
-      if (!inFloor(c * L.cell + L.cell / 2, r * L.cell + L.cell / 2)) grid[r][c] = 1;
-  for (const w of L.wallRects) paint(grid, L.cell, L.cols, L.rows, w, 1);
+  const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 1));
+  for (const o of L.objects) {
+    if (o.layer !== "floor") continue;
+    const v = V32.get(o.id);
+    const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 };
+    paint(grid, L.cell, L.cols, L.rows, { x: o.x + b.x, y: o.y + b.y, w: b.w, h: b.h }, 0);
+  }
   for (const o of L.objects) {
     if (!o.solid) continue;
     const fp = footprintRect(o);
@@ -210,8 +205,6 @@ export function serializeLayout(L: EditableLayout): string {
     cols: L.cols,
     rows: L.rows,
     spawn: L.spawn,
-    floorZones: L.floorZones,
-    wallRects: L.wallRects,
     objects,
     collision: L.collision,
     workSeats: L.workSeats,

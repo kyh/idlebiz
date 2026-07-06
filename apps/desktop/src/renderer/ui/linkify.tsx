@@ -14,7 +14,7 @@ function relFromToken(token: string): string {
   return i >= 0 ? token.slice(i + "/workspace/".length) : token;
 }
 
-export function openAsset(companyId: string, token: string): void {
+function openAsset(companyId: string, token: string): void {
   const bridge = window.appBridge;
   if (!bridge) return;
   if (/^https?:\/\//.test(token)) {

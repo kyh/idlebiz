@@ -713,8 +713,6 @@ async function main() {
       cols,
       rows,
       spawn: CLASS.spawn,
-      floorZones: [],
-      wallRects: [],
       objects,
       collision: solid.map((row) => row.map((v) => (v ? "1" : "0")).join("")),
       workSeats,

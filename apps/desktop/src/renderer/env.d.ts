@@ -8,6 +8,6 @@ declare module "*.png?url" {
 
 interface Window {
   appBridge?: import("@/shared/ipc-registry").AppBridge;
-  /** Dev/test handle to the running Phaser game (set in PhaserGame.tsx). */
+  /** Dev/test handle to the running Phaser game (set in phaser-game.tsx). */
   __game?: import("phaser").Game;
 }

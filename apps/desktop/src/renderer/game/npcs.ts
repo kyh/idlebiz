@@ -5,7 +5,7 @@ import type { Employee } from "@/shared/domain";
 
 export type NpcState = "idle" | "working" | "blocked";
 
-/** A desk seat (px) an employee occupies. Owned by OfficeScene, sized to the active tier. */
+/** A desk seat (px) an employee occupies. Owned by the office scene, sized to the active tier. */
 export interface Seat {
   readonly x: number;
   readonly y: number;

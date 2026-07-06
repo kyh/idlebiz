@@ -35,7 +35,8 @@ function runMetricsPulse(): void {
   if (!company || !company.onboarded) return;
   const cfg = readMetricsConfig(company.id);
   if (cfg) {
-    void fetchRealMetrics(cfg).then((snap) => {
+    void (async () => {
+      const snap = await fetchRealMetrics(cfg);
       const live = snap.users !== null || snap.revenue !== null;
       if (live) store.setRealMetrics(company.id, snap);
       if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
@@ -45,7 +46,7 @@ function runMetricsPulse(): void {
         payload: { users: snap.users, revenue: snap.revenue, real: live },
         createdAt: Date.now(),
       });
-    });
+    })();
     return;
   }
   const p = simulatedMetrics.pulse(company);
@@ -102,6 +103,17 @@ function registerBuiltinPlugins(): void {
   pluginHost.register(shipMilestones);
 }
 
+async function openWorkspacePath(companyId: string, rel: string): Promise<void> {
+  const company = store.getCompany(companyId);
+  if (!company) throw new Error("company not found");
+  const root = path.resolve(company.workspaceDir);
+  const target = path.resolve(root, rel === "" ? "." : rel);
+  if (target !== root && !target.startsWith(root + path.sep))
+    throw new Error("path escapes the workspace");
+  const err = await shell.openPath(target);
+  if (err) throw new Error(err);
+}
+
 function registerIpcHandlers(): void {
   handle("hasAuth", () => ({ ok: piDriver.hasAuth() }));
 
@@ -130,10 +142,9 @@ function registerIpcHandlers(): void {
 
   handle("generateHires", async ({ companyName, mission, businessType }) => {
     const candidates = await generateCandidates({ companyName, mission, businessType });
-    return candidates.map((c, i) => ({
-      ...c,
-      spriteSeed: `${c.role}-${c.name}-${Date.now().toString(36)}-${i}`,
-    }));
+    return candidates.map((c, i) =>
+      Object.assign(c, { spriteSeed: `${c.role}-${c.name}-${Date.now().toString(36)}-${i}` }),
+    );
   });
 
   handle("batchHire", ({ companyId, hires }) => {
@@ -274,17 +285,6 @@ function registerIpcHandlers(): void {
   });
 
   // open a workspace-relative path with the OS default app ("" = the folder itself)
-  const openWorkspacePath = async (companyId: string, rel: string): Promise<void> => {
-    const company = store.getCompany(companyId);
-    if (!company) throw new Error("company not found");
-    const root = path.resolve(company.workspaceDir);
-    const target = path.resolve(root, rel === "" ? "." : rel);
-    if (target !== root && !target.startsWith(root + path.sep))
-      throw new Error("path escapes the workspace");
-    const err = await shell.openPath(target);
-    if (err) throw new Error(err);
-  };
-
   handle("openCompanyPath", async ({ companyId, rel }) => {
     await openWorkspacePath(companyId, rel);
     return { ok: true };
@@ -347,7 +347,8 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-app.whenReady().then(() => {
+void (async () => {
+  await app.whenReady();
   initStore();
   exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
   piDriver.init();
@@ -374,7 +375,7 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
   });
-});
+})();
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

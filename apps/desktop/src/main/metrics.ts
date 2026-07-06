@@ -19,7 +19,7 @@ import type { Company } from "@/shared/domain";
 //   }
 // ---------------------------------------------------------------------------
 
-export interface BusinessPulse {
+interface BusinessPulse {
   usersDelta: number;
   cashDelta: number;
 }

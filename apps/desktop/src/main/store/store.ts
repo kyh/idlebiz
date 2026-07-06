@@ -695,7 +695,7 @@ function seedDefaultRoutines(companyId: string, businessType: BusinessTypeId): v
   }
 }
 
-export function createRoutine(input: {
+function createRoutine(input: {
   companyId: string;
   name: string;
   instruction: string;
@@ -1034,15 +1034,17 @@ export function getTask(id: string): Task | null {
 }
 
 export function listTasks(companyId: string): Task[] {
-  return [...(c().tasks.get(companyId) ?? [])].sort((a, b) => b.createdAt - a.createdAt);
+  return (c().tasks.get(companyId) ?? []).toSorted((a, b) => b.createdAt - a.createdAt);
 }
 
 export function listTasksForEmployee(employeeId: string): Task[] {
   const out: Task[] = [];
   for (const list of c().tasks.values())
     for (const t of list) if (t.assigneeId === employeeId) out.push(t);
-  return out.sort((a, b) => b.createdAt - a.createdAt);
+  return out.toSorted((a, b) => b.createdAt - a.createdAt);
 }
+
+const TASK_PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
 
 /** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
 export function listQueuedTasks(): Task[] {
@@ -1052,8 +1054,11 @@ export function listQueuedTasks(): Task[] {
     for (const t of list)
       if (t.status === "queued" && (t.nextAttemptAt === null || t.nextAttemptAt <= now))
         out.push(t);
-  const prio = (p: TaskPriority): number => (p === "high" ? 0 : p === "medium" ? 1 : 2);
-  return out.sort((a, b) => prio(a.priority) - prio(b.priority) || a.createdAt - b.createdAt);
+  return out.toSorted(
+    (a, b) =>
+      TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority] ||
+      a.createdAt - b.createdAt,
+  );
 }
 
 function patchTask(id: string, patch: Partial<Task>): Task | null {

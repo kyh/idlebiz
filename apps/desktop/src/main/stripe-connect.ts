@@ -16,7 +16,7 @@ import type { StripeStatus } from "@/shared/ipc-registry";
 
 const WEB_BASE = process.env["IDLEBIZ_WEB_URL"] ?? "https://idlebiz.com";
 const FLOW_TIMEOUT_MS = 5 * 60_000;
-export const STRIPE_TOKEN_KEY = "STRIPE_CONNECT_TOKEN";
+const STRIPE_TOKEN_KEY = "STRIPE_CONNECT_TOKEN";
 
 interface PendingFlow {
   server: Server;

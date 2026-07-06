@@ -31,6 +31,13 @@
   },
   "overrides": [
     {
+      // Electron app, not Next.js: plain <img> is correct here.
+      "files": ["apps/desktop/**"],
+      "rules": {
+        "nextjs/no-img-element": "off"
+      }
+    },
+    {
       // Dependency boundary: agent/ must stay main-free. Capabilities are
       // injected as AgentPorts from main/lib/agent-lifecycle.ts.
       "files": ["apps/desktop/src/agent/**"],

@@ -46,40 +46,11 @@ async function objectBounds(file) {
 function objectPath(id) {
   return path.join(kit, "office-objects/32", `modern-office-32-${id.replace("office-object-", "")}.png`);
 }
-function floorTile(kind) {
-  const file = kind === "wood" ? "floor-wood.png" : kind === "plank" ? "floor-plank.png" : "floor-gray.png";
-  return path.join(kit, "office-tiles", file);
-}
-function wallTile(kind) {
-  return path.join(kit, "office-tiles", kind === "brick" ? "wall-brick.png" : "wall-paper.png");
-}
-
-async function tiledRect(tileFile, w, h) {
-  // tile a sheet rounded up to whole 32px tiles, then crop to the exact rect
-  // (Phaser tileSprite clips partial tiles the same way).
-  const sw = Math.ceil(w / 32) * 32;
-  const sh = Math.ceil(h / 32) * 32;
-  const sheet = await sharp({
-    create: { width: sw, height: sh, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-  })
-    .composite([{ input: tileFile, tile: true, top: 0, left: 0 }])
-    .png()
-    .toBuffer();
-  return sharp(sheet).extract({ left: 0, top: 0, width: w, height: h }).png().toBuffer();
-}
-
 async function main() {
   const layout = JSON.parse(fs.readFileSync(layoutPath, "utf8"));
   const W = layout.width,
     H = layout.height;
   const layers = [];
-
-  for (const z of layout.floorZones) {
-    layers.push({ depth: 0, input: await tiledRect(floorTile(z.kind), z.w, z.h), left: z.x, top: z.y });
-  }
-  for (const r of layout.wallRects) {
-    layers.push({ depth: 5, input: await tiledRect(wallTile(r.kind), r.w, r.h), left: r.x, top: r.y });
-  }
   // objects: depth mirrors office-layout.ts depthFor exactly (floor decals
   // scale anchorY by 1e-4 so boosted anchors can never cross into the object
   // band; the +0.5 biases furniture to win ties against actors).

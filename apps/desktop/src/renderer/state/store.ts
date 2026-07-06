@@ -3,7 +3,6 @@ import type Phaser from "phaser";
 import type {
   ActivityEvent,
   Budget,
-  BusinessTypeId,
   Company,
   Employee,
   Task,
@@ -154,17 +153,6 @@ function onActivity(e: ActivityEvent): void {
 }
 
 // ---- actions ---------------------------------------------------------------
-export async function createCompany(input: {
-  name: string;
-  mission: string;
-  businessType: BusinessTypeId;
-  founderName: string;
-  founderSpriteSeed: string;
-}): Promise<Company> {
-  const company = await bridge().createCompany(input);
-  await refresh();
-  return company;
-}
 
 export async function setAutopilot(running: boolean): Promise<void> {
   const c = state.company;

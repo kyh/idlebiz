@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CHANNELS, type IpcMethod, type IpcKind } from "@/shared/ipc-channels";
+import type { IpcMethod, IpcKind } from "@/shared/ipc-channels";
 import type {
   ActivityEvent,
   Budget,
@@ -11,7 +11,6 @@ import type {
   TeamMessage,
 } from "@/shared/domain";
 
-export { CHANNELS };
 export type { IpcMethod };
 
 // ---- shared domain types ---------------------------------------------------
@@ -59,8 +58,8 @@ type _AssertBizSchemaCoversDomain =
   BusinessTypeId extends z.infer<typeof BusinessTypeSchema> ? true : never;
 type _AssertBizDomainCoversSchema =
   z.infer<typeof BusinessTypeSchema> extends BusinessTypeId ? true : never;
-const _bizCheck: _AssertBizSchemaCoversDomain & _AssertBizDomainCoversSchema = true;
-void _bizCheck;
+const bizSchemaInSync: _AssertBizSchemaCoversDomain & _AssertBizDomainCoversSchema = true;
+void bizSchemaInSync;
 
 const BudgetSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("infinite") }),
@@ -72,8 +71,8 @@ type _AssertBudgetSchema =
       ? true
       : never
     : never;
-const _budgetCheck: _AssertBudgetSchema = true;
-void _budgetCheck;
+const budgetSchemaInSync: _AssertBudgetSchema = true;
+void budgetSchemaInSync;
 
 const CreateCompanySchema = z.object({
   name: z.string(),
@@ -190,8 +189,8 @@ export interface Contract {
 // compile-time guarantee: Contract keys == channel keys
 type _AssertContractCoversChannels = IpcMethod extends keyof Contract ? true : never;
 type _AssertChannelsCoverContract = keyof Contract extends IpcMethod ? true : never;
-const _contractCheck: _AssertContractCoversChannels & _AssertChannelsCoverContract = true;
-void _contractCheck;
+const contractInSync: _AssertContractCoversChannels & _AssertChannelsCoverContract = true;
+void contractInSync;
 
 // ---- derived: renderer-facing bridge shape ---------------------------------
 export type AppBridge = {

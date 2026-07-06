@@ -22,7 +22,7 @@ import type { Company, Employee } from "@/shared/domain";
 
 import { DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from "@/shared/domain";
 
-export interface RunResult {
+interface RunResult {
   ok: boolean;
   error?: string;
   summary: string;

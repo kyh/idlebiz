@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
-import { PhaserGame } from "@/renderer/game/PhaserGame";
+import { PhaserGame } from "@/renderer/game/phaser-game";
 import { initStore, setGame, useStore } from "@/renderer/state/store";
-import { PokeOnboarding } from "@/renderer/ui/PokeOnboarding";
-import { AuthGate } from "@/renderer/ui/AuthGate";
-import { Hud } from "@/renderer/ui/Hud";
-import { Dialogue } from "@/renderer/ui/Dialogue";
-import { Hiring } from "@/renderer/ui/Hiring";
-import { Ships } from "@/renderer/ui/Ships";
-import { Inbox } from "@/renderer/ui/Inbox";
-import { Teams } from "@/renderer/ui/Teams";
-import { BudgetModal } from "@/renderer/ui/BudgetModal";
-import { Settings } from "@/renderer/ui/Settings";
-import { CompanyFeed } from "@/renderer/ui/CompanyFeed";
-import { OfficeObjectCatalog } from "@/renderer/ui/OfficeObjectCatalog";
-import { OfficeBuilder } from "@/renderer/ui/OfficeBuilder";
+import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
+import { AuthGate } from "@/renderer/ui/auth-gate";
+import { Hud } from "@/renderer/ui/hud";
+import { Dialogue } from "@/renderer/ui/dialogue";
+import { Hiring } from "@/renderer/ui/hiring";
+import { Ships } from "@/renderer/ui/ships";
+import { Inbox } from "@/renderer/ui/inbox";
+import { Teams } from "@/renderer/ui/teams";
+import { BudgetModal } from "@/renderer/ui/budget-modal";
+import { Settings } from "@/renderer/ui/settings";
+import { CompanyFeed } from "@/renderer/ui/company-feed";
+import { OfficeObjectCatalog } from "@/renderer/ui/office-object-catalog";
+import { OfficeBuilder } from "@/renderer/ui/office-builder";
 
 export function App() {
   const { booted, authed, company, game } = useStore();

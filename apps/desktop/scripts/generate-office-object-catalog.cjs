@@ -12,7 +12,7 @@ const generatedPath = path.join(
   "apps/desktop/src/renderer/game/office-object-catalog.generated.ts",
 );
 
-const scales = [16, 32, 48];
+const scales = [32]; // the game renders at 2x only — 16/48 variants were dead weight
 
 function fail(message) {
   console.error(message);

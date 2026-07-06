@@ -18,7 +18,7 @@ const GLOBAL_CONCURRENCY_CAP = 3;
  */
 const AUTOPILOT_TICK_MS = 10_000;
 
-export class Scheduler {
+class Scheduler {
   readonly events = new EventEmitter();
   private active = new Map<string, string>(); // runId -> employeeId
   private busy = new Set<string>(); // employeeId
@@ -252,7 +252,7 @@ export class Scheduler {
     if (!claimed) throw new Error("task is not assignable");
     this.emit({ taskId, employeeId, kind: "status", message: "queued" });
     this.tick();
-    return store.getTask(taskId)!;
+    return store.getTask(taskId) ?? claimed;
   }
 
   /** Pull queued tasks into runs while we have capacity. */
