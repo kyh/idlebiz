@@ -224,9 +224,21 @@ export function OfficeBuilder() {
         // if the hit isn't already in the selection, select just it; then drag the whole selection
         const inSel = selectedUids.includes(hit.uid);
         const group = inSel ? selectedUids : [hit.uid];
-        if (!inSel) setSelectedUids([hit.uid]);
         const groupSet = new Set(group);
-        beginStroke(); // the whole drag is one undo step
+        beginStroke(); // the whole gesture (clone included) is one undo step
+        if (e.altKey) {
+          // Figma-style alt-drag: duplicate the selection and drag the copies
+          const clones = layoutRef.current.objects.filter((o) => groupSet.has(o.uid)).map((o) => cloneObject(o));
+          applyLive((L) => ({ ...L, objects: [...L.objects, ...clones] }));
+          setSelectedUids(clones.map((o) => o.uid));
+          dragRef.current = {
+            sx: p.x,
+            sy: p.y,
+            origins: clones.map((o) => ({ uid: o.uid, x: o.x, y: o.y })),
+          };
+          return;
+        }
+        if (!inSel) setSelectedUids([hit.uid]);
         dragRef.current = {
           sx: p.x,
           sy: p.y,
@@ -672,7 +684,7 @@ export function OfficeBuilder() {
             </p>
             <div className="px-inset p-2 text-[10px] leading-relaxed">
               V select · P place · S spawn · T seat · B/X collision
-              <br />⌘Z undo · ⇧⌘Z redo · ⌘D duplicate · ⌘S save
+              <br />⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
               <br />⇧H flip horizontal · ⇧V flip vertical
               <br />arrows nudge (⇧ = snap step) · Delete remove · Esc deselect
               <br />
