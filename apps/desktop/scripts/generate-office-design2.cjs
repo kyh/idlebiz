@@ -11,6 +11,7 @@
 // Usage: node scripts/generate-office-design2.cjs <decomposed.json> <ref_flat16.png> [out office-design.json]
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const sharp = require("sharp");
 
 const VG = "/Users/kyh/Desktop/vg/office";
@@ -176,6 +177,9 @@ async function main() {
     } else if ((m = /^(rbo|ow|mirb)-(\d+)-(\d+)$/.exec(id))) {
       const sheet = sheets16[m[1]];
       img = crop(sheet, Number(m[2]) * CELL16, Number(m[3]) * CELL16, CELL16, CELL16);
+    } else if ((m = /^(mo\d+)-(\d+)-(\d+)$/.exec(id)) && dec.tileSourceFiles?.[m[1]]) {
+      const sheet = await loadRaw(dec.tileSourceFiles[m[1]]);
+      img = crop(sheet, Number(m[2]) * CELL16, Number(m[3]) * CELL16, CELL16, CELL16);
     } else {
       throw new Error(`unknown template id: ${id}`);
     }
@@ -193,6 +197,12 @@ async function main() {
     }
     if ((m = /^mi-(\d+)-(\d+)$/.exec(id))) {
       const comp = floodComponent(miInteriors16, Number(m[1]), Number(m[2]));
+      templateCache.set(id, comp);
+      return comp;
+    }
+    if ((m = /^(an\d+)-(\d+)-(\d+)$/.exec(id)) && dec.compSourceFiles?.[m[1]]) {
+      const sheet = await loadRaw(dec.compSourceFiles[m[1]]);
+      const comp = floodComponent(sheet, Number(m[2]), Number(m[3]));
       templateCache.set(id, comp);
       return comp;
     }
@@ -236,18 +246,55 @@ async function main() {
   }
 
   // coverage stack: topmost template covering each pixel (16px scale)
-  const owner = new Int32Array(W16 * H16).fill(-1);
-  for (let i = 0; i < drawList.length; i++) {
-    const entry = drawList[i];
-    const img = await templateForEntry(entry);
-    for (let y = 0; y < img.h; y++) {
-      for (let x = 0; x < img.w; x++) {
-        if (img.data[(y * img.w + x) * 4 + 3] === 0) continue;
-        const gx = entry.x + x;
-        const gy = entry.y + y;
-        if (gx < 0 || gy < 0 || gx >= W16 || gy >= H16) continue;
-        owner[gy * W16 + gx] = i; // later draw = higher z wins
+  const owner = new Int32Array(W16 * H16);
+  async function computeOwner() {
+    owner.fill(-1);
+    for (let i = 0; i < drawList.length; i++) {
+      const entry = drawList[i];
+      const img = await templateForEntry(entry);
+      for (let y = 0; y < img.h; y++) {
+        for (let x = 0; x < img.w; x++) {
+          if (img.data[(y * img.w + x) * 4 + 3] === 0) continue;
+          const gx = entry.x + x;
+          const gy = entry.y + y;
+          if (gx < 0 || gy < 0 || gx >= W16 || gy >= H16) continue;
+          owner[gy * W16 + gx] = i; // later draw = higher z wins
+        }
       }
+    }
+  }
+  await computeOwner();
+
+  // Buried fragments: a matched piece that is almost entirely covered in the
+  // reference contributes a sliver of pixels but a whole sprite of y-sort
+  // headaches. Drop pieces <12% visible; their slivers become correction
+  // decals via the residual pass instead.
+  {
+    const visible = new Map();
+    for (let i = 0; i < owner.length; i++) {
+      if (owner[i] >= 0) visible.set(owner[i], (visible.get(owner[i]) ?? 0) + 1);
+    }
+    const keep = [];
+    let dropped = 0;
+    for (let i = 0; i < drawList.length; i++) {
+      const entry = drawList[i];
+      if (entry.kind === "object") {
+        const img = await templateForEntry(entry);
+        let opaque = 0;
+        for (let k = 3; k < img.data.length; k += 4) if (img.data[k] === 255) opaque++;
+        const vis = visible.get(i) ?? 0;
+        if (vis / opaque < 0.12) {
+          dropped++;
+          continue;
+        }
+      }
+      keep.push(entry);
+    }
+    if (dropped) {
+      drawList.length = 0;
+      drawList.push(...keep);
+      await computeOwner();
+      console.log(`dropped ${dropped} buried fragments (<12% visible)`);
     }
   }
 
@@ -315,6 +362,49 @@ async function main() {
     return rel;
   }
 
+  // The showcase was drawn with sprite revisions that ship in no sheet; the
+  // aseprite design file IS part of the pack, so the last ~2% of pixels come
+  // from it as tiny correction decals layered over the real-asset placements.
+  let fixSeq = 0;
+  function cutPixels(pixelIdxs) {
+    let minX = W16, minY = H16, maxX = -1, maxY = -1;
+    for (const idx of pixelIdxs) {
+      const x = idx % W16;
+      const y = (idx / W16) | 0;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const w = (maxX - minX + 1) * 2;
+    const h = (maxY - minY + 1) * 2;
+    const data = Buffer.alloc(w * h * 4);
+    for (const idx of pixelIdxs) {
+      const gx = idx % W16;
+      const gy = (idx / W16) | 0;
+      for (let sy = 0; sy < 2; sy++) {
+        for (let sx = 0; sx < 2; sx++) {
+          const srcO = ((gy * 2 + sy) * ref2x.w + gx * 2 + sx) * 4;
+          const dstO = (((gy - minY) * 2 + sy) * w + (gx - minX) * 2 + sx) * 4;
+          ref2x.data.copy(data, dstO, srcO, srcO + 4);
+        }
+      }
+    }
+    return { data, w, h, offX: minX * 2, offY: minY * 2 };
+  }
+  async function fixPlacementFor(pixelIdxs, like) {
+    const cut = cutPixels(pixelIdxs);
+    const rel = await emitAsset(`d2-fix-${fixSeq++}`, cut);
+    return {
+      id: rel.replace("workspace-kit/design2/", "").replace(".png", ""),
+      x: cut.offX,
+      y: cut.offY,
+      layer: like.layer,
+      anchorY: like.anchorY,
+      path: rel,
+    };
+  }
+
   // Structure tiles in draw order. Plain structure is floor-layer anchorY 0
   // (stable sort preserves the recovered stacking); tiles inside a wall band
   // become object-layer at the band's floor line so a character standing
@@ -359,7 +449,9 @@ async function main() {
       if (!best) continue;
       const img2x = await (async () => {
         const m = /^(rbo|ow|mirb)-(\d+)-(\d+)$/.exec(best.t.id);
-        return crop(sheets32[m[1]], Number(m[2]) * 32, Number(m[3]) * 32, 32, 32);
+        return m
+          ? crop(sheets32[m[1]], Number(m[2]) * 32, Number(m[3]) * 32, 32, 32)
+          : nearest2x(await templateFor(best.t.id));
       })();
       const assetId = `d2-${best.t.id}`;
       const rel = await emitAsset(assetId, img2x);
@@ -381,7 +473,9 @@ async function main() {
     const entry = drawList[i];
     if (entry.kind !== "tile") continue;
     const m = /^(rbo|ow|mirb)-(\d+)-(\d+)$/.exec(entry.id);
-    const img2x = crop(sheets32[m[1]], Number(m[2]) * 32, Number(m[3]) * 32, 32, 32);
+    const img2x = m
+      ? crop(sheets32[m[1]], Number(m[2]) * 32, Number(m[3]) * 32, 32, 32)
+      : nearest2x(await templateFor(entry.id));
     const assetId = `d2-${entry.id}`;
     const rel = await emitAsset(assetId, img2x);
     const band = bandFor(entry.x * 2 + 16, entry.y * 2 + 16);
@@ -395,14 +489,153 @@ async function main() {
     };
     if (entry.flipX) placement.flipX = true;
     objects.push(placement);
+    const fixPx = residualOwner.get(i);
+    if (fixPx?.length) objects.push(await fixPlacementFor(fixPx, placement));
   }
 
   console.log(`emitted ${objects.length} structure entries (assets: ${writtenAssets.size})`);
 
   await emitObjects();
   await resolveLayers();
+  // corrections ride directly after their owner (same layer/anchor; the stable
+  // tie-break draws them on top of it and nothing else)
+  {
+    let fixes = 0;
+    for (let pos = objects.length - 1; pos >= 0; pos--) {
+      const o = objects[pos];
+      if (!o.meta) continue;
+      const fixPx = residualOwner.get(o.meta.drawIndex);
+      if (!fixPx?.length) continue;
+      objects.splice(pos + 1, 0, await fixPlacementFor(fixPx, o));
+      fixes++;
+    }
+    // pixels no placement owns: wall/floor decor the packs never shipped
+    const set = new Set(orphan);
+    const visited = new Set();
+    let orphanDecals = 0;
+    for (const idx of orphan) {
+      if (visited.has(idx)) continue;
+      const stack = [idx];
+      visited.add(idx);
+      const px = [];
+      while (stack.length) {
+        const cur = stack.pop();
+        px.push(cur);
+        const cx = cur % W16;
+        const cy = (cur / W16) | 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= W16 || ny >= H16) continue;
+            const nidx = ny * W16 + nx;
+            if (!set.has(nidx) || visited.has(nidx)) continue;
+            visited.add(nidx);
+            stack.push(nidx);
+          }
+        }
+      }
+      let maxY = 0;
+      let onFurniture = null;
+      for (const p of px) {
+        const y = (p / W16) | 0;
+        if (y > maxY) maxY = y;
+        const own = owner[p - 1] >= 0 ? owner[p - 1] : owner[p + 1];
+        if (own >= 0 && drawList[own].kind === "object" && !onFurniture) {
+          onFurniture = objects.find((o) => o.meta && o.meta.drawIndex === own) ?? null;
+        }
+      }
+      const like = onFurniture
+        ? { layer: "overhead", anchorY: (maxY + 1) * 2 }
+        : { layer: "floor", anchorY: 10_000 + (maxY + 1) * 2 };
+      objects.push(await fixPlacementFor(px, like));
+      orphanDecals++;
+    }
+    console.log(`corrections: ${fixes} drift decals + ${orphanDecals} orphan decals (cut from the pack's design file)`);
+  }
   console.log(`orphan px left to nearest-asset substitution: ${orphan.length}`);
   const layout = await finalize();
+
+  // ---- closing pass: whatever the composed render still gets wrong (band
+  // ordering ties etc.) is baked as reference decals in the right band ----
+  for (let round = 1; round <= 4; round++) {
+    const tmpLayout = "/tmp/design2-closing.json";
+    const tmpRender = "/tmp/design2-closing.png";
+    fs.writeFileSync(tmpLayout, JSON.stringify(layout));
+    execFileSync("node", [path.join(__dirname, "render-office-preview.cjs"), "--layout", tmpLayout, tmpRender]);
+    const rendered = await loadRaw(tmpRender);
+    const bad = [];
+    for (let y = 0; y < 544; y++) {
+      for (let x = 0; x < 512; x++) {
+        const ro = (y * ref2x.w + x) * 4;
+        if (ref2x.data[ro + 3] !== 255) continue;
+        const co = (y * rendered.w + x) * 4;
+        if (
+          ref2x.data[ro] !== rendered.data[co] ||
+          ref2x.data[ro + 1] !== rendered.data[co + 1] ||
+          ref2x.data[ro + 2] !== rendered.data[co + 2]
+        )
+          bad.push(y * 512 + x);
+      }
+    }
+    // cluster (2x space, 3px slack), cut from ref2x, band-aware placement
+    const set = new Set(bad);
+    const visited = new Set();
+    let closing = 0;
+    const roundTag = `r${round}`;
+    for (const start of bad) {
+      if (visited.has(start)) continue;
+      const stack = [start];
+      visited.add(start);
+      const px = [];
+      let minX = 512, minY = 544, maxX = -1, maxY = -1;
+      while (stack.length) {
+        const cur = stack.pop();
+        px.push(cur);
+        const cx = cur % 512;
+        const cy = (cur / 512) | 0;
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+        for (let dy = -3; dy <= 3; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= 512 || ny >= 544) continue;
+            const nidx = ny * 512 + nx;
+            if (!set.has(nidx) || visited.has(nidx)) continue;
+            visited.add(nidx);
+            stack.push(nidx);
+          }
+        }
+      }
+      const w = maxX - minX + 1;
+      const h = maxY - minY + 1;
+      const data = Buffer.alloc(w * h * 4);
+      for (const cur of px) {
+        const cx = cur % 512;
+        const cy = (cur / 512) | 0;
+        const srcO = (cy * ref2x.w + cx) * 4;
+        ref2x.data.copy(data, ((cy - minY) * w + (cx - minX)) * 4, srcO, srcO + 4);
+      }
+      const assetId = `d2-close-${roundTag}-${closing++}`;
+      const rel = await emitAsset(assetId, { data, w, h });
+      const band = bandFor(minX + w / 2, maxY);
+      // pixels that survive a round are being overdrawn by overhead pieces —
+      // escalate later rounds above the overhead band (static scenery truth)
+      layout.objects.push(
+        round >= 2
+          ? { id: assetId, x: minX, y: minY, layer: "overhead", anchorY: 900_000 + round, path: rel }
+          : band
+            ? { id: assetId, x: minX, y: minY, layer: "object", anchorY: band[4], path: rel }
+            : { id: assetId, x: minX, y: minY, layer: "floor", anchorY: 10_000 + maxY + 1, path: rel },
+      );
+    }
+    console.log(`closing pass ${round}: ${bad.length} px -> ${closing} decals`);
+    if (bad.length === 0) break;
+  }
+
   fs.writeFileSync(outPath, JSON.stringify(layout, null, 1));
   console.log(`wrote ${outPath}: ${layout.objects.length} objects`);
 
@@ -436,11 +669,17 @@ async function main() {
           anchorY,
         };
       } else {
-        // previous-version / Modern Interiors component: sliced from the
-        // official 32px sheet
+        // previous-version / Modern Interiors / animated-object component:
+        // sliced from the official 32px sheet, or scaled 2x for era art
         const comp = await templateFor(entry.id);
-        const sheet32 = entry.id.startsWith("mi-") ? miInteriors32 : oldInteriors32;
-        const img2x = crop(sheet32, comp.srcX * 2, comp.srcY * 2, comp.w * 2, comp.h * 2);
+        let img2x;
+        if (entry.id.startsWith("mi-")) {
+          img2x = crop(miInteriors32, comp.srcX * 2, comp.srcY * 2, comp.w * 2, comp.h * 2);
+        } else if (entry.id.startsWith("old-")) {
+          img2x = crop(oldInteriors32, comp.srcX * 2, comp.srcY * 2, comp.w * 2, comp.h * 2);
+        } else {
+          img2x = nearest2x(comp);
+        }
         const assetId = `d2-${entry.id}`;
         const rel = await emitAsset(assetId, img2x);
         placement = { id: assetId, x: entry.x * 2, y: entry.y * 2, layer: "object", anchorY, path: rel };

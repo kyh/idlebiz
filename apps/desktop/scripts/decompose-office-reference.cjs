@@ -44,6 +44,11 @@ const OLD_INTERIORS = path.join(
 // Modern Interiors objects (same artist): the design borrows props from it
 // (shelf contents like the aquarium/books are MI objects).
 const MI_INTERIORS = path.join(VG, "moderninteriors-win/1_Interiors/16x16/Interiors_16x16.png");
+// Era-correct sources: the 2021 design was drawn with Modern Interiors' since-
+// retired art, which still ships under "Old stuff" + the animated objects.
+// These are prescreened against the reference (4x4 hash) to stay tractable.
+const MI_OLD_DIR = path.join(VG, "moderninteriors-win/1_Interiors/16x16/Old stuff");
+const MI_ANIM_DIR = path.join(VG, "moderninteriors-win/3_Animated_objects/16x16/spritesheets");
 
 const MIN_EXACT = 0.88; // ≥88% of opaque pixels exact (tolerates palette drift)
 const OBJ_MIN_FRESH_FRAC = 0.35; // objects: enough fresh evidence to kill ghosts
@@ -132,7 +137,7 @@ async function loadSprites() {
 
 // Slice a sheet into connected components of non-transparent pixels
 // (8-connected), each exported as a template with its own bbox-local canvas.
-async function loadComponents(file, keyPrefix) {
+async function loadComponents(file, keyPrefix, refScreen = null) {
   const img = await loadRaw(file);
   const seen = new Uint8Array(img.w * img.h);
   const comps = [];
@@ -181,16 +186,18 @@ async function loadComponents(file, keyPrefix) {
       comp.opaque = masks.opaque;
       comp.anyAlpha = masks.anyAlpha;
       comp.bbox = masks.bbox;
+      if (refScreen && !passesScreen(comp, refScreen)) continue;
       pushWithFlip(comps, compContent, comp);
     }
   }
   return comps;
 }
 
-async function loadTiles() {
+async function loadTiles(extraSources = [], refScreen = null) {
   const tiles = [];
   const byContent = new Map();
-  for (const src of TILE_SOURCES) {
+  const sources = [...TILE_SOURCES, ...extraSources];
+  for (const src of sources) {
     const img = await loadRaw(src.file);
     const cols = Math.floor(img.w / CELL);
     const rows = Math.floor(img.h / CELL);
@@ -206,11 +213,62 @@ async function loadTiles() {
         tile.opaque = masks.opaque;
         tile.anyAlpha = masks.anyAlpha;
         tile.bbox = masks.bbox;
+        if (src.screened && refScreen && !passesScreen(tile, refScreen)) continue;
         pushWithFlip(tiles, byContent, tile);
       }
     }
   }
   return tiles;
+}
+
+// ---- prescreen: a template can only match if some interior 4x4 of it occurs
+// verbatim in the reference. Cheap hash screen for the huge era sheets. ----
+function hash4x4(data, w, x, y) {
+  let h = 0x811c9dc5;
+  for (let dy = 0; dy < 4; dy++) {
+    for (let dx = 0; dx < 4; dx++) {
+      const o = ((y + dy) * w + (x + dx)) * 4;
+      h = Math.imul(h ^ data[o], 16777619);
+      h = Math.imul(h ^ data[o + 1], 16777619);
+      h = Math.imul(h ^ data[o + 2], 16777619);
+    }
+  }
+  return h >>> 0;
+}
+function buildRefScreen(ref) {
+  const set = new Set();
+  for (let y = 0; y + 4 <= ref.h; y++) {
+    for (let x = 0; x + 4 <= ref.w; x++) {
+      let opaque = true;
+      for (let dy = 0; dy < 4 && opaque; dy++)
+        for (let dx = 0; dx < 4; dx++)
+          if (ref.data[((y + dy) * ref.w + (x + dx)) * 4 + 3] !== 255) {
+            opaque = false;
+            break;
+          }
+      if (opaque) set.add(hash4x4(ref.data, ref.w, x, y));
+    }
+  }
+  return set;
+}
+function passesScreen(tpl, refScreen) {
+  const { bbox } = tpl;
+  let probes = 0;
+  for (let y = bbox.by0; y + 4 <= bbox.by1 + 1 && probes < 24; y += 3) {
+    for (let x = bbox.bx0; x + 4 <= bbox.bx1 + 1 && probes < 24; x += 3) {
+      let opaque = true;
+      for (let dy = 0; dy < 4 && opaque; dy++)
+        for (let dx = 0; dx < 4; dx++)
+          if (tpl.data[((y + dy) * tpl.w + (x + dx)) * 4 + 3] !== 255) {
+            opaque = false;
+            break;
+          }
+      if (!opaque) continue;
+      probes++;
+      if (refScreen.has(hash4x4(tpl.data, tpl.w, x, y))) return true;
+    }
+  }
+  return false;
 }
 
 function scoreAt(sprite, sx, sy, ref, explained, minFreshFrac, minExact = MIN_EXACT) {
@@ -320,12 +378,34 @@ async function main() {
     process.exit(1);
   }
   const ref = await loadRaw(refPath);
+  const refScreen = buildRefScreen(ref);
   const sprites = await loadSprites();
   const oldComps = await loadComponents(OLD_INTERIORS, "old");
   const miComps = await loadComponents(MI_INTERIORS, "mi");
-  const tiles = await loadTiles();
+  // era-correct retired art, prescreened against the reference
+  const eraTileSources = [];
+  const tileSourceFiles = {};
+  for (const f of fs.readdirSync(MI_OLD_DIR).filter((f) => f.endsWith(".png"))) {
+    const key = `mo${eraTileSources.length}`;
+    eraTileSources.push({ key, file: path.join(MI_OLD_DIR, f), screened: true });
+    tileSourceFiles[key] = path.join(MI_OLD_DIR, f);
+  }
+  const animComps = [];
+  const compSourceFiles = {};
+  {
+    let idx = 0;
+    for (const f of fs.readdirSync(MI_ANIM_DIR).filter((f) => f.endsWith(".png"))) {
+      const key = `an${idx++}`;
+      const comps = await loadComponents(path.join(MI_ANIM_DIR, f), key, refScreen);
+      if (comps.length) {
+        animComps.push(...comps);
+        compSourceFiles[key] = path.join(MI_ANIM_DIR, f);
+      }
+    }
+  }
+  const tiles = await loadTiles(eraTileSources, refScreen);
   console.log(
-    `ref ${ref.w}x${ref.h}, ${sprites.length} unique sprites, ${oldComps.length} old + ${miComps.length} mi components, ${tiles.length} unique tiles`,
+    `ref ${ref.w}x${ref.h}, ${sprites.length} sprites, ${oldComps.length} old + ${miComps.length} mi + ${animComps.length} anim comps, ${tiles.length} tiles (era sheets screened)`,
   );
 
   const explained = new Uint8Array(ref.w * ref.h);
@@ -334,7 +414,7 @@ async function main() {
 
   runPasses("objects", sprites, ref, explained, objects, OBJ_MIN_FRESH_FRAC, 12);
   // previous-version + Modern Interiors props the office singles don't contain
-  runPasses("old-objects", oldComps.concat(miComps), ref, explained, objects, OBJ_MIN_FRESH_FRAC, 6);
+  runPasses("old-objects", oldComps.concat(miComps, animComps), ref, explained, objects, OBJ_MIN_FRESH_FRAC, 6);
   runPasses("tiles", tiles, ref, explained, structure, TILE_MIN_FRESH_FRAC, 12);
   // objects again: pieces that only became matchable once structure was known
   runPasses("objects2", sprites.concat(oldComps, miComps), ref, explained, objects, OBJ_MIN_FRESH_FRAC, 4);
@@ -342,7 +422,7 @@ async function main() {
   // ship in any pack, so what's left gets its CLOSEST real asset (loose
   // exactness, sprite silhouette must still fit). Layout stays exact; pixels
   // may differ slightly from the showcase gif where the artist revised art.
-  runPasses("substitute-objects", sprites.concat(oldComps, miComps), ref, explained, objects, 0.3, 4, 0.55);
+  runPasses("substitute-objects", sprites.concat(oldComps, miComps, animComps), ref, explained, objects, 0.3, 4, 0.55);
   // big decor whose art was revised heavily (old whiteboards/chart boards):
   // mostly-fresh regions only, so a wrong sprite can't glue onto matched art
   runPasses("substitute-decor", sprites, ref, explained, objects, 0.5, 2, 0.4);
@@ -365,7 +445,10 @@ async function main() {
     console.log("worst cells (col,row 16px):", top.map(([k, n]) => `${k}=${n}`).join(" "));
   }
 
-  fs.writeFileSync(outPath, JSON.stringify({ cell: CELL, objects, tiles: structure, unexplained }, null, 1));
+  fs.writeFileSync(
+    outPath,
+    JSON.stringify({ cell: CELL, objects, tiles: structure, unexplained, tileSourceFiles, compSourceFiles }, null, 1),
+  );
   console.log(`wrote ${outPath}: ${objects.length} objects, ${structure.length} tiles`);
 
   if (recompositePath) {
@@ -383,6 +466,7 @@ async function main() {
     for (const s of sprites) if (!s.flipX) templateById.set(s.id, s);
     for (const s of oldComps) if (!s.flipX) templateById.set(s.id, s);
     for (const s of miComps) if (!s.flipX) templateById.set(s.id, s);
+    for (const s of animComps) if (!s.flipX) templateById.set(s.id, s);
     for (const t of tiles) if (!t.flipX) templateById.set(t.id, t);
     const flipCache = new Map();
     const imageFor = (m) => {

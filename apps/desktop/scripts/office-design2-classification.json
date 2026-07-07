@@ -31,28 +31,9 @@
     "obj-92",
     "obj-93"
   ],
-  "_clear_note": "source-px zones where the gif used art that no pack ships: matched fragments there read as junk, so objects and substitute tiles inside are dropped (hole-fill lays the local wall/floor tile instead) and manualPlacements provide a clean native furnishing. Zones: the wall shelf (no modern twin; office mesh shelf stands in) and the left exterior wall (plain white in the design; drift-tolerant matching glued window-rung lookalikes onto it).",
-  "clearRects": [
-    [
-      123,
-      0,
-      167,
-      36
-    ],
-    [
-      0,
-      95,
-      24,
-      172
-    ]
-  ],
-  "manualPlacements": [
-    {
-      "id": "obj-200",
-      "x": 125,
-      "y": -16
-    }
-  ],
+  "_clear_note": "no clear zones: residual correction decals cut from the pack's own design file reproduce the few spots whose sprite revisions never shipped as standalone assets",
+  "clearRects": [],
+  "manualPlacements": [],
   "_wall_band_note": "x0,y0,x1,y1,anchor \u2014 structure tiles inside a band y-sort at the band's floor line so characters north of the wall are occluded; mounted decor lifts just above. Doorway x316-352 excluded.",
   "wallBands": [
     [
@@ -194,15 +175,5 @@
     "y": 180
   },
   "_fill_note": "hole-fill donor override per zone (source px + tile id): cleared zones fill with the right wall tile instead of the local mode donor",
-  "fillDonors": [
-    {
-      "rect": [
-        0,
-        95,
-        24,
-        172
-      ],
-      "tile": "ow-6-6"
-    }
-  ]
+  "fillDonors": []
 }
