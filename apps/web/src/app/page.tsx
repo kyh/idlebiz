@@ -69,7 +69,8 @@ export default async function Page() {
           <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-[var(--text)] sm:text-[14px]">
             An idle business sim where your employees are{" "}
             <span className="text-[var(--accent-lo)]">real AI agents</span>. They write real code,
-            ship real products, and ask you before doing anything public.
+            ship real products, and{" "}
+            <span className="text-[var(--text-dim)] line-through">make</span> burn real money.
             <span className="px-blink ml-2 inline-block text-[var(--accent-lo)]" aria-hidden>
               ▼
             </span>
@@ -84,7 +85,7 @@ export default async function Page() {
               Download for Mac
             </a>
             <span className="text-[11px] text-[var(--text-dim)]">
-              {version ? `${version} · ` : ""}macOS · bring your own OpenAI API key
+              {version ? `${version} · ` : ""}macOS · bring your own OpenAI Account
             </span>
           </div>
         </div>
@@ -100,7 +101,7 @@ export default async function Page() {
         <span aria-hidden>·</span>
         <span>© 2026 kyh</span>
         <span aria-hidden>·</span>
-        <span>{siteConfig.name} is in early access</span>
+        <span>{siteConfig.name} is in early development</span>
       </footer>
     </main>
   );
