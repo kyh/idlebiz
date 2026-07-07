@@ -82,14 +82,6 @@ img {
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
 }
 
-.px-inset {
-  background: #f6f3e9;
-  border: 2px solid var(--ink);
-  box-shadow:
-    inset 2px 2px 0 0 var(--face-lo),
-    inset -1px -1px 0 0 var(--face-hi);
-}
-
 .px-btn-accent {
   font-family: inherit;
   color: var(--light);
@@ -126,12 +118,6 @@ img {
     inset 4px 4px 0 0 var(--face-hi),
     inset -4px -4px 0 0 var(--face-lo);
   image-rendering: pixelated;
-}
-
-.px-badge {
-  border: 2px solid var(--ink);
-  padding: 2px 7px;
-  font-size: 10px;
 }
 
 .px-blink {

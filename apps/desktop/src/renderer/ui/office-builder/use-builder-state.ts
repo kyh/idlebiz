@@ -94,10 +94,10 @@ function footprintRect(o: EditableObject): Rect | null {
   return { x: o.x + b.x, y: o.y + b.y + b.h - fh, w: b.w, h: fh };
 }
 
-let uidSeq = 0;
+// Random uids: a module counter would reset on HMR while React state keeps
+// the old uids, colliding new placements with loaded ones.
 function newUid(): string {
-  uidSeq += 1;
-  return `o${uidSeq}`;
+  return crypto.randomUUID();
 }
 
 // --- grid helpers -----------------------------------------------------------

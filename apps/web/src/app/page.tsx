@@ -3,7 +3,7 @@ import Image from "next/image";
 
 import { siteConfig } from "@/lib/site-config";
 
-const GITHUB_REPO = "kyh/idlebiz";
+const GITHUB_REPO = siteConfig.githubRepo;
 const FALLBACK_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
 function MacLogoIcon({ className }: { className?: string }) {
@@ -144,7 +144,7 @@ export default async function Page() {
         <span aria-hidden>·</span>
         <span>© 2026 kyh</span>
         <span aria-hidden>·</span>
-        <span>{siteConfig.shortName} is in early access</span>
+        <span>{siteConfig.name} is in early access</span>
       </footer>
     </main>
   );

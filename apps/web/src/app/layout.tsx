@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     creator: siteConfig.twitter,
   },
   other: {
-    "apple-mobile-web-app-title": siteConfig.shortName,
+    "apple-mobile-web-app-title": siteConfig.name,
   },
 };
 
