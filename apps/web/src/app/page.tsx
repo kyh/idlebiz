@@ -67,7 +67,7 @@ export default async function Page() {
           />
 
           <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-[var(--text)] sm:text-[14px]">
-            An idle business sim where your employees are{" "}
+            An idle game business simulator where your employees are{" "}
             <span className="text-[var(--accent-lo)]">real AI agents</span>. They write real code,
             ship real products, and{" "}
             <span className="text-[var(--text-dim)] line-through">make</span> burn real money.
