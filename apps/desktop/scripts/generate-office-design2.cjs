@@ -123,6 +123,19 @@ function floodComponent(img, ox, oy) {
 
 const touches = (a, b) => a.x0 <= b.x1 + 2 && b.x0 <= a.x1 + 2 && a.y0 <= b.y1 + 2 && b.y0 <= a.y1 + 2;
 
+/** Horizontally mirrored copy of a raw image. */
+function flipXRaw(img) {
+  const data = Buffer.alloc(img.data.length);
+  for (let y = 0; y < img.h; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const src = (y * img.w + x) * 4;
+      const dst = (y * img.w + (img.w - 1 - x)) * 4;
+      img.data.copy(data, dst, src, src + 4);
+    }
+  }
+  return { ...img, data };
+}
+
 async function main() {
   const [decomposedPath, refPath, outPathArg] = process.argv.slice(2);
   if (!decomposedPath || !refPath) {
@@ -154,17 +167,6 @@ async function main() {
   const miInteriors32 = await loadRaw(MI_INTERIORS32);
 
   const templateCache = new Map();
-  function flipXRaw(img) {
-    const data = Buffer.alloc(img.data.length);
-    for (let y = 0; y < img.h; y++) {
-      for (let x = 0; x < img.w; x++) {
-        const src = (y * img.w + x) * 4;
-        const dst = (y * img.w + (img.w - 1 - x)) * 4;
-        img.data.copy(data, dst, src, src + 4);
-      }
-    }
-    return { ...img, data };
-  }
   async function template16(id) {
     if (templateCache.has(id)) return templateCache.get(id);
     let img;
@@ -689,21 +691,6 @@ async function main() {
       objects.push(placement);
     }
     console.log(`after objects: ${objects.length} entries, ${writtenAssets.size} assets`);
-  }
-
-  // wall-mounted decor sits within a wall band but has a small natural anchor;
-  // lift it just above the band tiles so it stays visible on the wall.
-  function liftWallBandObjects() {
-    let lifted = 0;
-    for (const o of objects) {
-      if (!o.meta || o.layer !== "object") continue;
-      const band = bandFor(o.x + 16, o.anchorY - 8);
-      if (band && o.anchorY <= band[4]) {
-        o.anchorY = band[4] + 0.25;
-        lifted++;
-      }
-    }
-    console.log(`wall bands: lifted ${lifted} mounted objects`);
   }
 
   // Layering, kept simple — three bands like the source art:
