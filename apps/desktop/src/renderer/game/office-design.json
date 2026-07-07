@@ -1,4676 +1,5100 @@
 {
-  "tile": 32,
-  "width": 512,
-  "height": 544,
-  "cell": 16,
-  "cols": 32,
-  "rows": 34,
-  "spawn": {
-    "x": 256,
-    "y": 180
+ "tile": 32,
+ "width": 512,
+ "height": 544,
+ "cell": 16,
+ "cols": 32,
+ "rows": 34,
+ "spawn": {
+  "x": 256,
+  "y": 180
+ },
+ "objects": [
+  {
+   "id": "d2-rbo-1-11",
+   "x": 256,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
   },
-  "objects": [
-    {
-      "id": "d2-rbo-1-11",
-      "x": 288,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 192,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 128,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 256,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 0,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 128,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 192,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 224,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 256,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 288,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 96,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 352,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 128,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 320,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 224,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 96,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 288,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-mirb-0-10",
-      "x": 0,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-0-10.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 128,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 160,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 352,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 288,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 416,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 0,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 96,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 96,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 192,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 288,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 384,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 448,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 256,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 256,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 192,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 448,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 384,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 288,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 294,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 290,
-      "y": 42,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 304,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 294,
-      "y": 36,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 192,
-      "y": 468,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-ow-5-3",
-      "x": 352,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-5-3.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 240,
-      "y": 58,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 302,
-      "y": 42,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-ow-6-6",
-      "x": 448,
-      "y": 248,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-6.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 294,
-      "y": 12,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 298,
-      "y": 24,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 284,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 352,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-0-11",
-      "x": 252,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-11.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 436,
-      "y": 250,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 160,
-      "y": 460,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 176,
-      "y": 462,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 336,
-      "y": 58,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 240,
-      "y": 42,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-13-5",
-      "x": 456,
-      "y": 464,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-13-5.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 342,
-      "y": 198,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 182,
-      "y": 70,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 2,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 228,
-      "y": 70,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 192,
-      "y": 456,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 212,
-      "y": 100,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 372,
-      "y": 228,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 296,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-0-11",
-      "x": 244,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-11.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 384,
-      "y": 198,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 160,
-      "y": 456,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 160,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 428,
-      "y": 250,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 300,
-      "y": 12,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 234,
-      "y": 42,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 292,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 352,
-      "y": 170,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 448,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-ow-6-8",
-      "x": 350,
-      "y": 42,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-8.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 306,
-      "y": 36,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 288,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-0-11",
-      "x": 248,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-11.png"
-    },
-    {
-      "id": "d2-ow-1-2",
-      "x": 336,
-      "y": 214,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-1-2.png"
-    },
-    {
-      "id": "d2-mirb-68-11",
-      "x": 312,
-      "y": 18,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-68-11.png"
-    },
-    {
-      "id": "d2-mirb-60-7",
-      "x": 2,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-7.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 292,
-      "y": 70,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-rbo-1-5",
-      "x": 18,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-5.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 208,
-      "y": 452,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 196,
-      "y": 106,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 216,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 346,
-      "y": 70,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-rbo-5-11",
-      "x": 6,
-      "y": 84,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-5-11.png"
-    },
-    {
-      "id": "d2-rbo-5-11",
-      "x": 0,
-      "y": 114,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-5-11.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 216,
-      "y": 474,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 308,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-0-11",
-      "x": 236,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-11.png"
-    },
-    {
-      "id": "d2-mirb-51-22",
-      "x": 114,
-      "y": 212,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-22.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 356,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 304,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-5-11",
-      "x": 0,
-      "y": 102,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-5-11.png"
-    },
-    {
-      "id": "d2-rbo-0-6",
-      "x": 312,
-      "y": 36,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-6.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 230,
-      "y": 100,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 390,
-      "y": 228,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 6,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 176,
-      "y": 452,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-mirb-51-22",
-      "x": 204,
-      "y": 212,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-22.png"
-    },
-    {
-      "id": "d2-ow-15-3",
-      "x": 164,
-      "y": 216,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-15-3.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 152,
-      "y": 452,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 182,
-      "y": 100,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 342,
-      "y": 228,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-0-10",
-      "x": 4,
-      "y": 176,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-0-10.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 148,
-      "y": 168,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 340,
-      "y": 168,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-ow-6-6",
-      "x": 420,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-6.png"
-    },
-    {
-      "id": "d2-rbo-2-11",
-      "x": 232,
-      "y": 30,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-2-11.png"
-    },
-    {
-      "id": "d2-rbo-0-11",
-      "x": 240,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-11.png"
-    },
-    {
-      "id": "d2-ow-6-8",
-      "x": 338,
-      "y": 40,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-8.png"
-    },
-    {
-      "id": "d2-mirb-51-22",
-      "x": 236,
-      "y": 206,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-22.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 408,
-      "y": 198,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-rbo-10-5",
-      "x": 436,
-      "y": 232,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-10-5.png"
-    },
-    {
-      "id": "d2-rbo-15-5",
-      "x": 424,
-      "y": 486,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-15-5.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 300,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 96,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 128,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 32,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 96,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 32,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 0,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 320,
-      "y": 320,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-13-6",
-      "x": 320,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-13-6.png"
-    },
-    {
-      "id": "d2-rbo-15-5",
-      "x": 320,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-15-5.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 192,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 288,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 320,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 352,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 448,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 192,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 288,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 320,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 352,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 224,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 288,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 320,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 352,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 88,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 40,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 384,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 392,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 88,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 136,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 104,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 400,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 48,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 416,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 112,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 144,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 384,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 80,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 80,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 408,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 424,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 448,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 416,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 352,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 224,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 448,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 288,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 120,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-13-6",
-      "x": 128,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-13-6.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 152,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 216,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 208,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-0-10",
-      "x": 352,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-10.png"
-    },
-    {
-      "id": "d2-rbo-1-10",
-      "x": 416,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-10.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 200,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 128,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 224,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 320,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 256,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 72,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 448,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 160,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 192,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 320,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 352,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-10",
-      "x": 384,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-10.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 136,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 224,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 64,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 392,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 224,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-7-1",
-      "x": 0,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-7-1.png"
-    },
-    {
-      "id": "d2-rbo-9-1",
-      "x": 480,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-9-1.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 0,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 416,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 160,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 406,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 402,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 398,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 338,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 394,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 342,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 216,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 424,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 390,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 346,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 386,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 350,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-12-5",
-      "x": 448,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-12-5.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 382,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 128,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 160,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 192,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 224,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 256,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 288,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 320,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 352,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 448,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 0,
-      "y": 202,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 0,
-      "y": 206,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-mirb-46-59",
-      "x": 114,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-46-59.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 434,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-mirb-49-59",
-      "x": 462,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-49-59.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 358,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-8-1",
-      "x": 428,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-1.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 32,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 64,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-0",
-      "x": 364,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-0.png"
-    },
-    {
-      "id": "d2-rbo-2-0",
-      "x": 422,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-2-0.png"
-    },
-    {
-      "id": "d2-rbo-2-0",
-      "x": 416,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-2-0.png"
-    },
-    {
-      "id": "d2-rbo-1-0",
-      "x": 370,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-0.png"
-    },
-    {
-      "id": "d2-rbo-1-0",
-      "x": 376,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-0.png"
-    },
-    {
-      "id": "d2-rbo-2-0",
-      "x": 410,
-      "y": 512,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-2-0.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 448,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 152,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 200,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 160,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 416,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-13-5",
-      "x": 128,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-13-5.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 160,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 128,
-      "y": 160,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 224,
-      "y": 160,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 320,
-      "y": 160,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-1-10",
-      "x": 448,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-10.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 448,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-14-5",
-      "x": 192,
-      "y": 384,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-5.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 320,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 352,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 164,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-ow-5-6",
-      "x": 160,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-5-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 192,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 64,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-12-5",
-      "x": 320,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-12-5.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 352,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 320,
-      "y": 70,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 0,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 248,
-      "y": -30,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 272,
-      "y": -30,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 248,
-      "y": -20,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 272,
-      "y": -20,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 262,
-      "y": 6,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 0,
-      "y": 34,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 262,
-      "y": 42,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 0,
-      "y": 44,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-60-8",
-      "x": 2,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-8.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 192,
-      "y": 198,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 346,
-      "y": 66,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-35-31",
-      "x": 132,
-      "y": 114,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-35-31.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 260,
-      "y": 66,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-67-37",
-      "x": 218,
-      "y": 144,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-67-37.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 132,
-      "y": 194,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 394,
-      "y": 194,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-15-5",
-      "x": 160,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-15-5.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 160,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-mirb-52-23",
-      "x": 284,
-      "y": 104,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-52-23.png"
-    },
-    {
-      "id": "d2-mirb-52-23",
-      "x": 156,
-      "y": 232,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-52-23.png"
-    },
-    {
-      "id": "d2-rbo-1-10",
-      "x": 160,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-10.png"
-    },
-    {
-      "id": "d2-rbo-5-9",
-      "x": 128,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-5-9.png"
-    },
-    {
-      "id": "d2-mirb-48-39",
-      "x": 66,
-      "y": 108,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-48-39.png"
-    },
-    {
-      "id": "d2-mirb-52-24",
-      "x": 370,
-      "y": 108,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-52-24.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 172,
-      "y": 106,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 332,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-rbo-0-12",
-      "x": 354,
-      "y": 20,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-12.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 384,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 384,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-5-9",
-      "x": 256,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-5-9.png"
-    },
-    {
-      "id": "d2-mirb-52-24",
-      "x": 254,
-      "y": 236,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-52-24.png"
-    },
-    {
-      "id": "d2-ow-5-6",
-      "x": 352,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-5-6.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 180,
-      "y": 106,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 340,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-rbo-1-10",
-      "x": 192,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-10.png"
-    },
-    {
-      "id": "d2-rbo-1-10",
-      "x": 224,
-      "y": 352,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-10.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 96,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 96,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-12-5",
-      "x": 256,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-12-5.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 288,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-12-5",
-      "x": 128,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-12-5.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 160,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-12-5",
-      "x": 224,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-12-5.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 256,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-12-5",
-      "x": 416,
-      "y": 256,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-12-5.png"
-    },
-    {
-      "id": "d2-mirb-50-24",
-      "x": 72,
-      "y": 108,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-24.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 228,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 316,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-mirb-50-24",
-      "x": 252,
-      "y": 114,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-24.png"
-    },
-    {
-      "id": "d2-mirb-50-24",
-      "x": 220,
-      "y": 242,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-24.png"
-    },
-    {
-      "id": "d2-mirb-50-24",
-      "x": 412,
-      "y": 242,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-24.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 224,
-      "y": 416,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-rbo-0-12",
-      "x": 316,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-0-12.png"
-    },
-    {
-      "id": "d2-mirb-42-1",
-      "x": 230,
-      "y": 114,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-42-1.png"
-    },
-    {
-      "id": "d2-ow-6-11",
-      "x": 90,
-      "y": 248,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-11.png"
-    },
-    {
-      "id": "d2-ow-6-11",
-      "x": 270,
-      "y": 248,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-11.png"
-    },
-    {
-      "id": "d2-ow-7-11",
-      "x": 398,
-      "y": 248,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-7-11.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 188,
-      "y": 106,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 348,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-50-24",
-      "x": 124,
-      "y": 242,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-24.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 288,
-      "y": 100,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 160,
-      "y": 228,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-50-22",
-      "x": 104,
-      "y": 212,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-22.png"
-    },
-    {
-      "id": "d2-rbo-1-12",
-      "x": 6,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-12.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 448,
-      "y": 448,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "d2-mirb-35-32",
-      "x": 220,
-      "y": 114,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-35-32.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 262,
-      "y": 24,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-0-10",
-      "x": 6,
-      "y": 170,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-0-10.png"
-    },
-    {
-      "id": "d2-ow-6-6",
-      "x": 132,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-6.png"
-    },
-    {
-      "id": "d2-ow-6-6",
-      "x": 324,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-6.png"
-    },
-    {
-      "id": "d2-mirb-51-22",
-      "x": 436,
-      "y": 212,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-22.png"
-    },
-    {
-      "id": "d2-ow-6-11",
-      "x": 362,
-      "y": 248,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-11.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 200,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 232,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-rbo-1-11",
-      "x": 312,
-      "y": 0,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-1-11.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 260,
-      "y": 198,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-mirb-50-25",
-      "x": 208,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-25.png"
-    },
-    {
-      "id": "d2-mirb-50-24",
-      "x": 328,
-      "y": 100,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-50-24.png"
-    },
-    {
-      "id": "d2-rbo-2-11",
-      "x": 228,
-      "y": 24,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-2-11.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 240,
-      "y": 106,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 400,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 362,
-      "y": 100,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 168,
-      "y": 198,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-ow-6-3",
-      "x": 192,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-6-3.png"
-    },
-    {
-      "id": "d2-mirb-47-0",
-      "x": 256,
-      "y": 424,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-47-0.png"
-    },
-    {
-      "id": "d2-mirb-52-24",
-      "x": 274,
-      "y": 102,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-52-24.png"
-    },
-    {
-      "id": "d2-mirb-52-24",
-      "x": 146,
-      "y": 230,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-52-24.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 228,
-      "y": 106,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-25",
-      "x": 388,
-      "y": 234,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-25.png"
-    },
-    {
-      "id": "d2-mirb-51-22",
-      "x": 248,
-      "y": 212,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-22.png"
-    },
-    {
-      "id": "d2-mirb-60-16",
-      "x": 80,
-      "y": 70,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-60-16.png"
-    },
-    {
-      "id": "d2-mirb-51-22",
-      "x": 248,
-      "y": 78,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-mirb-51-22.png"
-    },
-    {
-      "id": "d2-ow-5-3",
-      "x": 254,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-ow-5-3.png"
-    },
-    {
-      "id": "d2-rbo-14-6",
-      "x": 464,
-      "y": 492,
-      "layer": "floor",
-      "anchorY": 0,
-      "path": "workspace-kit/design2/d2-rbo-14-6.png"
-    },
-    {
-      "id": "rb-10-6",
-      "x": 48,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 128,
-      "path": "workspace-kit/room-builder/32/tile-10-6.png"
-    },
-    {
-      "id": "rb-10-6",
-      "x": 32,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 128,
-      "path": "workspace-kit/room-builder/32/tile-10-6.png"
-    },
-    {
-      "id": "d2-rbo-13-6",
-      "x": 128,
-      "y": 480,
-      "layer": "floor",
-      "anchorY": 512,
-      "path": "workspace-kit/design2/d2-rbo-13-6.png"
-    },
-    {
-      "id": "rb-1-2",
-      "x": 462,
-      "y": 492,
-      "layer": "floor",
-      "anchorY": 524,
-      "path": "workspace-kit/room-builder/32/tile-1-2.png",
-      "flipY": true
-    },
-    {
-      "id": "office-object-093",
-      "x": 64,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 10128
-    },
-    {
-      "id": "office-object-092",
-      "x": 416,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 10128
-    },
-    {
-      "id": "office-object-092",
-      "x": 384,
-      "y": 32,
-      "layer": "floor",
-      "anchorY": 10128
-    },
-    {
-      "id": "office-object-092",
-      "x": 416,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 10160
-    },
-    {
-      "id": "office-object-092",
-      "x": 64,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 10160
-    },
-    {
-      "id": "office-object-092",
-      "x": 32,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 10160
-    },
-    {
-      "id": "office-object-092",
-      "x": 384,
-      "y": 64,
-      "layer": "floor",
-      "anchorY": 10160
-    },
-    {
-      "id": "office-object-092",
-      "x": 96,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 288,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 0,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 32,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 64,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 160,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 192,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 256,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 352,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 384,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 416,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 448,
-      "y": 96,
-      "layer": "floor",
-      "anchorY": 10192
-    },
-    {
-      "id": "office-object-092",
-      "x": 224,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 416,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 64,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 256,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 192,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 384,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 32,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 320,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 128,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 448,
-      "y": 128,
-      "layer": "floor",
-      "anchorY": 10224
-    },
-    {
-      "id": "office-object-092",
-      "x": 32,
-      "y": 160,
-      "layer": "floor",
-      "anchorY": 10256
-    },
-    {
-      "id": "office-object-092",
-      "x": 448,
-      "y": 160,
-      "layer": "floor",
-      "anchorY": 10256
-    },
-    {
-      "id": "office-object-092",
-      "x": 32,
-      "y": 192,
-      "layer": "floor",
-      "anchorY": 10288
-    },
-    {
-      "id": "office-object-092",
-      "x": 32,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 64,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 128,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 160,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 224,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 256,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 320,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 352,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-092",
-      "x": 416,
-      "y": 224,
-      "layer": "floor",
-      "anchorY": 10320
-    },
-    {
-      "id": "office-object-165",
-      "x": 32,
-      "y": -64,
-      "layer": "object",
-      "anchorY": 32
-    },
-    {
-      "id": "office-object-163",
-      "x": 416,
-      "y": -34,
-      "layer": "object",
-      "anchorY": 38
-    },
-    {
-      "id": "office-object-114",
-      "x": 224,
-      "y": -32,
-      "layer": "object",
-      "anchorY": 52
-    },
-    {
-      "id": "office-object-200",
-      "x": 250,
-      "y": -32,
-      "layer": "object",
-      "anchorY": 56
-    },
-    {
-      "id": "office-object-170",
-      "x": 160,
-      "y": -32,
-      "layer": "object",
-      "anchorY": 60
-    },
-    {
-      "id": "office-object-171",
-      "x": 320,
-      "y": -32,
-      "layer": "object",
-      "anchorY": 60
-    },
-    {
-      "id": "office-object-173",
-      "x": 450,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 76
-    },
-    {
-      "id": "office-object-099",
-      "x": 384,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 76
-    },
-    {
-      "id": "office-object-167",
-      "x": 416,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 76
-    },
-    {
-      "id": "office-object-012",
-      "x": 108,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96
-    },
-    {
-      "id": "office-object-012",
-      "x": 224,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96
-    },
-    {
-      "id": "office-object-012",
-      "x": 320,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96
-    },
-    {
-      "id": "office-object-102",
-      "x": 128,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.125
-    },
-    {
-      "id": "office-object-012",
-      "x": 204,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.125
-    },
-    {
-      "id": "office-object-012",
-      "x": 236,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.125
-    },
-    {
-      "id": "office-object-012",
-      "x": 300,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.125
-    },
-    {
-      "id": "office-object-012",
-      "x": 332,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.125
-    },
-    {
-      "id": "office-object-237",
-      "x": 96,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.125
-    },
-    {
-      "id": "office-object-240",
-      "x": 128,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 96.25
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 204,
-      "y": 94,
-      "layer": "object",
-      "anchorY": 98,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 300,
-      "y": 94,
-      "layer": "object",
-      "anchorY": 98,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 228,
-      "y": 94,
-      "layer": "object",
-      "anchorY": 98.125,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 324,
-      "y": 94,
-      "layer": "object",
-      "anchorY": 98.125,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "office-object-325",
-      "x": 416,
-      "y": 74,
-      "layer": "object",
-      "anchorY": 152
-    },
-    {
-      "id": "office-object-222",
-      "x": 192,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-222",
-      "x": 96,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-222",
-      "x": 288,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-224",
-      "x": 256,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-224",
-      "x": 160,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-224",
-      "x": 352,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-207",
-      "x": 64,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-207",
-      "x": 256,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
-      "id": "office-object-064",
-      "x": 316,
-      "y": 52,
-      "layer": "object",
-      "anchorY": 160.125
-    },
-    {
-      "id": "office-object-208",
-      "x": 132,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.125
-    },
-    {
-      "id": "office-object-229",
-      "x": 192,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.125
-    },
-    {
-      "id": "office-object-232",
-      "x": 352,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.125
-    },
-    {
-      "id": "office-object-230",
-      "x": 256,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.125
-    },
-    {
-      "id": "office-object-333",
-      "x": 64,
-      "y": 0,
-      "layer": "object",
-      "anchorY": 160.125
-    },
-    {
-      "id": "office-object-231",
-      "x": 288,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.25
-    },
-    {
-      "id": "office-object-235",
-      "x": 96,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.25
-    },
-    {
-      "id": "office-object-236",
-      "x": 160,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.25
-    },
-    {
-      "id": "office-object-207",
-      "x": 160,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.25
-    },
-    {
-      "id": "office-object-207",
-      "x": 352,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160.25
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 108,
-      "y": 94,
-      "layer": "object",
-      "anchorY": 160.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "office-object-106",
-      "x": 128,
-      "y": 96,
-      "layer": "object",
-      "anchorY": 188
-    },
-    {
-      "id": "office-object-106",
-      "x": 224,
-      "y": 96,
-      "layer": "object",
-      "anchorY": 188
-    },
-    {
-      "id": "office-object-106",
-      "x": 320,
-      "y": 96,
-      "layer": "object",
-      "anchorY": 188
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 0,
-      "y": 190,
-      "layer": "object",
-      "anchorY": 194,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "office-object-080",
-      "x": 80,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-080",
-      "x": 272,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-069",
-      "x": 212,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-069",
-      "x": 404,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-080",
-      "x": 176,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-080",
-      "x": 368,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-242",
-      "x": 320,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-244",
-      "x": 128,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224
-    },
-    {
-      "id": "office-object-102",
-      "x": 96,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.125
-    },
-    {
-      "id": "office-object-102",
-      "x": 288,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.125
-    },
-    {
-      "id": "office-object-080",
-      "x": 196,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.125
-    },
-    {
-      "id": "office-object-080",
-      "x": 388,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.125
-    },
-    {
-      "id": "office-object-239",
-      "x": 64,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.125
-    },
-    {
-      "id": "office-object-238",
-      "x": 256,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.125
-    },
-    {
-      "id": "office-object-243",
-      "x": 96,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.25
-    },
-    {
-      "id": "office-object-241",
-      "x": 288,
-      "y": 128,
-      "layer": "object",
-      "anchorY": 224.25
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 176,
-      "y": 222,
-      "layer": "object",
-      "anchorY": 226,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 256,
-      "y": 222,
-      "layer": "object",
-      "anchorY": 226,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 368,
-      "y": 222,
-      "layer": "object",
-      "anchorY": 226,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 200,
-      "y": 222,
-      "layer": "object",
-      "anchorY": 226.125,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 224,
-      "y": 222,
-      "layer": "object",
-      "anchorY": 226.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-80-105",
-      "x": 30,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 238,
-      "path": "workspace-kit/design2/d2-mi-80-105.png"
-    },
-    {
-      "id": "office-object-208",
-      "x": 60,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 266
-    },
-    {
-      "id": "office-object-213",
-      "x": 64,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-213",
-      "x": 352,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-213",
-      "x": 256,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-213",
-      "x": 160,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-215",
-      "x": 224,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-215",
-      "x": 128,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-215",
-      "x": 416,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-215",
-      "x": 320,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-207",
-      "x": 32,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-207",
-      "x": 128,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-207",
-      "x": 224,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-207",
-      "x": 416,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288
-    },
-    {
-      "id": "office-object-047",
-      "x": 188,
-      "y": 180,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-208",
-      "x": 292,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-225",
-      "x": 64,
-      "y": 190,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-225",
-      "x": 352,
-      "y": 190,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-230",
-      "x": 128,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-230",
-      "x": 416,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-158",
-      "x": 218,
-      "y": 176,
-      "layer": "object",
-      "anchorY": 288.125
-    },
-    {
-      "id": "office-object-227",
-      "x": 160,
-      "y": 190,
-      "layer": "object",
-      "anchorY": 288.25
-    },
-    {
-      "id": "office-object-233",
-      "x": 256,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288.25
-    },
-    {
-      "id": "office-object-234",
-      "x": 320,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288.25
-    },
-    {
-      "id": "office-object-207",
-      "x": 320,
-      "y": 192,
-      "layer": "object",
-      "anchorY": 288.25
-    },
-    {
-      "id": "d2-mi-80-105",
-      "x": 30,
-      "y": 232,
-      "layer": "object",
-      "anchorY": 290.125,
-      "path": "workspace-kit/design2/d2-mi-80-105.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 64,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-1-5",
-      "x": 96,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-5.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 444,
-      "y": 312,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-rbo-1-5",
-      "x": 102,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-5.png"
-    },
-    {
-      "id": "d2-rbo-1-5",
-      "x": 114,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-5.png"
-    },
-    {
-      "id": "d2-rbo-8-0",
-      "x": 424,
-      "y": 304,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-8-0.png"
-    },
-    {
-      "id": "d2-mirb-0-10",
-      "x": 30,
-      "y": 302,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-0-10.png"
-    },
-    {
-      "id": "d2-mirb-0-10",
-      "x": 60,
-      "y": 304,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-0-10.png"
-    },
-    {
-      "id": "d2-rbo-1-5",
-      "x": 108,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-5.png"
-    },
-    {
-      "id": "d2-rbo-0-9",
-      "x": 352,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-0-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 448,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 416,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 384,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-4-0",
-      "x": 480,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-4-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 330,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-3-0",
-      "x": 96,
-      "y": 334,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-3-0.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 162,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 96,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 192,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 288,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 384,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "d2-rbo-7-3",
-      "x": 0,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-7-3.png"
-    },
-    {
-      "id": "d2-rbo-1-5",
-      "x": 150,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-5.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 136,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 82,
-      "y": 290,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 186,
-      "y": 290,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 274,
-      "y": 290,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 24,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 48,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 72,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 186,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 210,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 234,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 258,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-mirb-64-7",
-      "x": 282,
-      "y": 300,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-mirb-64-7.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 132,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 192,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 256,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 224,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-2-9",
-      "x": 288,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-2-9.png"
-    },
-    {
-      "id": "d2-rbo-1-9",
-      "x": 128,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-1-9.png"
-    },
-    {
-      "id": "d2-rbo-11-6",
-      "x": 448,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 352,
-      "path": "workspace-kit/design2/d2-rbo-11-6.png"
-    },
-    {
-      "id": "office-object-165",
-      "x": 128,
-      "y": 256,
-      "layer": "object",
-      "anchorY": 352.25
-    },
-    {
-      "id": "office-object-106",
-      "x": 96,
-      "y": 224,
-      "layer": "object",
-      "anchorY": 352.25
-    },
-    {
-      "id": "office-object-106",
-      "x": 192,
-      "y": 224,
-      "layer": "object",
-      "anchorY": 352.25
-    },
-    {
-      "id": "office-object-106",
-      "x": 288,
-      "y": 224,
-      "layer": "object",
-      "anchorY": 352.25
-    },
-    {
-      "id": "office-object-106",
-      "x": 384,
-      "y": 224,
-      "layer": "object",
-      "anchorY": 352.25
-    },
-    {
-      "id": "d2-mi-80-105",
-      "x": 30,
-      "y": 272,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-80-105.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 32,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 56,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 128,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 152,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 224,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 248,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 352,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 416,
-      "y": 318,
-      "layer": "object",
-      "anchorY": 352.25,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "office-object-098",
-      "x": 448,
-      "y": 258,
-      "layer": "object",
-      "anchorY": 352.25
-    },
-    {
-      "id": "office-object-097",
-      "x": 384,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 370
-    },
-    {
-      "id": "office-object-167",
-      "x": 352,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 396
-    },
-    {
-      "id": "d2-rbo-2-10",
-      "x": 288,
-      "y": 352,
-      "layer": "object",
-      "anchorY": 400,
-      "path": "workspace-kit/design2/d2-rbo-2-10.png"
-    },
-    {
-      "id": "office-object-173",
-      "x": 288,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 400.25
-    },
-    {
-      "id": "office-object-334",
-      "x": 448,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 402
-    },
-    {
-      "id": "office-object-116",
-      "x": 416,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 402.125
-    },
-    {
-      "id": "office-object-200",
-      "x": 126,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 408
-    },
-    {
-      "id": "office-object-110",
-      "x": 224,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 408
-    },
-    {
-      "id": "d2-mi-80-105",
-      "x": 126,
-      "y": 360,
-      "layer": "object",
-      "anchorY": 408.125,
-      "path": "workspace-kit/design2/d2-mi-80-105.png"
-    },
-    {
-      "id": "office-object-338",
-      "x": 192,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 416
-    },
-    {
-      "id": "office-object-251",
-      "x": 256,
-      "y": 324,
-      "layer": "object",
-      "anchorY": 420
-    },
-    {
-      "id": "office-object-272",
-      "x": 256,
-      "y": 320,
-      "layer": "object",
-      "anchorY": 420.125
-    },
-    {
-      "id": "office-object-250",
-      "x": 256,
-      "y": 292,
-      "layer": "object",
-      "anchorY": 420.25
-    },
-    {
-      "id": "office-object-278",
-      "x": 256,
-      "y": 288,
-      "layer": "object",
-      "anchorY": 420.375
-    },
-    {
-      "id": "office-object-279",
-      "x": 256,
-      "y": 352,
-      "layer": "object",
-      "anchorY": 434
-    },
-    {
-      "id": "office-object-304",
-      "x": 384,
-      "y": 384,
-      "layer": "object",
-      "anchorY": 454
-    },
-    {
-      "id": "office-object-306",
-      "x": 416,
-      "y": 384,
-      "layer": "object",
-      "anchorY": 470
-    },
-    {
-      "id": "office-object-146",
-      "x": 408,
-      "y": 364,
-      "layer": "object",
-      "anchorY": 470.125
-    },
-    {
-      "id": "office-object-194",
-      "x": 128,
-      "y": 384,
-      "layer": "object",
-      "anchorY": 472
-    },
-    {
-      "id": "office-object-156",
-      "x": 154,
-      "y": 354,
-      "layer": "object",
-      "anchorY": 472.125
-    },
-    {
-      "id": "office-object-252",
-      "x": 224,
-      "y": 384,
-      "layer": "object",
-      "anchorY": 480
-    },
-    {
-      "id": "office-object-250",
-      "x": 240,
-      "y": 372,
-      "layer": "object",
-      "anchorY": 480.125
-    },
-    {
-      "id": "office-object-118",
-      "x": 224,
-      "y": 392,
-      "layer": "object",
-      "anchorY": 480.25
-    },
-    {
-      "id": "office-object-335",
-      "x": 256,
-      "y": 416,
-      "layer": "object",
-      "anchorY": 498
-    },
-    {
-      "id": "office-object-099",
-      "x": 256,
-      "y": 384,
-      "layer": "object",
-      "anchorY": 498.125
-    },
-    {
-      "id": "office-object-305",
-      "x": 384,
-      "y": 416,
-      "layer": "object",
-      "anchorY": 512
-    },
-    {
-      "id": "office-object-312",
-      "x": 384,
-      "y": 416,
-      "layer": "object",
-      "anchorY": 512.125
-    },
-    {
-      "id": "office-object-308",
-      "x": 416,
-      "y": 416,
-      "layer": "object",
-      "anchorY": 512.125
-    },
-    {
-      "id": "office-object-046",
-      "x": 386,
-      "y": 404,
-      "layer": "object",
-      "anchorY": 512.25
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 384,
-      "y": 510,
-      "layer": "object",
-      "anchorY": 514,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "d2-mi-112-8960",
-      "x": 408,
-      "y": 510,
-      "layer": "object",
-      "anchorY": 514.125,
-      "path": "workspace-kit/design2/d2-mi-112-8960.png"
-    },
-    {
-      "id": "office-object-100",
-      "x": 128,
-      "y": 448,
-      "layer": "object",
-      "anchorY": 524
-    }
-  ],
-  "collision": [
-    "11111111111111111111111111111111",
-    "11111111111111111111111111111111",
-    "11111111111111111111111111111111",
-    "11111111111111111111111111111111",
-    "11000000000000000000000000111111",
-    "11000111001111111111111100000011",
-    "11000111111111111111111100111111",
-    "11000111111111111111111100111111",
-    "10000111111111111111111100111111",
-    "10000111001111001111001100111111",
-    "10000000000000000000000000000011",
-    "10000000000000000000000000000011",
-    "11000000000000000000000000000011",
-    "11011100111111111100111111110011",
-    "11011111111111111111111111110011",
-    "11011111111111111111111111110011",
-    "11011111111111111111111111110011",
-    "11011111111111111111111111110011",
-    "11000000000000000000000000000011",
-    "11000000000000000000000000000011",
-    "11111111111111111111001111111111",
-    "11111111111111111111001111111111",
-    "11111111111111111111001111111111",
-    "11111111111111001111001111111111",
-    "11111111000000001111000000000011",
-    "11111111000000001100000000000011",
-    "11111111011100001100000011110011",
-    "11111111011100001100000011110011",
-    "11111111011100111100000011000011",
-    "11111111001100111100000011000011",
-    "11111111000000001100000011110011",
-    "11111111000000000000000011110011",
-    "11111111111111111111111111111111",
-    "11111111111111111111111111111111"
-  ],
-  "workSeats": [
-    {
-      "x": 112,
-      "y": 212
-    },
-    {
-      "x": 304,
-      "y": 212
-    },
-    {
-      "x": 144,
-      "y": 84
-    },
-    {
-      "x": 144,
-      "y": 180
-    },
-    {
-      "x": 240,
-      "y": 180
-    },
-    {
-      "x": 336,
-      "y": 180
-    },
-    {
-      "x": 112,
-      "y": 308
-    },
-    {
-      "x": 208,
-      "y": 308
-    },
-    {
-      "x": 304,
-      "y": 308
-    },
-    {
-      "x": 400,
-      "y": 308
-    },
-    {
-      "x": 432,
-      "y": 462
-    }
-  ]
+  {
+   "id": "d2-rbo-1-11",
+   "x": 384,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 256,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 288,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 128,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 256,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 0,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 128,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 192,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 224,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 256,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 288,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 96,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 352,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 128,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 320,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 224,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-ow-6-6",
+   "x": 0,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 96,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 288,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 160,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 128,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 256,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 352,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 288,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 384,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 416,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-ow-6-6",
+   "x": 0,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 96,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-ow-6-6",
+   "x": 0,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 96,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 288,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 384,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 192,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-ow-6-6",
+   "x": 0,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-ow-6-6.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 64,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 384,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 416,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 256,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 256,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 448,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 384,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 290,
+   "y": 42,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 304,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 294,
+   "y": 36,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 166,
+   "y": 466,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 152,
+   "y": 466,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 302,
+   "y": 42,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-mirb-68-11",
+   "x": 294,
+   "y": 12,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-68-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 284,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-13-5",
+   "x": 456,
+   "y": 464,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-5.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 298,
+   "y": 24,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 158,
+   "y": 462,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-0-5",
+   "x": 96,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-0-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 180,
+   "y": 70,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 228,
+   "y": 70,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-mirb-68-11",
+   "x": 232,
+   "y": 40,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-68-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 160,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 352,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 292,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 196,
+   "y": 100,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 356,
+   "y": 228,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-13-5",
+   "x": 206,
+   "y": 466,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 246,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 288,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 384,
+   "y": 198,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 160,
+   "y": 456,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-ow-5-7",
+   "x": 432,
+   "y": 244,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 298,
+   "y": 10,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-ow-6-8",
+   "x": 182,
+   "y": 44,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-8.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 348,
+   "y": 198,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 442,
+   "y": 466,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-ow-5-3",
+   "x": 210,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-3.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-5-7",
+   "x": 446,
+   "y": 236,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 236,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 122,
+   "y": 460,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 192,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 184,
+   "y": 460,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-ow-8-4",
+   "x": 238,
+   "y": 26,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-8-4.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 444,
+   "y": 312,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 250,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 306,
+   "y": 36,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-0-5",
+   "x": 102,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-0-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-0-5",
+   "x": 114,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-0-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-68-11",
+   "x": 312,
+   "y": 18,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-68-11.png"
+  },
+  {
+   "id": "d2-mirb-68-11",
+   "x": 232,
+   "y": 18,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-68-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-15-5",
+   "x": 222,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-15-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-0-12",
+   "x": 4,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-12.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 292,
+   "y": 70,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-rbo-0-5",
+   "x": 18,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 446,
+   "y": 410,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-mirb-50-25",
+   "x": 196,
+   "y": 106,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-25.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 346,
+   "y": 70,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-rbo-0-11",
+   "x": 306,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-4-11",
+   "x": 0,
+   "y": 108,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-4-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 304,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 216,
+   "y": 474,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-mirb-51-22",
+   "x": 114,
+   "y": 212,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-22.png"
+  },
+  {
+   "id": "d2-mirb-50-25",
+   "x": 356,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-25.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 238,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-4-11",
+   "x": 228,
+   "y": 44,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-4-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 438,
+   "y": 454,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 180,
+   "y": 100,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 340,
+   "y": 228,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-0-6",
+   "x": 312,
+   "y": 36,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-6.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 230,
+   "y": 100,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 390,
+   "y": 228,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 176,
+   "y": 452,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 166,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-15-1",
+   "x": 166,
+   "y": 214,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-15-1.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 152,
+   "y": 452,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-11-5",
+   "x": 150,
+   "y": 172,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-11-5",
+   "x": 342,
+   "y": 172,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 422,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-0-10",
+   "x": 4,
+   "y": 176,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-0-10.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 118,
+   "y": 454,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 424,
+   "y": 304,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-mirb-0-10",
+   "x": 30,
+   "y": 302,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-0-10.png"
+  },
+  {
+   "id": "d2-ow-5-7",
+   "x": 178,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-5-7",
+   "x": 370,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-0-10",
+   "x": 60,
+   "y": 304,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-0-10.png"
+  },
+  {
+   "id": "d2-rbo-0-11",
+   "x": 300,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-10-5",
+   "x": 438,
+   "y": 232,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-10-5.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 408,
+   "y": 198,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 198,
+   "y": 456,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 434,
+   "y": 464,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-ow-6-8",
+   "x": 204,
+   "y": 40,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-8.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 296,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-ow-1-7",
+   "x": 336,
+   "y": 194,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-1-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-0-5",
+   "x": 108,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-0-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 242,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 96,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 128,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 32,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 96,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 32,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 0,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 320,
+   "y": 320,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-13-6",
+   "x": 320,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-6.png"
+  },
+  {
+   "id": "d2-rbo-15-5",
+   "x": 320,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-15-5.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 192,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 288,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 320,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 352,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 448,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 192,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 288,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 320,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 352,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 224,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 288,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 320,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 352,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 88,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-0-9",
+   "x": 352,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-0-9.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 40,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 384,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 392,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 88,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 136,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 104,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 400,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 48,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 416,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 112,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 144,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 384,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 80,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 448,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 80,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 408,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 416,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 424,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 448,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 416,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 352,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 224,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 448,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 288,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 120,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-13-6",
+   "x": 128,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-6.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 152,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 216,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 208,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-0-10",
+   "x": 352,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-10.png"
+  },
+  {
+   "id": "d2-rbo-1-10",
+   "x": 416,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-10.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 200,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 128,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 224,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 320,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 384,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 256,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 72,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 448,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 160,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 192,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 320,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 352,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-10",
+   "x": 384,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-10.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 136,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 224,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 64,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 392,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 224,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-7-1",
+   "x": 0,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-7-1.png"
+  },
+  {
+   "id": "d2-rbo-7-1",
+   "x": 480,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-7-1.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 0,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 416,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 246,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 406,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 330,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 132,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 242,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 402,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 334,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 136,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 238,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 398,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 338,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 140,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 394,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 342,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 216,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 424,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 144,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 230,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 390,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 346,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 148,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 226,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 386,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 350,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 448,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 152,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 222,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 96,
+   "y": 382,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 156,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 462,
+   "y": 218,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 160,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 480,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 128,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 160,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 192,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 224,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 256,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 288,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 320,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 352,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 448,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 0,
+   "y": 202,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-rbo-3-0",
+   "x": 0,
+   "y": 206,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-3-0.png"
+  },
+  {
+   "id": "d2-mirb-46-59",
+   "x": 114,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-46-59.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 434,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-mirb-46-59",
+   "x": 462,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-46-59.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 162,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 358,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-8-1",
+   "x": 428,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-1.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 32,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 64,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-0",
+   "x": 364,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-0.png"
+  },
+  {
+   "id": "d2-rbo-1-0",
+   "x": 422,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-0",
+   "x": 416,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-0",
+   "x": 370,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-0.png"
+  },
+  {
+   "id": "d2-rbo-1-0",
+   "x": 376,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-0.png"
+  },
+  {
+   "id": "d2-rbo-1-0",
+   "x": 410,
+   "y": 512,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-0.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 448,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 152,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 200,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 160,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-13-5",
+   "x": 128,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-5.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 160,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 128,
+   "y": 160,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 224,
+   "y": 160,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 320,
+   "y": 160,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 96,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 192,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 288,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 384,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-1-10",
+   "x": 448,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-10.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 448,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 192,
+   "y": 384,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 320,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 352,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-7-3",
+   "x": 0,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-7-3.png"
+  },
+  {
+   "id": "d2-rbo-1-5",
+   "x": 150,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-5.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 136,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 164,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-ow-5-6",
+   "x": 160,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 192,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 64,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 224,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 320,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 352,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 192,
+   "y": 198,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 0,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 248,
+   "y": -30,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 272,
+   "y": -30,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 248,
+   "y": -20,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 272,
+   "y": -20,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 262,
+   "y": 6,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 0,
+   "y": 34,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 262,
+   "y": 42,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 0,
+   "y": 44,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 320,
+   "y": 70,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-mirb-60-8",
+   "x": 2,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-8.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 130,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 322,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 80,
+   "y": 290,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 186,
+   "y": 290,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 274,
+   "y": 290,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 24,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 48,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 72,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 186,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 210,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 234,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 258,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 282,
+   "y": 300,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 418,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-35-31",
+   "x": 132,
+   "y": 114,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-35-31.png"
+  },
+  {
+   "id": "d2-mirb-22-4",
+   "x": 232,
+   "y": 66,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-22-4.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 262,
+   "y": 66,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 346,
+   "y": 66,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-mirb-66-37",
+   "x": 218,
+   "y": 144,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-66-37.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 132,
+   "y": 194,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 394,
+   "y": 194,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-15-5",
+   "x": 160,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-15-5.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 160,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-ow-5-3",
+   "x": 126,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-3.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-23",
+   "x": 284,
+   "y": 104,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-23.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-23",
+   "x": 156,
+   "y": 232,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-23.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 226,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 318,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-10",
+   "x": 160,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-10.png"
+  },
+  {
+   "id": "d2-rbo-5-9",
+   "x": 128,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-5-9.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 132,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-15-5",
+   "x": 392,
+   "y": 454,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-15-5.png"
+  },
+  {
+   "id": "d2-mirb-48-39",
+   "x": 66,
+   "y": 108,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-48-39.png"
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 370,
+   "y": 108,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-25",
+   "x": 172,
+   "y": 106,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-25.png"
+  },
+  {
+   "id": "d2-mirb-50-25",
+   "x": 332,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-25.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 358,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 384,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 318,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 192,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 256,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 224,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-2-9",
+   "x": 288,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-2-9.png"
+  },
+  {
+   "id": "d2-rbo-1-9",
+   "x": 128,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-1-9.png"
+  },
+  {
+   "id": "d2-rbo-5-9",
+   "x": 256,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-5-9.png"
+  },
+  {
+   "id": "d2-rbo-2-12",
+   "x": 316,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-2-12.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 254,
+   "y": 236,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-5-6",
+   "x": 352,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-6.png"
+  },
+  {
+   "id": "d2-mirb-50-25",
+   "x": 180,
+   "y": 106,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-25.png"
+  },
+  {
+   "id": "d2-mirb-50-25",
+   "x": 340,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-25.png"
+  },
+  {
+   "id": "d2-rbo-1-10",
+   "x": 192,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-10.png"
+  },
+  {
+   "id": "d2-rbo-1-10",
+   "x": 224,
+   "y": 352,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-10.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 96,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-0-10",
+   "x": 288,
+   "y": 352,
+   "layer": "object",
+   "anchorY": 400,
+   "path": "workspace-kit/design2/d2-rbo-0-10.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 96,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 256,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 288,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 128,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 160,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 256,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 416,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 72,
+   "y": 108,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png"
+  },
+  {
+   "id": "d2-rbo-15-5",
+   "x": 254,
+   "y": 408,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-15-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 252,
+   "y": 114,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png"
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 412,
+   "y": 242,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 224,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 416,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-ow-7-11",
+   "x": 88,
+   "y": 248,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-7-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-7-11",
+   "x": 268,
+   "y": 248,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-7-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-42-1",
+   "x": 230,
+   "y": 114,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-42-1.png"
+  },
+  {
+   "id": "d2-ow-7-11",
+   "x": 398,
+   "y": 248,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-7-11.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 188,
+   "y": 106,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 348,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 124,
+   "y": 242,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 288,
+   "y": 100,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 160,
+   "y": 228,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-50-22",
+   "x": 104,
+   "y": 212,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-22.png"
+  },
+  {
+   "id": "d2-rbo-1-12",
+   "x": 6,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-12.png"
+  },
+  {
+   "id": "d2-rbo-0-11",
+   "x": 0,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 448,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png"
+  },
+  {
+   "id": "d2-rbo-13-6",
+   "x": 128,
+   "y": 448,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-6.png"
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 230,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 314,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-36-31",
+   "x": 220,
+   "y": 114,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-36-31.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-64-7",
+   "x": 262,
+   "y": 24,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-64-7.png"
+  },
+  {
+   "id": "d2-ow-7-11",
+   "x": 356,
+   "y": 248,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-7-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-0-10",
+   "x": 6,
+   "y": 170,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-0-10.png"
+  },
+  {
+   "id": "d2-mirb-51-22",
+   "x": 436,
+   "y": 212,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-22.png"
+  },
+  {
+   "id": "d2-rbo-0-12",
+   "x": 228,
+   "y": 20,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-0-12.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 400,
+   "y": 416,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-mirb-0-10",
+   "x": 30,
+   "y": 298,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-0-10.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 260,
+   "y": 198,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-mirb-0-10",
+   "x": 64,
+   "y": 298,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mirb-0-10.png"
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 328,
+   "y": 100,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 418,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 240,
+   "y": 106,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 400,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-rbo-14-6",
+   "x": 422,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-6.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 234,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-1-11",
+   "x": 310,
+   "y": 0,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-1-11.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 362,
+   "y": 100,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 168,
+   "y": 198,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 162,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 352,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-mirb-40-2",
+   "x": 256,
+   "y": 428,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-40-2.png"
+  },
+  {
+   "id": "d2-rbo-10-5",
+   "x": 172,
+   "y": 168,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-10-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-10-5",
+   "x": 364,
+   "y": 168,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-10-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 274,
+   "y": 102,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-50-24",
+   "x": 146,
+   "y": 230,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-50-24.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 228,
+   "y": 106,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-mirb-51-25",
+   "x": 388,
+   "y": 234,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-25.png"
+  },
+  {
+   "id": "d2-ow-6-7",
+   "x": 134,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-6-7",
+   "x": 326,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-7.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-12-5",
+   "x": 448,
+   "y": 256,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-12-5.png"
+  },
+  {
+   "id": "d2-rbo-13-5",
+   "x": 128,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-13-5.png"
+  },
+  {
+   "id": "d2-rbo-14-5",
+   "x": 160,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-14-5.png"
+  },
+  {
+   "id": "d2-rbo-11-6",
+   "x": 448,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-rbo-11-6.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 294,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 206,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-mirb-60-16",
+   "x": 80,
+   "y": 70,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-60-16.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 288,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png"
+  },
+  {
+   "id": "d2-mirb-51-22",
+   "x": 246,
+   "y": 78,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-mirb-51-22.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 442,
+   "y": 478,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-rbo-8-0",
+   "x": 174,
+   "y": 480,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-8-0.png"
+  },
+  {
+   "id": "d2-ow-6-3",
+   "x": 246,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-6-3.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-rbo-15-5",
+   "x": 462,
+   "y": 488,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-rbo-15-5.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-ow-5-3",
+   "x": 254,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 0,
+   "path": "workspace-kit/design2/d2-ow-5-3.png"
+  },
+  {
+   "id": "office-object-251",
+   "x": 256,
+   "y": 324,
+   "layer": "object",
+   "anchorY": 420
+  },
+  {
+   "id": "office-object-092",
+   "x": 96,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 288,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-310",
+   "x": 224,
+   "y": 320,
+   "layer": "overhead",
+   "anchorY": 412,
+   "flipX": true
+  },
+  {
+   "id": "office-object-208",
+   "x": 60,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 266
+  },
+  {
+   "id": "office-object-092",
+   "x": 224,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 416,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 64,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 256,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-209",
+   "x": 186,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288,
+   "flipX": true
+  },
+  {
+   "id": "office-object-252",
+   "x": 224,
+   "y": 384,
+   "layer": "object",
+   "anchorY": 480
+  },
+  {
+   "id": "office-object-305",
+   "x": 384,
+   "y": 416,
+   "layer": "object",
+   "anchorY": 512
+  },
+  {
+   "id": "office-object-194",
+   "x": 128,
+   "y": 384,
+   "layer": "object",
+   "anchorY": 472
+  },
+  {
+   "id": "office-object-222",
+   "x": 192,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-213",
+   "x": 64,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-213",
+   "x": 352,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-093",
+   "x": 64,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 10128
+  },
+  {
+   "id": "office-object-222",
+   "x": 96,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-213",
+   "x": 256,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-222",
+   "x": 288,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-213",
+   "x": 160,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-215",
+   "x": 224,
+   "y": 192,
+   "layer": "overhead",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-279",
+   "x": 256,
+   "y": 352,
+   "layer": "object",
+   "anchorY": 434
+  },
+  {
+   "id": "office-object-092",
+   "x": 192,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 384,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 416,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 10128
+  },
+  {
+   "id": "office-object-224",
+   "x": 256,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-215",
+   "x": 128,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-215",
+   "x": 416,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-224",
+   "x": 160,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-215",
+   "x": 320,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-064",
+   "x": 284,
+   "y": 52,
+   "layer": "overhead",
+   "anchorY": 148,
+   "flipX": true
+  },
+  {
+   "id": "office-object-047",
+   "x": 188,
+   "y": 180,
+   "layer": "overhead",
+   "anchorY": 276
+  },
+  {
+   "id": "office-object-224",
+   "x": 352,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-012",
+   "x": 108,
+   "y": 0,
+   "layer": "object",
+   "anchorY": 96
+  },
+  {
+   "id": "office-object-046",
+   "x": 392,
+   "y": 334,
+   "layer": "object",
+   "anchorY": 430
+  },
+  {
+   "id": "office-object-080",
+   "x": 48,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-080",
+   "x": 240,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-046",
+   "x": 370,
+   "y": 346,
+   "layer": "object",
+   "anchorY": 442,
+   "flipX": true
+  },
+  {
+   "id": "office-object-102",
+   "x": 96,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 220
+  },
+  {
+   "id": "office-object-102",
+   "x": 288,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 220
+  },
+  {
+   "id": "office-object-102",
+   "x": 128,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 92
+  },
+  {
+   "id": "office-object-092",
+   "x": 416,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 10160
+  },
+  {
+   "id": "office-object-208",
+   "x": 132,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 138,
+   "flipX": true
+  },
+  {
+   "id": "office-object-208",
+   "x": 292,
+   "y": 192,
+   "layer": "overhead",
+   "anchorY": 266,
+   "flipX": true
+  },
+  {
+   "id": "office-object-082",
+   "x": 180,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-082",
+   "x": 372,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-250",
+   "x": 240,
+   "y": 372,
+   "layer": "overhead",
+   "anchorY": 468
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 64,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 10160
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 160,
+   "layer": "floor",
+   "anchorY": 10256
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 192,
+   "layer": "floor",
+   "anchorY": 10288
+  },
+  {
+   "id": "office-object-092",
+   "x": 320,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-250",
+   "x": 256,
+   "y": 292,
+   "layer": "object",
+   "anchorY": 388
+  },
+  {
+   "id": "office-object-092",
+   "x": 128,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-200",
+   "x": 126,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 408
+  },
+  {
+   "id": "office-object-170",
+   "x": 160,
+   "y": -32,
+   "layer": "object",
+   "anchorY": 60
+  },
+  {
+   "id": "office-object-171",
+   "x": 320,
+   "y": -32,
+   "layer": "object",
+   "anchorY": 60
+  },
+  {
+   "id": "office-object-325",
+   "x": 416,
+   "y": 74,
+   "layer": "object",
+   "anchorY": 152
+  },
+  {
+   "id": "office-object-231",
+   "x": 288,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 149
+  },
+  {
+   "id": "office-object-227",
+   "x": 160,
+   "y": 190,
+   "layer": "overhead",
+   "anchorY": 277
+  },
+  {
+   "id": "office-object-235",
+   "x": 96,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 144
+  },
+  {
+   "id": "office-object-233",
+   "x": 256,
+   "y": 192,
+   "layer": "overhead",
+   "anchorY": 272
+  },
+  {
+   "id": "office-object-312",
+   "x": 384,
+   "y": 416,
+   "layer": "overhead",
+   "anchorY": 488
+  },
+  {
+   "id": "office-object-173",
+   "x": 288,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 400
+  },
+  {
+   "id": "office-object-173",
+   "x": 450,
+   "y": 0,
+   "layer": "object",
+   "anchorY": 76
+  },
+  {
+   "id": "office-object-165",
+   "x": 32,
+   "y": -64,
+   "layer": "object",
+   "anchorY": 32
+  },
+  {
+   "id": "office-object-165",
+   "x": 128,
+   "y": 256,
+   "layer": "object",
+   "anchorY": 352
+  },
+  {
+   "id": "office-object-229",
+   "x": 192,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 144
+  },
+  {
+   "id": "office-object-225",
+   "x": 64,
+   "y": 190,
+   "layer": "overhead",
+   "anchorY": 272
+  },
+  {
+   "id": "office-object-225",
+   "x": 352,
+   "y": 190,
+   "layer": "overhead",
+   "anchorY": 272
+  },
+  {
+   "id": "office-object-106",
+   "x": 128,
+   "y": 96,
+   "layer": "object",
+   "anchorY": 188
+  },
+  {
+   "id": "office-object-106",
+   "x": 224,
+   "y": 96,
+   "layer": "object",
+   "anchorY": 188
+  },
+  {
+   "id": "office-object-106",
+   "x": 320,
+   "y": 96,
+   "layer": "object",
+   "anchorY": 188
+  },
+  {
+   "id": "office-object-106",
+   "x": 96,
+   "y": 224,
+   "layer": "object",
+   "anchorY": 352
+  },
+  {
+   "id": "office-object-106",
+   "x": 192,
+   "y": 224,
+   "layer": "object",
+   "anchorY": 352
+  },
+  {
+   "id": "office-object-106",
+   "x": 288,
+   "y": 224,
+   "layer": "object",
+   "anchorY": 352
+  },
+  {
+   "id": "office-object-106",
+   "x": 384,
+   "y": 224,
+   "layer": "object",
+   "anchorY": 352
+  },
+  {
+   "id": "office-object-338",
+   "x": 192,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 416
+  },
+  {
+   "id": "office-object-156",
+   "x": 154,
+   "y": 354,
+   "layer": "overhead",
+   "anchorY": 446
+  },
+  {
+   "id": "office-object-097",
+   "x": 384,
+   "y": 288,
+   "layer": "object",
+   "anchorY": 370
+  },
+  {
+   "id": "office-object-334",
+   "x": 448,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 402
+  },
+  {
+   "id": "office-object-240",
+   "x": 128,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 96
+  },
+  {
+   "id": "office-object-335",
+   "x": 256,
+   "y": 416,
+   "layer": "object",
+   "anchorY": 498
+  },
+  {
+   "id": "office-object-114",
+   "x": 224,
+   "y": -32,
+   "layer": "object",
+   "anchorY": 52
+  },
+  {
+   "id": "office-object-099",
+   "x": 384,
+   "y": 0,
+   "layer": "object",
+   "anchorY": 76
+  },
+  {
+   "id": "office-object-110",
+   "x": 224,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 408
+  },
+  {
+   "id": "office-object-306",
+   "x": 416,
+   "y": 384,
+   "layer": "object",
+   "anchorY": 470
+  },
+  {
+   "id": "office-object-232",
+   "x": 352,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 146
+  },
+  {
+   "id": "office-object-167",
+   "x": 416,
+   "y": 0,
+   "layer": "object",
+   "anchorY": 76
+  },
+  {
+   "id": "office-object-167",
+   "x": 352,
+   "y": 320,
+   "layer": "object",
+   "anchorY": 396
+  },
+  {
+   "id": "office-object-129",
+   "x": 224,
+   "y": 288,
+   "layer": "overhead",
+   "anchorY": 384,
+   "flipX": true
+  },
+  {
+   "id": "office-object-230",
+   "x": 256,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 148
+  },
+  {
+   "id": "office-object-230",
+   "x": 128,
+   "y": 192,
+   "layer": "overhead",
+   "anchorY": 276
+  },
+  {
+   "id": "office-object-230",
+   "x": 416,
+   "y": 192,
+   "layer": "overhead",
+   "anchorY": 276
+  },
+  {
+   "id": "office-object-236",
+   "x": 160,
+   "y": 64,
+   "layer": "overhead",
+   "anchorY": 144
+  },
+  {
+   "id": "office-object-234",
+   "x": 320,
+   "y": 192,
+   "layer": "overhead",
+   "anchorY": 272
+  },
+  {
+   "id": "office-object-118",
+   "x": 224,
+   "y": 392,
+   "layer": "overhead",
+   "anchorY": 469
+  },
+  {
+   "id": "office-object-207",
+   "x": 64,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-207",
+   "x": 32,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-163",
+   "x": 416,
+   "y": -34,
+   "layer": "object",
+   "anchorY": 38
+  },
+  {
+   "id": "office-object-243",
+   "x": 96,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 224
+  },
+  {
+   "id": "office-object-012",
+   "x": 224,
+   "y": 0,
+   "layer": "object",
+   "anchorY": 96
+  },
+  {
+   "id": "office-object-012",
+   "x": 320,
+   "y": 0,
+   "layer": "object",
+   "anchorY": 96
+  },
+  {
+   "id": "office-object-012",
+   "x": 174,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 96,
+   "flipX": true
+  },
+  {
+   "id": "office-object-012",
+   "x": 206,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 96,
+   "flipX": true
+  },
+  {
+   "id": "office-object-012",
+   "x": 270,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 96,
+   "flipX": true
+  },
+  {
+   "id": "office-object-012",
+   "x": 302,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 96,
+   "flipX": true
+  },
+  {
+   "id": "office-object-080",
+   "x": 144,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-080",
+   "x": 164,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 225,
+   "flipX": true
+  },
+  {
+   "id": "office-object-080",
+   "x": 336,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-080",
+   "x": 356,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 224,
+   "flipX": true
+  },
+  {
+   "id": "office-object-241",
+   "x": 288,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 224
+  },
+  {
+   "id": "office-object-160",
+   "x": 186,
+   "y": 176,
+   "layer": "overhead",
+   "anchorY": 289,
+   "flipX": true
+  },
+  {
+   "id": "office-object-242",
+   "x": 320,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224
+  },
+  {
+   "id": "office-object-308",
+   "x": 416,
+   "y": 416,
+   "layer": "overhead",
+   "anchorY": 496
+  },
+  {
+   "id": "office-object-244",
+   "x": 128,
+   "y": 128,
+   "layer": "object",
+   "anchorY": 224
+  },
+  {
+   "id": "office-object-237",
+   "x": 96,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 96
+  },
+  {
+   "id": "office-object-239",
+   "x": 64,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 224
+  },
+  {
+   "id": "office-object-238",
+   "x": 256,
+   "y": 128,
+   "layer": "overhead",
+   "anchorY": 224
+  },
+  {
+   "id": "office-object-238",
+   "x": 378,
+   "y": 322,
+   "layer": "object",
+   "anchorY": 418,
+   "flipX": true
+  },
+  {
+   "id": "office-object-143",
+   "x": 376,
+   "y": 364,
+   "layer": "overhead",
+   "anchorY": 432,
+   "flipX": true
+  },
+  {
+   "id": "office-object-333",
+   "x": 64,
+   "y": 0,
+   "layer": "overhead",
+   "anchorY": 82
+  },
+  {
+   "id": "office-object-207",
+   "x": 250,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160,
+   "flipX": true
+  },
+  {
+   "id": "office-object-207",
+   "x": 346,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160,
+   "flipX": true
+  },
+  {
+   "id": "office-object-207",
+   "x": 218,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288,
+   "flipX": true
+  },
+  {
+   "id": "office-object-207",
+   "x": 314,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288,
+   "flipX": true
+  },
+  {
+   "id": "office-object-207",
+   "x": 410,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288,
+   "flipX": true
+  },
+  {
+   "id": "office-object-207",
+   "x": 160,
+   "y": 64,
+   "layer": "object",
+   "anchorY": 160
+  },
+  {
+   "id": "office-object-207",
+   "x": 128,
+   "y": 192,
+   "layer": "object",
+   "anchorY": 288
+  },
+  {
+   "id": "office-object-099",
+   "x": 256,
+   "y": 384,
+   "layer": "overhead",
+   "anchorY": 469
+  },
+  {
+   "id": "office-object-116",
+   "x": 416,
+   "y": 288,
+   "layer": "overhead",
+   "anchorY": 370
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 10128
+  },
+  {
+   "id": "office-object-092",
+   "x": 384,
+   "y": 32,
+   "layer": "floor",
+   "anchorY": 10128
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 10160
+  },
+  {
+   "id": "office-object-092",
+   "x": 384,
+   "y": 64,
+   "layer": "floor",
+   "anchorY": 10160
+  },
+  {
+   "id": "office-object-092",
+   "x": 0,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 64,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 160,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 192,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 256,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 352,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 384,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 416,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 448,
+   "y": 96,
+   "layer": "floor",
+   "anchorY": 10192
+  },
+  {
+   "id": "office-object-092",
+   "x": 448,
+   "y": 128,
+   "layer": "floor",
+   "anchorY": 10224
+  },
+  {
+   "id": "office-object-092",
+   "x": 448,
+   "y": 160,
+   "layer": "floor",
+   "anchorY": 10256
+  },
+  {
+   "id": "office-object-092",
+   "x": 32,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 64,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 128,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 160,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 224,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 256,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 320,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 352,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-092",
+   "x": 416,
+   "y": 224,
+   "layer": "floor",
+   "anchorY": 10320
+  },
+  {
+   "id": "office-object-046",
+   "x": 356,
+   "y": 404,
+   "layer": "overhead",
+   "anchorY": 500,
+   "flipX": true
+  },
+  {
+   "id": "d2-mi-80-105",
+   "x": 476,
+   "y": 160,
+   "layer": "object",
+   "anchorY": 206,
+   "path": "workspace-kit/design2/d2-mi-80-105.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mi-80-105",
+   "x": 476,
+   "y": 200,
+   "layer": "object",
+   "anchorY": 246,
+   "path": "workspace-kit/design2/d2-mi-80-105.png",
+   "flipX": true
+  },
+  {
+   "id": "d2-mi-80-105",
+   "x": 126,
+   "y": 360,
+   "layer": "overhead",
+   "anchorY": 406,
+   "path": "workspace-kit/design2/d2-mi-80-105.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 206,
+   "y": 94,
+   "layer": "object",
+   "anchorY": 98,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 302,
+   "y": 94,
+   "layer": "object",
+   "anchorY": 98,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 326,
+   "y": 94,
+   "layer": "overhead",
+   "anchorY": 98,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 176,
+   "y": 222,
+   "layer": "object",
+   "anchorY": 226,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 256,
+   "y": 222,
+   "layer": "object",
+   "anchorY": 226,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 368,
+   "y": 222,
+   "layer": "object",
+   "anchorY": 226,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 54,
+   "y": 318,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 128,
+   "y": 318,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 152,
+   "y": 318,
+   "layer": "overhead",
+   "anchorY": 322,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 224,
+   "y": 318,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 248,
+   "y": 318,
+   "layer": "overhead",
+   "anchorY": 322,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 352,
+   "y": 318,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 416,
+   "y": 318,
+   "layer": "object",
+   "anchorY": 352,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 384,
+   "y": 510,
+   "layer": "object",
+   "anchorY": 514,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 408,
+   "y": 510,
+   "layer": "overhead",
+   "anchorY": 514,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "d2-mi-112-8960",
+   "x": 108,
+   "y": 94,
+   "layer": "object",
+   "anchorY": 98,
+   "path": "workspace-kit/design2/d2-mi-112-8960.png"
+  },
+  {
+   "id": "office-object-098",
+   "x": 448,
+   "y": 258,
+   "layer": "object",
+   "anchorY": 352
+  },
+  {
+   "id": "office-object-100",
+   "x": 128,
+   "y": 448,
+   "layer": "object",
+   "anchorY": 524
+  },
+  {
+   "id": "d2-mi-2-5440",
+   "x": 248,
+   "y": 74,
+   "layer": "overhead",
+   "anchorY": 76,
+   "path": "workspace-kit/design2/d2-mi-2-5440.png"
+  },
+  {
+   "id": "office-object-338",
+   "x": 162,
+   "y": 438,
+   "layer": "object",
+   "anchorY": 534
+  },
+  {
+   "id": "office-object-200",
+   "x": 250,
+   "y": -32,
+   "layer": "object",
+   "anchorY": 56
+  }
+ ],
+ "collision": [
+  "11111111111111111111111111111111",
+  "11111111111111111111111111111111",
+  "11111111001111111111111111111111",
+  "11111111001111111111111111111111",
+  "10000000000000000000000011001101",
+  "11000111001111111111111100000011",
+  "11000111111111111111111100111111",
+  "11000111111111111111111100111111",
+  "10000111111111111111111100111111",
+  "10000111001111001111001100111111",
+  "10000000000000000000000000000001",
+  "10000000000000000000000000000001",
+  "10000000000000000000000000000001",
+  "10011100111111111100111111110011",
+  "10011111111111111111111111110011",
+  "10011111111111111111111111110011",
+  "10011111111111111111111111110011",
+  "10011100111100111100111100111111",
+  "10000000000000000000000000001101",
+  "11111100111100111100001100111111",
+  "11111111111111111111001111111111",
+  "11111111111111111111001111111111",
+  "11111110111100000011000000001101",
+  "11111110111100000011000000001101",
+  "11111110111100000011000000001101",
+  "11111110111100001100000000001101",
+  "11111110011100001100000000000001",
+  "11111110011100001100000000000001",
+  "11111110011100111100000011000001",
+  "11111110111100111100000011000001",
+  "11111110110000001100000011110001",
+  "11111111111111111111111111111111",
+  "11111111111111111111111111111111",
+  "11111111111111111111111111111111"
+ ],
+ "workSeats": [
+  {
+   "x": 112,
+   "y": 212
+  },
+  {
+   "x": 304,
+   "y": 212
+  },
+  {
+   "x": 144,
+   "y": 84
+  },
+  {
+   "x": 144,
+   "y": 180
+  },
+  {
+   "x": 240,
+   "y": 180
+  },
+  {
+   "x": 336,
+   "y": 180
+  },
+  {
+   "x": 112,
+   "y": 308
+  },
+  {
+   "x": 208,
+   "y": 308
+  },
+  {
+   "x": 304,
+   "y": 308
+  },
+  {
+   "x": 400,
+   "y": 308
+  },
+  {
+   "x": 432,
+   "y": 462
+  }
+ ]
 }

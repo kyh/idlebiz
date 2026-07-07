@@ -74,6 +74,44 @@ function buildMasks(img) {
   return { opaque, anyAlpha, bbox: { bx0, by0, bx1, by1 } };
 }
 
+/** Horizontally mirrored copy of a raw image. */
+function flipXRaw(img) {
+  const data = Buffer.alloc(img.data.length);
+  for (let y = 0; y < img.h; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const src = (y * img.w + x) * 4;
+      const dst = (y * img.w + (img.w - 1 - x)) * 4;
+      img.data.copy(data, dst, src, src + 4);
+    }
+  }
+  return { data, w: img.w, h: img.h };
+}
+
+/** Register a template plus its mirrored variant (deduped by content — a
+ * symmetric sprite or one whose mirror ships as its own asset adds nothing). */
+function pushWithFlip(list, byContent, base) {
+  const contentKey = Buffer.from(base.data).toString("base64");
+  if (byContent.has(contentKey)) return byContent.get(contentKey);
+  byContent.set(contentKey, base);
+  list.push(base);
+  const flippedImg = flipXRaw(base);
+  const flipKey = Buffer.from(flippedImg.data).toString("base64");
+  if (!byContent.has(flipKey)) {
+    const masks = buildMasks(flippedImg);
+    const flipped = {
+      ...base,
+      data: flippedImg.data,
+      opaque: masks.opaque,
+      anyAlpha: masks.anyAlpha,
+      bbox: masks.bbox,
+      flipX: true,
+    };
+    byContent.set(flipKey, flipped);
+    list.push(flipped);
+  }
+  return base;
+}
+
 async function loadSprites() {
   const files = fs.readdirSync(SINGLES_DIR).filter((f) => f.endsWith(".png"));
   const sprites = [];
@@ -84,15 +122,9 @@ async function loadSprites() {
     const img = await loadRaw(path.join(SINGLES_DIR, f));
     const { opaque, anyAlpha, bbox } = buildMasks(img);
     if (opaque.length === 0) continue;
-    const contentKey = Buffer.from(img.data).toString("base64");
-    const dup = byContent.get(contentKey);
-    if (dup !== undefined) {
-      dup.aliases.push(Number(m[1]));
-      continue;
-    }
-    const sprite = { id: `obj-${m[1]}`, w: img.w, h: img.h, data: img.data, opaque, anyAlpha, bbox, aliases: [] };
-    byContent.set(contentKey, sprite);
-    sprites.push(sprite);
+    const sprite = { id: `obj-${m[1]}`, w: img.w, h: img.h, data: img.data, opaque, anyAlpha, bbox, aliases: [], flipX: false };
+    const kept = pushWithFlip(sprites, byContent, sprite);
+    if (kept !== sprite) kept.aliases.push(Number(m[1]));
   }
   sprites.sort((a, b) => b.opaque.length - a.opaque.length);
   return sprites;
@@ -104,6 +136,7 @@ async function loadComponents(file, keyPrefix) {
   const img = await loadRaw(file);
   const seen = new Uint8Array(img.w * img.h);
   const comps = [];
+  const compContent = new Map();
   for (let y0 = 0; y0 < img.h; y0++) {
     for (let x0 = 0; x0 < img.w; x0++) {
       const idx0 = y0 * img.w + x0;
@@ -142,13 +175,13 @@ async function loadComponents(file, keyPrefix) {
         const y = (idx / img.w) | 0;
         img.data.copy(data, ((y - minY) * w + (x - minX)) * 4, idx * 4, idx * 4 + 4);
       }
-      const comp = { id: `${keyPrefix}-${minX}-${minY}`, w, h, data, aliases: [], srcRect: { x: minX, y: minY, w, h } };
+      const comp = { id: `${keyPrefix}-${minX}-${minY}`, w, h, data, aliases: [], srcRect: { x: minX, y: minY, w, h }, flipX: false };
       const masks = buildMasks(comp);
       if (masks.opaque.length === 0) continue;
       comp.opaque = masks.opaque;
       comp.anyAlpha = masks.anyAlpha;
       comp.bbox = masks.bbox;
-      comps.push(comp);
+      pushWithFlip(comps, compContent, comp);
     }
   }
   return comps;
@@ -167,16 +200,13 @@ async function loadTiles() {
         for (let y = 0; y < CELL; y++) {
           img.data.copy(data, y * CELL * 4, ((r * CELL + y) * img.w + c * CELL) * 4, ((r * CELL + y) * img.w + (c + 1) * CELL) * 4);
         }
-        const tile = { id: `${src.key}-${c}-${r}`, w: CELL, h: CELL, data, aliases: [] };
+        const tile = { id: `${src.key}-${c}-${r}`, w: CELL, h: CELL, data, aliases: [], flipX: false };
         const masks = buildMasks(tile);
         if (masks.opaque.length < 24) continue;
-        const contentKey = data.toString("base64");
-        if (byContent.has(contentKey)) continue;
-        byContent.set(contentKey, true);
         tile.opaque = masks.opaque;
         tile.anyAlpha = masks.anyAlpha;
         tile.bbox = masks.bbox;
-        tiles.push(tile);
+        pushWithFlip(tiles, byContent, tile);
       }
     }
   }
@@ -272,7 +302,9 @@ function runPasses(label, templates, ref, explained, out, minFreshFrac, maxPasse
     for (const c of candidates) {
       const s = scoreAt(c.t, c.sx, c.sy, ref, explained, minFreshFrac, minExact); // re-verify after earlier claims
       if (!s) continue;
-      out.push({ id: c.t.id, x: c.sx, y: c.sy, pass, phase: label });
+      const entry = { id: c.t.id, x: c.sx, y: c.sy, pass, phase: label };
+      if (c.t.flipX) entry.flipX = true;
+      out.push(entry);
       claim(c.t, c.sx, c.sy, ref, explained);
       found++;
     }
@@ -348,13 +380,20 @@ async function main() {
       out[o + 3] = Math.max(out[o + 3], a);
     };
     const templateById = new Map();
-    for (const s of sprites) templateById.set(s.id, s);
-    for (const s of oldComps) templateById.set(s.id, s);
-    for (const s of miComps) templateById.set(s.id, s);
-    for (const t of tiles) templateById.set(t.id, t);
+    for (const s of sprites) if (!s.flipX) templateById.set(s.id, s);
+    for (const s of oldComps) if (!s.flipX) templateById.set(s.id, s);
+    for (const s of miComps) if (!s.flipX) templateById.set(s.id, s);
+    for (const t of tiles) if (!t.flipX) templateById.set(t.id, t);
+    const flipCache = new Map();
+    const imageFor = (m) => {
+      const base = templateById.get(m.id);
+      if (!m.flipX) return base;
+      if (!flipCache.has(m.id)) flipCache.set(m.id, flipXRaw(base));
+      return flipCache.get(m.id);
+    };
     const drawAll = (list) => {
       for (const m of [...list].toSorted((a, b) => b.pass - a.pass)) {
-        const img = templateById.get(m.id);
+        const img = imageFor(m);
         for (let y = 0; y < img.h; y++) {
           for (let x = 0; x < img.w; x++) {
             const o = (y * img.w + x) * 4;

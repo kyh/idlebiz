@@ -3,46 +3,206 @@
   "floorTiles": [],
   "wallTiles": [],
   "solidObjects": [
-    "obj-98", "obj-99", "obj-100", "obj-165", "obj-173", "obj-194",
-    "obj-200", "obj-252", "obj-279", "obj-304", "obj-305", "obj-325",
-    "obj-334", "obj-335"
+    "obj-98",
+    "obj-99",
+    "obj-100",
+    "obj-165",
+    "obj-173",
+    "obj-194",
+    "obj-200",
+    "obj-252",
+    "obj-279",
+    "obj-304",
+    "obj-305",
+    "obj-325",
+    "obj-334",
+    "obj-335"
   ],
   "deskTiles": [],
   "deskEdges": [],
-  "_seat_note": "obj-110 (break-room chair) is sealed off by the art (sub-16px gaps: cooler/fridge/plant/case chain) — decorative, not a workSeat.",
-  "seatObjects": ["obj-102", "obj-106", "obj-306"],
+  "_seat_note": "obj-110 (break-room chair) is sealed off by the art (sub-16px gaps: cooler/fridge/plant/case chain) \u2014 decorative, not a workSeat.",
+  "seatObjects": [
+    "obj-102",
+    "obj-106",
+    "obj-306"
+  ],
   "_floor_patch_note": "obj-92/93 are flat floor-texture pieces; on the object layer their anchors hide character bodies, so they render as boosted floor decals.",
-  "floorPatchObjects": ["obj-92", "obj-93"],
-  "_clear_note": "source-px zones where the gif's art no longer ships: matched fragments are dropped (objects + substitute tiles) and manualPlacements provide a clean native furnishing. The gif's light metal wall shelf has no modern twin; obj-200 (office mesh shelf) stands in.",
-  "clearRects": [[123, 0, 167, 36]],
-  "manualPlacements": [{ "id": "obj-200", "x": 125, "y": -16 }],
-  "_wall_band_note": "x0,y0,x1,y1,anchor — structure tiles inside a band y-sort at the band's floor line so characters north of the wall are occluded; mounted decor lifts just above. Doorway x316-352 excluded.",
+  "floorPatchObjects": [
+    "obj-92",
+    "obj-93"
+  ],
+  "_clear_note": "source-px zones where the gif used art that no pack ships: matched fragments there read as junk, so objects and substitute tiles inside are dropped (hole-fill lays the local wall/floor tile instead) and manualPlacements provide a clean native furnishing. Zones: the wall shelf (no modern twin; office mesh shelf stands in) and the left exterior wall (plain white in the design; drift-tolerant matching glued window-rung lookalikes onto it).",
+  "clearRects": [
+    [
+      123,
+      0,
+      167,
+      36
+    ],
+    [
+      0,
+      95,
+      24,
+      172
+    ]
+  ],
+  "manualPlacements": [
+    {
+      "id": "obj-200",
+      "x": 125,
+      "y": -16
+    }
+  ],
+  "_wall_band_note": "x0,y0,x1,y1,anchor \u2014 structure tiles inside a band y-sort at the band's floor line so characters north of the wall are occluded; mounted decor lifts just above. Doorway x316-352 excluded.",
   "wallBands": [
-    [16, 288, 316, 352, 352],
-    [352, 288, 512, 352, 352],
-    [296, 352, 322, 400, 400]
+    [
+      16,
+      288,
+      316,
+      352,
+      352
+    ],
+    [
+      352,
+      288,
+      512,
+      352,
+      352
+    ],
+    [
+      296,
+      352,
+      322,
+      400,
+      400
+    ]
   ],
   "walkableRects": [
-    [16, 64, 496, 80],
-    [16, 160, 496, 204],
-    [16, 208, 52, 304],
-    [16, 288, 496, 304],
-    [320, 296, 352, 400],
-    [120, 352, 316, 400],
-    [356, 352, 496, 400],
-    [120, 400, 496, 500]
+    [
+      16,
+      64,
+      496,
+      80
+    ],
+    [
+      16,
+      160,
+      496,
+      204
+    ],
+    [
+      16,
+      208,
+      52,
+      304
+    ],
+    [
+      16,
+      288,
+      496,
+      304
+    ],
+    [
+      320,
+      296,
+      352,
+      400
+    ],
+    [
+      120,
+      352,
+      316,
+      400
+    ],
+    [
+      356,
+      352,
+      496,
+      400
+    ],
+    [
+      120,
+      400,
+      496,
+      500
+    ]
   ],
   "solidRects": [
-    [0, 0, 512, 64],
-    [0, 0, 16, 544],
-    [496, 0, 512, 544],
-    [0, 504, 512, 544],
-    [84, 88, 386, 162],
-    [52, 202, 450, 290],
-    [16, 304, 316, 352],
-    [352, 304, 512, 352],
-    [304, 304, 320, 400],
-    [0, 352, 120, 544]
+    [
+      0,
+      0,
+      512,
+      64
+    ],
+    [
+      0,
+      0,
+      16,
+      544
+    ],
+    [
+      496,
+      0,
+      512,
+      544
+    ],
+    [
+      0,
+      504,
+      512,
+      544
+    ],
+    [
+      84,
+      88,
+      386,
+      162
+    ],
+    [
+      52,
+      202,
+      450,
+      290
+    ],
+    [
+      16,
+      304,
+      316,
+      352
+    ],
+    [
+      352,
+      304,
+      512,
+      352
+    ],
+    [
+      304,
+      304,
+      320,
+      400
+    ],
+    [
+      0,
+      352,
+      120,
+      544
+    ]
   ],
-  "spawn": { "x": 256, "y": 180 }
+  "spawn": {
+    "x": 256,
+    "y": 180
+  },
+  "_fill_note": "hole-fill donor override per zone (source px + tile id): cleared zones fill with the right wall tile instead of the local mode donor",
+  "fillDonors": [
+    {
+      "rect": [
+        0,
+        95,
+        24,
+        172
+      ],
+      "tile": "ow-6-6"
+    }
+  ]
 }

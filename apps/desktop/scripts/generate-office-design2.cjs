@@ -153,6 +153,17 @@ async function main() {
   const miInteriors32 = await loadRaw(MI_INTERIORS32);
 
   const templateCache = new Map();
+  function flipXRaw(img) {
+    const data = Buffer.alloc(img.data.length);
+    for (let y = 0; y < img.h; y++) {
+      for (let x = 0; x < img.w; x++) {
+        const src = (y * img.w + x) * 4;
+        const dst = (y * img.w + (img.w - 1 - x)) * 4;
+        img.data.copy(data, dst, src, src + 4);
+      }
+    }
+    return { ...img, data };
+  }
   async function template16(id) {
     if (templateCache.has(id)) return templateCache.get(id);
     let img;
@@ -187,6 +198,15 @@ async function main() {
     }
     return template16(id);
   }
+  /** Template image for a decomposed entry, honoring its flipX. */
+  async function templateForEntry(entry) {
+    if (!entry.flipX) return templateFor(entry.id);
+    const key = `${entry.id}|flip`;
+    if (templateCache.has(key)) return templateCache.get(key);
+    const flipped = flipXRaw(await templateFor(entry.id));
+    templateCache.set(key, flipped);
+    return flipped;
+  }
 
   // ---------- rebuild z-ordered draw list (matches decompose recomposite) ----------
   // clearRects (source px): hand-curated zones where the gif used art that no
@@ -196,7 +216,7 @@ async function main() {
   const CLEAR = loadClassification0();
   const inClearRect = async (entry) => {
     if (!CLEAR.clearRects.length) return false;
-    const img = await templateFor(entry.id);
+    const img = await templateForEntry(entry);
     const b = opaqueBounds(img);
     const cx = entry.x + b.x + b.w / 2;
     const cy = entry.y + b.y + b.h / 2;
@@ -219,7 +239,7 @@ async function main() {
   const owner = new Int32Array(W16 * H16).fill(-1);
   for (let i = 0; i < drawList.length; i++) {
     const entry = drawList[i];
-    const img = await templateFor(entry.id);
+    const img = await templateForEntry(entry);
     for (let y = 0; y < img.h; y++) {
       for (let x = 0; x < img.w; x++) {
         if (img.data[(y * img.w + x) * 4 + 3] === 0) continue;
@@ -238,7 +258,7 @@ async function main() {
     // recomposite at 16px
     const rec = Buffer.alloc(W16 * H16 * 4);
     for (const entry of drawList) {
-      const img = await templateFor(entry.id);
+      const img = await templateForEntry(entry);
       for (let y = 0; y < img.h; y++) {
         for (let x = 0; x < img.w; x++) {
           const so = (y * img.w + x) * 4;
@@ -319,16 +339,22 @@ async function main() {
     let fills = 0;
     for (const key of fillCells) {
       const [cx, cy] = key.split(",").map(Number);
-      // donor = most common tile in the local row band (a lone dark trim
-      // neighbor must not win over the dominant wall/floor fill)
-      const counts = new Map();
-      for (const t of tileEntries) {
-        if (Math.abs(t.y - cy) > 16 || Math.abs(t.x - cx) > 56) continue;
-        counts.set(t.id, (counts.get(t.id) ?? 0) + 1);
-      }
-      let best = null;
-      for (const [id, n] of counts) {
-        if (!best || n > best.n) best = { t: { id }, n };
+      // donor = an explicit per-zone override, else the most common tile in
+      // the local row band (a lone dark trim neighbor must not win over the
+      // dominant wall/floor fill)
+      const donorOverride = CLEAR.fillDonors.find(
+        (f) => cx + 8 >= f.rect[0] && cx + 8 < f.rect[2] && cy + 8 >= f.rect[1] && cy + 8 < f.rect[3],
+      );
+      let best = donorOverride ? { t: { id: donorOverride.tile }, n: 1 } : null;
+      if (!best) {
+        const counts = new Map();
+        for (const t of tileEntries) {
+          if (Math.abs(t.y - cy) > 16 || Math.abs(t.x - cx) > 56) continue;
+          counts.set(t.id, (counts.get(t.id) ?? 0) + 1);
+        }
+        for (const [id, n] of counts) {
+          if (!best || n > best.n) best = { t: { id }, n };
+        }
       }
       if (!best) continue;
       const img2x = await (async () => {
@@ -359,21 +385,22 @@ async function main() {
     const assetId = `d2-${entry.id}`;
     const rel = await emitAsset(assetId, img2x);
     const band = bandFor(entry.x * 2 + 16, entry.y * 2 + 16);
-    objects.push({
+    const placement = {
       id: assetId,
       x: entry.x * 2,
       y: entry.y * 2,
       layer: band ? "object" : "floor",
       anchorY: band ? band[4] : 0,
       path: rel,
-    });
+    };
+    if (entry.flipX) placement.flipX = true;
+    objects.push(placement);
   }
 
   console.log(`emitted ${objects.length} structure entries (assets: ${writtenAssets.size})`);
 
   await emitObjects();
-  await enforceZOrder();
-  liftWallBandObjects();
+  await resolveLayers();
   console.log(`orphan px left to nearest-asset substitution: ${orphan.length}`);
   const layout = await finalize();
   fs.writeFileSync(outPath, JSON.stringify(layout, null, 1));
@@ -384,7 +411,7 @@ async function main() {
     for (let i = 0; i < drawList.length; i++) {
       const entry = drawList[i];
       if (entry.kind !== "object") continue;
-      const img16 = await templateFor(entry.id);
+      const img16 = await templateForEntry(entry);
       const b16 = opaqueBounds(img16);
       const anchorY = (entry.y + b16.y + b16.h) * 2;
       const catalog = /^obj-(\d+)$/.exec(entry.id);
@@ -418,7 +445,8 @@ async function main() {
         const rel = await emitAsset(assetId, img2x);
         placement = { id: assetId, x: entry.x * 2, y: entry.y * 2, layer: "object", anchorY, path: rel };
       }
-      placement.meta = { drawIndex: i, templateId: entry.id, ex: entry.x, ey: entry.y };
+      if (entry.flipX) placement.flipX = true;
+      placement.meta = { drawIndex: i, templateId: entry.id, ex: entry.x, ey: entry.y, flipX: entry.flipX === true };
       objects.push(placement);
     }
     console.log(`after objects: ${objects.length} entries, ${writtenAssets.size} assets`);
@@ -439,16 +467,19 @@ async function main() {
     console.log(`wall bands: lifted ${lifted} mounted objects`);
   }
 
-  // y-sort must reproduce the recovered z-order wherever objects overlap
-  // (props sitting ON furniture have a higher z but a smaller floor-contact
-  // anchor, so the desk would cover them). Walk objects bottom-up in z and
-  // bump anchors just above whatever they overlap.
-  async function enforceZOrder() {
+  // Layering, kept simple — three bands like the source art:
+  //   floor:    flat structure tiles + floor-texture patches (under everyone)
+  //   object:   furniture that touches the ground, y-sorted by content bottom
+  //   overhead: props that sit ON furniture — always above walkers, which is
+  //             also correct (a walker overlapping a desktop stands behind it)
+  // Wall-mounted decor snaps to its wall band's floor line and draws after the
+  // band tiles (stable tie-break), so walkers in front still cover it.
+  async function resolveLayers() {
     const objPlacements = objects.filter((o) => o.meta && o.layer === "object");
     objPlacements.sort((a, b) => a.meta.drawIndex - b.meta.drawIndex);
     const masks = new Map();
     for (const o of objPlacements) {
-      const img = await templateFor(o.meta.templateId);
+      const img = await templateForEntry({ id: o.meta.templateId, flipX: o.meta.flipX });
       masks.set(o, { img, x: o.meta.ex, y: o.meta.ey });
     }
     const overlaps = (a, b) => {
@@ -468,17 +499,40 @@ async function main() {
       }
       return false;
     };
-    let bumped = 0;
+    // pass 1: anything drawn above a piece it would y-sort below goes overhead
+    let toOverhead = 0;
     for (let j = 1; j < objPlacements.length; j++) {
       for (let i = 0; i < j; i++) {
+        if (objPlacements[i].layer !== "object") continue;
+        if (objPlacements[j].anchorY > objPlacements[i].anchorY) continue;
         if (!overlaps(objPlacements[i], objPlacements[j])) continue;
-        if (objPlacements[j].anchorY <= objPlacements[i].anchorY) {
-          objPlacements[j].anchorY = objPlacements[i].anchorY + 0.125;
+        objPlacements[j].layer = "overhead";
+        toOverhead++;
+        break;
+      }
+    }
+    // pass 2: stacked overhead props keep their recovered order (integer bumps)
+    const over = objPlacements.filter((o) => o.layer === "overhead");
+    let bumped = 0;
+    for (let j = 1; j < over.length; j++) {
+      for (let i = 0; i < j; i++) {
+        if (over[j].anchorY <= over[i].anchorY && overlaps(over[i], over[j])) {
+          over[j].anchorY = over[i].anchorY + 1;
           bumped++;
         }
       }
     }
-    console.log(`z-order: bumped ${bumped} anchors`);
+    // pass 3: wall-mounted decor rides its band's floor line
+    let banded = 0;
+    for (const o of objPlacements) {
+      if (o.layer !== "object") continue;
+      const band = bandFor(o.x + 16, o.anchorY - 8);
+      if (band && o.anchorY <= band[4]) {
+        o.anchorY = band[4];
+        banded++;
+      }
+    }
+    console.log(`layers: ${toOverhead} props -> overhead, ${bumped} overhead bumps, ${banded} snapped to wall bands`);
   }
 
   async function finalize() {
@@ -704,9 +758,13 @@ async function main() {
 
   function loadClassification0() {
     const p = path.join(__dirname, "office-design2-classification.json");
-    if (!fs.existsSync(p)) return { clearRects: [], manualPlacements: [] };
+    if (!fs.existsSync(p)) return { clearRects: [], manualPlacements: [], fillDonors: [] };
     const raw = JSON.parse(fs.readFileSync(p, "utf8"));
-    return { clearRects: raw.clearRects ?? [], manualPlacements: raw.manualPlacements ?? [] };
+    return {
+      clearRects: raw.clearRects ?? [],
+      manualPlacements: raw.manualPlacements ?? [],
+      fillDonors: raw.fillDonors ?? [],
+    };
   }
 
   function loadClassification() {
