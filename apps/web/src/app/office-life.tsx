@@ -148,7 +148,8 @@ export function OfficeLife({ title }: { title: ReactNode }) {
 
     // click anywhere non-interactive on the card: the employee reports there,
     // says something corporate, then goes back to their routine
-    const card = overlay.closest(".px-window") ?? overlay.parentElement;
+    const cardEl = overlay.closest(".px-window");
+    const card = cardEl instanceof HTMLElement ? cardEl : overlay.parentElement;
     const onCardClick = (e: MouseEvent) => {
       if (!(e.target instanceof Element)) return;
       if (e.target.closest("a, button, [role='button']")) return;
