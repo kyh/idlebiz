@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { parseOfficeLayout, type OfficeLayer } from "@/renderer/game/office-layout";
+import { applyOfficeLayout, parseOfficeLayout, type OfficeLayer } from "@/renderer/game/office-layout";
 import {
   ALL_OBJECT_IDS,
   assetSrc,
@@ -266,8 +266,12 @@ export function OfficeBuilder() {
       return;
     }
     try {
-      await bridge.saveOfficeDesign({ json: serializeLayout(layout) });
-      setStatus("Saved ✓ — reload the game window (Cmd-R) to see changes.");
+      const json = serializeLayout(layout);
+      await bridge.saveOfficeDesign({ json });
+      // apply to the live layout bindings: the game scene rebuilds from them
+      // when you switch back, so the save is visible immediately
+      applyOfficeLayout(JSON.parse(json));
+      setStatus("Saved ✓ — switch to Game to see it.");
     } catch (err) {
       setStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     }

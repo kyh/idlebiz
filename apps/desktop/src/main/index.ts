@@ -212,8 +212,15 @@ function registerIpcHandlers(): void {
   // launch (see store.refresh → applyOfficeLayout). Survives rebuilds + packaging.
   handle("saveOfficeDesign", ({ json }) => {
     const parsed: unknown = JSON.parse(json); // reject malformed before writing
+    const body = `${JSON.stringify(parsed, null, 2)}\n`;
     mkdirSync(ROOT_DIR, { recursive: true });
-    writeFileSync(OFFICE_DESIGN_PATH, `${JSON.stringify(parsed, null, 2)}\n`);
+    writeFileSync(OFFICE_DESIGN_PATH, body);
+    // dev: mirror into the repo source so edited maps ship as the bundled
+    // default (main runs from .output/app/main — three levels up = app root)
+    if (!app.isPackaged) {
+      const repoDesign = path.resolve(moduleDir, "../../../src/renderer/game/office-design.json");
+      if (existsSync(path.dirname(repoDesign))) writeFileSync(repoDesign, body);
+    }
     return { ok: true };
   });
   handle("loadOfficeDesign", () => {
