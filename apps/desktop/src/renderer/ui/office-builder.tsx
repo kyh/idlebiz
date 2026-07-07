@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyOfficeLayout, parseOfficeLayout, type OfficeLayer } from "@/renderer/game/office-layout";
 import {
   ALL_OBJECT_IDS,
+  anchorFor,
   assetSrc,
-  defaultAnchorY,
+  cloneObject,
+  contentBounds,
   deriveCollision,
   loadLayout,
   makeObject,
@@ -12,7 +14,6 @@ import {
   serializeLayout,
   setCollisionCell,
   srcForObject,
-  variant32,
   type EditableLayout,
   type EditableObject,
   type Tool,
@@ -22,14 +23,15 @@ type PaletteMode = "objects" | "tiles";
 
 const SNAPS = [1, 8, 16, 32] as const;
 const LAYERS: readonly OfficeLayer[] = ["floor", "object", "overhead"];
-const TOOLS: readonly { tool: Tool; label: string }[] = [
-  { tool: "select", label: "Select" },
-  { tool: "place", label: "Place" },
-  { tool: "spawn", label: "Spawn" },
-  { tool: "seat", label: "Seat" },
-  { tool: "block", label: "+Collision" },
-  { tool: "clear", label: "−Collision" },
+const TOOLS: readonly { tool: Tool; label: string; hotkey: string }[] = [
+  { tool: "select", label: "Select", hotkey: "v" },
+  { tool: "place", label: "Place", hotkey: "p" },
+  { tool: "spawn", label: "Spawn", hotkey: "s" },
+  { tool: "seat", label: "Seat", hotkey: "t" },
+  { tool: "block", label: "+Collision", hotkey: "b" },
+  { tool: "clear", label: "−Collision", hotkey: "x" },
 ];
+const HISTORY_CAP = 100;
 
 export function OfficeBuilder() {
   const [layout, setLayout] = useState<EditableLayout>(loadLayout);
@@ -50,18 +52,103 @@ export function OfficeBuilder() {
 
   const selected = selectedUids.length === 1 ? layout.objects.find((o) => o.uid === selectedUids[0]) ?? null : null;
 
+  // ---- undo/redo: snapshot history over the whole layout ----
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const historyRef = useRef<{ past: EditableLayout[]; future: EditableLayout[] }>({ past: [], future: [] });
+
+  /** Apply without recording (mid-drag / mid-paint frames). */
+  const applyLive = useCallback((updater: (L: EditableLayout) => EditableLayout) => {
+    const next = updater(layoutRef.current);
+    layoutRef.current = next;
+    setLayout(next);
+  }, []);
+  /** Record the current state as an undo step (start of a stroke/gesture). */
+  const beginStroke = useCallback(() => {
+    const h = historyRef.current;
+    h.past.push(layoutRef.current);
+    if (h.past.length > HISTORY_CAP) h.past.shift();
+    h.future = [];
+  }, []);
+  /** One-shot undoable change. */
+  const commit = useCallback(
+    (updater: (L: EditableLayout) => EditableLayout) => {
+      const next = updater(layoutRef.current);
+      if (next === layoutRef.current) return;
+      beginStroke();
+      layoutRef.current = next;
+      setLayout(next);
+    },
+    [beginStroke],
+  );
+  const restore = useCallback((L: EditableLayout) => {
+    layoutRef.current = L;
+    setLayout(L);
+    setSelectedUids((cur) => cur.filter((u) => L.objects.some((o) => o.uid === u)));
+  }, []);
+  const undo = useCallback(() => {
+    const h = historyRef.current;
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future.push(layoutRef.current);
+    restore(prev);
+  }, [restore]);
+  const redo = useCallback(() => {
+    const h = historyRef.current;
+    const next = h.future.pop();
+    if (!next) return;
+    h.past.push(layoutRef.current);
+    restore(next);
+  }, [restore]);
+
   const snapTo = useCallback((v: number) => (snap > 1 ? Math.round(v / snap) * snap : Math.round(v)), [snap]);
 
-  const updateObject = useCallback((uid: string, patch: Partial<EditableObject>) => {
-    setLayout((L) => ({ ...L, objects: L.objects.map((o) => (o.uid === uid ? { ...o, ...patch } : o)) }));
-  }, []);
+  const updateObject = useCallback(
+    (uid: string, patch: Partial<EditableObject>) => {
+      commit((L) => ({ ...L, objects: L.objects.map((o) => (o.uid === uid ? { ...o, ...patch } : o)) }));
+    },
+    [commit],
+  );
 
-  const deleteUids = useCallback((uids: readonly string[]) => {
-    if (uids.length === 0) return;
-    const kill = new Set(uids);
-    setLayout((L) => ({ ...L, objects: L.objects.filter((o) => !kill.has(o.uid)) }));
-    setSelectedUids((cur) => cur.filter((u) => !kill.has(u)));
-  }, []);
+  const deleteUids = useCallback(
+    (uids: readonly string[]) => {
+      if (uids.length === 0) return;
+      const kill = new Set(uids);
+      commit((L) => ({ ...L, objects: L.objects.filter((o) => !kill.has(o.uid)) }));
+      setSelectedUids((cur) => cur.filter((u) => !kill.has(u)));
+    },
+    [commit],
+  );
+
+  const duplicateUids = useCallback(
+    (uids: readonly string[]) => {
+      if (uids.length === 0) return;
+      const src = new Set(uids);
+      const clones = layoutRef.current.objects
+        .filter((o) => src.has(o.uid))
+        .map((o) => Object.assign(cloneObject(o), { x: o.x + 8, y: o.y + 8, anchorY: o.anchorY + 8 }));
+      commit((L) => ({ ...L, objects: [...L.objects, ...clones] }));
+      setSelectedUids(clones.map((o) => o.uid));
+    },
+    [commit],
+  );
+
+  const flipSelection = useCallback(
+    (axis: "x" | "y") => {
+      const sel = new Set(selectedUids);
+      if (sel.size === 0) return;
+      commit((L) => ({
+        ...L,
+        objects: L.objects.map((o) => {
+          if (!sel.has(o.uid)) return o;
+          const flipped = axis === "x" ? { ...o, flipX: !o.flipX } : { ...o, flipY: !o.flipY };
+          // flipping vertically moves the content bottom — refresh the y-sort anchor
+          return axis === "y" ? { ...flipped, anchorY: anchorFor(flipped, flipped.y) } : flipped;
+        }),
+      }));
+    },
+    [selectedUids, commit],
+  );
 
   // hit-test: topmost (highest depth) object whose content bbox contains (x,y)
   const hitTest = useCallback(
@@ -69,8 +156,7 @@ export function OfficeBuilder() {
       let best: EditableObject | null = null;
       let bestDepth = -Infinity;
       for (const o of layout.objects) {
-        const v = variant32(o.id);
-        const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 };
+        const b = contentBounds(o);
         const bx = o.x + b.x;
         const by = o.y + b.y;
         if (x < bx || y < by || x >= bx + b.w || y >= by + b.h) continue;
@@ -102,9 +188,10 @@ export function OfficeBuilder() {
       if (tool === "block" || tool === "clear") {
         const val: 0 | 1 = tool === "block" ? 1 : 0;
         paintRef.current = val;
+        beginStroke(); // the whole paint stroke is one undo step
         const c = Math.floor(p.x / layout.cell);
         const r = Math.floor(p.y / layout.cell);
-        setLayout((L) => ({ ...L, collision: setCollisionCell(L.collision, L.cols, c, r, val) }));
+        applyLive((L) => ({ ...L, collision: setCollisionCell(L.collision, L.cols, c, r, val) }));
         e.currentTarget.setPointerCapture(e.pointerId);
         return;
       }
@@ -113,16 +200,16 @@ export function OfficeBuilder() {
         const obj = tile
           ? makeObject(tile.id, sx, sy, { path: tile.path, layer: "floor" })
           : makeObject(paletteId, sx, sy);
-        setLayout((L) => ({ ...L, objects: [...L.objects, obj] }));
+        commit((L) => ({ ...L, objects: [...L.objects, obj] }));
         setSelectedUids([obj.uid]); // stay in Place mode so you can keep placing
         return;
       }
       if (tool === "spawn") {
-        setLayout((L) => ({ ...L, spawn: { x: sx, y: sy } }));
+        commit((L) => ({ ...L, spawn: { x: sx, y: sy } }));
         return;
       }
       if (tool === "seat") {
-        setLayout((L) => {
+        commit((L) => {
           const near = L.workSeats.findIndex((s) => Math.hypot(s.x - p.x, s.y - p.y) < 12);
           return near >= 0
             ? { ...L, workSeats: L.workSeats.filter((_, i) => i !== near) }
@@ -139,6 +226,7 @@ export function OfficeBuilder() {
         const group = inSel ? selectedUids : [hit.uid];
         if (!inSel) setSelectedUids([hit.uid]);
         const groupSet = new Set(group);
+        beginStroke(); // the whole drag is one undo step
         dragRef.current = {
           sx: p.x,
           sy: p.y,
@@ -148,7 +236,7 @@ export function OfficeBuilder() {
         setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
       }
     },
-    [tool, paletteId, paletteMode, snapTo, worldFromEvent, hitTest, layout.objects, layout.cell, selectedUids],
+    [tool, paletteId, paletteMode, snapTo, worldFromEvent, hitTest, layout.objects, layout.cell, selectedUids, beginStroke, commit, applyLive],
   );
 
   const onStagePointerMove = useCallback(
@@ -158,7 +246,7 @@ export function OfficeBuilder() {
         const val = paintRef.current;
         const c = Math.floor(p.x / layout.cell);
         const r = Math.floor(p.y / layout.cell);
-        setLayout((L) => ({ ...L, collision: setCollisionCell(L.collision, L.cols, c, r, val) }));
+        applyLive((L) => ({ ...L, collision: setCollisionCell(L.collision, L.cols, c, r, val) }));
         return;
       }
       const drag = dragRef.current;
@@ -166,20 +254,20 @@ export function OfficeBuilder() {
         const dx = snapTo(p.x - drag.sx);
         const dy = snapTo(p.y - drag.sy);
         const moves = new Map(drag.origins.map((o) => [o.uid, o]));
-        setLayout((L) => ({
+        applyLive((L) => ({
           ...L,
           objects: L.objects.map((o) => {
             const orig = moves.get(o.uid);
             if (!orig) return o;
             const ny = orig.y + dy;
-            return { ...o, x: orig.x + dx, y: ny, anchorY: defaultAnchorY(o.id, ny) };
+            return { ...o, x: orig.x + dx, y: ny, anchorY: anchorFor(o, ny) };
           }),
         }));
         return;
       }
       setMarquee((m) => (m ? { ...m, x1: p.x, y1: p.y } : m));
     },
-    [worldFromEvent, snapTo, layout.cell],
+    [worldFromEvent, snapTo, layout.cell, applyLive],
   );
 
   const onStagePointerUp = useCallback(() => {
@@ -192,8 +280,7 @@ export function OfficeBuilder() {
       if (x1 - x0 > 3 || y1 - y0 > 3) {
         const hits = layout.objects
           .filter((o) => {
-            const v = variant32(o.id);
-            const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 };
+            const b = contentBounds(o);
             const bx = o.x + b.x;
             const by = o.y + b.y;
             return !(x1 < bx || x0 > bx + b.w || y1 < by || y0 > by + b.h);
@@ -207,57 +294,6 @@ export function OfficeBuilder() {
     }
     dragRef.current = null;
   }, [marquee, layout.objects]);
-
-  // keyboard: nudge + delete every selected object
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (selectedUids.length === 0) return;
-      const target = e.target;
-      if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
-      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-      const sel = new Set(selectedUids);
-      if (d) {
-        e.preventDefault();
-        setLayout((L) => ({
-          ...L,
-          objects: L.objects.map((o) =>
-            sel.has(o.uid)
-              ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: defaultAnchorY(o.id, o.y + d[1]) }
-              : o,
-          ),
-        }));
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        deleteUids(selectedUids);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedUids, snap, deleteUids]);
-
-  // show the collision grid whenever you're editing it
-  useEffect(() => {
-    if (tool === "block" || tool === "clear") setShowCollision(true);
-  }, [tool]);
-
-  // load the player's saved office from disk (falls back to the bundled default)
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const res = await window.appBridge?.loadOfficeDesign();
-      if (cancelled || !res || !res.layout) return;
-      try {
-        setLayout(loadLayout(parseOfficeLayout(res.layout)));
-        setStatus("Loaded your saved office from disk.");
-      } catch {
-        // keep the bundled default if the saved file is from an older schema
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const save = useCallback(async () => {
     const bridge = window.appBridge;
@@ -276,6 +312,113 @@ export function OfficeBuilder() {
       setStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, [layout]);
+
+  // keyboard: Figma-style hotkeys (see the cheat sheet in the inspector)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
+      )
+        return;
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void save();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicateUids(selectedUids);
+        return;
+      }
+      if (mod) return; // don't shadow other app/browser shortcuts
+
+      if (e.key === "Escape") {
+        setSelectedUids([]);
+        setTool("select");
+        return;
+      }
+      if (e.shiftKey && (e.key === "H" || e.key === "h")) {
+        e.preventDefault();
+        flipSelection("x");
+        return;
+      }
+      if (e.shiftKey && (e.key === "V" || e.key === "v")) {
+        e.preventDefault();
+        flipSelection("y");
+        return;
+      }
+      if (!e.shiftKey) {
+        const toolFor = TOOLS.find((t) => t.hotkey === e.key.toLowerCase());
+        if (toolFor) {
+          setTool(toolFor.tool);
+          return;
+        }
+        if (e.key === "-") {
+          setZoom((z) => Math.max(1, z - 0.5));
+          return;
+        }
+        if (e.key === "=" || e.key === "+") {
+          setZoom((z) => Math.min(5, z + 0.5));
+          return;
+        }
+      }
+
+      if (selectedUids.length === 0) return;
+      const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+      const sel = new Set(selectedUids);
+      if (d) {
+        e.preventDefault();
+        commit((L) => ({
+          ...L,
+          objects: L.objects.map((o) =>
+            sel.has(o.uid) ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: anchorFor(o, o.y + d[1]) } : o,
+          ),
+        }));
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteUids(selectedUids);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedUids, snap, deleteUids, duplicateUids, flipSelection, undo, redo, save, commit]);
+
+  // show the collision grid whenever you're editing it
+  useEffect(() => {
+    if (tool === "block" || tool === "clear") setShowCollision(true);
+  }, [tool]);
+
+  // load the player's saved office from disk (falls back to the bundled default)
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await window.appBridge?.loadOfficeDesign();
+      if (cancelled || !res || !res.layout) return;
+      try {
+        const loaded = loadLayout(parseOfficeLayout(res.layout));
+        layoutRef.current = loaded;
+        historyRef.current = { past: [], future: [] };
+        setLayout(loaded);
+        setStatus("Loaded your saved office from disk.");
+      } catch {
+        // keep the bundled default if the saved file is from an older schema
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const sortedObjects = useMemo(
     () => layout.objects.toSorted((a, b) => objectDepth(a) - objectDepth(b)),
@@ -343,6 +486,7 @@ export function OfficeBuilder() {
                 key={t.tool}
                 onClick={() => setTool(t.tool)}
                 data-sel={tool === t.tool}
+                title={`${t.label} (${t.hotkey.toUpperCase()})`}
                 className="px-opt px-2.5 py-1.5"
               >
                 {t.label}
@@ -372,8 +516,8 @@ export function OfficeBuilder() {
             </button>
             <button
               onClick={() => {
-                setLayout((L) => ({ ...L, collision: deriveCollision(L) }));
-                setStatus("Rebuilt collision from solid furniture footprints.");
+                commit((L) => ({ ...L, collision: deriveCollision(L) }));
+                setStatus("Rebuilt collision from floor tiles + solid furniture.");
                 setShowCollision(true);
               }}
               className="px-btn px-2.5 py-1.5"
@@ -428,6 +572,8 @@ export function OfficeBuilder() {
                     zIndex: 10 + i,
                     pointerEvents: "none",
                     outline: selSet.has(o.uid) ? "1px solid #34d399" : "none",
+                    transform:
+                      o.flipX || o.flipY ? `scale(${o.flipX ? -1 : 1}, ${o.flipY ? -1 : 1})` : undefined,
                   }}
                   className="max-w-none [image-rendering:pixelated]"
                 />
@@ -516,13 +662,25 @@ export function OfficeBuilder() {
             </button>
           </div>
         ) : (
-          <p className="text-[var(--text-dim)]">
-            {tool === "place"
-              ? paletteId
-                ? `Click the canvas to place ${paletteId}.`
-                : "Pick an asset from the left."
-              : "Click to select, or drag a box to select many. Arrow keys nudge; Delete removes."}
-          </p>
+          <div className="flex flex-col gap-2 text-[var(--text-dim)]">
+            <p>
+              {tool === "place"
+                ? paletteId
+                  ? `Click the canvas to place ${paletteId}.`
+                  : "Pick an asset from the left."
+                : "Click to select, or drag a box to select many."}
+            </p>
+            <div className="px-inset p-2 text-[10px] leading-relaxed">
+              V select · P place · S spawn · T seat · B/X collision
+              <br />⌘Z undo · ⇧⌘Z redo · ⌘D duplicate · ⌘S save
+              <br />⇧H flip horizontal · ⇧V flip vertical
+              <br />arrows nudge (⇧ = snap step) · Delete remove · Esc deselect
+              <br />
+              <br />Layers: floor = flat under everyone · object = y-sorts with
+              walkers (in front when they're above it, behind when below) ·
+              overhead = always on top.
+            </div>
+          </div>
         )}
         <div className="mt-auto text-[10px] text-[var(--text-dim)]">
           {layout.objects.length} objects · {layout.workSeats.length} seats · {layout.width}×{layout.height}
@@ -546,7 +704,14 @@ function Inspector({
     <div className="flex flex-col gap-2">
       <div className="px-inset flex items-center gap-2 p-2">
         {src ? (
-          <img src={src} alt={obj.id} className="max-h-12 max-w-none [image-rendering:pixelated]" />
+          <img
+            src={src}
+            alt={obj.id}
+            style={{
+              transform: obj.flipX || obj.flipY ? `scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1})` : undefined,
+            }}
+            className="max-h-12 max-w-none [image-rendering:pixelated]"
+          />
         ) : null}
         <span className="truncate">{obj.id}</span>
       </div>
@@ -566,7 +731,7 @@ function Inspector({
           value={obj.y}
           onChange={(e) => {
             const y = Number(e.currentTarget.value);
-            onChange({ y, anchorY: defaultAnchorY(obj.id, y) });
+            onChange({ y, anchorY: anchorFor(obj, y) });
           }}
           className="px-field w-20 text-right"
         />
@@ -583,7 +748,7 @@ function Inspector({
         >
           {LAYERS.map((l) => (
             <option key={l} value={l}>
-              {l}
+              {l === "floor" ? "floor — flat, under everyone" : l === "object" ? "object — y-sorts with walkers" : "overhead — always on top"}
             </option>
           ))}
         </select>
@@ -598,8 +763,29 @@ function Inspector({
         />
       </label>
       <div className="flex gap-1">
-        <button onClick={() => onChange({ anchorY: defaultAnchorY(obj.id, obj.y) })} className="px-btn flex-1 py-1.5">
+        <button onClick={() => onChange({ anchorY: anchorFor(obj, obj.y) })} className="px-btn flex-1 py-1.5">
           Auto anchor
+        </button>
+      </div>
+      <div className="flex gap-1">
+        <button
+          onClick={() => onChange({ flipX: !obj.flipX })}
+          data-sel={obj.flipX}
+          className="px-opt flex-1 py-1.5"
+          title="Flip horizontal (⇧H)"
+        >
+          Flip H
+        </button>
+        <button
+          onClick={() => {
+            const flipped = { ...obj, flipY: !obj.flipY };
+            onChange({ flipY: flipped.flipY, anchorY: anchorFor(flipped, obj.y) });
+          }}
+          data-sel={obj.flipY}
+          className="px-opt flex-1 py-1.5"
+          title="Flip vertical (⇧V)"
+        >
+          Flip V
         </button>
       </div>
       <label className="flex items-center gap-2">

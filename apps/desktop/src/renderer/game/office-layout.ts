@@ -20,6 +20,8 @@ export interface OfficeObjectPlacement {
   readonly x: number;
   readonly y: number;
   readonly depth: number;
+  readonly flipX: boolean;
+  readonly flipY: boolean;
 }
 
 const OFFICE_OBJECT_SCALE = 32;
@@ -35,6 +37,8 @@ const objectSchema = z.object({
   y: z.number(),
   layer: z.enum(["floor", "object", "overhead"]),
   anchorY: z.number(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
   path: z.string().optional(),
   bounds: rectSchema.optional(),
 });
@@ -111,6 +115,8 @@ function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObje
     x: obj.x,
     y: obj.y,
     depth: depthFor(obj.layer, obj.anchorY),
+    flipX: obj.flipX ?? false,
+    flipY: obj.flipY ?? false,
   }));
 }
 

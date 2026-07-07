@@ -36,6 +36,8 @@ export interface EditableObject {
   layer: OfficeLayer;
   anchorY: number;
   solid: boolean;
+  flipX: boolean;
+  flipY: boolean;
   path?: string; // explicit asset path (room-builder tiles); else resolved from id via the catalog
 }
 
@@ -66,6 +68,28 @@ export const ROOM_TILES: readonly RoomBuilderTile[] = ROOM_BUILDER_TILES;
 export function variant32(id: string): OfficeObjectVariant | null {
   return V32.get(id) ?? null;
 }
+function rawBounds(id: string): { canvasW: number; canvasH: number; b: Rect } {
+  const v = V32.get(id);
+  return v
+    ? { canvasW: v.w, canvasH: v.h, b: v.bounds }
+    : { canvasW: 32, canvasH: 32, b: { x: 0, y: 0, w: 32, h: 32 } }; // room-builder tiles: full cell
+}
+/** Canvas-local content bbox, adjusted for flips (flipping mirrors the content
+ * inside its canvas box, so the bbox moves to the mirrored corner). */
+export function contentBounds(o: Pick<EditableObject, "id" | "flipX" | "flipY">): Rect {
+  const { canvasW, canvasH, b } = rawBounds(o.id);
+  return {
+    x: o.flipX ? canvasW - (b.x + b.w) : b.x,
+    y: o.flipY ? canvasH - (b.y + b.h) : b.y,
+    w: b.w,
+    h: b.h,
+  };
+}
+/** y-sort anchor for an object placed at world y = bottom of its (flipped) content. */
+export function anchorFor(o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number): number {
+  const b = contentBounds(o);
+  return y + b.y + b.h;
+}
 export function assetSrc(id: string): string | null {
   const v = V32.get(id);
   return v ? `/${v.path}` : null;
@@ -75,18 +99,12 @@ export function srcForObject(o: { id: string; path?: string }): string | null {
   if (o.path) return `/${o.path}`;
   return assetSrc(o.id);
 }
-/** Default y-sort anchor for a fresh placement = world bottom of the sprite's content. */
-export function defaultAnchorY(id: string, y: number): number {
-  const v = V32.get(id);
-  return v ? y + v.bounds.y + v.bounds.h : y + 32;
-}
 /** The render depth used by the game; the builder sorts by this for WYSIWYG. */
 export function objectDepth(o: { layer: OfficeLayer; anchorY: number }): number {
   return depthFor(o.layer, o.anchorY);
 }
 function footprintRect(o: EditableObject): Rect | null {
-  const v = V32.get(o.id);
-  const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 }; // room-builder tiles: full 32×32 cell
+  const b = contentBounds(o);
   // full content footprint (a solid desk blocks its whole base, matching the
   // generator); FOOT trims very tall sprites so a wall-mounted item that's
   // mis-flagged solid doesn't paint a huge column.
@@ -122,6 +140,8 @@ export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableL
     layer: o.layer,
     anchorY: o.anchorY,
     solid: inferSolid(o, grid, r.cell),
+    flipX: o.flipX ?? false,
+    flipY: o.flipY ?? false,
     path: o.path,
   }));
   return {
@@ -140,14 +160,12 @@ export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableL
 
 /** An object loaded from disk is "solid" if its footprint cells are mostly solid. */
 function inferSolid(
-  o: { id: string; x: number; y: number; layer: OfficeLayer; anchorY: number },
+  o: { id: string; x: number; y: number; layer: OfficeLayer; flipX?: boolean; flipY?: boolean },
   grid: number[][],
   cell: number,
 ): boolean {
-  if (o.layer !== "object") return false;
-  const v = V32.get(o.id);
-  if (!v) return false;
-  const b = v.bounds;
+  if (o.layer !== "object" || !V32.has(o.id)) return false;
+  const b = contentBounds({ id: o.id, flipX: o.flipX ?? false, flipY: o.flipY ?? false });
   const fh = Math.min(FOOT, b.h);
   const fp: Rect = { x: o.x + b.x, y: o.y + b.y + b.h - fh, w: b.w, h: fh };
   let solidCells = 0;
@@ -192,11 +210,22 @@ export function deriveCollision(L: EditableLayout): string[] {
 export function serializeLayout(L: EditableLayout): string {
   const objects = L.objects
     .toSorted((a, b) => objectDepth(a) - objectDepth(b))
-    .map((o) =>
-      o.path
-        ? { id: o.id, x: o.x, y: o.y, layer: o.layer, anchorY: o.anchorY, path: o.path }
-        : { id: o.id, x: o.x, y: o.y, layer: o.layer, anchorY: o.anchorY },
-    );
+    .map((o) => {
+      const out: {
+        id: string;
+        x: number;
+        y: number;
+        layer: OfficeLayer;
+        anchorY: number;
+        path?: string;
+        flipX?: boolean;
+        flipY?: boolean;
+      } = { id: o.id, x: o.x, y: o.y, layer: o.layer, anchorY: o.anchorY };
+      if (o.path) out.path = o.path;
+      if (o.flipX) out.flipX = true;
+      if (o.flipY) out.flipY = true;
+      return out;
+    });
   const out = {
     tile: L.tile,
     width: L.width,
@@ -221,8 +250,8 @@ export function makeObject(
   opts: { path?: string; layer?: OfficeLayer } = {},
 ): EditableObject {
   const layer = opts.layer ?? "object";
-  const v = V32.get(id);
-  const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 };
+  const unflipped = { id, flipX: false, flipY: false };
+  const b = contentBounds(unflipped);
   const x = cx - b.x;
   const y = cy - b.y;
   return {
@@ -231,10 +260,17 @@ export function makeObject(
     x,
     y,
     layer,
-    anchorY: defaultAnchorY(id, y),
+    anchorY: anchorFor(unflipped, y),
     solid: layer === "object" && !opts.path,
+    flipX: false,
+    flipY: false,
     path: opts.path,
   };
+}
+
+/** Duplicate a placed object (fresh uid). */
+export function cloneObject(o: EditableObject): EditableObject {
+  return { ...o, uid: newUid() };
 }
 
 /** Set one collision cell (1 = solid, 0 = walkable); returns a new collision array. */

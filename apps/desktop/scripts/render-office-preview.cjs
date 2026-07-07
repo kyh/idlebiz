@@ -48,7 +48,14 @@ async function main() {
     const anchor = typeof o.anchorY === "number" ? o.anchorY : o.y + b.y + b.h;
     const depth =
       o.layer === "floor" ? 10 + anchor * 1e-4 : o.layer === "overhead" ? 1_000_000 + anchor : 1000 + anchor + 0.5;
-    objLayers.push({ depth, input: file, left: o.x, top: o.y });
+    let input = file;
+    if (o.flipX || o.flipY) {
+      let img = sharp(file);
+      if (o.flipX) img = img.flop();
+      if (o.flipY) img = img.flip();
+      input = await img.png().toBuffer();
+    }
+    objLayers.push({ depth, input, left: o.x, top: o.y });
   }
   objLayers.sort((a, b) => a.depth - b.depth);
   layers.push(...objLayers);

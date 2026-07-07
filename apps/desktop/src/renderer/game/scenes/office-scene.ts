@@ -183,7 +183,11 @@ export class OfficeScene extends Phaser.Scene {
 
   private buildRoom(): Seat[] {
     for (const placement of OFFICE_OBJECT_PLACEMENTS) {
-      this.add.image(placement.x, placement.y, placement.key).setOrigin(0, 0).setDepth(placement.depth);
+      this.add
+        .image(placement.x, placement.y, placement.key)
+        .setOrigin(0, 0)
+        .setDepth(placement.depth)
+        .setFlip(placement.flipX, placement.flipY);
     }
     return OFFICE_WORK_SEATS.map((seat) => ({ x: seat.x, y: seat.y }));
   }
