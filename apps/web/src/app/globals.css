@@ -146,6 +146,7 @@ img {
   position: absolute;
   width: 48px;
   height: 96px;
+  isolation: isolate;
   transition-property: left, top;
   transition-timing-function: linear, linear;
 }
@@ -163,14 +164,21 @@ img {
 }
 .px-prop-wrap {
   display: inline-block;
+  isolation: isolate;
+}
+.px-prop,
+.px-npc-body {
+  position: relative;
+  z-index: 0;
 }
 .px-ground-shadow {
   position: absolute;
-  bottom: -2px;
+  bottom: -4px;
   left: 50%;
   transform: translateX(-50%);
+  z-index: -1;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(29, 33, 54, 0.45), rgba(29, 33, 54, 0.25) 70%, rgba(29, 33, 54, 0));
+  background: radial-gradient(closest-side, rgba(29, 33, 54, 0.5), rgba(29, 33, 54, 0.3) 65%, rgba(29, 33, 54, 0));
 }
 @keyframes px-gait {
   from {
@@ -182,7 +190,7 @@ img {
 }
 .px-say {
   position: absolute;
-  bottom: 100px;
+  bottom: 84px;
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;

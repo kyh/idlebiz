@@ -182,7 +182,7 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       {/* title row: desk top-left in its own grid cell, title centered */}
       <div className="grid w-full grid-cols-[auto_1fr_auto] items-center" aria-hidden>
         <span className={`px-prop-wrap relative ${pose?.sitting ? "z-30" : ""}`}>
-          <span className="px-ground-shadow" style={{ width: "74%", height: 12 }} />
+          <span className="px-ground-shadow" style={{ width: "94%", height: 15 }} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img ref={deskRef} src="/office/desk.png" alt="" width={52} height={96} className="px-prop h-[144px] w-auto" />
         </span>
@@ -190,8 +190,8 @@ export function OfficeLife({ title }: { title: ReactNode }) {
         <div className="w-[78px]" />
       </div>
       {/* cooler pinned to the card's bottom-right corner */}
-      <span className="px-prop-wrap absolute right-3 bottom-3" aria-hidden>
-        <span className="px-ground-shadow" style={{ width: "86%", height: 8 }} />
+      <span className="px-prop-wrap absolute right-4 bottom-[22px]" aria-hidden>
+        <span className="px-ground-shadow" style={{ width: "116%", height: 11 }} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img ref={coolerRef} src="/office/cooler.png" alt="" width={28} height={60} className="px-prop h-[90px] w-auto" />
       </span>
