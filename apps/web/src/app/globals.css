@@ -146,15 +146,31 @@ img {
   position: absolute;
   width: 48px;
   height: 96px;
+  transition-property: left, top;
+  transition-timing-function: linear, linear;
+}
+.px-npc-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
   background-image: url(/office/npc.png);
   background-size: 288px 576px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  transition-property: left, top;
-  transition-timing-function: linear, linear;
 }
 .px-npc-anim {
   animation: px-gait 0.66s steps(6) infinite;
+}
+.px-prop-wrap {
+  display: inline-block;
+}
+.px-ground-shadow {
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(29, 33, 54, 0.28), rgba(29, 33, 54, 0));
 }
 @keyframes px-gait {
   from {

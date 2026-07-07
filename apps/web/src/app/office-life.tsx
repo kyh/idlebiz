@@ -21,6 +21,20 @@ const LINES = [
   "just one more fix",
 ];
 
+// delivered on arrival when the visitor clicks somewhere on the card
+const CORPORATE_LINES = [
+  "per my last email",
+  "let's circle back",
+  "can we take this offline?",
+  "great alignment here",
+  "I'll action that",
+  "quick win!",
+  "low-hanging fruit",
+  "moving the needle",
+  "cascading this downstream",
+  "let's double-click on that",
+];
+
 type Row = "down" | "left" | "right" | "up";
 const ROW_Y: Record<Row, number> = { down: 0, left: -96, right: -192, up: -288 };
 const SPEED = 64; // px/s at 1.5x
@@ -132,10 +146,29 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       );
     };
 
+    // click anywhere non-interactive on the card: the employee reports there,
+    // says something corporate, then goes back to their routine
+    const card = overlay.closest(".px-window") ?? overlay.parentElement;
+    const onCardClick = (e: MouseEvent) => {
+      if (!(e.target instanceof Element)) return;
+      if (e.target.closest("a, button, [role='button']")) return;
+      const o = overlay.getBoundingClientRect();
+      const tx = Math.min(Math.max(e.clientX - o.left - NPC_W / 2, 4), o.width - NPC_W - 4);
+      const ty = Math.min(Math.max(e.clientY - o.top - (NPC_H - 12), 4), o.height - NPC_H - 4);
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      walk(tx, ty, () =>
+        idle("down", 2800, { bubble: pick(CORPORATE_LINES) ?? null }, () =>
+          idle("down", 600 + Math.random() * 900, {}, tick),
+        ),
+      );
+    };
+    card?.addEventListener("click", onCardClick);
+
     setPose({ ...poseRef.current, x: 60, y: overlay.clientHeight * 0.35 });
     later(600, tick);
     return () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      card?.removeEventListener("click", onCardClick);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -144,41 +177,32 @@ export function OfficeLife({ title }: { title: ReactNode }) {
     <>
       {/* title row: desk top-left in its own grid cell, title centered */}
       <div className="grid w-full grid-cols-[auto_1fr_auto] items-center" aria-hidden>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={deskRef}
-          src="/office/desk.png"
-          alt=""
-          width={52}
-          height={96}
-          className={`px-prop h-[144px] w-auto ${pose?.sitting ? "relative z-30" : ""}`}
-        />
+        <span className={`px-prop-wrap relative ${pose?.sitting ? "z-30" : ""}`}>
+          <span className="px-ground-shadow" style={{ width: "74%", height: 12 }} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img ref={deskRef} src="/office/desk.png" alt="" width={52} height={96} className="px-prop h-[144px] w-auto" />
+        </span>
         <div className="flex items-center justify-center">{title}</div>
         <div className="w-[78px]" />
       </div>
       {/* cooler pinned to the card's bottom-right corner */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        ref={coolerRef}
-        src="/office/cooler.png"
-        alt=""
-        width={28}
-        height={60}
-        className="px-prop absolute right-3 bottom-3 h-[90px] w-auto"
-        aria-hidden
-      />
+      <span className="px-prop-wrap absolute right-3 bottom-3" aria-hidden>
+        <span className="px-ground-shadow" style={{ width: "86%", height: 8 }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img ref={coolerRef} src="/office/cooler.png" alt="" width={28} height={60} className="px-prop h-[90px] w-auto" />
+      </span>
       {/* the employee roams the whole card */}
       <div ref={overlayRef} aria-hidden className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         {pose ? (
           <div
-            className={`px-npc ${pose.moving ? "px-npc-anim" : ""}`}
-            style={{
-              left: pose.x,
-              top: pose.y,
-              transitionDuration: `${pose.ms}ms, ${pose.ms}ms`,
-              backgroundPositionY: ROW_Y[pose.row],
-            }}
+            className="px-npc"
+            style={{ left: pose.x, top: pose.y, transitionDuration: `${pose.ms}ms, ${pose.ms}ms` }}
           >
+            <span className="px-ground-shadow" style={{ width: 30, height: 9 }} />
+            <div
+              className={`px-npc-body ${pose.moving ? "px-npc-anim" : ""}`}
+              style={{ backgroundPositionY: ROW_Y[pose.row] }}
+            />
             {pose.bubble ? <div className="px-say">{pose.bubble}</div> : null}
           </div>
         ) : null}
