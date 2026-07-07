@@ -65,6 +65,7 @@ export function OfficeLife({ title }: { title: ReactNode }) {
   const timerRef = useRef<number | null>(null);
   const poseRef = useRef<Pose>({ x: 70, y: 70, row: "down", moving: false, sitting: false, ms: 0, bubble: null });
   const [pose, setPoseState] = useState<Pose | null>(null);
+  const [marker, setMarker] = useState<{ x: number; y: number } | null>(null);
 
   const setPose = useCallback((next: Pose) => {
     poseRef.current = next;
@@ -157,11 +158,13 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       const tx = Math.min(Math.max(e.clientX - o.left - NPC_W / 2, 4), o.width - NPC_W - 4);
       const ty = Math.min(Math.max(e.clientY - o.top - (NPC_H - 12), 4), o.height - NPC_H - 4);
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      walk(tx, ty, () =>
+      setMarker({ x: e.clientX - o.left, y: e.clientY - o.top });
+      walk(tx, ty, () => {
+        setMarker(null);
         idle("down", 2800, { bubble: pick(CORPORATE_LINES) ?? null }, () =>
           idle("down", 600 + Math.random() * 900, {}, tick),
-        ),
-      );
+        );
+      });
     };
     card?.addEventListener("click", onCardClick);
 
@@ -194,6 +197,9 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       </span>
       {/* the employee roams the whole card */}
       <div ref={overlayRef} aria-hidden className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+        {marker ? (
+          <div className="px-selector" style={{ left: marker.x - 24, top: marker.y - 24 }} />
+        ) : null}
         {pose ? (
           <div
             className="px-npc"

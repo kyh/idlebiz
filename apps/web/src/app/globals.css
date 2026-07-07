@@ -166,11 +166,11 @@ img {
 }
 .px-ground-shadow {
   position: absolute;
-  bottom: 1px;
+  bottom: -2px;
   left: 50%;
   transform: translateX(-50%);
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(29, 33, 54, 0.28), rgba(29, 33, 54, 0));
+  background: radial-gradient(closest-side, rgba(29, 33, 54, 0.45), rgba(29, 33, 54, 0.25) 70%, rgba(29, 33, 54, 0));
 }
 @keyframes px-gait {
   from {
@@ -214,4 +214,39 @@ img {
 }
 .px-drag:active {
   cursor: grabbing;
+}
+
+/* pixel cursors from the Modern UI pack */
+body {
+  cursor: url(/office/cursor.png) 2 2, default;
+}
+a,
+button,
+[role="button"] {
+  cursor: url(/office/cursor-hand.png) 11 3, pointer;
+}
+.px-drag {
+  cursor: url(/office/cursor-hand.png) 11 3, grab;
+}
+.px-drag:active {
+  cursor: url(/office/cursor-hand.png) 11 3, grabbing;
+}
+
+/* click-dispatch selection marker: bracket frames lock onto the target */
+.px-selector {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  background-image: url(/office/selector.png);
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  animation: px-select 0.55s steps(3) infinite;
+}
+@keyframes px-select {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -144px;
+  }
 }
