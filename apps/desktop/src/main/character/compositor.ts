@@ -13,8 +13,8 @@ import type { CharacterAssets } from "@/shared/ipc-registry";
 // perfect, and varied — guaranteed correct.
 //
 // Output (both base64 data URLs, no disk writes):
-//   - walkSheetDataUrl: 192x256, 4 dirs x 6 walk frames of 32x64
-//                       (rows: down 0-5, left 6-11, right 12-17, up 18-23)
+//   - walkSheetDataUrl: 192x384, 6 rows x 6 frames of 32x64
+//                       (rows: walk down/left/right/up, then sit-left, sit-right)
 //   - portraitDataUrl:  64x64, a crisp nearest-neighbour crop of the character's
 //                       own down-facing head — so the portrait always matches the
 //                       sprite exactly.
@@ -33,13 +33,16 @@ const EMPLOYEE_SHEET_DIR = join(app.getAppPath(), "resources", "employee-sheets"
 const FRAME_W = 32;
 const FRAME_H = 64;
 const WALK_TOP = 128;
+const SIT_TOP = 256; // sitting band: 6 frames per facing, two facings
 const WALK_FRAMES = 6;
-// output row order -> source column where that direction's 6 frames begin
-const OUT_ROWS: ReadonlyArray<readonly [string, number]> = [
-  ["down", 18],
-  ["left", 12],
-  ["right", 0],
-  ["up", 6],
+// output row order -> [source band top, source column where the 6 frames begin]
+const OUT_ROWS: ReadonlyArray<readonly [string, number, number]> = [
+  ["down", WALK_TOP, 18],
+  ["left", WALK_TOP, 12],
+  ["right", WALK_TOP, 0],
+  ["up", WALK_TOP, 6],
+  ["sit-left", SIT_TOP, 0],
+  ["sit-right", SIT_TOP, 6],
 ];
 
 let employeeSheetPaths: string[] | null = null;
@@ -76,17 +79,17 @@ function makeRng(seed: string): () => number {
 
 const toDataUrl = (buf: Buffer): string => `data:image/png;base64,${buf.toString("base64")}`;
 
-/** Re-pack a source sheet's walk band into the 192x256 4-dir x 6-frame layout. */
+/** Re-pack a source sheet's walk + sit bands into the 192x384 6-row layout. */
 async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
   const sheet = sharp(sheetPath);
   const tiles: sharp.OverlayOptions[] = [];
-  for (const [row, direction] of OUT_ROWS.entries()) {
-    const startCol = direction[1];
+  for (const [row, def] of OUT_ROWS.entries()) {
+    const [, bandTop, startCol] = def;
     for (let f = 0; f < WALK_FRAMES; f++) {
       const col = startCol + f;
       const cell = await sheet
         .clone()
-        .extract({ left: col * FRAME_W, top: WALK_TOP, width: FRAME_W, height: FRAME_H })
+        .extract({ left: col * FRAME_W, top: bandTop, width: FRAME_W, height: FRAME_H })
         .toBuffer();
       tiles.push({ input: cell, left: f * FRAME_W, top: row * FRAME_H });
     }

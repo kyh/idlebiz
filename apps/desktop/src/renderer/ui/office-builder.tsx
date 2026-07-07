@@ -55,7 +55,13 @@ export function OfficeBuilder() {
   // ---- undo/redo: snapshot history over the whole layout ----
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const historyRef = useRef<{ past: EditableLayout[]; future: EditableLayout[] }>({ past: [], future: [] });
+  const selectedRef = useRef(selectedUids);
+  selectedRef.current = selectedUids;
+  interface HistoryEntry {
+    layout: EditableLayout;
+    selection: string[];
+  }
+  const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] });
 
   /** Apply without recording (mid-drag / mid-paint frames). */
   const applyLive = useCallback((updater: (L: EditableLayout) => EditableLayout) => {
@@ -66,7 +72,7 @@ export function OfficeBuilder() {
   /** Record the current state as an undo step (start of a stroke/gesture). */
   const beginStroke = useCallback(() => {
     const h = historyRef.current;
-    h.past.push(layoutRef.current);
+    h.past.push({ layout: layoutRef.current, selection: selectedRef.current });
     if (h.past.length > HISTORY_CAP) h.past.shift();
     h.future = [];
   }, []);
@@ -81,23 +87,24 @@ export function OfficeBuilder() {
     },
     [beginStroke],
   );
-  const restore = useCallback((L: EditableLayout) => {
-    layoutRef.current = L;
-    setLayout(L);
-    setSelectedUids((cur) => cur.filter((u) => L.objects.some((o) => o.uid === u)));
+  const restore = useCallback((entry: HistoryEntry) => {
+    layoutRef.current = entry.layout;
+    setLayout(entry.layout);
+    // restore the selection as it was, minus anything that no longer exists
+    setSelectedUids(entry.selection.filter((u) => entry.layout.objects.some((o) => o.uid === u)));
   }, []);
   const undo = useCallback(() => {
     const h = historyRef.current;
     const prev = h.past.pop();
     if (!prev) return;
-    h.future.push(layoutRef.current);
+    h.future.push({ layout: layoutRef.current, selection: selectedRef.current });
     restore(prev);
   }, [restore]);
   const redo = useCallback(() => {
     const h = historyRef.current;
     const next = h.future.pop();
     if (!next) return;
-    h.past.push(layoutRef.current);
+    h.past.push({ layout: layoutRef.current, selection: selectedRef.current });
     restore(next);
   }, [restore]);
 

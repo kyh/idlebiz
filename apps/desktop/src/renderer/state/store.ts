@@ -146,10 +146,17 @@ function onActivity(e: ActivityEvent): void {
     typeof e.payload === "object" &&
     "real" in e.payload
   ) {
-    set({ liveMetrics: (e.payload as { real?: unknown }).real === true });
+    const real: unknown = e.payload.real;
+    set({ liveMetrics: real === true });
+    // a pulse only moves company numbers — refetch just the company instead of
+    // reloading employees/teams/tasks every 30s
+    void bridge()
+      .getCompany()
+      .then((company) => set({ company }))
+      .catch(() => undefined);
+    return;
   }
-  if (e.kind === "lifecycle" && (e.message === "run.end" || e.message === "metrics.pulse"))
-    void refresh();
+  if (e.kind === "lifecycle" && e.message === "run.end") void refresh();
 }
 
 // ---- actions ---------------------------------------------------------------

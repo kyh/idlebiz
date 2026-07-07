@@ -1,5 +1,4 @@
 import { cacheLife, cacheTag } from "next/cache";
-import Image from "next/image";
 
 import { siteConfig } from "@/lib/site-config";
 
@@ -14,7 +13,7 @@ function MacLogoIcon({ className }: { className?: string }) {
   );
 }
 
-async function getDownloadUrl(): Promise<string> {
+async function getLatestRelease(): Promise<{ url: string; version: string | null }> {
   "use cache";
   cacheLife("hours");
   cacheTag("download-url");
@@ -23,71 +22,63 @@ async function getDownloadUrl(): Promise<string> {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
     });
-    if (!res.ok) return FALLBACK_URL;
+    if (!res.ok) return { url: FALLBACK_URL, version: null };
 
     const release: {
+      tag_name?: string;
       assets: Array<{ name: string; browser_download_url: string }>;
     } = await res.json();
 
     const dmg = release.assets.find((a) => a.name.endsWith(".dmg"));
-    return dmg?.browser_download_url ?? FALLBACK_URL;
+    return { url: dmg?.browser_download_url ?? FALLBACK_URL, version: release.tag_name ?? null };
   } catch {
-    return FALLBACK_URL;
+    return { url: FALLBACK_URL, version: null };
   }
 }
 
-function OfficeScene() {
-  // sprites stay unoptimized — next/image resampling would blur the pixel art
+function Walker({
+  sheet,
+  walkClass,
+  bottom,
+  duration,
+  delay,
+}: {
+  sheet: string;
+  walkClass: string;
+  bottom: number;
+  duration: number;
+  delay: number;
+}) {
   return (
-    <div className="flex items-end justify-center gap-4" aria-hidden>
-      <Image
-        src="/workspace-kit/plant_tall.png"
-        alt=""
-        width={32}
-        height={64}
-        unoptimized
-        className="h-[128px] w-auto"
-      />
-      <div className="relative">
-        <Image
-          src="/workspace-kit/monitor.png"
-          alt=""
-          width={30}
-          height={30}
-          unoptimized
-          className="absolute -top-[52px] left-1/2 h-[60px] w-auto -translate-x-1/2"
-        />
-        <Image
-          src="/workspace-kit/desk.png"
-          alt=""
-          width={64}
-          height={38}
-          unoptimized
-          className="h-[76px] w-auto"
-        />
-      </div>
-      <Image
-        src="/workspace-kit/chair.png"
-        alt=""
-        width={32}
-        height={46}
-        unoptimized
-        className="h-[92px] w-auto"
-      />
-      <Image
-        src="/workspace-kit/watercooler.png"
-        alt=""
-        width={28}
-        height={60}
-        unoptimized
-        className="h-[120px] w-auto"
-      />
+    <div
+      aria-hidden
+      className={`px-walker ${walkClass}`}
+      style={{
+        backgroundImage: `url(${sheet})`,
+        bottom,
+        animationDuration: `${duration}s, 0.7s`,
+        animationDelay: `${delay}s, 0s`,
+      }}
+    />
+  );
+}
+
+function OfficeScene() {
+  // A real slice of the in-game office (pixel-exact render of the shipped map)
+  // with employee sprites walking the aisle. All plain <img>/CSS — next/image
+  // resampling would blur the pixel art.
+  return (
+    <div className="px-office relative w-full max-w-[480px] overflow-hidden" aria-hidden>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/office/hero.png" alt="" width={480} height={196} className="block h-auto w-full" />
+      <Walker sheet="/office/walker-right.png" walkClass="px-walk-right" bottom={2} duration={16} delay={0} />
+      <Walker sheet="/office/walker-left.png" walkClass="px-walk-left" bottom={6} duration={19} delay={6} />
     </div>
   );
 }
 
 export default async function Page() {
-  const downloadUrl = await getDownloadUrl();
+  const { url: downloadUrl, version } = await getLatestRelease();
 
   return (
     <main className="px-floor flex min-h-dvh flex-col items-center justify-center px-4 py-10">
@@ -128,7 +119,7 @@ export default async function Page() {
               Download for Mac
             </a>
             <span className="text-[11px] text-[var(--text-dim)]">
-              v0.0.1 · macOS · bring your own Anthropic API key
+              {version ? `${version} · ` : ""}macOS · bring your own Anthropic API key
             </span>
           </div>
         </div>

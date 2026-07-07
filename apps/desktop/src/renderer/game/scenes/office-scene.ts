@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import { loadCharacter, ensureWalkAnims, idleFrame, type Dir } from "@/renderer/game/characters";
-import { NpcManager, type NpcState, type Seat, type PathProvider } from "@/renderer/game/npcs";
+import { NpcManager, type NpcState, type Seat, type PathProvider, type Poi } from "@/renderer/game/npcs";
 import {
   OFFICE_CELL,
   OFFICE_COLS,
@@ -28,6 +28,15 @@ const WORKSPACE_KIT_PATH = "workspace-kit";
 const PATH_STEP = TILE / 2;
 const BODY_HALF_WIDTH = 8;
 const BODY_HALF_HEIGHT = 6;
+
+// Idle-life points of interest on the current map: the water cooler and the
+// printer get faced, the break-room chair gets sat on.
+const OFFICE_POIS: readonly Poi[] = [
+  { x: 304, y: 408, face: "up" }, // water cooler (break-room entrance)
+  { x: 440, y: 168, face: "up" }, // printer cart (top right)
+  { x: 240, y: 400, face: "down", sit: "left" }, // break-room office chair
+  { x: 200, y: 424, face: "down" }, // the money corner
+];
 const PATH_SEARCH_RADIUS = 6;
 
 const CARDINAL_STEPS: ReadonlyArray<readonly [number, number]> = [
@@ -159,7 +168,7 @@ export class OfficeScene extends Phaser.Scene {
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE_SPAWN);
 
-    this.npcs = new NpcManager(this, seats, this.makePathProvider());
+    this.npcs = new NpcManager(this, seats, this.makePathProvider(), OFFICE_POIS);
 
     const bridge = window.appBridge;
     const company = bridge ? await bridge.getCompany() : null;

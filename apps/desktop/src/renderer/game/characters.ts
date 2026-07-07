@@ -1,11 +1,14 @@
 import Phaser from "phaser";
 import type { CharacterAssets } from "@/shared/ipc-registry";
 
-// Composited character sheets are 32x64 frames: down 0-5, left 6-11, right 12-17, up 18-23.
+// Composited character sheets are 32x64 frames, 6 per row:
+// walk down/left/right/up (rows 0-3), then sit-left (row 4) and sit-right (row 5).
 const FRAME_W = 32;
 const FRAME_H = 64;
 export type Dir = "down" | "left" | "right" | "up";
+export type SitSide = "left" | "right";
 const DIR_START: Record<Dir, number> = { down: 0, left: 6, right: 12, up: 18 };
+const SIT_START: Record<SitSide, number> = { left: 24, right: 30 };
 
 /** Load a base64 PNG as a Phaser spritesheet under `key` (resolves when ready). */
 function loadSpritesheetDataUrl(scene: Phaser.Scene, key: string, dataUrl: string): Promise<void> {
@@ -20,7 +23,7 @@ function loadSpritesheetDataUrl(scene: Phaser.Scene, key: string, dataUrl: strin
   });
 }
 
-/** Create the 4 directional walk anims for a character texture (idempotent). */
+/** Create the walk + sit anims for a character texture (idempotent). */
 export function ensureWalkAnims(scene: Phaser.Scene, key: string): void {
   for (const [dir, start] of Object.entries(DIR_START) as Array<[Dir, number]>) {
     const akey = `${key}-walk-${dir}`;
@@ -29,6 +32,16 @@ export function ensureWalkAnims(scene: Phaser.Scene, key: string): void {
       key: akey,
       frames: scene.anims.generateFrameNumbers(key, { start, end: start + 5 }),
       frameRate: 9,
+      repeat: -1,
+    });
+  }
+  for (const [side, start] of Object.entries(SIT_START) as Array<[SitSide, number]>) {
+    const akey = `${key}-sit-${side}`;
+    if (scene.anims.exists(akey)) continue;
+    scene.anims.create({
+      key: akey,
+      frames: scene.anims.generateFrameNumbers(key, { start, end: start + 5 }),
+      frameRate: 4,
       repeat: -1,
     });
   }

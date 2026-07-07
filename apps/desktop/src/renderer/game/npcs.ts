@@ -1,6 +1,12 @@
 import Phaser from "phaser";
 import { DEPTH } from "@/renderer/game/config";
-import { loadCharacter, ensureWalkAnims, idleFrame, type Dir } from "@/renderer/game/characters";
+import {
+  loadCharacter,
+  ensureWalkAnims,
+  idleFrame,
+  type Dir,
+  type SitSide,
+} from "@/renderer/game/characters";
 import type { Employee } from "@/shared/domain";
 
 export type NpcState = "idle" | "working" | "blocked";
@@ -9,6 +15,15 @@ export type NpcState = "idle" | "working" | "blocked";
 export interface Seat {
   readonly x: number;
   readonly y: number;
+}
+
+/** A point of interest idle employees visit: stand at (x,y) facing `face`,
+ *  or sit (break-room chair) playing the matching sit animation. */
+export interface Poi {
+  readonly x: number;
+  readonly y: number;
+  readonly face: Dir;
+  readonly sit?: SitSide;
 }
 
 /** Pathfinding services the scene provides (BFS over its collision grid). */
@@ -74,6 +89,7 @@ export class NpcManager {
     private scene: Phaser.Scene,
     private seats: ReadonlyArray<Seat>,
     private paths: PathProvider,
+    private pois: ReadonlyArray<Poi> = [],
   ) {}
 
   size(): number {
@@ -317,8 +333,8 @@ export class NpcManager {
         if (!wp) {
           const done = npc.plan.onArrive;
           npc.plan = null;
-          done?.();
           this.applySeatedLook(npc);
+          done?.(); // an arrival pose (POI facing / sitting) overrides the default look
         } else {
           const dx = wp.x - npc.sprite.x;
           const dy = wp.y - npc.sprite.y;
@@ -338,7 +354,9 @@ export class NpcManager {
       } else if (npc.state === "idle" && now >= npc.nextWanderAt) {
         npc.nextWanderAt = now + 5000 + Math.random() * 9000;
         const startedChat = this.startIdleChat(npc);
-        if (!startedChat) {
+        if (!startedChat && this.visitPoi(npc)) {
+          // heading to the cooler / printer / break chair
+        } else if (!startedChat) {
           const spot =
             this.paths.randomFloor(npc.sprite.x, npc.sprite.y, 180) ??
             this.paths.randomFloor(npc.seat.x, npc.seat.y + 128, 240);
@@ -348,6 +366,35 @@ export class NpcManager {
 
       npc.sprite.setDepth(DEPTH.entityBase + npc.sprite.y);
     }
+  }
+
+  /** Wander flavor: walk to a point of interest, face it (or sit) for a bit. */
+  private visitPoi(npc: Npc): boolean {
+    if (this.pois.length === 0 || Math.random() > 0.35) return false;
+    const poi = this.pois[Math.floor(Math.random() * this.pois.length)];
+    if (!poi) return false;
+    // don't crowd an occupied spot
+    for (const other of this.npcs.values()) {
+      if (other.id !== npc.id && Math.hypot(other.sprite.x - poi.x, other.sprite.y - poi.y) < 10)
+        return false;
+    }
+    const dwell = 2500 + Math.random() * 4000;
+    return this.walkTo(npc, poi.x, poi.y, () => {
+      npc.nextWanderAt = this.scene.time.now + dwell + 800;
+      if (poi.sit) {
+        npc.sprite.play(`${npc.key}-sit-${poi.sit}`, true);
+      } else {
+        npc.sprite.anims.stop();
+        npc.sprite.setFrame(idleFrame(poi.face));
+      }
+      npc.pendingTimer = this.scene.time.delayedCall(dwell, () => {
+        if (!npc.plan && npc.state === "idle") {
+          npc.sprite.anims.stop();
+          npc.sprite.setFrame(idleFrame("down"));
+          this.stepAway(npc);
+        }
+      });
+    });
   }
 
   private startIdleChat(npc: Npc): boolean {

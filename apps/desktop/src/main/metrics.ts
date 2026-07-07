@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { companyDir } from "@/main/paths";
@@ -51,12 +52,15 @@ export const simulatedMetrics: MetricsProvider = {
 
 // ---- real-world providers ----------------------------------------------------
 
-export interface MetricsConfig {
-  stripe?: boolean;
-  stripeAccount?: { accountId: string; livemode: boolean; connectedAt: number };
-  plausible?: { domain: string };
-  custom?: { url: string };
-}
+const MetricsConfigSchema = z.object({
+  stripe: z.boolean().optional(),
+  stripeAccount: z
+    .object({ accountId: z.string(), livemode: z.boolean(), connectedAt: z.number() })
+    .optional(),
+  plausible: z.object({ domain: z.string() }).optional(),
+  custom: z.object({ url: z.string() }).optional(),
+});
+export type MetricsConfig = z.infer<typeof MetricsConfigSchema>;
 
 /** Absolute real-world numbers; null fields mean "no source configured". */
 export interface RealSnapshot {
@@ -73,10 +77,10 @@ function metricsPath(companyId: string): string {
 export function readMetricsConfig(companyId: string): MetricsConfig | null {
   try {
     const parsed: unknown = JSON.parse(readFileSync(metricsPath(companyId), "utf8"));
-    if (!parsed || typeof parsed !== "object") return null;
-    const cfg = parsed as MetricsConfig;
-    if (!cfg.stripe && !cfg.plausible && !cfg.custom) return null;
-    return cfg;
+    const cfg = MetricsConfigSchema.safeParse(parsed);
+    if (!cfg.success) return null;
+    if (!cfg.data.stripe && !cfg.data.plausible && !cfg.data.custom) return null;
+    return cfg.data;
   } catch {
     return null;
   }
@@ -123,28 +127,26 @@ async function stripeGet(path: string, key: string): Promise<unknown> {
   return res.json();
 }
 
-function listData(data: unknown): unknown[] {
-  if (data && typeof data === "object" && "data" in data) {
-    const inner = (data as { data: unknown }).data;
-    if (Array.isArray(inner)) return inner;
-  }
-  return [];
-}
+// Stripe list envelopes, parsed at the boundary (unknown fields ignored)
+const StripeChargesSchema = z.object({
+  data: z.array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() })).default([]),
+});
+const StripeListSchema = z.object({
+  data: z.array(z.object({ id: z.string().optional() })).default([]),
+  has_more: z.boolean().default(false),
+});
+const StripeCountSchema = z.object({ total_count: z.number() });
+const PlausibleSchema = z.object({
+  results: z.object({ visitors: z.object({ value: z.unknown() }) }),
+});
+const CustomSnapshotSchema = z.object({ users: z.unknown().optional(), revenue: z.unknown().optional() });
 
 async function stripeRevenue(key: string): Promise<number | null> {
-  const data = await stripeGet("/v1/charges?limit=100", key);
+  const res = StripeChargesSchema.safeParse(await stripeGet("/v1/charges?limit=100", key));
+  if (!res.success) return null;
   let cents = 0;
-  for (const ch of listData(data)) {
-    if (
-      ch &&
-      typeof ch === "object" &&
-      "amount" in ch &&
-      "paid" in ch &&
-      (ch as { paid: unknown }).paid === true
-    ) {
-      const amount = (ch as { amount: unknown }).amount;
-      if (typeof amount === "number") cents += amount;
-    }
+  for (const ch of res.data.data) {
+    if (ch.paid === true && typeof ch.amount === "number") cents += ch.amount;
   }
   return Math.round(cents) / 100;
 }
@@ -152,14 +154,10 @@ async function stripeRevenue(key: string): Promise<number | null> {
 /** Exact customer count via the search API; paginate fallback if search is unavailable. */
 async function stripeCustomers(key: string): Promise<number | null> {
   try {
-    const data = await stripeGet(
-      "/v1/customers/search?query=created%3E0&limit=1&include[]=total_count",
-      key,
+    const counted = StripeCountSchema.safeParse(
+      await stripeGet("/v1/customers/search?query=created%3E0&limit=1&include[]=total_count", key),
     );
-    if (data && typeof data === "object" && "total_count" in data) {
-      const t = (data as { total_count: unknown }).total_count;
-      if (typeof t === "number") return t;
-    }
+    if (counted.success) return counted.data.total_count;
   } catch (err) {
     if (err instanceof StripeAuthError) throw err;
     /* search unsupported on this account — paginate below */
@@ -168,17 +166,12 @@ async function stripeCustomers(key: string): Promise<number | null> {
   let startingAfter: string | null = null;
   for (let page = 0; page < 50; page++) {
     const qs = `limit=100${startingAfter ? `&starting_after=${startingAfter}` : ""}`;
-    const data = await stripeGet(`/v1/customers?${qs}`, key);
-    const rows = listData(data);
+    const parsed = StripeListSchema.safeParse(await stripeGet(`/v1/customers?${qs}`, key));
+    if (!parsed.success) break;
+    const rows = parsed.data.data;
     count += rows.length;
-    const last: unknown = rows[rows.length - 1];
-    const hasMore =
-      data && typeof data === "object" && "has_more" in data
-        ? (data as { has_more: unknown }).has_more === true
-        : false;
-    if (!hasMore || !last || typeof last !== "object" || !("id" in last)) break;
-    const lastId = (last as { id: unknown }).id;
-    if (typeof lastId !== "string") break;
+    const lastId = rows[rows.length - 1]?.id;
+    if (!parsed.data.has_more || typeof lastId !== "string") break;
     startingAfter = lastId;
   }
   return count;
@@ -211,14 +204,8 @@ async function plausibleVisitors(domain: string): Promise<number | null> {
       `https://plausible.io/api/v1/stats/aggregate?site_id=${encodeURIComponent(domain)}&period=30d&metrics=visitors`,
       { Authorization: `Bearer ${key}` },
     );
-    if (data && typeof data === "object" && "results" in data) {
-      const results = (data as { results: unknown }).results;
-      if (results && typeof results === "object" && "visitors" in results) {
-        const v = (results as { visitors: unknown }).visitors;
-        if (v && typeof v === "object" && "value" in v) return num((v as { value: unknown }).value);
-      }
-    }
-    return null;
+    const parsed = PlausibleSchema.safeParse(data);
+    return parsed.success ? num(parsed.data.results.visitors.value) : null;
   } catch {
     return null;
   }
@@ -226,11 +213,8 @@ async function plausibleVisitors(domain: string): Promise<number | null> {
 
 async function customSnapshot(url: string): Promise<RealSnapshot> {
   try {
-    const data = await getJson(url, {});
-    if (data && typeof data === "object") {
-      const d = data as { users?: unknown; revenue?: unknown };
-      return { users: num(d.users), revenue: num(d.revenue) };
-    }
+    const parsed = CustomSnapshotSchema.safeParse(await getJson(url, {}));
+    if (parsed.success) return { users: num(parsed.data.users), revenue: num(parsed.data.revenue) };
   } catch {
     /* unreachable endpoint — report nothing */
   }
