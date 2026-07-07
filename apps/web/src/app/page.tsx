@@ -1,6 +1,7 @@
 import { cacheLife, cacheTag } from "next/cache";
 
 import { siteConfig } from "@/lib/site-config";
+import { OfficeLife } from "@/app/office-life";
 
 const GITHUB_REPO = siteConfig.githubRepo;
 const FALLBACK_URL = `https://github.com/${GITHUB_REPO}/releases`;
@@ -36,53 +37,12 @@ async function getLatestRelease(): Promise<{ url: string; version: string | null
   }
 }
 
-function Walker({
-  sheet,
-  walkClass,
-  bottom,
-  duration,
-  delay,
-}: {
-  sheet: string;
-  walkClass: string;
-  bottom: number;
-  duration: number;
-  delay: number;
-}) {
-  return (
-    <div
-      aria-hidden
-      className={`px-walker ${walkClass}`}
-      style={{
-        backgroundImage: `url(${sheet})`,
-        bottom,
-        animationDuration: `${duration}s, 0.7s`,
-        animationDelay: `${delay}s, 0s`,
-      }}
-    />
-  );
-}
-
-function OfficeScene() {
-  // A real slice of the in-game office (pixel-exact render of the shipped map)
-  // with employee sprites walking the aisle. All plain <img>/CSS — next/image
-  // resampling would blur the pixel art.
-  return (
-    <div className="px-office relative w-full max-w-[480px] overflow-hidden" aria-hidden>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/office/hero.png" alt="" width={480} height={196} className="block h-auto w-full" />
-      <Walker sheet="/office/walker-right.png" walkClass="px-walk-right" bottom={2} duration={16} delay={0} />
-      <Walker sheet="/office/walker-left.png" walkClass="px-walk-left" bottom={6} duration={19} delay={6} />
-    </div>
-  );
-}
-
 export default async function Page() {
   const { url: downloadUrl, version } = await getLatestRelease();
 
   return (
     <main className="px-floor flex min-h-dvh flex-col items-center justify-center px-4 py-10">
-      <div className="px-window w-full max-w-xl">
+      <div className="px-window relative w-full max-w-xl">
         <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[12px] uppercase tracking-wider">
           <span>IdleBiz.exe</span>
           <span className="flex items-center gap-1.5 text-[10px]" aria-hidden>
@@ -91,9 +51,8 @@ export default async function Page() {
           </span>
         </div>
 
+        <OfficeLife />
         <div className="flex flex-col items-center gap-7 px-6 pt-10 pb-8 sm:px-10">
-          <OfficeScene />
-
           <h1
             className="text-[40px] leading-none text-[var(--text)] sm:text-[52px]"
             style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
@@ -119,7 +78,7 @@ export default async function Page() {
               Download for Mac
             </a>
             <span className="text-[11px] text-[var(--text-dim)]">
-              {version ? `${version} · ` : ""}macOS · bring your own Anthropic API key
+              {version ? `${version} · ` : ""}macOS · bring your own OpenAI API key
             </span>
           </div>
         </div>

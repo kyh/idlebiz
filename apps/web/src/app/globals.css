@@ -138,54 +138,56 @@ img {
   }
 }
 
-/* hero office: sprite walkers (6-frame 32x64 strips) */
-.px-office,
-.px-office img {
+/* the landing card is one employee's office: real game sprites roam it */
+.px-prop {
+  position: absolute;
   image-rendering: pixelated;
 }
-.px-walker {
+.px-npc {
   position: absolute;
   width: 32px;
   height: 64px;
+  background-image: url(/office/npc.png);
   background-repeat: no-repeat;
-  animation-timing-function: linear, steps(6);
-  animation-iteration-count: infinite, infinite;
-  animation-name: none;
+  image-rendering: pixelated;
+  transition-property: left, top;
+  transition-timing-function: linear, linear;
 }
-.px-walk-right {
-  animation-name: px-stroll-right, px-gait;
-}
-.px-walk-left {
-  animation-name: px-stroll-left, px-gait;
+.px-npc-anim {
+  animation: px-gait 0.66s steps(6) infinite;
 }
 @keyframes px-gait {
   from {
-    background-position: 0 0;
+    background-position-x: 0;
   }
   to {
-    background-position: -192px 0;
+    background-position-x: -192px;
   }
 }
-@keyframes px-stroll-right {
-  from {
-    left: -36px;
-    transform: none;
-  }
-  to {
-    left: calc(100% + 4px);
-    transform: none;
-  }
+.px-say {
+  position: absolute;
+  bottom: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: #f8f5ec;
+  color: #2b2f46;
+  border: 2px solid var(--ink);
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1.4;
 }
-@keyframes px-stroll-left {
-  from {
-    left: calc(100% + 4px);
-  }
-  to {
-    left: -36px;
-  }
+.px-say::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--ink);
 }
 @media (prefers-reduced-motion: reduce) {
-  .px-walker {
+  .px-npc {
     display: none;
   }
 }
