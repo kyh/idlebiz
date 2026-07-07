@@ -51,8 +51,8 @@ export default async function Page() {
           </span>
         </div>
 
-        <OfficeLife />
-        <div className="flex flex-col items-center gap-7 px-6 pt-10 pb-8 sm:px-10">
+        <div className="flex flex-col items-center gap-7 px-6 pt-6 pb-8 sm:px-10">
+          <OfficeLife />
           <h1
             className="text-[40px] leading-none text-[var(--text)] sm:text-[52px]"
             style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
