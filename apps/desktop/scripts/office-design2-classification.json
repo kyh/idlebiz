@@ -175,5 +175,14 @@
     "y": 180
   },
   "_fill_note": "hole-fill donor override per zone (source px + tile id): cleared zones fill with the right wall tile instead of the local mode donor",
-  "fillDonors": []
+  "fillDonors": [],
+  "_carve_note": "post-solid walkable carves: squeeze-throughs where the walker passes behind furniture (cooler base at the break-room entrance \u2014 the art seals the room with sub-16px gaps)",
+  "carveRects": [
+    [
+      288,
+      384,
+      320,
+      400
+    ]
+  ]
 }

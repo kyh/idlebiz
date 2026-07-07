@@ -548,7 +548,7 @@ async function main() {
         }
       }
       const like = onFurniture
-        ? { layer: "overhead", anchorY: (maxY + 1) * 2 }
+        ? { layer: onFurniture.layer, anchorY: onFurniture.anchorY } // rides its support
         : { layer: "floor", anchorY: 10_000 + (maxY + 1) * 2 };
       objects.push(await fixPlacementFor(px, like));
       orphanDecals++;
@@ -725,28 +725,24 @@ async function main() {
       }
       return false;
     };
-    // pass 1: anything drawn above a piece it would y-sort below goes overhead
-    let toOverhead = 0;
-    for (let j = 1; j < objPlacements.length; j++) {
-      for (let i = 0; i < j; i++) {
-        if (objPlacements[i].layer !== "object") continue;
-        if (objPlacements[j].anchorY > objPlacements[i].anchorY) continue;
-        if (!overlaps(objPlacements[i], objPlacements[j])) continue;
-        objPlacements[j].layer = "overhead";
-        toOverhead++;
-        break;
-      }
-    }
-    // pass 2: stacked overhead props keep their recovered order (integer bumps)
-    const over = objPlacements.filter((o) => o.layer === "overhead");
-    let bumped = 0;
-    for (let j = 1; j < over.length; j++) {
-      for (let i = 0; i < j; i++) {
-        if (over[j].anchorY <= over[i].anchorY && overlaps(over[i], over[j])) {
-          over[j].anchorY = over[i].anchorY + 1;
-          bumped++;
+    // A piece drawn above a support it would y-sort below snaps to the
+    // support's anchor: stable insertion (z order) draws it above the support,
+    // while a walker standing south of both still covers them — no overhead
+    // band, so heads never get clipped by desk props. Iterate to fixpoint so
+    // stacks (paper on monitor on desk) chain up.
+    let snapped = 0;
+    for (let round = 0; round < 6; round++) {
+      let changed = false;
+      for (let j = 1; j < objPlacements.length; j++) {
+        for (let i = 0; i < j; i++) {
+          if (objPlacements[j].anchorY >= objPlacements[i].anchorY) continue;
+          if (!overlaps(objPlacements[i], objPlacements[j])) continue;
+          objPlacements[j].anchorY = objPlacements[i].anchorY;
+          snapped++;
+          changed = true;
         }
       }
+      if (!changed) break;
     }
     // pass 3: wall-mounted decor rides its band's floor line
     let banded = 0;
@@ -758,7 +754,7 @@ async function main() {
         banded++;
       }
     }
-    console.log(`layers: ${toOverhead} props -> overhead, ${bumped} overhead bumps, ${banded} snapped to wall bands`);
+    console.log(`layers: ${snapped} support snaps, ${banded} snapped to wall bands`);
   }
 
   async function finalize() {
@@ -885,6 +881,8 @@ async function main() {
     }
 
     paintRects(CLASS.solidRects, true);
+    // hand-authored squeeze-through carves (walker passes behind furniture)
+    paintRects(CLASS.carveRects, false);
 
     // seats carve back walkable (chairs tuck into desk bboxes visually)
     for (const entry of drawList) {
@@ -1007,6 +1005,7 @@ async function main() {
         floorPatchObjects: new Set(),
         wallBands: [],
         walkableRects: [],
+        carveRects: [],
         solidRects: [],
         spawn: { x: 256, y: 344 },
       };
@@ -1022,6 +1021,7 @@ async function main() {
       floorPatchObjects: new Set(raw.floorPatchObjects ?? []),
       wallBands: raw.wallBands ?? [],
       walkableRects: raw.walkableRects ?? [],
+      carveRects: raw.carveRects ?? [],
       solidRects: raw.solidRects ?? [],
       spawn: raw.spawn ?? { x: 256, y: 344 },
     };

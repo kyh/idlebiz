@@ -4771,8 +4771,8 @@
    "id": "office-object-310",
    "x": 224,
    "y": 320,
-   "layer": "overhead",
-   "anchorY": 412,
+   "layer": "object",
+   "anchorY": 420,
    "flipX": true
   },
   {
@@ -4971,7 +4971,7 @@
    "id": "office-object-215",
    "x": 224,
    "y": 192,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 288
   },
   {
@@ -5041,16 +5041,16 @@
    "id": "office-object-064",
    "x": 284,
    "y": 52,
-   "layer": "overhead",
-   "anchorY": 148,
+   "layer": "object",
+   "anchorY": 160,
    "flipX": true
   },
   {
    "id": "office-object-047",
    "x": 188,
    "y": 180,
-   "layer": "overhead",
-   "anchorY": 276
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-224",
@@ -5109,45 +5109,45 @@
    "id": "office-object-102",
    "x": 96,
    "y": 128,
-   "layer": "overhead",
-   "anchorY": 220
+   "layer": "object",
+   "anchorY": 224
   },
   {
    "id": "d2-fix-208",
    "x": 98,
    "y": 212,
-   "layer": "overhead",
-   "anchorY": 220,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-208.png"
   },
   {
    "id": "office-object-102",
    "x": 288,
    "y": 128,
-   "layer": "overhead",
-   "anchorY": 220
+   "layer": "object",
+   "anchorY": 224
   },
   {
    "id": "d2-fix-207",
    "x": 290,
    "y": 212,
-   "layer": "overhead",
-   "anchorY": 220,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-207.png"
   },
   {
    "id": "office-object-102",
    "x": 128,
    "y": 0,
-   "layer": "overhead",
-   "anchorY": 92
+   "layer": "object",
+   "anchorY": 96
   },
   {
    "id": "d2-fix-206",
    "x": 130,
    "y": 82,
-   "layer": "overhead",
-   "anchorY": 92,
+   "layer": "object",
+   "anchorY": 96,
    "path": "workspace-kit/design2/d2-fix-206.png"
   },
   {
@@ -5169,48 +5169,48 @@
    "id": "office-object-208",
    "x": 132,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 138,
+   "layer": "object",
+   "anchorY": 160,
    "flipX": true
   },
   {
    "id": "d2-fix-204",
    "x": 156,
    "y": 98,
-   "layer": "overhead",
-   "anchorY": 138,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-204.png"
   },
   {
    "id": "office-object-208",
    "x": 292,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 266,
+   "layer": "object",
+   "anchorY": 288,
    "flipX": true
   },
   {
    "id": "d2-fix-203",
    "x": 316,
    "y": 226,
-   "layer": "overhead",
-   "anchorY": 266,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-203.png"
   },
   {
    "id": "office-object-082",
    "x": 180,
    "y": 128,
-   "layer": "overhead",
-   "anchorY": 224,
+   "layer": "object",
+   "anchorY": 288,
    "flipX": true
   },
   {
    "id": "d2-fix-202",
    "x": 242,
    "y": 212,
-   "layer": "overhead",
-   "anchorY": 224,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-202.png"
   },
   {
@@ -5233,15 +5233,15 @@
    "id": "office-object-250",
    "x": 240,
    "y": 372,
-   "layer": "overhead",
-   "anchorY": 468
+   "layer": "object",
+   "anchorY": 480
   },
   {
    "id": "d2-fix-200",
    "x": 240,
    "y": 452,
-   "layer": "overhead",
-   "anchorY": 468,
+   "layer": "object",
+   "anchorY": 480,
    "path": "workspace-kit/design2/d2-fix-200.png"
   },
   {
@@ -5324,14 +5324,14 @@
    "x": 256,
    "y": 292,
    "layer": "object",
-   "anchorY": 388
+   "anchorY": 420
   },
   {
    "id": "d2-fix-194",
    "x": 256,
    "y": 372,
    "layer": "object",
-   "anchorY": 388,
+   "anchorY": 420,
    "path": "workspace-kit/design2/d2-fix-194.png"
   },
   {
@@ -5397,36 +5397,36 @@
    "id": "office-object-231",
    "x": 288,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 149
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "office-object-227",
    "x": 160,
    "y": 190,
-   "layer": "overhead",
-   "anchorY": 277
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-235",
    "x": 96,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 144
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "office-object-233",
    "x": 256,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 272
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-312",
    "x": 384,
    "y": 416,
-   "layer": "overhead",
-   "anchorY": 488
+   "layer": "object",
+   "anchorY": 512
   },
   {
    "id": "office-object-173",
@@ -5460,22 +5460,22 @@
    "id": "office-object-229",
    "x": 192,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 144
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "office-object-225",
    "x": 64,
    "y": 190,
-   "layer": "overhead",
-   "anchorY": 272
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-225",
    "x": 352,
    "y": 190,
-   "layer": "overhead",
-   "anchorY": 272
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-106",
@@ -5537,8 +5537,8 @@
    "id": "office-object-156",
    "x": 154,
    "y": 354,
-   "layer": "overhead",
-   "anchorY": 446
+   "layer": "object",
+   "anchorY": 472
   },
   {
    "id": "office-object-097",
@@ -5558,7 +5558,7 @@
    "id": "office-object-240",
    "x": 128,
    "y": 0,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 96
   },
   {
@@ -5600,8 +5600,8 @@
    "id": "office-object-232",
    "x": 352,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 146
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "office-object-167",
@@ -5621,51 +5621,51 @@
    "id": "office-object-129",
    "x": 224,
    "y": 288,
-   "layer": "overhead",
-   "anchorY": 384,
+   "layer": "object",
+   "anchorY": 420,
    "flipX": true
   },
   {
    "id": "office-object-230",
    "x": 256,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 148
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "office-object-230",
    "x": 128,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 276
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-230",
    "x": 416,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 276
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-236",
    "x": 160,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 144
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "office-object-234",
    "x": 320,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 272
+   "layer": "object",
+   "anchorY": 288
   },
   {
    "id": "office-object-118",
    "x": 224,
    "y": 392,
-   "layer": "overhead",
-   "anchorY": 469
+   "layer": "object",
+   "anchorY": 480
   },
   {
    "id": "office-object-207",
@@ -5692,7 +5692,7 @@
    "id": "office-object-243",
    "x": 96,
    "y": 128,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 224
   },
   {
@@ -5739,8 +5739,8 @@
    "id": "office-object-080",
    "x": 164,
    "y": 128,
-   "layer": "overhead",
-   "anchorY": 225,
+   "layer": "object",
+   "anchorY": 288,
    "flipX": true
   },
   {
@@ -5755,7 +5755,7 @@
    "id": "office-object-080",
    "x": 356,
    "y": 128,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 224,
    "flipX": true
   },
@@ -5763,15 +5763,15 @@
    "id": "office-object-241",
    "x": 288,
    "y": 128,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 224
   },
   {
    "id": "office-object-160",
    "x": 186,
    "y": 176,
-   "layer": "overhead",
-   "anchorY": 289,
+   "layer": "object",
+   "anchorY": 288,
    "flipX": true
   },
   {
@@ -5785,8 +5785,8 @@
    "id": "office-object-308",
    "x": 416,
    "y": 416,
-   "layer": "overhead",
-   "anchorY": 496
+   "layer": "object",
+   "anchorY": 512
   },
   {
    "id": "office-object-244",
@@ -5799,52 +5799,52 @@
    "id": "office-object-237",
    "x": 96,
    "y": 0,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 96
   },
   {
    "id": "office-object-239",
    "x": 64,
    "y": 128,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 224
   },
   {
    "id": "office-object-238",
    "x": 256,
    "y": 128,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 224
   },
   {
    "id": "office-object-143",
    "x": 376,
    "y": 364,
-   "layer": "overhead",
-   "anchorY": 432,
+   "layer": "object",
+   "anchorY": 442,
    "flipX": true
   },
   {
    "id": "d2-fix-191",
    "x": 418,
    "y": 424,
-   "layer": "overhead",
-   "anchorY": 432,
+   "layer": "object",
+   "anchorY": 442,
    "path": "workspace-kit/design2/d2-fix-191.png"
   },
   {
    "id": "office-object-333",
    "x": 64,
    "y": 0,
-   "layer": "overhead",
-   "anchorY": 82
+   "layer": "object",
+   "anchorY": 160
   },
   {
    "id": "d2-fix-190",
    "x": 90,
    "y": 74,
-   "layer": "overhead",
-   "anchorY": 82,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-190.png"
   },
   {
@@ -5961,30 +5961,30 @@
    "id": "office-object-099",
    "x": 256,
    "y": 384,
-   "layer": "overhead",
-   "anchorY": 469
+   "layer": "object",
+   "anchorY": 498
   },
   {
    "id": "d2-fix-182",
    "x": 266,
    "y": 456,
-   "layer": "overhead",
-   "anchorY": 469,
+   "layer": "object",
+   "anchorY": 498,
    "path": "workspace-kit/design2/d2-fix-182.png"
   },
   {
    "id": "office-object-116",
    "x": 416,
    "y": 288,
-   "layer": "overhead",
-   "anchorY": 370
+   "layer": "object",
+   "anchorY": 402
   },
   {
    "id": "d2-fix-181",
    "x": 458,
    "y": 362,
-   "layer": "overhead",
-   "anchorY": 370,
+   "layer": "object",
+   "anchorY": 402,
    "path": "workspace-kit/design2/d2-fix-181.png"
   },
   {
@@ -6366,16 +6366,16 @@
    "id": "office-object-046",
    "x": 356,
    "y": 404,
-   "layer": "overhead",
-   "anchorY": 500,
+   "layer": "object",
+   "anchorY": 512,
    "flipX": true
   },
   {
    "id": "d2-fix-155",
    "x": 388,
    "y": 486,
-   "layer": "overhead",
-   "anchorY": 500,
+   "layer": "object",
+   "anchorY": 512,
    "path": "workspace-kit/design2/d2-fix-155.png"
   },
   {
@@ -6432,56 +6432,56 @@
    "id": "d2-mi-80-105",
    "x": 30,
    "y": 232,
-   "layer": "overhead",
-   "anchorY": 278,
+   "layer": "object",
+   "anchorY": 290,
    "path": "workspace-kit/design2/d2-mi-80-105.png"
   },
   {
    "id": "d2-fix-151",
    "x": 32,
    "y": 232,
-   "layer": "overhead",
-   "anchorY": 278,
+   "layer": "object",
+   "anchorY": 290,
    "path": "workspace-kit/design2/d2-fix-151.png"
   },
   {
    "id": "d2-mi-80-105",
    "x": 30,
    "y": 272,
-   "layer": "overhead",
-   "anchorY": 318,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-mi-80-105.png"
   },
   {
    "id": "d2-fix-150",
    "x": 32,
    "y": 272,
-   "layer": "overhead",
-   "anchorY": 318,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-150.png"
   },
   {
    "id": "d2-mi-80-105",
    "x": 126,
    "y": 360,
-   "layer": "overhead",
-   "anchorY": 406,
+   "layer": "object",
+   "anchorY": 408,
    "path": "workspace-kit/design2/d2-mi-80-105.png"
   },
   {
    "id": "d2-fix-149",
    "x": 128,
    "y": 360,
-   "layer": "overhead",
-   "anchorY": 406,
+   "layer": "object",
+   "anchorY": 408,
    "path": "workspace-kit/design2/d2-fix-149.png"
   },
   {
    "id": "d2-mi-112-8960",
    "x": 30,
    "y": 318,
-   "layer": "overhead",
-   "anchorY": 322,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-mi-112-8960.png",
    "flipX": true
   },
@@ -6489,8 +6489,8 @@
    "id": "d2-fix-148",
    "x": 32,
    "y": 318,
-   "layer": "overhead",
-   "anchorY": 322,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-148.png"
   },
   {
@@ -6529,7 +6529,7 @@
    "id": "d2-mi-112-8960",
    "x": 326,
    "y": 94,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 98,
    "path": "workspace-kit/design2/d2-mi-112-8960.png"
   },
@@ -6537,7 +6537,7 @@
    "id": "d2-fix-145",
    "x": 326,
    "y": 94,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 98,
    "path": "workspace-kit/design2/d2-fix-145.png"
   },
@@ -6562,7 +6562,7 @@
    "x": 176,
    "y": 222,
    "layer": "object",
-   "anchorY": 226,
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-mi-112-8960.png"
   },
   {
@@ -6570,7 +6570,7 @@
    "x": 176,
    "y": 222,
    "layer": "object",
-   "anchorY": 226,
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-143.png"
   },
   {
@@ -6641,16 +6641,16 @@
    "id": "d2-mi-112-8960",
    "x": 152,
    "y": 318,
-   "layer": "overhead",
-   "anchorY": 322,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-mi-112-8960.png"
   },
   {
    "id": "d2-fix-138",
    "x": 152,
    "y": 318,
-   "layer": "overhead",
-   "anchorY": 322,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-138.png"
   },
   {
@@ -6673,16 +6673,16 @@
    "id": "d2-mi-112-8960",
    "x": 248,
    "y": 318,
-   "layer": "overhead",
-   "anchorY": 322,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-mi-112-8960.png"
   },
   {
    "id": "d2-fix-136",
    "x": 248,
    "y": 318,
-   "layer": "overhead",
-   "anchorY": 322,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-136.png"
   },
   {
@@ -6737,7 +6737,7 @@
    "id": "d2-mi-112-8960",
    "x": 408,
    "y": 510,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 514,
    "path": "workspace-kit/design2/d2-mi-112-8960.png"
   },
@@ -6745,7 +6745,7 @@
    "id": "d2-fix-132",
    "x": 408,
    "y": 510,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 514,
    "path": "workspace-kit/design2/d2-fix-132.png"
   },
@@ -6754,7 +6754,7 @@
    "x": 108,
    "y": 94,
    "layer": "object",
-   "anchorY": 98,
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-mi-112-8960.png"
   },
   {
@@ -6762,7 +6762,7 @@
    "x": 108,
    "y": 94,
    "layer": "object",
-   "anchorY": 98,
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-131.png"
   },
   {
@@ -6815,16 +6815,16 @@
    "id": "d2-mi-2-5440",
    "x": 248,
    "y": 74,
-   "layer": "overhead",
-   "anchorY": 76,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-mi-2-5440.png"
   },
   {
    "id": "d2-fix-127",
    "x": 248,
    "y": 74,
-   "layer": "overhead",
-   "anchorY": 76,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-127.png"
   },
   {
@@ -6854,32 +6854,32 @@
    "id": "d2-fix-222",
    "x": 270,
    "y": 32,
-   "layer": "overhead",
-   "anchorY": 72,
+   "layer": "object",
+   "anchorY": 38,
    "path": "workspace-kit/design2/d2-fix-222.png"
   },
   {
    "id": "d2-fix-223",
    "x": 390,
    "y": 32,
-   "layer": "overhead",
-   "anchorY": 44,
+   "layer": "object",
+   "anchorY": 76,
    "path": "workspace-kit/design2/d2-fix-223.png"
   },
   {
    "id": "d2-fix-224",
    "x": 158,
    "y": 64,
-   "layer": "overhead",
-   "anchorY": 68,
+   "layer": "object",
+   "anchorY": 96,
    "path": "workspace-kit/design2/d2-fix-224.png"
   },
   {
    "id": "d2-fix-225",
    "x": 158,
    "y": 80,
-   "layer": "overhead",
-   "anchorY": 86,
+   "layer": "object",
+   "anchorY": 96,
    "path": "workspace-kit/design2/d2-fix-225.png"
   },
   {
@@ -6894,8 +6894,8 @@
    "id": "d2-fix-227",
    "x": 130,
    "y": 98,
-   "layer": "overhead",
-   "anchorY": 108,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-227.png"
   },
   {
@@ -6910,24 +6910,24 @@
    "id": "d2-fix-229",
    "x": 278,
    "y": 98,
-   "layer": "overhead",
-   "anchorY": 102,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-229.png"
   },
   {
    "id": "d2-fix-230",
    "x": 288,
    "y": 98,
-   "layer": "overhead",
-   "anchorY": 100,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-230.png"
   },
   {
    "id": "d2-fix-231",
    "x": 96,
    "y": 102,
-   "layer": "overhead",
-   "anchorY": 108,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-231.png"
   },
   {
@@ -6942,7 +6942,7 @@
    "id": "d2-fix-233",
    "x": 128,
    "y": 132,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-233.png"
   },
@@ -6950,15 +6950,15 @@
    "id": "d2-fix-234",
    "x": 348,
    "y": 132,
-   "layer": "overhead",
-   "anchorY": 136,
+   "layer": "object",
+   "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-234.png"
   },
   {
    "id": "d2-fix-235",
    "x": 348,
    "y": 144,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-235.png"
   },
@@ -6966,15 +6966,15 @@
    "id": "d2-fix-236",
    "x": 154,
    "y": 146,
-   "layer": "overhead",
-   "anchorY": 160,
+   "layer": "object",
+   "anchorY": 188,
    "path": "workspace-kit/design2/d2-fix-236.png"
   },
   {
    "id": "d2-fix-237",
    "x": 224,
    "y": 146,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-237.png"
   },
@@ -6982,15 +6982,15 @@
    "id": "d2-fix-238",
    "x": 250,
    "y": 146,
-   "layer": "overhead",
-   "anchorY": 160,
+   "layer": "object",
+   "anchorY": 188,
    "path": "workspace-kit/design2/d2-fix-238.png"
   },
   {
    "id": "d2-fix-239",
    "x": 320,
    "y": 148,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 160,
    "path": "workspace-kit/design2/d2-fix-239.png"
   },
@@ -6998,48 +6998,48 @@
    "id": "d2-fix-240",
    "x": 96,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 196,
+   "layer": "floor",
+   "anchorY": 10224,
    "path": "workspace-kit/design2/d2-fix-240.png"
   },
   {
    "id": "d2-fix-241",
    "x": 106,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 194,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-241.png"
   },
   {
    "id": "d2-fix-242",
    "x": 126,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 196,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-242.png"
   },
   {
    "id": "d2-fix-243",
    "x": 288,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 196,
+   "layer": "floor",
+   "anchorY": 10224,
    "path": "workspace-kit/design2/d2-fix-243.png"
   },
   {
    "id": "d2-fix-244",
    "x": 298,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 194,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-244.png"
   },
   {
    "id": "d2-fix-245",
    "x": 318,
    "y": 192,
-   "layer": "overhead",
-   "anchorY": 196,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-245.png"
   },
   {
@@ -7054,31 +7054,31 @@
    "id": "d2-fix-247",
    "x": 96,
    "y": 208,
-   "layer": "overhead",
-   "anchorY": 210,
+   "layer": "floor",
+   "anchorY": 10224,
    "path": "workspace-kit/design2/d2-fix-247.png"
   },
   {
    "id": "d2-fix-248",
    "x": 126,
    "y": 208,
-   "layer": "overhead",
-   "anchorY": 218,
+   "layer": "object",
+   "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-248.png"
   },
   {
    "id": "d2-fix-249",
    "x": 288,
    "y": 208,
-   "layer": "overhead",
-   "anchorY": 210,
+   "layer": "floor",
+   "anchorY": 10224,
    "path": "workspace-kit/design2/d2-fix-249.png"
   },
   {
    "id": "d2-fix-250",
    "x": 318,
    "y": 208,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 224,
    "path": "workspace-kit/design2/d2-fix-250.png"
   },
@@ -7086,24 +7086,24 @@
    "id": "d2-fix-251",
    "x": 160,
    "y": 224,
-   "layer": "overhead",
-   "anchorY": 228,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-251.png"
   },
   {
    "id": "d2-fix-252",
    "x": 146,
    "y": 226,
-   "layer": "overhead",
-   "anchorY": 230,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-252.png"
   },
   {
    "id": "d2-fix-253",
    "x": 256,
    "y": 226,
-   "layer": "overhead",
-   "anchorY": 236,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-253.png"
   },
   {
@@ -7118,8 +7118,8 @@
    "id": "d2-fix-255",
    "x": 290,
    "y": 230,
-   "layer": "overhead",
-   "anchorY": 236,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-255.png"
   },
   {
@@ -7134,8 +7134,8 @@
    "id": "d2-fix-257",
    "x": 428,
    "y": 230,
-   "layer": "overhead",
-   "anchorY": 238,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-257.png"
   },
   {
@@ -7150,32 +7150,32 @@
    "id": "d2-fix-259",
    "x": 18,
    "y": 238,
-   "layer": "overhead",
-   "anchorY": 240,
+   "layer": "object",
+   "anchorY": 290,
    "path": "workspace-kit/design2/d2-fix-259.png"
   },
   {
    "id": "d2-fix-260",
    "x": 124,
    "y": 244,
-   "layer": "overhead",
-   "anchorY": 264,
+   "layer": "object",
+   "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-260.png"
   },
   {
    "id": "d2-fix-261",
    "x": 120,
    "y": 272,
-   "layer": "overhead",
-   "anchorY": 288,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-261.png"
   },
   {
    "id": "d2-fix-262",
    "x": 300,
    "y": 272,
-   "layer": "overhead",
-   "anchorY": 288,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-262.png"
   },
   {
@@ -7190,7 +7190,7 @@
    "id": "d2-fix-264",
    "x": 192,
    "y": 276,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-264.png"
   },
@@ -7198,7 +7198,7 @@
    "id": "d2-fix-265",
    "x": 96,
    "y": 280,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-265.png"
   },
@@ -7206,7 +7206,7 @@
    "id": "d2-fix-266",
    "x": 288,
    "y": 280,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-266.png"
   },
@@ -7214,7 +7214,7 @@
    "id": "d2-fix-267",
    "x": 384,
    "y": 280,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 288,
    "path": "workspace-kit/design2/d2-fix-267.png"
   },
@@ -7222,8 +7222,8 @@
    "id": "d2-fix-268",
    "x": 414,
    "y": 280,
-   "layer": "overhead",
-   "anchorY": 288,
+   "layer": "object",
+   "anchorY": 352,
    "path": "workspace-kit/design2/d2-fix-268.png"
   },
   {
@@ -7238,16 +7238,16 @@
    "id": "d2-fix-270",
    "x": 384,
    "y": 416,
-   "layer": "overhead",
-   "anchorY": 426,
+   "layer": "object",
+   "anchorY": 512,
    "path": "workspace-kit/design2/d2-fix-270.png"
   },
   {
    "id": "d2-fix-271",
    "x": 434,
    "y": 416,
-   "layer": "overhead",
-   "anchorY": 448,
+   "layer": "object",
+   "anchorY": 442,
    "path": "workspace-kit/design2/d2-fix-271.png"
   },
   {
@@ -7262,39 +7262,39 @@
    "id": "d2-fix-273",
    "x": 434,
    "y": 430,
-   "layer": "overhead",
-   "anchorY": 440,
+   "layer": "object",
+   "anchorY": 442,
    "path": "workspace-kit/design2/d2-fix-273.png"
   },
   {
    "id": "d2-fix-274",
    "x": 384,
    "y": 444,
-   "layer": "overhead",
-   "anchorY": 448,
+   "layer": "object",
+   "anchorY": 512,
    "path": "workspace-kit/design2/d2-fix-274.png"
   },
   {
    "id": "d2-fix-275",
    "x": 280,
    "y": 460,
-   "layer": "overhead",
-   "anchorY": 480,
+   "layer": "object",
+   "anchorY": 498,
    "path": "workspace-kit/design2/d2-fix-275.png"
   },
   {
    "id": "d2-fix-276",
    "x": 272,
    "y": 464,
-   "layer": "overhead",
-   "anchorY": 466,
+   "layer": "object",
+   "anchorY": 498,
    "path": "workspace-kit/design2/d2-fix-276.png"
   },
   {
    "id": "d2-fix-277",
    "x": 256,
    "y": 468,
-   "layer": "overhead",
+   "layer": "object",
    "anchorY": 480,
    "path": "workspace-kit/design2/d2-fix-277.png"
   },
@@ -7316,147 +7316,43 @@
   },
   {
    "id": "d2-close-r1-0",
-   "x": 186,
-   "y": 96,
-   "layer": "floor",
-   "anchorY": 10138,
-   "path": "workspace-kit/design2/d2-close-r1-0.png"
-  },
-  {
-   "id": "d2-close-r1-1",
-   "x": 326,
-   "y": 146,
-   "layer": "floor",
-   "anchorY": 10148,
-   "path": "workspace-kit/design2/d2-close-r1-1.png"
-  },
-  {
-   "id": "d2-close-r1-2",
    "x": 218,
    "y": 202,
    "layer": "floor",
    "anchorY": 10210,
-   "path": "workspace-kit/design2/d2-close-r1-2.png"
+   "path": "workspace-kit/design2/d2-close-r1-0.png"
   },
   {
-   "id": "d2-close-r1-3",
-   "x": 346,
-   "y": 224,
-   "layer": "floor",
-   "anchorY": 10266,
-   "path": "workspace-kit/design2/d2-close-r1-3.png"
-  },
-  {
-   "id": "d2-close-r1-4",
+   "id": "d2-close-r1-1",
    "x": 32,
    "y": 240,
    "layer": "object",
    "anchorY": 352,
-   "path": "workspace-kit/design2/d2-close-r1-4.png"
+   "path": "workspace-kit/design2/d2-close-r1-1.png"
   },
   {
-   "id": "d2-close-r1-5",
-   "x": 198,
-   "y": 274,
-   "layer": "floor",
-   "anchorY": 10276,
-   "path": "workspace-kit/design2/d2-close-r1-5.png"
-  },
-  {
-   "id": "d2-close-r1-6",
+   "id": "d2-close-r1-2",
    "x": 424,
    "y": 304,
    "layer": "object",
    "anchorY": 352,
-   "path": "workspace-kit/design2/d2-close-r1-6.png"
+   "path": "workspace-kit/design2/d2-close-r1-2.png"
   },
   {
-   "id": "d2-close-r1-7",
+   "id": "d2-close-r1-3",
    "x": 92,
    "y": 326,
    "layer": "object",
    "anchorY": 352,
-   "path": "workspace-kit/design2/d2-close-r1-7.png"
-  },
-  {
-   "id": "d2-close-r1-8",
-   "x": 260,
-   "y": 404,
-   "layer": "floor",
-   "anchorY": 10412,
-   "path": "workspace-kit/design2/d2-close-r1-8.png"
-  },
-  {
-   "id": "d2-close-r1-9",
-   "x": 262,
-   "y": 460,
-   "layer": "floor",
-   "anchorY": 10468,
-   "path": "workspace-kit/design2/d2-close-r1-9.png"
+   "path": "workspace-kit/design2/d2-close-r1-3.png"
   },
   {
    "id": "d2-close-r2-0",
-   "x": 186,
-   "y": 96,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-0.png"
-  },
-  {
-   "id": "d2-close-r2-1",
-   "x": 326,
-   "y": 146,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-1.png"
-  },
-  {
-   "id": "d2-close-r2-2",
    "x": 218,
    "y": 202,
    "layer": "overhead",
    "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-2.png"
-  },
-  {
-   "id": "d2-close-r2-3",
-   "x": 346,
-   "y": 224,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-3.png"
-  },
-  {
-   "id": "d2-close-r2-4",
-   "x": 198,
-   "y": 274,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-4.png"
-  },
-  {
-   "id": "d2-close-r2-5",
-   "x": 54,
-   "y": 318,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-5.png"
-  },
-  {
-   "id": "d2-close-r2-6",
-   "x": 260,
-   "y": 404,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-6.png"
-  },
-  {
-   "id": "d2-close-r2-7",
-   "x": 262,
-   "y": 460,
-   "layer": "overhead",
-   "anchorY": 900002,
-   "path": "workspace-kit/design2/d2-close-r2-7.png"
+   "path": "workspace-kit/design2/d2-close-r2-0.png"
   }
  ],
  "collision": [
@@ -7484,7 +7380,7 @@
   "11111111111111111111001111111111",
   "11111110111100000011000000001101",
   "11111110111100000011000000001101",
-  "11111110111100000011000000001101",
+  "11111110111100000000000000001101",
   "11111110111100001100000000001101",
   "11111110011100001100000000000001",
   "11111110011100001100000000000001",
