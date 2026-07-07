@@ -2,6 +2,7 @@ import { cacheLife, cacheTag } from "next/cache";
 
 import { siteConfig } from "@/lib/site-config";
 import { OfficeLife } from "@/app/office-life";
+import { WindowCard } from "@/app/window-card";
 
 const GITHUB_REPO = siteConfig.githubRepo;
 const FALLBACK_URL = `https://github.com/${GITHUB_REPO}/releases`;
@@ -42,23 +43,28 @@ export default async function Page() {
 
   return (
     <main className="px-floor flex min-h-dvh flex-col items-center justify-center px-4 py-10">
-      <div className="px-window relative w-full max-w-xl">
-        <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[12px] uppercase tracking-wider">
-          <span>IdleBiz.exe</span>
-          <span className="flex items-center gap-1.5 text-[10px]" aria-hidden>
-            <span className="px-live-dot inline-block h-[10px] w-[10px] border-2 border-[var(--ink)] bg-[var(--ok)]" />
-            agents working
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center gap-7 px-6 pt-6 pb-8 sm:px-10">
-          <OfficeLife />
-          <h1
-            className="text-[40px] leading-none text-[var(--text)] sm:text-[52px]"
-            style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
-          >
-            IdleBiz
-          </h1>
+      <WindowCard
+        titlebar={
+          <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[12px] uppercase tracking-wider">
+            <span>IdleBiz.exe</span>
+            <span className="flex items-center gap-1.5 text-[10px]" aria-hidden>
+              <span className="px-live-dot inline-block h-[10px] w-[10px] border-2 border-[var(--ink)] bg-[var(--ok)]" />
+              agents working
+            </span>
+          </div>
+        }
+      >
+        <div className="flex flex-col items-center gap-6 px-6 pt-2 pb-10 sm:px-10">
+          <OfficeLife
+            title={
+              <h1
+                className="text-[40px] leading-none text-[var(--text)] sm:text-[52px]"
+                style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
+              >
+                IdleBiz
+              </h1>
+            }
+          />
 
           <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-[var(--text)] sm:text-[14px]">
             An idle business sim where your employees are{" "}
@@ -82,7 +88,7 @@ export default async function Page() {
             </span>
           </div>
         </div>
-      </div>
+      </WindowCard>
 
       <footer className="mt-8 flex items-center gap-4 text-[11px] text-[var(--chrome-hi)]">
         <a

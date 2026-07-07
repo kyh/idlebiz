@@ -144,10 +144,10 @@ img {
 }
 .px-npc {
   position: absolute;
-  width: 64px;
-  height: 128px;
+  width: 48px;
+  height: 96px;
   background-image: url(/office/npc.png);
-  background-size: 384px 768px;
+  background-size: 288px 576px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
   transition-property: left, top;
@@ -161,12 +161,12 @@ img {
     background-position-x: 0;
   }
   to {
-    background-position-x: -384px;
+    background-position-x: -288px;
   }
 }
 .px-say {
   position: absolute;
-  bottom: 132px;
+  bottom: 100px;
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
@@ -190,4 +190,12 @@ img {
   .px-npc {
     display: none;
   }
+}
+.px-drag {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.px-drag:active {
+  cursor: grabbing;
 }
