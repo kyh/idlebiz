@@ -143,7 +143,7 @@ export function OfficeLife({ title }: { title: ReactNode }) {
   return (
     <>
       {/* title row: desk top-left in its own grid cell, title centered */}
-      <div className="grid w-full grid-cols-[auto_1fr_auto] items-start" aria-hidden>
+      <div className="grid w-full grid-cols-[auto_1fr_auto] items-center" aria-hidden>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={deskRef}
@@ -153,7 +153,7 @@ export function OfficeLife({ title }: { title: ReactNode }) {
           height={96}
           className={`px-prop h-[144px] w-auto ${pose?.sitting ? "relative z-30" : ""}`}
         />
-        <div className="flex items-center justify-center pt-4">{title}</div>
+        <div className="flex items-center justify-center">{title}</div>
         <div className="w-[78px]" />
       </div>
       {/* cooler pinned to the card's bottom-right corner */}
