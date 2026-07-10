@@ -24,6 +24,7 @@ interface State {
   pendingAsks: Task[]; // blocked tasks awaiting the founder's answer
   stuckTasks: Task[]; // dead-lettered / failed tasks needing attention
   game: Phaser.Game | null;
+  modalOpen: boolean; // a dialogue/modal overlay is up (ambient HUD chrome hides)
 }
 
 let state: State = {
@@ -38,6 +39,7 @@ let state: State = {
   pendingAsks: [],
   stuckTasks: [],
   game: null,
+  modalOpen: false,
 };
 const listeners = new Set<() => void>();
 
@@ -96,6 +98,7 @@ export function setGame(game: Phaser.Game): void {
 
 /** Toggle Phaser keyboard so typing in overlays doesn't move the player. */
 export function setModalOpen(open: boolean): void {
+  set({ modalOpen: open });
   state.game?.events.emit("ui-modal", open);
 }
 

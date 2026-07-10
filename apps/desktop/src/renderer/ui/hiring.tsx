@@ -40,22 +40,22 @@ export function Hiring({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Recruiting</div>
-            <div className="text-[11px] text-[#c4c9dd]">
+            <div className="text-[12px] text-[#c4c9dd]">
               {employees.length} on the team · ${HIRE_COST} per hire · ${Math.floor(company.cash)}{" "}
               in the bank
             </div>
           </div>
-          <button onClick={onClose} className="px-btn text-[13px]">
+          <button onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
 
         {candidates === null && !error ? (
-          <div className="flex flex-1 items-center justify-center p-10 text-[13px] text-[var(--text-dim)]">
+          <div className="flex flex-1 items-center justify-center p-10 text-[14px] text-[var(--text-dim)]">
             <span className="px-live-dot">Reviewing applications…</span>
           </div>
         ) : null}
-        {error ? <div className="p-6 text-[12px] text-[var(--danger)]">{error}</div> : null}
+        {error ? <div className="p-6 text-[13px] text-[var(--danger)]">{error}</div> : null}
 
         {candidates ? (
           <div className="px-scroll grid grid-cols-1 gap-3 overflow-y-auto p-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -115,15 +115,15 @@ function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }
         )}
         <div>
           <div className="text-[14px] text-[var(--text)]">{c.name}</div>
-          <div className="text-[11px] text-[var(--accent-lo)]">{c.title}</div>
-          <div className="text-[10px] text-[var(--text-dim)]">{c.blurb}</div>
+          <div className="text-[12px] text-[var(--accent-lo)]">{c.title}</div>
+          <div className="text-[11px] text-[var(--text-dim)]">{c.blurb}</div>
         </div>
       </div>
-      <p className="mt-2 flex-1 text-[12px] leading-relaxed text-[#54586c]">{c.persona}</p>
+      <p className="mt-2 flex-1 text-[13px] leading-relaxed text-[#4c5064]">{c.persona}</p>
       <button
         onClick={() => void hire()}
         disabled={state !== "idle" || !canAfford}
-        className={(state === "hired" ? "px-btn" : "px-btn-accent px-btn") + " mt-3 text-[13px]"}
+        className={(state === "hired" ? "px-btn" : "px-btn-accent px-btn") + " mt-3"}
         style={state === "hired" ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
       >
         {state === "hired"

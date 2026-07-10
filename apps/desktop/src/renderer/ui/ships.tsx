@@ -23,12 +23,12 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
             📦 {firstLine || t.title}
           </span>
         </span>
-        <span className="shrink-0 text-[10px] text-[var(--text-dim)]">
+        <span className="shrink-0 text-[11px] text-[var(--text-dim)]">
           {by} · {new Date(t.completedAt ?? t.createdAt).toLocaleDateString()}
         </span>
       </button>
       {open ? (
-        <p className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-[#54586c]">
+        <p className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-[#4c5064]">
           <RichText text={summary.slice(0, 1500)} companyId={companyId} />
         </p>
       ) : null}
@@ -79,14 +79,14 @@ export function Ships({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Shipping log</div>
-            <div className="text-[11px] text-[#c4c9dd]">
+            <div className="text-[12px] text-[#c4c9dd]">
               {company.ships} shipped · everything your team built lives in the workspace
             </div>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => void open("")}
-              className="px-btn text-[12px]"
+              className="px-btn"
               title="Reveal the real folder where the team works"
             >
               📁 Workspace
@@ -100,24 +100,24 @@ export function Ships({ onClose }: { onClose: () => void }) {
                   window.setTimeout(() => setNote(null), 2500);
                 });
               }}
-              className="px-btn text-[12px]"
+              className="px-btn"
               title="Open the product (via workspace/PRODUCT.md, falls back to index.html)"
             >
               ▶ Product
             </button>
-            <button onClick={onClose} className="px-btn text-[13px]">
+            <button onClick={onClose} className="px-btn">
               Done
             </button>
           </div>
         </div>
 
-        {note ? <div className="px-3 pt-2 text-[11px] text-[var(--danger)]">{note}</div> : null}
+        {note ? <div className="px-3 pt-2 text-[12px] text-[var(--danger)]">{note}</div> : null}
 
         <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
           {ships === null ? (
-            <div className="text-[12px] text-[var(--text-dim)]">Loading…</div>
+            <div className="text-[13px] text-[var(--text-dim)]">Loading…</div>
           ) : ships.length === 0 ? (
-            <div className="text-[12px] text-[var(--text-dim)]">
+            <div className="text-[13px] text-[var(--text-dim)]">
               Nothing shipped yet — the team is just getting started.
             </div>
           ) : (

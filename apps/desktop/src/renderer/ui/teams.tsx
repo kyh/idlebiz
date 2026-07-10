@@ -36,32 +36,32 @@ export function Teams({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Teams</div>
-            <div className="text-[11px] text-[#c4c9dd]">
+            <div className="text-[12px] text-[#c4c9dd]">
               {teams.length} team{teams.length === 1 ? "" : "s"} · {employees.length} people
             </div>
           </div>
-          <button onClick={onClose} className="px-btn text-[13px]">
+          <button onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
         <div className="px-scroll flex-1 space-y-3 overflow-y-auto p-4">
           {teams.length === 0 ? (
-            <div className="text-[12px] text-[var(--text-dim)]">No teams yet.</div>
+            <div className="text-[13px] text-[var(--text-dim)]">No teams yet.</div>
           ) : (
             teams.map((t) => {
               const members = employees.filter((e) => t.memberIds.includes(e.id));
               const room = rooms[t.id] ?? [];
               return (
                 <div key={t.id} className="px-inset p-3">
-                  <div className="text-[13px]">{t.name}</div>
+                  <div className="text-[14px]">{t.name}</div>
                   {t.purpose ? (
-                    <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{t.purpose}</div>
+                    <div className="mt-0.5 text-[12px] text-[var(--text-dim)]">{t.purpose}</div>
                   ) : null}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {members.map((e) => (
                       <span
                         key={e.id}
-                        className="px-plate px-2 py-0.5 text-[10px]"
+                        className="px-plate px-2 py-0.5 text-[11px]"
                         title={e.title}
                         style={e.id === t.leaderId ? { color: "#e8d28a" } : undefined}
                       >
@@ -70,16 +70,16 @@ export function Teams({ onClose }: { onClose: () => void }) {
                       </span>
                     ))}
                   </div>
-                  <div className="mt-3 text-[9px] uppercase tracking-wide text-[#8a90ab]">
+                  <div className="mt-3 text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
                     Team room
                   </div>
                   <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
                     {room.length === 0 ? (
-                      <div className="text-[11px] text-[var(--text-dim)]">Quiet so far.</div>
+                      <div className="text-[12px] text-[var(--text-dim)]">Quiet so far.</div>
                     ) : (
                       room.map((m) => (
-                        <div key={m.id} className="text-[11px] leading-snug">
-                          <span className="text-[#86c0ee]">{nameOf(m.fromEmployeeId)}</span>
+                        <div key={m.id} className="text-[12px] leading-snug">
+                          <span className="text-[#3a76b8]">{nameOf(m.fromEmployeeId)}</span>
                           <span className="text-[var(--text)]">: {m.text}</span>
                         </div>
                       ))

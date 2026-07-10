@@ -36,11 +36,11 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Budget</div>
-            <div className="text-[11px] text-[#c4c9dd]">
+            <div className="text-[12px] text-[#c4c9dd]">
               AI tokens cost real money — set how much the office may burn
             </div>
           </div>
-          <button onClick={onClose} className="px-btn text-[13px]">
+          <button onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
@@ -48,7 +48,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
         <div className="px-scroll flex-1 space-y-4 overflow-y-auto p-4">
           {out ? (
             <div
-              className="px-inset p-3 text-[12px]"
+              className="px-inset p-3 text-[13px]"
               style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
             >
               ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite) to get the team
@@ -64,7 +64,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               <button
                 onClick={() => void setBudget({ mode: "infinite" })}
                 data-sel={!capped}
-                className="px-opt text-[13px]"
+                className="px-opt"
               >
                 ∞ Infinite
               </button>
@@ -73,26 +73,26 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                   if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
                 }}
                 data-sel={capped}
-                className="px-opt text-[13px]"
+                className="px-opt"
               >
                 $ Capped
               </button>
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[13px] text-[var(--text)]">$</span>
+              <span className="text-[14px] text-[var(--text)]">$</span>
               <input
                 value={capInput}
                 onChange={(e) => setCapInput(e.target.value)}
                 placeholder="25"
                 inputMode="decimal"
-                className="px-field w-28 text-[13px]"
+                className="px-field w-28"
               />
               <button
                 onClick={() => {
                   if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
                 }}
                 disabled={!capValid}
-                className="px-btn text-[12px]"
+                className="px-btn"
               >
                 Set cap
               </button>
@@ -104,14 +104,16 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               <div className="text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
                 Spent so far
               </div>
-              <div className="text-[16px] text-[var(--text)]">${company.spentUsd.toFixed(2)}</div>
+              <div className="text-[16px] tabular-nums text-[var(--text)]">
+                ${company.spentUsd.toFixed(2)}
+              </div>
               {capped && company.budget.mode === "capped" ? (
-                <div className="text-[10px] text-[var(--text-dim)]">
+                <div className="text-[11px] tabular-nums text-[var(--text-dim)]">
                   of ${company.budget.capUsd.toFixed(2)} budget
                 </div>
               ) : null}
             </div>
-            <button onClick={() => void resetSpend()} className="px-btn text-[12px]">
+            <button onClick={() => void resetSpend()} className="px-btn">
               Reset meter
             </button>
           </div>
@@ -121,13 +123,13 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               Real numbers · Stripe
             </div>
             <div className="px-inset space-y-2 p-3">
-              <div className="text-[12px] leading-snug text-[var(--text)]">
+              <div className="text-[13px] leading-snug text-[var(--text)]">
                 Connect your Stripe account and the dashboard shows REAL revenue (cash) and REAL
                 customers (users){liveMetrics ? " — live now ⚡" : ""}.
               </div>
               {stripeStatus.state === "connected" ? (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-[var(--text)]">
+                  <span className="text-[13px] text-[var(--text)]">
                     ✓ {stripeStatus.accountId}
                     <span
                       className="px-badge ml-2"
@@ -138,25 +140,22 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                       {stripeStatus.livemode ? "live" : "test"}
                     </span>
                   </span>
-                  <button onClick={() => void disconnectStripe()} className="px-btn text-[12px]">
+                  <button onClick={() => void disconnectStripe()} className="px-btn">
                     Disconnect
                   </button>
                 </div>
               ) : stripeStatus.state === "connecting" ? (
-                <div className="px-live-dot text-[12px] text-[var(--text-dim)]">
+                <div className="px-live-dot text-[13px] text-[var(--text-dim)]">
                   Waiting for Stripe in your browser…
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-2">
                   {stripeStatus.state === "error" ? (
-                    <span className="text-[11px] text-[var(--danger)]">{stripeStatus.message}</span>
+                    <span className="text-[12px] text-[var(--danger)]">{stripeStatus.message}</span>
                   ) : (
-                    <span className="text-[11px] text-[var(--text-dim)]">Not connected</span>
+                    <span className="text-[12px] text-[var(--text-dim)]">Not connected</span>
                   )}
-                  <button
-                    onClick={() => void connectStripe()}
-                    className="px-btn-accent px-btn text-[12px]"
-                  >
+                  <button onClick={() => void connectStripe()} className="px-btn-accent px-btn">
                     {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
                   </button>
                 </div>

@@ -9,14 +9,14 @@ import {
 import { RichText } from "@/renderer/ui/linkify";
 import type { ActivityEvent, Employee, Task } from "@/shared/domain";
 
-const COLS = 2;
+const COLS = 1;
 
 interface ChatOption {
   label: string;
   instr: string;
 }
 
-const short = (s: string, n = 22): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const short = (s: string, n = 26): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** A role-flavored action so every employee's menu feels like THEIR menu. */
 function roleOption(emp: Employee): ChatOption {
@@ -67,13 +67,13 @@ function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
   const lastDone = tasks.find((t) => t.status === "done" && t.summary);
   if (running) {
     out.push({
-      label: `Check in: ${short(running.title, 16)}`,
+      label: `Check in: ${short(running.title, 18)}`,
       instr: `Give a quick status update on "${running.title}": what's done, what's left, anything at risk. Keep it brief, then continue.`,
     });
   }
   if (lastDone) {
     out.push({
-      label: `Build on: ${short(lastDone.title, 16)}`,
+      label: `Build on: ${short(lastDone.title, 18)}`,
       instr: `Take the next step on what you last shipped ("${lastDone.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${(lastDone.summary ?? "").slice(0, 500)}`,
     });
   }
@@ -225,8 +225,25 @@ export function Dialogue() {
   }, [emp, mode, sel, options]);
 
   if (!emp || !company) return null;
-  const feed: ActivityEvent[] = activity.filter((a) => a.employeeId === emp.id).slice(-4);
+  const mine = activity.filter((a) => a.employeeId === emp.id);
+  // what they SAY: the latest real utterance (chat/message/ship), Pokémon-style
+  const spoken = mine.filter(
+    (a) => (a.kind === "chat" || a.kind === "message" || a.kind === "ship") && a.message,
+  );
+  const latest = spoken[spoken.length - 1];
+  // what they're DOING: everything else stays a compact activity trail
+  const trail: ActivityEvent[] = mine.filter((a) => a !== latest).slice(-3);
   const working = emp.status === "working";
+  const running = tasks.find((t) => t.status === "running" || t.status === "queued");
+  const speech = latest?.message
+    ? latest.kind === "ship"
+      ? `Shipped it! ${latest.message}`
+      : latest.message
+    : working
+      ? running
+        ? `On it — "${running.title}".`
+        : "Heads down on something right now."
+      : "All quiet. What should I do next?";
 
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center p-4">
@@ -249,7 +266,7 @@ export function Dialogue() {
             )}
             <div className="flex-1">
               <div className="text-[16px] uppercase tracking-wide">{emp.name}</div>
-              <div className="text-[11px] text-[var(--accent-lo)]">{emp.title || emp.role}</div>
+              <div className="text-[12px] text-[var(--accent-lo)]">{emp.title || emp.role}</div>
               <span
                 className="px-badge mt-1 inline-block"
                 style={
@@ -264,9 +281,9 @@ export function Dialogue() {
           </div>
 
           {blocked ? (
-            <div className="px-inset flex-1 p-2" style={{ borderColor: "var(--warn)" }}>
-              <div className="text-[11px] text-[var(--danger)]">❗ {emp.name} needs your call:</div>
-              <div className="mt-1 text-[12px] leading-snug text-[var(--text)]">
+            <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
+              <div className="text-[12px] text-[var(--danger)]">❗ {emp.name} needs your call:</div>
+              <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
                 <RichText text={blocked.blockedQuestion ?? ""} companyId={company.id} />
               </div>
               <div className="mt-2 flex gap-2">
@@ -280,25 +297,32 @@ export function Dialogue() {
                     }
                   }}
                   placeholder="Your answer…"
-                  className="px-field flex-1 text-[12px]"
+                  className="px-field min-w-0 flex-1"
                   autoFocus
                 />
                 <button
                   onClick={() => void sendAnswer()}
                   disabled={!answer.trim()}
-                  className="px-btn-accent px-btn text-[12px]"
+                  className="px-btn-accent px-btn"
                 >
                   Answer
                 </button>
               </div>
             </div>
           ) : (
-            <div className="px-inset px-scroll min-h-[72px] flex-1 overflow-y-auto p-2 text-[12px] leading-relaxed">
-              {feed.length === 0 ? (
-                <div className="text-[var(--text-dim)]">{emp.name} hasn't logged anything yet.</div>
-              ) : (
-                feed.map((a, i) => <FeedLine key={a.id ?? i} e={a} companyId={company.id} />)
-              )}
+            <div className="px-inset px-scroll flex min-h-[72px] flex-1 flex-col overflow-y-auto p-2.5">
+              <Speech
+                key={`${emp.id}:${latest?.id ?? "flavor"}`}
+                text={speech.slice(0, 280)}
+                companyId={company.id}
+              />
+              {trail.length > 0 ? (
+                <div className="mt-auto space-y-0.5 pt-2 text-[11px] leading-snug opacity-70">
+                  {trail.map((a, i) => (
+                    <FeedLine key={a.id ?? i} e={a} companyId={company.id} />
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -308,14 +332,14 @@ export function Dialogue() {
           <div className="px-inset flex flex-1 flex-col p-2">
             {mode === "menu" ? (
               <>
-                <div className="mb-1 grid flex-1 grid-cols-2 content-start gap-x-1 gap-y-0.5">
+                <div className="mb-1 grid flex-1 grid-cols-1 content-start gap-y-0.5">
                   {options.map((q, i) => (
                     <button
                       key={q.label}
                       data-sel={sel === i}
                       onMouseEnter={() => setSel(i)}
                       onClick={() => choose(i)}
-                      className="px-cmd text-[12px]"
+                      className="px-cmd truncate"
                     >
                       {q.label}
                     </button>
@@ -324,18 +348,18 @@ export function Dialogue() {
                     data-sel={sel === talkIndex}
                     onMouseEnter={() => setSel(talkIndex)}
                     onClick={() => choose(talkIndex)}
-                    className="px-cmd text-[12px]"
+                    className="px-cmd"
                   >
                     Talk…
                   </button>
                 </div>
-                <div className="text-right text-[9px] text-[var(--text-dim)]">
-                  ↑↓←→ select · ⏎ · esc
+                <div className="text-right text-[10px] text-[var(--text-dim)]">
+                  ↑↓ select · ⏎ · esc
                 </div>
               </>
             ) : (
               <div className="flex h-full flex-col gap-2">
-                <div className="text-[11px] text-[var(--text-dim)]">
+                <div className="text-[12px] text-[var(--text-dim)]">
                   Tell {emp.name} what to do:
                 </div>
                 <input
@@ -349,16 +373,16 @@ export function Dialogue() {
                     }
                   }}
                   placeholder="e.g. build a settings page"
-                  className="px-field w-full text-[13px]"
+                  className="px-field w-full"
                 />
                 <div className="mt-auto flex gap-2">
-                  <button onClick={() => setMode("menu")} className="px-btn flex-1 text-[12px]">
+                  <button onClick={() => setMode("menu")} className="px-btn flex-1">
                     Back
                   </button>
                   <button
                     onClick={() => submitTalk()}
                     disabled={!input.trim()}
-                    className="px-btn-accent px-btn flex-1 text-[12px]"
+                    className="px-btn-accent px-btn flex-1"
                   >
                     Send
                   </button>
@@ -367,17 +391,52 @@ export function Dialogue() {
             )}
           </div>
           {note ? (
-            <div className="mt-1 text-center text-[11px] text-[var(--ok)]">{note}</div>
+            <div className="mt-1 text-center text-[12px] text-[var(--ok)]">{note}</div>
           ) : null}
         </div>
 
         <button
           onClick={close}
-          className="absolute right-2 top-1 text-[14px] text-[var(--text-dim)] hover:text-[var(--text)]"
+          title="Close (esc)"
+          className="absolute top-0 right-0 p-2.5 text-[15px] leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
         >
           ✕
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The employee's spoken line: a Pokémon-style typewriter reveal. Click to skip. */
+function Speech({ text, companyId }: { text: string; companyId: string }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    setShown(0);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setShown(text.length);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setShown((n) => {
+        if (n + 2 >= text.length) {
+          window.clearInterval(id);
+          return text.length;
+        }
+        return n + 2;
+      });
+    }, 16);
+    return () => window.clearInterval(id);
+  }, [text]);
+
+  const done = shown >= text.length;
+  return (
+    <div
+      onClick={() => setShown(text.length)}
+      className="text-[14px] leading-relaxed break-words text-[var(--text)]"
+      style={{ cursor: done ? "default" : "pointer" }}
+    >
+      {done ? <RichText text={text} companyId={companyId} /> : text.slice(0, shown)}
+      {done ? null : <span className="px-live-dot">▌</span>}
     </div>
   );
 }

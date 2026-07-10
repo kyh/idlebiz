@@ -23,18 +23,18 @@ export function Inbox({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Inbox</div>
-            <div className="text-[11px] text-[#c4c9dd]">
+            <div className="text-[12px] text-[#c4c9dd]">
               {pendingAsks.length} question{pendingAsks.length === 1 ? "" : "s"} ·{" "}
               {stuckTasks.length} stuck
             </div>
           </div>
-          <button onClick={onClose} className="px-btn text-[13px]">
+          <button onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
         <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
           {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
-            <div className="text-[12px] text-[var(--text-dim)]">
+            <div className="text-[13px] text-[var(--text-dim)]">
               All clear — nobody's waiting on you.
             </div>
           ) : null}
@@ -42,7 +42,7 @@ export function Inbox({ onClose }: { onClose: () => void }) {
             <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
           ))}
           {stuckTasks.length > 0 ? (
-            <div className="pt-1 text-[9px] uppercase tracking-wide text-[#8a90ab]">
+            <div className="pt-1 text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
               Stuck — needs a retry
             </div>
           ) : null}
@@ -64,18 +64,18 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
   };
   return (
     <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
-      <div className="text-[11px] text-[var(--danger)]">
+      <div className="text-[12px] text-[var(--danger)]">
         {t.status === "dead" ? "💀" : "⚠"} {by} ·{" "}
         <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
       {t.lastError ? (
-        <div className="mt-1 text-[11px] leading-snug text-[var(--text-dim)]">{t.lastError}</div>
+        <div className="mt-1 text-[12px] leading-snug text-[var(--text-dim)]">{t.lastError}</div>
       ) : null}
       <div className="mt-2 flex justify-end">
         <button
           onClick={() => void retry()}
           disabled={retried || !t.assigneeId}
-          className="px-btn-accent px-btn text-[12px]"
+          className="px-btn-accent px-btn"
         >
           {retried ? "Retrying…" : "Retry"}
         </button>
@@ -99,10 +99,10 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
 
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
-      <div className="text-[11px] text-[var(--danger)]">
+      <div className="text-[12px] text-[var(--danger)]">
         ❗ {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
-      <div className="mt-1 text-[12px] leading-snug text-[var(--text)]">
+      <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
         <RichText text={t.blockedQuestion ?? ""} companyId={companyId} />
       </div>
       <div className="mt-2 flex gap-2">
@@ -116,13 +116,13 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
             }
           }}
           placeholder="Your answer…"
-          className="px-field flex-1 text-[12px]"
+          className="px-field min-w-0 flex-1"
           disabled={sent}
         />
         <button
           onClick={() => void send()}
           disabled={!answer.trim() || sent}
-          className="px-btn-accent px-btn text-[12px]"
+          className="px-btn-accent px-btn"
         >
           {sent ? "Sent ✓" : "Answer"}
         </button>

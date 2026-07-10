@@ -2,6 +2,8 @@ import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 
 function fmt(n: number): string {
+  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
@@ -22,25 +24,28 @@ function Stat({
 }) {
   const body = (
     <>
-      <div className="text-[9px] uppercase tracking-wide text-[#aab0c8]">{label}</div>
-      <div className="text-[16px] leading-tight" style={accent ? { color: accent } : undefined}>
+      <div className="text-[10px] uppercase tracking-wide text-[#c3c9de]">{label}</div>
+      <div
+        className="text-[17px] leading-tight tabular-nums"
+        style={accent ? { color: accent } : undefined}
+      >
         {value}
       </div>
-      {sub ? <div className="text-[9px] text-[#8a90ab]">{sub}</div> : null}
+      {sub ? <div className="text-[10px] tabular-nums text-[#a7adc6]">{sub}</div> : null}
     </>
   );
   if (onClick) {
     return (
       <button
         onClick={onClick}
-        className="px-plate pointer-events-auto min-w-[58px] cursor-pointer px-3 py-1.5 text-center"
+        className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
         title="Open the shipping log"
       >
         {body}
       </button>
     );
   }
-  return <div className="px-plate min-w-[58px] px-3 py-1.5 text-center">{body}</div>;
+  return <div className="px-plate min-w-[64px] px-3 py-1.5 text-center">{body}</div>;
 }
 
 export function Hud({
@@ -106,7 +111,7 @@ export function Hud({
         />
         <button
           onClick={onInbox}
-          className="px-btn pointer-events-auto px-3 text-[12px]"
+          className="px-btn pointer-events-auto"
           style={
             pendingAsks.length + stuckTasks.length > 0
               ? { background: "var(--warn)", color: "#3a2c0a" }
@@ -122,7 +127,7 @@ export function Hud({
         </button>
         <button
           onClick={() => void setAutopilot(!company.autopilot)}
-          className="px-btn pointer-events-auto px-3 text-[12px]"
+          className="px-btn pointer-events-auto"
           style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
           title={
             company.autopilot
@@ -132,14 +137,10 @@ export function Hud({
         >
           {company.autopilot ? "● LIVE" : "⏸ Paused"}
         </button>
-        <button onClick={onHire} className="px-btn-accent px-btn pointer-events-auto text-[14px]">
+        <button onClick={onHire} className="px-btn-accent px-btn pointer-events-auto">
           + Hire
         </button>
-        <button
-          onClick={onSettings}
-          className="px-btn pointer-events-auto px-3 text-[12px]"
-          title="Settings"
-        >
+        <button onClick={onSettings} className="px-btn pointer-events-auto" title="Settings">
           ⚙
         </button>
       </div>
