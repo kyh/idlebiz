@@ -82,7 +82,6 @@ function ObjectCard({
   copied: boolean;
   onCopy: () => void;
 }) {
-
   return (
     <article className="px-window flex min-h-[230px] flex-col overflow-hidden">
       <div className="px-titlebar flex items-center justify-between gap-2 px-3 py-2">

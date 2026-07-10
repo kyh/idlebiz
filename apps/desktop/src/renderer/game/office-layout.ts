@@ -120,7 +120,9 @@ function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObje
   }));
 }
 
-export let OFFICE_OBJECT_PLACEMENTS: readonly OfficeObjectPlacement[] = placementsOf(LAYOUT.objects);
+export let OFFICE_OBJECT_PLACEMENTS: readonly OfficeObjectPlacement[] = placementsOf(
+  LAYOUT.objects,
+);
 
 /**
  * Replace the live office layout (the player's saved office from disk overrides the

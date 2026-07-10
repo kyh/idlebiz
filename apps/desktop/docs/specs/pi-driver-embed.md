@@ -137,29 +137,31 @@ Other session methods you'll use: `session.getLastAssistantText()`, `session.get
 `session.subscribe` emits `AgentSessionEvent = AgentEvent | <session-extras>`. Raw shapes (from `pi-agent-core/types.d.ts` and `agent-session.d.ts`):
 
 Core `AgentEvent`:
-| type | payload | meaning / animation cue |
-|---|---|---|
-| `agent_start` | `{}` | turn begins → employee "thinking" |
-| `agent_end` | `{ messages: AgentMessage[] }` | turn done → return to idle |
-| `turn_start` | `{}` | inner loop iteration start |
-| `turn_end` | `{ message, toolResults: ToolResultMessage[] }` | iteration done |
-| `message_start` | `{ message: AgentMessage }` (`message.role: "assistant"|"user"|"toolResult"`) | start of a bubble |
-| `message_update` | `{ message, assistantMessageEvent }` — `assistantMessageEvent.type === "text_delta"` carries `.delta: string` | streaming tokens → typing animation |
-| `message_end` | `{ message }` — read `message.role`, `message.content`, `message.stopReason`, `message.errorMessage` | bubble finalized; `stopReason === "error"` = failure |
-| `tool_execution_start` | `{ toolCallId, toolName, args }` | tool invoked → tool-specific anim (e.g. "writing code") |
-| `tool_execution_update` | `{ toolCallId, toolName, args, partialResult }` | streaming tool output |
-| `tool_execution_end` | `{ toolCallId, toolName, result, isError }` | tool done; `result` is content blocks → `extractText` |
+
+| type                    | payload                                                                                                       | meaning / animation cue                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `agent_start`           | `{}`                                                                                                          | turn begins → employee "thinking"                       |
+| `agent_end`             | `{ messages: AgentMessage[] }`                                                                                | turn done → return to idle                              |
+| `turn_start`            | `{}`                                                                                                          | inner loop iteration start                              |
+| `turn_end`              | `{ message, toolResults: ToolResultMessage[] }`                                                               | iteration done                                          |
+| `message_start`         | `{ message: AgentMessage }` (`message.role: "assistant"                                                       | "user"                                                  | "toolResult"`) | start of a bubble |
+| `message_update`        | `{ message, assistantMessageEvent }` — `assistantMessageEvent.type === "text_delta"` carries `.delta: string` | streaming tokens → typing animation                     |
+| `message_end`           | `{ message }` — read `message.role`, `message.content`, `message.stopReason`, `message.errorMessage`          | bubble finalized; `stopReason === "error"` = failure    |
+| `tool_execution_start`  | `{ toolCallId, toolName, args }`                                                                              | tool invoked → tool-specific anim (e.g. "writing code") |
+| `tool_execution_update` | `{ toolCallId, toolName, args, partialResult }`                                                               | streaming tool output                                   |
+| `tool_execution_end`    | `{ toolCallId, toolName, result, isError }`                                                                   | tool done; `result` is content blocks → `extractText`   |
 
 Session extras (also delivered to the same subscriber):
-| type | payload |
-|---|---|
-| `queue_update` | `{ steering: readonly string[], followUp: readonly string[] }` |
-| `compaction_start` | `{ reason: "manual"|"threshold"|"overflow" }` |
-| `compaction_end` | `{ reason, result?, aborted, willRetry, errorMessage? }` |
-| `session_info_changed` | `{ name?: string }` |
-| `thinking_level_changed` | `{ level: ThinkingLevel }` |
-| `auto_retry_start` | `{ attempt, maxAttempts, delayMs, errorMessage }` |
-| `auto_retry_end` | `{ success, attempt, finalError? }` |
+
+| type                     | payload                                                        |
+| ------------------------ | -------------------------------------------------------------- |
+| `queue_update`           | `{ steering: readonly string[], followUp: readonly string[] }` |
+| `compaction_start`       | `{ reason: "manual"                                            | "threshold" | "overflow" }` |
+| `compaction_end`         | `{ reason, result?, aborted, willRetry, errorMessage? }`       |
+| `session_info_changed`   | `{ name?: string }`                                            |
+| `thinking_level_changed` | `{ level: ThinkingLevel }`                                     |
+| `auto_retry_start`       | `{ attempt, maxAttempts, delayMs, errorMessage }`              |
+| `auto_retry_end`         | `{ success, attempt, finalError? }`                            |
 
 **Critical gotcha (inteligir-discovered):** `stopReason` and `errorMessage` live on `event.message`, NOT on the event root. Reading them from root silently swallows every provider/auth error. Inteligir's `parseAgentEvent` (`shared/agent-event-parser.ts`) normalizes raw → a flat `AppAgentEvent` and validates shape with TypeBox `Value.Check`. Reproduce that parser; it returns `null` for events you don't care about and never throws. Its flattened union (`shared/agent-events.ts`):
 

@@ -178,7 +178,12 @@ img {
   transform: translateX(-50%);
   z-index: -1;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(29, 33, 54, 0.5), rgba(29, 33, 54, 0.3) 65%, rgba(29, 33, 54, 0));
+  background: radial-gradient(
+    closest-side,
+    rgba(29, 33, 54, 0.5),
+    rgba(29, 33, 54, 0.3) 65%,
+    rgba(29, 33, 54, 0)
+  );
 }
 @keyframes px-gait {
   from {
@@ -245,7 +250,9 @@ button,
 [role="button"],
 .px-drag,
 .px-drag:active {
-  cursor: url(/office/cursor.png) 2 2, default;
+  cursor:
+    url(/office/cursor.png) 2 2,
+    default;
 }
 
 /* click-dispatch selection marker: bracket frames lock onto the target */

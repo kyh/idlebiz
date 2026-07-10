@@ -30,9 +30,15 @@ const TILE_SOURCES = [
   { key: "rbo", file: path.join(PACK, "1_Room_Builder_Office/Room_Builder_Office_16x16.png") },
   {
     key: "ow",
-    file: path.join(PACK, "7_Modern_Office_Previous_Version/Modern_Office_old/Office_walls_floors_16x16.png"),
+    file: path.join(
+      PACK,
+      "7_Modern_Office_Previous_Version/Modern_Office_old/Office_walls_floors_16x16.png",
+    ),
   },
-  { key: "mirb", file: path.join(VG, "moderninteriors-win/1_Interiors/16x16/Room_Builder_16x16.png") },
+  {
+    key: "mirb",
+    file: path.join(VG, "moderninteriors-win/1_Interiors/16x16/Room_Builder_16x16.png"),
+  },
 ];
 
 // Previous-version interiors sheet: objects sliced by connected components
@@ -62,7 +68,10 @@ function rgbEq(a, ao, b, bo) {
 function buildMasks(img) {
   const opaque = []; // x, y, byteOffset triples of fully solid pixels
   const anyAlpha = []; // x, y pairs of every non-transparent pixel (claim mask)
-  let bx0 = img.w, by0 = img.h, bx1 = -1, by1 = -1;
+  let bx0 = img.w,
+    by0 = img.h,
+    bx1 = -1,
+    by1 = -1;
   for (let y = 0; y < img.h; y++) {
     for (let x = 0; x < img.w; x++) {
       const o = (y * img.w + x) * 4;
@@ -127,7 +136,17 @@ async function loadSprites() {
     const img = await loadRaw(path.join(SINGLES_DIR, f));
     const { opaque, anyAlpha, bbox } = buildMasks(img);
     if (opaque.length === 0) continue;
-    const sprite = { id: `obj-${m[1]}`, w: img.w, h: img.h, data: img.data, opaque, anyAlpha, bbox, aliases: [], flipX: false };
+    const sprite = {
+      id: `obj-${m[1]}`,
+      w: img.w,
+      h: img.h,
+      data: img.data,
+      opaque,
+      anyAlpha,
+      bbox,
+      aliases: [],
+      flipX: false,
+    };
     const kept = pushWithFlip(sprites, byContent, sprite);
     if (kept !== sprite) kept.aliases.push(Number(m[1]));
   }
@@ -149,7 +168,10 @@ async function loadComponents(file, keyPrefix, refScreen = null) {
       const stack = [idx0];
       seen[idx0] = 1;
       const px = [];
-      let minX = x0, maxX = x0, minY = y0, maxY = y0;
+      let minX = x0,
+        maxX = x0,
+        minY = y0,
+        maxY = y0;
       while (stack.length) {
         const idx = stack.pop();
         const x = idx % img.w;
@@ -180,7 +202,15 @@ async function loadComponents(file, keyPrefix, refScreen = null) {
         const y = (idx / img.w) | 0;
         img.data.copy(data, ((y - minY) * w + (x - minX)) * 4, idx * 4, idx * 4 + 4);
       }
-      const comp = { id: `${keyPrefix}-${minX}-${minY}`, w, h, data, aliases: [], srcRect: { x: minX, y: minY, w, h }, flipX: false };
+      const comp = {
+        id: `${keyPrefix}-${minX}-${minY}`,
+        w,
+        h,
+        data,
+        aliases: [],
+        srcRect: { x: minX, y: minY, w, h },
+        flipX: false,
+      };
       const masks = buildMasks(comp);
       if (masks.opaque.length === 0) continue;
       comp.opaque = masks.opaque;
@@ -205,9 +235,21 @@ async function loadTiles(extraSources = [], refScreen = null) {
       for (let c = 0; c < cols; c++) {
         const data = Buffer.alloc(CELL * CELL * 4);
         for (let y = 0; y < CELL; y++) {
-          img.data.copy(data, y * CELL * 4, ((r * CELL + y) * img.w + c * CELL) * 4, ((r * CELL + y) * img.w + (c + 1) * CELL) * 4);
+          img.data.copy(
+            data,
+            y * CELL * 4,
+            ((r * CELL + y) * img.w + c * CELL) * 4,
+            ((r * CELL + y) * img.w + (c + 1) * CELL) * 4,
+          );
         }
-        const tile = { id: `${src.key}-${c}-${r}`, w: CELL, h: CELL, data, aliases: [], flipX: false };
+        const tile = {
+          id: `${src.key}-${c}-${r}`,
+          w: CELL,
+          h: CELL,
+          data,
+          aliases: [],
+          flipX: false,
+        };
         const masks = buildMasks(tile);
         if (masks.opaque.length < 24) continue;
         tile.opaque = masks.opaque;
@@ -324,7 +366,16 @@ function buildUnexplainedIntegral(ref, explained) {
   };
 }
 
-function runPasses(label, templates, ref, explained, out, minFreshFrac, maxPasses, minExact = MIN_EXACT) {
+function runPasses(
+  label,
+  templates,
+  ref,
+  explained,
+  out,
+  minFreshFrac,
+  maxPasses,
+  minExact = MIN_EXACT,
+) {
   for (let pass = 1; pass <= maxPasses; pass++) {
     const unexplainedIn = buildUnexplainedIntegral(ref, explained);
     const candidates = [];
@@ -352,7 +403,8 @@ function runPasses(label, templates, ref, explained, out, minFreshFrac, maxPasse
       (a, b) =>
         a.mis / a.total - b.mis / b.total ||
         b.fresh - a.fresh ||
-        (a.sx % CELL === 0 && a.sy % CELL === 0 ? 0 : 1) - (b.sx % CELL === 0 && b.sy % CELL === 0 ? 0 : 1) ||
+        (a.sx % CELL === 0 && a.sy % CELL === 0 ? 0 : 1) -
+          (b.sx % CELL === 0 && b.sy % CELL === 0 ? 0 : 1) ||
         a.sy - b.sy ||
         a.sx - b.sx,
     );
@@ -414,15 +466,40 @@ async function main() {
 
   runPasses("objects", sprites, ref, explained, objects, OBJ_MIN_FRESH_FRAC, 12);
   // previous-version + Modern Interiors props the office singles don't contain
-  runPasses("old-objects", oldComps.concat(miComps, animComps), ref, explained, objects, OBJ_MIN_FRESH_FRAC, 6);
+  runPasses(
+    "old-objects",
+    oldComps.concat(miComps, animComps),
+    ref,
+    explained,
+    objects,
+    OBJ_MIN_FRESH_FRAC,
+    6,
+  );
   runPasses("tiles", tiles, ref, explained, structure, TILE_MIN_FRESH_FRAC, 12);
   // objects again: pieces that only became matchable once structure was known
-  runPasses("objects2", sprites.concat(oldComps, miComps), ref, explained, objects, OBJ_MIN_FRESH_FRAC, 4);
+  runPasses(
+    "objects2",
+    sprites.concat(oldComps, miComps),
+    ref,
+    explained,
+    objects,
+    OBJ_MIN_FRESH_FRAC,
+    4,
+  );
   // Substitute passes: the design was drawn with art revisions that no longer
   // ship in any pack, so what's left gets its CLOSEST real asset (loose
   // exactness, sprite silhouette must still fit). Layout stays exact; pixels
   // may differ slightly from the showcase gif where the artist revised art.
-  runPasses("substitute-objects", sprites.concat(oldComps, miComps, animComps), ref, explained, objects, 0.3, 4, 0.55);
+  runPasses(
+    "substitute-objects",
+    sprites.concat(oldComps, miComps, animComps),
+    ref,
+    explained,
+    objects,
+    0.3,
+    4,
+    0.55,
+  );
   // big decor whose art was revised heavily (old whiteboards/chart boards):
   // mostly-fresh regions only, so a wrong sprite can't glue onto matched art
   runPasses("substitute-decor", sprites, ref, explained, objects, 0.5, 2, 0.4);
@@ -447,7 +524,11 @@ async function main() {
 
   fs.writeFileSync(
     outPath,
-    JSON.stringify({ cell: CELL, objects, tiles: structure, unexplained, tileSourceFiles, compSourceFiles }, null, 1),
+    JSON.stringify(
+      { cell: CELL, objects, tiles: structure, unexplained, tileSourceFiles, compSourceFiles },
+      null,
+      1,
+    ),
   );
   console.log(`wrote ${outPath}: ${objects.length} objects, ${structure.length} tiles`);
 
@@ -488,7 +569,9 @@ async function main() {
     };
     drawAll(structure);
     drawAll(objects);
-    await sharp(out, { raw: { width: ref.w, height: ref.h, channels: 4 } }).png().toFile(recompositePath);
+    await sharp(out, { raw: { width: ref.w, height: ref.h, channels: 4 } })
+      .png()
+      .toFile(recompositePath);
     let diff = 0;
     for (let i = 0; i < ref.w * ref.h; i++) {
       const o = i * 4;

@@ -8,10 +8,7 @@
         "src/renderer/main.tsx",
         "scripts/*.cjs"
       ],
-      "project": [
-        "src/**",
-        "scripts/**"
-      ],
+      "project": ["src/**", "scripts/**"],
       "ignoreDependencies": [
         "@mariozechner/pi-ai",
         "@mariozechner/pi-coding-agent",
@@ -19,9 +16,7 @@
         "@vitejs/plugin-react",
         "electron-builder"
       ],
-      "ignoreBinaries": [
-        "gh"
-      ]
+      "ignoreBinaries": ["gh"]
     }
   }
 }

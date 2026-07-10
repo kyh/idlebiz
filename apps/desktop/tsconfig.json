@@ -15,7 +15,6 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": false,
     "types": ["electron-vite/node", "node"],
-    "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   }
 }

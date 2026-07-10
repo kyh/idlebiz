@@ -6,9 +6,13 @@ import type { ReactNode } from "react";
 /** The landing card behaves like an app window: grab the titlebar to drag it. */
 export function WindowCard({ titlebar, children }: { titlebar: ReactNode; children: ReactNode }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(
-    null,
-  );
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -42,7 +46,9 @@ export function WindowCard({ titlebar, children }: { titlebar: ReactNode; childr
   return (
     <div
       className="px-window relative w-full max-w-xl"
-      style={{ transform: offset.x || offset.y ? `translate(${offset.x}px, ${offset.y}px)` : undefined }}
+      style={{
+        transform: offset.x || offset.y ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
+      }}
     >
       <div
         onPointerDown={onPointerDown}

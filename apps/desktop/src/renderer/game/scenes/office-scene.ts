@@ -1,7 +1,13 @@
 import Phaser from "phaser";
 import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import { loadCharacter, ensureWalkAnims, idleFrame, type Dir } from "@/renderer/game/characters";
-import { NpcManager, type NpcState, type Seat, type PathProvider, type Poi } from "@/renderer/game/npcs";
+import {
+  NpcManager,
+  type NpcState,
+  type Seat,
+  type PathProvider,
+  type Poi,
+} from "@/renderer/game/npcs";
 import {
   OFFICE_CELL,
   OFFICE_COLS,
@@ -212,7 +218,8 @@ export class OfficeScene extends Phaser.Scene {
     gfx.fillStyle(0xff3366, 0.35);
     for (let r = 0; r < OFFICE_ROWS; r++) {
       for (let c = 0; c < OFFICE_COLS; c++) {
-        if (OFFICE_SOLID_GRID[r]?.[c]) gfx.fillRect(c * OFFICE_CELL, r * OFFICE_CELL, OFFICE_CELL, OFFICE_CELL);
+        if (OFFICE_SOLID_GRID[r]?.[c])
+          gfx.fillRect(c * OFFICE_CELL, r * OFFICE_CELL, OFFICE_CELL, OFFICE_CELL);
       }
     }
     this.debugGfx = gfx;

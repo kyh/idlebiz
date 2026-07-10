@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { applyOfficeLayout, parseOfficeLayout, type OfficeLayer } from "@/renderer/game/office-layout";
+import {
+  applyOfficeLayout,
+  parseOfficeLayout,
+  type OfficeLayer,
+} from "@/renderer/game/office-layout";
 import {
   ALL_OBJECT_IDS,
   anchorFor,
@@ -39,18 +43,27 @@ export function OfficeBuilder() {
   const [paletteId, setPaletteId] = useState<string | null>(null);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("objects");
   const [selectedUids, setSelectedUids] = useState<string[]>([]);
-  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(
+    null,
+  );
   const [snap, setSnap] = useState<number>(16);
   const [zoom, setZoom] = useState<number>(2);
   const [showCollision, setShowCollision] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Loaded current office. Place assets, then Save.");
   const stageRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ sx: number; sy: number; origins: { uid: string; x: number; y: number }[] } | null>(null);
+  const dragRef = useRef<{
+    sx: number;
+    sy: number;
+    origins: { uid: string; x: number; y: number }[];
+  } | null>(null);
   const paintRef = useRef<0 | 1 | null>(null);
   const selSet = new Set(selectedUids);
 
-  const selected = selectedUids.length === 1 ? layout.objects.find((o) => o.uid === selectedUids[0]) ?? null : null;
+  const selected =
+    selectedUids.length === 1
+      ? (layout.objects.find((o) => o.uid === selectedUids[0]) ?? null)
+      : null;
 
   // ---- undo/redo: snapshot history over the whole layout ----
   const layoutRef = useRef(layout);
@@ -61,7 +74,10 @@ export function OfficeBuilder() {
     layout: EditableLayout;
     selection: string[];
   }
-  const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] });
+  const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({
+    past: [],
+    future: [],
+  });
 
   /** Apply without recording (mid-drag / mid-paint frames). */
   const applyLive = useCallback((updater: (L: EditableLayout) => EditableLayout) => {
@@ -108,11 +124,17 @@ export function OfficeBuilder() {
     restore(next);
   }, [restore]);
 
-  const snapTo = useCallback((v: number) => (snap > 1 ? Math.round(v / snap) * snap : Math.round(v)), [snap]);
+  const snapTo = useCallback(
+    (v: number) => (snap > 1 ? Math.round(v / snap) * snap : Math.round(v)),
+    [snap],
+  );
 
   const updateObject = useCallback(
     (uid: string, patch: Partial<EditableObject>) => {
-      commit((L) => ({ ...L, objects: L.objects.map((o) => (o.uid === uid ? { ...o, ...patch } : o)) }));
+      commit((L) => ({
+        ...L,
+        objects: L.objects.map((o) => (o.uid === uid ? { ...o, ...patch } : o)),
+      }));
     },
     [commit],
   );
@@ -133,7 +155,9 @@ export function OfficeBuilder() {
       const src = new Set(uids);
       const clones = layoutRef.current.objects
         .filter((o) => src.has(o.uid))
-        .map((o) => Object.assign(cloneObject(o), { x: o.x + 8, y: o.y + 8, anchorY: o.anchorY + 8 }));
+        .map((o) =>
+          Object.assign(cloneObject(o), { x: o.x + 8, y: o.y + 8, anchorY: o.anchorY + 8 }),
+        );
       commit((L) => ({ ...L, objects: [...L.objects, ...clones] }));
       setSelectedUids(clones.map((o) => o.uid));
     },
@@ -235,7 +259,9 @@ export function OfficeBuilder() {
         beginStroke(); // the whole gesture (clone included) is one undo step
         if (e.altKey) {
           // Figma-style alt-drag: duplicate the selection and drag the copies
-          const clones = layoutRef.current.objects.filter((o) => groupSet.has(o.uid)).map((o) => cloneObject(o));
+          const clones = layoutRef.current.objects
+            .filter((o) => groupSet.has(o.uid))
+            .map((o) => cloneObject(o));
           applyLive((L) => ({ ...L, objects: [...L.objects, ...clones] }));
           setSelectedUids(clones.map((o) => o.uid));
           dragRef.current = {
@@ -249,13 +275,28 @@ export function OfficeBuilder() {
         dragRef.current = {
           sx: p.x,
           sy: p.y,
-          origins: layout.objects.filter((o) => groupSet.has(o.uid)).map((o) => ({ uid: o.uid, x: o.x, y: o.y })),
+          origins: layout.objects
+            .filter((o) => groupSet.has(o.uid))
+            .map((o) => ({ uid: o.uid, x: o.x, y: o.y })),
         };
       } else {
         setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
       }
     },
-    [tool, paletteId, paletteMode, snapTo, worldFromEvent, hitTest, layout.objects, layout.cell, selectedUids, beginStroke, commit, applyLive],
+    [
+      tool,
+      paletteId,
+      paletteMode,
+      snapTo,
+      worldFromEvent,
+      hitTest,
+      layout.objects,
+      layout.cell,
+      selectedUids,
+      beginStroke,
+      commit,
+      applyLive,
+    ],
   );
 
   const onStagePointerMove = useCallback(
@@ -394,14 +435,21 @@ export function OfficeBuilder() {
 
       if (selectedUids.length === 0) return;
       const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
-      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+      const d = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      }[e.key];
       const sel = new Set(selectedUids);
       if (d) {
         e.preventDefault();
         commit((L) => ({
           ...L,
           objects: L.objects.map((o) =>
-            sel.has(o.uid) ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: anchorFor(o, o.y + d[1]) } : o,
+            sel.has(o.uid)
+              ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: anchorFor(o, o.y + d[1]) }
+              : o,
           ),
         }));
       } else if (e.key === "Delete" || e.key === "Backspace") {
@@ -489,7 +537,11 @@ export function OfficeBuilder() {
                 data-sel={paletteId === it.id}
                 className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
               >
-                <img src={it.src} alt={it.id} className="max-h-10 max-w-none [image-rendering:pixelated]" />
+                <img
+                  src={it.src}
+                  alt={it.id}
+                  className="max-h-10 max-w-none [image-rendering:pixelated]"
+                />
               </button>
             );
           })}
@@ -514,16 +566,27 @@ export function OfficeBuilder() {
             <span className="mx-1 opacity-40">|</span>
             <span className="text-[var(--text-dim)]">snap</span>
             {SNAPS.map((s) => (
-              <button key={s} onClick={() => setSnap(s)} data-sel={snap === s} className="px-opt px-2 py-1.5">
+              <button
+                key={s}
+                onClick={() => setSnap(s)}
+                data-sel={snap === s}
+                className="px-opt px-2 py-1.5"
+              >
                 {s === 1 ? "free" : s}
               </button>
             ))}
             <span className="mx-1 opacity-40">|</span>
-            <button onClick={() => setZoom((z) => Math.max(1, z - 0.5))} className="px-btn px-2 py-1.5">
+            <button
+              onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
+              className="px-btn px-2 py-1.5"
+            >
               −
             </button>
             <span className="w-8 text-center">{zoom}×</span>
-            <button onClick={() => setZoom((z) => Math.min(5, z + 0.5))} className="px-btn px-2 py-1.5">
+            <button
+              onClick={() => setZoom((z) => Math.min(5, z + 0.5))}
+              className="px-btn px-2 py-1.5"
+            >
               +
             </button>
             <button
@@ -592,7 +655,9 @@ export function OfficeBuilder() {
                     pointerEvents: "none",
                     outline: selSet.has(o.uid) ? "1px solid #34d399" : "none",
                     transform:
-                      o.flipX || o.flipY ? `scale(${o.flipX ? -1 : 1}, ${o.flipY ? -1 : 1})` : undefined,
+                      o.flipX || o.flipY
+                        ? `scale(${o.flipX ? -1 : 1}, ${o.flipY ? -1 : 1})`
+                        : undefined,
                   }}
                   className="max-w-none [image-rendering:pixelated]"
                 />
@@ -675,8 +740,13 @@ export function OfficeBuilder() {
         ) : selectedUids.length > 1 ? (
           <div className="flex flex-col gap-2">
             <p>{selectedUids.length} objects selected.</p>
-            <p className="text-[11px] text-[var(--text-dim)]">Drag to move them together; arrows nudge; Delete removes all.</p>
-            <button onClick={() => deleteUids(selectedUids)} className="px-btn py-1.5 text-[var(--danger)]">
+            <p className="text-[11px] text-[var(--text-dim)]">
+              Drag to move them together; arrows nudge; Delete removes all.
+            </p>
+            <button
+              onClick={() => deleteUids(selectedUids)}
+              className="px-btn py-1.5 text-[var(--danger)]"
+            >
               Delete {selectedUids.length}
             </button>
           </div>
@@ -691,18 +761,22 @@ export function OfficeBuilder() {
             </p>
             <div className="px-inset p-2 text-[10px] leading-relaxed">
               V select · P place · S spawn · T seat · B/X collision
-              <br />⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
-              <br />⇧H flip horizontal · ⇧V flip vertical
-              <br />arrows nudge (⇧ = snap step) · Delete remove · Esc deselect
               <br />
-              <br />Layers: floor = flat under everyone · object = y-sorts with
-              walkers (in front when they're above it, behind when below) ·
-              overhead = always on top.
+              ⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
+              <br />
+              ⇧H flip horizontal · ⇧V flip vertical
+              <br />
+              arrows nudge (⇧ = snap step) · Delete remove · Esc deselect
+              <br />
+              <br />
+              Layers: floor = flat under everyone · object = y-sorts with walkers (in front when
+              they're above it, behind when below) · overhead = always on top.
             </div>
           </div>
         )}
         <div className="mt-auto text-[10px] text-[var(--text-dim)]">
-          {layout.objects.length} objects · {layout.workSeats.length} seats · {layout.width}×{layout.height}
+          {layout.objects.length} objects · {layout.workSeats.length} seats · {layout.width}×
+          {layout.height}
         </div>
       </aside>
     </main>
@@ -727,7 +801,10 @@ function Inspector({
             src={src}
             alt={obj.id}
             style={{
-              transform: obj.flipX || obj.flipY ? `scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1})` : undefined,
+              transform:
+                obj.flipX || obj.flipY
+                  ? `scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1})`
+                  : undefined,
             }}
             className="max-h-12 max-w-none [image-rendering:pixelated]"
           />
@@ -767,7 +844,11 @@ function Inspector({
         >
           {LAYERS.map((l) => (
             <option key={l} value={l}>
-              {l === "floor" ? "floor — flat, under everyone" : l === "object" ? "object — y-sorts with walkers" : "overhead — always on top"}
+              {l === "floor"
+                ? "floor — flat, under everyone"
+                : l === "object"
+                  ? "object — y-sorts with walkers"
+                  : "overhead — always on top"}
             </option>
           ))}
         </select>
@@ -782,7 +863,10 @@ function Inspector({
         />
       </label>
       <div className="flex gap-1">
-        <button onClick={() => onChange({ anchorY: anchorFor(obj, obj.y) })} className="px-btn flex-1 py-1.5">
+        <button
+          onClick={() => onChange({ anchorY: anchorFor(obj, obj.y) })}
+          className="px-btn flex-1 py-1.5"
+        >
           Auto anchor
         </button>
       </div>
@@ -808,7 +892,11 @@ function Inspector({
         </button>
       </div>
       <label className="flex items-center gap-2">
-        <input type="checkbox" checked={obj.solid} onChange={(e) => onChange({ solid: e.currentTarget.checked })} />
+        <input
+          type="checkbox"
+          checked={obj.solid}
+          onChange={(e) => onChange({ solid: e.currentTarget.checked })}
+        />
         solid (blocks walking)
       </label>
       <button onClick={onDelete} className="px-btn py-1.5 text-[var(--danger)]">
@@ -821,7 +909,8 @@ function Inspector({
 function collisionCells(L: EditableLayout): { x: number; y: number }[] {
   const cells: { x: number; y: number }[] = [];
   L.collision.forEach((row, r) => {
-    for (let c = 0; c < row.length; c++) if (row[c] === "1") cells.push({ x: c * L.cell, y: r * L.cell });
+    for (let c = 0; c < row.length; c++)
+      if (row[c] === "1") cells.push({ x: c * L.cell, y: r * L.cell });
   });
   return cells;
 }

@@ -63,7 +63,15 @@ export function OfficeLife({ title }: { title: ReactNode }) {
   const deskRef = useRef<HTMLImageElement>(null);
   const coolerRef = useRef<HTMLImageElement>(null);
   const timerRef = useRef<number | null>(null);
-  const poseRef = useRef<Pose>({ x: 70, y: 70, row: "down", moving: false, sitting: false, ms: 0, bubble: null });
+  const poseRef = useRef<Pose>({
+    x: 70,
+    y: 70,
+    row: "down",
+    moving: false,
+    sitting: false,
+    ms: 0,
+    bubble: null,
+  });
   const [pose, setPoseState] = useState<Pose | null>(null);
   const [marker, setMarker] = useState<{ x: number; y: number } | null>(null);
 
@@ -81,7 +89,11 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       timerRef.current = window.setTimeout(fn, ms);
     };
 
-    const spotIn = (el: HTMLElement | null, dx: number, dy: number): { x: number; y: number } | null => {
+    const spotIn = (
+      el: HTMLElement | null,
+      dx: number,
+      dy: number,
+    ): { x: number; y: number } | null => {
       if (!el) return null;
       const o = overlay.getBoundingClientRect();
       const r = el.getBoundingClientRect();
@@ -93,13 +105,19 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       const dx = tx - p.x;
       const dy = ty - p.y;
       const dist = Math.hypot(dx, dy);
-      const row: Row = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+      const row: Row =
+        Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
       const ms = Math.max(300, (dist / SPEED) * 1000);
       setPose({ ...p, x: tx, y: ty, row, moving: true, sitting: false, ms, bubble: null });
       later(ms, done);
     };
 
-    const idle = (row: Row, ms: number, opts: { bubble?: string | null; sitting?: boolean }, done: () => void) => {
+    const idle = (
+      row: Row,
+      ms: number,
+      opts: { bubble?: string | null; sitting?: boolean },
+      done: () => void,
+    ) => {
       setPose({
         ...poseRef.current,
         row,
@@ -119,7 +137,9 @@ export function OfficeLife({ title }: { title: ReactNode }) {
         // sit down at the desk: feet on the chair, chair + desk drawn over
         const seat = spotIn(deskRef.current, SEAT_X - NPC_W / 2, SEAT_Y - (NPC_H - 8));
         if (seat) {
-          walk(seat.x, seat.y, () => idle("up", 4200 + Math.random() * 3600, { sitting: true }, tick));
+          walk(seat.x, seat.y, () =>
+            idle("up", 4200 + Math.random() * 3600, { sitting: true }, tick),
+          );
           return;
         }
       } else if (roll < 0.4) {
@@ -184,7 +204,14 @@ export function OfficeLife({ title }: { title: ReactNode }) {
         <span className={`px-prop-wrap relative ${pose?.sitting ? "z-30" : ""}`}>
           <span className="px-ground-shadow" style={{ width: "94%", height: 15 }} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img ref={deskRef} src="/office/desk.png" alt="" width={52} height={96} className="px-prop h-[144px] w-auto" />
+          <img
+            ref={deskRef}
+            src="/office/desk.png"
+            alt=""
+            width={52}
+            height={96}
+            className="px-prop h-[144px] w-auto"
+          />
         </span>
         <div className="flex items-center justify-center">{title}</div>
         <div className="w-[78px]" />
@@ -193,10 +220,21 @@ export function OfficeLife({ title }: { title: ReactNode }) {
       <span className="px-prop-wrap absolute right-4 bottom-[22px]" aria-hidden>
         <span className="px-ground-shadow" style={{ width: "116%", height: 11 }} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img ref={coolerRef} src="/office/cooler.png" alt="" width={28} height={60} className="px-prop h-[90px] w-auto" />
+        <img
+          ref={coolerRef}
+          src="/office/cooler.png"
+          alt=""
+          width={28}
+          height={60}
+          className="px-prop h-[90px] w-auto"
+        />
       </span>
       {/* the employee roams the whole card */}
-      <div ref={overlayRef} aria-hidden className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+      <div
+        ref={overlayRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+      >
         {marker ? (
           <div className="px-selector" style={{ left: marker.x - 24, top: marker.y - 24 }} />
         ) : null}

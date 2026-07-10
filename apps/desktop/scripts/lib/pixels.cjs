@@ -3,7 +3,10 @@ const sharp = require("sharp");
 
 /** Decode a PNG to raw RGBA. */
 async function loadRaw(file) {
-  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(file)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
   return { data, w: info.width, h: info.height };
 }
 

@@ -12,7 +12,10 @@ import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectVariant,
 } from "@/renderer/game/office-object-catalog.generated";
-import { ROOM_BUILDER_TILES, type RoomBuilderTile } from "@/renderer/game/room-builder-tiles.generated";
+import {
+  ROOM_BUILDER_TILES,
+  type RoomBuilderTile,
+} from "@/renderer/game/room-builder-tiles.generated";
 
 export type Tool = "select" | "place" | "spawn" | "seat" | "block" | "clear";
 
@@ -119,7 +122,14 @@ function newUid(): string {
 }
 
 // --- grid helpers -----------------------------------------------------------
-function paint(grid: number[][], cell: number, cols: number, rows: number, r: Rect, v: number): void {
+function paint(
+  grid: number[][],
+  cell: number,
+  cols: number,
+  rows: number,
+  r: Rect,
+  v: number,
+): void {
   const c0 = Math.max(0, Math.floor(r.x / cell));
   const r0 = Math.max(0, Math.floor(r.y / cell));
   const c1 = Math.min(cols, Math.ceil((r.x + r.w) / cell));
@@ -274,7 +284,13 @@ export function cloneObject(o: EditableObject): EditableObject {
 }
 
 /** Set one collision cell (1 = solid, 0 = walkable); returns a new collision array. */
-export function setCollisionCell(collision: string[], cols: number, c: number, r: number, val: 0 | 1): string[] {
+export function setCollisionCell(
+  collision: string[],
+  cols: number,
+  c: number,
+  r: number,
+  val: 0 | 1,
+): string[] {
   const row = collision[r];
   if (r < 0 || c < 0 || c >= cols || !row || row[c] === String(val)) return collision;
   const next = row.slice(0, c) + String(val) + row.slice(c + 1);

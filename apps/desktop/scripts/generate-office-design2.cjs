@@ -56,7 +56,9 @@ function nearest2x(img) {
 }
 
 async function writePng(img, file) {
-  await sharp(img.data, { raw: { width: img.w, height: img.h, channels: 4 } }).png().toFile(file);
+  await sharp(img.data, { raw: { width: img.w, height: img.h, channels: 4 } })
+    .png()
+    .toFile(file);
 }
 
 function crop(img, x, y, w, h) {
@@ -82,7 +84,10 @@ function floodComponent(img, ox, oy) {
       const stack = [idx0];
       seen[idx0] = 1;
       const px = [];
-      let minX = x0, maxX = x0, minY = y0, maxY = y0;
+      let minX = x0,
+        maxX = x0,
+        minY = y0,
+        maxY = y0;
       while (stack.length) {
         const idx = stack.pop();
         const x = idx % img.w;
@@ -120,8 +125,8 @@ function floodComponent(img, ox, oy) {
   throw new Error(`component at ${ox},${oy} not found`);
 }
 
-
-const touches = (a, b) => a.x0 <= b.x1 + 2 && b.x0 <= a.x1 + 2 && a.y0 <= b.y1 + 2 && b.y0 <= a.y1 + 2;
+const touches = (a, b) =>
+  a.x0 <= b.x1 + 2 && b.x0 <= a.x1 + 2 && a.y0 <= b.y1 + 2 && b.y0 <= a.y1 + 2;
 
 /** Horizontally mirrored copy of a raw image. */
 function flipXRaw(img) {
@@ -139,7 +144,9 @@ function flipXRaw(img) {
 async function main() {
   const [decomposedPath, refPath, outPathArg] = process.argv.slice(2);
   if (!decomposedPath || !refPath) {
-    console.error("usage: generate-office-design2.cjs <decomposed.json> <ref_flat16.png> [out.json]");
+    console.error(
+      "usage: generate-office-design2.cjs <decomposed.json> <ref_flat16.png> [out.json]",
+    );
     process.exit(1);
   }
   const outPath = outPathArg
@@ -369,7 +376,10 @@ async function main() {
   // from it as tiny correction decals layered over the real-asset placements.
   let fixSeq = 0;
   function cutPixels(pixelIdxs) {
-    let minX = W16, minY = H16, maxX = -1, maxY = -1;
+    let minX = W16,
+      minY = H16,
+      maxX = -1,
+      maxY = -1;
     for (const idx of pixelIdxs) {
       const x = idx % W16;
       const y = (idx / W16) | 0;
@@ -435,7 +445,8 @@ async function main() {
       // the local row band (a lone dark trim neighbor must not win over the
       // dominant wall/floor fill)
       const donorOverride = CLEAR.fillDonors.find(
-        (f) => cx + 8 >= f.rect[0] && cx + 8 < f.rect[2] && cy + 8 >= f.rect[1] && cy + 8 < f.rect[3],
+        (f) =>
+          cx + 8 >= f.rect[0] && cx + 8 < f.rect[2] && cy + 8 >= f.rect[1] && cy + 8 < f.rect[3],
       );
       let best = donorOverride ? { t: { id: donorOverride.tile }, n: 1 } : null;
       if (!best) {
@@ -553,7 +564,9 @@ async function main() {
       objects.push(await fixPlacementFor(px, like));
       orphanDecals++;
     }
-    console.log(`corrections: ${fixes} drift decals + ${orphanDecals} orphan decals (cut from the pack's design file)`);
+    console.log(
+      `corrections: ${fixes} drift decals + ${orphanDecals} orphan decals (cut from the pack's design file)`,
+    );
   }
   console.log(`orphan px left to nearest-asset substitution: ${orphan.length}`);
   const layout = await finalize();
@@ -564,7 +577,12 @@ async function main() {
     const tmpLayout = "/tmp/design2-closing.json";
     const tmpRender = "/tmp/design2-closing.png";
     fs.writeFileSync(tmpLayout, JSON.stringify(layout));
-    execFileSync("node", [path.join(__dirname, "render-office-preview.cjs"), "--layout", tmpLayout, tmpRender]);
+    execFileSync("node", [
+      path.join(__dirname, "render-office-preview.cjs"),
+      "--layout",
+      tmpLayout,
+      tmpRender,
+    ]);
     const rendered = await loadRaw(tmpRender);
     const bad = [];
     for (let y = 0; y < 544; y++) {
@@ -590,7 +608,10 @@ async function main() {
       const stack = [start];
       visited.add(start);
       const px = [];
-      let minX = 512, minY = 544, maxX = -1, maxY = -1;
+      let minX = 512,
+        minY = 544,
+        maxX = -1,
+        maxY = -1;
       while (stack.length) {
         const cur = stack.pop();
         px.push(cur);
@@ -628,10 +649,24 @@ async function main() {
       // escalate later rounds above the overhead band (static scenery truth)
       layout.objects.push(
         round >= 2
-          ? { id: assetId, x: minX, y: minY, layer: "overhead", anchorY: 900_000 + round, path: rel }
+          ? {
+              id: assetId,
+              x: minX,
+              y: minY,
+              layer: "overhead",
+              anchorY: 900_000 + round,
+              path: rel,
+            }
           : band
             ? { id: assetId, x: minX, y: minY, layer: "object", anchorY: band[4], path: rel }
-            : { id: assetId, x: minX, y: minY, layer: "floor", anchorY: 10_000 + maxY + 1, path: rel },
+            : {
+                id: assetId,
+                x: minX,
+                y: minY,
+                layer: "floor",
+                anchorY: 10_000 + maxY + 1,
+                path: rel,
+              },
       );
     }
     console.log(`closing pass ${round}: ${bad.length} px -> ${closing} decals`);
@@ -684,10 +719,23 @@ async function main() {
         }
         const assetId = `d2-${entry.id}`;
         const rel = await emitAsset(assetId, img2x);
-        placement = { id: assetId, x: entry.x * 2, y: entry.y * 2, layer: "object", anchorY, path: rel };
+        placement = {
+          id: assetId,
+          x: entry.x * 2,
+          y: entry.y * 2,
+          layer: "object",
+          anchorY,
+          path: rel,
+        };
       }
       if (entry.flipX) placement.flipX = true;
-      placement.meta = { drawIndex: i, templateId: entry.id, ex: entry.x, ey: entry.y, flipX: entry.flipX === true };
+      placement.meta = {
+        drawIndex: i,
+        templateId: entry.id,
+        ex: entry.x,
+        ey: entry.y,
+        flipX: entry.flipX === true,
+      };
       objects.push(placement);
     }
     console.log(`after objects: ${objects.length} entries, ${writtenAssets.size} assets`);
@@ -829,7 +877,12 @@ async function main() {
     const bbox2x = async (entry) => {
       const img = await templateFor(entry.id);
       const b = opaqueBounds(img);
-      return { x0: (entry.x + b.x) * 2, y0: (entry.y + b.y) * 2, x1: (entry.x + b.x + b.w) * 2, y1: (entry.y + b.y + b.h) * 2 };
+      return {
+        x0: (entry.x + b.x) * 2,
+        y0: (entry.y + b.y) * 2,
+        x1: (entry.x + b.x + b.w) * 2,
+        y1: (entry.y + b.y + b.h) * 2,
+      };
     };
     const paintSolid = ({ x0, y0, x1, y1 }) => {
       for (let r = Math.floor(y0 / 16); r < Math.ceil(y1 / 16); r++) {
@@ -851,7 +904,8 @@ async function main() {
     {
       const edges = [];
       for (const entry of drawList) {
-        if (entry.kind === "object" && CLASS.deskEdges.has(entry.id)) edges.push(await bbox2x(entry));
+        if (entry.kind === "object" && CLASS.deskEdges.has(entry.id))
+          edges.push(await bbox2x(entry));
       }
       const deskTiles = [];
       for (const entry of drawList) {
@@ -859,12 +913,15 @@ async function main() {
           deskTiles.push({ box: await bbox2x(entry), solid: false });
         }
       }
-        let changed = true;
+      let changed = true;
       while (changed) {
         changed = false;
         for (const t of deskTiles) {
           if (t.solid) continue;
-          if (edges.some((e) => touches(t.box, e)) || deskTiles.some((o) => o.solid && touches(t.box, o.box))) {
+          if (
+            edges.some((e) => touches(t.box, e)) ||
+            deskTiles.some((o) => o.solid && touches(t.box, o.box))
+          ) {
             t.solid = true;
             changed = true;
           }
@@ -933,10 +990,16 @@ async function main() {
       } else console.warn(`spawn (${CLASS.spawn.x},${CLASS.spawn.y}) is body-blocked`);
       while (queue.length) {
         const [c, r] = queue.shift();
-        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (const [dc, dr] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
           const nc = c + dc;
           const nr = r + dr;
-          if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || seen[nr][nc] || !nodeOpen(nc, nr)) continue;
+          if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || seen[nr][nc] || !nodeOpen(nc, nr))
+            continue;
           seen[nr][nc] = true;
           queue.push([nc, nr]);
         }
@@ -958,7 +1021,9 @@ async function main() {
         else console.warn(`seat (${s.x},${s.y}) cell(${c},${r}) UNREACHABLE (body-aware)`);
       }
       const nodes = seen.flat().filter(Boolean).length;
-      console.log(`body-aware reachability: ${reach}/${workSeats.length} seats, ${nodes} reachable nodes from spawn`);
+      console.log(
+        `body-aware reachability: ${reach}/${workSeats.length} seats, ${nodes} reachable nodes from spawn`,
+      );
       console.log(
         solid
           .map((row, r) => row.map((v, c) => (v ? "#" : seen[r][c] ? "O" : ".")).join(""))

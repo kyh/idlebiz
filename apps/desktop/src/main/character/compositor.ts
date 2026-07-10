@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import sharp, { type OverlayOptions } from "sharp";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { app } from "electron";
@@ -82,7 +82,7 @@ const toDataUrl = (buf: Buffer): string => `data:image/png;base64,${buf.toString
 /** Re-pack a source sheet's walk + sit bands into the 192x384 6-row layout. */
 async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
   const sheet = sharp(sheetPath);
-  const tiles: sharp.OverlayOptions[] = [];
+  const tiles: OverlayOptions[] = [];
   for (const [row, def] of OUT_ROWS.entries()) {
     const [, bandTop, startCol] = def;
     for (let f = 0; f < WALK_FRAMES; f++) {

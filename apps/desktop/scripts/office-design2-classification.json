@@ -21,154 +21,39 @@
   "deskTiles": [],
   "deskEdges": [],
   "_seat_note": "obj-110 (break-room chair) is sealed off by the art (sub-16px gaps: cooler/fridge/plant/case chain) \u2014 decorative, not a workSeat.",
-  "seatObjects": [
-    "obj-102",
-    "obj-106",
-    "obj-306"
-  ],
+  "seatObjects": ["obj-102", "obj-106", "obj-306"],
   "_floor_patch_note": "obj-92/93 are flat floor-texture pieces; on the object layer their anchors hide character bodies, so they render as boosted floor decals.",
-  "floorPatchObjects": [
-    "obj-92",
-    "obj-93"
-  ],
+  "floorPatchObjects": ["obj-92", "obj-93"],
   "_clear_note": "no clear zones: residual correction decals cut from the pack's own design file reproduce the few spots whose sprite revisions never shipped as standalone assets",
   "clearRects": [],
   "manualPlacements": [],
   "_wall_band_note": "x0,y0,x1,y1,anchor \u2014 structure tiles inside a band y-sort at the band's floor line so characters north of the wall are occluded; mounted decor lifts just above. Doorway x316-352 excluded.",
   "wallBands": [
-    [
-      16,
-      288,
-      316,
-      352,
-      352
-    ],
-    [
-      352,
-      288,
-      512,
-      352,
-      352
-    ],
-    [
-      296,
-      352,
-      322,
-      400,
-      400
-    ]
+    [16, 288, 316, 352, 352],
+    [352, 288, 512, 352, 352],
+    [296, 352, 322, 400, 400]
   ],
   "walkableRects": [
-    [
-      16,
-      64,
-      496,
-      80
-    ],
-    [
-      16,
-      160,
-      496,
-      204
-    ],
-    [
-      16,
-      208,
-      52,
-      304
-    ],
-    [
-      16,
-      288,
-      496,
-      304
-    ],
-    [
-      320,
-      296,
-      352,
-      400
-    ],
-    [
-      120,
-      352,
-      316,
-      400
-    ],
-    [
-      356,
-      352,
-      496,
-      400
-    ],
-    [
-      120,
-      400,
-      496,
-      500
-    ]
+    [16, 64, 496, 80],
+    [16, 160, 496, 204],
+    [16, 208, 52, 304],
+    [16, 288, 496, 304],
+    [320, 296, 352, 400],
+    [120, 352, 316, 400],
+    [356, 352, 496, 400],
+    [120, 400, 496, 500]
   ],
   "solidRects": [
-    [
-      0,
-      0,
-      512,
-      64
-    ],
-    [
-      0,
-      0,
-      16,
-      544
-    ],
-    [
-      496,
-      0,
-      512,
-      544
-    ],
-    [
-      0,
-      504,
-      512,
-      544
-    ],
-    [
-      84,
-      88,
-      386,
-      162
-    ],
-    [
-      52,
-      202,
-      450,
-      290
-    ],
-    [
-      16,
-      304,
-      316,
-      352
-    ],
-    [
-      352,
-      304,
-      512,
-      352
-    ],
-    [
-      304,
-      304,
-      320,
-      400
-    ],
-    [
-      0,
-      352,
-      120,
-      544
-    ]
+    [0, 0, 512, 64],
+    [0, 0, 16, 544],
+    [496, 0, 512, 544],
+    [0, 504, 512, 544],
+    [84, 88, 386, 162],
+    [52, 202, 450, 290],
+    [16, 304, 316, 352],
+    [352, 304, 512, 352],
+    [304, 304, 320, 400],
+    [0, 352, 120, 544]
   ],
   "spawn": {
     "x": 256,
@@ -177,12 +62,5 @@
   "_fill_note": "hole-fill donor override per zone (source px + tile id): cleared zones fill with the right wall tile instead of the local mode donor",
   "fillDonors": [],
   "_carve_note": "post-solid walkable carves: squeeze-throughs where the walker passes behind furniture (cooler base at the break-room entrance \u2014 the art seals the room with sub-16px gaps)",
-  "carveRects": [
-    [
-      288,
-      384,
-      320,
-      400
-    ]
-  ]
+  "carveRects": [[288, 384, 320, 400]]
 }

@@ -31,7 +31,11 @@ async function objectBounds(file) {
 }
 
 function objectPath(id) {
-  return path.join(kit, "office-objects/32", `modern-office-32-${id.replace("office-object-", "")}.png`);
+  return path.join(
+    kit,
+    "office-objects/32",
+    `modern-office-32-${id.replace("office-object-", "")}.png`,
+  );
 }
 async function main() {
   const layout = JSON.parse(fs.readFileSync(layoutPath, "utf8"));
@@ -47,7 +51,11 @@ async function main() {
     const b = await objectBounds(file);
     const anchor = typeof o.anchorY === "number" ? o.anchorY : o.y + b.y + b.h;
     const depth =
-      o.layer === "floor" ? 10 + anchor * 1e-4 : o.layer === "overhead" ? 1_000_000 + anchor : 1000 + anchor + 0.5;
+      o.layer === "floor"
+        ? 10 + anchor * 1e-4
+        : o.layer === "overhead"
+          ? 1_000_000 + anchor
+          : 1000 + anchor + 0.5;
     let input = file;
     if (o.flipX || o.flipY) {
       let img = sharp(file);
@@ -64,7 +72,14 @@ async function main() {
     .toSorted((a, b) => a.depth - b.depth)
     .map(({ input, left, top }) => ({ input, left: Math.round(left), top: Math.round(top) }));
 
-  await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0x14, g: 0x16, b: 0x1f, alpha: 1 } } })
+  await sharp({
+    create: {
+      width: W,
+      height: H,
+      channels: 4,
+      background: { r: 0x14, g: 0x16, b: 0x1f, alpha: 1 },
+    },
+  })
     .composite(composite)
     .png()
     .toFile(outPath);

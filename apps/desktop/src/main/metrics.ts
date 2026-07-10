@@ -129,7 +129,9 @@ async function stripeGet(path: string, key: string): Promise<unknown> {
 
 // Stripe list envelopes, parsed at the boundary (unknown fields ignored)
 const StripeChargesSchema = z.object({
-  data: z.array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() })).default([]),
+  data: z
+    .array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() }))
+    .default([]),
 });
 const StripeListSchema = z.object({
   data: z.array(z.object({ id: z.string().optional() })).default([]),
@@ -139,7 +141,10 @@ const StripeCountSchema = z.object({ total_count: z.number() });
 const PlausibleSchema = z.object({
   results: z.object({ visitors: z.object({ value: z.unknown() }) }),
 });
-const CustomSnapshotSchema = z.object({ users: z.unknown().optional(), revenue: z.unknown().optional() });
+const CustomSnapshotSchema = z.object({
+  users: z.unknown().optional(),
+  revenue: z.unknown().optional(),
+});
 
 async function stripeRevenue(key: string): Promise<number | null> {
   const res = StripeChargesSchema.safeParse(await stripeGet("/v1/charges?limit=100", key));
