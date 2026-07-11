@@ -1,12 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
-import { integrationAsk } from "@/shared/domain";
+import { z } from "zod";
+import type { BlockedAsk } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
 // back into with run-scoped bearer tokens (paperclip convention — agents curl
 // the API; the game is the control plane). Each run registers hooks that
-// bridge tool calls into game state; the token dies with the run.
+// bridge tool calls into game state; the token dies with the run. This file
+// is pure transport: bodies are zod-validated at the boundary and every
+// game rule lives in the hooks.
 // ---------------------------------------------------------------------------
 
 /** Side-effects a running agent can trigger to operate the business. */
@@ -23,17 +26,12 @@ export interface RunToolHooks {
 }
 
 interface RunRecord {
-  employeeId: string;
-  employeeName: string;
-  companyId: string;
-  taskId: string | null;
   hooks: RunToolHooks;
-  blockedQuestion: string | null;
+  blocked: BlockedAsk | null;
 }
 
 export interface RunRegistration {
   employeeId: string;
-  employeeName: string;
   companyId: string;
   taskId?: string;
   hooks: RunToolHooks;
@@ -43,12 +41,32 @@ export interface RunHandle {
   /** Run-scoped env for the agent process (API URL + bearer token + ids). */
   env: Record<string, string>;
   /** What the agent reported back through the API during the run. */
-  outcome(): { blockedQuestion: string | null };
+  outcome(): { blocked: BlockedAsk | null };
   /** Invalidate the token. Call after the run settles. */
   release(): void;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
+
+// ---- request bodies (validated at the transport boundary) -------------------
+const AskBossBody = z.object({ question: z.string().min(1) });
+const MessageTeamBody = z.object({ text: z.string().min(1) });
+const DelegateBody = z.object({
+  role: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+});
+const HireBody = z.object({
+  role: z.string().min(1),
+  title: z.string().min(1),
+  name: z.string().min(1).optional(),
+  persona: z.string().min(1).optional(),
+});
+const ReleaseBody = z.object({ slug: z.string().min(1), reason: z.string().default("") });
+const RequestIntegrationBody = z.object({
+  kind: z.enum(["vercel", "stripe"]),
+  reason: z.string().min(1),
+});
 
 class ControlPlane {
   private server: Server | null = null;
@@ -85,14 +103,7 @@ class ControlPlane {
 
   registerRun(reg: RunRegistration): RunHandle {
     const token = randomBytes(24).toString("base64url");
-    const record: RunRecord = {
-      employeeId: reg.employeeId,
-      employeeName: reg.employeeName,
-      companyId: reg.companyId,
-      taskId: reg.taskId ?? null,
-      hooks: reg.hooks,
-      blockedQuestion: null,
-    };
+    const record: RunRecord = { hooks: reg.hooks, blocked: null };
     this.runs.set(token, record);
     const env: Record<string, string> = {
       IDLEBIZ_API_URL: this.baseUrl(),
@@ -103,7 +114,7 @@ class ControlPlane {
     if (reg.taskId) env.IDLEBIZ_TASK_ID = reg.taskId;
     return {
       env,
-      outcome: () => ({ blockedQuestion: record.blockedQuestion }),
+      outcome: () => ({ blocked: record.blocked }),
       release: () => {
         this.runs.delete(token);
       },
@@ -120,16 +131,6 @@ class ControlPlane {
       const path = (req.url ?? "").split("?")[0];
       const route = `${req.method ?? "GET"} ${path}`;
       switch (route) {
-        case "GET /v1/me": {
-          respond(res, 200, {
-            ok: true,
-            agentId: run.employeeId,
-            name: run.employeeName,
-            companyId: run.companyId,
-            taskId: run.taskId,
-          });
-          return;
-        }
         case "GET /v1/team-chat": {
           respond(res, 200, {
             ok: true,
@@ -138,13 +139,12 @@ class ControlPlane {
           return;
         }
         case "POST /v1/ask-boss": {
-          const body = await readJsonBody(req);
-          const question = strField(body, "question");
-          if (!question) {
-            respond(res, 400, { ok: false, error: "missing string field: question" });
+          const body = AskBossBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
-          run.blockedQuestion = question;
+          run.blocked = { type: "question", question: body.data.question.trim() };
           respond(res, 200, {
             ok: true,
             message:
@@ -153,78 +153,62 @@ class ControlPlane {
           return;
         }
         case "POST /v1/message-team": {
-          const body = await readJsonBody(req);
-          const text = strField(body, "text");
-          if (!text) {
-            respond(res, 400, { ok: false, error: "missing string field: text" });
+          const body = MessageTeamBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
-          run.hooks.messageTeam(text);
+          run.hooks.messageTeam(body.data.text.trim());
           respond(res, 200, { ok: true, message: "Posted to the team room." });
           return;
         }
         case "POST /v1/delegate": {
-          const body = await readJsonBody(req);
-          const role = strField(body, "role");
-          const title = strField(body, "title");
-          const description = strField(body, "description");
-          if (!role || !title || !description) {
-            respond(res, 400, {
-              ok: false,
-              error: "missing string fields: role, title, description",
-            });
+          const body = DelegateBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
+          const { role, title, description } = body.data;
           respond(res, 200, { ok: true, message: run.hooks.delegate(role, title, description) });
           return;
         }
         case "POST /v1/hire": {
-          const body = await readJsonBody(req);
-          const role = strField(body, "role");
-          const title = strField(body, "title");
-          if (!role || !title) {
-            respond(res, 400, { ok: false, error: "missing string fields: role, title" });
+          const body = HireBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
-          const message = run.hooks.hire({
-            role,
-            title,
-            name: strField(body, "name") ?? undefined,
-            persona: strField(body, "persona") ?? undefined,
-          });
-          respond(res, 200, { ok: true, message });
+          respond(res, 200, { ok: true, message: run.hooks.hire(body.data) });
           return;
         }
         case "POST /v1/release": {
-          const body = await readJsonBody(req);
-          const slug = strField(body, "slug");
-          if (!slug) {
-            respond(res, 400, { ok: false, error: "missing string field: slug" });
+          const body = ReleaseBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
           respond(res, 200, {
             ok: true,
-            message: run.hooks.release(slug, strField(body, "reason") ?? ""),
+            message: run.hooks.release(body.data.slug, body.data.reason),
           });
           return;
         }
         case "POST /v1/request-integration": {
-          const body = await readJsonBody(req);
-          const kind = strField(body, "kind");
-          const reason = strField(body, "reason");
-          if ((kind !== "vercel" && kind !== "stripe") || !reason) {
-            respond(res, 400, {
-              ok: false,
-              error: 'kind must be "vercel" or "stripe", and reason is required',
-            });
+          const body = RequestIntegrationBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
           // A typed ask: the notification renders a [Connect] button and this
           // task auto-resumes when the founder connects.
-          run.blockedQuestion = integrationAsk(kind, reason);
+          run.blocked = {
+            type: "integration",
+            integration: body.data.kind,
+            reason: body.data.reason.trim(),
+          };
           respond(res, 200, {
             ok: true,
-            message: `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
+            message: `The founder has a ${body.data.kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
           });
           return;
         }
@@ -251,7 +235,8 @@ function respond(res: ServerResponse, status: number, payload: unknown): void {
   res.end(body);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+/** Collect and parse the body; zod narrows the shape per route. */
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -261,13 +246,7 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
     chunks.push(buf);
   }
   if (chunks.length === 0) return {};
-  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
-}
-
-function strField(body: Record<string, unknown>, key: string): string | null {
-  const v = body[key];
-  return typeof v === "string" && v.trim() ? v.trim() : null;
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
 
 export const controlPlane = new ControlPlane();

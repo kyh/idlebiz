@@ -6,9 +6,7 @@ import type { AuthFlowEvent } from "@/shared/ipc-registry";
  *  logged-out CLI). Same flow as onboarding's auth step, minus the ceremony. */
 export function AuthGate() {
   const [lines, setLines] = useState<string[]>([]);
-  const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [code, setCode] = useState("");
 
   useEffect(() => {
     setModalOpen(true);
@@ -19,7 +17,7 @@ export function AuthGate() {
     const bridge = window.appBridge;
     if (!bridge) return;
     const off = bridge.onAuthEvent((e: AuthFlowEvent) => {
-      if (e.type === "url") setUrl(e.url);
+      if (e.type === "url") setLines((l) => [...l.slice(-3), `Browser opened: ${e.url}`]);
       else if (e.type === "progress") setLines((l) => [...l.slice(-3), e.message]);
       else if (e.type === "done") {
         setBusy(false);
@@ -50,27 +48,9 @@ export function AuthGate() {
             {lines.join("\n")}
           </div>
         ) : null}
-        {url ? (
-          <div className="mt-2 flex gap-2">
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="…or paste the code from the browser"
-              className="px-field flex-1 text-[12px]"
-            />
-            <button
-              onClick={() => {
-                if (code.trim()) void window.appBridge?.submitAuthCode({ code: code.trim() });
-              }}
-              className="px-btn text-[12px]"
-            >
-              Submit
-            </button>
-          </div>
-        ) : null}
         <div className="mt-3 flex justify-end">
           <button onClick={start} disabled={busy} className="px-btn-accent px-btn text-[13px]">
-            {busy ? "Setting up…" : url ? "Try again" : "Set up workforce"}
+            {busy ? "Setting up…" : "Set up workforce"}
           </button>
         </div>
       </div>

@@ -5,8 +5,22 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { pluginHost } from "@/main/plugins";
 import type { RunContext, RunOutcome } from "@/main/plugins";
-import { MAX_TASK_ATTEMPTS, businessTypeById, isOutOfBudget, retryDelayMs } from "@/shared/domain";
-import type { ActivityEvent, Company, Employee, Task } from "@/shared/domain";
+import {
+  INTEGRATION_LABELS,
+  MAX_TASK_ATTEMPTS,
+  businessTypeById,
+  isOutOfBudget,
+  resolveMentions,
+  retryDelayMs,
+} from "@/shared/domain";
+import type {
+  ActivityEvent,
+  BlockedAsk,
+  Company,
+  Employee,
+  IntegrationKind,
+  Task,
+} from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -238,30 +252,30 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
           assigneeId: mate.id,
         });
         post(`→ ${mate.name} (${mate.title}): ${title}`);
-        try {
-          this.assign(t.id, mate.id);
-        } catch {
-          /* mate busy — runs on a later tick */
-        }
+        this.tryAssign(t.id, mate.id);
         return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
       },
       hire: ({ role, title, name, persona }): string => {
         if (!isLeader) return "Only the team lead can hire — raise it in the team room.";
         const all = store.listEmployees(company.id);
-        if (all.length >= company.maxAgents) {
-          return `The office is at its ${company.maxAgents}-seat cap — release someone first or work with the team you have.`;
-        }
         const hireName = name ?? `${title} ${all.length + 1}`;
-        const hired = store.createEmployee({
-          companyId: company.id,
-          name: hireName,
-          role,
-          title,
-          persona: persona ?? `A focused, pragmatic ${title} who ships.`,
-          runner: agentDriver.pickRunner(all.length),
-          spriteSeed: `${role}-${hireName}-${Date.now().toString(36)}`,
-          deskIndex: all.length,
-        });
+        let hired: Employee;
+        try {
+          // the seat cap is enforced by the store — every hire path hits it
+          hired = store.createEmployee({
+            companyId: company.id,
+            name: hireName,
+            role,
+            title,
+            persona: persona ?? `A focused, pragmatic ${title} who ships.`,
+            runner: agentDriver.pickRunner(all.length),
+            spriteSeed: `${role}-${hireName}-${Date.now().toString(36)}`,
+            deskIndex: all.length,
+          });
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          return `Couldn't hire: ${why}. Release someone first or work with the team you have.`;
+        }
         if (team) store.addTeamMember(team.id, hired.id);
         post(`🤝 hired ${hired.name} (${title})`);
         this.emit({
@@ -298,18 +312,16 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
 
   /**
    * Founder speaks in the team room. The message lands in the channel and the
-   * room log; any @first-name mention wakes that employee immediately with the
-   * message as context (paperclip's mention-wake convention).
+   * room log; `@slug` or `@first-name` mentions (whole-token, see
+   * resolveMentions) wake those employees immediately with the message as
+   * context (paperclip's mention-wake convention).
    */
   founderMessage(companyId: string, teamId: string, text: string): void {
     store.postTeamMessage(teamId, null, text);
     this.emit({ kind: "chat", message: text.slice(0, 400) });
-    const lower = text.toLowerCase();
-    for (const emp of store.listEmployees(companyId)) {
-      const first = emp.name.split(/\s+/)[0]?.toLowerCase();
-      if (!first || !lower.includes(`@${first}`)) continue;
+    for (const employeeId of resolveMentions(text, store.listEmployees(companyId))) {
       this.wakeEmployee(
-        emp.id,
+        employeeId,
         `Founder: ${text.slice(0, 48)}`,
         [
           "The founder pinged you in the team room:",
@@ -318,6 +330,24 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
           "Read the room with read_team_chat for context, do what they're asking (or answer their question), and reply with message_team.",
         ].join("\n"),
       );
+    }
+  }
+
+  /**
+   * The founder connected an integration: every task blocked on a typed ask
+   * for it resumes automatically (paperclip's wake-assignee convention).
+   */
+  resumeIntegrationAsks(kind: IntegrationKind): void {
+    const company = store.getDefaultCompany();
+    if (!company) return;
+    for (const task of store.listTasks(company.id)) {
+      if (task.status !== "blocked" || task.blocked?.type !== "integration") continue;
+      if (task.blocked.integration !== kind) continue;
+      const continuation = store.resolveBlockedWithAnswer(
+        task.id,
+        `${INTEGRATION_LABELS[kind]} is now connected — the credentials are in your environment. Continue where you left off.`,
+      );
+      if (continuation?.assigneeId) this.tryAssign(continuation.id, continuation.assigneeId);
     }
   }
 
@@ -342,12 +372,17 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       priority: "high",
       assigneeId: employeeId,
     });
-    try {
-      this.assign(task.id, employeeId);
-    } catch {
-      /* busy — the queue picks it up next tick */
-    }
+    this.tryAssign(task.id, employeeId);
     return task;
+  }
+
+  /** Assign, tolerating a busy assignee — the queue picks it up next tick. */
+  private tryAssign(taskId: string, employeeId: string): void {
+    try {
+      this.assign(taskId, employeeId);
+    } catch {
+      /* claim race or busy — retried on a later tick */
+    }
   }
 
   /** Player assigns a task to an employee, then we try to run it. */
@@ -461,7 +496,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       summary: string;
       usage: AgentUsage;
       sessionId?: string;
-      blockedQuestion?: string;
+      blocked?: BlockedAsk;
       staleSession?: boolean;
     },
   ): void {
@@ -469,9 +504,9 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     // MAX_TASK_ATTEMPTS, then dead-lettered rather than silently abandoned.
     let taskStatus: RunOutcome["status"];
     let retryAt: number | null = null;
-    if (r.blockedQuestion) {
+    if (r.blocked) {
       taskStatus = "blocked";
-      store.releaseTask(task.id, runId, "blocked", r.summary || null, r.blockedQuestion);
+      store.releaseTask(task.id, runId, "blocked", r.summary || null, r.blocked);
     } else if (r.ok) {
       taskStatus = "done";
       store.releaseTask(task.id, runId, "done", r.summary || null, null);
@@ -546,7 +581,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       employeeId: emp.id,
       kind: "lifecycle",
       message: "run.end",
-      payload: { summary: r.summary, blockedQuestion: r.blockedQuestion, error: r.error },
+      payload: { summary: r.summary, blocked: r.blocked, error: r.error },
     });
 
     // post-run plugin hook

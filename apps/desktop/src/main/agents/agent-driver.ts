@@ -1,7 +1,6 @@
-import { runClaude } from "@repo/agent-driver/claude";
-import { runCodex } from "@repo/agent-driver/codex";
 import { probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
+import { RUNNERS } from "@repo/agent-driver/registry";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_MS,
@@ -11,7 +10,7 @@ import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
 import { companyWorkspace, employeeAgentDir } from "@/main/paths";
-import type { AgentRunner, Company, Employee } from "@/shared/domain";
+import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
 // The employee runtime: each run spawns the employee's CLI (claude / codex),
@@ -26,44 +25,42 @@ export interface RunResult {
   summary: string;
   usage: AgentUsage;
   sessionId?: string;
-  blockedQuestion?: string;
+  blocked?: BlockedAsk;
   /** The stored session id failed to resume — the caller should clear it. */
   staleSession?: boolean;
 }
 
 export type { RunToolHooks };
 
-/** Rough pricing anchors for runs on the CLI's default model. */
-const FALLBACK_PRICING_MODEL: Record<AgentRunner, string> = {
-  claude: "claude-sonnet",
-  codex: "gpt-5.5-codex",
-};
-
 class AgentDriver {
+  // CLI probes run async in the background; `probes` holds the latest results
+  // and `probing` is awaited by anything that needs a definitive answer.
   private probes: RunnerProbe[] = [];
+  private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
   private active = new Map<string, AbortController>(); // employeeId -> abort
 
-  /** Probe installed CLIs once at boot (re-run after installs). */
+  /** Kick off CLI probes (never blocks — boot calls this before the window shows). */
   init(): void {
-    this.probes = probeRunners();
+    this.probing = probeRunners().then((probes) => {
+      this.probes = probes;
+      return probes;
+    });
   }
 
-  refresh(): RunnerProbe[] {
+  /** Re-probe (after installs/logins) and wait for the fresh results. */
+  refresh(): Promise<RunnerProbe[]> {
     this.init();
-    return this.probes;
+    return this.probing;
   }
 
-  runnerStatus(): RunnerProbe[] {
-    return [...this.probes];
+  async hasAnyRunner(): Promise<boolean> {
+    await this.probing;
+    return this.availableRunners().length > 0;
   }
 
-  /** Runners that can actually execute work right now. */
+  /** Runners that can execute work, per the most recent probe. */
   availableRunners(): AgentRunner[] {
     return this.probes.filter((p) => p.installed && p.authed).map((p) => p.id);
-  }
-
-  hasAnyRunner(): boolean {
-    return this.availableRunners().length > 0;
   }
 
   /** Mixed-roster assignment: round-robin across whatever is available. */
@@ -120,15 +117,14 @@ class AgentDriver {
   ): Promise<{ result: RunResult; sawOutput: boolean }> {
     const handle = controlPlane.registerRun({
       employeeId: emp.id,
-      employeeName: emp.name,
       companyId: company.id,
       taskId: task.id,
       hooks,
     });
     let sawOutput = false;
-    const run = emp.runner === "claude" ? runClaude : runCodex;
+    const adapter = RUNNERS[emp.runner];
     try {
-      const res = await run({
+      const res = await adapter.run({
         prompt,
         systemPrompt: store.employeeInstructions(emp.id),
         cwd: companyWorkspace(company.id),
@@ -141,7 +137,7 @@ class AgentDriver {
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         signal: abort.signal,
         onEvent: (e) => {
-          if (e.type === "message_end" || e.type === "tool_start") sawOutput = true;
+          sawOutput = true;
           try {
             onEvent(e);
           } catch {
@@ -151,9 +147,9 @@ class AgentDriver {
       });
       const usage = { ...res.usage };
       if (usage.costUsd === 0 && usage.inputTokens + usage.outputTokens > 0) {
-        usage.costUsd = priceUsage(emp.model ?? FALLBACK_PRICING_MODEL[emp.runner], usage);
+        usage.costUsd = priceUsage(emp.model ?? adapter.fallbackPricingModel, usage);
       }
-      const { blockedQuestion } = handle.outcome();
+      const { blocked } = handle.outcome();
       return {
         result: {
           ok: res.ok,
@@ -161,7 +157,7 @@ class AgentDriver {
           summary: res.summary,
           usage,
           sessionId: res.sessionId,
-          blockedQuestion: blockedQuestion ?? undefined,
+          blocked: blocked ?? undefined,
         },
         sawOutput,
       };

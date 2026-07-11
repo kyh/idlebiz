@@ -15,7 +15,6 @@ import { applyOfficeLayout } from "@/renderer/game/office-layout";
 interface State {
   booted: boolean;
   authed: boolean;
-  liveMetrics: boolean; // true when real-world providers (Stripe/analytics) feed the numbers
   stripeStatus: StripeStatus;
   vercelStatus: VercelStatus;
   product: ProductStatus | null; // ships + PRODUCT.md entry + latest deploy
@@ -32,7 +31,6 @@ interface State {
 let state: State = {
   booted: false,
   authed: true,
-  liveMetrics: false,
   stripeStatus: { state: "disconnected" },
   vercelStatus: { state: "disconnected" },
   product: null,
@@ -122,7 +120,7 @@ export async function refresh(): Promise<void> {
   const employees = company ? await bridge().listEmployees({ companyId: company.id }) : [];
   const teams = company ? await bridge().listTeams({ companyId: company.id }) : [];
   const tasks = company ? await bridge().listTasks({ companyId: company.id }) : [];
-  const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blockedQuestion !== null);
+  const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blocked !== null);
   const stuckTasks = tasks.filter((t) => t.status === "dead" || t.status === "failed");
   set({ booted: true, company, employees, teams, pendingAsks, stuckTasks });
   // product state rides along (deploy lookup is a no-op until Vercel is connected)
@@ -156,15 +154,7 @@ function onActivity(e: ActivityEvent): void {
       );
   }
   set({ activity, employees });
-  if (
-    e.kind === "lifecycle" &&
-    e.message === "metrics.pulse" &&
-    e.payload &&
-    typeof e.payload === "object" &&
-    "real" in e.payload
-  ) {
-    const real: unknown = e.payload.real;
-    set({ liveMetrics: real === true });
+  if (e.kind === "lifecycle" && e.message === "metrics.pulse") {
     // a pulse only moves company numbers — refetch just the company instead of
     // reloading employees/teams/tasks every 30s
     void bridge()
@@ -176,12 +166,13 @@ function onActivity(e: ActivityEvent): void {
   // the team self-sizes: reflect hires/releases in the office immediately
   if (e.kind === "lifecycle" && (e.message === "org.hired" || e.message === "org.released")) {
     const hired = e.message === "org.hired";
+    const employeeId = e.employeeId;
     void refresh().then(() => {
-      if (hired && e.employeeId) {
-        const emp = state.employees.find((x) => x.id === e.employeeId);
+      if (hired && employeeId) {
+        const emp = state.employees.find((x) => x.id === employeeId);
         if (emp) state.game?.events.emit("spawn-employee", emp);
-      } else {
-        state.game?.events.emit("company-ready"); // rebuild the office minus the leaver
+      } else if (employeeId) {
+        state.game?.events.emit("despawn-employee", employeeId); // surgical — no scene rebuild
       }
       return null;
     });

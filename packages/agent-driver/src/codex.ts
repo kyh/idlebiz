@@ -3,9 +3,6 @@ import { arr, num, obj, str } from "./json";
 import { zeroUsage, type AgentUsage } from "./events";
 import type { RunnerOptions, RunnerResult } from "./runner";
 
-/** Bound what a shell tool's captured output contributes to the event feed. */
-const RESULT_TEXT_MAX = 2_000;
-
 /**
  * Run a headless Codex session: `codex exec --json [resume <id>] -`, prompt
  * on stdin. Codex has no separate system-prompt channel, so on fresh sessions
@@ -53,7 +50,6 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
       switch (str(e.type)) {
         case "thread.started": {
           sessionId = str(e.thread_id);
-          opts.onEvent({ type: "agent_start" });
           return;
         }
         case "item.started":
@@ -69,7 +65,6 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
           usage.inputTokens += num(u.input_tokens);
           usage.outputTokens += num(u.output_tokens);
           usage.cachedTokens += num(u.cached_input_tokens);
-          opts.onEvent({ type: "turn_end", usage: { ...usage } });
           return;
         }
         case "turn.failed": {
@@ -85,7 +80,6 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
       }
     },
     onExit: (code, stderrTail) => {
-      opts.onEvent({ type: "agent_end" });
       const ok = code === 0 && turnCompleted && !failure;
       return {
         ok,
@@ -100,15 +94,14 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
   });
 }
 
-/** Map a codex thread item onto AgentEvents. Tool-ish items report when they
- * start (so the feed shows live work) and shells also report their outcome. */
+/** Map a codex thread item onto AgentEvents. Tool-ish items report once when
+ * they start (so the feed shows live work); messages once when they complete. */
 function onItem(
   opts: RunnerOptions,
   item: Record<string, unknown>,
   started: boolean,
   onMessage: (text: string) => void,
 ): void {
-  const id = str(item.id) ?? "";
   switch (str(item.item_type) ?? str(item.type)) {
     case "agent_message": {
       const text = str(item.text) ?? "";
@@ -122,17 +115,8 @@ function onItem(
       if (started) {
         opts.onEvent({
           type: "tool_start",
-          toolCallId: id,
           toolName: "shell",
           args: { command: str(item.command) ?? "" },
-        });
-      } else {
-        opts.onEvent({
-          type: "tool_end",
-          toolCallId: id,
-          toolName: "shell",
-          isError: num(item.exit_code) !== 0,
-          resultText: (str(item.aggregated_output) ?? "").slice(0, RESULT_TEXT_MAX),
         });
       }
       return;
@@ -142,20 +126,19 @@ function onItem(
       const paths = arr(item.changes)
         .map((c) => str(obj(c).path))
         .filter((p): p is string => Boolean(p));
-      opts.onEvent({ type: "tool_start", toolCallId: id, toolName: "edit", args: { paths } });
+      opts.onEvent({ type: "tool_start", toolName: "edit", args: { paths } });
       return;
     }
     case "mcp_tool_call": {
       if (!started) return;
       const name = [str(item.server), str(item.tool)].filter(Boolean).join(".") || "mcp";
-      opts.onEvent({ type: "tool_start", toolCallId: id, toolName: name, args: {} });
+      opts.onEvent({ type: "tool_start", toolName: name, args: {} });
       return;
     }
     case "web_search": {
       if (!started) return;
       opts.onEvent({
         type: "tool_start",
-        toolCallId: id,
         toolName: "web_search",
         args: { query: str(item.query) ?? "" },
       });

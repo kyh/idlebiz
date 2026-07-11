@@ -9,7 +9,7 @@ import * as store from "@/main/store/store";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { scheduler } from "@/main/scheduler";
-import { startLogin, submitAuthCode, generateCandidates } from "@/main/agents/onboarding";
+import { startLogin, generateCandidates } from "@/main/agents/onboarding";
 import { readMetricsConfig, writeMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
 import { validateToken, listProjects, latestDeployment } from "@/main/vercel";
 import { pluginHost } from "@/main/plugins";
@@ -23,8 +23,8 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isOutOfBudget, parseIntegrationAsk } from "@/shared/domain";
-import type { ActivityEvent, IntegrationKind } from "@/shared/domain";
+import { isOutOfBudget } from "@/shared/domain";
+import type { ActivityEvent } from "@/shared/domain";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -95,30 +95,6 @@ function registerBuiltinPlugins(): void {
   pluginHost.register(shipMilestones);
 }
 
-/**
- * When the founder connects an integration, every task blocked on a typed
- * ask for it resumes automatically (paperclip's wake-assignee convention).
- */
-function resumeIntegrationAsks(kind: IntegrationKind): void {
-  const company = store.getDefaultCompany();
-  if (!company) return;
-  for (const task of store.listTasks(company.id)) {
-    if (task.status !== "blocked" || !task.blockedQuestion) continue;
-    if (parseIntegrationAsk(task.blockedQuestion)?.kind !== kind) continue;
-    const continuation = store.resolveBlockedWithAnswer(
-      task.id,
-      `${kind === "vercel" ? "Vercel" : "Stripe"} is now connected — the credentials are in your environment. Continue where you left off.`,
-    );
-    if (continuation?.assigneeId) {
-      try {
-        scheduler.assign(continuation.id, continuation.assigneeId);
-      } catch {
-        /* busy — the queue picks it up next tick */
-      }
-    }
-  }
-}
-
 /** The workspace PRODUCT.md `entry:` convention — how the team points at the product. */
 function readProductEntry(workspaceDir: string): string | null {
   try {
@@ -142,14 +118,12 @@ async function openWorkspacePath(companyId: string, rel: string): Promise<void> 
 }
 
 function registerIpcHandlers(): void {
-  handle("hasAuth", () => ({ ok: agentDriver.hasAnyRunner() }));
+  handle("hasAuth", async () => ({ ok: await agentDriver.hasAnyRunner() }));
 
   handle("startLogin", () => {
     void startLogin((e) => broadcast("onAuthEvent", e));
     return { started: true };
   });
-
-  handle("submitAuthCode", ({ code }) => ({ accepted: submitAuthCode(code) }));
 
   handle("composeCharacter", async ({ seed }) => {
     const { composeCharacter } = await import("@/main/character/compositor");
@@ -266,11 +240,7 @@ function registerIpcHandlers(): void {
     const company = store.getDefaultCompany();
     const cfg = company ? readMetricsConfig(company.id) : null;
     if (!cfg?.vercel || !getSecret("VERCEL_TOKEN")) return { state: "disconnected" };
-    return {
-      state: "connected",
-      projectId: cfg.vercel.projectId,
-      projectName: cfg.vercel.projectName ?? cfg.vercel.projectId,
-    };
+    return { state: "connected", projectName: cfg.vercel.projectName ?? cfg.vercel.projectId };
   });
 
   handle("vercelListProjects", async ({ token }) => {
@@ -286,7 +256,7 @@ function registerIpcHandlers(): void {
       vercel: teamId ? { projectId, projectName, teamId } : { projectId, projectName },
     });
     runMetricsPulse(); // users flip without waiting 30s
-    resumeIntegrationAsks("vercel"); // agents waiting on hosting get back to work
+    scheduler.resumeIntegrationAsks("vercel"); // agents waiting on hosting get back to work
     return { ok: true };
   });
 
@@ -303,7 +273,7 @@ function registerIpcHandlers(): void {
     const deploy = cfg?.vercel
       ? await latestDeployment(cfg.vercel.projectId, cfg.vercel.teamId)
       : null;
-    return { ships: company.ships, entry: readProductEntry(company.workspaceDir), deploy };
+    return { entry: readProductEntry(company.workspaceDir), deploy };
   });
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
@@ -323,16 +293,6 @@ function registerIpcHandlers(): void {
   handle("setMaxAgents", ({ companyId, maxAgents }) => store.setMaxAgents(companyId, maxAgents));
 
   handle("listTasks", ({ companyId }) => store.listTasks(companyId));
-
-  handle("createTask", (p) =>
-    store.createTask({
-      companyId: p.companyId,
-      title: p.title,
-      description: p.description ?? null,
-      priority: p.priority,
-      assigneeId: p.assigneeId ?? null,
-    }),
-  );
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 
@@ -422,7 +382,7 @@ void (async () => {
     notify: (status) => broadcast("onStripeStatus", status),
     onConnected: () => {
       runMetricsPulse(); // ⚡ flips without waiting 30s
-      resumeIntegrationAsks("stripe"); // agents waiting on payments resume
+      scheduler.resumeIntegrationAsks("stripe"); // agents waiting on payments resume
     },
   });
 

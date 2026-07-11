@@ -434,14 +434,19 @@ export class NpcManager {
     this.showBubble(npc, line);
   }
 
+  /** Remove one NPC (an employee was released) without touching the rest of the scene. */
+  despawn(employeeId: string): void {
+    const npc = this.npcs.get(employeeId);
+    if (!npc) return;
+    this.npcs.delete(employeeId);
+    npc.pendingTimer?.remove();
+    npc.bubble?.root.destroy();
+    npc.emote?.destroy();
+    npc.label.destroy();
+    npc.sprite.destroy();
+  }
+
   destroy(): void {
-    for (const npc of this.npcs.values()) {
-      npc.pendingTimer?.remove();
-      npc.bubble?.root.destroy();
-      npc.emote?.destroy();
-      npc.label.destroy();
-      npc.sprite.destroy();
-    }
-    this.npcs.clear();
+    for (const id of this.npcs.keys()) this.despawn(id);
   }
 }

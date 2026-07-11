@@ -141,11 +141,13 @@ export class OfficeScene extends Phaser.Scene {
     this.exposeDebug();
 
     const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp);
+    const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId);
     const onModal = (open: boolean) => {
       if (this.input.keyboard) this.input.keyboard.enabled = !open;
     };
     const onCompanyReady = () => this.scene.restart();
     this.game.events.on("spawn-employee", onSpawn);
+    this.game.events.on("despawn-employee", onDespawn);
     this.game.events.on("ui-modal", onModal);
     this.game.events.on("company-ready", onCompanyReady);
     this.subscribeActivity();
@@ -154,6 +156,7 @@ export class OfficeScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.activityUnsub?.();
       this.game.events.off("spawn-employee", onSpawn);
+      this.game.events.off("despawn-employee", onDespawn);
       this.game.events.off("ui-modal", onModal);
       this.game.events.off("company-ready", onCompanyReady);
       this.npcs?.destroy();
@@ -188,7 +191,7 @@ export class OfficeScene extends Phaser.Scene {
     if (company && bridge) {
       const tasks = await bridge.listTasks({ companyId: company.id });
       for (const t of tasks) {
-        if (t.status === "blocked" && t.assigneeId && t.blockedQuestion)
+        if (t.status === "blocked" && t.assigneeId && t.blocked)
           this.npcs.setState(t.assigneeId, "blocked");
       }
     }

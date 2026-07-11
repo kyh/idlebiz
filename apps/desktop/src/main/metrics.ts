@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
@@ -83,12 +84,6 @@ export function writeMetricsConfig(companyId: string, patch: Partial<MetricsConf
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(existing, null, 2));
   renameSync(tmp, path);
-}
-
-async function getJson(url: string, headers: Record<string, string>): Promise<unknown> {
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return res.json();
 }
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);

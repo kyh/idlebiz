@@ -14,9 +14,9 @@ import type {
 export type { IpcMethod };
 
 // ---- shared domain types ---------------------------------------------------
-/** Streamed steps of the in-game OpenAI OAuth flow. */
+/** Streamed steps of the workforce setup flow (CLI detect/install/login). */
 export type AuthFlowEvent =
-  | { type: "url"; url: string; instructions: string }
+  | { type: "url"; url: string }
   | { type: "progress"; message: string }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -42,16 +42,13 @@ export type StripeStatus =
   | { state: "error"; message: string };
 
 /** Vercel link state (token-based; no OAuth). */
-export type VercelStatus =
-  | { state: "disconnected" }
-  | { state: "connected"; projectId: string; projectName: string };
+export type VercelStatus = { state: "disconnected" } | { state: "connected"; projectName: string };
 
 /** A Vercel project the founder can bind the company to. */
 export type VercelProjectChoice = { id: string; name: string; teamId?: string };
 
 /** The product panel's real-world state. */
 export type ProductStatus = {
-  ships: number;
   /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
   entry: string | null;
   /** Latest production deployment when Vercel is connected. */
@@ -98,14 +95,6 @@ const CreateCompanySchema = z.object({
   founderName: z.string(),
   founderSpriteSeed: z.string(),
 });
-const CreateTaskSchema = z.object({
-  companyId: z.string(),
-  title: z.string(),
-  description: z.string().optional(),
-  priority: z.enum(["low", "medium", "high"]).optional(),
-  assigneeId: z.string().optional(),
-});
-
 const HireProposalSchema = z.object({
   name: z.string(),
   role: z.string(),
@@ -125,9 +114,7 @@ export const SCHEMAS = {
   postTeamChat: z.object({ teamId: z.string(), text: z.string().min(1).max(2000) }),
   setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
   listTasks: z.object({ companyId: z.string() }),
-  createTask: CreateTaskSchema,
   assignTask: z.object({ taskId: z.string(), employeeId: z.string() }),
-  submitAuthCode: z.object({ code: z.string() }),
   answerQuestion: z.object({ taskId: z.string(), answer: z.string() }),
   openCompanyPath: z.object({ companyId: z.string(), rel: z.string() }),
   openProduct: z.object({ companyId: z.string() }),
@@ -160,7 +147,6 @@ export const SCHEMAS = {
 export interface Contract {
   hasAuth: { payload: void; result: { ok: boolean } };
   startLogin: { payload: void; result: { started: boolean } };
-  submitAuthCode: { payload: { code: string }; result: { accepted: boolean } };
   onAuthEvent: { payload: void; result: AuthFlowEvent };
   composeCharacter: { payload: { seed: string }; result: CharacterAssets };
   getFounderChoices: { payload: void; result: FounderChoice[] };
@@ -210,7 +196,6 @@ export interface Contract {
   setMaxAgents: { payload: { companyId: string; maxAgents: number }; result: Company };
 
   listTasks: { payload: { companyId: string }; result: Task[] };
-  createTask: { payload: z.infer<typeof CreateTaskSchema>; result: Task };
   assignTask: { payload: { taskId: string; employeeId: string }; result: Task };
   answerQuestion: { payload: { taskId: string; answer: string }; result: Task };
   openCompanyPath: { payload: { companyId: string; rel: string }; result: { ok: boolean } };

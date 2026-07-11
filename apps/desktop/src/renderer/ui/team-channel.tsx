@@ -91,9 +91,11 @@ function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
     );
   }
   if (e.kind === "lifecycle") {
-    const payload =
-      e.payload && typeof e.payload === "object" ? (e.payload as Record<string, unknown>) : {};
-    const who = typeof payload.name === "string" ? payload.name : "someone";
+    const p: unknown = e.payload;
+    const who =
+      typeof p === "object" && p !== null && "name" in p && typeof p.name === "string"
+        ? p.name
+        : "someone";
     return (
       <div className="text-[var(--text-dim)]">
         {e.message === "org.hired" ? `🤝 ${who} joined the team` : `👋 ${who} left the team`}

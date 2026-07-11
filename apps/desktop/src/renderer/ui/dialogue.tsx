@@ -106,8 +106,10 @@ export function Dialogue() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const emp = useMemo(() => employees.find((e) => e.id === openId) ?? null, [employees, openId]);
+  // only free-text questions get the inline answer form; integration asks
+  // live in the inbox where the [Connect] button is
   const blocked = useMemo(
-    () => tasks.find((t) => t.status === "blocked" && t.blockedQuestion) ?? null,
+    () => tasks.find((t) => t.status === "blocked" && t.blocked?.type === "question") ?? null,
     [tasks],
   );
   const options = useMemo(() => (emp ? buildOptions(emp, tasks) : []), [emp, tasks]);
@@ -157,13 +159,12 @@ export function Dialogue() {
     setMode("menu");
   };
 
-  // everything the founder says goes through the team channel; the @mention
-  // wakes this employee with the message as their brief
-  const send = async (_title: string, instruction: string) => {
+  // everything the founder says goes through the team channel; the @slug
+  // mention wakes exactly this employee with the message as their brief
+  const send = async (instruction: string) => {
     if (!emp) return;
     setNote(`Sent to ${emp.name} ✓`);
-    const first = emp.name.split(/\s+/)[0] ?? emp.name;
-    await sendFounderChat(`@${first} ${instruction}`);
+    await sendFounderChat(`@${emp.id} ${instruction}`);
     window.setTimeout(() => setNote(null), 1800);
   };
 
@@ -185,14 +186,13 @@ export function Dialogue() {
       return;
     }
     const q = options[i];
-    if (q) void send(q.label, q.instr);
+    if (q) void send(q.instr);
   };
 
   const submitTalk = () => {
     const text = input.trim();
     if (!text) return;
-    const title = text.length > 60 ? `${text.slice(0, 57)}…` : text;
-    void send(title, text);
+    void send(text);
     setInput("");
     setMode("menu");
   };
@@ -287,7 +287,10 @@ export function Dialogue() {
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
               <div className="text-[12px] text-[var(--danger)]">❗ {emp.name} needs your call:</div>
               <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
-                <RichText text={blocked.blockedQuestion ?? ""} companyId={company.id} />
+                <RichText
+                  text={blocked.blocked?.type === "question" ? blocked.blocked.question : ""}
+                  companyId={company.id}
+                />
               </div>
               <div className="mt-2 flex gap-2">
                 <input

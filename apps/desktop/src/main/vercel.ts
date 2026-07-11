@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getJson } from "@/main/lib/http";
 
 // ---------------------------------------------------------------------------
 // Vercel REST API helpers. The founder connects with a personal access token
@@ -14,18 +15,17 @@ function envToken(): string | null {
   return process.env["VERCEL_TOKEN"] ?? null;
 }
 
-async function apiGet(
+function apiGet(
   path: string,
   token: string,
   params: Record<string, string> = {},
 ): Promise<unknown> {
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${API}${path}${qs ? `?${qs}` : ""}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`vercel ${path} -> ${res.status}`);
-  return res.json();
+  return getJson(
+    `${API}${path}${qs ? `?${qs}` : ""}`,
+    { Authorization: `Bearer ${token}` },
+    10_000,
+  );
 }
 
 // ---- token validation --------------------------------------------------------
@@ -70,16 +70,16 @@ export async function listProjects(token: string): Promise<VercelProject[]> {
   try {
     const teams = TeamsSchema.safeParse(await apiGet("/v2/teams", token, { limit: "20" }));
     if (teams.success) {
-      for (const team of teams.data.teams) {
-        const projs = ProjectsSchema.safeParse(
-          await apiGet("/v9/projects", token, { limit: "100", teamId: team.id }),
-        );
-        if (projs.success) {
-          out.push(
-            ...projs.data.projects.map((p) => ({ id: p.id, name: p.name, teamId: team.id })),
+      const perTeam = await Promise.all(
+        teams.data.teams.map(async (team) => {
+          const projs = ProjectsSchema.safeParse(
+            await apiGet("/v9/projects", token, { limit: "100", teamId: team.id }),
           );
-        }
-      }
+          if (!projs.success) return [];
+          return projs.data.projects.map((p) => ({ id: p.id, name: p.name, teamId: team.id }));
+        }),
+      );
+      out.push(...perTeam.flat());
     }
   } catch {
     /* personal-only token */
@@ -144,6 +144,11 @@ const DeploymentsSchema = z.object({
     .default([]),
 });
 
+// Deploy state changes rarely but is asked for on every renderer refresh
+// (each run end) — cache per project so bursts don't hammer the API.
+const DEPLOY_CACHE_TTL_MS = 60_000;
+const deployCache = new Map<string, { at: number; value: VercelDeployment | null }>();
+
 /** The latest production deployment — the product panel's "LIVE" state. */
 export async function latestDeployment(
   projectId: string,
@@ -151,19 +156,24 @@ export async function latestDeployment(
 ): Promise<VercelDeployment | null> {
   const token = envToken();
   if (!token) return null;
+  const cached = deployCache.get(projectId);
+  if (cached && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) return cached.value;
   const params: Record<string, string> = { projectId, limit: "1", target: "production" };
   if (teamId) params.teamId = teamId;
+  let value: VercelDeployment | null = null;
   try {
     const parsed = DeploymentsSchema.safeParse(await apiGet("/v6/deployments", token, params));
-    if (!parsed.success) return null;
-    const d = parsed.data.deployments[0];
-    if (!d || !d.url) return null;
-    return {
-      url: `https://${d.url}`,
-      state: d.state ?? d.readyState ?? "UNKNOWN",
-      createdAt: d.createdAt ?? d.created ?? 0,
-    };
+    const d = parsed.success ? parsed.data.deployments[0] : undefined;
+    if (d?.url) {
+      value = {
+        url: `https://${d.url}`,
+        state: d.state ?? d.readyState ?? "UNKNOWN",
+        createdAt: d.createdAt ?? d.created ?? 0,
+      };
+    }
   } catch {
-    return null;
+    /* unreachable — treat as no deployment, retry after the TTL */
   }
+  deployCache.set(projectId, { at: Date.now(), value });
+  return value;
 }

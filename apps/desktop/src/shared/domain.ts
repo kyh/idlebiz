@@ -7,30 +7,68 @@
 
 /**
  * Which coding-agent CLI powers an employee. Employees run on the player's
- * own installed CLIs (claude / codex) — a mixed roster is normal.
+ * own installed CLIs — a mixed roster is normal. The union is owned by
+ * @repo/agent-driver (type-only re-export keeps this module renderer-safe);
+ * use `isRunnerId` from the package where a runtime guard is needed.
  */
-export type AgentRunner = "claude" | "codex";
-export const AGENT_RUNNERS: readonly AgentRunner[] = ["claude", "codex"];
-export const isAgentRunner = (v: string): v is AgentRunner =>
-  (AGENT_RUNNERS as readonly string[]).includes(v);
+export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
 
-// ---- typed integration asks --------------------------------------------------
-// Agents request real-world connections ("we need hosting to deploy") through
-// ask_boss with a typed marker; the notification renders a [Connect] button
-// and the blocked task auto-resumes once the founder connects.
+// ---- blocked asks ------------------------------------------------------------
+// Why a task is waiting on the founder. Structured end-to-end: a free-text
+// question gets an answer box; an integration request renders a [Connect]
+// button and the task auto-resumes once the founder connects.
 
 export type IntegrationKind = "vercel" | "stripe";
 
-export const integrationAsk = (kind: IntegrationKind, reason: string): string =>
-  `[connect:${kind}] ${reason}`;
+export const INTEGRATION_LABELS: Record<IntegrationKind, string> = {
+  vercel: "Vercel",
+  stripe: "Stripe",
+};
 
-export function parseIntegrationAsk(q: string): { kind: IntegrationKind; reason: string } | null {
-  const m = /^\[connect:(vercel|stripe)\]\s*([\s\S]*)$/.exec(q);
-  if (!m) return null;
-  return { kind: m[1] === "vercel" ? "vercel" : "stripe", reason: (m[2] ?? "").trim() };
+export type BlockedAsk =
+  | { type: "question"; question: string }
+  | { type: "integration"; integration: IntegrationKind; reason: string };
+
+// TASK.md keeps a single human-editable scalar; the marker syntax exists ONLY
+// at this persistence boundary — everything in memory is the typed union.
+export function serializeBlockedAsk(a: BlockedAsk): string {
+  return a.type === "question" ? a.question : `[connect:${a.integration}] ${a.reason}`;
+}
+
+export function parseBlockedAsk(s: string): BlockedAsk {
+  const m = /^\[connect:(vercel|stripe)\]\s*([\s\S]*)$/.exec(s);
+  if (!m) return { type: "question", question: s };
+  return {
+    type: "integration",
+    integration: m[1] === "vercel" ? "vercel" : "stripe",
+    reason: (m[2] ?? "").trim(),
+  };
+}
+
+// ---- team-room mentions --------------------------------------------------------
+
+/**
+ * Resolve `@token` mentions against the roster: employee slug match first,
+ * then exact first-name token (case-insensitive). Whole-token matching only —
+ * `@sam` never wakes Samantha. Returns matched employee ids, deduped.
+ */
+export function resolveMentions(
+  text: string,
+  roster: readonly { id: string; name: string }[],
+): string[] {
+  const ids = new Set<string>();
+  for (const m of text.matchAll(/@([\w-]+)/g)) {
+    const token = (m[1] ?? "").toLowerCase();
+    if (!token) continue;
+    const bySlug = roster.find((e) => e.id.toLowerCase() === token);
+    const byFirst = roster.filter((e) => e.name.split(/\s+/)[0]?.toLowerCase() === token);
+    if (bySlug) ids.add(bySlug.id);
+    else for (const e of byFirst) ids.add(e.id);
+  }
+  return [...ids];
 }
 
 export type TaskStatus =
@@ -225,7 +263,7 @@ export interface Task {
   assigneeId: string | null;
   runId: string | null;
   summary: string | null;
-  blockedQuestion: string | null;
+  blocked: BlockedAsk | null; // why this task awaits the founder (status "blocked")
   artifacts: string[]; // file paths the agent reported
   attempts: number; // failed runs so far (drives retry/dead-letter)
   nextAttemptAt: number | null; // earliest time a backoff retry may start

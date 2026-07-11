@@ -12,8 +12,10 @@ import { isOutOfBudget } from "@/shared/domain";
 /** Budget control + Stripe connection: how much real money the office may burn,
  *  and where the real revenue/user numbers come from. */
 export function BudgetModal({ onClose }: { onClose: () => void }) {
-  const { company, stripeStatus, liveMetrics } = useStore();
+  const { company, stripeStatus } = useStore();
   const [capInput, setCapInput] = useState("");
+  // real revenue showing at all means the connection is live
+  const liveMetrics = company !== null && company.revenueUsd !== null;
 
   useEffect(() => {
     setModalOpen(true);

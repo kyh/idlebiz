@@ -6,7 +6,6 @@
 export const CHANNELS = {
   hasAuth: { channel: "agent:hasAuth", kind: "invoke-void" },
   startLogin: { channel: "auth:start", kind: "invoke-void" },
-  submitAuthCode: { channel: "auth:code", kind: "invoke" },
   onAuthEvent: { channel: "auth:event", kind: "event" },
   composeCharacter: { channel: "char:compose", kind: "invoke" },
   getFounderChoices: { channel: "char:founders", kind: "invoke-void" },
@@ -41,7 +40,6 @@ export const CHANNELS = {
   setMaxAgents: { channel: "company:max-agents", kind: "invoke" },
 
   listTasks: { channel: "task:list", kind: "invoke" },
-  createTask: { channel: "task:create", kind: "invoke" },
   assignTask: { channel: "task:assign", kind: "invoke" },
   answerQuestion: { channel: "task:answer", kind: "invoke" },
   openCompanyPath: { channel: "company:open-path", kind: "invoke" },

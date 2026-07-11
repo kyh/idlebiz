@@ -1,6 +1,6 @@
 import { runNdjsonProcess } from "./ndjson-process";
 import { arr, num, obj, str } from "./json";
-import type { AgentUsage } from "./events";
+import { zeroUsage, type AgentUsage } from "./events";
 import type { RunnerOptions, RunnerResult } from "./runner";
 
 /**
@@ -46,13 +46,8 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
     onValue: (value, ctl) => {
       const e = obj(value);
       switch (str(e.type)) {
-        case "system": {
-          if (str(e.subtype) === "init") opts.onEvent({ type: "agent_start" });
-          return;
-        }
         case "assistant": {
-          const m = obj(e.message);
-          for (const block of arr(m.content)) {
+          for (const block of arr(obj(e.message).content)) {
             const b = obj(block);
             if (b.type === "text") {
               const text = str(b.text) ?? "";
@@ -60,24 +55,8 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
             } else if (b.type === "tool_use") {
               opts.onEvent({
                 type: "tool_start",
-                toolCallId: str(b.id) ?? "",
                 toolName: str(b.name) ?? "tool",
                 args: b.input,
-              });
-            }
-          }
-          return;
-        }
-        case "user": {
-          const m = obj(e.message);
-          for (const block of arr(m.content)) {
-            const b = obj(block);
-            if (b.type === "tool_result") {
-              opts.onEvent({
-                type: "tool_end",
-                toolCallId: str(b.tool_use_id) ?? "",
-                isError: b.is_error === true,
-                resultText: extractText(b.content),
               });
             }
           }
@@ -86,8 +65,6 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
         case "result": {
           const isError = e.is_error === true || str(e.subtype) !== "success";
           const resultText = str(e.result) ?? "";
-          opts.onEvent({ type: "turn_end", usage: extractUsage(e) });
-          opts.onEvent({ type: "agent_end" });
           ctl.finish({
             ok: !isError,
             summary: resultText,
@@ -101,15 +78,12 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
           return;
       }
     },
-    onExit: (code, stderrTail) => {
-      opts.onEvent({ type: "agent_end" });
-      return {
-        ok: false,
-        summary: "",
-        usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 },
-        error: stderrTail || `claude exited with code ${code} without a result event`,
-      };
-    },
+    onExit: (code, stderrTail) => ({
+      ok: false,
+      summary: "",
+      usage: zeroUsage(),
+      error: stderrTail || `claude exited with code ${code} without a result event`,
+    }),
   });
 }
 
@@ -122,16 +96,4 @@ function extractUsage(resultEvent: Record<string, unknown>): AgentUsage {
     cachedTokens: num(u.cache_read_input_tokens),
     costUsd: num(resultEvent.total_cost_usd),
   };
-}
-
-/** tool_result content is a string or an array of {type:"text"} blocks. */
-function extractText(content: unknown): string {
-  const direct = str(content);
-  if (direct !== undefined) return direct;
-  return arr(content)
-    .map((b) => {
-      const o = obj(b);
-      return o.type === "text" ? (str(o.text) ?? "") : "";
-    })
-    .join("");
 }

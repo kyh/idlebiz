@@ -65,9 +65,8 @@ export function PokeOnboarding() {
   const [step, setStep] = useState<Step>("intro");
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [authLines, setAuthLines] = useState<string[]>([]);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [authTried, setAuthTried] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
-  const [code, setCode] = useState("");
   const [founderName, setFounderName] = useState("");
   const [choices, setChoices] = useState<FounderChoice[]>([]);
   const [look, setLook] = useState(0);
@@ -94,7 +93,6 @@ export function PokeOnboarding() {
   useEffect(() => {
     const off = bridge().onAuthEvent((e: AuthFlowEvent) => {
       if (e.type === "url") {
-        setAuthUrl(e.url);
         setAuthLines((l) => [...l, "Your browser opened — authorize there, then come back."]);
       } else if (e.type === "progress") setAuthLines((l) => [...l.slice(-3), e.message]);
       else if (e.type === "done") {
@@ -263,24 +261,6 @@ export function PokeOnboarding() {
                   {authLines.join("\n")}
                 </div>
               ) : null}
-              {authUrl ? (
-                <div className="flex gap-2">
-                  <input
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="…or paste the code from the browser here"
-                    className="px-field flex-1 text-[12px]"
-                  />
-                  <button
-                    onClick={() => {
-                      if (code.trim()) void bridge().submitAuthCode({ code: code.trim() });
-                    }}
-                    className="px-btn text-[12px]"
-                  >
-                    Submit
-                  </button>
-                </div>
-              ) : null}
               <div className="flex items-center">
                 <button
                   onClick={() => void bridge().resetGame()}
@@ -292,13 +272,14 @@ export function PokeOnboarding() {
                 <button
                   onClick={() => {
                     setAuthBusy(true);
+                    setAuthTried(true);
                     setAuthLines([]);
                     void bridge().startLogin();
                   }}
                   disabled={authBusy}
                   className="px-btn-accent px-btn ml-auto text-[13px]"
                 >
-                  {authBusy ? "Setting up…" : authUrl ? "Try again" : "Set up workforce"}
+                  {authBusy ? "Setting up…" : authTried ? "Try again" : "Set up workforce"}
                 </button>
               </div>
             </div>

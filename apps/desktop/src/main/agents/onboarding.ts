@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
 import { z } from "zod";
-import { runClaude } from "@repo/agent-driver/claude";
-import { runCodex } from "@repo/agent-driver/codex";
+import { RUNNERS } from "@repo/agent-driver/registry";
 import { runnerBin } from "@repo/agent-driver/runner";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { agentDriver } from "@/main/agents/agent-driver";
@@ -16,7 +16,7 @@ import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
 // ---------------------------------------------------------------------------
 
 export type AuthFlowEvent =
-  | { type: "url"; url: string; instructions: string }
+  | { type: "url"; url: string }
   | { type: "progress"; message: string }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -33,21 +33,15 @@ function streamCommand(
 ): Promise<number | null> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let buffer = "";
-    const onChunk = (d: Buffer): void => {
-      buffer += d.toString();
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const text = line.trim();
-        if (!text) continue;
-        const url = /https?:\/\/\S+/.exec(text)?.[0];
-        if (url) emit({ type: "url", url, instructions: text });
-        else emit({ type: "progress", message: text.slice(0, 200) });
-      }
+    const onLine = (line: string): void => {
+      const text = line.trim();
+      if (!text) return;
+      const url = /https?:\/\/\S+/.exec(text)?.[0];
+      if (url) emit({ type: "url", url });
+      else emit({ type: "progress", message: text.slice(0, 200) });
     };
-    child.stdout?.on("data", onChunk);
-    child.stderr?.on("data", onChunk);
+    if (child.stdout) createInterface({ input: child.stdout }).on("line", onLine);
+    if (child.stderr) createInterface({ input: child.stderr }).on("line", onLine);
     child.on("error", (err) => {
       emit({ type: "error", message: err.message });
       resolve(null);
@@ -56,7 +50,7 @@ function streamCommand(
   });
 }
 
-const label = (p: RunnerProbe): string => (p.id === "claude" ? "Claude Code" : "Codex");
+const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
 
 /**
  * The guided workforce setup: probe CLIs → install one if none → log in the
@@ -69,7 +63,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
   }
   setupRunning = true;
   try {
-    let probes = agentDriver.refresh();
+    let probes = await agentDriver.refresh();
     for (const p of probes) {
       emit({
         type: "progress",
@@ -90,30 +84,25 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
         return;
       }
       emit({ type: "progress", message: "Claude Code installed." });
-      probes = agentDriver.refresh();
+      probes = await agentDriver.refresh();
     }
 
     for (const p of probes) {
       if (!p.installed || p.authed) continue;
       emit({ type: "progress", message: `Signing in to ${label(p)} — your browser will open…` });
-      const loginArgs = p.id === "claude" ? ["auth", "login"] : ["login"];
-      const code = await streamCommand(p.bin, loginArgs, emit);
+      const code = await streamCommand(p.bin, RUNNERS[p.id].loginArgs, emit);
       if (code !== 0) {
         emit({
-          type: "url",
-          url: "",
-          instructions: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${loginArgs.join(" ")} — then come back and retry.`,
+          type: "progress",
+          message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.`,
         });
       }
     }
 
-    probes = agentDriver.refresh();
+    probes = await agentDriver.refresh();
     const ready = probes.filter((p) => p.installed && p.authed);
     if (ready.length > 0) {
-      emit({
-        type: "progress",
-        message: `Workforce ready: ${ready.map(label).join(" + ")}.`,
-      });
+      emit({ type: "progress", message: `Workforce ready: ${ready.map(label).join(" + ")}.` });
       emit({ type: "done" });
     } else {
       emit({
@@ -126,11 +115,6 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
   } finally {
     setupRunning = false;
   }
-}
-
-/** Legacy manual-code hook (the CLIs own their auth flows now). */
-export function submitAuthCode(_code: string): boolean {
-  return false;
 }
 
 // ---- LLM-generated founding team -------------------------------------------
@@ -158,10 +142,8 @@ const CandidatesSchema = z.array(CandidateSchema).min(3).max(8);
 
 /** One-shot completion on whichever CLI is available (no tools, no session). */
 async function completeOneShot(prompt: string): Promise<string> {
-  const available = agentDriver.availableRunners();
-  const runner: AgentRunner = available[0] ?? "codex";
-  const run = runner === "claude" ? runClaude : runCodex;
-  const res = await run({
+  const runner: AgentRunner = agentDriver.pickRunner(0);
+  const res = await RUNNERS[runner].run({
     prompt,
     systemPrompt: "",
     cwd: tmpdir(),

@@ -42,16 +42,19 @@ import {
   type FrontmatterDoc,
   type Scalar,
 } from "@/main/store/frontmatter";
+import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
   DEFAULT_MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
   businessTypeById,
-  isAgentRunner,
+  parseBlockedAsk,
+  serializeBlockedAsk,
 } from "@/shared/domain";
 import type {
   ActivityEvent,
   AgentRunner,
+  BlockedAsk,
   Budget,
   BusinessTypeId,
   Company,
@@ -234,7 +237,7 @@ function parseModelOverride(v: string | null): string | null {
 }
 
 function parseRunner(v: string | null): AgentRunner {
-  return v && isAgentRunner(v) ? v : "codex";
+  return v && isRunnerId(v) ? v : "codex";
 }
 
 /** The body of AGENTS.md doubles as the agent's actual instructions (injected into every run). */
@@ -345,6 +348,9 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
   };
 }
 
+const parseBlocked = (s: string | null): BlockedAsk | null =>
+  s === null ? null : parseBlockedAsk(s);
+
 function taskToDoc(t: Task): FrontmatterDoc {
   const metadata: Record<string, Scalar> = {
     status: t.status,
@@ -354,7 +360,7 @@ function taskToDoc(t: Task): FrontmatterDoc {
   if (t.assigneeId !== null) metadata.assigneeId = t.assigneeId;
   if (t.runId !== null) metadata.runId = t.runId;
   if (t.summary !== null) metadata.summary = t.summary;
-  if (t.blockedQuestion !== null) metadata.blockedQuestion = t.blockedQuestion;
+  if (t.blocked !== null) metadata.blockedQuestion = serializeBlockedAsk(t.blocked);
   if (t.artifacts.length > 0) metadata.artifacts = JSON.stringify(t.artifacts);
   if (t.attempts > 0) metadata.attempts = t.attempts;
   if (t.nextAttemptAt !== null) metadata.nextAttemptAt = t.nextAttemptAt;
@@ -402,7 +408,7 @@ function docToTask(doc: FrontmatterDoc, companyId: string): Task {
     assigneeId: optStr(m, "assigneeId"),
     runId: optStr(m, "runId"),
     summary: optStr(m, "summary"),
-    blockedQuestion: optStr(m, "blockedQuestion"),
+    blocked: parseBlocked(optStr(m, "blockedQuestion")),
     artifacts: strArray(m, "artifacts"),
     attempts: optNum(m, "attempts", 0),
     nextAttemptAt: m.nextAttemptAt === undefined ? null : optNum(m, "nextAttemptAt", 0),
@@ -990,6 +996,11 @@ export function createEmployee(input: {
 }): Employee {
   const list = c().employees.get(input.companyId);
   if (!list) throw new Error(`company ${input.companyId} not found`);
+  // the seat cap is a domain invariant — every hire path hits it here
+  const company = c().companies.get(input.companyId);
+  if (company && list.length >= company.maxAgents) {
+    throw new Error(`the office is at its ${company.maxAgents}-seat cap`);
+  }
   const id = uniqueSlug(
     input.name,
     (s) => list.some((e) => e.id === s) || existsSync(employeeAgentDir(input.companyId, s)),
@@ -1083,7 +1094,7 @@ export function createTask(t: {
     assigneeId: t.assigneeId ?? null,
     runId: null,
     summary: null,
-    blockedQuestion: null,
+    blocked: null,
     artifacts: [],
     attempts: 0,
     nextAttemptAt: null,
@@ -1181,11 +1192,11 @@ export function releaseTask(
   runId: string,
   status: TaskStatus,
   summary: string | null,
-  blockedQuestion: string | null,
+  blocked: BlockedAsk | null,
 ): void {
   const t = getTask(taskId);
   if (!t || t.runId !== runId) return;
-  patchTask(taskId, { status, summary, blockedQuestion, runId: null, completedAt: Date.now() });
+  patchTask(taskId, { status, summary, blocked, runId: null, completedAt: Date.now() });
 }
 
 /**
@@ -1231,16 +1242,17 @@ export function deadLetterTask(
 export function resolveBlockedWithAnswer(taskId: string, answer: string): Task | null {
   const t = getTask(taskId);
   if (!t || t.status !== "blocked" || !t.assigneeId) return null;
+  const asked = t.blocked ? serializeBlockedAsk(t.blocked) : "(question lost)";
   patchTask(taskId, {
     status: "done",
     summary: `Founder answered: ${answer}`,
-    blockedQuestion: null,
+    blocked: null,
     completedAt: Date.now(),
   });
   return createTask({
     companyId: t.companyId,
     title: `Continue: ${t.title.slice(0, 60)}`,
-    description: `You previously asked the founder:\n> ${t.blockedQuestion ?? "(question lost)"}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${t.title}`,
+    description: `You previously asked the founder:\n> ${asked}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${t.title}`,
     priority: "high",
     assigneeId: t.assigneeId,
   });

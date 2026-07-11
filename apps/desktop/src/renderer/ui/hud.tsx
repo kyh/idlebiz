@@ -72,7 +72,7 @@ export function Hud({
   onSettings: () => void;
   onTeams: () => void;
 }) {
-  const { company, employees, teams, liveMetrics, pendingAsks, stuckTasks, product } = useStore();
+  const { company, employees, teams, pendingAsks, stuckTasks, product } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
@@ -93,7 +93,7 @@ export function Hud({
       {/* top-left: the money + adoption scoreboard (real numbers or connect) */}
       <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
         <Stat
-          label={liveMetrics && company.revenueUsd !== null ? "revenue ⚡" : "revenue"}
+          label={company.revenueUsd !== null ? "revenue ⚡" : "revenue"}
           value={company.revenueUsd === null ? "—" : `$${fmt(Math.floor(company.revenueUsd))}`}
           accent={out ? "var(--danger)" : "#9fe6b0"}
           sub={
@@ -105,7 +105,7 @@ export function Hud({
           onClick={onBudget}
         />
         <Stat
-          label={liveMetrics && company.users !== null ? "users ⚡" : "users"}
+          label={company.users !== null ? "users ⚡" : "users"}
           value={company.users === null ? "—" : fmt(company.users)}
           accent="#86c0ee"
           sub={company.users === null ? "connect" : "web analytics"}

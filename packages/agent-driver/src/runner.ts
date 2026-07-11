@@ -5,6 +5,10 @@ import type { AgentEvent, AgentUsage } from "./events";
  * spawn a headless CLI session (fresh or resumed), stream normalized
  * AgentEvents while it works, and resolve a RunnerResult when it ends.
  * Continuity lives in the CLI's own session store — resume by id.
+ *
+ * This module is type/metadata only (no node imports beyond env reads), so
+ * `RunnerId` can be type-re-exported into renderer-safe shared code. The
+ * executable adapter record lives in registry.ts.
  */
 export type RunnerId = "claude" | "codex";
 

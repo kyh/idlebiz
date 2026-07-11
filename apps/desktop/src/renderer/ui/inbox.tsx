@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore, setModalOpen, refresh, retryTask } from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
-import { parseIntegrationAsk } from "@/shared/domain";
+import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { IntegrationKind, Task } from "@/shared/domain";
 
 /** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
@@ -46,20 +46,20 @@ export function Inbox({
               All clear — nobody's waiting on you.
             </div>
           ) : null}
-          {pendingAsks.map((t) => {
-            const ask = t.blockedQuestion ? parseIntegrationAsk(t.blockedQuestion) : null;
-            return ask ? (
+          {pendingAsks.map((t) =>
+            t.blocked?.type === "integration" ? (
               <ConnectRow
                 key={t.id}
                 t={t}
                 by={nameOf(t.assigneeId)}
-                ask={ask}
+                integration={t.blocked.integration}
+                reason={t.blocked.reason}
                 onConnect={onConnect}
               />
             ) : (
               <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
-            );
-          })}
+            ),
+          )}
           {stuckTasks.length > 0 ? (
             <div className="pt-1 text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
               Stuck — needs a retry
@@ -79,28 +79,30 @@ export function Inbox({
 function ConnectRow({
   t,
   by,
-  ask,
+  integration,
+  reason,
   onConnect,
 }: {
   t: Task;
   by: string;
-  ask: { kind: IntegrationKind; reason: string };
+  integration: IntegrationKind;
+  reason: string;
   onConnect: (kind: IntegrationKind) => void;
 }) {
-  const label = ask.kind === "vercel" ? "Vercel" : "Stripe";
+  const label = INTEGRATION_LABELS[integration];
   return (
     <div className="px-inset p-3">
       <div className="text-[12px] text-[var(--accent-lo)]">
         🔌 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
       <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
-        {ask.reason || `The team needs ${label} connected to keep going.`}
+        {reason || `The team needs ${label} connected to keep going.`}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-[11px] text-[var(--text-dim)]">
           Their task resumes automatically once connected.
         </span>
-        <button onClick={() => onConnect(ask.kind)} className="px-btn-accent px-btn">
+        <button onClick={() => onConnect(integration)} className="px-btn-accent px-btn">
           Connect {label}
         </button>
       </div>
@@ -156,7 +158,10 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
         ❗ {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
       <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
-        <RichText text={t.blockedQuestion ?? ""} companyId={companyId} />
+        <RichText
+          text={t.blocked?.type === "question" ? t.blocked.question : ""}
+          companyId={companyId}
+        />
       </div>
       <div className="mt-2 flex gap-2">
         <input
