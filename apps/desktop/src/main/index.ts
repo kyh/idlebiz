@@ -357,7 +357,11 @@ function createWindow(): BrowserWindow {
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
     // background mac app: no windows → no dock icon, just the tray briefcase
-    if (BrowserWindow.getAllWindows().length === 0) app.dock?.hide();
+    // (which badges + notifies when the office is still actively working)
+    if (BrowserWindow.getAllWindows().length === 0) {
+      app.dock?.hide();
+      appTray.setWindowless(true);
+    }
   });
   return win;
 }
@@ -365,6 +369,7 @@ function createWindow(): BrowserWindow {
 /** Bring the office back: focus the open window or create one (dock returns too). */
 function ensureWindow(): void {
   void app.dock?.show();
+  appTray.setWindowless(false);
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
