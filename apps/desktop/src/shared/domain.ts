@@ -14,9 +14,6 @@ export const AGENT_RUNNERS: readonly AgentRunner[] = ["claude", "codex"];
 export const isAgentRunner = (v: string): v is AgentRunner =>
   (AGENT_RUNNERS as readonly string[]).includes(v);
 
-/** What hiring one employee costs after the founding team. */
-export const HIRE_COST = 150;
-
 export type TaskStatus =
   | "todo"
   | "queued"
@@ -148,9 +145,9 @@ export interface Company {
   founderName: string;
   founderSpriteSeed: string;
   autopilot: boolean; // when true, idle employees self-direct work (idle-game loop)
-  cash: number; // in-game dollars (light economy; real metrics providers later)
   ships: number; // units of work the team has shipped
-  users: number; // simulated adoption — grows as the product ships
+  revenueUsd: number | null; // REAL revenue (Stripe); null until a source is connected
+  users: number | null; // REAL users (analytics); null until a source is connected
   budget: Budget; // founder-set cap on real AI spend
   spentUsd: number; // lifetime real token spend (USD)
   onboarded: boolean;

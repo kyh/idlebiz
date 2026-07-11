@@ -174,9 +174,10 @@ function companyToDoc(co: Company): FrontmatterDoc {
       founderSpriteSeed: co.founderSpriteSeed,
       businessType: co.businessType,
       autopilot: co.autopilot,
-      cash: co.cash,
       ships: co.ships,
-      users: co.users,
+      // real metrics: absent keys mean "no source has ever reported"
+      ...(co.revenueUsd !== null ? { revenueUsd: co.revenueUsd } : {}),
+      ...(co.users !== null ? { users: co.users } : {}),
       budgetMode: co.budget.mode,
       ...(co.budget.mode === "capped" ? { budgetCapUsd: co.budget.capUsd } : {}),
       spentUsd: co.spentUsd,
@@ -212,9 +213,9 @@ function docToCompany(doc: FrontmatterDoc): Company {
     founderName: optStr(m, "founderName") ?? "Founder",
     founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? "founder-player-001",
     autopilot: optBool(m, "autopilot", true),
-    cash: optNum(m, "cash", 0),
     ships: optNum(m, "ships", 0),
-    users: optNum(m, "users", 0),
+    revenueUsd: m.revenueUsd === undefined ? null : optNum(m, "revenueUsd", 0),
+    users: m.users === undefined ? null : optNum(m, "users", 0),
     budget: parseBudget(m),
     spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
     onboarded: optBool(m, "onboarded", false),
@@ -665,9 +666,9 @@ export function createCompany(input: {
     founderName: input.founderName,
     founderSpriteSeed: input.founderSpriteSeed,
     autopilot: true,
-    cash: 1000,
     ships: 0,
-    users: 0,
+    revenueUsd: null,
+    users: null,
     budget: { mode: "infinite" },
     spentUsd: 0,
     onboarded: false,
@@ -881,21 +882,11 @@ export function setCompanyOnboarded(id: string, onboarded: boolean): void {
 export function setAutopilot(id: string, on: boolean): void {
   patchCompany(id, { autopilot: on });
 }
-/** Record one shipped unit of work plus the adoption/revenue it drove. */
-export function recordShip(id: string, usersDelta: number, cashDelta: number): void {
+/** Record one shipped unit of work (the real counter behind the version string). */
+export function recordShip(id: string): void {
   const co = c().companies.get(id);
   if (!co) return;
-  patchCompany(id, {
-    ships: co.ships + 1,
-    users: co.users + Math.max(0, Math.round(usersDelta)),
-    cash: Math.round((co.cash + cashDelta) * 100) / 100,
-  });
-}
-/** Adjust cash (hiring costs, revenue ticks). Returns the updated company. */
-export function adjustCash(id: string, delta: number): Company {
-  const co = c().companies.get(id);
-  if (!co) throw new Error(`company ${id} not found`);
-  return patchCompany(id, { cash: Math.round((co.cash + delta) * 100) / 100 });
+  patchCompany(id, { ships: co.ships + 1 });
 }
 /** Accumulate real AI spend (USD) from a finished run. */
 export function recordSpend(id: string, costUsd: number): Company | null {
@@ -911,16 +902,8 @@ export function setBudget(id: string, budget: Budget): Company {
 export function resetSpend(id: string): Company {
   return patchCompany(id, { spentUsd: 0 });
 }
-/** Apply a periodic metrics pulse (revenue trickle + organic growth). */
-export function applyPulse(id: string, usersDelta: number, cashDelta: number): Company | null {
-  const co = c().companies.get(id);
-  if (!co) return null;
-  return patchCompany(id, {
-    users: co.users + Math.max(0, Math.round(usersDelta)),
-    cash: Math.round((co.cash + cashDelta) * 100) / 100,
-  });
-}
-/** Overwrite with REAL absolute numbers from configured metrics sources. */
+/** Overwrite with REAL absolute numbers from configured metrics sources.
+ * Null fields are skipped (a provider hiccup keeps the last-known value). */
 export function setRealMetrics(
   id: string,
   snapshot: { users: number | null; revenue: number | null },
@@ -929,7 +912,7 @@ export function setRealMetrics(
   if (!co) return null;
   const patch: Partial<Company> = {};
   if (snapshot.users !== null) patch.users = Math.max(0, Math.round(snapshot.users));
-  if (snapshot.revenue !== null) patch.cash = Math.round(snapshot.revenue * 100) / 100;
+  if (snapshot.revenue !== null) patch.revenueUsd = Math.round(snapshot.revenue * 100) / 100;
   if (Object.keys(patch).length === 0) return co;
   return patchCompany(id, patch);
 }

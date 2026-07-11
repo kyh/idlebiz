@@ -2,13 +2,11 @@ import { z } from "zod";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { companyDir } from "@/main/paths";
-import type { Company } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
-// Business metrics as a swappable provider. By default the numbers are
-// simulated (light idle-game economy). Drop a metrics.json into the company
-// package and the REAL providers take over — the HUD then shows your actual
-// business:
+// REAL business metrics only — there is no simulated economy. Numbers exist
+// when a source is connected, otherwise the HUD shows a connect button.
+// Sources are configured per company in metrics.json:
 //
 //   ~/.idlebiz/<company>/metrics.json
 //   {
@@ -20,37 +18,7 @@ import type { Company } from "@/shared/domain";
 //   }
 // ---------------------------------------------------------------------------
 
-interface BusinessPulse {
-  usersDelta: number;
-  cashDelta: number;
-}
-
-export interface MetricsProvider {
-  /** Periodic accrual while the business is running (called every pulse tick). */
-  pulse(company: Company): BusinessPulse;
-  /** Boost when the team ships a unit of work. */
-  onShip(company: Company): BusinessPulse;
-}
-
 export const PULSE_MS = 30_000;
-
-export const simulatedMetrics: MetricsProvider = {
-  pulse(company) {
-    if (company.users <= 0) return { usersDelta: 0, cashDelta: 0 };
-    // existing users trickle in revenue and a little word-of-mouth growth
-    const cashDelta = Math.round(company.users * 0.02 * 100) / 100;
-    const usersDelta = Math.random() < 0.5 ? Math.ceil(company.users * 0.005) : 0;
-    return { usersDelta, cashDelta };
-  },
-  onShip(company) {
-    return {
-      usersDelta: 8 + Math.floor(Math.random() * 24) + Math.floor(company.users * 0.04),
-      cashDelta: 40 + Math.round(company.users * 0.08),
-    };
-  },
-};
-
-// ---- real-world providers ----------------------------------------------------
 
 const MetricsConfigSchema = z.object({
   stripe: z.boolean().optional(),

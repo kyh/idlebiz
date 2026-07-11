@@ -5,7 +5,6 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { pluginHost } from "@/main/plugins";
 import type { RunContext, RunOutcome } from "@/main/plugins";
-import { simulatedMetrics } from "@/main/metrics";
 import { MAX_TASK_ATTEMPTS, businessTypeById, isOutOfBudget, retryDelayMs } from "@/shared/domain";
 import type { ActivityEvent, Company, Employee, Task } from "@/shared/domain";
 
@@ -422,21 +421,16 @@ class Scheduler {
       }
     }
 
-    // business metrics: a completed task ships work, drives adoption + revenue
+    // a completed task ships work — the real counter behind the product version
     if (taskStatus === "done") {
-      const c = store.getCompany(task.companyId);
-      if (c) {
-        const boost = simulatedMetrics.onShip(c);
-        store.recordShip(task.companyId, boost.usersDelta, boost.cashDelta);
-        this.emit({
-          runId,
-          taskId: task.id,
-          employeeId: emp.id,
-          kind: "ship",
-          message: (r.summary || "shipped work").slice(0, 200),
-          payload: boost,
-        });
-      }
+      store.recordShip(task.companyId);
+      this.emit({
+        runId,
+        taskId: task.id,
+        employeeId: emp.id,
+        kind: "ship",
+        message: (r.summary || "shipped work").slice(0, 200),
+      });
     }
 
     // surface a failed run's fate so the feed shows the retry / give-up, not silence

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore, hireEmployee, getPortrait, setModalOpen } from "@/renderer/state/store";
 import type { HireProposal } from "@/shared/ipc-registry";
-import { HIRE_COST } from "@/shared/domain";
 
 /** In-game recruiting: candidates are LLM-cast for THIS company, same as onboarding. */
 export function Hiring({ onClose }: { onClose: () => void }) {
@@ -40,10 +39,7 @@ export function Hiring({ onClose }: { onClose: () => void }) {
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-[16px]">Recruiting</div>
-            <div className="text-[12px] text-[#c4c9dd]">
-              {employees.length} on the team · ${HIRE_COST} per hire · ${Math.floor(company.cash)}{" "}
-              in the bank
-            </div>
+            <div className="text-[12px] text-[#c4c9dd]">{employees.length} on the team</div>
           </div>
           <button onClick={onClose} className="px-btn">
             Done
@@ -60,7 +56,7 @@ export function Hiring({ onClose }: { onClose: () => void }) {
         {candidates ? (
           <div className="px-scroll grid grid-cols-1 gap-3 overflow-y-auto p-5 sm:grid-cols-2 lg:grid-cols-3">
             {candidates.map((c) => (
-              <CandidateCard key={c.spriteSeed} c={c} canAfford={company.cash >= HIRE_COST} />
+              <CandidateCard key={c.spriteSeed} c={c} />
             ))}
           </div>
         ) : null}
@@ -69,7 +65,7 @@ export function Hiring({ onClose }: { onClose: () => void }) {
   );
 }
 
-function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }) {
+function CandidateCard({ c }: { c: HireProposal }) {
   const [portrait, setPortrait] = useState<string | null>(null);
   const [state, setState] = useState<"idle" | "hiring" | "hired" | "failed">("idle");
 
@@ -122,7 +118,7 @@ function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }
       <p className="mt-2 flex-1 text-[13px] leading-relaxed text-[#4c5064]">{c.persona}</p>
       <button
         onClick={() => void hire()}
-        disabled={state !== "idle" || !canAfford}
+        disabled={state !== "idle"}
         className={(state === "hired" ? "px-btn" : "px-btn-accent px-btn") + " mt-3"}
         style={state === "hired" ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
       >
@@ -132,9 +128,7 @@ function CandidateCard({ c, canAfford }: { c: HireProposal; canAfford: boolean }
             ? "Hiring…"
             : state === "failed"
               ? "Couldn't hire"
-              : canAfford
-                ? `Hire ($${HIRE_COST})`
-                : "Not enough cash"}
+              : "Hire"}
       </button>
     </div>
   );

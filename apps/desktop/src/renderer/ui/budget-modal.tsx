@@ -124,8 +124,8 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="px-inset space-y-2 p-3">
               <div className="text-[13px] leading-snug text-[var(--text)]">
-                Connect your Stripe account and the dashboard shows REAL revenue (cash) and REAL
-                customers (users){liveMetrics ? " — live now ⚡" : ""}.
+                Connect your Stripe account to see your REAL revenue and customers — there are no
+                numbers without it{liveMetrics ? " — live now ⚡" : ""}.
               </div>
               {stripeStatus.state === "connected" ? (
                 <div className="flex items-center justify-between gap-2">

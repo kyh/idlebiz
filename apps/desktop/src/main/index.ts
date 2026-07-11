@@ -10,7 +10,7 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { scheduler } from "@/main/scheduler";
 import { startLogin, submitAuthCode, generateCandidates } from "@/main/agents/onboarding";
-import { simulatedMetrics, readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
 import { pluginHost } from "@/main/plugins";
 import type { IdleBizPlugin } from "@/main/plugins";
 import { exportSecretsToEnv } from "@/main/secrets";
@@ -22,7 +22,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { HIRE_COST, isAgentRunner, isOutOfBudget } from "@/shared/domain";
+import { isAgentRunner, isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent } from "@/shared/domain";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -30,35 +30,25 @@ const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let metricsTimer: ReturnType<typeof setInterval> | null = null;
 
-/** One pulse of the business metrics loop (also fired on demand, e.g. Stripe connect). */
+/** One pulse of the business metrics loop (also fired on demand, e.g. Stripe connect).
+ * Real sources only — with nothing connected there are no numbers to move. */
 function runMetricsPulse(): void {
   const company = store.getDefaultCompany();
   if (!company || !company.onboarded) return;
   const cfg = readMetricsConfig(company.id);
-  if (cfg) {
-    void (async () => {
-      const snap = await fetchRealMetrics(cfg);
-      const live = snap.users !== null || snap.revenue !== null;
-      if (live) store.setRealMetrics(company.id, snap);
-      if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
-      broadcast("onActivity", {
-        kind: "lifecycle",
-        message: "metrics.pulse",
-        payload: { users: snap.users, revenue: snap.revenue, real: live },
-        createdAt: Date.now(),
-      });
-    })();
-    return;
-  }
-  const p = simulatedMetrics.pulse(company);
-  if (p.usersDelta === 0 && p.cashDelta === 0) return;
-  store.applyPulse(company.id, p.usersDelta, p.cashDelta);
-  broadcast("onActivity", {
-    kind: "lifecycle",
-    message: "metrics.pulse",
-    payload: p,
-    createdAt: Date.now(),
-  });
+  if (!cfg) return;
+  void (async () => {
+    const snap = await fetchRealMetrics(cfg);
+    const live = snap.users !== null || snap.revenue !== null;
+    if (live) store.setRealMetrics(company.id, snap);
+    if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
+    broadcast("onActivity", {
+      kind: "lifecycle",
+      message: "metrics.pulse",
+      payload: { users: snap.users, revenue: snap.revenue, real: live },
+      createdAt: Date.now(),
+    });
+  })();
 }
 
 /**
@@ -239,13 +229,6 @@ function registerIpcHandlers(): void {
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
 
   handle("createEmployee", (p) => {
-    // founding hires (pre-onboarding) are free; later hires cost real (in-game) money
-    const company = store.getCompany(p.companyId);
-    if (company?.onboarded) {
-      if (company.cash < HIRE_COST)
-        throw new Error(`Hiring costs $${HIRE_COST} — you have $${company.cash.toFixed(0)}.`);
-      store.adjustCash(p.companyId, -HIRE_COST);
-    }
     const emp = store.createEmployee({
       companyId: p.companyId,
       name: p.name,

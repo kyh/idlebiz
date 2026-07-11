@@ -78,16 +78,18 @@ export function Hud({
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex max-w-[34rem] flex-col items-end gap-2">
       <div className="flex flex-wrap items-stretch justify-end gap-2">
         <Stat
-          label={liveMetrics ? "cash ⚡" : "cash"}
-          value={`$${fmt(Math.floor(company.cash))}`}
+          label={liveMetrics ? "revenue ⚡" : "revenue"}
+          value={company.revenueUsd === null ? "—" : `$${fmt(Math.floor(company.revenueUsd))}`}
           accent="#9fe6b0"
-          sub={liveMetrics ? "real" : undefined}
+          sub={company.revenueUsd === null ? "connect" : liveMetrics ? "real" : undefined}
+          onClick={onBudget}
         />
         <Stat
           label={liveMetrics ? "users ⚡" : "users"}
-          value={fmt(company.users)}
+          value={company.users === null ? "—" : fmt(company.users)}
           accent="#86c0ee"
-          sub={liveMetrics ? "real" : undefined}
+          sub={company.users === null ? "connect" : liveMetrics ? "real" : undefined}
+          onClick={onBudget}
         />
         <Stat label="shipped" value={String(company.ships)} sub={version} onClick={onShips} />
         <Stat
