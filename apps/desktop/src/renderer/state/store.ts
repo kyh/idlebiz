@@ -166,9 +166,11 @@ function onActivity(e: ActivityEvent): void {
     }
     return;
   }
-  if (e.kind === "lifecycle" && e.message === "metrics.pulse") {
-    // a pulse only moves company numbers — refetch just the company instead of
-    // reloading employees/teams/tasks every 30s
+  // both only move company fields — refetch just the company, not the world
+  if (
+    e.kind === "lifecycle" &&
+    (e.message === "metrics.pulse" || e.message === "autopilot.changed")
+  ) {
     void bridge()
       .getCompany()
       .then((company) => set({ company }))

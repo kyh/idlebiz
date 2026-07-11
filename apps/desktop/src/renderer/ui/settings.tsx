@@ -79,6 +79,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
             <div className="mt-1 text-[12px] text-[var(--text-dim)]">
               WASD / arrows to move · walk up to someone and press E
             </div>
+            <div className="mt-1 text-[12px] text-[var(--text-dim)]">
+              Closing this window keeps the office running — the 💼 in the menu bar shows status and
+              is where you quit.
+            </div>
           </div>
 
           <div className="px-inset p-3 text-[13px] text-[var(--text)]">

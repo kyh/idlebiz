@@ -9,6 +9,7 @@ import * as store from "@/main/store/store";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { scheduler } from "@/main/scheduler";
+import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
 import { readMetricsConfig, writeMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
 import { validateToken, listProjects, latestDeployment } from "@/main/vercel";
@@ -355,8 +356,22 @@ function createWindow(): BrowserWindow {
 
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
+    // background mac app: no windows → no dock icon, just the tray briefcase
+    if (BrowserWindow.getAllWindows().length === 0) app.dock?.hide();
   });
   return win;
+}
+
+/** Bring the office back: focus the open window or create one (dock returns too). */
+function ensureWindow(): void {
+  void app.dock?.show();
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  mainWindow = createWindow();
 }
 
 void (async () => {
@@ -388,12 +403,29 @@ void (async () => {
 
   mainWindow = createWindow();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+  // the menu-bar presence: closing the window leaves the office running here
+  appTray.init({
+    openWindow: ensureWindow,
+    setAutopilot: (on) => {
+      const company = store.getDefaultCompany();
+      if (!company) return;
+      store.setAutopilot(company.id, on);
+      const e: ActivityEvent = {
+        kind: "lifecycle",
+        message: "autopilot.changed",
+        payload: { on },
+        createdAt: Date.now(),
+      };
+      store.logActivity(e);
+      broadcast("onActivity", e);
+    },
   });
+
+  app.on("activate", () => ensureWindow());
 })();
 
 app.on("window-all-closed", () => {
+  // macOS: stay resident — the tray owns the lifecycle; Quit lives in its menu
   if (process.platform !== "darwin") app.quit();
 });
 
