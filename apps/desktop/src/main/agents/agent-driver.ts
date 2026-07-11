@@ -1,5 +1,6 @@
 import { probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
+import { parseRateLimit } from "@repo/agent-driver/rate-limit";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -28,6 +29,8 @@ export interface RunResult {
   blocked?: BlockedAsk;
   /** The stored session id failed to resume — the caller should clear it. */
   staleSession?: boolean;
+  /** The CLI hit its usage/session limit; park work until this epoch instead of retrying. */
+  rateLimitedUntil?: number;
 }
 
 export type { RunToolHooks };
@@ -38,6 +41,7 @@ class AgentDriver {
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
   private active = new Map<string, AbortController>(); // employeeId -> abort
+  private restingUntil = new Map<AgentRunner, number>(); // runner -> epoch its limit lifts
 
   /** Kick off CLI probes (never blocks — boot calls this before the window shows). */
   init(): void {
@@ -63,11 +67,24 @@ class AgentDriver {
     return this.probes.filter((p) => p.installed && p.authed).map((p) => p.id);
   }
 
-  /** Mixed-roster assignment: round-robin across whatever is available. */
+  /** Mixed-roster assignment: round-robin across whatever is available (awake first). */
   pickRunner(index: number): AgentRunner {
     const available = this.availableRunners();
-    const pick = available[index % Math.max(1, available.length)];
+    const awake = available.filter((r) => this.restingRunner(r) === null);
+    const pool = awake.length > 0 ? awake : available;
+    const pick = pool[index % Math.max(1, pool.length)];
     return pick ?? "codex";
+  }
+
+  /** Epoch until which this runner's usage limit holds, or null if it's awake. */
+  restingRunner(runner: AgentRunner): number | null {
+    const until = this.restingUntil.get(runner);
+    if (until === undefined) return null;
+    if (until <= Date.now()) {
+      this.restingUntil.delete(runner);
+      return null;
+    }
+    return until;
   }
 
   async runTask(
@@ -84,6 +101,13 @@ class AgentDriver {
       const prompt = `${task.title}\n\n${task.description ?? ""}`.trim();
       const resumeId = emp.sessionId ?? undefined;
       const first = await this.invoke(emp, company, task, prompt, onEvent, hooks, resumeId, abort);
+      // A usage/session limit is a wall, not a flake — park the runner and
+      // hand the reset time up; never burn the fresh-session retry on it.
+      const limit = parseRateLimit(first.result.error);
+      if (!first.result.ok && limit) {
+        this.restingUntil.set(emp.runner, limit.resetsAt);
+        return { ...first.result, rateLimitedUntil: limit.resetsAt };
+      }
       // A resume that dies without producing any output is almost always a
       // stale/unknown session — retry once with a fresh one before failing.
       if (!first.result.ok && !first.sawOutput && resumeId) {
@@ -97,6 +121,11 @@ class AgentDriver {
           undefined,
           abort,
         );
+        const retryLimit = parseRateLimit(retry.result.error);
+        if (!retry.result.ok && retryLimit) {
+          this.restingUntil.set(emp.runner, retryLimit.resetsAt);
+          return { ...retry.result, rateLimitedUntil: retryLimit.resetsAt };
+        }
         return { ...retry.result, staleSession: retry.result.sessionId === undefined };
       }
       return first.result;

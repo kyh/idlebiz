@@ -72,9 +72,17 @@ export function Hud({
   onSettings: () => void;
   onTeams: () => void;
 }) {
-  const { company, employees, teams, pendingAsks, stuckTasks, product } = useStore();
+  const { company, employees, teams, pendingAsks, stuckTasks, product, resting } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
+  // a CLI on cooldown: the office naps until the earliest reset
+  const napUntil = Object.values(resting)
+    .filter((t) => t > Date.now())
+    .toSorted((a, b) => a - b)[0];
+  const napLabel =
+    napUntil === undefined
+      ? null
+      : `☕ resting til ${new Date(napUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
   const out = isOutOfBudget(company);
   const needsYou = pendingAsks.length + stuckTasks.length;
@@ -130,11 +138,16 @@ export function Hud({
           sub={
             working > 0
               ? `${working} working`
-              : teams.length > 0
-                ? `${teams.length} team${teams.length === 1 ? "" : "s"}`
-                : "idle"
+              : (napLabel ??
+                (teams.length > 0
+                  ? `${teams.length} team${teams.length === 1 ? "" : "s"}`
+                  : "idle"))
           }
-          title="The roster sizes itself — your lever is the budget"
+          title={
+            napLabel
+              ? "A CLI hit its usage limit — parked work resumes automatically at reset"
+              : "The roster sizes itself — your lever is the budget"
+          }
           onClick={onTeams}
         />
         <button

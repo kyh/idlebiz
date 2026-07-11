@@ -110,6 +110,8 @@ class Scheduler {
     for (const emp of employees) {
       if (this.active.size >= GLOBAL_CONCURRENCY_CAP) break;
       if (emp.status !== "idle" || this.busy.has(emp.id)) continue;
+      // don't brief employees whose CLI is resting on a usage limit
+      if (agentDriver.restingRunner(emp.runner) !== null) continue;
       const open = store
         .listTasksForEmployee(emp.id)
         .some((t) => t.status === "queued" || t.status === "running");
@@ -402,9 +404,11 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
   /** Pull queued tasks into runs while we have capacity. */
   tick(): void {
     while (this.active.size < GLOBAL_CONCURRENCY_CAP) {
-      const next = store
-        .listQueuedTasks()
-        .find((t) => t.assigneeId !== null && !this.busy.has(t.assigneeId));
+      const next = store.listQueuedTasks().find((t) => {
+        if (t.assigneeId === null || this.busy.has(t.assigneeId)) return false;
+        const runner = store.getEmployee(t.assigneeId)?.runner;
+        return runner === undefined || agentDriver.restingRunner(runner) === null;
+      });
       if (!next) break;
       this.startRun(next);
     }
@@ -498,6 +502,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       sessionId?: string;
       blocked?: BlockedAsk;
       staleSession?: boolean;
+      rateLimitedUntil?: number;
     },
   ): void {
     // Decide the outcome. A failed run is retried with exponential backoff up to
@@ -510,6 +515,20 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     } else if (r.ok) {
       taskStatus = "done";
       store.releaseTask(task.id, runId, "done", r.summary || null, null);
+    } else if (r.rateLimitedUntil !== undefined) {
+      // A usage/session limit is the CLI's wall, not the task's fault: park
+      // until the reset WITHOUT burning an attempt, and tell the office why.
+      taskStatus = "queued";
+      retryAt = r.rateLimitedUntil;
+      store.requeueForRetry(task.id, runId, task.attempts, retryAt, r.error ?? "usage limit");
+      this.emit({
+        runId,
+        taskId: task.id,
+        employeeId: emp.id,
+        kind: "lifecycle",
+        message: "runner.resting",
+        payload: { runner: emp.runner, until: r.rateLimitedUntil },
+      });
     } else {
       const attempts = task.attempts + 1;
       const err = r.error || "run failed";
@@ -549,7 +568,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     }
 
     // surface a failed run's fate so the feed shows the retry / give-up, not silence
-    if (taskStatus === "queued" && retryAt !== null) {
+    if (taskStatus === "queued" && retryAt !== null && r.rateLimitedUntil === undefined) {
       this.emit({
         runId,
         taskId: task.id,

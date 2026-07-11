@@ -269,7 +269,7 @@ ${co.mission}
 Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl; always send the Authorization header. Quote JSON carefully (single-quote the payload).
 - **ask_boss** — you are blocked or need a decision only the founder can make. Use sparingly; prefer making reasonable choices yourself. Note the answer arrives later — continue with whatever you can still do.
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"question":"..."}'\`
-- **message_team** — post a one-line update, decision, ask, or handoff to the team room so teammates see it live.
+- **message_team** — post a one-line update, decision, ask, or handoff to the team room so teammates see it live. The room already shows your name — never prefix messages with it.
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"text":"..."}'\`
 - **read_team_chat** — catch up on the room before you act, so you build on teammates' work instead of duplicating it.
   \`curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"\`

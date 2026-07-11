@@ -3,7 +3,7 @@ import { useStore, sendFounderChat } from "@/renderer/state/store";
 import type { ActivityEvent } from "@/shared/domain";
 
 const FEED_KINDS = new Set(["chat", "ship"]);
-const ORG_EVENTS = new Set(["org.hired", "org.released"]);
+const ORG_EVENTS = new Set(["org.hired", "org.released", "runner.resting"]);
 
 const inFeed = (a: ActivityEvent): boolean =>
   FEED_KINDS.has(a.kind) ||
@@ -92,10 +92,21 @@ function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
   }
   if (e.kind === "lifecycle") {
     const p: unknown = e.payload;
-    const who =
-      typeof p === "object" && p !== null && "name" in p && typeof p.name === "string"
-        ? p.name
-        : "someone";
+    const obj = typeof p === "object" && p !== null ? p : {};
+    if (e.message === "runner.resting") {
+      const until = "until" in obj && typeof obj.until === "number" ? obj.until : null;
+      const at =
+        until === null
+          ? "later"
+          : new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const runner = "runner" in obj && typeof obj.runner === "string" ? obj.runner : "a";
+      return (
+        <div className="text-[var(--text-dim)]">
+          ☕ {runner} crew hit their limit — back at {at}
+        </div>
+      );
+    }
+    const who = "name" in obj && typeof obj.name === "string" ? obj.name : "someone";
     return (
       <div className="text-[var(--text-dim)]">
         {e.message === "org.hired" ? `🤝 ${who} joined the team` : `👋 ${who} left the team`}

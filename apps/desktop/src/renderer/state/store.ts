@@ -17,7 +17,8 @@ interface State {
   authed: boolean;
   stripeStatus: StripeStatus;
   vercelStatus: VercelStatus;
-  product: ProductStatus | null; // ships + PRODUCT.md entry + latest deploy
+  product: ProductStatus | null; // PRODUCT.md entry + latest deploy
+  resting: Record<string, number>; // runner -> epoch its usage limit lifts
   company: Company | null;
   employees: Employee[];
   teams: Team[];
@@ -34,6 +35,7 @@ let state: State = {
   stripeStatus: { state: "disconnected" },
   vercelStatus: { state: "disconnected" },
   product: null,
+  resting: {},
   company: null,
   employees: [],
   teams: [],
@@ -154,6 +156,16 @@ function onActivity(e: ActivityEvent): void {
       );
   }
   set({ activity, employees });
+  // a CLI hit its usage limit — remember until when, so the HUD can say why
+  if (e.kind === "lifecycle" && e.message === "runner.resting") {
+    const p: unknown = e.payload;
+    if (typeof p === "object" && p !== null && "runner" in p && "until" in p) {
+      const runner = typeof p.runner === "string" ? p.runner : null;
+      const until = typeof p.until === "number" ? p.until : null;
+      if (runner && until) set({ resting: { ...state.resting, [runner]: until } });
+    }
+    return;
+  }
   if (e.kind === "lifecycle" && e.message === "metrics.pulse") {
     // a pulse only moves company numbers — refetch just the company instead of
     // reloading employees/teams/tasks every 30s
