@@ -935,6 +935,9 @@ function patchCompany(id: string, patch: Partial<Company>): Company {
 export function setCompanyOnboarded(id: string, onboarded: boolean): void {
   patchCompany(id, { onboarded });
 }
+export function setMaxAgents(id: string, maxAgents: number): Company {
+  return patchCompany(id, { maxAgents: Math.max(1, Math.round(maxAgents)) });
+}
 export function setAutopilot(id: string, on: boolean): void {
   patchCompany(id, { autopilot: on });
 }

@@ -9,7 +9,7 @@ import type {
   Team,
   TeamMessage,
 } from "@/shared/domain";
-import type { StripeStatus, VercelStatus } from "@/shared/ipc-registry";
+import type { ProductStatus, StripeStatus, VercelStatus } from "@/shared/ipc-registry";
 import { applyOfficeLayout } from "@/renderer/game/office-layout";
 
 interface State {
@@ -18,6 +18,7 @@ interface State {
   liveMetrics: boolean; // true when real-world providers (Stripe/analytics) feed the numbers
   stripeStatus: StripeStatus;
   vercelStatus: VercelStatus;
+  product: ProductStatus | null; // ships + PRODUCT.md entry + latest deploy
   company: Company | null;
   employees: Employee[];
   teams: Team[];
@@ -34,6 +35,7 @@ let state: State = {
   liveMetrics: false,
   stripeStatus: { state: "disconnected" },
   vercelStatus: { state: "disconnected" },
+  product: null,
   company: null,
   employees: [],
   teams: [],
@@ -123,6 +125,13 @@ export async function refresh(): Promise<void> {
   const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blockedQuestion !== null);
   const stuckTasks = tasks.filter((t) => t.status === "dead" || t.status === "failed");
   set({ booted: true, company, employees, teams, pendingAsks, stuckTasks });
+  // product state rides along (deploy lookup is a no-op until Vercel is connected)
+  if (company) {
+    void bridge()
+      .productStatus({ companyId: company.id })
+      .then((product) => set({ product }))
+      .catch(() => undefined);
+  }
 }
 
 /** Fetch a team's chat-room messages on demand (for the Teams panel). */
@@ -239,39 +248,11 @@ export async function resetGame(): Promise<void> {
   await bridge().resetGame();
 }
 
-export async function hireEmployee(input: {
-  name: string;
-  role: string;
-  title: string;
-  persona: string;
-  spriteSeed: string;
-}): Promise<Employee | null> {
-  const company = state.company;
-  if (!company) return null;
-  const deskIndex = state.employees.length;
-  const emp = await bridge().createEmployee({ companyId: company.id, deskIndex, ...input });
-  await refresh();
-  state.game?.events.emit("spawn-employee", emp);
-  return emp;
-}
-
-export async function assignWork(
-  employeeId: string,
-  title: string,
-  description: string,
-): Promise<Task | null> {
-  const company = state.company;
-  if (!company) return null;
-  const task = await bridge().createTask({
-    companyId: company.id,
-    title,
-    description,
-    priority: "high",
-    assigneeId: employeeId,
-  });
-  const assigned = await bridge().assignTask({ taskId: task.id, employeeId });
-  await refresh();
-  return assigned;
+/** Founder posts in the team channel; @first-name wakes that employee. */
+export async function sendFounderChat(text: string): Promise<void> {
+  const team = state.teams[0];
+  if (!team || !text.trim()) return;
+  await bridge().postTeamChat({ teamId: team.id, text: text.trim() });
 }
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */

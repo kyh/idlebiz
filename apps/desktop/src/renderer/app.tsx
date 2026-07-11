@@ -5,20 +5,18 @@ import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
 import { AuthGate } from "@/renderer/ui/auth-gate";
 import { Hud } from "@/renderer/ui/hud";
 import { Dialogue } from "@/renderer/ui/dialogue";
-import { Hiring } from "@/renderer/ui/hiring";
 import { Ships } from "@/renderer/ui/ships";
 import { Inbox } from "@/renderer/ui/inbox";
 import { Teams } from "@/renderer/ui/teams";
 import { BudgetModal } from "@/renderer/ui/budget-modal";
 import { ConnectVercel } from "@/renderer/ui/connect-vercel";
 import { Settings } from "@/renderer/ui/settings";
-import { CompanyFeed } from "@/renderer/ui/company-feed";
+import { TeamChannel } from "@/renderer/ui/team-channel";
 import { OfficeObjectCatalog } from "@/renderer/ui/office-object-catalog";
 import { OfficeBuilder } from "@/renderer/ui/office-builder";
 
 export function App() {
   const { booted, authed, company, game } = useStore();
-  const [hiring, setHiring] = useState(false);
   const [ships, setShips] = useState(false);
   const [inbox, setInbox] = useState(false);
   const [teams, setTeams] = useState(false);
@@ -65,7 +63,6 @@ export function App() {
         {booted && company && company.onboarded ? (
           <>
             <Hud
-              onHire={() => setHiring(true)}
               onShips={() => setShips(true)}
               onInbox={() => setInbox(true)}
               onBudget={() => setBudget(true)}
@@ -73,9 +70,8 @@ export function App() {
               onSettings={() => setSettings(true)}
               onTeams={() => setTeams(true)}
             />
-            <CompanyFeed />
+            <TeamChannel />
             <Dialogue />
-            {hiring && <Hiring onClose={() => setHiring(false)} />}
             {ships && <Ships onClose={() => setShips(false)} />}
             {inbox && (
               <Inbox

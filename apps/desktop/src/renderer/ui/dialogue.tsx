@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useStore,
   getPortrait,
-  assignWork,
+  sendFounderChat,
   setModalOpen,
   listTasksFor,
 } from "@/renderer/state/store";
@@ -157,10 +157,13 @@ export function Dialogue() {
     setMode("menu");
   };
 
-  const send = async (title: string, instruction: string) => {
+  // everything the founder says goes through the team channel; the @mention
+  // wakes this employee with the message as their brief
+  const send = async (_title: string, instruction: string) => {
     if (!emp) return;
     setNote(`Sent to ${emp.name} ✓`);
-    await assignWork(emp.id, title, instruction);
+    const first = emp.name.split(/\s+/)[0] ?? emp.name;
+    await sendFounderChat(`@${first} ${instruction}`);
     window.setTimeout(() => setNote(null), 1800);
   };
 

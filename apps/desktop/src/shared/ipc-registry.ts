@@ -98,16 +98,6 @@ const CreateCompanySchema = z.object({
   founderName: z.string(),
   founderSpriteSeed: z.string(),
 });
-const CreateEmployeeSchema = z.object({
-  companyId: z.string(),
-  name: z.string(),
-  role: z.string(),
-  title: z.string(),
-  persona: z.string(),
-  spriteSeed: z.string(),
-  deskIndex: z.number().int(),
-  runner: z.enum(["claude", "codex"]).optional(),
-});
 const CreateTaskSchema = z.object({
   companyId: z.string(),
   title: z.string(),
@@ -130,9 +120,10 @@ export const SCHEMAS = {
   createCompany: CreateCompanySchema,
   setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
   listEmployees: z.object({ companyId: z.string() }),
-  createEmployee: CreateEmployeeSchema,
   listTeams: z.object({ companyId: z.string() }),
   teamMessages: z.object({ teamId: z.string(), limit: z.number().int().optional() }),
+  postTeamChat: z.object({ teamId: z.string(), text: z.string().min(1).max(2000) }),
+  setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
   listTasks: z.object({ companyId: z.string() }),
   createTask: CreateTaskSchema,
   assignTask: z.object({ taskId: z.string(), employeeId: z.string() }),
@@ -212,10 +203,11 @@ export interface Contract {
   productStatus: { payload: { companyId: string }; result: ProductStatus };
 
   listEmployees: { payload: { companyId: string }; result: Employee[] };
-  createEmployee: { payload: z.infer<typeof CreateEmployeeSchema>; result: Employee };
 
   listTeams: { payload: { companyId: string }; result: Team[] };
   teamMessages: { payload: { teamId: string; limit?: number }; result: TeamMessage[] };
+  postTeamChat: { payload: { teamId: string; text: string }; result: { ok: boolean } };
+  setMaxAgents: { payload: { companyId: string; maxAgents: number }; result: Company };
 
   listTasks: { payload: { companyId: string }; result: Task[] };
   createTask: { payload: z.infer<typeof CreateTaskSchema>; result: Task };

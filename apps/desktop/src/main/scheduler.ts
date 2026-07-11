@@ -297,6 +297,31 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
   }
 
   /**
+   * Founder speaks in the team room. The message lands in the channel and the
+   * room log; any @first-name mention wakes that employee immediately with the
+   * message as context (paperclip's mention-wake convention).
+   */
+  founderMessage(companyId: string, teamId: string, text: string): void {
+    store.postTeamMessage(teamId, null, text);
+    this.emit({ kind: "chat", message: text.slice(0, 400) });
+    const lower = text.toLowerCase();
+    for (const emp of store.listEmployees(companyId)) {
+      const first = emp.name.split(/\s+/)[0]?.toLowerCase();
+      if (!first || !lower.includes(`@${first}`)) continue;
+      this.wakeEmployee(
+        emp.id,
+        `Founder: ${text.slice(0, 48)}`,
+        [
+          "The founder pinged you in the team room:",
+          `"${text}"`,
+          "",
+          "Read the room with read_team_chat for context, do what they're asking (or answer their question), and reply with message_team.",
+        ].join("\n"),
+      );
+    }
+  }
+
+  /**
    * Event wake (paperclip convention): create + assign a task for an employee
    * right now instead of waiting for the autopilot tick. Coalesces — an
    * identical queued wake for the same employee is not duplicated.

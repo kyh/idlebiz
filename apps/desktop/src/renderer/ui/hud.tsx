@@ -14,12 +14,14 @@ function Stat({
   value,
   sub,
   accent,
+  title,
   onClick,
 }: {
   label: string;
   value: string;
   sub?: string;
   accent?: string;
+  title?: string;
   onClick?: () => void;
 }) {
   const body = (
@@ -39,7 +41,7 @@ function Stat({
       <button
         onClick={onClick}
         className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
-        title="Open the shipping log"
+        title={title}
       >
         {body}
       </button>
@@ -48,8 +50,14 @@ function Stat({
   return <div className="px-plate min-w-[64px] px-3 py-1.5 text-center">{body}</div>;
 }
 
+/**
+ * Four-corner HUD.
+ *   top-left     the real scoreboard — revenue+spend (Stripe) and users (Vercel)
+ *   top-right    the company — product state, team, notifications
+ *   bottom-left  run controls — start/pause + settings
+ *   (bottom-right is the TeamChannel component)
+ */
 export function Hud({
-  onHire,
   onShips,
   onInbox,
   onBudget,
@@ -57,7 +65,6 @@ export function Hud({
   onSettings,
   onTeams,
 }: {
-  onHire: () => void;
   onShips: () => void;
   onInbox: () => void;
   onBudget: () => void;
@@ -65,89 +72,99 @@ export function Hud({
   onSettings: () => void;
   onTeams: () => void;
 }) {
-  const { company, employees, teams, liveMetrics, pendingAsks, stuckTasks } = useStore();
+  const { company, employees, teams, liveMetrics, pendingAsks, stuckTasks, product } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
   const out = isOutOfBudget(company);
-  const budgetValue = out
-    ? "OUT"
-    : company.budget.mode === "infinite"
-      ? "∞"
-      : `$${(company.budget.capUsd - company.spentUsd).toFixed(2)}`;
+  const needsYou = pendingAsks.length + stuckTasks.length;
+
+  const deploy = product?.deploy ?? null;
+  const productState = deploy
+    ? deploy.state === "READY"
+      ? "LIVE"
+      : deploy.state.toLowerCase()
+    : product?.entry
+      ? "local build"
+      : "unshipped";
 
   return (
-    <div className="pointer-events-none absolute top-3 right-3 z-10 flex max-w-[34rem] flex-col items-end gap-2">
-      <div className="flex flex-wrap items-stretch justify-end gap-2">
+    <>
+      {/* top-left: the money + adoption scoreboard (real numbers or connect) */}
+      <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
         <Stat
-          label={liveMetrics ? "revenue ⚡" : "revenue"}
+          label={liveMetrics && company.revenueUsd !== null ? "revenue ⚡" : "revenue"}
           value={company.revenueUsd === null ? "—" : `$${fmt(Math.floor(company.revenueUsd))}`}
-          accent="#9fe6b0"
-          sub={company.revenueUsd === null ? "connect" : liveMetrics ? "real" : undefined}
+          accent={out ? "var(--danger)" : "#9fe6b0"}
+          sub={
+            company.revenueUsd === null
+              ? `spent $${company.spentUsd.toFixed(2)} · connect`
+              : `spent $${company.spentUsd.toFixed(2)}${out ? " · OUT" : ""}`
+          }
+          title="Real Stripe revenue vs real AI spend — budget & Stripe live here"
           onClick={onBudget}
         />
         <Stat
-          label={liveMetrics ? "users ⚡" : "users"}
+          label={liveMetrics && company.users !== null ? "users ⚡" : "users"}
           value={company.users === null ? "—" : fmt(company.users)}
           accent="#86c0ee"
-          sub={company.users === null ? "connect" : liveMetrics ? "real" : undefined}
+          sub={company.users === null ? "connect" : "web analytics"}
+          title="Real users from Vercel Web Analytics on your deployed product"
           onClick={onUsers}
         />
-        <Stat label="shipped" value={String(company.ships)} sub={version} onClick={onShips} />
+      </div>
+
+      {/* top-right: the company — product, team, notifications */}
+      <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
+        <Stat
+          label="product"
+          value={version}
+          accent={productState === "LIVE" ? "var(--ok)" : undefined}
+          sub={`${productState} · ${company.ships} shipped`}
+          title={deploy ? `Live at ${deploy.url}` : "Shipping log"}
+          onClick={onShips}
+        />
         <Stat
           label="team"
           value={String(employees.length)}
           sub={
-            teams.length > 0
-              ? `${teams.length} team${teams.length === 1 ? "" : "s"}`
-              : working > 0
-                ? `${working} working`
+            working > 0
+              ? `${working} working`
+              : teams.length > 0
+                ? `${teams.length} team${teams.length === 1 ? "" : "s"}`
                 : "idle"
           }
+          title="The roster sizes itself — your lever is the budget"
           onClick={onTeams}
-        />
-        <Stat
-          label="budget"
-          value={budgetValue}
-          accent={out ? "var(--danger)" : "#e8d28a"}
-          sub={`spent $${company.spentUsd.toFixed(2)}`}
-          onClick={onBudget}
         />
         <button
           onClick={onInbox}
           className="px-btn pointer-events-auto"
-          style={
-            pendingAsks.length + stuckTasks.length > 0
-              ? { background: "var(--warn)", color: "#3a2c0a" }
-              : undefined
-          }
-          title="Questions and stuck tasks waiting on you"
+          style={needsYou > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
+          title="Questions, connect requests and stuck tasks waiting on you"
         >
-          {pendingAsks.length + stuckTasks.length > 0 ? (
-            <span className="px-live-dot">❗ {pendingAsks.length + stuckTasks.length}</span>
-          ) : (
-            "📥"
-          )}
+          {needsYou > 0 ? <span className="px-live-dot">❗ {needsYou}</span> : "📥"}
         </button>
+      </div>
+
+      {/* bottom-left: run controls */}
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
         <button
           onClick={() => void setAutopilot(!company.autopilot)}
           className="px-btn pointer-events-auto"
           style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
           title={
             company.autopilot
-              ? "Autopilot on — the team works on its own. Click to pause."
+              ? "Autopilot on — the company runs itself. Click to pause."
               : "Autopilot paused. Click to resume."
           }
         >
-          {company.autopilot ? "● LIVE" : "⏸ Paused"}
-        </button>
-        <button onClick={onHire} className="px-btn-accent px-btn pointer-events-auto">
-          + Hire
+          {company.autopilot ? "● LIVE" : "▶ Start"}
         </button>
         <button onClick={onSettings} className="px-btn pointer-events-auto" title="Settings">
           ⚙
         </button>
       </div>
-    </div>
+    </>
   );
 }

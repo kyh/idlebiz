@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useStore, setModalOpen, resetGame } from "@/renderer/state/store";
+import { useStore, setModalOpen, resetGame, refresh } from "@/renderer/state/store";
 
 /** Game settings. Mostly the danger zone: demolish the office and start over. */
 export function Settings({ onClose }: { onClose: () => void }) {
   const { company } = useStore();
   const [confirm, setConfirm] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [cap, setCap] = useState<string | null>(null);
 
   useEffect(() => {
     setModalOpen(true);
@@ -14,6 +15,16 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   if (!company) return null;
   const armed = confirm.trim() === company.name;
+  const capValue = cap ?? String(company.maxAgents);
+
+  const saveCap = async () => {
+    const n = Number(capValue);
+    const bridge = window.appBridge;
+    if (!bridge || !Number.isFinite(n) || n < 1) return;
+    await bridge.setMaxAgents({ companyId: company.id, maxAgents: Math.round(n) });
+    await refresh();
+    setCap(null);
+  };
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
@@ -34,6 +45,30 @@ export function Settings({ onClose }: { onClose: () => void }) {
             <div className="text-[12px] text-[var(--text-dim)]">{company.mission}</div>
             <div className="mt-1 truncate text-[12px] text-[var(--text-dim)]">
               {company.workspaceDir}
+            </div>
+          </div>
+
+          <div className="px-inset p-3 text-[13px] text-[var(--text)]">
+            <div className="text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
+              Team size cap
+            </div>
+            <div className="mt-1 text-[12px] text-[var(--text-dim)]">
+              The team lead hires and releases on their own — this is the hard ceiling.
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={capValue}
+                onChange={(e) => setCap(e.target.value)}
+                inputMode="numeric"
+                className="px-field w-20 text-[13px]"
+              />
+              <button
+                onClick={() => void saveCap()}
+                disabled={cap === null || Number(capValue) === company.maxAgents}
+                className="px-btn"
+              >
+                Save
+              </button>
             </div>
           </div>
 

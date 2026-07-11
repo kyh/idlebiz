@@ -23,7 +23,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isAgentRunner, isOutOfBudget, parseIntegrationAsk } from "@/shared/domain";
+import { isOutOfBudget, parseIntegrationAsk } from "@/shared/domain";
 import type { ActivityEvent, IntegrationKind } from "@/shared/domain";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -308,29 +308,19 @@ function registerIpcHandlers(): void {
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
 
-  handle("createEmployee", (p) => {
-    const emp = store.createEmployee({
-      companyId: p.companyId,
-      name: p.name,
-      role: p.role,
-      title: p.title,
-      persona: p.persona,
-      runner: p.runner && isAgentRunner(p.runner) ? p.runner : agentDriver.pickRunner(p.deskIndex),
-      spriteSeed: p.spriteSeed,
-      deskIndex: p.deskIndex,
-    });
-    // a new hire joins the founding team so they share its chat room + leader
-    const team = store.listTeams(p.companyId)[0];
-    if (team) {
-      const withMember = store.addTeamMember(team.id, emp.id);
-      return withMember ? (store.getEmployee(emp.id) ?? emp) : emp;
-    }
-    return emp;
-  });
-
   handle("listTeams", ({ companyId }) => store.listTeams(companyId));
 
   handle("teamMessages", ({ teamId, limit }) => store.recentTeamMessages(teamId, limit ?? 30));
+
+  // the founder types in the team channel; @first-name wakes that employee
+  handle("postTeamChat", ({ teamId, text }) => {
+    const company = store.getDefaultCompany();
+    if (!company) throw new Error("no company");
+    scheduler.founderMessage(company.id, teamId, text.trim());
+    return { ok: true };
+  });
+
+  handle("setMaxAgents", ({ companyId, maxAgents }) => store.setMaxAgents(companyId, maxAgents));
 
   handle("listTasks", ({ companyId }) => store.listTasks(companyId));
 
