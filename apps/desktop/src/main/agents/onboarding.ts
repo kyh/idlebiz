@@ -1,14 +1,18 @@
-import { shell } from "electron";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { z } from "zod";
-import { loginWithProvider } from "@repo/pi-driver/auth";
-import { completeText } from "@repo/pi-driver/complete";
-import { resolveModel } from "@repo/pi-driver/model";
-import { piDriver } from "@/main/agents/pi-driver";
-import { DEFAULT_PROVIDER, DEFAULT_MODEL_ID, businessTypeById } from "@/shared/domain";
-import type { BusinessTypeId } from "@/shared/domain";
+import { runClaude } from "@repo/agent-driver/claude";
+import { runCodex } from "@repo/agent-driver/codex";
+import { runnerBin } from "@repo/agent-driver/runner";
+import type { RunnerProbe } from "@repo/agent-driver/detect";
+import { agentDriver } from "@/main/agents/agent-driver";
+import { businessTypeById } from "@/shared/domain";
+import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
-// First-run onboarding backend: in-game OpenAI OAuth + LLM-generated hires.
+// First-run onboarding backend. The workforce runs on the player's own coding
+// CLIs (claude / codex): detect them, install one if none exist, walk their
+// login flows, and cast the founding team with a one-shot CLI call.
 // ---------------------------------------------------------------------------
 
 export type AuthFlowEvent =
@@ -17,57 +21,116 @@ export type AuthFlowEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-let pendingCode: ((code: string) => void) | null = null;
-let loginRunning = false;
+let setupRunning = false;
+
+const CLAUDE_INSTALL_CMD = "curl -fsSL https://claude.ai/install.sh | bash";
+
+/** Spawn a command, streaming its output lines as progress (URLs get their own event). */
+function streamCommand(
+  cmd: string,
+  args: string[],
+  emit: (e: AuthFlowEvent) => void,
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let buffer = "";
+    const onChunk = (d: Buffer): void => {
+      buffer += d.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const text = line.trim();
+        if (!text) continue;
+        const url = /https?:\/\/\S+/.exec(text)?.[0];
+        if (url) emit({ type: "url", url, instructions: text });
+        else emit({ type: "progress", message: text.slice(0, 200) });
+      }
+    };
+    child.stdout?.on("data", onChunk);
+    child.stderr?.on("data", onChunk);
+    child.on("error", (err) => {
+      emit({ type: "error", message: err.message });
+      resolve(null);
+    });
+    child.on("close", (code) => resolve(code));
+  });
+}
+
+const label = (p: RunnerProbe): string => (p.id === "claude" ? "Claude Code" : "Codex");
 
 /**
- * Run the openai-codex OAuth flow. Opens the system browser; a local callback
- * server races against manual code paste (submitAuthCode). Events stream to the
- * renderer so the Pokémon dialog can narrate the steps.
+ * The guided workforce setup: probe CLIs → install one if none → log in the
+ * ones that need it → re-probe. Events stream to the onboarding dialog.
  */
 export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void> {
-  if (loginRunning) {
-    emit({ type: "progress", message: "Login already in progress…" });
+  if (setupRunning) {
+    emit({ type: "progress", message: "Setup already in progress…" });
     return;
   }
-  loginRunning = true;
+  setupRunning = true;
   try {
-    await loginWithProvider(piDriver.getAuth(), DEFAULT_PROVIDER, {
-      onAuth: (info: { url: string; instructions?: string }) => {
+    let probes = agentDriver.refresh();
+    for (const p of probes) {
+      emit({
+        type: "progress",
+        message: p.installed
+          ? `Found ${label(p)} (${p.version ?? "unknown version"})${p.authed ? " — signed in ✓" : " — not signed in"}`
+          : `${label(p)} not installed`,
+      });
+    }
+
+    if (probes.every((p) => !p.installed)) {
+      emit({ type: "progress", message: "No coding CLI found — installing Claude Code…" });
+      const code = await streamCommand("bash", ["-lc", CLAUDE_INSTALL_CMD], emit);
+      if (code !== 0) {
+        emit({
+          type: "error",
+          message: "Install failed — install Claude Code or Codex manually, then retry.",
+        });
+        return;
+      }
+      emit({ type: "progress", message: "Claude Code installed." });
+      probes = agentDriver.refresh();
+    }
+
+    for (const p of probes) {
+      if (!p.installed || p.authed) continue;
+      emit({ type: "progress", message: `Signing in to ${label(p)} — your browser will open…` });
+      const loginArgs = p.id === "claude" ? ["auth", "login"] : ["login"];
+      const code = await streamCommand(p.bin, loginArgs, emit);
+      if (code !== 0) {
         emit({
           type: "url",
-          url: info.url,
-          instructions: info.instructions ?? "Authorize in your browser, then come back.",
+          url: "",
+          instructions: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${loginArgs.join(" ")} — then come back and retry.`,
         });
-        void shell.openExternal(info.url);
-      },
-      // fallback prompt if both the callback server and manual input stall —
-      // we just route it through the same manual-code promise
-      onPrompt: () =>
-        new Promise<string>((resolve) => {
-          pendingCode = resolve;
-        }),
-      onProgress: (message: string) => emit({ type: "progress", message }),
-      onManualCodeInput: () =>
-        new Promise<string>((resolve) => {
-          pendingCode = resolve;
-        }),
-    });
-    emit({ type: "done" });
+      }
+    }
+
+    probes = agentDriver.refresh();
+    const ready = probes.filter((p) => p.installed && p.authed);
+    if (ready.length > 0) {
+      emit({
+        type: "progress",
+        message: `Workforce ready: ${ready.map(label).join(" + ")}.`,
+      });
+      emit({ type: "done" });
+    } else {
+      emit({
+        type: "error",
+        message: "No signed-in coding CLI yet. Sign in to Claude Code or Codex, then retry.",
+      });
+    }
   } catch (err) {
     emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
   } finally {
-    pendingCode = null;
-    loginRunning = false;
+    setupRunning = false;
   }
 }
 
-/** Feed a manually pasted authorization code (or full redirect URL) into the flow. */
-export function submitAuthCode(code: string): boolean {
-  if (!pendingCode) return false;
-  pendingCode(code.trim());
-  pendingCode = null;
-  return true;
+/** Legacy manual-code hook (the CLIs own their auth flows now). */
+export function submitAuthCode(_code: string): boolean {
+  return false;
 }
 
 // ---- LLM-generated founding team -------------------------------------------
@@ -93,6 +156,25 @@ const CandidateSchema = z.object({
 });
 const CandidatesSchema = z.array(CandidateSchema).min(3).max(8);
 
+/** One-shot completion on whichever CLI is available (no tools, no session). */
+async function completeOneShot(prompt: string): Promise<string> {
+  const available = agentDriver.availableRunners();
+  const runner: AgentRunner = available[0] ?? "codex";
+  const run = runner === "claude" ? runClaude : runCodex;
+  const res = await run({
+    prompt,
+    systemPrompt: "",
+    cwd: tmpdir(),
+    bin: runnerBin(runner),
+    maxTurns: 4,
+    idleTimeoutMs: 3 * 60_000,
+    maxSessionMs: 5 * 60_000,
+    onEvent: () => {},
+  });
+  if (!res.ok) throw new Error(res.error ?? "generation failed");
+  return res.summary;
+}
+
 /** Generate a founding team tailored to the player's pitch (one cheap LLM call). */
 export async function generateCandidates(input: {
   companyName: string;
@@ -116,11 +198,7 @@ Invent 5 distinct hires tailored to THIS pitch — whatever business it is. Mix 
 
 Reply with ONLY a JSON array of 5 objects with keys name, role, title, persona, blurb. No markdown fence, no commentary.`;
 
-  const raw = await completeText(
-    piDriver.getAuth(),
-    resolveModel(DEFAULT_PROVIDER, DEFAULT_MODEL_ID),
-    prompt,
-  );
+  const raw = await completeOneShot(prompt);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
   const parsed: unknown = JSON.parse(jsonText);
   return CandidatesSchema.parse(parsed);

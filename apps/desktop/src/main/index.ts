@@ -6,7 +6,8 @@ import { handle } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
 import { initStore } from "@/main/store/store";
 import * as store from "@/main/store/store";
-import { piDriver } from "@/main/agents/pi-driver";
+import { agentDriver } from "@/main/agents/agent-driver";
+import { controlPlane } from "@/main/control-plane";
 import { scheduler } from "@/main/scheduler";
 import { startLogin, submitAuthCode, generateCandidates } from "@/main/agents/onboarding";
 import { simulatedMetrics, readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
@@ -21,7 +22,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { DEFAULT_AGENT_MODEL, HIRE_COST, isOutOfBudget } from "@/shared/domain";
+import { HIRE_COST, isAgentRunner, isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent } from "@/shared/domain";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -70,7 +71,7 @@ async function resetGame(): Promise<{ ok: boolean }> {
   scheduler.stop();
   if (metricsTimer) clearInterval(metricsTimer);
   store.suspendWrites();
-  await piDriver.disposeAll();
+  agentDriver.disposeAll();
   rmSync(ROOT_DIR, { recursive: true, force: true });
   setImmediate(() => {
     app.relaunch();
@@ -115,7 +116,7 @@ async function openWorkspacePath(companyId: string, rel: string): Promise<void> 
 }
 
 function registerIpcHandlers(): void {
-  handle("hasAuth", () => ({ ok: piDriver.hasAuth() }));
+  handle("hasAuth", () => ({ ok: agentDriver.hasAnyRunner() }));
 
   handle("startLogin", () => {
     void startLogin((e) => broadcast("onAuthEvent", e));
@@ -155,8 +156,7 @@ function registerIpcHandlers(): void {
         role: h.role,
         title: h.title,
         persona: h.persona,
-        model: DEFAULT_AGENT_MODEL,
-        thinking: null,
+        runner: agentDriver.pickRunner(i), // mixed roster across installed CLIs
         spriteSeed: h.spriteSeed,
         deskIndex: i,
       }),
@@ -252,8 +252,7 @@ function registerIpcHandlers(): void {
       role: p.role,
       title: p.title,
       persona: p.persona,
-      model: p.model ?? DEFAULT_AGENT_MODEL,
-      thinking: p.thinking ?? null,
+      runner: p.runner && isAgentRunner(p.runner) ? p.runner : agentDriver.pickRunner(p.deskIndex),
       spriteSeed: p.spriteSeed,
       deskIndex: p.deskIndex,
     });
@@ -358,7 +357,8 @@ void (async () => {
   await app.whenReady();
   initStore();
   exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
-  piDriver.init();
+  agentDriver.init(); // probe installed CLIs (claude / codex)
+  await controlPlane.start(); // loopback API running agents curl back into
   registerBuiltinPlugins();
   registerIpcHandlers();
 
@@ -389,5 +389,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  void piDriver.disposeAll();
+  agentDriver.disposeAll();
+  controlPlane.stop();
 });

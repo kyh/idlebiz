@@ -89,8 +89,7 @@ const CreateEmployeeSchema = z.object({
   persona: z.string(),
   spriteSeed: z.string(),
   deskIndex: z.number().int(),
-  model: z.string().optional(),
-  thinking: z.string().optional(),
+  runner: z.enum(["claude", "codex"]).optional(),
 });
 const CreateTaskSchema = z.object({
   companyId: z.string(),

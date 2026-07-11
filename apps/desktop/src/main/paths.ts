@@ -14,15 +14,11 @@ import { mkdirSync } from "node:fs";
 //     workspace/            shared cwd where agents do real work
 //     activity.jsonl        append-only event log (non-canonical)
 //
-// OpenAI credentials live at ~/.idlebiz/auth.json (written by the in-game
-// OAuth flow during onboarding).
+// Agents run on the player's own coding CLIs (claude / codex), which manage
+// their own credentials — IdleBiz stores no model-provider auth.
 export const ROOT_DIR = join(homedir(), ".idlebiz");
-export const AUTH_PATH = join(ROOT_DIR, "auth.json");
 /** The player's saved office layout (built in #/ui). Overrides the bundled default. */
 export const OFFICE_DESIGN_PATH = join(ROOT_DIR, "office-design.json");
-
-/** Global pi fallback dir (set once via env before any agent starts). */
-export const PI_AGENT_DIR = join(ROOT_DIR, "pi");
 
 export const companyDir = (companySlug: string): string => join(ROOT_DIR, companySlug);
 export const companyFile = (companySlug: string): string =>
@@ -62,5 +58,4 @@ export const teamChatFile = (companySlug: string, teamSlug: string): string =>
 
 export function ensureAppDirs(): void {
   mkdirSync(ROOT_DIR, { recursive: true });
-  mkdirSync(PI_AGENT_DIR, { recursive: true });
 }

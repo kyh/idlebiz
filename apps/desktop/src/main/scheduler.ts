@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
-import type { PiEvent, PiUsage } from "@repo/pi-driver/events";
+import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
-import { piDriver } from "@/main/agents/pi-driver";
-import type { RunHooks } from "@/main/agents/pi-driver";
+import { agentDriver } from "@/main/agents/agent-driver";
+import type { RunToolHooks } from "@/main/control-plane";
 import { pluginHost } from "@/main/plugins";
 import type { RunContext, RunOutcome } from "@/main/plugins";
 import { simulatedMetrics } from "@/main/metrics";
@@ -14,7 +14,7 @@ const GLOBAL_CONCURRENCY_CAP = 3;
 /**
  * Async run scheduler. Respects a global concurrency cap and a per-employee
  * single-active lock (the busy Set in-process, plus the task's runId lock
- * persisted in its TASK.md). Streams pi events to the activity log + renderer.
+ * persisted in its TASK.md). Streams agent events to the activity log + renderer.
  */
 const AUTOPILOT_TICK_MS = 10_000;
 
@@ -159,8 +159,8 @@ class Scheduler {
         .join("\n") || "(none)";
 
     const coordinate = isLeader
-      ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — call delegate(role, title, description) once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.`
-      : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${this.empName(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with delegate(role, title, description).`;
+      ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.`
+      : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${this.empName(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with the delegate tool.`;
 
     const description = [
       `You are operating autonomously to grow ${company.name}.`,
@@ -192,7 +192,7 @@ class Scheduler {
   }
 
   /** Tools the running agent can call to operate the business with teammates. */
-  private hooksFor(emp: Employee, company: Company): RunHooks {
+  private hooksFor(emp: Employee, company: Company): RunToolHooks {
     const team = store.teamForEmployee(emp.id);
 
     /** Mirror a line into the team room (if any) and the company activity feed. */
@@ -212,7 +212,7 @@ class Scheduler {
           )
           .join("\n");
       },
-      delegate: (role: string, title: string, description: string): void => {
+      delegate: (role: string, title: string, description: string): string => {
         const want = role.toLowerCase();
         const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
         const matches = (e: Employee): boolean =>
@@ -222,7 +222,7 @@ class Scheduler {
         const mate = sameTeam.find(matches) ?? pool.find(matches);
         if (!mate) {
           post(`(no "${role}" to delegate "${title}" to)`);
-          return;
+          return `No teammate matches the role "${role}" — do it yourself or pick another role.`;
         }
         const t = store.createTask({
           companyId: company.id,
@@ -237,8 +237,38 @@ class Scheduler {
         } catch {
           /* mate busy — runs on a later tick */
         }
+        return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
       },
     };
+  }
+
+  /**
+   * Event wake (paperclip convention): create + assign a task for an employee
+   * right now instead of waiting for the autopilot tick. Coalesces — an
+   * identical queued wake for the same employee is not duplicated.
+   */
+  wakeEmployee(employeeId: string, title: string, description: string): Task | null {
+    const emp = store.getEmployee(employeeId);
+    if (!emp) return null;
+    const company = store.getCompany(emp.companyId);
+    if (!company || isOutOfBudget(company)) return null;
+    const open = store
+      .listTasksForEmployee(employeeId)
+      .find((t) => t.title === title && (t.status === "queued" || t.status === "todo"));
+    if (open) return open;
+    const task = store.createTask({
+      companyId: company.id,
+      title,
+      description,
+      priority: "high",
+      assigneeId: employeeId,
+    });
+    try {
+      this.assign(task.id, employeeId);
+    } catch {
+      /* busy — the queue picks it up next tick */
+    }
+    return task;
   }
 
   /** Player assigns a task to an employee, then we try to run it. */
@@ -304,17 +334,17 @@ class Scheduler {
     const ctx: RunContext = { company, employee: emp, task };
     const extra = pluginHost.collectRunStart(ctx);
     const description = extra ? `${task.description ?? ""}\n\n${extra}`.trim() : task.description;
-    const result = await piDriver.runTask(
+    const result = await agentDriver.runTask(
       emp,
       company,
-      { title: task.title, description },
-      (ev: PiEvent) => this.onPiEvent(runId, task, emp, ev),
+      { id: task.id, title: task.title, description },
+      (ev: AgentEvent) => this.onAgentEvent(runId, task, emp, ev),
       this.hooksFor(emp, company),
     );
     this.finish(runId, task, emp, result);
   }
 
-  private onPiEvent(runId: string, task: Task, emp: Employee, ev: PiEvent): void {
+  private onAgentEvent(runId: string, task: Task, emp: Employee, ev: AgentEvent): void {
     switch (ev.type) {
       case "tool_start":
         this.emit({
@@ -350,9 +380,10 @@ class Scheduler {
       ok: boolean;
       error?: string;
       summary: string;
-      usage: PiUsage;
+      usage: AgentUsage;
       sessionId?: string;
       blockedQuestion?: string;
+      staleSession?: boolean;
     },
   ): void {
     // Decide the outcome. A failed run is retried with exponential backoff up to
@@ -380,6 +411,7 @@ class Scheduler {
 
     store.setEmployeeStatus(emp.id, "idle");
     if (r.sessionId) store.setEmployeeSession(emp.id, r.sessionId);
+    else if (r.staleSession) store.setEmployeeSession(emp.id, null); // dead resume — start fresh next run
 
     // real AI spend drains the founder's budget (once per run, not per token)
     if (r.usage.costUsd > 0) {

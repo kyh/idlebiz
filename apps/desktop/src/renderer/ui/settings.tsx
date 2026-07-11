@@ -64,8 +64,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </div>
             <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
               Reset demolishes the office: every employee, task, and workspace file your team
-              created, plus your OpenAI connection. The game restarts from scratch. There is no
-              undo.
+              created, plus stored secrets and connections. The game restarts from scratch. There is
+              no undo.
             </div>
             {resetting ? (
               <div className="px-live-dot mt-3 text-[14px]" style={{ color: "var(--danger)" }}>

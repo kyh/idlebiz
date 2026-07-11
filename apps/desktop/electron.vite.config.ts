@@ -14,11 +14,11 @@ export default defineConfig(() => ({
     },
     build: {
       outDir: ".output/app/main",
-      // bundle the workspace pi-driver source; its @mariozechner/* imports stay external
-      externalizeDeps: { exclude: ["@repo/pi-driver"] },
+      // bundle the workspace agent-driver source (raw .ts — must be inlined)
+      externalizeDeps: { exclude: ["@repo/agent-driver"] },
       rollupOptions: {
-        // sharp + pi are native/heavy: keep them external so they load from node_modules at runtime
-        external: ["electron", "sharp", "@mariozechner/pi-ai", "@mariozechner/pi-coding-agent"],
+        // sharp is native: keep it external so it loads from node_modules at runtime
+        external: ["electron", "sharp"],
         input: { index: resolve(configDir, "src/main/index.ts") },
       },
     },

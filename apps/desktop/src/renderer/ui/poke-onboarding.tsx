@@ -175,7 +175,7 @@ export function PokeOnboarding() {
   const narration: Record<Step, string> = {
     intro:
       "Welcome to IDLEBIZ! You're about to found a startup staffed by real AI employees — they write real code and real docs in a real folder on your computer.",
-    auth: "First things first: connect your OpenAI account. It's what powers your employees — no connection, no workforce.",
+    auth: "First things first: your employees run on your own coding CLI — Claude Code or Codex. No CLI, no workforce. I'll check what's installed and set it up.",
     founder: "Let's get you on payroll. What's your name, founder?",
     look: "Pick your look. This is how you'll appear around the office.",
     company: "Now the fun part. What's your company called?",
@@ -313,11 +313,7 @@ export function PokeOnboarding() {
                   disabled={authBusy}
                   className="px-btn-accent px-btn ml-auto text-[13px]"
                 >
-                  {authBusy
-                    ? "Waiting for authorization…"
-                    : authUrl
-                      ? "Try again"
-                      : "Connect OpenAI account"}
+                  {authBusy ? "Setting up…" : authUrl ? "Try again" : "Set up workforce"}
                 </button>
               </div>
             </div>

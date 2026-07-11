@@ -5,10 +5,14 @@
 // company's id is its folder name under ~/.idlebiz; an employee's id is its
 // folder name under agents/; a task's id is its folder name under tasks/.
 
-// The one place the default agent model lives.
-export const DEFAULT_PROVIDER = "openai-codex";
-export const DEFAULT_MODEL_ID = "gpt-5.5";
-export const DEFAULT_AGENT_MODEL = `${DEFAULT_PROVIDER}/${DEFAULT_MODEL_ID}`;
+/**
+ * Which coding-agent CLI powers an employee. Employees run on the player's
+ * own installed CLIs (claude / codex) — a mixed roster is normal.
+ */
+export type AgentRunner = "claude" | "codex";
+export const AGENT_RUNNERS: readonly AgentRunner[] = ["claude", "codex"];
+export const isAgentRunner = (v: string): v is AgentRunner =>
+  (AGENT_RUNNERS as readonly string[]).includes(v);
 
 /** What hiring one employee costs after the founding team. */
 export const HIRE_COST = 150;
@@ -160,8 +164,8 @@ export interface Employee {
   role: string;
   title: string;
   persona: string; // system-prompt flavor for the agent
-  model: string; // "provider/model"
-  thinking: string | null;
+  runner: AgentRunner; // which CLI executes this employee
+  model: string | null; // model override; null = the CLI's own default
   sessionId: string | null;
   spriteSeed: string; // deterministic sprite + portrait
   deskIndex: number; // which desk slot in the office

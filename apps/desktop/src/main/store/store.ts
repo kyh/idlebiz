@@ -42,13 +42,14 @@ import {
   type Scalar,
 } from "@/main/store/frontmatter";
 import {
-  DEFAULT_AGENT_MODEL,
   BUSINESS_TYPES,
   MAX_TASK_ATTEMPTS,
   businessTypeById,
+  isAgentRunner,
 } from "@/shared/domain";
 import type {
   ActivityEvent,
+  AgentRunner,
   Budget,
   BusinessTypeId,
   Company,
@@ -221,7 +222,17 @@ function docToCompany(doc: FrontmatterDoc): Company {
   };
 }
 
-/** The body of AGENTS.md doubles as the agent's actual instructions (pi reads it). */
+/** Legacy saves carry "provider/model" strings from the pi era — not a valid override. */
+function parseModelOverride(v: string | null): string | null {
+  if (!v || v.includes("/")) return null;
+  return v;
+}
+
+function parseRunner(v: string | null): AgentRunner {
+  return v && isAgentRunner(v) ? v : "codex";
+}
+
+/** The body of AGENTS.md doubles as the agent's actual instructions (injected into every run). */
 function employeeBody(e: Employee, co: Company): string {
   return `# ${e.name} — ${e.title || e.role}
 
@@ -236,14 +247,24 @@ ${co.mission}
 - Files you create, edit, and run here are REAL. Produce concrete artifacts.
 - When given a task, do it concretely and completely: write real code/docs, run commands, verify your work.
 - Finish with a short summary of exactly what you did and which files/artifacts you produced.
-- You have a private memory folder at ./memory — keep notes/decisions there so future-you remembers.
-- If you are blocked or need a decision only the founder can make, call the \`ask_boss\` tool with a concise question instead of guessing or stopping.
+- You have a private memory folder at ${employeeMemoryDir(co.id, e.id)} — keep notes/decisions there so future-you remembers.
+
+## Company tools (the IdleBiz API)
+Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl; always send the Authorization header. Quote JSON carefully (single-quote the payload).
+- **ask_boss** — you are blocked or need a decision only the founder can make. Use sparingly; prefer making reasonable choices yourself. Note the answer arrives later — continue with whatever you can still do.
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"question":"..."}'\`
+- **message_team** — post a one-line update, decision, ask, or handoff to the team room so teammates see it live.
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"text":"..."}'\`
+- **read_team_chat** — catch up on the room before you act, so you build on teammates' work instead of duplicating it.
+  \`curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"\`
+- **delegate** — hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel.
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"...","description":"..."}'\`
 
 ## Working with your team
 - You operate autonomously to grow the business — you don't wait to be told what to do.
-- You belong to a team with a designated lead. Catch up on what teammates are doing with the \`read_team_chat\` tool before you start, so you build on their work instead of duplicating it.
-- Post short progress updates, decisions, and handoffs to your team's shared room with the \`message_team\` tool so teammates can see them live.
-- When work is better owned by another role, hand it off with the \`delegate\` tool (give the role, a title, and what to do) — call it once for a single handoff, or several times to fan work out across the team in parallel. If you lead the team, coordinating and delegating is your main job.
+- You belong to a team with a designated lead. Catch up with read_team_chat before you start.
+- Post short progress updates to the room with message_team so teammates can see them live.
+- When work is better owned by another role, hand it off with delegate. If you lead the team, coordinating and delegating is your main job.
 
 ## Make the business REAL
 - The goal is a real product with real users, not documents about one. Bias toward a runnable, shippable thing.
@@ -265,13 +286,13 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
     role: e.role,
     title: e.title,
     persona: e.persona,
-    model: e.model,
+    runner: e.runner,
     spriteSeed: e.spriteSeed,
     deskIndex: e.deskIndex,
     status: e.status,
     createdAt: e.createdAt,
   };
-  if (e.thinking !== null) metadata.thinking = e.thinking;
+  if (e.model !== null) metadata.model = e.model;
   if (e.sessionId !== null) metadata.sessionId = e.sessionId;
   if (e.teamId !== null) metadata.teamId = e.teamId;
   return {
@@ -297,8 +318,8 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
     role: optStr(m, "role") ?? "general",
     title: optStr(m, "title") ?? optStr(f, "description") ?? "",
     persona: optStr(m, "persona") ?? "",
-    model: optStr(m, "model") ?? DEFAULT_AGENT_MODEL,
-    thinking: optStr(m, "thinking"),
+    runner: parseRunner(optStr(m, "runner")),
+    model: parseModelOverride(optStr(m, "model")),
     sessionId: optStr(m, "sessionId"),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     deskIndex: optNum(m, "deskIndex", 0),
@@ -920,8 +941,8 @@ export function createEmployee(input: {
   role: string;
   title: string;
   persona: string;
-  model: string;
-  thinking: string | null;
+  runner: AgentRunner;
+  model?: string | null;
   spriteSeed: string;
   deskIndex: number;
 }): Employee {
@@ -938,8 +959,8 @@ export function createEmployee(input: {
     role: input.role,
     title: input.title,
     persona: input.persona,
-    model: input.model,
-    thinking: input.thinking,
+    runner: input.runner,
+    model: input.model ?? null,
     sessionId: null,
     spriteSeed: input.spriteSeed,
     deskIndex: input.deskIndex,
@@ -960,6 +981,15 @@ export function getEmployee(id: string): Employee | null {
     if (found) return found;
   }
   return null;
+}
+
+/** The rendered AGENTS.md body — what a run injects as the agent's instructions. */
+export function employeeInstructions(employeeId: string): string {
+  const e = getEmployee(employeeId);
+  if (!e) throw new Error(`employee ${employeeId} not found`);
+  const co = c().companies.get(e.companyId);
+  if (!co) throw new Error(`company ${e.companyId} not found`);
+  return employeeBody(e, co);
 }
 
 export function listEmployees(companyId: string): Employee[] {
