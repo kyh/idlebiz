@@ -14,6 +14,25 @@ export const AGENT_RUNNERS: readonly AgentRunner[] = ["claude", "codex"];
 export const isAgentRunner = (v: string): v is AgentRunner =>
   (AGENT_RUNNERS as readonly string[]).includes(v);
 
+/** Hard ceiling on team size — the LLM staffs freely underneath it. */
+export const DEFAULT_MAX_AGENTS = 12;
+
+// ---- typed integration asks --------------------------------------------------
+// Agents request real-world connections ("we need hosting to deploy") through
+// ask_boss with a typed marker; the notification renders a [Connect] button
+// and the blocked task auto-resumes once the founder connects.
+
+export type IntegrationKind = "vercel" | "stripe";
+
+export const integrationAsk = (kind: IntegrationKind, reason: string): string =>
+  `[connect:${kind}] ${reason}`;
+
+export function parseIntegrationAsk(q: string): { kind: IntegrationKind; reason: string } | null {
+  const m = /^\[connect:(vercel|stripe)\]\s*([\s\S]*)$/.exec(q);
+  if (!m) return null;
+  return { kind: m[1] === "vercel" ? "vercel" : "stripe", reason: (m[2] ?? "").trim() };
+}
+
 export type TaskStatus =
   | "todo"
   | "queued"
@@ -145,6 +164,7 @@ export interface Company {
   founderName: string;
   founderSpriteSeed: string;
   autopilot: boolean; // when true, idle employees self-direct work (idle-game loop)
+  maxAgents: number; // seat cap — the team lead hires/releases freely below it
   ships: number; // units of work the team has shipped
   revenueUsd: number | null; // REAL revenue (Stripe); null until a source is connected
   users: number | null; // REAL users (analytics); null until a source is connected

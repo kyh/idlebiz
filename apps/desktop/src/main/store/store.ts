@@ -16,6 +16,7 @@ import {
   companyWorkspace,
   activityFile,
   agentsDir,
+  alumniDir,
   employeeAgentDir,
   employeeFile,
   employeeMemoryDir,
@@ -43,6 +44,7 @@ import {
 } from "@/main/store/frontmatter";
 import {
   BUSINESS_TYPES,
+  DEFAULT_MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
   businessTypeById,
   isAgentRunner,
@@ -174,6 +176,7 @@ function companyToDoc(co: Company): FrontmatterDoc {
       founderSpriteSeed: co.founderSpriteSeed,
       businessType: co.businessType,
       autopilot: co.autopilot,
+      maxAgents: co.maxAgents,
       ships: co.ships,
       // real metrics: absent keys mean "no source has ever reported"
       ...(co.revenueUsd !== null ? { revenueUsd: co.revenueUsd } : {}),
@@ -213,6 +216,7 @@ function docToCompany(doc: FrontmatterDoc): Company {
     founderName: optStr(m, "founderName") ?? "Founder",
     founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? "founder-player-001",
     autopilot: optBool(m, "autopilot", true),
+    maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
     ships: optNum(m, "ships", 0),
     revenueUsd: m.revenueUsd === undefined ? null : optNum(m, "revenueUsd", 0),
     users: m.users === undefined ? null : optNum(m, "users", 0),
@@ -235,6 +239,14 @@ function parseRunner(v: string | null): AgentRunner {
 
 /** The body of AGENTS.md doubles as the agent's actual instructions (injected into every run). */
 function employeeBody(e: Employee, co: Company): string {
+  const lead = teamForEmployee(e.id)?.leaderId === e.id;
+  const leadTools = lead
+    ? `
+- **hire** — you lead the team and own headcount (hard cap ${co.maxAgents} seats): add a role the backlog demands. Give a real first name and a vivid 2-3 sentence persona.
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/hire" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"Frontend Engineer","name":"Mara","persona":"..."}'\`
+- **release** — let a teammate go when their role stopped pulling weight (their work is archived, never deleted).
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/release" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"slug":"teammate-slug","reason":"..."}'\``
+    : "";
   return `# ${e.name} — ${e.title || e.role}
 
 You are ${e.name}, the ${e.title || e.role} at "${co.name}", a startup.
@@ -260,6 +272,8 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
   \`curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"\`
 - **delegate** — hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel.
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"...","description":"..."}'\`
+- **request_integration** — the business needs a real-world connection: \`"vercel"\` (hosting, deploys, traffic analytics) or \`"stripe"\` (charging money). The founder gets a card with a Connect button; this task resumes automatically once they connect.
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/request-integration" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"kind":"vercel","reason":"..."}'\`${leadTools}
 
 ## Working with your team
 - You operate autonomously to grow the business — you don't wait to be told what to do.
@@ -667,6 +681,7 @@ export function createCompany(input: {
     founderName: input.founderName,
     founderSpriteSeed: input.founderSpriteSeed,
     autopilot: true,
+    maxAgents: DEFAULT_MAX_AGENTS,
     ships: 0,
     revenueUsd: null,
     users: null,
@@ -815,6 +830,46 @@ export function addTeamMember(teamId: string, employeeId: string): Team | null {
   const memberIds = t.memberIds.includes(employeeId) ? t.memberIds : [...t.memberIds, employeeId];
   patchEmployee(employeeId, { teamId });
   return patchTeam(teamId, { memberIds });
+}
+
+/**
+ * Release an employee: archive their package to alumni/ (memory + history
+ * preserved, never deleted), prune them from their team, and orphan their
+ * open tasks so nothing keeps scheduling them.
+ */
+export function archiveEmployee(employeeId: string): Employee | null {
+  const emp = getEmployee(employeeId);
+  if (!emp) return null;
+  const team = teamForEmployee(employeeId);
+  if (team) {
+    patchTeam(team.id, {
+      memberIds: team.memberIds.filter((id) => id !== employeeId),
+      ...(team.leaderId === employeeId ? { leaderId: null } : {}),
+    });
+  }
+  const companyTasks = c().tasks.get(emp.companyId) ?? [];
+  for (const t of companyTasks) {
+    if (t.assigneeId === employeeId && (t.status === "todo" || t.status === "queued")) {
+      const next: Task = { ...t, assigneeId: null };
+      companyTasks[companyTasks.indexOf(t)] = next;
+      saveTask(next);
+    }
+  }
+  const list = c().employees.get(emp.companyId);
+  if (list) {
+    const idx = list.findIndex((e) => e.id === employeeId);
+    if (idx >= 0) list.splice(idx, 1);
+  }
+  try {
+    mkdirSync(alumniDir(emp.companyId), { recursive: true });
+    renameSync(
+      employeeAgentDir(emp.companyId, employeeId),
+      join(alumniDir(emp.companyId), employeeId),
+    );
+  } catch {
+    /* archive is best-effort — the roster removal is what matters */
+  }
+  return emp;
 }
 
 /** The team an employee belongs to, if any. */

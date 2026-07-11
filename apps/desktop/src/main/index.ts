@@ -23,8 +23,8 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isAgentRunner, isOutOfBudget } from "@/shared/domain";
-import type { ActivityEvent } from "@/shared/domain";
+import { isAgentRunner, isOutOfBudget, parseIntegrationAsk } from "@/shared/domain";
+import type { ActivityEvent, IntegrationKind } from "@/shared/domain";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -93,6 +93,30 @@ function registerBuiltinPlugins(): void {
     },
   };
   pluginHost.register(shipMilestones);
+}
+
+/**
+ * When the founder connects an integration, every task blocked on a typed
+ * ask for it resumes automatically (paperclip's wake-assignee convention).
+ */
+function resumeIntegrationAsks(kind: IntegrationKind): void {
+  const company = store.getDefaultCompany();
+  if (!company) return;
+  for (const task of store.listTasks(company.id)) {
+    if (task.status !== "blocked" || !task.blockedQuestion) continue;
+    if (parseIntegrationAsk(task.blockedQuestion)?.kind !== kind) continue;
+    const continuation = store.resolveBlockedWithAnswer(
+      task.id,
+      `${kind === "vercel" ? "Vercel" : "Stripe"} is now connected — the credentials are in your environment. Continue where you left off.`,
+    );
+    if (continuation?.assigneeId) {
+      try {
+        scheduler.assign(continuation.id, continuation.assigneeId);
+      } catch {
+        /* busy — the queue picks it up next tick */
+      }
+    }
+  }
 }
 
 /** The workspace PRODUCT.md `entry:` convention — how the team points at the product. */
@@ -262,6 +286,7 @@ function registerIpcHandlers(): void {
       vercel: teamId ? { projectId, projectName, teamId } : { projectId, projectName },
     });
     runMetricsPulse(); // users flip without waiting 30s
+    resumeIntegrationAsks("vercel"); // agents waiting on hosting get back to work
     return { ok: true };
   });
 
@@ -405,7 +430,10 @@ void (async () => {
 
   initStripeConnect({
     notify: (status) => broadcast("onStripeStatus", status),
-    onConnected: () => runMetricsPulse(), // ⚡ flips without waiting 30s
+    onConnected: () => {
+      runMetricsPulse(); // ⚡ flips without waiting 30s
+      resumeIntegrationAsks("stripe"); // agents waiting on payments resume
+    },
   });
 
   mainWindow = createWindow();

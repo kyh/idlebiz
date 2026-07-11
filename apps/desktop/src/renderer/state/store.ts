@@ -164,6 +164,20 @@ function onActivity(e: ActivityEvent): void {
       .catch(() => undefined);
     return;
   }
+  // the team self-sizes: reflect hires/releases in the office immediately
+  if (e.kind === "lifecycle" && (e.message === "org.hired" || e.message === "org.released")) {
+    const hired = e.message === "org.hired";
+    void refresh().then(() => {
+      if (hired && e.employeeId) {
+        const emp = state.employees.find((x) => x.id === e.employeeId);
+        if (emp) state.game?.events.emit("spawn-employee", emp);
+      } else {
+        state.game?.events.emit("company-ready"); // rebuild the office minus the leaver
+      }
+      return null;
+    });
+    return;
+  }
   if (e.kind === "lifecycle" && e.message === "run.end") void refresh();
 }
 

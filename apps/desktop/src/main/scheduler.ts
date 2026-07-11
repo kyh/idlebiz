@@ -157,9 +157,15 @@ class Scheduler {
         .map((t) => `- ${t.title}${t.lastError ? ` (last error: ${t.lastError})` : ""}`)
         .join("\n") || "(none)";
 
+    const budgetLine =
+      company.budget.mode === "capped"
+        ? `AI budget: $${company.spentUsd.toFixed(2)} of $${company.budget.capUsd.toFixed(2)} spent${company.spentUsd >= company.budget.capUsd * 0.8 ? " — over 80%: critical work only, keep runs short" : ""}.`
+        : `AI spend so far: $${company.spentUsd.toFixed(2)} (no cap set).`;
+
     const coordinate = isLeader
-      ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.`
-      : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${this.empName(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with the delegate tool.`;
+      ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.
+You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length} filled): hire when the backlog demands a role you don't have (hire tool — give role, title, name, persona), release teammates whose role stopped pulling weight (release tool — their work is archived, not lost). Size the team to the budget: more people burn money faster. ${budgetLine}`
+      : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${this.empName(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with the delegate tool. ${budgetLine}`;
 
     const description = [
       `You are operating autonomously to grow ${company.name}.`,
@@ -193,6 +199,7 @@ class Scheduler {
   /** Tools the running agent can call to operate the business with teammates. */
   private hooksFor(emp: Employee, company: Company): RunToolHooks {
     const team = store.teamForEmployee(emp.id);
+    const isLeader = team?.leaderId === emp.id;
 
     /** Mirror a line into the team room (if any) and the company activity feed. */
     const post = (text: string): void => {
@@ -237,6 +244,54 @@ class Scheduler {
           /* mate busy — runs on a later tick */
         }
         return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
+      },
+      hire: ({ role, title, name, persona }): string => {
+        if (!isLeader) return "Only the team lead can hire — raise it in the team room.";
+        const all = store.listEmployees(company.id);
+        if (all.length >= company.maxAgents) {
+          return `The office is at its ${company.maxAgents}-seat cap — release someone first or work with the team you have.`;
+        }
+        const hireName = name ?? `${title} ${all.length + 1}`;
+        const hired = store.createEmployee({
+          companyId: company.id,
+          name: hireName,
+          role,
+          title,
+          persona: persona ?? `A focused, pragmatic ${title} who ships.`,
+          runner: agentDriver.pickRunner(all.length),
+          spriteSeed: `${role}-${hireName}-${Date.now().toString(36)}`,
+          deskIndex: all.length,
+        });
+        if (team) store.addTeamMember(team.id, hired.id);
+        post(`🤝 hired ${hired.name} (${title})`);
+        this.emit({
+          employeeId: hired.id,
+          kind: "lifecycle",
+          message: "org.hired",
+          payload: { by: emp.id, name: hired.name, title },
+        });
+        return `Hired ${hired.name} (${title}) — slug "${hired.id}". They start picking up work autonomously; delegate to them right away if you have something specific.`;
+      },
+      release: (slug, reason): string => {
+        if (!isLeader) return "Only the team lead can release teammates.";
+        if (slug === emp.id) return "You can't release yourself.";
+        const target = store.getEmployee(slug);
+        if (!target || target.companyId !== company.id) {
+          return `No teammate with slug "${slug}" — check the roster in your brief.`;
+        }
+        if (this.busy.has(slug)) {
+          return `${target.name} is mid-task right now — try again when they're idle.`;
+        }
+        agentDriver.disposeEmployee(slug);
+        store.archiveEmployee(slug);
+        post(`👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
+        this.emit({
+          employeeId: target.id,
+          kind: "lifecycle",
+          message: "org.released",
+          payload: { by: emp.id, name: target.name, reason },
+        });
+        return `Released ${target.name}. Their workspace contributions and memory are archived under alumni/.`;
       },
     };
   }

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
+import { integrationAsk } from "@/shared/domain";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
@@ -15,6 +16,10 @@ export interface RunToolHooks {
   readTeam(): string;
   /** Returns a human-readable confirmation (or explains why nothing happened). */
   delegate(role: string, title: string, description: string): string;
+  /** Team-lead only: grow the roster (gated by the company's seat cap). */
+  hire(input: { role: string; title: string; name?: string; persona?: string }): string;
+  /** Team-lead only: release a teammate (their package is archived, not deleted). */
+  release(slug: string, reason: string): string;
 }
 
 interface RunRecord {
@@ -171,6 +176,56 @@ class ControlPlane {
             return;
           }
           respond(res, 200, { ok: true, message: run.hooks.delegate(role, title, description) });
+          return;
+        }
+        case "POST /v1/hire": {
+          const body = await readJsonBody(req);
+          const role = strField(body, "role");
+          const title = strField(body, "title");
+          if (!role || !title) {
+            respond(res, 400, { ok: false, error: "missing string fields: role, title" });
+            return;
+          }
+          const message = run.hooks.hire({
+            role,
+            title,
+            name: strField(body, "name") ?? undefined,
+            persona: strField(body, "persona") ?? undefined,
+          });
+          respond(res, 200, { ok: true, message });
+          return;
+        }
+        case "POST /v1/release": {
+          const body = await readJsonBody(req);
+          const slug = strField(body, "slug");
+          if (!slug) {
+            respond(res, 400, { ok: false, error: "missing string field: slug" });
+            return;
+          }
+          respond(res, 200, {
+            ok: true,
+            message: run.hooks.release(slug, strField(body, "reason") ?? ""),
+          });
+          return;
+        }
+        case "POST /v1/request-integration": {
+          const body = await readJsonBody(req);
+          const kind = strField(body, "kind");
+          const reason = strField(body, "reason");
+          if ((kind !== "vercel" && kind !== "stripe") || !reason) {
+            respond(res, 400, {
+              ok: false,
+              error: 'kind must be "vercel" or "stripe", and reason is required',
+            });
+            return;
+          }
+          // A typed ask: the notification renders a [Connect] button and this
+          // task auto-resumes when the founder connects.
+          run.blockedQuestion = integrationAsk(kind, reason);
+          respond(res, 200, {
+            ok: true,
+            message: `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
+          });
           return;
         }
         default: {

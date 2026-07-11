@@ -77,7 +77,16 @@ export function App() {
             <Dialogue />
             {hiring && <Hiring onClose={() => setHiring(false)} />}
             {ships && <Ships onClose={() => setShips(false)} />}
-            {inbox && <Inbox onClose={() => setInbox(false)} />}
+            {inbox && (
+              <Inbox
+                onClose={() => setInbox(false)}
+                onConnect={(kind) => {
+                  setInbox(false);
+                  if (kind === "vercel") setVercel(true);
+                  else setBudget(true); // Stripe connect lives in the budget modal
+                }}
+              />
+            )}
             {teams && <Teams onClose={() => setTeams(false)} />}
             {budget && <BudgetModal onClose={() => setBudget(false)} />}
             {vercel && <ConnectVercel onClose={() => setVercel(false)} />}

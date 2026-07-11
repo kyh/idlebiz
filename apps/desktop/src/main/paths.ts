@@ -30,6 +30,8 @@ export const activityFile = (companySlug: string): string =>
   join(companyDir(companySlug), "activity.jsonl");
 
 export const agentsDir = (companySlug: string): string => join(companyDir(companySlug), "agents");
+/** Released employees are archived here (package preserved, never deleted). */
+export const alumniDir = (companySlug: string): string => join(companyDir(companySlug), "alumni");
 /** Per-employee package dir; doubles as the pi agentDir (AGENTS.md lives here). */
 export const employeeAgentDir = (companySlug: string, employeeSlug: string): string =>
   join(agentsDir(companySlug), employeeSlug);

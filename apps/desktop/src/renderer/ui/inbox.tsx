@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
 import { useStore, setModalOpen, refresh, retryTask } from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
-import type { Task } from "@/shared/domain";
+import { parseIntegrationAsk } from "@/shared/domain";
+import type { IntegrationKind, Task } from "@/shared/domain";
 
 /** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
  *  place (walking up to the "!" in the office still works — this is the fast path). */
-export function Inbox({ onClose }: { onClose: () => void }) {
+export function Inbox({
+  onClose,
+  onConnect,
+}: {
+  onClose: () => void;
+  /** Launch the connect flow for a typed integration ask. */
+  onConnect: (kind: IntegrationKind) => void;
+}) {
   const { company, employees, pendingAsks, stuckTasks } = useStore();
 
   useEffect(() => {
@@ -38,9 +46,20 @@ export function Inbox({ onClose }: { onClose: () => void }) {
               All clear — nobody's waiting on you.
             </div>
           ) : null}
-          {pendingAsks.map((t) => (
-            <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
-          ))}
+          {pendingAsks.map((t) => {
+            const ask = t.blockedQuestion ? parseIntegrationAsk(t.blockedQuestion) : null;
+            return ask ? (
+              <ConnectRow
+                key={t.id}
+                t={t}
+                by={nameOf(t.assigneeId)}
+                ask={ask}
+                onConnect={onConnect}
+              />
+            ) : (
+              <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
+            );
+          })}
           {stuckTasks.length > 0 ? (
             <div className="pt-1 text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
               Stuck — needs a retry
@@ -50,6 +69,40 @@ export function Inbox({ onClose }: { onClose: () => void }) {
             <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** A typed integration ask: the agent needs a real-world connection. Connecting
+ *  resumes the blocked task automatically — no text answer required. */
+function ConnectRow({
+  t,
+  by,
+  ask,
+  onConnect,
+}: {
+  t: Task;
+  by: string;
+  ask: { kind: IntegrationKind; reason: string };
+  onConnect: (kind: IntegrationKind) => void;
+}) {
+  const label = ask.kind === "vercel" ? "Vercel" : "Stripe";
+  return (
+    <div className="px-inset p-3">
+      <div className="text-[12px] text-[var(--accent-lo)]">
+        🔌 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
+      </div>
+      <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
+        {ask.reason || `The team needs ${label} connected to keep going.`}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-[var(--text-dim)]">
+          Their task resumes automatically once connected.
+        </span>
+        <button onClick={() => onConnect(ask.kind)} className="px-btn-accent px-btn">
+          Connect {label}
+        </button>
       </div>
     </div>
   );

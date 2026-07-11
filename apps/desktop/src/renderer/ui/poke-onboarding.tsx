@@ -75,7 +75,6 @@ export function PokeOnboarding() {
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
   const [pitch, setPitch] = useState("");
   const [hires, setHires] = useState<HireProposal[] | null>(null);
-  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
 
@@ -129,7 +128,6 @@ export function PokeOnboarding() {
         })
         .then((h) => {
           setHires(h);
-          setPicked(new Set(h.map((_, i) => i)));
           return null;
         })
         .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
@@ -137,7 +135,7 @@ export function PokeOnboarding() {
   }, [step, authed, founderName, companyName, biz, pitch]);
 
   const finalize = async () => {
-    if (!hires || picked.size === 0 || finalizing) return;
+    if (!hires || hires.length === 0 || finalizing) return;
     setFinalizing(true);
     setStep("finalize");
     try {
@@ -149,7 +147,7 @@ export function PokeOnboarding() {
         founderName: founderName.trim(),
         founderSpriteSeed: seed,
       });
-      await bridge().batchHire({ companyId: co.id, hires: hires.filter((_, i) => picked.has(i)) });
+      await bridge().batchHire({ companyId: co.id, hires });
       await bridge().completeOnboarding({ companyId: co.id });
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
@@ -184,7 +182,7 @@ export function PokeOnboarding() {
     team:
       hires === null
         ? "Putting out the job posting… reviewing resumes…"
-        : "Here's your founding team. Uncheck anyone you don't want — then let's open the office!",
+        : "Your founding team, cast for this exact pitch. From here the team lead grows or shrinks the roster on their own — you steer with the budget.",
     finalize: "Signing the lease… assembling desks… your office is ready!",
   };
 
@@ -227,29 +225,16 @@ export function PokeOnboarding() {
 
         {step === "team" && hires ? (
           <div className="px-window grid max-h-[46vh] w-full grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
-            {hires.map((h, i) => (
-              <button
-                key={h.spriteSeed}
-                onClick={() =>
-                  setPicked((p) => {
-                    const n = new Set(p);
-                    if (n.has(i)) n.delete(i);
-                    else n.add(i);
-                    return n;
-                  })
-                }
-                className="px-inset flex items-start gap-2 p-2 text-left"
-                style={{ opacity: picked.has(i) ? 1 : 0.45 }}
-              >
+            {hires.map((h) => (
+              <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
                 <Portrait seed={h.spriteSeed} />
                 <span>
                   <span className="block text-[13px] text-[var(--text)]">
-                    {picked.has(i) ? "☑" : "☐"} {h.name} ·{" "}
-                    <span className="text-[var(--accent-lo)]">{h.title}</span>
+                    {h.name} · <span className="text-[var(--accent-lo)]">{h.title}</span>
                   </span>
                   <span className="block text-[10px] text-[var(--text-dim)]">{h.blurb}</span>
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         ) : null}
@@ -410,10 +395,10 @@ export function PokeOnboarding() {
           {step === "team" && hires ? (
             <button
               onClick={() => void finalize()}
-              disabled={picked.size === 0 || finalizing}
+              disabled={finalizing}
               className="px-btn-accent px-btn ml-auto text-[13px]"
             >
-              Hire {picked.size} & open the office →
+              Open the office →
             </button>
           ) : null}
         </div>
