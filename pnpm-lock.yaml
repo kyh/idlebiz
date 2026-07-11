@@ -122,6 +122,15 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/agent-driver:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/pi-driver:
     dependencies:
       '@mariozechner/pi-ai':

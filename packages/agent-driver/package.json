@@ -1,0 +1,18 @@
+{
+  "name": "@repo/agent-driver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI coding-agent runners (claude, codex): spawn, stream NDJSON events, price usage",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .cache .turbo"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}
