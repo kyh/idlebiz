@@ -9,7 +9,7 @@ import type {
   Team,
   TeamMessage,
 } from "@/shared/domain";
-import type { StripeStatus } from "@/shared/ipc-registry";
+import type { StripeStatus, VercelStatus } from "@/shared/ipc-registry";
 import { applyOfficeLayout } from "@/renderer/game/office-layout";
 
 interface State {
@@ -17,6 +17,7 @@ interface State {
   authed: boolean;
   liveMetrics: boolean; // true when real-world providers (Stripe/analytics) feed the numbers
   stripeStatus: StripeStatus;
+  vercelStatus: VercelStatus;
   company: Company | null;
   employees: Employee[];
   teams: Team[];
@@ -32,6 +33,7 @@ let state: State = {
   authed: true,
   liveMetrics: false,
   stripeStatus: { state: "disconnected" },
+  vercelStatus: { state: "disconnected" },
   company: null,
   employees: [],
   teams: [],
@@ -84,6 +86,9 @@ export function initStore(): void {
   void bridge()
     .stripeStatus()
     .then((s) => set({ stripeStatus: s }));
+  void bridge()
+    .vercelStatus()
+    .then((s) => set({ vercelStatus: s }));
   bridge().onActivity((e: ActivityEvent) => onActivity(e));
   bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
 }
@@ -195,6 +200,25 @@ export async function disconnectStripe(): Promise<void> {
   const c = state.company;
   if (!c) return;
   await bridge().stripeDisconnect({ companyId: c.id });
+}
+
+export async function connectVercel(input: {
+  token: string;
+  projectId: string;
+  projectName: string;
+  teamId?: string;
+}): Promise<void> {
+  const c = state.company;
+  if (!c) return;
+  await bridge().vercelConnect({ companyId: c.id, ...input });
+  set({ vercelStatus: await bridge().vercelStatus() });
+}
+
+export async function disconnectVercel(): Promise<void> {
+  const c = state.company;
+  if (!c) return;
+  await bridge().vercelDisconnect({ companyId: c.id });
+  set({ vercelStatus: { state: "disconnected" } });
 }
 
 export async function resetGame(): Promise<void> {

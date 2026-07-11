@@ -41,6 +41,23 @@ export type StripeStatus =
   | { state: "connected"; accountId: string; livemode: boolean }
   | { state: "error"; message: string };
 
+/** Vercel link state (token-based; no OAuth). */
+export type VercelStatus =
+  | { state: "disconnected" }
+  | { state: "connected"; projectId: string; projectName: string };
+
+/** A Vercel project the founder can bind the company to. */
+export type VercelProjectChoice = { id: string; name: string; teamId?: string };
+
+/** The product panel's real-world state. */
+export type ProductStatus = {
+  ships: number;
+  /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
+  entry: string | null;
+  /** Latest production deployment when Vercel is connected. */
+  deploy: { url: string; state: string; createdAt: number } | null;
+};
+
 /** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
 export type CharacterAssets = {
   seed: string;
@@ -134,6 +151,16 @@ export const SCHEMAS = {
   resetSpend: z.object({ companyId: z.string() }),
   stripeConnect: z.object({ companyId: z.string() }),
   stripeDisconnect: z.object({ companyId: z.string() }),
+  vercelListProjects: z.object({ token: z.string() }),
+  vercelConnect: z.object({
+    companyId: z.string(),
+    token: z.string(),
+    projectId: z.string(),
+    projectName: z.string(),
+    teamId: z.string().optional(),
+  }),
+  vercelDisconnect: z.object({ companyId: z.string() }),
+  productStatus: z.object({ companyId: z.string() }),
   saveOfficeDesign: z.object({ json: z.string() }),
 } satisfies Partial<Record<IpcMethod, z.ZodTypeAny>>;
 
@@ -165,6 +192,24 @@ export interface Contract {
   stripeConnect: { payload: { companyId: string }; result: { started: boolean } };
   stripeDisconnect: { payload: { companyId: string }; result: { ok: boolean } };
   onStripeStatus: { payload: void; result: StripeStatus };
+
+  vercelStatus: { payload: void; result: VercelStatus };
+  vercelListProjects: {
+    payload: { token: string };
+    result: { ok: boolean; account?: string; projects: VercelProjectChoice[] };
+  };
+  vercelConnect: {
+    payload: {
+      companyId: string;
+      token: string;
+      projectId: string;
+      projectName: string;
+      teamId?: string;
+    };
+    result: { ok: boolean };
+  };
+  vercelDisconnect: { payload: { companyId: string }; result: { ok: boolean } };
+  productStatus: { payload: { companyId: string }; result: ProductStatus };
 
   listEmployees: { payload: { companyId: string }; result: Employee[] };
   createEmployee: { payload: z.infer<typeof CreateEmployeeSchema>; result: Employee };

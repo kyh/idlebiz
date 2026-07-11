@@ -27,6 +27,12 @@ export const CHANNELS = {
   stripeDisconnect: { channel: "stripe:disconnect", kind: "invoke" },
   onStripeStatus: { channel: "stripe:event", kind: "event" },
 
+  vercelStatus: { channel: "vercel:status", kind: "invoke-void" },
+  vercelListProjects: { channel: "vercel:projects", kind: "invoke" },
+  vercelConnect: { channel: "vercel:connect", kind: "invoke" },
+  vercelDisconnect: { channel: "vercel:disconnect", kind: "invoke" },
+  productStatus: { channel: "company:product-status", kind: "invoke" },
+
   listEmployees: { channel: "employee:list", kind: "invoke" },
   createEmployee: { channel: "employee:create", kind: "invoke" },
 

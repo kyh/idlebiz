@@ -53,6 +53,7 @@ export function Hud({
   onShips,
   onInbox,
   onBudget,
+  onUsers,
   onSettings,
   onTeams,
 }: {
@@ -60,6 +61,7 @@ export function Hud({
   onShips: () => void;
   onInbox: () => void;
   onBudget: () => void;
+  onUsers: () => void;
   onSettings: () => void;
   onTeams: () => void;
 }) {
@@ -89,7 +91,7 @@ export function Hud({
           value={company.users === null ? "—" : fmt(company.users)}
           accent="#86c0ee"
           sub={company.users === null ? "connect" : liveMetrics ? "real" : undefined}
-          onClick={onBudget}
+          onClick={onUsers}
         />
         <Stat label="shipped" value={String(company.ships)} sub={version} onClick={onShips} />
         <Stat

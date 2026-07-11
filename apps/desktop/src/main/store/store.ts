@@ -273,10 +273,11 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
   \`entry: <relative path or URL to open the product, e.g. dist/index.html or https://...>\`
   \`status: <one line on the current state>\`
   Update \`entry\` whenever the canonical way to open the product changes (and after any deploy, set it to the public URL).
-- Publishing: from the product's folder you can run \`vg deploy\` to publish it to the web and get a public URL. ALWAYS ask the founder first via \`ask_boss\` before publishing or re-publishing.
+- Publishing: if \`VERCEL_TOKEN\` is set in your environment, the founder has connected Vercel — deploy the product for real with \`npx vercel deploy --yes --prod --token "$VERCEL_TOKEN"\` from the product's folder. If it is NOT set and the product is ready to ship, ask the founder to connect Vercel via \`ask_boss\`. ALWAYS ask the founder first via \`ask_boss\` before the FIRST publish of anything.
+- Charging money: if \`STRIPE_SECRET_KEY\` or a Stripe connection exists in your environment, you can build real payments. If the product is live and could charge but Stripe isn't connected, ask the founder to connect it via \`ask_boss\`.
 - Marketing & outreach: write real copy, launch posts, outreach drafts. You can research and test in a real browser with the \`agent-browser\` CLI (\`agent-browser open <url>\`, \`snapshot\`, \`click\`, \`type\`, \`screenshot\`) — use \`--session yourname\` to keep your own browser session. To POST anywhere public: draft the exact content first, get founder approval via \`ask_boss\` (include the draft in your question), and only then publish it.
-- Secrets: the founder may configure API keys (e.g. STRIPE_SECRET_KEY) — they're available to you as environment variables. Never print or commit secret values.
-- Real metrics: if the founder wires up \`metrics.json\`, the business dashboard reads REAL users/revenue — your work moves real numbers. You can also propose analytics for the product (e.g. a /metrics endpoint returning {"users":n,"revenue":n}) and ask the founder to point metrics.json at it.
+- Secrets: the founder's API keys (VERCEL_TOKEN, STRIPE keys, …) arrive as environment variables. Never print or commit secret values.
+- The dashboard reads REAL numbers only: users come from Vercel Web Analytics on the deployed product, revenue from Stripe. Your work is what moves them — there is no simulation.
 - Permission rule: anything outward-facing — publishing, posting publicly, creating accounts, spending money — needs founder sign-off first via \`ask_boss\`. Internal work in the workspace never needs permission.
 - After shipping something findable (a URL, a file), say exactly where it lives in your summary.
 `;

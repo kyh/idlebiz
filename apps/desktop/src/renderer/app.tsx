@@ -10,6 +10,7 @@ import { Ships } from "@/renderer/ui/ships";
 import { Inbox } from "@/renderer/ui/inbox";
 import { Teams } from "@/renderer/ui/teams";
 import { BudgetModal } from "@/renderer/ui/budget-modal";
+import { ConnectVercel } from "@/renderer/ui/connect-vercel";
 import { Settings } from "@/renderer/ui/settings";
 import { CompanyFeed } from "@/renderer/ui/company-feed";
 import { OfficeObjectCatalog } from "@/renderer/ui/office-object-catalog";
@@ -22,6 +23,7 @@ export function App() {
   const [inbox, setInbox] = useState(false);
   const [teams, setTeams] = useState(false);
   const [budget, setBudget] = useState(false);
+  const [vercel, setVercel] = useState(false);
   const [settings, setSettings] = useState(false);
   const [route, setRoute] = useState(() => window.location.hash);
 
@@ -67,6 +69,7 @@ export function App() {
               onShips={() => setShips(true)}
               onInbox={() => setInbox(true)}
               onBudget={() => setBudget(true)}
+              onUsers={() => setVercel(true)}
               onSettings={() => setSettings(true)}
               onTeams={() => setTeams(true)}
             />
@@ -77,6 +80,7 @@ export function App() {
             {inbox && <Inbox onClose={() => setInbox(false)} />}
             {teams && <Teams onClose={() => setTeams(false)} />}
             {budget && <BudgetModal onClose={() => setBudget(false)} />}
+            {vercel && <ConnectVercel onClose={() => setVercel(false)} />}
             {settings && <Settings onClose={() => setSettings(false)} />}
           </>
         ) : null}

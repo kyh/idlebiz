@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { companyDir } from "@/main/paths";
+import { webAnalyticsVisitors } from "@/main/vercel";
 
 // ---------------------------------------------------------------------------
 // REAL business metrics only — there is no simulated economy. Numbers exist
@@ -12,6 +13,8 @@ import { companyDir } from "@/main/paths";
 //   {
 //     "stripe": true,                          // revenue: sum of recent Stripe charges
 //                                              //   (needs STRIPE_SECRET_KEY in secrets.json)
+//     "vercel": { "projectId": "prj_..." },    // users: Web Analytics visitors
+//                                              //   (needs VERCEL_TOKEN in secrets.json)
 //     "plausible": { "domain": "mysite.com" }, // users: 30d visitors via Plausible
 //                                              //   (needs PLAUSIBLE_API_KEY in secrets.json)
 //     "custom": { "url": "https://..." }       // any endpoint returning {"users":n,"revenue":n}
@@ -24,6 +27,13 @@ const MetricsConfigSchema = z.object({
   stripe: z.boolean().optional(),
   stripeAccount: z
     .object({ accountId: z.string(), livemode: z.boolean(), connectedAt: z.number() })
+    .optional(),
+  vercel: z
+    .object({
+      projectId: z.string(),
+      projectName: z.string().optional(),
+      teamId: z.string().optional(),
+    })
     .optional(),
   plausible: z.object({ domain: z.string() }).optional(),
   custom: z.object({ url: z.string() }).optional(),
@@ -47,7 +57,8 @@ export function readMetricsConfig(companyId: string): MetricsConfig | null {
     const parsed: unknown = JSON.parse(readFileSync(metricsPath(companyId), "utf8"));
     const cfg = MetricsConfigSchema.safeParse(parsed);
     if (!cfg.success) return null;
-    if (!cfg.data.stripe && !cfg.data.plausible && !cfg.data.custom) return null;
+    if (!cfg.data.stripe && !cfg.data.vercel && !cfg.data.plausible && !cfg.data.custom)
+      return null;
     return cfg.data;
   } catch {
     return null;
@@ -197,14 +208,17 @@ async function customSnapshot(url: string): Promise<RealSnapshot> {
 /** Fetch the real numbers for every configured source (nulls where unavailable). */
 export async function fetchRealMetrics(cfg: MetricsConfig): Promise<RealSnapshot> {
   const none: StripeSnapshot = { revenue: null, customers: null, authError: false };
-  const [stripe, visitors, custom] = await Promise.all([
+  const [stripe, vercelUsers, visitors, custom] = await Promise.all([
     cfg.stripe ? stripeSnapshot() : Promise.resolve(none),
+    cfg.vercel
+      ? webAnalyticsVisitors(cfg.vercel.projectId, cfg.vercel.teamId)
+      : Promise.resolve(null),
     cfg.plausible ? plausibleVisitors(cfg.plausible.domain) : Promise.resolve(null),
     cfg.custom ? customSnapshot(cfg.custom.url) : Promise.resolve({ users: null, revenue: null }),
   ]);
   return {
-    // paying customers are the strongest "users" signal when Stripe is connected
-    users: stripe.customers ?? visitors ?? custom.users,
+    // real traffic first; paying customers as the fallback "users" signal
+    users: vercelUsers ?? stripe.customers ?? visitors ?? custom.users,
     revenue: stripe.revenue ?? custom.revenue,
     authError: stripe.authError,
   };

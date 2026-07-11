@@ -10,10 +10,11 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { scheduler } from "@/main/scheduler";
 import { startLogin, submitAuthCode, generateCandidates } from "@/main/agents/onboarding";
-import { readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { readMetricsConfig, writeMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { validateToken, listProjects, latestDeployment } from "@/main/vercel";
 import { pluginHost } from "@/main/plugins";
 import type { IdleBizPlugin } from "@/main/plugins";
-import { exportSecretsToEnv } from "@/main/secrets";
+import { exportSecretsToEnv, getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import {
   initStripeConnect,
   beginConnect,
@@ -92,6 +93,17 @@ function registerBuiltinPlugins(): void {
     },
   };
   pluginHost.register(shipMilestones);
+}
+
+/** The workspace PRODUCT.md `entry:` convention — how the team points at the product. */
+function readProductEntry(workspaceDir: string): string | null {
+  try {
+    const text = readFileSync(path.join(workspaceDir, "PRODUCT.md"), "utf8");
+    const m = /^\s*`?entry`?\s*:\s*`?([^`\n]+?)`?\s*$/m.exec(text);
+    return m?.[1]?.trim() ?? null;
+  } catch {
+    return null; // no PRODUCT.md yet
+  }
 }
 
 async function openWorkspacePath(companyId: string, rel: string): Promise<void> {
@@ -226,6 +238,49 @@ function registerIpcHandlers(): void {
   handle("stripeConnect", ({ companyId }) => beginConnect(companyId));
   handle("stripeDisconnect", ({ companyId }) => disconnectStripe(companyId));
 
+  handle("vercelStatus", () => {
+    const company = store.getDefaultCompany();
+    const cfg = company ? readMetricsConfig(company.id) : null;
+    if (!cfg?.vercel || !getSecret("VERCEL_TOKEN")) return { state: "disconnected" };
+    return {
+      state: "connected",
+      projectId: cfg.vercel.projectId,
+      projectName: cfg.vercel.projectName ?? cfg.vercel.projectId,
+    };
+  });
+
+  handle("vercelListProjects", async ({ token }) => {
+    const check = await validateToken(token.trim());
+    if (!check.ok) return { ok: false, projects: [] };
+    const projects = await listProjects(token.trim());
+    return { ok: true, account: check.account, projects };
+  });
+
+  handle("vercelConnect", ({ companyId, token, projectId, projectName, teamId }) => {
+    setSecret("VERCEL_TOKEN", token.trim()); // metrics pulse + agents' `vercel` CLI
+    writeMetricsConfig(companyId, {
+      vercel: teamId ? { projectId, projectName, teamId } : { projectId, projectName },
+    });
+    runMetricsPulse(); // users flip without waiting 30s
+    return { ok: true };
+  });
+
+  handle("vercelDisconnect", ({ companyId }) => {
+    writeMetricsConfig(companyId, { vercel: undefined });
+    deleteSecret("VERCEL_TOKEN");
+    return { ok: true };
+  });
+
+  handle("productStatus", async ({ companyId }) => {
+    const company = store.getCompany(companyId);
+    if (!company) throw new Error("company not found");
+    const cfg = readMetricsConfig(companyId);
+    const deploy = cfg?.vercel
+      ? await latestDeployment(cfg.vercel.projectId, cfg.vercel.teamId)
+      : null;
+    return { ships: company.ships, entry: readProductEntry(company.workspaceDir), deploy };
+  });
+
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
 
   handle("createEmployee", (p) => {
@@ -283,14 +338,7 @@ function registerIpcHandlers(): void {
   handle("openProduct", async ({ companyId }) => {
     const company = store.getCompany(companyId);
     if (!company) throw new Error("company not found");
-    let entry = "index.html";
-    try {
-      const text = readFileSync(path.join(company.workspaceDir, "PRODUCT.md"), "utf8");
-      const m = /^\s*`?entry`?\s*:\s*`?([^`\n]+?)`?\s*$/m.exec(text);
-      if (m && m[1]) entry = m[1].trim();
-    } catch {
-      /* no PRODUCT.md yet — fall back to index.html */
-    }
+    const entry = readProductEntry(company.workspaceDir) ?? "index.html";
     if (/^https?:\/\//.test(entry)) {
       await shell.openExternal(entry);
       return { ok: true, opened: entry };
