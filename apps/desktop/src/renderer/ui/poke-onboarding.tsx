@@ -29,35 +29,40 @@ const bridge = () => {
 /** Typewriter text; click/Enter elsewhere skips to the end. */
 function useTypewriter(text: string): { shown: string; done: boolean; skip: () => void } {
   const [n, setN] = useState(0);
-  const target = useRef(text);
+  const timerRef = useRef<number | null>(null);
   useEffect(() => {
-    target.current = text;
     setN(0);
-    const t = setInterval(() => {
-      setN((cur) => {
-        if (cur >= target.current.length) {
-          clearInterval(t);
-          return cur;
-        }
-        return cur + 2;
-      });
-    }, 16);
-    return () => clearInterval(t);
+    let next = 0;
+    const tick = () => {
+      next = Math.min(next + 2, text.length);
+      setN(next);
+      timerRef.current = next < text.length ? window.setTimeout(tick, 16) : null;
+    };
+    timerRef.current = window.setTimeout(tick, 16);
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
   }, [text]);
   const done = n >= text.length;
-  return { shown: text.slice(0, n), done, skip: () => setN(text.length) };
+  const skip = useCallback(() => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setN(text.length);
+  }, [text]);
+  return { shown: text.slice(0, n), done, skip };
 }
 
 function Narrator({ text }: { text: string }) {
   const { shown, done, skip } = useTypewriter(text);
   return (
-    <div
-      className="min-h-[44px] cursor-pointer text-[14px] leading-relaxed text-[var(--text)]"
+    <button
+      type="button"
+      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-[14px] leading-relaxed text-[var(--text)]"
       onClick={skip}
     >
       {shown}
       {!done ? <span className="px-live-dot">▌</span> : null}
-    </div>
+    </button>
   );
 }
 
@@ -202,6 +207,7 @@ export function PokeOnboarding() {
           <div className="grid grid-cols-6 gap-3">
             {choices.map((ch, i) => (
               <button
+                type="button"
                 key={ch.seed}
                 onClick={() => setLook(i)}
                 className="p-1"
@@ -249,7 +255,11 @@ export function PokeOnboarding() {
 
         <div className="mt-3 flex items-center gap-2">
           {step === "intro" ? (
-            <button onClick={next} className="px-btn-accent px-btn ml-auto text-[13px]">
+            <button
+              type="button"
+              onClick={next}
+              className="px-btn-accent px-btn ml-auto text-[13px]"
+            >
               ▶ Let's go
             </button>
           ) : null}
@@ -263,6 +273,7 @@ export function PokeOnboarding() {
               ) : null}
               <div className="flex items-center">
                 <button
+                  type="button"
                   onClick={() => void bridge().resetGame()}
                   className="cursor-pointer border-none bg-transparent text-[11px] text-[var(--text-dim)] hover:text-[var(--danger)]"
                   title="Wipe everything in ~/.idlebiz and restart"
@@ -270,6 +281,7 @@ export function PokeOnboarding() {
                   ↺ start over
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setAuthBusy(true);
                     setAuthTried(true);
@@ -295,6 +307,7 @@ export function PokeOnboarding() {
                 autoFocus
               />
               <button
+                type="button"
                 onClick={next}
                 disabled={!founderName.trim()}
                 className="px-btn-accent px-btn text-[13px]"
@@ -305,7 +318,11 @@ export function PokeOnboarding() {
           ) : null}
 
           {step === "look" ? (
-            <button onClick={next} className="px-btn-accent px-btn ml-auto text-[13px]">
+            <button
+              type="button"
+              onClick={next}
+              className="px-btn-accent px-btn ml-auto text-[13px]"
+            >
               Looking sharp →
             </button>
           ) : null}
@@ -320,6 +337,7 @@ export function PokeOnboarding() {
                 autoFocus
               />
               <button
+                type="button"
                 onClick={next}
                 disabled={!companyName.trim()}
                 className="px-btn-accent px-btn text-[13px]"
@@ -334,6 +352,7 @@ export function PokeOnboarding() {
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {BUSINESS_TYPES.map((b) => (
                   <button
+                    type="button"
                     key={b.id}
                     onClick={() => setBiz(b.id)}
                     data-sel={biz === b.id}
@@ -344,6 +363,7 @@ export function PokeOnboarding() {
                 ))}
               </div>
               <button
+                type="button"
                 onClick={next}
                 disabled={biz === null}
                 className="px-btn-accent px-btn ml-auto text-[13px]"
@@ -364,6 +384,7 @@ export function PokeOnboarding() {
                 autoFocus
               />
               <button
+                type="button"
                 onClick={next}
                 disabled={!pitch.trim()}
                 className="px-btn-accent px-btn ml-auto text-[13px]"
@@ -375,6 +396,7 @@ export function PokeOnboarding() {
 
           {step === "team" && hires ? (
             <button
+              type="button"
               onClick={() => void finalize()}
               disabled={finalizing}
               className="px-btn-accent px-btn ml-auto text-[13px]"

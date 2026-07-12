@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useStore,
   getPortrait,
@@ -307,6 +307,7 @@ export function Dialogue() {
                   autoFocus
                 />
                 <button
+                  type="button"
                   onClick={() => void sendAnswer()}
                   disabled={!answer.trim()}
                   className="px-btn-accent px-btn"
@@ -341,6 +342,7 @@ export function Dialogue() {
                 <div className="mb-1 grid flex-1 grid-cols-1 content-start gap-y-0.5">
                   {options.map((q, i) => (
                     <button
+                      type="button"
                       key={q.label}
                       data-sel={sel === i}
                       onMouseEnter={() => setSel(i)}
@@ -351,6 +353,7 @@ export function Dialogue() {
                     </button>
                   ))}
                   <button
+                    type="button"
                     data-sel={sel === talkIndex}
                     onMouseEnter={() => setSel(talkIndex)}
                     onClick={() => choose(talkIndex)}
@@ -382,10 +385,11 @@ export function Dialogue() {
                   className="px-field w-full"
                 />
                 <div className="mt-auto flex gap-2">
-                  <button onClick={() => setMode("menu")} className="px-btn flex-1">
+                  <button type="button" onClick={() => setMode("menu")} className="px-btn flex-1">
                     Back
                   </button>
                   <button
+                    type="button"
                     onClick={() => submitTalk()}
                     disabled={!input.trim()}
                     className="px-btn-accent px-btn flex-1"
@@ -402,6 +406,7 @@ export function Dialogue() {
         </div>
 
         <button
+          type="button"
           onClick={close}
           title="Close (esc)"
           className="absolute top-0 right-0 p-2.5 text-[15px] leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
@@ -416,28 +421,45 @@ export function Dialogue() {
 /** The employee's spoken line: a Pokémon-style typewriter reveal. Click to skip. */
 function Speech({ text, companyId }: { text: string; companyId: string }) {
   const [shown, setShown] = useState(0);
+  const timerRef = useRef<number | null>(null);
   useEffect(() => {
     setShown(0);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setShown(text.length);
       return;
     }
-    const id = window.setInterval(() => {
-      setShown((n) => {
-        if (n + 2 >= text.length) {
-          window.clearInterval(id);
-          return text.length;
-        }
-        return n + 2;
-      });
-    }, 16);
-    return () => window.clearInterval(id);
+    let next = 0;
+    const tick = () => {
+      next = Math.min(next + 2, text.length);
+      setShown(next);
+      timerRef.current = next < text.length ? window.setTimeout(tick, 16) : null;
+    };
+    timerRef.current = window.setTimeout(tick, 16);
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
   }, [text]);
 
   const done = shown >= text.length;
+  const skip = useCallback(() => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setShown(text.length);
+  }, [text]);
   return (
     <div
-      onClick={() => setShown(text.length)}
+      onClick={done ? undefined : skip}
+      onKeyDown={
+        done
+          ? undefined
+          : (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              skip();
+            }
+      }
+      role={done ? undefined : "button"}
+      tabIndex={done ? undefined : 0}
       className="text-[14px] leading-relaxed break-words text-[var(--text)]"
       style={{ cursor: done ? "default" : "pointer" }}
     >

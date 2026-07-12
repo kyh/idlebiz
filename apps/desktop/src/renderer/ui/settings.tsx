@@ -31,7 +31,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
       <div className="px-window flex w-full max-w-xl flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div className="text-[16px]">Settings</div>
-          <button onClick={onClose} className="px-btn" disabled={resetting}>
+          <button type="button" onClick={onClose} className="px-btn" disabled={resetting}>
             Done
           </button>
         </div>
@@ -57,12 +57,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </div>
             <div className="mt-2 flex gap-2">
               <input
+                aria-label="Team size cap"
                 value={capValue}
                 onChange={(e) => setCap(e.target.value)}
                 inputMode="numeric"
                 className="px-field w-20 text-[13px]"
               />
               <button
+                type="button"
                 onClick={() => void saveCap()}
                 disabled={cap === null || Number(capValue) === company.maxAgents}
                 className="px-btn"
@@ -119,6 +121,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                   className="px-field min-w-0 flex-1"
                 />
                 <button
+                  type="button"
                   onClick={() => {
                     if (!armed) return;
                     setResetting(true);

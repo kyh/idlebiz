@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   applyOfficeLayout,
   parseOfficeLayout,
@@ -67,9 +75,13 @@ export function OfficeBuilder() {
 
   // ---- undo/redo: snapshot history over the whole layout ----
   const layoutRef = useRef(layout);
-  layoutRef.current = layout;
   const selectedRef = useRef(selectedUids);
-  selectedRef.current = selectedUids;
+  useLayoutEffect(() => {
+    layoutRef.current = layout;
+  }, [layout]);
+  useLayoutEffect(() => {
+    selectedRef.current = selectedUids;
+  }, [selectedUids]);
   interface HistoryEntry {
     layout: EditableLayout;
     selection: string[];
@@ -373,93 +385,94 @@ export function OfficeBuilder() {
     }
   }, [layout]);
 
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    const target = e.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
+    )
+      return;
+    const mod = e.metaKey || e.ctrlKey;
+
+    if (mod && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      void save();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      duplicateUids(selectedUids);
+      return;
+    }
+    if (mod) return; // don't shadow other app/browser shortcuts
+
+    if (e.key === "Escape") {
+      setSelectedUids([]);
+      setTool("select");
+      return;
+    }
+    if (e.shiftKey && (e.key === "H" || e.key === "h")) {
+      e.preventDefault();
+      flipSelection("x");
+      return;
+    }
+    if (e.shiftKey && (e.key === "V" || e.key === "v")) {
+      e.preventDefault();
+      flipSelection("y");
+      return;
+    }
+    if (!e.shiftKey) {
+      const toolFor = TOOLS.find((t) => t.hotkey === e.key.toLowerCase());
+      if (toolFor) {
+        setTool(toolFor.tool);
+        return;
+      }
+      if (e.key === "-") {
+        setZoom((z) => Math.max(1, z - 0.5));
+        return;
+      }
+      if (e.key === "=" || e.key === "+") {
+        setZoom((z) => Math.min(5, z + 0.5));
+        return;
+      }
+    }
+
+    if (selectedUids.length === 0) return;
+    const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
+    const d = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    }[e.key];
+    const sel = new Set(selectedUids);
+    if (d) {
+      e.preventDefault();
+      commit((L) => ({
+        ...L,
+        objects: L.objects.map((o) =>
+          sel.has(o.uid)
+            ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: anchorFor(o, o.y + d[1]) }
+            : o,
+        ),
+      }));
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      deleteUids(selectedUids);
+    }
+  });
+
   // keyboard: Figma-style hotkeys (see the cheat sheet in the inspector)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
-      )
-        return;
-      const mod = e.metaKey || e.ctrlKey;
-
-      if (mod && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if (mod && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        void save();
-        return;
-      }
-      if (mod && e.key.toLowerCase() === "d") {
-        e.preventDefault();
-        duplicateUids(selectedUids);
-        return;
-      }
-      if (mod) return; // don't shadow other app/browser shortcuts
-
-      if (e.key === "Escape") {
-        setSelectedUids([]);
-        setTool("select");
-        return;
-      }
-      if (e.shiftKey && (e.key === "H" || e.key === "h")) {
-        e.preventDefault();
-        flipSelection("x");
-        return;
-      }
-      if (e.shiftKey && (e.key === "V" || e.key === "v")) {
-        e.preventDefault();
-        flipSelection("y");
-        return;
-      }
-      if (!e.shiftKey) {
-        const toolFor = TOOLS.find((t) => t.hotkey === e.key.toLowerCase());
-        if (toolFor) {
-          setTool(toolFor.tool);
-          return;
-        }
-        if (e.key === "-") {
-          setZoom((z) => Math.max(1, z - 0.5));
-          return;
-        }
-        if (e.key === "=" || e.key === "+") {
-          setZoom((z) => Math.min(5, z + 0.5));
-          return;
-        }
-      }
-
-      if (selectedUids.length === 0) return;
-      const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
-      const d = {
-        ArrowLeft: [-step, 0],
-        ArrowRight: [step, 0],
-        ArrowUp: [0, -step],
-        ArrowDown: [0, step],
-      }[e.key];
-      const sel = new Set(selectedUids);
-      if (d) {
-        e.preventDefault();
-        commit((L) => ({
-          ...L,
-          objects: L.objects.map((o) =>
-            sel.has(o.uid)
-              ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: anchorFor(o, o.y + d[1]) }
-              : o,
-          ),
-        }));
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        deleteUids(selectedUids);
-      }
-    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedUids, snap, deleteUids, duplicateUids, flipSelection, undo, redo, save, commit]);
+  }, []);
 
   // show the collision grid whenever you're editing it
   useEffect(() => {
@@ -508,6 +521,7 @@ export function OfficeBuilder() {
         <div className="px-titlebar flex gap-1 px-2 py-2 text-[13px]">
           {(["objects", "tiles"] as const).map((m) => (
             <button
+              type="button"
               key={m}
               onClick={() => setPaletteMode(m)}
               data-sel={paletteMode === m}
@@ -528,6 +542,7 @@ export function OfficeBuilder() {
             if (!it.src) return null;
             return (
               <button
+                type="button"
                 key={it.id}
                 onClick={() => {
                   setPaletteId(it.id);
@@ -554,6 +569,7 @@ export function OfficeBuilder() {
           <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-[11px]">
             {TOOLS.map((t) => (
               <button
+                type="button"
                 key={t.tool}
                 onClick={() => setTool(t.tool)}
                 data-sel={tool === t.tool}
@@ -567,6 +583,7 @@ export function OfficeBuilder() {
             <span className="text-[var(--text-dim)]">snap</span>
             {SNAPS.map((s) => (
               <button
+                type="button"
                 key={s}
                 onClick={() => setSnap(s)}
                 data-sel={snap === s}
@@ -577,6 +594,7 @@ export function OfficeBuilder() {
             ))}
             <span className="mx-1 opacity-40">|</span>
             <button
+              type="button"
               onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
               className="px-btn px-2 py-1.5"
             >
@@ -584,12 +602,14 @@ export function OfficeBuilder() {
             </button>
             <span className="w-8 text-center">{zoom}×</span>
             <button
+              type="button"
               onClick={() => setZoom((z) => Math.min(5, z + 0.5))}
               className="px-btn px-2 py-1.5"
             >
               +
             </button>
             <button
+              type="button"
               onClick={() => setShowCollision((v) => !v)}
               data-sel={showCollision}
               className="px-opt px-2.5 py-1.5"
@@ -597,6 +617,7 @@ export function OfficeBuilder() {
               Collision
             </button>
             <button
+              type="button"
               onClick={() => {
                 commit((L) => ({ ...L, collision: deriveCollision(L) }));
                 setStatus("Rebuilt collision from floor tiles + solid furniture.");
@@ -614,7 +635,11 @@ export function OfficeBuilder() {
               <a href="#/" className="px-btn px-2.5 py-1.5">
                 Game
               </a>
-              <button onClick={() => void save()} className="px-btn-accent px-3 py-1.5">
+              <button
+                type="button"
+                onClick={() => void save()}
+                className="px-btn-accent px-3 py-1.5"
+              >
                 Save
               </button>
             </span>
@@ -744,6 +769,7 @@ export function OfficeBuilder() {
               Drag to move them together; arrows nudge; Delete removes all.
             </p>
             <button
+              type="button"
               onClick={() => deleteUids(selectedUids)}
               className="px-btn py-1.5 text-[var(--danger)]"
             >
@@ -864,6 +890,7 @@ function Inspector({
       </label>
       <div className="flex gap-1">
         <button
+          type="button"
           onClick={() => onChange({ anchorY: anchorFor(obj, obj.y) })}
           className="px-btn flex-1 py-1.5"
         >
@@ -872,6 +899,7 @@ function Inspector({
       </div>
       <div className="flex gap-1">
         <button
+          type="button"
           onClick={() => onChange({ flipX: !obj.flipX })}
           data-sel={obj.flipX}
           className="px-opt flex-1 py-1.5"
@@ -880,6 +908,7 @@ function Inspector({
           Flip H
         </button>
         <button
+          type="button"
           onClick={() => {
             const flipped = { ...obj, flipY: !obj.flipY };
             onChange({ flipY: flipped.flipY, anchorY: anchorFor(flipped, obj.y) });
@@ -899,7 +928,7 @@ function Inspector({
         />
         solid (blocks walking)
       </label>
-      <button onClick={onDelete} className="px-btn py-1.5 text-[var(--danger)]">
+      <button type="button" onClick={onDelete} className="px-btn py-1.5 text-[var(--danger)]">
         Delete
       </button>
     </div>
