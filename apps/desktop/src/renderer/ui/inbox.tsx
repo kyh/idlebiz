@@ -36,7 +36,7 @@ export function Inbox({
               {stuckTasks.length} stuck
             </div>
           </div>
-          <button onClick={onClose} className="px-btn">
+          <button type="button" onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
@@ -102,7 +102,11 @@ function ConnectRow({
         <span className="text-[11px] text-[var(--text-dim)]">
           Their task resumes automatically once connected.
         </span>
-        <button onClick={() => onConnect(integration)} className="px-btn-accent px-btn">
+        <button
+          type="button"
+          onClick={() => onConnect(integration)}
+          className="px-btn-accent px-btn"
+        >
           Connect {label}
         </button>
       </div>
@@ -128,6 +132,7 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
       ) : null}
       <div className="mt-2 flex justify-end">
         <button
+          type="button"
           onClick={() => void retry()}
           disabled={retried || !t.assigneeId}
           className="px-btn-accent px-btn"
@@ -178,6 +183,7 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
           disabled={sent}
         />
         <button
+          type="button"
           onClick={() => void send()}
           disabled={!answer.trim() || sent}
           className="px-btn-accent px-btn"

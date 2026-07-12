@@ -16,7 +16,11 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
   const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
   return (
     <div className="px-inset p-2.5">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-baseline gap-2 text-left">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-baseline gap-2 text-left"
+      >
         <span className="text-[11px] text-[var(--text-dim)]">{open ? "▼" : "▶"}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] text-[var(--text)]">
@@ -85,6 +89,7 @@ export function Ships({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => void open("")}
               className="px-btn"
               title="Reveal the real folder where the team works"
@@ -92,6 +97,7 @@ export function Ships({ onClose }: { onClose: () => void }) {
               📁 Workspace
             </button>
             <button
+              type="button"
               onClick={() => {
                 const bridge = window.appBridge;
                 if (!bridge) return;
@@ -105,7 +111,7 @@ export function Ships({ onClose }: { onClose: () => void }) {
             >
               ▶ Product
             </button>
-            <button onClick={onClose} className="px-btn">
+            <button type="button" onClick={onClose} className="px-btn">
               Done
             </button>
           </div>

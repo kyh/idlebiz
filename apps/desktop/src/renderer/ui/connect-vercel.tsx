@@ -63,7 +63,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
       <div className="px-window flex max-h-[80vh] w-full max-w-lg flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div className="text-[16px]">Connect Vercel</div>
-          <button onClick={onClose} className="px-btn">
+          <button type="button" onClick={onClose} className="px-btn">
             Close
           </button>
         </div>
@@ -75,7 +75,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                 ✓ Connected to <b>{vercelStatus.projectName}</b> — users come from its Web
                 Analytics, and your team deploys to it for real.
               </div>
-              <button onClick={() => void disconnectVercel()} className="px-btn">
+              <button type="button" onClick={() => void disconnectVercel()} className="px-btn">
                 Disconnect
               </button>
             </div>
@@ -96,6 +96,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                   autoFocus
                 />
                 <button
+                  type="button"
                   onClick={() => void loadProjects()}
                   disabled={busy || token.trim().length === 0}
                   className="px-btn-accent px-btn"
@@ -113,6 +114,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                   </div>
                   {projects.map((p) => (
                     <button
+                      type="button"
                       key={p.id}
                       onClick={() => void pick(p)}
                       disabled={busy}

@@ -39,6 +39,7 @@ function Stat({
   if (onClick) {
     return (
       <button
+        type="button"
         onClick={onClick}
         className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
         title={title}
@@ -151,6 +152,7 @@ export function Hud({
           onClick={onTeams}
         />
         <button
+          type="button"
           onClick={onInbox}
           className="px-btn pointer-events-auto"
           style={needsYou > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
@@ -163,6 +165,7 @@ export function Hud({
       {/* bottom-left: run controls */}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
         <button
+          type="button"
           onClick={() => void setAutopilot(!company.autopilot)}
           className="px-btn pointer-events-auto"
           style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
@@ -174,7 +177,12 @@ export function Hud({
         >
           {company.autopilot ? "● LIVE" : "▶ Start"}
         </button>
-        <button onClick={onSettings} className="px-btn pointer-events-auto" title="Settings">
+        <button
+          type="button"
+          onClick={onSettings}
+          className="px-btn pointer-events-auto"
+          title="Settings"
+        >
           ⚙
         </button>
       </div>

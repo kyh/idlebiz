@@ -42,7 +42,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               AI tokens cost real money — set how much the office may burn
             </div>
           </div>
-          <button onClick={onClose} className="px-btn">
+          <button type="button" onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
@@ -64,6 +64,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={() => void setBudget({ mode: "infinite" })}
                 data-sel={!capped}
                 className="px-opt"
@@ -71,6 +72,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                 ∞ Infinite
               </button>
               <button
+                type="button"
                 onClick={() => {
                   if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
                 }}
@@ -90,6 +92,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                 className="px-field w-28"
               />
               <button
+                type="button"
                 onClick={() => {
                   if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
                 }}
@@ -115,7 +118,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                 </div>
               ) : null}
             </div>
-            <button onClick={() => void resetSpend()} className="px-btn">
+            <button type="button" onClick={() => void resetSpend()} className="px-btn">
               Reset meter
             </button>
           </div>
@@ -142,7 +145,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                       {stripeStatus.livemode ? "live" : "test"}
                     </span>
                   </span>
-                  <button onClick={() => void disconnectStripe()} className="px-btn">
+                  <button type="button" onClick={() => void disconnectStripe()} className="px-btn">
                     Disconnect
                   </button>
                 </div>
@@ -157,7 +160,11 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                   ) : (
                     <span className="text-[12px] text-[var(--text-dim)]">Not connected</span>
                   )}
-                  <button onClick={() => void connectStripe()} className="px-btn-accent px-btn">
+                  <button
+                    type="button"
+                    onClick={() => void connectStripe()}
+                    className="px-btn-accent px-btn"
+                  >
                     {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
                   </button>
                 </div>
