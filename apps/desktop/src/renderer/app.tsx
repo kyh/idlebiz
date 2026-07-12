@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { initStore, setGame, useStore } from "@/renderer/state/store";
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
@@ -15,6 +15,13 @@ import { TeamChannel } from "@/renderer/ui/team-channel";
 import { OfficeObjectCatalog } from "@/renderer/ui/office-object-catalog";
 import { OfficeBuilder } from "@/renderer/ui/office-builder";
 
+const subscribeToHash = (onStoreChange: () => void): (() => void) => {
+  window.addEventListener("hashchange", onStoreChange);
+  return () => window.removeEventListener("hashchange", onStoreChange);
+};
+
+const getHash = (): string => window.location.hash;
+
 export function App() {
   const { booted, authed, company, game } = useStore();
   const [ships, setShips] = useState(false);
@@ -23,13 +30,7 @@ export function App() {
   const [budget, setBudget] = useState(false);
   const [vercel, setVercel] = useState(false);
   const [settings, setSettings] = useState(false);
-  const [route, setRoute] = useState(() => window.location.hash);
-
-  useEffect(() => {
-    const updateRoute = () => setRoute(window.location.hash);
-    window.addEventListener("hashchange", updateRoute);
-    return () => window.removeEventListener("hashchange", updateRoute);
-  }, []);
+  const route = useSyncExternalStore(subscribeToHash, getHash);
 
   useEffect(() => {
     initStore();
