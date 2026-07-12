@@ -35,6 +35,7 @@ export function RichText({ text, companyId }: { text: string; companyId: string 
     if (m.index > last) parts.push(text.slice(last, m.index));
     parts.push(
       <button
+        type="button"
         key={`${m.index}-${token}`}
         onClick={(e) => {
           e.stopPropagation();

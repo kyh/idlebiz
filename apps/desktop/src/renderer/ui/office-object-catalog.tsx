@@ -89,7 +89,7 @@ function ObjectCard({
           <h2 className="truncate text-[13px]">{asset.id}</h2>
           <p className="text-[10px] text-[#d6d9e7]">source {asset.sourceId}</p>
         </div>
-        <button onClick={onCopy} className="px-chip shrink-0 text-[10px]">
+        <button type="button" onClick={onCopy} className="px-chip shrink-0 text-[10px]">
           {copied ? "Copied" : "Copy"}
         </button>
       </div>

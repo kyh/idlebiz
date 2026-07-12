@@ -40,7 +40,7 @@ export function Teams({ onClose }: { onClose: () => void }) {
               {teams.length} team{teams.length === 1 ? "" : "s"} · {employees.length} people
             </div>
           </div>
-          <button onClick={onClose} className="px-btn">
+          <button type="button" onClick={onClose} className="px-btn">
             Done
           </button>
         </div>
