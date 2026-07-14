@@ -1,6 +1,6 @@
 import { z } from "zod";
 import rawLayout from "@/renderer/game/office-design.json";
-import { DEPTH } from "@/renderer/game/config";
+import { DEPTH, OVERHEAD_SPAN } from "@/renderer/game/config";
 import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectVariant as CatalogVariant,
@@ -98,12 +98,16 @@ function resolvePath(obj: z.infer<typeof objectSchema>): string {
   return variant.path;
 }
 
-// floor decals below actors; object band y-sorts by floor-contact (the +0.5
+// Floor decals below actors; the object band y-sorts by floor-contact (the +0.5
 // biases furniture to win ties, so the character draws behind what it stands at).
-const OVERHEAD_BASE = 1_500_000;
+//
+// Overhead is CLAMPED into its own band: the generator's closing pass escalates
+// stubborn decals with six-figure anchors (900_000+), and unclamped those land above
+// DEPTH.emote and paint over speech bubbles and name labels. Clamping keeps the band
+// ordered among itself and structurally unable to reach the emotes.
 export function depthFor(layer: OfficeLayer, anchorY: number): number {
   if (layer === "floor") return DEPTH.ground + 1 + anchorY * 1e-4;
-  if (layer === "overhead") return OVERHEAD_BASE + anchorY;
+  if (layer === "overhead") return DEPTH.overhead + Math.min(anchorY, OVERHEAD_SPAN - 1);
   return DEPTH.entityBase + anchorY + 0.5;
 }
 

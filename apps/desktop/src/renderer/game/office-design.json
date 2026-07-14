@@ -7,7 +7,7 @@
   "rows": 34,
   "spawn": {
     "x": 256,
-    "y": 180
+    "y": 200
   },
   "objects": [
     {
@@ -773,7 +773,7 @@
       "x": 444,
       "y": 312,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 344,
       "path": "workspace-kit/design2/d2-rbo-8-0.png"
     },
     {
@@ -1230,7 +1230,7 @@
       "x": 424,
       "y": 304,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 344,
       "path": "workspace-kit/design2/d2-rbo-8-0.png"
     },
     {
@@ -1238,7 +1238,7 @@
       "x": 30,
       "y": 302,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 330,
       "path": "workspace-kit/design2/d2-mirb-0-10.png"
     },
     {
@@ -1246,7 +1246,7 @@
       "x": 32,
       "y": 326,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 330,
       "path": "workspace-kit/design2/d2-fix-34.png"
     },
     {
@@ -2092,7 +2092,7 @@
       "x": 480,
       "y": 288,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 320,
       "path": "workspace-kit/design2/d2-rbo-3-0.png",
       "flipX": true
     },
@@ -2195,7 +2195,7 @@
       "x": 96,
       "y": 330,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 362,
       "path": "workspace-kit/design2/d2-rbo-3-0.png"
     },
     {
@@ -2227,7 +2227,7 @@
       "x": 96,
       "y": 334,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 366,
       "path": "workspace-kit/design2/d2-rbo-3-0.png"
     },
     {
@@ -2721,7 +2721,7 @@
       "x": 96,
       "y": 288,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 320,
       "path": "workspace-kit/design2/d2-rbo-11-6.png"
     },
     {
@@ -2729,7 +2729,7 @@
       "x": 192,
       "y": 288,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 320,
       "path": "workspace-kit/design2/d2-rbo-11-6.png"
     },
     {
@@ -2737,7 +2737,7 @@
       "x": 288,
       "y": 288,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 320,
       "path": "workspace-kit/design2/d2-rbo-11-6.png"
     },
     {
@@ -2745,7 +2745,7 @@
       "x": 384,
       "y": 288,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 320,
       "path": "workspace-kit/design2/d2-rbo-11-6.png"
     },
     {
@@ -2793,7 +2793,7 @@
       "x": 0,
       "y": 320,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-rbo-7-3.png"
     },
     {
@@ -2995,7 +2995,7 @@
       "x": 186,
       "y": 290,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 322,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3003,7 +3003,7 @@
       "x": 274,
       "y": 290,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 322,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3011,7 +3011,7 @@
       "x": 24,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3019,7 +3019,7 @@
       "x": 48,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3035,7 +3035,7 @@
       "x": 186,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3043,7 +3043,7 @@
       "x": 210,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3051,7 +3051,7 @@
       "x": 234,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3059,7 +3059,7 @@
       "x": 258,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3067,7 +3067,7 @@
       "x": 282,
       "y": 300,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 332,
       "path": "workspace-kit/design2/d2-mirb-64-7.png"
     },
     {
@@ -3551,7 +3551,7 @@
       "x": 288,
       "y": 352,
       "layer": "object",
-      "anchorY": 400,
+      "anchorY": 384,
       "path": "workspace-kit/design2/d2-rbo-0-10.png",
       "flipX": true
     },
@@ -3560,7 +3560,7 @@
       "x": 316,
       "y": 352,
       "layer": "object",
-      "anchorY": 400,
+      "anchorY": 384,
       "path": "workspace-kit/design2/d2-fix-61.png"
     },
     {
@@ -4500,7 +4500,7 @@
       "x": 448,
       "y": 288,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 344,
       "path": "workspace-kit/design2/d2-rbo-11-6.png"
     },
     {
@@ -5412,14 +5412,16 @@
       "x": 96,
       "y": 64,
       "layer": "object",
-      "anchorY": 160
+      "anchorY": 160,
+      "path": "workspace-kit/design2/d2-noface-office-object-235-96-64.png"
     },
     {
       "id": "office-object-233",
       "x": 256,
       "y": 192,
       "layer": "object",
-      "anchorY": 288
+      "anchorY": 288,
+      "path": "workspace-kit/design2/d2-noface-office-object-233-256-192.png"
     },
     {
       "id": "office-object-312",
@@ -5433,7 +5435,7 @@
       "x": 288,
       "y": 320,
       "layer": "object",
-      "anchorY": 400
+      "anchorY": 396
     },
     {
       "id": "office-object-173",
@@ -5503,28 +5505,28 @@
       "x": 96,
       "y": 224,
       "layer": "object",
-      "anchorY": 352
+      "anchorY": 320
     },
     {
       "id": "office-object-106",
       "x": 192,
       "y": 224,
       "layer": "object",
-      "anchorY": 352
+      "anchorY": 320
     },
     {
       "id": "office-object-106",
       "x": 288,
       "y": 224,
       "layer": "object",
-      "anchorY": 352
+      "anchorY": 320
     },
     {
       "id": "office-object-106",
       "x": 384,
       "y": 224,
       "layer": "object",
-      "anchorY": 352
+      "anchorY": 320
     },
     {
       "id": "office-object-338",
@@ -5597,13 +5599,6 @@
       "anchorY": 470
     },
     {
-      "id": "office-object-232",
-      "x": 352,
-      "y": 64,
-      "layer": "object",
-      "anchorY": 160
-    },
-    {
       "id": "office-object-167",
       "x": 416,
       "y": 0,
@@ -5651,14 +5646,16 @@
       "x": 160,
       "y": 64,
       "layer": "object",
-      "anchorY": 160
+      "anchorY": 160,
+      "path": "workspace-kit/design2/d2-noface-office-object-236-160-64.png"
     },
     {
       "id": "office-object-234",
       "x": 320,
       "y": 192,
       "layer": "object",
-      "anchorY": 288
+      "anchorY": 288,
+      "path": "workspace-kit/design2/d2-noface-office-object-234-320-192.png"
     },
     {
       "id": "office-object-118",
@@ -5767,14 +5764,6 @@
       "anchorY": 224
     },
     {
-      "id": "office-object-160",
-      "x": 186,
-      "y": 176,
-      "layer": "object",
-      "anchorY": 288,
-      "flipX": true
-    },
-    {
       "id": "office-object-242",
       "x": 320,
       "y": 128,
@@ -5837,14 +5826,14 @@
       "x": 64,
       "y": 0,
       "layer": "object",
-      "anchorY": 160
+      "anchorY": 82
     },
     {
       "id": "d2-fix-190",
       "x": 90,
       "y": 74,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 82,
       "path": "workspace-kit/design2/d2-fix-190.png"
     },
     {
@@ -5977,14 +5966,14 @@
       "x": 416,
       "y": 288,
       "layer": "object",
-      "anchorY": 402
+      "anchorY": 370
     },
     {
       "id": "d2-fix-181",
       "x": 458,
       "y": 362,
       "layer": "object",
-      "anchorY": 402,
+      "anchorY": 370,
       "path": "workspace-kit/design2/d2-fix-181.png"
     },
     {
@@ -6465,7 +6454,7 @@
       "x": 126,
       "y": 360,
       "layer": "object",
-      "anchorY": 408,
+      "anchorY": 406,
       "path": "workspace-kit/design2/d2-mi-80-105.png"
     },
     {
@@ -6473,7 +6462,7 @@
       "x": 128,
       "y": 360,
       "layer": "object",
-      "anchorY": 408,
+      "anchorY": 392,
       "path": "workspace-kit/design2/d2-fix-149.png"
     },
     {
@@ -6816,7 +6805,7 @@
       "x": 248,
       "y": 74,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 76,
       "path": "workspace-kit/design2/d2-mi-2-5440.png"
     },
     {
@@ -6824,7 +6813,7 @@
       "x": 248,
       "y": 74,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 76,
       "path": "workspace-kit/design2/d2-fix-127.png"
     },
     {
@@ -6855,7 +6844,7 @@
       "x": 270,
       "y": 32,
       "layer": "object",
-      "anchorY": 38,
+      "anchorY": 72,
       "path": "workspace-kit/design2/d2-fix-222.png"
     },
     {
@@ -6863,7 +6852,7 @@
       "x": 390,
       "y": 32,
       "layer": "object",
-      "anchorY": 76,
+      "anchorY": 44,
       "path": "workspace-kit/design2/d2-fix-223.png"
     },
     {
@@ -6871,7 +6860,7 @@
       "x": 158,
       "y": 64,
       "layer": "object",
-      "anchorY": 96,
+      "anchorY": 68,
       "path": "workspace-kit/design2/d2-fix-224.png"
     },
     {
@@ -6879,7 +6868,7 @@
       "x": 158,
       "y": 80,
       "layer": "object",
-      "anchorY": 96,
+      "anchorY": 86,
       "path": "workspace-kit/design2/d2-fix-225.png"
     },
     {
@@ -6895,7 +6884,7 @@
       "x": 130,
       "y": 98,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 108,
       "path": "workspace-kit/design2/d2-fix-227.png"
     },
     {
@@ -6911,7 +6900,7 @@
       "x": 278,
       "y": 98,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 102,
       "path": "workspace-kit/design2/d2-fix-229.png"
     },
     {
@@ -6919,7 +6908,7 @@
       "x": 288,
       "y": 98,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 100,
       "path": "workspace-kit/design2/d2-fix-230.png"
     },
     {
@@ -6927,7 +6916,7 @@
       "x": 96,
       "y": 102,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 108,
       "path": "workspace-kit/design2/d2-fix-231.png"
     },
     {
@@ -6951,7 +6940,7 @@
       "x": 348,
       "y": 132,
       "layer": "object",
-      "anchorY": 160,
+      "anchorY": 136,
       "path": "workspace-kit/design2/d2-fix-234.png"
     },
     {
@@ -6967,7 +6956,7 @@
       "x": 154,
       "y": 146,
       "layer": "object",
-      "anchorY": 188,
+      "anchorY": 160,
       "path": "workspace-kit/design2/d2-fix-236.png"
     },
     {
@@ -6983,7 +6972,7 @@
       "x": 250,
       "y": 146,
       "layer": "object",
-      "anchorY": 188,
+      "anchorY": 160,
       "path": "workspace-kit/design2/d2-fix-238.png"
     },
     {
@@ -7007,7 +6996,7 @@
       "x": 106,
       "y": 192,
       "layer": "object",
-      "anchorY": 224,
+      "anchorY": 194,
       "path": "workspace-kit/design2/d2-fix-241.png"
     },
     {
@@ -7015,7 +7004,7 @@
       "x": 126,
       "y": 192,
       "layer": "object",
-      "anchorY": 224,
+      "anchorY": 196,
       "path": "workspace-kit/design2/d2-fix-242.png"
     },
     {
@@ -7031,7 +7020,7 @@
       "x": 298,
       "y": 192,
       "layer": "object",
-      "anchorY": 224,
+      "anchorY": 194,
       "path": "workspace-kit/design2/d2-fix-244.png"
     },
     {
@@ -7039,7 +7028,7 @@
       "x": 318,
       "y": 192,
       "layer": "object",
-      "anchorY": 224,
+      "anchorY": 196,
       "path": "workspace-kit/design2/d2-fix-245.png"
     },
     {
@@ -7063,7 +7052,7 @@
       "x": 126,
       "y": 208,
       "layer": "object",
-      "anchorY": 224,
+      "anchorY": 218,
       "path": "workspace-kit/design2/d2-fix-248.png"
     },
     {
@@ -7087,7 +7076,7 @@
       "x": 160,
       "y": 224,
       "layer": "object",
-      "anchorY": 288,
+      "anchorY": 228,
       "path": "workspace-kit/design2/d2-fix-251.png"
     },
     {
@@ -7095,7 +7084,7 @@
       "x": 146,
       "y": 226,
       "layer": "object",
-      "anchorY": 288,
+      "anchorY": 230,
       "path": "workspace-kit/design2/d2-fix-252.png"
     },
     {
@@ -7103,7 +7092,7 @@
       "x": 256,
       "y": 226,
       "layer": "object",
-      "anchorY": 288,
+      "anchorY": 236,
       "path": "workspace-kit/design2/d2-fix-253.png"
     },
     {
@@ -7119,7 +7108,7 @@
       "x": 290,
       "y": 230,
       "layer": "object",
-      "anchorY": 288,
+      "anchorY": 236,
       "path": "workspace-kit/design2/d2-fix-255.png"
     },
     {
@@ -7135,7 +7124,7 @@
       "x": 428,
       "y": 230,
       "layer": "object",
-      "anchorY": 288,
+      "anchorY": 238,
       "path": "workspace-kit/design2/d2-fix-257.png"
     },
     {
@@ -7151,7 +7140,7 @@
       "x": 18,
       "y": 238,
       "layer": "object",
-      "anchorY": 290,
+      "anchorY": 240,
       "path": "workspace-kit/design2/d2-fix-259.png"
     },
     {
@@ -7159,7 +7148,7 @@
       "x": 124,
       "y": 244,
       "layer": "object",
-      "anchorY": 288,
+      "anchorY": 264,
       "path": "workspace-kit/design2/d2-fix-260.png"
     },
     {
@@ -7167,7 +7156,7 @@
       "x": 120,
       "y": 272,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 288,
       "path": "workspace-kit/design2/d2-fix-261.png"
     },
     {
@@ -7175,7 +7164,7 @@
       "x": 300,
       "y": 272,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 288,
       "path": "workspace-kit/design2/d2-fix-262.png"
     },
     {
@@ -7223,7 +7212,7 @@
       "x": 414,
       "y": 280,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 288,
       "path": "workspace-kit/design2/d2-fix-268.png"
     },
     {
@@ -7239,7 +7228,7 @@
       "x": 384,
       "y": 416,
       "layer": "object",
-      "anchorY": 512,
+      "anchorY": 426,
       "path": "workspace-kit/design2/d2-fix-270.png"
     },
     {
@@ -7247,7 +7236,7 @@
       "x": 434,
       "y": 416,
       "layer": "object",
-      "anchorY": 442,
+      "anchorY": 448,
       "path": "workspace-kit/design2/d2-fix-271.png"
     },
     {
@@ -7263,7 +7252,7 @@
       "x": 434,
       "y": 430,
       "layer": "object",
-      "anchorY": 442,
+      "anchorY": 440,
       "path": "workspace-kit/design2/d2-fix-273.png"
     },
     {
@@ -7271,7 +7260,7 @@
       "x": 384,
       "y": 444,
       "layer": "object",
-      "anchorY": 512,
+      "anchorY": 448,
       "path": "workspace-kit/design2/d2-fix-274.png"
     },
     {
@@ -7279,7 +7268,7 @@
       "x": 280,
       "y": 460,
       "layer": "object",
-      "anchorY": 498,
+      "anchorY": 480,
       "path": "workspace-kit/design2/d2-fix-275.png"
     },
     {
@@ -7287,7 +7276,7 @@
       "x": 272,
       "y": 464,
       "layer": "object",
-      "anchorY": 498,
+      "anchorY": 466,
       "path": "workspace-kit/design2/d2-fix-276.png"
     },
     {
@@ -7335,7 +7324,7 @@
       "x": 424,
       "y": 304,
       "layer": "object",
-      "anchorY": 352,
+      "anchorY": 344,
       "path": "workspace-kit/design2/d2-close-r1-2.png"
     },
     {
@@ -7358,8 +7347,8 @@
   "collision": [
     "11111111111111111111111111111111",
     "11111111111111111111111111111111",
-    "11111111001111111111111111111111",
-    "11111111001111111111111111111111",
+    "11111111111111111111111111111111",
+    "11111111111111111111111111111111",
     "10000000000000000000000011001101",
     "11000111001111111111111100000011",
     "11000111111111111111111100111111",
@@ -7378,10 +7367,10 @@
     "11111100111100111100001100111111",
     "11111111111111111111001111111111",
     "11111111111111111111001111111111",
-    "11111110111100000011000000001101",
-    "11111110111100000011000000001101",
-    "11111110111100000000000000001101",
-    "11111110111100001100000000001101",
+    "11111110111100110011000000001101",
+    "11111110111111111111000000001101",
+    "11111110111111000000000000001101",
+    "11111110111111001100000000001101",
     "11111110011100001100000000000001",
     "11111110011100001100000000000001",
     "11111110011100111100000011000001",

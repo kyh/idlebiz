@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { DEPTH } from "@/renderer/game/config";
 import type { CharacterAssets } from "@/shared/ipc-registry";
 
 // Composited character sheets are 32x64 frames, 6 per row:
@@ -9,6 +10,46 @@ export type Dir = "down" | "left" | "right" | "up";
 export type SitSide = "left" | "right";
 const DIR_START: Record<Dir, number> = { down: 0, left: 6, right: 12, up: 18 };
 const SIT_START: Record<SitSide, number> = { left: 24, right: 30 };
+
+/** Content rows within a frame: the art starts at the hair and ends at the soles. */
+const HEAD_ROW = 18;
+const SOLE_ROW = 62;
+
+/** One origin for every character, so the player and NPCs sort on the same footing. */
+export const CHAR_ORIGIN_X = 0.5;
+export const CHAR_ORIGIN_Y = 0.86;
+
+/**
+ * Gap between a character's depth anchor (its origin) and its soles. Office objects
+ * anchor on their content bottom — their floor contact — so characters must be compared
+ * on floor contact too. Without this a character renders BEHIND everything for the last
+ * ~7px of approach, i.e. their feet get eaten right where they step in front of a desk.
+ */
+const SOLE_OFFSET = SOLE_ROW - FRAME_H * CHAR_ORIGIN_Y;
+
+/** Depth of a character whose origin sits at world `y`. */
+export function characterDepth(y: number): number {
+  return DEPTH.entityBase + y + SOLE_OFFSET;
+}
+
+/**
+ * The frame region drawn while seated. The pack's own seated workers are head-and-
+ * shoulders busts painted over the chair with the desk in front; cropping the walk sheet
+ * at the origin row reproduces that silhouette, so a sitter lifted above their desk
+ * (OfficeScene.seatDepth) doesn't dangle legs across it.
+ */
+export const SEAT_CROP = {
+  x: 0,
+  y: 0,
+  w: FRAME_W,
+  h: Math.round(FRAME_H * CHAR_ORIGIN_Y),
+} as const;
+
+/** Silhouette of that bust around its origin — what a seat tests for overlap. */
+export const BUST = {
+  halfWidth: 10,
+  height: Math.ceil(FRAME_H * CHAR_ORIGIN_Y) - HEAD_ROW,
+} as const;
 
 /** Load a base64 PNG as a Phaser spritesheet under `key` (resolves when ready). */
 function loadSpritesheetDataUrl(scene: Phaser.Scene, key: string, dataUrl: string): Promise<void> {

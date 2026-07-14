@@ -1,6 +1,15 @@
 import Phaser from "phaser";
 import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
-import { loadCharacter, ensureWalkAnims, idleFrame, type Dir } from "@/renderer/game/characters";
+import {
+  loadCharacter,
+  ensureWalkAnims,
+  idleFrame,
+  characterDepth,
+  CHAR_ORIGIN_X,
+  CHAR_ORIGIN_Y,
+  BUST,
+  type Dir,
+} from "@/renderer/game/characters";
 import {
   NpcManager,
   type NpcState,
@@ -34,6 +43,16 @@ const WORKSPACE_KIT_PATH = "workspace-kit";
 const PATH_STEP = TILE / 2;
 const BODY_HALF_WIDTH = 8;
 const BODY_HALF_HEIGHT = 6;
+
+/** How far above their workstation a seated employee is lifted (see seatDepth). */
+const SEAT_LIFT = 0.25;
+
+/** Opaque-pixel coverage of a room texture, in texture space. */
+interface OpaqueMask {
+  readonly opaque: Uint8Array;
+  readonly w: number;
+  readonly h: number;
+}
 
 // Idle-life points of interest on the current map: the water cooler and the
 // printer get faced, the break-room chair gets sat on.
@@ -87,6 +106,7 @@ export class OfficeScene extends Phaser.Scene {
   private pathRows = Math.ceil(OFFICE_H / PATH_STEP);
   private npcs?: NpcManager;
   private activityUnsub?: () => void;
+  private masks = new Map<string, OpaqueMask>();
 
   constructor() {
     super("office");
@@ -200,14 +220,83 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private buildRoom(): Seat[] {
-    for (const placement of OFFICE_OBJECT_PLACEMENTS) {
+    const room = OFFICE_OBJECT_PLACEMENTS.map((placement) =>
       this.add
         .image(placement.x, placement.y, placement.key)
         .setOrigin(0, 0)
         .setDepth(placement.depth)
-        .setFlip(placement.flipX, placement.flipY);
+        .setFlip(placement.flipX, placement.flipY),
+    );
+    return OFFICE_WORK_SEATS.map((seat) => ({
+      x: seat.x,
+      y: seat.y,
+      depth: this.seatDepth(seat, room),
+    }));
+  }
+
+  /**
+   * Depth a seated employee renders at.
+   *
+   * The art pack paints its seated workers OVER the workstation — chair back behind the
+   * head, desk in front — and pure y-sorting cannot express that: a chair's floor contact
+   * is always SOUTH of whoever sits in it, so y-sort buries the sitter behind the chair
+   * (it hid 92-97% of every employee). Lift the occupant just above the topmost thing
+   * their bust actually overlaps and no further, so a colleague walking past the front of
+   * the desk still occludes them.
+   */
+  private seatDepth(seat: PixelPoint, room: readonly Phaser.GameObjects.Image[]): number {
+    let depth = characterDepth(seat.y);
+    for (const image of room) {
+      // overhead props are meant to stay above actors; never lift past them
+      if (image.depth <= depth || image.depth >= DEPTH.overhead) continue;
+      if (!this.bustOverlaps(seat, image)) continue;
+      depth = image.depth;
     }
-    return OFFICE_WORK_SEATS.map((seat) => ({ x: seat.x, y: seat.y }));
+    return depth + SEAT_LIFT;
+  }
+
+  /** Does a seated bust at `seat` touch any opaque pixel of `image`? */
+  private bustOverlaps(seat: PixelPoint, image: Phaser.GameObjects.Image): boolean {
+    const x0 = Math.max(seat.x - BUST.halfWidth, image.x);
+    const x1 = Math.min(seat.x + BUST.halfWidth, image.x + image.width);
+    const y0 = Math.max(seat.y - BUST.height, image.y);
+    const y1 = Math.min(seat.y, image.y + image.height);
+    if (x1 <= x0 || y1 <= y0) return false;
+    const mask = this.opaqueMask(image.texture.key);
+    if (!mask) return true; // unreadable source: assume it covers, so the seat clears it
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const lx = image.flipX ? mask.w - 1 - (x - image.x) : x - image.x;
+        const ly = image.flipY ? mask.h - 1 - (y - image.y) : y - image.y;
+        if (mask.opaque[ly * mask.w + lx]) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Opaque coverage of a room texture, cached. Object canvases are heavily padded, so
+   * bounds-only hit-testing would lift a seat above furniture it never actually touches.
+   * Only textures whose bounds reach a seat are ever read back.
+   */
+  private opaqueMask(key: string): OpaqueMask | null {
+    const cached = this.masks.get(key);
+    if (cached) return cached;
+    const source = this.textures.get(key).getSourceImage();
+    if (!(source instanceof HTMLImageElement) && !(source instanceof HTMLCanvasElement))
+      return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0);
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const opaque = new Uint8Array(canvas.width * canvas.height);
+    for (let i = 0; i < opaque.length; i++) opaque[i] = pixels[i * 4 + 3] > 0 ? 1 : 0;
+    const mask: OpaqueMask = { opaque, w: canvas.width, h: canvas.height };
+    this.masks.set(key, mask);
+    return mask;
   }
 
   /** Toggle (G) a red overlay of the authored collision grid for debugging. */
@@ -400,8 +489,10 @@ export class OfficeScene extends Phaser.Scene {
     await loadCharacter(this, key, this.founderSeed);
     ensureWalkAnims(this, key);
     this.playerKey = key;
-    const player = this.add.sprite(spawn.x, spawn.y, key, idleFrame("down")).setOrigin(0.5, 0.86);
-    player.setDepth(DEPTH.entityBase + player.y);
+    const player = this.add
+      .sprite(spawn.x, spawn.y, key, idleFrame("down"))
+      .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
+    player.setDepth(characterDepth(player.y));
     this.player = player;
     this.centerCameraOn(player);
   }
@@ -429,7 +520,7 @@ export class OfficeScene extends Phaser.Scene {
       player.anims.stop();
       player.setFrame(idleFrame(this.facing));
     }
-    player.setDepth(DEPTH.entityBase + player.y);
+    player.setDepth(characterDepth(player.y));
     this.centerCameraOn(player);
     this.npcs?.update();
   }

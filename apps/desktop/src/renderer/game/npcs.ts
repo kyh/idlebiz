@@ -4,6 +4,10 @@ import {
   loadCharacter,
   ensureWalkAnims,
   idleFrame,
+  characterDepth,
+  CHAR_ORIGIN_X,
+  CHAR_ORIGIN_Y,
+  SEAT_CROP,
   type Dir,
   type SitSide,
 } from "@/renderer/game/characters";
@@ -15,6 +19,9 @@ export type NpcState = "idle" | "working" | "blocked";
 export interface Seat {
   readonly x: number;
   readonly y: number;
+  /** Depth its occupant renders at while seated — above the workstation, so the chair
+   *  back doesn't swallow them. Computed by OfficeScene.seatDepth from the built room. */
+  readonly depth: number;
 }
 
 /** A point of interest idle employees visit: stand at (x,y) facing `face`,
@@ -110,8 +117,9 @@ export class NpcManager {
     const seat = this.pickSeat(emp);
     if (!seat) return;
 
-    const sprite = this.scene.add.sprite(seat.x, seat.y, key, idleFrame("up")).setOrigin(0.5, 0.82);
-    sprite.setDepth(DEPTH.entityBase + seat.y);
+    const sprite = this.scene.add
+      .sprite(seat.x, seat.y, key, idleFrame("up"))
+      .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
 
     const label = this.scene.add
       .text(seat.x, seat.y - 52, emp.name, {
@@ -137,7 +145,24 @@ export class NpcManager {
       nextWanderAt: this.scene.time.now + 4000 + Math.random() * 8000,
     };
     this.npcs.set(emp.id, npc);
+    this.applyPose(npc);
     this.setState(emp.id, emp.status === "working" ? "working" : "idle");
+  }
+
+  /**
+   * Seated employees are drawn as a bust lifted above their workstation — the pack paints
+   * its seated workers over the chair with the desk in front, which y-sorting alone can't
+   * do (a chair's floor contact is south of its occupant, so it would hide them). Walkers
+   * y-sort normally, on their soles.
+   */
+  private applyPose(npc: Npc): void {
+    if (!npc.plan && this.atSeat(npc)) {
+      npc.sprite.setCrop(SEAT_CROP.x, SEAT_CROP.y, SEAT_CROP.w, SEAT_CROP.h);
+      npc.sprite.setDepth(npc.seat.depth);
+      return;
+    }
+    if (npc.sprite.isCropped) npc.sprite.setCrop();
+    npc.sprite.setDepth(characterDepth(npc.sprite.y));
   }
 
   // ---- state ---------------------------------------------------------------
@@ -364,7 +389,7 @@ export class NpcManager {
         }
       }
 
-      npc.sprite.setDepth(DEPTH.entityBase + npc.sprite.y);
+      this.applyPose(npc);
     }
   }
 
