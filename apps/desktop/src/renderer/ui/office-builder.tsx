@@ -14,17 +14,19 @@ import {
 } from "@/renderer/game/office-layout";
 import {
   ALL_OBJECT_IDS,
-  anchorFor,
   assetSrc,
   cloneObject,
   contentBounds,
   deriveCollision,
+  flipObject,
   loadLayout,
   makeObject,
-  objectDepth,
+  moveObject,
+  paintOrder,
   ROOM_TILES,
   serializeLayout,
   setCollisionCell,
+  setLayer,
   srcForObject,
   type EditableLayout,
   type EditableObject,
@@ -142,11 +144,35 @@ export function OfficeBuilder() {
   );
 
   const updateObject = useCallback(
-    (uid: string, patch: Partial<EditableObject>) => {
+    (uid: string, next: EditableObject) => {
       commit((L) => ({
         ...L,
-        objects: L.objects.map((o) => (o.uid === uid ? { ...o, ...patch } : o)),
+        objects: L.objects.map((o) => (o.uid === uid ? next : o)),
       }));
+    },
+    [commit],
+  );
+
+  // Restack a flat-band object: those paint in list order, so raising one is
+  // literally moving it later in the list (past the next sibling in its band).
+  const restackObject = useCallback(
+    (uid: string, dir: 1 | -1) => {
+      commit((L) => {
+        const i = L.objects.findIndex((o) => o.uid === uid);
+        const self = L.objects[i];
+        if (!self) return L;
+        const step = (n: number): number => {
+          for (let j = n + dir; j >= 0 && j < L.objects.length; j += dir)
+            if (L.objects[j]?.layer === self.layer) return j;
+          return n;
+        };
+        const j = step(i);
+        if (j === i) return L;
+        const objects = L.objects.slice();
+        objects.splice(i, 1);
+        objects.splice(j, 0, self);
+        return { ...L, objects };
+      });
     },
     [commit],
   );
@@ -167,9 +193,7 @@ export function OfficeBuilder() {
       const src = new Set(uids);
       const clones = layoutRef.current.objects
         .filter((o) => src.has(o.uid))
-        .map((o) =>
-          Object.assign(cloneObject(o), { x: o.x + 8, y: o.y + 8, anchorY: o.anchorY + 8 }),
-        );
+        .map((o) => moveObject(cloneObject(o), o.x + 8, o.y + 8));
       commit((L) => ({ ...L, objects: [...L.objects, ...clones] }));
       setSelectedUids(clones.map((o) => o.uid));
     },
@@ -182,32 +206,22 @@ export function OfficeBuilder() {
       if (sel.size === 0) return;
       commit((L) => ({
         ...L,
-        objects: L.objects.map((o) => {
-          if (!sel.has(o.uid)) return o;
-          const flipped = axis === "x" ? { ...o, flipX: !o.flipX } : { ...o, flipY: !o.flipY };
-          // flipping vertically moves the content bottom — refresh the y-sort anchor
-          return axis === "y" ? { ...flipped, anchorY: anchorFor(flipped, flipped.y) } : flipped;
-        }),
+        objects: L.objects.map((o) => (sel.has(o.uid) ? flipObject(o, axis) : o)),
       }));
     },
     [selectedUids, commit],
   );
 
-  // hit-test: topmost (highest depth) object whose content bbox contains (x,y)
+  // hit-test: the object you'd see at (x,y) — the LAST one painted over it
   const hitTest = useCallback(
     (x: number, y: number): EditableObject | null => {
       let best: EditableObject | null = null;
-      let bestDepth = -Infinity;
-      for (const o of layout.objects) {
+      for (const o of paintOrder(layout.objects)) {
         const b = contentBounds(o);
         const bx = o.x + b.x;
         const by = o.y + b.y;
         if (x < bx || y < by || x >= bx + b.w || y >= by + b.h) continue;
-        const d = objectDepth(o);
-        if (d >= bestDepth) {
-          bestDepth = d;
-          best = o;
-        }
+        best = o;
       }
       return best;
     },
@@ -331,8 +345,7 @@ export function OfficeBuilder() {
           objects: L.objects.map((o) => {
             const orig = moves.get(o.uid);
             if (!orig) return o;
-            const ny = orig.y + dy;
-            return { ...o, x: orig.x + dx, y: ny, anchorY: anchorFor(o, ny) };
+            return moveObject(o, orig.x + dx, orig.y + dy);
           }),
         }));
         return;
@@ -456,11 +469,7 @@ export function OfficeBuilder() {
       e.preventDefault();
       commit((L) => ({
         ...L,
-        objects: L.objects.map((o) =>
-          sel.has(o.uid)
-            ? { ...o, x: o.x + d[0], y: o.y + d[1], anchorY: anchorFor(o, o.y + d[1]) }
-            : o,
-        ),
+        objects: L.objects.map((o) => (sel.has(o.uid) ? moveObject(o, o.x + d[0], o.y + d[1]) : o)),
       }));
     } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
@@ -500,10 +509,7 @@ export function OfficeBuilder() {
     };
   }, []);
 
-  const sortedObjects = useMemo(
-    () => layout.objects.toSorted((a, b) => objectDepth(a) - objectDepth(b)),
-    [layout.objects],
-  );
+  const sortedObjects = useMemo(() => paintOrder(layout.objects), [layout.objects]);
   const visibleItems = useMemo<{ id: string; src: string | null }[]>(() => {
     const q = query.trim().toLowerCase();
     if (paletteMode === "tiles") {
@@ -759,7 +765,8 @@ export function OfficeBuilder() {
           <Inspector
             key={selected.uid}
             obj={selected}
-            onChange={(patch) => updateObject(selected.uid, patch)}
+            onChange={(next) => updateObject(selected.uid, next)}
+            onRestack={(dir) => restackObject(selected.uid, dir)}
             onDelete={() => deleteUids([selected.uid])}
           />
         ) : selectedUids.length > 1 ? (
@@ -812,10 +819,12 @@ export function OfficeBuilder() {
 function Inspector({
   obj,
   onChange,
+  onRestack,
   onDelete,
 }: {
   obj: EditableObject;
-  onChange: (patch: Partial<EditableObject>) => void;
+  onChange: (next: EditableObject) => void;
+  onRestack: (dir: 1 | -1) => void;
   onDelete: () => void;
 }) {
   const src = srcForObject(obj);
@@ -842,7 +851,7 @@ function Inspector({
         <input
           type="number"
           value={obj.x}
-          onChange={(e) => onChange({ x: Number(e.currentTarget.value) })}
+          onChange={(e) => onChange(moveObject(obj, Number(e.currentTarget.value), obj.y))}
           className="px-field w-20 text-right"
         />
       </label>
@@ -851,10 +860,7 @@ function Inspector({
         <input
           type="number"
           value={obj.y}
-          onChange={(e) => {
-            const y = Number(e.currentTarget.value);
-            onChange({ y, anchorY: anchorFor(obj, y) });
-          }}
+          onChange={(e) => onChange(moveObject(obj, obj.x, Number(e.currentTarget.value)))}
           className="px-field w-20 text-right"
         />
       </label>
@@ -864,7 +870,7 @@ function Inspector({
           value={obj.layer}
           onChange={(e) => {
             const v = e.currentTarget.value;
-            if (v === "floor" || v === "object" || v === "overhead") onChange({ layer: v });
+            if (v === "floor" || v === "object" || v === "overhead") onChange(setLayer(obj, v));
           }}
           className="px-field"
         >
@@ -879,28 +885,54 @@ function Inspector({
           ))}
         </select>
       </label>
-      <label className="flex items-center justify-between gap-2">
-        anchorY
-        <input
-          type="number"
-          value={obj.anchorY}
-          onChange={(e) => onChange({ anchorY: Number(e.currentTarget.value) })}
-          className="px-field w-20 text-right"
-        />
-      </label>
+      {/* Only the y-sorting band has a floor line. The flat bands paint in list
+          order instead, so what they get is a way to move within that order. */}
+      {obj.layer === "object" ? (
+        <>
+          <label className="flex items-center justify-between gap-2">
+            anchorY
+            <input
+              type="number"
+              value={obj.anchorY}
+              onChange={(e) => onChange({ ...obj, anchorY: Number(e.currentTarget.value) })}
+              className="px-field w-20 text-right"
+            />
+          </label>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => onChange(moveObject(obj, obj.x, obj.y))}
+              className="px-btn flex-1 py-1.5"
+              title="Snap the anchor back to the sprite's floor line"
+            >
+              Auto anchor
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => onRestack(-1)}
+            className="px-btn flex-1 py-1.5"
+            title="Paint this one earlier — behind its neighbours in this layer"
+          >
+            Send back
+          </button>
+          <button
+            type="button"
+            onClick={() => onRestack(1)}
+            className="px-btn flex-1 py-1.5"
+            title="Paint this one later — in front of its neighbours in this layer"
+          >
+            Bring forward
+          </button>
+        </div>
+      )}
       <div className="flex gap-1">
         <button
           type="button"
-          onClick={() => onChange({ anchorY: anchorFor(obj, obj.y) })}
-          className="px-btn flex-1 py-1.5"
-        >
-          Auto anchor
-        </button>
-      </div>
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => onChange({ flipX: !obj.flipX })}
+          onClick={() => onChange(flipObject(obj, "x"))}
           data-sel={obj.flipX}
           className="px-opt flex-1 py-1.5"
           title="Flip horizontal (⇧H)"
@@ -909,10 +941,7 @@ function Inspector({
         </button>
         <button
           type="button"
-          onClick={() => {
-            const flipped = { ...obj, flipY: !obj.flipY };
-            onChange({ flipY: flipped.flipY, anchorY: anchorFor(flipped, obj.y) });
-          }}
+          onClick={() => onChange(flipObject(obj, "y"))}
           data-sel={obj.flipY}
           className="px-opt flex-1 py-1.5"
           title="Flip vertical (⇧V)"
@@ -924,7 +953,7 @@ function Inspector({
         <input
           type="checkbox"
           checked={obj.solid}
-          onChange={(e) => onChange({ solid: e.currentTarget.checked })}
+          onChange={(e) => onChange({ ...obj, solid: e.currentTarget.checked })}
         />
         solid (blocks walking)
       </label>

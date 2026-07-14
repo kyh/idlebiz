@@ -1,12 +1,17 @@
 // Relax over-lifted object anchors in office-design.json.
 //
-// `anchorY` serves two masters. It fixes the draw order among overlapping objects (the
-// static composite must stay pixel-exact to the pack reference), and it is the floor line
-// characters y-sort against. generate-office-design2.cjs tunes it purely for the first:
-// its wall-band pass lifts ANY object whose anchor lands in a band rect up to that band's
-// floor line, which sweeps up free-standing furniture (chairs, plants) parked in front of
-// a divider. A chair lifted 36px past its own base then draws over anyone standing well
-// in front of it — the character's head vanishes behind a chair they are walking past.
+// Inside the entity band, `anchorY` still serves two masters. It fixes the draw order
+// among overlapping objects (the static composite must stay pixel-exact to the pack
+// reference), and it is the floor line characters y-sort against. generate-office-design2
+// tunes it purely for the first: its wall-band pass lifts ANY object whose anchor lands in
+// a band rect up to that band's floor line, which sweeps up free-standing furniture
+// (chairs, plants) parked in front of a divider. A chair lifted 36px past its own base
+// then draws over anyone standing well in front of it — the character's head vanishes
+// behind a chair they are walking past.
+//
+// This is now the ONLY place the two masters collide: the flat bands carry no anchor at
+// all (they paint in array order), so the generator cannot inflate one. Only the entity
+// band, where furniture and actors genuinely share a sort key, still needs the squeeze.
 //
 // The minimal anchor that still preserves the composite is a topological one. Objects
 // later in the array draw over earlier ones they overlap, so for every overlapping pair
@@ -25,6 +30,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const sharp = require("sharp");
+const { writeLayout } = require("./lib/office-layout-file.cjs");
 
 const appRoot = path.resolve(__dirname, "..");
 const LAYOUT = path.join(appRoot, "src/renderer/game/office-design.json");
@@ -216,7 +222,7 @@ async function pixels(file) {
   if (diff !== 0) throw new Error("composite changed — refusing to write");
 
   if (WRITE) {
-    fs.writeFileSync(LAYOUT, JSON.stringify(layout, null, 1));
+    writeLayout(layout, LAYOUT);
     console.log(`wrote ${LAYOUT}`);
   } else {
     console.log("(dry run — pass --write to save)");

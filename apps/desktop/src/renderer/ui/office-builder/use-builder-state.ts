@@ -4,7 +4,6 @@
 // collision grid from the placed furniture so the result stays playable.
 import {
   OFFICE_LAYOUT_RAW,
-  depthFor,
   type OfficeLayer,
   type OfficeLayoutData,
 } from "@/renderer/game/office-layout";
@@ -30,19 +29,24 @@ interface Rect {
   h: number;
 }
 
-/** A placed prop being edited. `uid`/`solid` are builder-only (not serialized). */
-export interface EditableObject {
+/**
+ * A placed prop being edited. `uid`/`solid` are builder-only (not serialized).
+ *
+ * Mirrors the game's model: the flat bands stack in list order, so only an
+ * `object` carries the floor line that walkers y-sort against.
+ */
+interface EditableBase {
   uid: string;
   id: string;
   x: number;
   y: number;
-  layer: OfficeLayer;
-  anchorY: number;
   solid: boolean;
   flipX: boolean;
   flipY: boolean;
   path?: string; // explicit asset path (room-builder tiles); else resolved from id via the catalog
 }
+export type EditableObject = EditableBase &
+  ({ layer: "floor" } | { layer: "overhead" } | { layer: "object"; anchorY: number });
 
 export interface EditableLayout {
   tile: number;
@@ -102,9 +106,42 @@ export function srcForObject(o: { id: string; path?: string }): string | null {
   if (o.path) return `/${o.path}`;
   return assetSrc(o.id);
 }
-/** The render depth used by the game; the builder sorts by this for WYSIWYG. */
-export function objectDepth(o: { layer: OfficeLayer; anchorY: number }): number {
-  return depthFor(o.layer, o.anchorY);
+const BAND: Record<OfficeLayer, number> = { floor: 0, object: 1, overhead: 2 };
+
+/**
+ * The objects in the order the game paints them, back to front — what the builder
+ * renders and what it serializes. Bands stack; inside the entity band, objects
+ * y-sort on their anchor. The flat bands have no sort key, so they hold their list
+ * order and this sort MUST stay stable (Array#toSorted is).
+ */
+export function paintOrder(objects: readonly EditableObject[]): EditableObject[] {
+  return objects.toSorted(
+    (a, b) =>
+      BAND[a.layer] - BAND[b.layer] ||
+      (a.layer === "object" && b.layer === "object" ? a.anchorY - b.anchorY : 0),
+  );
+}
+
+/** Move an object, keeping the floor line it y-sorts on in step with its sprite. */
+export function moveObject(o: EditableObject, x: number, y: number): EditableObject {
+  if (o.layer !== "object") return { ...o, x, y };
+  return { ...o, x, y, anchorY: anchorFor(o, y) };
+}
+
+/** Flip an object; a vertical flip moves its content bottom, so the anchor follows. */
+export function flipObject(o: EditableObject, axis: "x" | "y"): EditableObject {
+  const flipped: EditableObject =
+    axis === "x" ? { ...o, flipX: !o.flipX } : { ...o, flipY: !o.flipY };
+  if (axis === "x" || flipped.layer !== "object") return flipped;
+  return { ...flipped, anchorY: anchorFor(flipped, flipped.y) };
+}
+
+/** Move an object to another band, giving it an anchor exactly when it needs one. */
+export function setLayer(o: EditableObject, layer: OfficeLayer): EditableObject {
+  if (o.layer === layer) return o;
+  const { uid, id, x, y, solid, flipX, flipY, path } = o;
+  const base = { uid, id, x, y, solid, flipX, flipY, path };
+  return layer === "object" ? { ...base, layer, anchorY: anchorFor(o, y) } : { ...base, layer };
 }
 function footprintRect(o: EditableObject): Rect | null {
   const b = contentBounds(o);
@@ -142,18 +179,21 @@ function paint(
 export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableLayout {
   const r: OfficeLayoutData = raw;
   const grid = r.collision.map((row) => Array.from(row, (ch) => (ch === "1" ? 1 : 0)));
-  const objects: EditableObject[] = r.objects.map((o) => ({
-    uid: newUid(),
-    id: o.id,
-    x: o.x,
-    y: o.y,
-    layer: o.layer,
-    anchorY: o.anchorY,
-    solid: inferSolid(o, grid, r.cell),
-    flipX: o.flipX ?? false,
-    flipY: o.flipY ?? false,
-    path: o.path,
-  }));
+  const objects: EditableObject[] = r.objects.map((o) => {
+    const base = {
+      uid: newUid(),
+      id: o.id,
+      x: o.x,
+      y: o.y,
+      solid: inferSolid(o, grid, r.cell),
+      flipX: o.flipX ?? false,
+      flipY: o.flipY ?? false,
+      path: o.path,
+    };
+    return o.layer === "object"
+      ? { ...base, layer: o.layer, anchorY: o.anchorY }
+      : { ...base, layer: o.layer };
+  });
   return {
     tile: r.tile,
     width: r.width,
@@ -218,24 +258,25 @@ export function deriveCollision(L: EditableLayout): string[] {
 
 /** Serialize to the exact office-design.json string the game reads. */
 export function serializeLayout(L: EditableLayout): string {
-  const objects = L.objects
-    .toSorted((a, b) => objectDepth(a) - objectDepth(b))
-    .map((o) => {
-      const out: {
-        id: string;
-        x: number;
-        y: number;
-        layer: OfficeLayer;
-        anchorY: number;
-        path?: string;
-        flipX?: boolean;
-        flipY?: boolean;
-      } = { id: o.id, x: o.x, y: o.y, layer: o.layer, anchorY: o.anchorY };
-      if (o.path) out.path = o.path;
-      if (o.flipX) out.flipX = true;
-      if (o.flipY) out.flipY = true;
-      return out;
-    });
+  // paint order is load-bearing on disk: the flat bands have no depth of their
+  // own, so the array order IS their draw order
+  const objects = paintOrder(L.objects).map((o) => {
+    const out: {
+      id: string;
+      x: number;
+      y: number;
+      layer: OfficeLayer;
+      anchorY?: number;
+      path?: string;
+      flipX?: boolean;
+      flipY?: boolean;
+    } = { id: o.id, x: o.x, y: o.y, layer: o.layer };
+    if (o.layer === "object") out.anchorY = o.anchorY;
+    if (o.path) out.path = o.path;
+    if (o.flipX) out.flipX = true;
+    if (o.flipY) out.flipY = true;
+    return out;
+  });
   const out = {
     tile: L.tile,
     width: L.width,
@@ -264,18 +305,19 @@ export function makeObject(
   const b = contentBounds(unflipped);
   const x = cx - b.x;
   const y = cy - b.y;
-  return {
+  const base = {
     uid: newUid(),
     id,
     x,
     y,
-    layer,
-    anchorY: anchorFor(unflipped, y),
     solid: layer === "object" && !opts.path,
     flipX: false,
     flipY: false,
     path: opts.path,
   };
+  return layer === "object"
+    ? { ...base, layer, anchorY: anchorFor(unflipped, y) }
+    : { ...base, layer };
 }
 
 /** Duplicate a placed object (fresh uid). */

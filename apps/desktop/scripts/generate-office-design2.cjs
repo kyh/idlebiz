@@ -13,6 +13,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const sharp = require("sharp");
+const { writeLayout, canonicalizeLegacyAnchors } = require("./lib/office-layout-file.cjs");
 
 const VG = "/Users/kyh/Desktop/vg/office";
 const PACK = path.join(VG, "Modern_Office_Revamped_v1.2");
@@ -673,7 +674,10 @@ async function main() {
     if (bad.length === 0) break;
   }
 
-  fs.writeFileSync(outPath, JSON.stringify(layout, null, 1));
+  // spend the working anchors: the shipped model orders the flat bands by the
+  // array, not by a sort key (see lib/office-layout-file.cjs)
+  layout.objects = canonicalizeLegacyAnchors(layout.objects);
+  writeLayout(layout, outPath);
   console.log(`wrote ${outPath}: ${layout.objects.length} objects`);
 
   // ---------- second half ----------

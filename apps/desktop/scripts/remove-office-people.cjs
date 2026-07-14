@@ -25,6 +25,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const sharp = require("sharp");
+const { paintOrder } = require("./lib/depth.cjs");
+const { writeLayout } = require("./lib/office-layout-file.cjs");
 
 const appRoot = path.resolve(__dirname, "..");
 const LAYOUT = path.join(appRoot, "src/renderer/game/office-design.json");
@@ -95,22 +97,14 @@ const raw = async (f) => {
   // anything buried under the monitor is left alone (it can't show through anyway, and a
   // variant PNG per hidden floor tile would be pure litter).
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const OVERHEAD = 1_500_000;
-  const depthOf = (o) =>
-    o.layer === "floor"
-      ? 1 + o.anchorY * 1e-4
-      : o.layer === "overhead"
-        ? OVERHEAD + Math.min(o.anchorY, 499_999)
-        : 1000 + o.anchorY + 0.5;
 
-  const sprites = [];
-  for (const [index, o] of layout.objects.entries()) {
-    const rel = assetOf(o);
+  // back to front, exactly as the game paints (see lib/depth.cjs)
+  const drawOrder = [];
+  for (const { obj } of paintOrder(layout.objects)) {
+    const rel = assetOf(obj);
     if (!rel) continue;
-    sprites.push({ o, index, rel, depth: depthOf(o), img: await raw(path.join(PUB, rel)) });
+    drawOrder.push({ o: obj, rel, img: await raw(path.join(PUB, rel)) });
   }
-  // draw order: depth, then array order (Phaser's stable tie-break)
-  const drawOrder = sprites.toSorted((a, b) => a.depth - b.depth || a.index - b.index);
 
   const repaint = new Map(); // sprite -> count
   for (const { rect, fill } of SCREENS) {
@@ -201,7 +195,7 @@ const raw = async (f) => {
   if (skinLeft.length > 0) throw new Error("people still visible — refusing to write");
 
   if (WRITE) {
-    fs.writeFileSync(LAYOUT, JSON.stringify(layout, null, 1));
+    writeLayout(layout, LAYOUT);
     console.log(`\nwrote ${LAYOUT}`);
   } else {
     console.log("\n(dry run — pass --write to save)");
