@@ -25,6 +25,10 @@
 // used as an oracle afterwards: we re-render and refuse to write unless the composite is
 // byte-identical.
 //
+// The shipped office-design.json is now hand-authored; this ran as pass 3 of the pipeline
+// that seeded it (generate -> remove-people -> relax -> prune). It rewrites the live layout
+// in place — diff before you commit.
+//
 // Usage: node scripts/relax-office-anchors.cjs [--write]
 const fs = require("node:fs");
 const path = require("node:path");

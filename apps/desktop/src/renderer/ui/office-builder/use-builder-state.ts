@@ -4,6 +4,7 @@
 // collision grid from the placed furniture so the result stays playable.
 import {
   OFFICE_LAYOUT_RAW,
+  comparePaintOrder,
   type OfficeLayer,
   type OfficeLayoutData,
 } from "@/renderer/game/office-layout";
@@ -106,20 +107,13 @@ export function srcForObject(o: { id: string; path?: string }): string | null {
   if (o.path) return `/${o.path}`;
   return assetSrc(o.id);
 }
-const BAND: Record<OfficeLayer, number> = { floor: 0, object: 1, overhead: 2 };
-
 /**
  * The objects in the order the game paints them, back to front — what the builder
- * renders and what it serializes. Bands stack; inside the entity band, objects
- * y-sort on their anchor. The flat bands have no sort key, so they hold their list
- * order and this sort MUST stay stable (Array#toSorted is).
+ * renders and what it serializes. Sorts by the game's own comparator, so the builder
+ * cannot disagree with the scene about what covers what.
  */
 export function paintOrder(objects: readonly EditableObject[]): EditableObject[] {
-  return objects.toSorted(
-    (a, b) =>
-      BAND[a.layer] - BAND[b.layer] ||
-      (a.layer === "object" && b.layer === "object" ? a.anchorY - b.anchorY : 0),
-  );
+  return objects.toSorted(comparePaintOrder);
 }
 
 /** Move an object, keeping the floor line it y-sorts on in step with its sprite. */

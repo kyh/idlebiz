@@ -12,6 +12,10 @@
 // the check this script enforces before it writes: prune, re-render, and refuse
 // unless the image is byte-identical.
 //
+// The shipped office-design.json is now hand-authored; this ran as pass 4 of the pipeline
+// that seeded it (generate -> remove-people -> relax -> prune). It rewrites the live layout
+// in place — diff before you commit.
+//
 // Usage: node scripts/prune-invisible-office-objects.cjs [--write]
 const path = require("node:path");
 

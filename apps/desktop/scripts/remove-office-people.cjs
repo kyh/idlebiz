@@ -20,6 +20,11 @@
 // Run after generate-office-design2.cjs (which would re-introduce them), before
 // relax-office-anchors.cjs.
 //
+// The shipped office-design.json is now hand-authored; this ran as pass 2 of the pipeline
+// that seeded it (generate -> remove-people -> relax -> prune). It rewrites the live layout
+// in place, and its rects/skin-tone hexes below are pinned to that one generation — rerun
+// it only against a fresh generate, and diff before you commit.
+//
 // Usage: node scripts/remove-office-people.cjs [--write]
 const fs = require("node:fs");
 const path = require("node:path");

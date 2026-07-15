@@ -255,19 +255,30 @@ export class OfficeScene extends Phaser.Scene {
     return depth + SEAT_LIFT;
   }
 
-  /** Does a seated bust at `seat` touch any opaque pixel of `image`? */
+  /**
+   * Does a seated bust at `seat` touch any opaque pixel of `image`?
+   *
+   * Walks the overlap rect in whole pixels: the mask is indexed arithmetically, and a
+   * fractional or out-of-range index reads past the array as `undefined` — falsy, so a
+   * miss. TS types a Uint8Array read as `number`, so nothing would flag that; keep every
+   * index an integer inside the mask instead of trusting placements to stay aligned.
+   */
   private bustOverlaps(seat: PixelPoint, image: Phaser.GameObjects.Image): boolean {
-    const x0 = Math.max(seat.x - BUST.halfWidth, image.x);
-    const x1 = Math.min(seat.x + BUST.halfWidth, image.x + image.width);
-    const y0 = Math.max(seat.y - BUST.height, image.y);
-    const y1 = Math.min(seat.y, image.y + image.height);
-    if (x1 <= x0 || y1 <= y0) return false;
     const mask = this.opaqueMask(image.texture.key);
     if (!mask) return true; // unreadable source: assume it covers, so the seat clears it
+    const x0 = Math.floor(Math.max(seat.x - BUST.halfWidth, image.x));
+    const x1 = Math.ceil(Math.min(seat.x + BUST.halfWidth, image.x + mask.w));
+    const y0 = Math.floor(Math.max(seat.y - BUST.height, image.y));
+    const y1 = Math.ceil(Math.min(seat.y, image.y + mask.h));
+    if (x1 <= x0 || y1 <= y0) return false;
     for (let y = y0; y < y1; y++) {
+      const dy = Math.floor(y - image.y);
+      const ly = image.flipY ? mask.h - 1 - dy : dy;
+      if (ly < 0 || ly >= mask.h) continue;
       for (let x = x0; x < x1; x++) {
-        const lx = image.flipX ? mask.w - 1 - (x - image.x) : x - image.x;
-        const ly = image.flipY ? mask.h - 1 - (y - image.y) : y - image.y;
+        const dx = Math.floor(x - image.x);
+        const lx = image.flipX ? mask.w - 1 - dx : dx;
+        if (lx < 0 || lx >= mask.w) continue;
         if (mask.opaque[ly * mask.w + lx]) return true;
       }
     }

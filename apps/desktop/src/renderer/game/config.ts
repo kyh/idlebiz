@@ -15,6 +15,14 @@ export const DEPTH = {
   emote: 3000, // bubbles, name labels, "!" — always on top
 } as const;
 
+/**
+ * How tall a world the entity band can hold. Floor contact maps into the band as
+ * `entityBase + y`, so a world taller than this wraps the band above it and a desk
+ * silently climbs over a ceiling lamp. office-layout.ts enforces it where layouts
+ * are parsed; widening the world means widening the band here first.
+ */
+export const ENTITY_BAND_HEIGHT = DEPTH.overhead - DEPTH.entityBase;
+
 export const COLORS = {
   bg: 0x14161f,
 } as const;

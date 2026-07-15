@@ -8,6 +8,12 @@
 // showcase gif was drawn with since-revised sprites, so a small pixel residual
 // vs the gif is expected (reported, not patched) — the layout stays exact.
 //
+// THE SHIPPED office-design.json IS NOW HAND-AUTHORED (via the in-app builder,
+// #/office-builder). This script is the head of the pipeline that seeded it —
+//   generate -> remove-office-people -> relax-office-anchors -> prune-invisible-office-objects
+// — and rerunning it rebuilds from the reference, discarding every hand edit since.
+// Kept for provenance and for the render oracles the pipeline shares. Diff before you commit.
+//
 // Usage: node scripts/generate-office-design2.cjs <decomposed.json> <ref_flat16.png> [out office-design.json]
 const fs = require("node:fs");
 const path = require("node:path");

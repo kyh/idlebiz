@@ -1,6 +1,6 @@
 import { z } from "zod";
 import rawLayout from "@/renderer/game/office-design.json";
-import { DEPTH } from "@/renderer/game/config";
+import { DEPTH, ENTITY_BAND_HEIGHT } from "@/renderer/game/config";
 import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectVariant as CatalogVariant,
@@ -35,6 +35,19 @@ const OFFICE_OBJECT_SCALE = 32;
 // Only the entity band sorts, and it sorts on anchorY. So anchorY exists on the
 // object layer and nowhere else: on a flat stack there is nothing for a floor
 // line to mean.
+/**
+ * The tallest floor line the entity band can sort. `depthFor` maps a floor line straight
+ * into the band as `entityBase + y`, so a line outside it is not merely mis-sorted — it
+ * lands in a neighbouring band and paints under the floor or over the speech bubbles.
+ * Characters sort a few px below their origin (characters.ts SOLE_OFFSET), so reserve a
+ * sprite height at the top of the band for the ones standing at the world's bottom edge.
+ */
+const CHAR_FRAME_H = 64;
+const MAX_FLOOR_LINE = ENTITY_BAND_HEIGHT - CHAR_FRAME_H;
+
+/** A floor line the entity band can hold. Custom layouts are user input — bound it here. */
+const floorLineSchema = z.number().min(0).max(MAX_FLOOR_LINE);
+
 const rectSchema = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
 const pointSchema = z.object({ x: z.number(), y: z.number() });
 const placedSchema = {
@@ -51,7 +64,7 @@ const objectSchema = z.discriminatedUnion("layer", [
   z.object({
     layer: z.literal("object"),
     /** World y this sprite contacts the floor at — what actors y-sort against. */
-    anchorY: z.number(),
+    anchorY: floorLineSchema,
     ...placedSchema,
   }),
   z.object({ layer: z.literal("overhead"), ...placedSchema }),
@@ -59,7 +72,8 @@ const objectSchema = z.discriminatedUnion("layer", [
 const layoutSchema = z.object({
   tile: z.number(),
   width: z.number(),
-  height: z.number(),
+  // characters y-sort on their own world y, so the world must fit the band too
+  height: floorLineSchema,
   cell: z.number(),
   cols: z.number(),
   rows: z.number(),
@@ -138,6 +152,29 @@ export function depthFor(obj: OfficeObjectDef, index: number): number {
     case "object":
       return DEPTH.entityBase + obj.anchorY + 0.5;
   }
+}
+
+/** All paint order needs of a placed object: its band, and its floor line if it has one. */
+export type PaintOrdered =
+  | { readonly layer: "floor" }
+  | { readonly layer: "overhead" }
+  | { readonly layer: "object"; readonly anchorY: number };
+
+const BAND: Record<OfficeLayer, number> = { floor: 0, object: 1, overhead: 2 };
+
+/**
+ * Orders two placed objects back to front — the one comparator the game, the builder and
+ * the render oracles all sort by, so what you author is what you see.
+ *
+ * Bands stack; inside the entity band, objects y-sort on their floor line. The flat bands
+ * have no sort key and return 0 here, so they keep their list order — meaning every sort
+ * through this MUST be stable (Array#sort and #toSorted are).
+ */
+export function comparePaintOrder(a: PaintOrdered, b: PaintOrdered): number {
+  return (
+    BAND[a.layer] - BAND[b.layer] ||
+    (a.layer === "object" && b.layer === "object" ? a.anchorY - b.anchorY : 0)
+  );
 }
 
 function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] {
