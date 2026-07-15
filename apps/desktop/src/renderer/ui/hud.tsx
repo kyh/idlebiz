@@ -158,7 +158,13 @@ export function Hud({
           style={needsYou > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
           title="Questions, connect requests and stuck tasks waiting on you"
         >
-          {needsYou > 0 ? <span className="px-live-dot">❗ {needsYou}</span> : "📥"}
+          {needsYou > 0 ? (
+            <span className="px-live-dot">
+              <span className="px-icon">❗</span> {needsYou}
+            </span>
+          ) : (
+            <span className="px-icon px-icon-solo">📥</span>
+          )}
         </button>
       </div>
 
@@ -175,7 +181,15 @@ export function Hud({
               : "Autopilot paused. Click to resume."
           }
         >
-          {company.autopilot ? "● LIVE" : "▶ Start"}
+          {company.autopilot ? (
+            <>
+              <span className="px-icon">●</span> LIVE
+            </>
+          ) : (
+            <>
+              <span className="px-icon">▶</span> Start
+            </>
+          )}
         </button>
         <button
           type="button"
@@ -183,7 +197,7 @@ export function Hud({
           className="px-btn pointer-events-auto"
           title="Settings"
         >
-          ⚙
+          <span className="px-icon px-icon-solo">⚙</span>
         </button>
       </div>
     </>

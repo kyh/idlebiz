@@ -778,7 +778,7 @@ export function OfficeBuilder() {
             <button
               type="button"
               onClick={() => deleteUids(selectedUids)}
-              className="px-btn py-1.5 text-[var(--danger)]"
+              className="px-btn px-btn-danger py-1.5"
             >
               Delete {selectedUids.length}
             </button>
@@ -957,7 +957,7 @@ function Inspector({
         />
         solid (blocks walking)
       </label>
-      <button type="button" onClick={onDelete} className="px-btn py-1.5 text-[var(--danger)]">
+      <button type="button" onClick={onDelete} className="px-btn px-btn-danger py-1.5">
         Delete
       </button>
     </div>

@@ -117,6 +117,28 @@ canvas {
   cursor: default;
 }
 
+/* An icon.
+ *
+ * Icons here are glyphs from the pixel font, not assets — so "icon size" IS font-size,
+ * and every kit class that sets one (.px-btn: 14px) has been sizing icons as body text:
+ * a 14px glyph adrift in a 36px button, which is the dead space you see around it. Wrap
+ * the glyph so it sizes independently of any label beside it.
+ *
+ * Must live outside @layer, like the rest of the kit: Tailwind's utilities are layered,
+ * and unlayered CSS beats layered CSS whatever the specificity. A `text-[20px]` next to
+ * a kit class that sets font-size loses and silently does nothing.
+ */
+.px-icon {
+  font-size: 20px;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: -0.1em;
+}
+/* icon carrying the weight of a button on its own, with no label to sit beside */
+.px-icon-solo {
+  font-size: 24px;
+}
+
 /* primary (accent blue) button */
 .px-btn-accent {
   color: var(--light);
@@ -136,6 +158,12 @@ canvas {
   box-shadow:
     inset 2px 2px 0 0 var(--accent-lo),
     inset -2px -2px 0 0 var(--accent-hi);
+}
+
+/* destructive button. A kit class, not a `text-[var(--danger)]` utility: .px-btn sets
+ * `color` unlayered, so a Tailwind colour utility on the same element never lands. */
+.px-btn-danger {
+  color: var(--danger);
 }
 
 /* selectable option (toggle) */
