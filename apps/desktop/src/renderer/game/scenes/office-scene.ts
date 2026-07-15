@@ -93,6 +93,19 @@ function samePoint(a: PixelPoint, b: PixelPoint): boolean {
   return Math.hypot(a.x - b.x, a.y - b.y) < 1;
 }
 
+/**
+ * Somewhere the player clicked, and why.
+ *
+ * `points` are the remaining waypoints; `index` is the one being walked to. `talkTo` is
+ * set when the click landed on a colleague — we walk over and then start the conversation,
+ * so clicking someone across the room means "go talk to them", not "go stand near them".
+ */
+interface ClickWalk {
+  readonly points: readonly PixelPoint[];
+  index: number;
+  readonly talkTo: string | null;
+}
+
 /** Tiled office assembled from Modern Office object sprites. */
 export class OfficeScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Sprite;
@@ -105,6 +118,10 @@ export class OfficeScene extends Phaser.Scene {
   private pathCols = Math.ceil(OFFICE_W / PATH_STEP);
   private pathRows = Math.ceil(OFFICE_H / PATH_STEP);
   private npcs?: NpcManager;
+  private paths?: PathProvider;
+  private walk: ClickWalk | null = null;
+  private walkMarker?: Phaser.GameObjects.Graphics;
+  private modalOpen = false;
   private activityUnsub?: () => void;
   private masks = new Map<string, OpaqueMask>();
 
@@ -157,12 +174,20 @@ export class OfficeScene extends Phaser.Scene {
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.E).on("down", () => this.tryAction());
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.G).on("down", () => this.toggleCollisionOverlay());
 
+    // Click to go there. The HUD sits over this canvas but is pointer-events-none except
+    // on its own controls, so a click on a button never reaches us.
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
+      this.onPointerDown(p),
+    );
+
     void this.boot();
     this.exposeDebug();
 
     const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp);
     const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId);
     const onModal = (open: boolean) => {
+      this.modalOpen = open;
+      if (open) this.cancelWalk();
       if (this.input.keyboard) this.input.keyboard.enabled = !open;
     };
     const onCompanyReady = () => this.scene.restart();
@@ -182,6 +207,8 @@ export class OfficeScene extends Phaser.Scene {
       this.npcs?.destroy();
       this.debugGfx?.destroy();
       this.debugGfx = undefined;
+      this.cancelWalk();
+      this.paths = undefined;
       this.npcs = undefined;
       this.player = undefined;
       Reflect.deleteProperty(window, "__officeDebug");
@@ -197,7 +224,8 @@ export class OfficeScene extends Phaser.Scene {
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE_SPAWN);
 
-    this.npcs = new NpcManager(this, seats, this.makePathProvider(), OFFICE_POIS);
+    this.paths = this.makePathProvider();
+    this.npcs = new NpcManager(this, seats, this.paths, OFFICE_POIS);
 
     const bridge = window.appBridge;
     const company = bridge ? await bridge.getCompany() : null;
@@ -495,6 +523,132 @@ export class OfficeScene extends Phaser.Scene {
     if (id) this.game.events.emit("npc-interact", { employeeId: id });
   }
 
+  /**
+   * Click to walk there; click a colleague to go talk to them; click one you're already
+   * standing next to and you just talk.
+   *
+   * Same contract as the web app's office-life card (apps/web/src/app/office-life.tsx):
+   * a marker drops where you clicked and clears when you arrive. The difference is that
+   * this office has furniture in it, so we path around it rather than slide through.
+   */
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    const player = this.player;
+    const npcs = this.npcs;
+    if (!player || !npcs || this.modalOpen) return;
+    const to = { x: pointer.worldX, y: pointer.worldY };
+
+    const clicked = npcs.interactAt(to.x, to.y);
+    if (clicked) {
+      // near enough to talk from where we stand: don't make them walk first
+      if (npcs.inReach(clicked, player)) {
+        this.cancelWalk();
+        this.faceToward(npcs.positionOf(clicked) ?? to);
+        this.game.events.emit("npc-interact", { employeeId: clicked });
+        return;
+      }
+      const at = npcs.positionOf(clicked);
+      if (at) {
+        this.startWalk(at, clicked);
+        return;
+      }
+    }
+    this.startWalk(to, null);
+  }
+
+  /**
+   * Walk to `to`, then talk to `talkTo` if set.
+   *
+   * findPath already snaps an unwalkable goal to the nearest floor, so clicking a desk
+   * walks you up to it rather than doing nothing — which is what a player means by it.
+   */
+  private startWalk(to: PixelPoint, talkTo: string | null): void {
+    const player = this.player;
+    const paths = this.paths;
+    if (!player || !paths) return;
+    const points = paths.findPath(player.x, player.y, to.x, to.y);
+    if (!points || points.length === 0) {
+      this.cancelWalk(); // nowhere to stand over there; don't leave a marker lying
+      return;
+    }
+    this.walk = { points, index: 0, talkTo };
+    const goal = points[points.length - 1];
+    if (goal) this.markWalkTarget(goal);
+  }
+
+  /** Advance along the clicked path. Returns false when there's no further to go. */
+  private followWalk(dt: number): boolean {
+    const player = this.player;
+    const walk = this.walk;
+    if (!player || !walk) return false;
+    const point = walk.points[walk.index];
+    if (!point) return false;
+
+    const dx = point.x - player.x;
+    const dy = point.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    const step = WALK_SPEED * dt;
+    if (dist <= step) {
+      player.x = point.x;
+      player.y = point.y;
+      walk.index += 1;
+      return walk.index < walk.points.length;
+    }
+
+    this.facing =
+      Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+    const wasX = player.x;
+    const wasY = player.y;
+    this.moveResolved((dx / dist) * step, (dy / dist) * step);
+    // the path is walkable by construction, so being stuck means the world moved under
+    // us (a layout swap, a body wedged on a corner). Give up rather than shove forever.
+    if (player.x === wasX && player.y === wasY) return false;
+    player.play(`${this.playerKey}-walk-${this.facing}`, true);
+    return true;
+  }
+
+  private arriveWalk(): void {
+    const talkTo = this.walk?.talkTo ?? null;
+    this.cancelWalk();
+    if (!talkTo || !this.npcs || !this.player) return;
+    // they may have wandered off mid-walk; only talk if they're actually still here
+    if (!this.npcs.inReach(talkTo, this.player)) return;
+    this.faceToward(this.npcs.positionOf(talkTo) ?? this.player);
+    this.game.events.emit("npc-interact", { employeeId: talkTo });
+  }
+
+  private cancelWalk(): void {
+    this.walk = null;
+    this.walkMarker?.destroy();
+    this.walkMarker = undefined;
+  }
+
+  private faceToward(point: PixelPoint): void {
+    const player = this.player;
+    if (!player) return;
+    const dx = point.x - player.x;
+    const dy = point.y - player.y;
+    this.facing =
+      Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+    player.setFrame(idleFrame(this.facing));
+  }
+
+  /** A flat diamond where you clicked — flat so it reads as lying on the floor. */
+  private markWalkTarget(at: PixelPoint): void {
+    this.walkMarker?.destroy();
+    const g = this.add.graphics();
+    // above every floor decal, below anyone standing on it
+    g.setDepth(DEPTH.entityBase - 1);
+    g.lineStyle(2, 0x86c0ee, 1);
+    g.beginPath();
+    g.moveTo(at.x, at.y - 4);
+    g.lineTo(at.x + 7, at.y);
+    g.lineTo(at.x, at.y + 4);
+    g.lineTo(at.x - 7, at.y);
+    g.closePath();
+    g.strokePath();
+    this.walkMarker = g;
+  }
+
   private async spawnPlayer(spawn: { x: number; y: number }): Promise<void> {
     const key = `player-${this.founderSeed}`;
     await loadCharacter(this, key, this.founderSeed);
@@ -522,11 +676,14 @@ export class OfficeScene extends Phaser.Scene {
     if (keys.S.isDown || cursors.down.isDown) dy += 1;
 
     if (dx !== 0 || dy !== 0) {
+      this.cancelWalk(); // taking the keys back cancels wherever the click was sending us
       if (dx !== 0) this.facing = dx < 0 ? "left" : "right";
       else this.facing = dy < 0 ? "up" : "down";
       const len = Math.hypot(dx, dy) || 1;
       this.moveResolved((dx / len) * WALK_SPEED * dt, (dy / len) * WALK_SPEED * dt);
       player.play(`${this.playerKey}-walk-${this.facing}`, true);
+    } else if (this.walk) {
+      if (!this.followWalk(dt)) this.arriveWalk();
     } else {
       player.anims.stop();
       player.setFrame(idleFrame(this.facing));

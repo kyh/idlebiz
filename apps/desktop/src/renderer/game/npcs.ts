@@ -11,6 +11,7 @@ import {
   type Dir,
   type SitSide,
 } from "@/renderer/game/characters";
+import type { PixelPoint } from "@/renderer/game/office-layout";
 import type { Employee } from "@/shared/domain";
 
 export type NpcState = "idle" | "working" | "blocked";
@@ -278,6 +279,18 @@ export class NpcManager {
       if (d <= INTERACT_RADIUS && (!best || d < best.d)) best = { id: npc.id, d };
     }
     return best?.id ?? null;
+  }
+
+  /** Where an employee is standing/sitting right now, for walking over to them. */
+  positionOf(employeeId: string): PixelPoint | null {
+    const npc = this.npcs.get(employeeId);
+    return npc ? { x: npc.sprite.x, y: npc.sprite.y } : null;
+  }
+
+  /** Can someone standing at `point` strike up a conversation with `employeeId`? */
+  inReach(employeeId: string, point: PixelPoint): boolean {
+    const at = this.positionOf(employeeId);
+    return at !== null && Math.hypot(at.x - point.x, at.y - point.y) <= INTERACT_RADIUS;
   }
 
   // ---- visuals ---------------------------------------------------------------
