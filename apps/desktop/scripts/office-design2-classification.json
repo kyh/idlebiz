@@ -33,11 +33,12 @@
     [352, 288, 512, 352, 352],
     [296, 352, 322, 400, 400]
   ],
+  "_walkable_note": "Left lanes start at x=32, not x=16: the left wall is a 32px tile whose opaque face begins at x=18, so a lane opened at x=16 lets the 16px body stand at x=24 while the 32px sprite spans x=8..40 — the character's left half hangs in the void beside the wall. Keep lane edges on the wall tile's real footprint, not on its collision cell.",
   "walkableRects": [
-    [16, 64, 496, 80],
-    [16, 160, 496, 204],
-    [16, 208, 52, 304],
-    [16, 288, 496, 304],
+    [32, 64, 496, 80],
+    [32, 160, 496, 204],
+    [32, 208, 52, 304],
+    [32, 288, 496, 304],
     [320, 296, 352, 400],
     [120, 352, 316, 400],
     [356, 352, 496, 400],
