@@ -35,9 +35,12 @@ export function Teams({ onClose }: { onClose: () => void }) {
       <div className="px-window flex max-h-[80vh] w-full max-w-2xl flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
-            <div className="text-[16px]">Teams</div>
+            {/* The domain allows many teams; the game only ever founds one. Title and
+                count follow what's actually there rather than announcing a constant. */}
+            <div className="text-[16px]">{teams.length > 1 ? "Teams" : "Team"}</div>
             <div className="text-[12px] text-[#c4c9dd]">
-              {teams.length} team{teams.length === 1 ? "" : "s"} · {employees.length} people
+              {employees.length} {employees.length === 1 ? "person" : "people"}
+              {teams.length > 1 ? ` · ${teams.length} teams` : ""}
             </div>
           </div>
           <button type="button" onClick={onClose} className="px-btn">

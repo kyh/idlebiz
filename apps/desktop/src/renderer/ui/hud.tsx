@@ -73,7 +73,7 @@ export function Hud({
   onSettings: () => void;
   onTeams: () => void;
 }) {
-  const { company, employees, teams, pendingAsks, stuckTasks, product, resting } = useStore();
+  const { company, employees, pendingAsks, stuckTasks, product, resting } = useStore();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
   // a CLI on cooldown: the office naps until the earliest reset
@@ -136,14 +136,9 @@ export function Hud({
         <Stat
           label="team"
           value={String(employees.length)}
-          sub={
-            working > 0
-              ? `${working} working`
-              : (napLabel ??
-                (teams.length > 0
-                  ? `${teams.length} team${teams.length === 1 ? "" : "s"}`
-                  : "idle"))
-          }
+          // a company has exactly one team, so a team count is a constant wearing a
+          // number's clothes. Say what's actually happening instead.
+          sub={working > 0 ? `${working} working` : (napLabel ?? "idle")}
           title={
             napLabel
               ? "A CLI hit its usage limit — parked work resumes automatically at reset"
@@ -154,7 +149,8 @@ export function Hud({
         <button
           type="button"
           onClick={onInbox}
-          className="px-btn pointer-events-auto"
+          // only icon-only when there's no count beside the glyph
+          className={`px-btn pointer-events-auto${needsYou > 0 ? "" : " px-btn-icon"}`}
           style={needsYou > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
           title="Questions, connect requests and stuck tasks waiting on you"
         >
@@ -194,7 +190,7 @@ export function Hud({
         <button
           type="button"
           onClick={onSettings}
-          className="px-btn pointer-events-auto"
+          className="px-btn px-btn-icon pointer-events-auto"
           title="Settings"
         >
           <span className="px-icon px-icon-solo">⚙</span>

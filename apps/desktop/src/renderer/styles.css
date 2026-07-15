@@ -129,14 +129,25 @@ canvas {
  * a kit class that sets font-size loses and silently does nothing.
  */
 .px-icon {
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
   display: inline-block;
   vertical-align: -0.1em;
 }
 /* icon carrying the weight of a button on its own, with no label to sit beside */
 .px-icon-solo {
-  font-size: 24px;
+  font-size: 22px;
+}
+
+/* An icon-only button.
+ *
+ * .px-btn's padding is sized for a line of 14px text; a bigger glyph inside it doesn't
+ * fit the content box and pushes the whole button out instead. Give the glyph that
+ * padding rather than making the button fatter: 22px icon + 6px padding + 3px border
+ * lands on the same ~40px box a text button already has.
+ */
+.px-btn-icon {
+  padding: 6px 10px;
 }
 
 /* primary (accent blue) button */
