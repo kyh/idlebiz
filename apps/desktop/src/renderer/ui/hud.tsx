@@ -156,10 +156,16 @@ export function Hud({
         >
           {needsYou > 0 ? (
             <span className="px-live-dot">
+              {/* ❗ stays, though VG5000 has no glyph for it and it renders as a colour
+                  emoji. Tried the pixel "!" — it reads as punctuation glued to the
+                  count and the plate loses its focal mark. The colour IS the signal
+                  here, so the fallback earns its keep. */}
               <span className="px-icon">❗</span> {needsYou}
             </span>
           ) : (
-            <span className="px-icon px-icon-solo">📥</span>
+            // ✉ not 📥: VG5000 has no inbox glyph, so it fell back to the system
+            // symbol font — the one icon here not drawn in the pixel font
+            <span className="px-icon px-icon-solo">✉</span>
           )}
         </button>
       </div>
@@ -179,7 +185,9 @@ export function Hud({
         >
           {company.autopilot ? (
             <>
-              <span className="px-icon">●</span> LIVE
+              {/* ◉ not ●: U+25CF isn't in VG5000 either, and this one has a pixel
+                  equivalent that reads as a status light. */}
+              <span className="px-icon">◉</span> LIVE
             </>
           ) : (
             <>
