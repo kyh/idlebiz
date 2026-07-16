@@ -531,7 +531,7 @@ export function OfficeBuilder() {
               key={m}
               onClick={() => setPaletteMode(m)}
               data-sel={paletteMode === m}
-              className="px-opt flex-1 px-2 py-1 text-[11px] capitalize"
+              className="px-opt flex-1 px-2 py-1 capitalize"
             >
               {m === "tiles" ? "Room tiles" : "Objects"}
             </button>
@@ -541,7 +541,7 @@ export function OfficeBuilder() {
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           placeholder="Search id…"
-          className="px-field m-2 text-[12px]"
+          className="px-field m-2"
         />
         <div className="px-scroll grid min-h-0 flex-1 grid-cols-3 gap-1 overflow-y-auto p-2">
           {visibleItems.map((it) => {

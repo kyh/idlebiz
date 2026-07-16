@@ -92,7 +92,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="vercel_…"
                   type="password"
-                  className="px-field flex-1 text-[12px]"
+                  className="px-field flex-1"
                   autoFocus
                 />
                 <button
@@ -118,7 +118,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                       key={p.id}
                       onClick={() => void pick(p)}
                       disabled={busy}
-                      className="px-opt block w-full text-left text-[13px]"
+                      className="px-opt block w-full text-left"
                     >
                       {p.name}
                       {p.teamId ? (

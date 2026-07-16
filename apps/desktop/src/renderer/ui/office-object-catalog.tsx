@@ -40,12 +40,12 @@ export function OfficeObjectCatalog() {
                 value={query}
                 onChange={(event) => setQuery(event.currentTarget.value)}
                 placeholder="Search id, source, size"
-                className="px-field w-full min-w-0 text-[12px] sm:w-56"
+                className="px-field w-full min-w-0 sm:w-56"
               />
-              <a href="#/ui" className="px-btn px-3 py-2 text-center text-[11px]">
+              <a href="#/ui" className="px-btn px-3 py-2 text-center">
                 Builder
               </a>
-              <a href="#/" className="px-btn px-3 py-2 text-center text-[11px]">
+              <a href="#/" className="px-btn px-3 py-2 text-center">
                 Game
               </a>
             </div>
@@ -89,7 +89,7 @@ function ObjectCard({
           <h2 className="truncate text-[13px]">{asset.id}</h2>
           <p className="text-[10px] text-[#d6d9e7]">source {asset.sourceId}</p>
         </div>
-        <button type="button" onClick={onCopy} className="px-chip shrink-0 text-[10px]">
+        <button type="button" onClick={onCopy} className="px-chip shrink-0">
           {copied ? "Copied" : "Copy"}
         </button>
       </div>

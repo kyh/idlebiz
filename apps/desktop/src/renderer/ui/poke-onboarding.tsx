@@ -255,11 +255,7 @@ export function PokeOnboarding() {
 
         <div className="mt-3 flex items-center gap-2">
           {step === "intro" ? (
-            <button
-              type="button"
-              onClick={next}
-              className="px-btn-accent px-btn ml-auto text-[13px]"
-            >
+            <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
               ▶ Let's go
             </button>
           ) : null}
@@ -289,7 +285,7 @@ export function PokeOnboarding() {
                     void bridge().startLogin();
                   }}
                   disabled={authBusy}
-                  className="px-btn-accent px-btn ml-auto text-[13px]"
+                  className="px-btn-accent px-btn ml-auto"
                 >
                   {authBusy ? "Setting up…" : authTried ? "Try again" : "Set up workforce"}
                 </button>
@@ -303,14 +299,14 @@ export function PokeOnboarding() {
                 value={founderName}
                 onChange={(e) => setFounderName(e.target.value)}
                 placeholder="Ada"
-                className="px-field flex-1 text-[14px]"
+                className="px-field flex-1"
                 autoFocus
               />
               <button
                 type="button"
                 onClick={next}
                 disabled={!founderName.trim()}
-                className="px-btn-accent px-btn text-[13px]"
+                className="px-btn-accent px-btn"
               >
                 That's me
               </button>
@@ -318,11 +314,7 @@ export function PokeOnboarding() {
           ) : null}
 
           {step === "look" ? (
-            <button
-              type="button"
-              onClick={next}
-              className="px-btn-accent px-btn ml-auto text-[13px]"
-            >
+            <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
               Looking sharp →
             </button>
           ) : null}
@@ -333,14 +325,14 @@ export function PokeOnboarding() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="Acme AI"
-                className="px-field flex-1 text-[14px]"
+                className="px-field flex-1"
                 autoFocus
               />
               <button
                 type="button"
                 onClick={next}
                 disabled={!companyName.trim()}
-                className="px-btn-accent px-btn text-[13px]"
+                className="px-btn-accent px-btn"
               >
                 Register it
               </button>
@@ -356,7 +348,7 @@ export function PokeOnboarding() {
                     key={b.id}
                     onClick={() => setBiz(b.id)}
                     data-sel={biz === b.id}
-                    className="px-opt text-left text-[13px]"
+                    className="px-opt text-left"
                   >
                     {b.emoji} {b.label}
                   </button>
@@ -366,7 +358,7 @@ export function PokeOnboarding() {
                 type="button"
                 onClick={next}
                 disabled={biz === null}
-                className="px-btn-accent px-btn ml-auto text-[13px]"
+                className="px-btn-accent px-btn ml-auto"
               >
                 That's the plan →
               </button>
@@ -380,14 +372,14 @@ export function PokeOnboarding() {
                 onChange={(e) => setPitch(e.target.value)}
                 rows={3}
                 placeholder={businessTypeById(biz ?? "custom").pitchPlaceholder}
-                className="px-field w-full resize-none text-[13px]"
+                className="px-field w-full resize-none"
                 autoFocus
               />
               <button
                 type="button"
                 onClick={next}
                 disabled={!pitch.trim()}
-                className="px-btn-accent px-btn ml-auto text-[13px]"
+                className="px-btn-accent px-btn ml-auto"
               >
                 That's the vision
               </button>
@@ -399,7 +391,7 @@ export function PokeOnboarding() {
               type="button"
               onClick={() => void finalize()}
               disabled={finalizing}
-              className="px-btn-accent px-btn ml-auto text-[13px]"
+              className="px-btn-accent px-btn ml-auto"
             >
               Open the office →
             </button>

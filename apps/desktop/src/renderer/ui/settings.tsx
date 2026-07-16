@@ -61,7 +61,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 value={capValue}
                 onChange={(e) => setCap(e.target.value)}
                 inputMode="numeric"
-                className="px-field w-20 text-[13px]"
+                className="px-field w-20"
               />
               <button
                 type="button"

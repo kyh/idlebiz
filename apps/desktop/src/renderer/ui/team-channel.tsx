@@ -72,7 +72,7 @@ export function TeamChannel() {
             }
           }}
           placeholder={focused ? "@name wakes them up" : "Message the team…"}
-          className="px-field min-w-0 flex-1 text-[12px]"
+          className="px-field min-w-0 flex-1"
         />
         <button type="button" onClick={send} disabled={!draft.trim()} className="px-btn">
           <span className="px-icon px-icon-solo">➤</span>

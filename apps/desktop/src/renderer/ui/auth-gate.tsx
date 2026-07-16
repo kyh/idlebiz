@@ -49,12 +49,7 @@ export function AuthGate() {
           </div>
         ) : null}
         <div className="mt-3 flex justify-end">
-          <button
-            type="button"
-            onClick={start}
-            disabled={busy}
-            className="px-btn-accent px-btn text-[13px]"
-          >
+          <button type="button" onClick={start} disabled={busy} className="px-btn-accent px-btn">
             {busy ? "Setting up…" : "Set up workforce"}
           </button>
         </div>
