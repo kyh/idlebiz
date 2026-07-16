@@ -13,7 +13,7 @@
     "check:office": "node scripts/check-office-void.cjs",
     "start": "electron-vite preview",
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
-    "release:publish": "GH_TOKEN=$(gh auth token) pnpm with-env electron-vite build && GH_TOKEN=$(gh auth token) pnpm with-env electron-builder --mac --publish always",
+    "release:publish": "bash scripts/publish-release.sh",
     "with-env": "dotenv -e .env --",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .cache .output"
