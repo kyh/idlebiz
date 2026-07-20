@@ -42,6 +42,9 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   (office builder) and `#/office-assets` — all reachable with no company.
 - **`pnpm dev:desktop` kills first**: `dev:kill` SIGKILLs this checkout's dev processes _and_
   whatever holds TCP 9222. Check `lsof -ti tcp:9222` before starting.
+- **`pnpm dev:desktop` also costs money**: boot calls `scheduler.start()`, which drains the
+  task queue immediately against the real `~/.idlebiz` save — real CLI spend, real writes.
+  `ls ~/.idlebiz` first; don't boot it on a machine with a live company.
 
 Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
