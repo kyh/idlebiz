@@ -7,8 +7,6 @@
     "pnpm-lock.yaml",
     "*.tsbuildinfo",
     ".next",
-    ".expo",
-    ".wxt",
     ".output",
     "out"
   ],

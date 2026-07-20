@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
 import type { ActivityEvent } from "@/shared/domain";
+import { formatTime } from "@/shared/format";
 
 const FEED_KINDS = new Set(["chat", "ship"]);
 const ORG_EVENTS = new Set(["org.hired", "org.released", "runner.resting"]);
@@ -95,10 +96,7 @@ function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
     const obj = typeof p === "object" && p !== null ? p : {};
     if (e.message === "runner.resting") {
       const until = "until" in obj && typeof obj.until === "number" ? obj.until : null;
-      const at =
-        until === null
-          ? "later"
-          : new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const at = until === null ? "later" : formatTime(until);
       const runner = "runner" in obj && typeof obj.runner === "string" ? obj.runner : "a";
       return (
         <div className="text-[var(--text-dim)]">

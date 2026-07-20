@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useStore, setModalOpen } from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
 import type { Task } from "@/shared/domain";
+import { formatDate } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
 // Shipping log: everything the team has shipped, with summaries that say where
@@ -28,7 +29,7 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
           </span>
         </span>
         <span className="shrink-0 text-[11px] text-[var(--text-dim)]">
-          {by} · {new Date(t.completedAt ?? t.createdAt).toLocaleDateString()}
+          {by} · {formatDate(t.completedAt ?? t.createdAt)}
         </span>
       </button>
       {open ? (

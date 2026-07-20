@@ -9,14 +9,7 @@
         "scripts/*.cjs"
       ],
       "project": ["src/**", "scripts/**"],
-      "ignoreDependencies": [
-        "@mariozechner/pi-ai",
-        "@mariozechner/pi-coding-agent",
-        "@tailwindcss/vite",
-        "@vitejs/plugin-react",
-        "electron-builder"
-      ],
-      "ignoreBinaries": ["gh"]
+      "ignoreDependencies": ["@tailwindcss/vite", "@vitejs/plugin-react", "electron-builder"]
     }
   }
 }
