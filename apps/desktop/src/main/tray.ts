@@ -3,6 +3,7 @@ import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { scheduler } from "@/main/scheduler";
 import * as store from "@/main/store/store";
+import { formatTime } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
 // The menu-bar presence: IdleBiz is a background mac app. Closing the window
@@ -25,9 +26,6 @@ function trayIcon(): Electron.NativeImage {
   img.setTemplateImage(true);
   return img;
 }
-
-const fmtTime = (epoch: number): string =>
-  new Date(epoch).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 /** The office's pulse, shared by the menu status line and the icon badge. */
 interface OfficeStatus {
@@ -60,7 +58,7 @@ function officeStatus(): OfficeStatus {
 function statusLine(s: OfficeStatus): string {
   if (!s.company || !s.company.onboarded) return "No company yet";
   if (s.working > 0) return `${s.working} working · spent $${s.company.spentUsd.toFixed(2)}`;
-  if (s.napUntil !== undefined) return `☕ resting til ${fmtTime(s.napUntil)}`;
+  if (s.napUntil !== undefined) return `☕ resting til ${formatTime(s.napUntil)}`;
   return s.company.autopilot
     ? `idle · spent $${s.company.spentUsd.toFixed(2)}`
     : `paused · spent $${s.company.spentUsd.toFixed(2)}`;

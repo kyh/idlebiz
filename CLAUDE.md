@@ -1,10 +1,11 @@
 # IdleBiz
 
-Electron game where AI employees (pi agents) really operate a business. One app:
-`apps/desktop` (electron-vite + React + Phaser, strict TS — no `any`, no `!`, no `as`).
+Electron game where AI employees — real `claude` / `codex` CLI sessions — operate a
+business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS — no
+`any`, no `!`, no `as`). Full map and workflow in `AGENTS.md`.
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
-  packages (COMPANY.md, agents/<slug>/AGENTS.md doubles as the live pi agent
+  packages (COMPANY.md, agents/<slug>/AGENTS.md doubles as the live agent
   instructions, tasks/<slug>/TASK.md, routines/, workspace/, activity.jsonl).
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
@@ -29,5 +30,24 @@ Electron game where AI employees (pi agents) really operate a business. One app:
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
   it fails on any reachable spot where the player's art hangs over nothing.
 
-Commands: `pnpm typecheck` · `pnpm lint` · `pnpm format` · `pnpm dev:desktop`
+## Agent-driven development
+
+`AGENTS.md` is the full workflow — read it before driving this repo. The essentials:
+
+- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · build). There is no
+  GitHub Actions; Vercel's build of `apps/web` is the only remote gate and `verify` runs it.
+- **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
+  onboard, hire or run anything. There is no seeded save.
+- **CLI-free surfaces**: `apps/web`, the onboarding modal, and the two hash routes `#/ui`
+  (office builder) and `#/office-assets` — all reachable with no company.
+- **`pnpm dev:desktop` kills first**: `dev:kill` SIGKILLs this checkout's dev processes _and_
+  whatever holds TCP 9222. Check `lsof -ti tcp:9222` before starting.
+- **`pnpm dev:desktop` also costs money**: boot calls `scheduler.start()`, which drains the
+  task queue immediately against the real `~/.idlebiz` save — real CLI spend, real writes.
+  `ls ~/.idlebiz` first; don't boot it on a machine with a live company.
+
+Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
+`pnpm knip` is exploratory, not a gate (it's not in `verify`) and currently exits 1 on
+pre-existing unused exports in `apps/desktop` — treat its output as a cleanup backlog,
+not as something your change broke.
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)

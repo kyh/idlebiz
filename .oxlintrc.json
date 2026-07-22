@@ -7,8 +7,6 @@
     "pnpm-lock.yaml",
     "*.tsbuildinfo",
     ".next",
-    ".expo",
-    ".wxt",
     ".output",
     "out"
   ],
@@ -24,9 +22,7 @@
     "react/react-in-jsx-scope": "off",
     "eslint/no-shadow": "off",
     "eslint/no-await-in-loop": "off",
-    // expo-status-bar's StatusBar takes `style` as a string variant, not CSS.
-    "react/style-prop-object": ["error", { "allow": ["StatusBar"] }],
-    // Render props (React Navigation headerRight, FlatList renderItem) are legit.
+    // Render props (a component passed as a prop, not nested in render) are legit.
     "react/no-unstable-nested-components": ["error", { "allowAsProps": true }]
   },
   "overrides": [
@@ -35,24 +31,6 @@
       "files": ["apps/desktop/**"],
       "rules": {
         "nextjs/no-img-element": "off"
-      }
-    },
-    {
-      // Dependency boundary: agent/ must stay main-free. Capabilities are
-      // injected as AgentPorts from main/lib/agent-lifecycle.ts.
-      "files": ["apps/desktop/src/agent/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["@/main", "@/main/**", "**/main/**"],
-                "message": "agent/ must not import from main/ — inject via AgentPorts (main/lib/agent-lifecycle.ts)"
-              }
-            ]
-          }
-        ]
       }
     }
   ]

@@ -1,3 +1,4 @@
+import { env } from "@/lib/env";
 import { parseState } from "@/lib/stripe-oauth";
 
 export function GET(req: Request): Response {
@@ -6,7 +7,7 @@ export function GET(req: Request): Response {
   if (!parseState(rawState) || rawState === null) {
     return new Response("invalid state", { status: 400 });
   }
-  const clientId = process.env.STRIPE_CLIENT_ID;
+  const clientId = env.STRIPE_CLIENT_ID;
   if (!clientId) return new Response("stripe not configured", { status: 500 });
 
   const authorize = new URL("https://connect.stripe.com/oauth/authorize");

@@ -9,12 +9,13 @@
     "dev:desktop": "pnpm dev:kill && turbo watch dev -F @repo/desktop...",
     "dev:kill": "bash apps/desktop/scripts/devkill.sh",
     "dev:web": "turbo watch dev -F @repo/web...",
-    "lint": "oxlint --report-unused-disable-directives",
+    "lint": "oxlint --report-unused-disable-directives --deny-warnings",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "knip": "knip",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm build"
   },
   "devDependencies": {
     "knip": "^6.25.0",

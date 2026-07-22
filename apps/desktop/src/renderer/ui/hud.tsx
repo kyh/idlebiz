@@ -1,5 +1,6 @@
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
+import { formatTime } from "@/shared/format";
 
 function fmt(n: number): string {
   if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
@@ -80,10 +81,7 @@ export function Hud({
   const napUntil = Object.values(resting)
     .filter((t) => t > Date.now())
     .toSorted((a, b) => a - b)[0];
-  const napLabel =
-    napUntil === undefined
-      ? null
-      : `☕ resting til ${new Date(napUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  const napLabel = napUntil === undefined ? null : `☕ resting til ${formatTime(napUntil)}`;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
   const out = isOutOfBudget(company);
   const needsYou = pendingAsks.length + stuckTasks.length;

@@ -4,6 +4,8 @@
 // (the platform secret never leaves the server) and forwards the read-only
 // connected-account token to the desktop's loopback server on 127.0.0.1:port.
 
+import { env } from "@/lib/env";
+
 export interface OAuthState {
   port: number;
   nonce: string;
@@ -38,7 +40,7 @@ export interface ExchangeResult {
 
 /** POST connect.stripe.com/oauth/token with the platform secret. */
 export async function exchangeCode(code: string): Promise<ExchangeResult> {
-  const secret = process.env.STRIPE_SECRET_KEY;
+  const secret = env.STRIPE_SECRET_KEY;
   if (!secret) throw new Error("STRIPE_SECRET_KEY not configured");
   const res = await fetch("https://connect.stripe.com/oauth/token", {
     method: "POST",
@@ -83,8 +85,8 @@ export async function tokenAccountId(accessToken: string): Promise<string | null
 }
 
 export async function deauthorize(stripeUserId: string): Promise<void> {
-  const secret = process.env.STRIPE_SECRET_KEY;
-  const clientId = process.env.STRIPE_CLIENT_ID;
+  const secret = env.STRIPE_SECRET_KEY;
+  const clientId = env.STRIPE_CLIENT_ID;
   if (!secret || !clientId) throw new Error("Stripe platform env not configured");
   const res = await fetch("https://connect.stripe.com/oauth/deauthorize", {
     method: "POST",

@@ -7,11 +7,13 @@ the dashboard can read your actual Stripe revenue and analytics.
 
 ## Layout
 
-- `apps/desktop` — the Electron game (electron-vite + React + Phaser + pi agents).
+- `apps/desktop` — the Electron game (electron-vite + React + Phaser).
   Character sprites generate from bundled employee sheets at
   `apps/desktop/resources/employee-sheets`.
 - `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
   Download button resolves the latest `.dmg` from GitHub releases.
+- `packages/agent-driver` — spawns the player's `claude` / `codex` CLIs and
+  normalizes their event streams.
 
 Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
@@ -21,7 +23,11 @@ Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 pnpm install
 pnpm dev:desktop
 pnpm dev:web
+pnpm verify        # typecheck · lint · format · check:office · build
 ```
+
+Employees run on your own signed-in `claude` or `codex` CLI — the app needs one on
+PATH. `AGENTS.md` is the guide for coding agents working on this repo.
 
 ## Release (desktop)
 
