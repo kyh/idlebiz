@@ -18,10 +18,10 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm build"
   },
   "devDependencies": {
-    "knip": "^6.29.0",
+    "knip": "^6.32.2",
     "oxfmt": "^0.60.0",
-    "oxlint": "^1.75.0",
-    "turbo": "^2.10.6",
+    "oxlint": "^1.78.0",
+    "turbo": "^2.10.10",
     "typescript": "^7.0.2"
   },
   "engines": {
