@@ -74,7 +74,7 @@ interface Npc {
   pendingTimer?: Phaser.Time.TimerEvent;
 }
 
-const EMOTE_FRAME: Record<"alert" | "think", number> = { alert: 0, think: 1 };
+const EMOTE_FRAME = { alert: 0, think: 1 } satisfies Record<"alert" | "think", number>;
 const NPC_SPEED = 64; // px/s
 const INTERACT_RADIUS = 38;
 const BUBBLE_MS = 3200;

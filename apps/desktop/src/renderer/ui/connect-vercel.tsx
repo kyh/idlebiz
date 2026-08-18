@@ -45,12 +45,11 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await connectVercel({
-        token: token.trim(),
-        projectId: p.id,
-        projectName: p.name,
-        ...(p.teamId ? { teamId: p.teamId } : {}),
-      });
+      await connectVercel(
+        p.teamId
+          ? { token: token.trim(), projectId: p.id, projectName: p.name, teamId: p.teamId }
+          : { token: token.trim(), projectId: p.id, projectName: p.name },
+      );
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

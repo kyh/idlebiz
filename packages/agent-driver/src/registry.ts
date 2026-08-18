@@ -16,7 +16,7 @@ export interface RunnerAdapter {
   fallbackPricingModel: string;
 }
 
-export const RUNNERS: Record<RunnerId, RunnerAdapter> = {
+export const RUNNERS = {
   claude: {
     run: runClaude,
     displayName: "Claude Code",
@@ -29,4 +29,4 @@ export const RUNNERS: Record<RunnerId, RunnerAdapter> = {
     loginArgs: ["login"],
     fallbackPricingModel: "gpt-5.5-codex",
   },
-};
+} satisfies Record<RunnerId, RunnerAdapter>;

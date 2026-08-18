@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { z } from "zod";
 import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import {
   loadCharacter,
@@ -32,12 +33,12 @@ import {
 } from "@/renderer/game/office-layout";
 import type { ActivityEvent, Employee } from "@/shared/domain";
 
-const FACING_OFFSET: Record<Dir, { x: number; y: number }> = {
+const FACING_OFFSET = {
   down: { x: 0, y: 1 },
   up: { x: 0, y: -1 },
   left: { x: -1, y: 0 },
   right: { x: 1, y: 0 },
-};
+} satisfies Record<Dir, { x: number; y: number }>;
 
 const WORKSPACE_KIT_PATH = "workspace-kit";
 const PATH_STEP = TILE / 2;
@@ -395,7 +396,7 @@ export class OfficeScene extends Phaser.Scene {
 
   /** BFS over a half-tile grid; collision itself uses the authored grid. */
   private makePathProvider(): PathProvider {
-    const nodePx = (gx: number, gy: number): { x: number; y: number } => ({
+    const nodePx = (gx: number, gy: number): PixelPoint => ({
       x: gx * PATH_STEP + PATH_STEP / 2,
       y: gy * PATH_STEP + PATH_STEP / 2,
     });
@@ -497,21 +498,19 @@ export class OfficeScene extends Phaser.Scene {
     if (!bridge) return;
     this.activityUnsub = bridge.onActivity((e: ActivityEvent) => {
       if (!e.employeeId) return;
-      if (e.kind === "chat" && typeof e.message === "string") {
+      if (e.kind === "chat" && e.message != null) {
         const m = /^→ ([^(]+) \(/.exec(e.message);
         this.npcs?.onChat(e.employeeId, e.message, m?.[1]?.trim() ?? null);
         return;
       }
-      if (e.kind !== "status" || typeof e.message !== "string") return;
-      const map: Record<string, NpcState | undefined> = {
-        running: "working",
-        done: "idle",
-        failed: "idle",
-        cancelled: "idle",
-        blocked: "blocked",
-      };
-      const next = map[e.message];
-      if (next) this.npcs?.setState(e.employeeId, next);
+      if (e.kind !== "status") return;
+      const status = z
+        .enum(["running", "done", "failed", "cancelled", "blocked"])
+        .safeParse(e.message);
+      if (!status.success) return;
+      const next: NpcState =
+        status.data === "running" ? "working" : status.data === "blocked" ? "blocked" : "idle";
+      this.npcs?.setState(e.employeeId, next);
     });
   }
 

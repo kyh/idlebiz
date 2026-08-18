@@ -1,4 +1,4 @@
-// Minimal agentcompanies/v1 frontmatter codec — zero deps, strict types.
+// Minimal agentcompanies/v1 frontmatter codec — no YAML dep, strict types.
 //
 // We only ever WRITE a constrained YAML subset, so parsing stays trivial:
 //   - top-level scalar fields, one `metadata:` block of indented scalars
@@ -7,6 +7,9 @@
 // Free text (mission, persona, task description) lives in the markdown BODY,
 // never in frontmatter, which is what keeps this codec safe.
 
+import { z } from "zod";
+import type { JsonValue } from "@/shared/json";
+
 export type Scalar = string | number | boolean | null;
 export interface FrontmatterDoc {
   fields: Record<string, Scalar>;
@@ -14,10 +17,10 @@ export interface FrontmatterDoc {
   body: string;
 }
 
+// JSON.stringify quotes strings and renders numbers/booleans/null bare —
+// exactly this codec's serialization for every Scalar.
 function writeValue(v: Scalar): string {
-  if (typeof v === "string") return JSON.stringify(v);
-  if (v === null) return "null";
-  return String(v);
+  return JSON.stringify(v);
 }
 
 function parseValue(raw: string): Scalar {
@@ -28,8 +31,8 @@ function parseValue(raw: string): Scalar {
   if (t !== "" && !Number.isNaN(Number(t)) && !t.startsWith('"')) return Number(t);
   if (t.startsWith('"')) {
     try {
-      const parsed: unknown = JSON.parse(t);
-      if (typeof parsed === "string") return parsed;
+      const parsed = z.string().safeParse(JSON.parse(t));
+      if (parsed.success) return parsed.data;
     } catch {
       /* fall through to raw */
     }
@@ -80,33 +83,36 @@ export function parseDoc(text: string): FrontmatterDoc {
 
 // ---- typed readers (parse-boundary narrowing; throw = corrupt file) --------
 export function reqStr(rec: Record<string, Scalar>, key: string): string {
-  const v = rec[key];
-  if (typeof v !== "string") throw new Error(`expected string "${key}"`);
-  return v;
+  const v = z.string().safeParse(rec[key]);
+  if (!v.success) throw new Error(`expected string "${key}"`);
+  return v.data;
 }
 export function optStr(rec: Record<string, Scalar>, key: string): string | null {
-  const v = rec[key];
-  return typeof v === "string" ? v : null;
+  const v = z.string().safeParse(rec[key]);
+  return v.success ? v.data : null;
 }
 export function reqNum(rec: Record<string, Scalar>, key: string): number {
-  const v = rec[key];
-  if (typeof v !== "number") throw new Error(`expected number "${key}"`);
-  return v;
+  const v = z.number().safeParse(rec[key]);
+  if (!v.success) throw new Error(`expected number "${key}"`);
+  return v.data;
 }
 export function optNum(rec: Record<string, Scalar>, key: string, fallback: number): number {
-  const v = rec[key];
-  return typeof v === "number" ? v : fallback;
+  const v = z.number().safeParse(rec[key]);
+  return v.success ? v.data : fallback;
 }
 export function optBool(rec: Record<string, Scalar>, key: string, fallback: boolean): boolean {
-  const v = rec[key];
-  return typeof v === "boolean" ? v : fallback;
+  const v = z.boolean().safeParse(rec[key]);
+  return v.success ? v.data : fallback;
 }
 export function strArray(rec: Record<string, Scalar>, key: string): string[] {
-  const v = rec[key];
-  if (typeof v !== "string") return [];
+  const v = z.string().safeParse(rec[key]);
+  if (!v.success) return [];
   try {
-    const parsed: unknown = JSON.parse(v);
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
+    const parsed: JsonValue = JSON.parse(v.data);
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => z.string().safeParse(x).success)
+      : [];
   } catch {
     return [];
   }

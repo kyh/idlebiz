@@ -1,5 +1,5 @@
 import { runNdjsonProcess } from "./ndjson-process";
-import { arr, num, obj, str } from "./json";
+import { arr, num, obj, str, type JsonObject } from "./json";
 import { zeroUsage, type AgentUsage } from "./events";
 import type { RunnerOptions, RunnerResult } from "./runner";
 
@@ -98,7 +98,7 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
  * they start (so the feed shows live work); messages once when they complete. */
 function onItem(
   opts: RunnerOptions,
-  item: Record<string, unknown>,
+  item: JsonObject,
   started: boolean,
   onMessage: (text: string) => void,
 ): void {

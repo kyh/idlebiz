@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
+import { jsonRecordSchema, jsonValueSchema, type JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
 // ---------------------------------------------------------------------------
@@ -68,10 +69,12 @@ export function readMetricsConfig(companyId: string): MetricsConfig | null {
 
 /** Merge a patch into metrics.json (atomic tmp+rename). */
 export function writeMetricsConfig(companyId: string, patch: Partial<MetricsConfig>): void {
-  const existing: Record<string, unknown> = {};
+  let existing: z.infer<typeof jsonRecordSchema> = {};
   try {
-    const parsed: unknown = JSON.parse(readFileSync(metricsPath(companyId), "utf8"));
-    if (parsed && typeof parsed === "object") Object.assign(existing, parsed);
+    const parsed = jsonRecordSchema.safeParse(
+      JSON.parse(readFileSync(metricsPath(companyId), "utf8")),
+    );
+    if (parsed.success) existing = parsed.data;
   } catch {
     /* fresh file */
   }
@@ -86,19 +89,24 @@ export function writeMetricsConfig(companyId: string, patch: Partial<MetricsConf
   renameSync(tmp, path);
 }
 
-const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const num = (v: JsonValue | undefined): number | null => {
+  const parsed = z.number().safeParse(v);
+  return parsed.success && Number.isFinite(parsed.data) ? parsed.data : null;
+};
 
 /** 401/403 from Stripe — credentials revoked or invalid. */
 class StripeAuthError extends Error {}
 
-async function stripeGet(path: string, key: string): Promise<unknown> {
+async function stripeGet(path: string, key: string): Promise<JsonValue> {
   const res = await fetch(`https://api.stripe.com${path}`, {
     headers: { Authorization: `Bearer ${key}` },
     signal: AbortSignal.timeout(8000),
   });
   if (res.status === 401 || res.status === 403) throw new StripeAuthError(`stripe ${res.status}`);
   if (!res.ok) throw new Error(`stripe ${path} -> ${res.status}`);
-  return res.json();
+  // Response.json() is typed `any`; its actual return domain is exactly JsonValue.
+  const data: JsonValue = await res.json();
+  return data;
 }
 
 // Stripe list envelopes, parsed at the boundary (unknown fields ignored)
@@ -113,11 +121,11 @@ const StripeListSchema = z.object({
 });
 const StripeCountSchema = z.object({ total_count: z.number() });
 const PlausibleSchema = z.object({
-  results: z.object({ visitors: z.object({ value: z.unknown() }) }),
+  results: z.object({ visitors: z.object({ value: jsonValueSchema }) }),
 });
 const CustomSnapshotSchema = z.object({
-  users: z.unknown().optional(),
-  revenue: z.unknown().optional(),
+  users: jsonValueSchema.optional(),
+  revenue: jsonValueSchema.optional(),
 });
 
 async function stripeRevenue(key: string): Promise<number | null> {
@@ -125,7 +133,7 @@ async function stripeRevenue(key: string): Promise<number | null> {
   if (!res.success) return null;
   let cents = 0;
   for (const ch of res.data.data) {
-    if (ch.paid === true && typeof ch.amount === "number") cents += ch.amount;
+    if (ch.paid === true && ch.amount !== undefined) cents += ch.amount;
   }
   return Math.round(cents) / 100;
 }
@@ -150,7 +158,7 @@ async function stripeCustomers(key: string): Promise<number | null> {
     const rows = parsed.data.data;
     count += rows.length;
     const lastId = rows[rows.length - 1]?.id;
-    if (!parsed.data.has_more || typeof lastId !== "string") break;
+    if (!parsed.data.has_more || lastId === undefined) break;
     startingAfter = lastId;
   }
   return count;

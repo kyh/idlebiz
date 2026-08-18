@@ -24,6 +24,12 @@ import type {
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
+/** What a self-directed heartbeat asks an employee to do next. */
+interface TaskBrief {
+  title: string;
+  description: string;
+}
+
 /**
  * Async run scheduler. Respects a global concurrency cap and a per-employee
  * single-active lock (the busy Set in-process, plus the task's runId lock
@@ -137,11 +143,7 @@ class Scheduler {
    * in the team room, recent ships, and recent failures. The team leader is asked
    * to coordinate (chain / fan out) while members execute and report back.
    */
-  private autonomousBrief(
-    company: Company,
-    emp: Employee,
-    employees: Employee[],
-  ): { title: string; description: string } {
+  private autonomousBrief(company: Company, emp: Employee, employees: Employee[]): TaskBrief {
     const team = store.teamForEmployee(emp.id);
     const isLeader = team?.leaderId === emp.id;
     const teammates = team ? employees.filter((e) => e.teamId === team.id) : employees;
@@ -432,10 +434,10 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     this.emit({ runId, taskId: task.id, employeeId, kind: "status", message: "running" });
 
     void this.execute(runId, task, employee, company)
-      .catch((err: unknown) => {
+      .catch((cause: unknown) => {
         this.finish(runId, task, employee, {
           ok: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: cause instanceof Error ? cause.message : String(cause),
           summary: "",
           usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 },
         });

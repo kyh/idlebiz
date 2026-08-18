@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { CHANNELS } from "@/shared/ipc-channels";
+import { CHANNELS, type IpcMethod } from "@/shared/ipc-channels";
 // type-only: erased at build, so zod never enters the sandboxed preload bundle
-import type { AppBridge } from "@/shared/ipc-registry";
+import type { AppBridge, Contract } from "@/shared/ipc-registry";
+
+type BridgeMethod = AppBridge[IpcMethod];
 
 function forwardEvent<T>(channel: string, listener: (data: T) => void): () => void {
   const wrapped = (_e: Electron.IpcRendererEvent, data: T) => listener(data);
@@ -11,16 +13,21 @@ function forwardEvent<T>(channel: string, listener: (data: T) => void): () => vo
   };
 }
 
-const entries = Object.entries(CHANNELS).map(([method, def]) => {
+const entries = Object.entries(CHANNELS).map(([method, def]): [string, BridgeMethod] => {
   switch (def.kind) {
     case "invoke":
-      return [method, (p: unknown) => ipcRenderer.invoke(def.channel, p)] as const;
+      return [method, (p: Contract[IpcMethod]["payload"]) => ipcRenderer.invoke(def.channel, p)];
     case "invoke-void":
-      return [method, () => ipcRenderer.invoke(def.channel)] as const;
+      return [method, () => ipcRenderer.invoke(def.channel)];
     case "event":
-      return [method, (l: (e: unknown) => void) => forwardEvent(def.channel, l)] as const;
+      // `never` is the contravariant-position stand-in that keeps this
+      // listener assignable to every per-method event signature.
+      return [method, (l: (e: never) => void) => forwardEvent(def.channel, l)];
   }
 });
 
-const appBridge = Object.fromEntries(entries) as unknown as AppBridge;
+// SAFETY: entries holds exactly one kind-matched bridge function per CHANNELS
+// method — the same record AppBridge is derived from — so the assembled object
+// has every AppBridge key; Object.fromEntries merely erases the per-key types.
+const appBridge = Object.fromEntries(entries) as AppBridge;
 contextBridge.exposeInMainWorld("appBridge", appBridge);

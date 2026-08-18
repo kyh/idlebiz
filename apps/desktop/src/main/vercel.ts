@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getJson } from "@/main/lib/http";
+import type { JsonValue } from "@/shared/json";
 
 // ---------------------------------------------------------------------------
 // Vercel REST API helpers. The founder connects with a personal access token
@@ -19,7 +20,7 @@ function apiGet(
   path: string,
   token: string,
   params: Record<string, string> = {},
-): Promise<unknown> {
+): Promise<JsonValue> {
   const qs = new URLSearchParams(params).toString();
   return getJson(
     `${API}${path}${qs ? `?${qs}` : ""}`,
@@ -104,15 +105,14 @@ export async function webAnalyticsVisitors(
 ): Promise<number | null> {
   const token = envToken();
   if (!token) return null;
-  const base: Record<string, string> = { projectId };
-  if (teamId) base.teamId = teamId;
+  const base: Record<string, string> = teamId ? { projectId, teamId } : { projectId };
   const since = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString().slice(0, 10);
   for (const params of [{ ...base, since }, base]) {
     try {
       const parsed = VisitsCountSchema.safeParse(
         await apiGet("/v1/query/web-analytics/visits/count", token, params),
       );
-      if (parsed.success && typeof parsed.data.data.visitors === "number") {
+      if (parsed.success && parsed.data.data.visitors !== undefined) {
         return parsed.data.data.visitors;
       }
     } catch {
@@ -158,8 +158,9 @@ export async function latestDeployment(
   if (!token) return null;
   const cached = deployCache.get(projectId);
   if (cached && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) return cached.value;
-  const params: Record<string, string> = { projectId, limit: "1", target: "production" };
-  if (teamId) params.teamId = teamId;
+  const params: Record<string, string> = teamId
+    ? { projectId, limit: "1", target: "production", teamId }
+    : { projectId, limit: "1", target: "production" };
   let value: VercelDeployment | null = null;
   try {
     const parsed = DeploymentsSchema.safeParse(await apiGet("/v6/deployments", token, params));

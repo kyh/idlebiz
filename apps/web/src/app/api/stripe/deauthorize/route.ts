@@ -1,29 +1,33 @@
+import { z } from "zod";
 import { deauthorize, tokenAccountId } from "@/lib/stripe-oauth";
 
+const deauthorizeBodySchema = z.object({
+  accessToken: z.string(),
+  stripeUserId: z.string(),
+});
+
 export async function POST(req: Request): Promise<Response> {
-  let body: unknown;
+  let raw: unknown;
   try {
-    body = await req.json();
+    raw = await req.json();
   } catch {
     return Response.json({ error: "invalid json" }, { status: 400 });
   }
-  if (!body || typeof body !== "object") {
+  const body = deauthorizeBodySchema.safeParse(raw);
+  if (!body.success) {
     return Response.json({ error: "invalid body" }, { status: 400 });
   }
-  const o = body as { accessToken?: unknown; stripeUserId?: unknown };
-  if (typeof o.accessToken !== "string" || typeof o.stripeUserId !== "string") {
-    return Response.json({ error: "missing fields" }, { status: 400 });
-  }
+  const { accessToken, stripeUserId } = body.data;
 
   // ownership check: only the holder of a valid token for this account may
   // disconnect it — keeps this endpoint from deauthorizing arbitrary accounts
-  const owner = await tokenAccountId(o.accessToken);
-  if (owner === null || owner !== o.stripeUserId) {
+  const owner = await tokenAccountId(accessToken);
+  if (owner === null || owner !== stripeUserId) {
     return Response.json({ error: "not authorized for this account" }, { status: 403 });
   }
 
   try {
-    await deauthorize(o.stripeUserId);
+    await deauthorize(stripeUserId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "deauthorize failed";
     return Response.json({ error: message }, { status: 502 });

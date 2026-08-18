@@ -36,7 +36,7 @@ const CORPORATE_LINES = [
 ];
 
 type Row = "down" | "left" | "right" | "up";
-const ROW_Y: Record<Row, number> = { down: 0, left: -96, right: -192, up: -288 };
+const ROW_Y = { down: 0, left: -96, right: -192, up: -288 } satisfies Record<Row, number>;
 const SPEED = 64; // px/s at 1.5x
 const NPC_W = 48;
 const NPC_H = 96;

@@ -23,10 +23,10 @@ export const DEFAULT_MAX_AGENTS = 12;
 
 export type IntegrationKind = "vercel" | "stripe";
 
-export const INTEGRATION_LABELS: Record<IntegrationKind, string> = {
+export const INTEGRATION_LABELS = {
   vercel: "Vercel",
   stripe: "Stripe",
-};
+} satisfies Record<IntegrationKind, string>;
 
 export type BlockedAsk =
   | { type: "question"; question: string }
@@ -284,7 +284,7 @@ export interface Routine {
   lastRunAt: number | null;
 }
 
-type ActivityKind =
+export type ActivityKind =
   | "log"
   | "tool_call"
   | "status"

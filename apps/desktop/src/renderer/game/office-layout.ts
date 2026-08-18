@@ -1,6 +1,7 @@
 import { z } from "zod";
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH, ENTITY_BAND_HEIGHT } from "@/renderer/game/config";
+import type { JsonValue } from "@/shared/json";
 import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectVariant as CatalogVariant,
@@ -160,7 +161,7 @@ export type PaintOrdered =
   | { readonly layer: "overhead" }
   | { readonly layer: "object"; readonly anchorY: number };
 
-const BAND: Record<OfficeLayer, number> = { floor: 0, object: 1, overhead: 2 };
+const BAND = { floor: 0, object: 1, overhead: 2 } satisfies Record<OfficeLayer, number>;
 
 /**
  * Orders two placed objects back to front — the one comparator the game, the builder and
@@ -199,12 +200,12 @@ export let OFFICE_OBJECT_PLACEMENTS: readonly OfficeObjectPlacement[] = placemen
  * bundled default). Call BEFORE the Phaser scene boots — store.refresh awaits the
  * disk layout, so preload/buildRoom see these updated bindings.
  */
-/** Validate an arbitrary value as a layout (for the builder to load a saved file). */
-export function parseOfficeLayout(raw: unknown): OfficeLayoutData {
+/** Validate an arbitrary JSON value as a layout (for the builder to load a saved file). */
+export function parseOfficeLayout(raw: JsonValue): OfficeLayoutData {
   return layoutSchema.parse(raw);
 }
 
-export function applyOfficeLayout(raw: unknown): void {
+export function applyOfficeLayout(raw: JsonValue): void {
   const L = layoutSchema.parse(raw);
   OFFICE_W = L.width;
   OFFICE_H = L.height;

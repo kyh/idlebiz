@@ -102,8 +102,8 @@ export function Ships({ onClose }: { onClose: () => void }) {
               onClick={() => {
                 const bridge = window.appBridge;
                 if (!bridge) return;
-                bridge.openProduct({ companyId: company.id }).catch((e: unknown) => {
-                  setNote(e instanceof Error ? e.message : String(e));
+                bridge.openProduct({ companyId: company.id }).catch((cause: unknown) => {
+                  setNote(cause instanceof Error ? cause.message : String(cause));
                   window.setTimeout(() => setNote(null), 2500);
                 });
               }}

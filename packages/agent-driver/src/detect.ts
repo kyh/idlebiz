@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { obj } from "./json";
+import { obj, type JsonValue } from "./json";
 import { runnerBin, RUNNER_IDS, type RunnerId } from "./runner";
 
 // Preflight probes: which coding-agent CLIs exist on this machine and whether
@@ -61,7 +61,8 @@ async function claudeAuthed(bin: string): Promise<boolean> {
   try {
     const start = r.output.indexOf("{");
     if (start < 0) return false;
-    const parsed: unknown = JSON.parse(r.output.slice(start, r.output.lastIndexOf("}") + 1));
+    // JSON.parse is typed `any`, but its actual return domain is exactly JsonValue.
+    const parsed: JsonValue = JSON.parse(r.output.slice(start, r.output.lastIndexOf("}") + 1));
     return obj(parsed).loggedIn === true;
   } catch {
     return false;

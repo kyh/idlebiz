@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { IpcMethod, IpcKind } from "@/shared/ipc-channels";
+import type { JsonValue } from "@/shared/json";
 import type {
   ActivityEvent,
   Budget,
@@ -204,7 +205,7 @@ export interface Contract {
   onActivity: { payload: void; result: ActivityEvent };
 
   saveOfficeDesign: { payload: { json: string }; result: { ok: boolean } };
-  loadOfficeDesign: { payload: void; result: { layout: unknown } };
+  loadOfficeDesign: { payload: void; result: { layout: JsonValue | null } };
 }
 
 // compile-time guarantee: Contract keys == channel keys

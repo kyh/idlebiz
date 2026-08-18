@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
 import type { ActivityEvent } from "@/shared/domain";
 import { formatTime } from "@/shared/format";
@@ -6,9 +7,19 @@ import { formatTime } from "@/shared/format";
 const FEED_KINDS = new Set(["chat", "ship"]);
 const ORG_EVENTS = new Set(["org.hired", "org.released", "runner.resting"]);
 
+// Lifecycle payloads parsed at the feed boundary; each field falls back
+// independently, and a non-object payload falls back wholesale.
+const LifecyclePayloadSchema = z
+  .object({
+    until: z.number().nullable().catch(null),
+    runner: z.string().catch("a"),
+    name: z.string().catch("someone"),
+  })
+  .catch({ until: null, runner: "a", name: "someone" });
+
 const inFeed = (a: ActivityEvent): boolean =>
   FEED_KINDS.has(a.kind) ||
-  (a.kind === "lifecycle" && typeof a.message === "string" && ORG_EVENTS.has(a.message));
+  (a.kind === "lifecycle" && a.message != null && ORG_EVENTS.has(a.message));
 
 /**
  * The team channel (bottom-right): a live room the founder is actually in.
@@ -92,22 +103,18 @@ function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
     );
   }
   if (e.kind === "lifecycle") {
-    const p: unknown = e.payload;
-    const obj = typeof p === "object" && p !== null ? p : {};
+    const p = LifecyclePayloadSchema.parse(e.payload);
     if (e.message === "runner.resting") {
-      const until = "until" in obj && typeof obj.until === "number" ? obj.until : null;
-      const at = until === null ? "later" : formatTime(until);
-      const runner = "runner" in obj && typeof obj.runner === "string" ? obj.runner : "a";
+      const at = p.until === null ? "later" : formatTime(p.until);
       return (
         <div className="text-[var(--text-dim)]">
-          ☕ {runner} crew hit their limit — back at {at}
+          ☕ {p.runner} crew hit their limit — back at {at}
         </div>
       );
     }
-    const who = "name" in obj && typeof obj.name === "string" ? obj.name : "someone";
     return (
       <div className="text-[var(--text-dim)]">
-        {e.message === "org.hired" ? `🤝 ${who} joined the team` : `👋 ${who} left the team`}
+        {e.message === "org.hired" ? `🤝 ${p.name} joined the team` : `👋 ${p.name} left the team`}
       </div>
     );
   }

@@ -6,10 +6,12 @@ import type { CharacterAssets } from "@/shared/ipc-registry";
 // walk down/left/right/up (rows 0-3), then sit-left (row 4) and sit-right (row 5).
 const FRAME_W = 32;
 const FRAME_H = 64;
-export type Dir = "down" | "left" | "right" | "up";
-export type SitSide = "left" | "right";
-const DIR_START: Record<Dir, number> = { down: 0, left: 6, right: 12, up: 18 };
-const SIT_START: Record<SitSide, number> = { left: 24, right: 30 };
+const DIRS = ["down", "left", "right", "up"] as const;
+export type Dir = (typeof DIRS)[number];
+const SIT_SIDES = ["left", "right"] as const;
+export type SitSide = (typeof SIT_SIDES)[number];
+const DIR_START = { down: 0, left: 6, right: 12, up: 18 } satisfies Record<Dir, number>;
+const SIT_START = { left: 24, right: 30 } satisfies Record<SitSide, number>;
 
 /** Content rows within a frame: the art starts at the hair and ends at the soles. */
 const HEAD_ROW = 18;
@@ -66,7 +68,8 @@ function loadSpritesheetDataUrl(scene: Phaser.Scene, key: string, dataUrl: strin
 
 /** Create the walk + sit anims for a character texture (idempotent). */
 export function ensureWalkAnims(scene: Phaser.Scene, key: string): void {
-  for (const [dir, start] of Object.entries(DIR_START) as Array<[Dir, number]>) {
+  for (const dir of DIRS) {
+    const start = DIR_START[dir];
     const akey = `${key}-walk-${dir}`;
     if (scene.anims.exists(akey)) continue;
     scene.anims.create({
@@ -76,7 +79,8 @@ export function ensureWalkAnims(scene: Phaser.Scene, key: string): void {
       repeat: -1,
     });
   }
-  for (const [side, start] of Object.entries(SIT_START) as Array<[SitSide, number]>) {
+  for (const side of SIT_SIDES) {
+    const start = SIT_START[side];
     const akey = `${key}-sit-${side}`;
     if (scene.anims.exists(akey)) continue;
     scene.anims.create({

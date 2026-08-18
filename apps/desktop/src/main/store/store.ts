@@ -40,9 +40,10 @@ import {
   optBool,
   strArray,
   type FrontmatterDoc,
-  type Scalar,
 } from "@/main/store/frontmatter";
+import { z } from "zod";
 import { isRunnerId } from "@repo/agent-driver/runner";
+import { jsonValueSchema } from "@/shared/json";
 import {
   BUSINESS_TYPES,
   DEFAULT_MAX_AGENTS,
@@ -53,6 +54,7 @@ import {
 } from "@/shared/domain";
 import type {
   ActivityEvent,
+  ActivityKind,
   AgentRunner,
   BlockedAsk,
   Budget,
@@ -89,7 +91,7 @@ interface Cache {
 let cache: Cache | null = null;
 
 function routineToDoc(r: Routine): FrontmatterDoc {
-  const metadata: Record<string, Scalar> = { intervalHours: r.intervalHours };
+  const metadata: FrontmatterDoc["metadata"] = { intervalHours: r.intervalHours };
   if (r.role !== null) metadata.role = r.role;
   if (r.lastRunAt !== null) metadata.lastRunAt = r.lastRunAt;
   return {
@@ -116,7 +118,7 @@ function saveRoutine(r: Routine): void {
 }
 
 function teamToDoc(t: Team): FrontmatterDoc {
-  const metadata: Record<string, Scalar> = {
+  const metadata: FrontmatterDoc["metadata"] = {
     memberIds: JSON.stringify(t.memberIds),
     createdAt: t.createdAt,
   };
@@ -166,6 +168,22 @@ function atomicWrite(path: string, content: string): void {
 
 // ---- serialization ----------------------------------------------------------
 function companyToDoc(co: Company): FrontmatterDoc {
+  const metadata: FrontmatterDoc["metadata"] = {
+    founderName: co.founderName,
+    founderSpriteSeed: co.founderSpriteSeed,
+    businessType: co.businessType,
+    autopilot: co.autopilot,
+    maxAgents: co.maxAgents,
+    ships: co.ships,
+  };
+  // real metrics: absent keys mean "no source has ever reported"
+  if (co.revenueUsd !== null) metadata.revenueUsd = co.revenueUsd;
+  if (co.users !== null) metadata.users = co.users;
+  metadata.budgetMode = co.budget.mode;
+  if (co.budget.mode === "capped") metadata.budgetCapUsd = co.budget.capUsd;
+  metadata.spentUsd = co.spentUsd;
+  metadata.onboarded = co.onboarded;
+  metadata.createdAt = co.createdAt;
   return {
     fields: {
       schema: "agentcompanies/v1",
@@ -174,22 +192,7 @@ function companyToDoc(co: Company): FrontmatterDoc {
       name: co.name,
       description: co.mission,
     },
-    metadata: {
-      founderName: co.founderName,
-      founderSpriteSeed: co.founderSpriteSeed,
-      businessType: co.businessType,
-      autopilot: co.autopilot,
-      maxAgents: co.maxAgents,
-      ships: co.ships,
-      // real metrics: absent keys mean "no source has ever reported"
-      ...(co.revenueUsd !== null ? { revenueUsd: co.revenueUsd } : {}),
-      ...(co.users !== null ? { users: co.users } : {}),
-      budgetMode: co.budget.mode,
-      ...(co.budget.mode === "capped" ? { budgetCapUsd: co.budget.capUsd } : {}),
-      spentUsd: co.spentUsd,
-      onboarded: co.onboarded,
-      createdAt: co.createdAt,
-    },
+    metadata,
     body: `# ${co.name}\n\n${co.mission}\n`,
   };
 }
@@ -301,7 +304,7 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
 }
 
 function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
-  const metadata: Record<string, Scalar> = {
+  const metadata: FrontmatterDoc["metadata"] = {
     role: e.role,
     title: e.title,
     persona: e.persona,
@@ -352,7 +355,7 @@ const parseBlocked = (s: string | null): BlockedAsk | null =>
   s === null ? null : parseBlockedAsk(s);
 
 function taskToDoc(t: Task): FrontmatterDoc {
-  const metadata: Record<string, Scalar> = {
+  const metadata: FrontmatterDoc["metadata"] = {
     status: t.status,
     priority: t.priority,
     createdAt: t.createdAt,
@@ -609,17 +612,37 @@ function safeReaddir(dir: string): string[] {
   }
 }
 
+// One activity.jsonl line, as logActivity persists it (id is re-assigned on load).
+const PersistedActivitySchema = z.object({
+  runId: z.string().nullish(),
+  taskId: z.string().nullish(),
+  employeeId: z.string().nullish(),
+  kind: z.enum(["log", "tool_call", "status", "lifecycle", "thinking", "message", "chat", "ship"]),
+  message: z.string().nullish(),
+  payload: jsonValueSchema.nullish(),
+  createdAt: z.number(),
+});
+// compile-time guarantee: the zod enum and the domain union stay in sync
+type _AssertActivityKindCovered = ActivityKind extends z.infer<
+  typeof PersistedActivitySchema
+>["kind"]
+  ? true
+  : never;
+type _AssertActivityKindSound = z.infer<typeof PersistedActivitySchema>["kind"] extends ActivityKind
+  ? true
+  : never;
+const activityKindInSync: _AssertActivityKindCovered & _AssertActivityKindSound = true;
+void activityKindInSync;
+
 function loadRecentActivity(loaded: Cache, companyId: string): void {
   try {
     const text = readFileSync(activityFile(companyId), "utf8");
     const lines = text.split("\n").filter((l) => l.trim() !== "");
     for (const line of lines.slice(-ACTIVITY_RING)) {
       try {
-        const parsed: unknown = JSON.parse(line);
-        if (parsed && typeof parsed === "object" && "kind" in parsed && "createdAt" in parsed) {
-          const e = parsed as ActivityEvent;
-          e.id = loaded.nextActivityId++;
-          loaded.activity.push(e);
+        const parsed = PersistedActivitySchema.safeParse(JSON.parse(line));
+        if (parsed.success) {
+          loaded.activity.push({ ...parsed.data, id: loaded.nextActivityId++ });
         }
       } catch {
         /* skip bad line */
@@ -634,6 +657,13 @@ function loadRecentActivity(loaded: Cache, companyId: string): void {
 
 const TEAM_CHAT_RING = 200;
 
+// One team-chat jsonl line, as postTeamMessage persists it (id/teamId re-assigned on load).
+const PersistedTeamMessageSchema = z.object({
+  fromEmployeeId: z.string().nullable(),
+  text: z.string(),
+  createdAt: z.number(),
+});
+
 function loadRecentTeamChat(loaded: Cache, companyId: string, teamId: string): void {
   const msgs: TeamMessage[] = [];
   try {
@@ -641,12 +671,9 @@ function loadRecentTeamChat(loaded: Cache, companyId: string, teamId: string): v
     for (const line of text.split("\n").slice(-TEAM_CHAT_RING)) {
       if (line.trim() === "") continue;
       try {
-        const parsed: unknown = JSON.parse(line);
-        if (parsed && typeof parsed === "object" && "text" in parsed && "createdAt" in parsed) {
-          const m = parsed as TeamMessage;
-          m.id = loaded.nextTeamMessageId++;
-          m.teamId = teamId;
-          msgs.push(m);
+        const parsed = PersistedTeamMessageSchema.safeParse(JSON.parse(line));
+        if (parsed.success) {
+          msgs.push({ ...parsed.data, id: loaded.nextTeamMessageId++, teamId });
         }
       } catch {
         /* skip bad line */
@@ -848,10 +875,11 @@ export function archiveEmployee(employeeId: string): Employee | null {
   if (!emp) return null;
   const team = teamForEmployee(employeeId);
   if (team) {
-    patchTeam(team.id, {
+    const teamPatch: Partial<Team> = {
       memberIds: team.memberIds.filter((id) => id !== employeeId),
-      ...(team.leaderId === employeeId ? { leaderId: null } : {}),
-    });
+    };
+    if (team.leaderId === employeeId) teamPatch.leaderId = null;
+    patchTeam(team.id, teamPatch);
   }
   const companyTasks = c().tasks.get(emp.companyId) ?? [];
   for (const t of companyTasks) {
@@ -1127,7 +1155,7 @@ export function listTasksForEmployee(employeeId: string): Task[] {
   return out.toSorted((a, b) => b.createdAt - a.createdAt);
 }
 
-const TASK_PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
+const TASK_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } satisfies Record<TaskPriority, number>;
 
 /** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
 export function listQueuedTasks(): Task[] {
@@ -1171,11 +1199,13 @@ export function claimTask(taskId: string, employeeId: string): Task | null {
     t.status === "todo" || t.status === "blocked" || t.status === "failed" || t.status === "dead";
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) return null;
   const revived = t.status === "failed" || t.status === "dead";
-  return patchTask(taskId, {
-    assigneeId: employeeId,
-    status: "queued",
-    ...(revived ? { attempts: 0, nextAttemptAt: null, lastError: null } : {}),
-  });
+  const patch: Partial<Task> = { assigneeId: employeeId, status: "queued" };
+  if (revived) {
+    patch.attempts = 0;
+    patch.nextAttemptAt = null;
+    patch.lastError = null;
+  }
+  return patchTask(taskId, patch);
 }
 
 /** Acquire execution lock: queued -> running, stamp runId. Null if lost race or backing off. */

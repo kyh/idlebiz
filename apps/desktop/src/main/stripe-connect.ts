@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { shell } from "electron";
+import { z } from "zod";
 import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import type { StripeStatus } from "@/shared/ipc-registry";
@@ -94,8 +95,9 @@ export async function beginConnect(companyId: string): Promise<{ started: boolea
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  const address = server.address();
-  if (!address || typeof address !== "object") {
+  // address() is AddressInfo | string | null; only the object form has a port
+  const address = z.object({ port: z.number() }).safeParse(server.address());
+  if (!address.success) {
     server.close();
     throw new Error("loopback server failed to bind");
   }
@@ -111,7 +113,9 @@ export async function beginConnect(companyId: string): Promise<{ started: boolea
   };
   notify({ state: "connecting" });
 
-  const state = Buffer.from(JSON.stringify({ port: address.port, nonce })).toString("base64url");
+  const state = Buffer.from(JSON.stringify({ port: address.data.port, nonce })).toString(
+    "base64url",
+  );
   await shell.openExternal(`${WEB_BASE}/api/stripe/authorize?state=${state}`);
   return { started: true };
 }

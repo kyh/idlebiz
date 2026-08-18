@@ -26,6 +26,7 @@ import {
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
 import { isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent } from "@/shared/domain";
+import type { JsonValue } from "@/shared/json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -226,7 +227,8 @@ function registerIpcHandlers(): void {
   });
   handle("loadOfficeDesign", () => {
     if (!existsSync(OFFICE_DESIGN_PATH)) return { layout: null };
-    const layout: unknown = JSON.parse(readFileSync(OFFICE_DESIGN_PATH, "utf8"));
+    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
+    const layout: JsonValue = JSON.parse(readFileSync(OFFICE_DESIGN_PATH, "utf8"));
     return { layout };
   });
 

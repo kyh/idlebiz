@@ -54,3 +54,16 @@ export const CHANNELS = {
 type Channels = typeof CHANNELS;
 export type IpcMethod = keyof Channels;
 export type IpcKind<M extends IpcMethod> = Channels[M]["kind"];
+
+/**
+ * The JSON-ish domain the bridge actually sends over structured-clone IPC —
+ * the honest type of a payload before main-process validation narrows it.
+ */
+export type WireValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | WireValue[]
+  | { [key: string]: WireValue };

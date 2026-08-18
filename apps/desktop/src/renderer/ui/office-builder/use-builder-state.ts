@@ -250,21 +250,24 @@ export function deriveCollision(L: EditableLayout): string[] {
   return grid.map((row) => row.join(""));
 }
 
+/** One object row in office-design.json — optional keys are omitted, not nulled. */
+interface SerializedObject {
+  id: string;
+  x: number;
+  y: number;
+  layer: OfficeLayer;
+  anchorY?: number;
+  path?: string;
+  flipX?: boolean;
+  flipY?: boolean;
+}
+
 /** Serialize to the exact office-design.json string the game reads. */
 export function serializeLayout(L: EditableLayout): string {
   // paint order is load-bearing on disk: the flat bands have no depth of their
   // own, so the array order IS their draw order
   const objects = paintOrder(L.objects).map((o) => {
-    const out: {
-      id: string;
-      x: number;
-      y: number;
-      layer: OfficeLayer;
-      anchorY?: number;
-      path?: string;
-      flipX?: boolean;
-      flipY?: boolean;
-    } = { id: o.id, x: o.x, y: o.y, layer: o.layer };
+    const out: SerializedObject = { id: o.id, x: o.x, y: o.y, layer: o.layer };
     if (o.layer === "object") out.anchorY = o.anchorY;
     if (o.path) out.path = o.path;
     if (o.flipX) out.flipX = true;

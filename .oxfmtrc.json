@@ -8,7 +8,9 @@
     "*.tsbuildinfo",
     ".next",
     ".output",
-    "out"
+    "out",
+    ".claude",
+    "tools/oxlint/anti-slop"
   ],
   "experimentalSortPackageJson": {}
 }

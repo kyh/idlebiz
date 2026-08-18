@@ -11,6 +11,7 @@ import {
   applyOfficeLayout,
   parseOfficeLayout,
   type OfficeLayer,
+  type PixelPoint,
 } from "@/renderer/game/office-layout";
 import {
   ALL_OBJECT_IDS,
@@ -229,7 +230,7 @@ export function OfficeBuilder() {
   );
 
   const worldFromEvent = useCallback(
-    (e: { clientX: number; clientY: number }): { x: number; y: number } => {
+    (e: { clientX: number; clientY: number }): PixelPoint => {
       const rect = stageRef.current?.getBoundingClientRect();
       if (!rect) return { x: 0, y: 0 };
       return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };

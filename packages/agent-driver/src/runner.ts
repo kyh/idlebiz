@@ -14,8 +14,7 @@ export type RunnerId = "claude" | "codex";
 
 export const RUNNER_IDS: readonly RunnerId[] = ["claude", "codex"];
 
-export const isRunnerId = (v: string): v is RunnerId =>
-  (RUNNER_IDS as readonly string[]).includes(v);
+export const isRunnerId = (v: string): v is RunnerId => RUNNER_IDS.some((id) => id === v);
 
 /** Binary override hooks, mirroring the CLIs' own conventions. */
 export const runnerBin = (id: RunnerId): string =>

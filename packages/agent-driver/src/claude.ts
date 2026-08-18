@@ -1,5 +1,5 @@
 import { runNdjsonProcess } from "./ndjson-process";
-import { arr, num, obj, str } from "./json";
+import { arr, num, obj, str, type JsonObject } from "./json";
 import { zeroUsage, type AgentUsage } from "./events";
 import type { RunnerOptions, RunnerResult } from "./runner";
 
@@ -30,8 +30,8 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
   // `--dangerously-skip-permissions` refuses to run as root unless
   // IS_SANDBOX=1 marks the environment as already isolated. claude only
   // accepts the literal "1".
-  const env: Record<string, string> = { ...opts.env };
-  const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  const env = { ...opts.env };
+  const isRoot = process.getuid?.() === 0;
   if (isRoot && process.env.IS_SANDBOX !== "1") env.IS_SANDBOX = "1";
 
   return runNdjsonProcess({
@@ -88,7 +88,7 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
 }
 
 /** The result event's usage block; cache creation is billed input. */
-function extractUsage(resultEvent: Record<string, unknown>): AgentUsage {
+function extractUsage(resultEvent: JsonObject): AgentUsage {
   const u = obj(resultEvent.usage);
   return {
     inputTokens: num(u.input_tokens) + num(u.cache_creation_input_tokens),

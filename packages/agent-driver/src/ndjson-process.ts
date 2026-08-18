@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import { zeroUsage } from "./events";
+import type { JsonValue } from "./json";
 import type { RunnerResult } from "./runner";
 
 // Every resolution path funnels through the settle() helper below, guarded by
@@ -51,7 +52,7 @@ export interface NdjsonProcessOptions {
   /** Absolute session ceiling, even while actively streaming. 0 disables. */
   maxSessionMs: number;
   /** One parsed JSON value per stdout line (adapter narrows the shape). */
-  onValue(value: unknown, ctl: NdjsonControl): void;
+  onValue(value: JsonValue, ctl: NdjsonControl): void;
   /** Process closed without a staged result — compute the final outcome. */
   onExit(code: number | null, stderrTail: string): RunnerResult;
 }
@@ -176,7 +177,8 @@ export function runNdjsonProcess(opts: NdjsonProcessOptions): Promise<RunnerResu
       pokeIdle(); // any output is a sign of life
       const trimmed = line.trim();
       if (!trimmed) return;
-      let value: unknown;
+      // JSON.parse is typed `any`, but its actual return domain is exactly JsonValue.
+      let value: JsonValue;
       try {
         value = JSON.parse(trimmed);
       } catch {

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { z } from "zod";
 import type Phaser from "phaser";
 import type {
   ActivityEvent,
@@ -139,11 +140,14 @@ export async function teamMessages(teamId: string, limit = 30): Promise<TeamMess
   return bridge().teamMessages({ teamId, limit });
 }
 
+// runner.resting lifecycle payload, parsed at the event boundary
+const RestingPayloadSchema = z.object({ runner: z.string().min(1), until: z.number() });
+
 function onActivity(e: ActivityEvent): void {
   const activity = [...state.activity, e].slice(-300);
   // live-patch employee status from run status events (keeps HUD + dialogue badge live)
   let employees = state.employees;
-  if (e.kind === "status" && e.employeeId && typeof e.message === "string") {
+  if (e.kind === "status" && e.employeeId && e.message != null) {
     const next =
       e.message === "running"
         ? "working"
@@ -158,11 +162,9 @@ function onActivity(e: ActivityEvent): void {
   set({ activity, employees });
   // a CLI hit its usage limit — remember until when, so the HUD can say why
   if (e.kind === "lifecycle" && e.message === "runner.resting") {
-    const p: unknown = e.payload;
-    if (typeof p === "object" && p !== null && "runner" in p && "until" in p) {
-      const runner = typeof p.runner === "string" ? p.runner : null;
-      const until = typeof p.until === "number" ? p.until : null;
-      if (runner && until) set({ resting: { ...state.resting, [runner]: until } });
+    const p = RestingPayloadSchema.safeParse(e.payload);
+    if (p.success && p.data.until) {
+      set({ resting: { ...state.resting, [p.data.runner]: p.data.until } });
     }
     return;
   }

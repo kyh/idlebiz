@@ -27,7 +27,13 @@ const bridge = () => {
 };
 
 /** Typewriter text; click/Enter elsewhere skips to the end. */
-function useTypewriter(text: string): { shown: string; done: boolean; skip: () => void } {
+interface TypewriterState {
+  shown: string;
+  done: boolean;
+  skip: () => void;
+}
+
+function useTypewriter(text: string): TypewriterState {
   const [n, setN] = useState(0);
   const timerRef = useRef<number | null>(null);
   useEffect(() => {
@@ -133,7 +139,9 @@ export function PokeOnboarding() {
           setHires(h);
           return null;
         })
-        .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+        .catch((cause: unknown) =>
+          setError(cause instanceof Error ? cause.message : String(cause)),
+        );
     }
   }, [step, authed, founderName, companyName, biz, pitch]);
 
@@ -173,7 +181,7 @@ export function PokeOnboarding() {
     return () => window.removeEventListener("keydown", onKey);
   }, [next]);
 
-  const narration: Record<Step, string> = {
+  const narration = {
     intro:
       "Welcome to IDLEBIZ! You're about to found a startup staffed by real AI employees — they write real code and real docs in a real folder on your computer.",
     auth: "First things first: your employees run on your own coding CLI — Claude Code or Codex. No CLI, no workforce. I'll check what's installed and set it up.",
@@ -187,7 +195,7 @@ export function PokeOnboarding() {
         ? "Putting out the job posting… reviewing resumes…"
         : "Your founding team, cast for this exact pitch. From here the team lead grows or shrinks the roster on their own — you steer with the budget.",
     finalize: "Signing the lease… assembling desks… your office is ready!",
-  };
+  } satisfies Record<Step, string>;
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-between bg-[#10121b] p-6">

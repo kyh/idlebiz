@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import { ROOT_DIR } from "@/main/paths";
+import { jsonRecordSchema, type JsonRecord } from "@/shared/json";
 
 // ---------------------------------------------------------------------------
 // Founder-managed secrets at ~/.idlebiz/secrets.json (mode 0600). Values are
@@ -11,16 +13,23 @@ import { ROOT_DIR } from "@/main/paths";
 
 const SECRETS_PATH = join(ROOT_DIR, "secrets.json");
 
-function loadSecrets(): Record<string, string> {
+/** The secrets file parsed as a JSON record; null = unreadable or not an object. */
+function readSecretsFile(): JsonRecord | null {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(SECRETS_PATH, "utf8"));
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") out[k] = v;
-    return out;
+    const parsed = jsonRecordSchema.safeParse(JSON.parse(readFileSync(SECRETS_PATH, "utf8")));
+    return parsed.success ? parsed.data : null;
   } catch {
-    return {};
+    return null;
   }
+}
+
+function loadSecrets(): Record<string, string> {
+  const file = readSecretsFile() ?? {};
+  return Object.fromEntries(
+    Object.entries(file).filter(
+      (entry): entry is [string, string] => z.string().safeParse(entry[1]).success,
+    ),
+  );
 }
 
 /** Export secrets as env vars (inherited by agents' shells) and return them. */
@@ -58,26 +67,15 @@ export function getSecret(key: string): string | null {
 
 /** Read-modify-write a single secret (file mode 0600) and sync process.env. */
 export function setSecret(key: string, value: string): void {
-  const raw: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(SECRETS_PATH, "utf8"));
-    if (parsed && typeof parsed === "object") Object.assign(raw, parsed);
-  } catch {
-    /* fresh file */
-  }
+  const raw = readSecretsFile() ?? {};
   raw[key] = value;
   writeFileSync(SECRETS_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
   if (!key.startsWith("_")) process.env[key] = value;
 }
 
 export function deleteSecret(key: string): void {
-  const raw: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(SECRETS_PATH, "utf8"));
-    if (parsed && typeof parsed === "object") Object.assign(raw, parsed);
-  } catch {
-    return;
-  }
+  const raw = readSecretsFile();
+  if (raw === null) return;
   delete raw[key];
   writeFileSync(SECRETS_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
   delete process.env[key];

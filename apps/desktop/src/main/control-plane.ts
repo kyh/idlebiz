@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { BlockedAsk } from "@/shared/domain";
+import type { JsonValue } from "@/shared/json";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
@@ -83,8 +84,9 @@ class ControlPlane {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => {
-        const addr = server.address();
-        if (addr && typeof addr === "object") this.port = addr.port;
+        // address() is AddressInfo | string | null; only the object form has a port
+        const addr = z.object({ port: z.number() }).safeParse(server.address());
+        if (addr.success) this.port = addr.data.port;
         resolve();
       });
     });
@@ -105,15 +107,14 @@ class ControlPlane {
     const token = randomBytes(24).toString("base64url");
     const record: RunRecord = { hooks: reg.hooks, blocked: null };
     this.runs.set(token, record);
-    const env: Record<string, string> = {
+    const base = {
       IDLEBIZ_API_URL: this.baseUrl(),
       IDLEBIZ_RUN_TOKEN: token,
       IDLEBIZ_AGENT_ID: reg.employeeId,
       IDLEBIZ_COMPANY_ID: reg.companyId,
     };
-    if (reg.taskId) env.IDLEBIZ_TASK_ID = reg.taskId;
     return {
-      env,
+      env: reg.taskId ? { ...base, IDLEBIZ_TASK_ID: reg.taskId } : base,
       outcome: () => ({ blocked: record.blocked }),
       release: () => {
         this.runs.delete(token);
@@ -229,14 +230,22 @@ class ControlPlane {
   }
 }
 
-function respond(res: ServerResponse, status: number, payload: unknown): void {
+/** Every tool route answers with this envelope. */
+interface ToolResponse {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  messages?: string;
+}
+
+function respond(res: ServerResponse, status: number, payload: ToolResponse): void {
   const body = JSON.stringify(payload);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(body);
 }
 
 /** Collect and parse the body; zod narrows the shape per route. */
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readJsonBody(req: IncomingMessage): Promise<JsonValue> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -246,7 +255,9 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
     chunks.push(buf);
   }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
+  const parsed: JsonValue = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return parsed;
 }
 
 export const controlPlane = new ControlPlane();
