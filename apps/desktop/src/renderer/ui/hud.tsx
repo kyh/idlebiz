@@ -1,3 +1,4 @@
+import { useNow } from "@/renderer/hooks/use-now";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 import { formatTime } from "@/shared/format";
@@ -75,11 +76,12 @@ export function Hud({
   onTeams: () => void;
 }) {
   const { company, employees, pendingAsks, stuckTasks, product, resting } = useStore();
+  const now = useNow();
   if (!company) return null;
   const working = employees.filter((e) => e.status === "working").length;
   // a CLI on cooldown: the office naps until the earliest reset
   const napUntil = Object.values(resting)
-    .filter((t) => t > Date.now())
+    .filter((t) => t > now)
     .toSorted((a, b) => a - b)[0];
   const napLabel = napUntil === undefined ? null : `☕ resting til ${formatTime(napUntil)}`;
   const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;

@@ -13,7 +13,12 @@ import { isOutOfBudget } from "@/shared/domain";
  *  and where the real revenue/user numbers come from. */
 export function BudgetModal({ onClose }: { onClose: () => void }) {
   const { company, stripeStatus } = useStore();
-  const [capInput, setCapInput] = useState("");
+  const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
+  // the draft carries the saved cap it was typed against, so a cap saved
+  // elsewhere replaces a stale draft without an effect resetting it
+  const [draft, setDraft] = useState({ savedCap, value: savedCap });
+  const capInput = draft.savedCap === savedCap ? draft.value : savedCap;
+  const setCapInput = (value: string) => setDraft({ savedCap, value });
   // real revenue showing at all means the connection is live
   const liveMetrics = company !== null && company.revenueUsd !== null;
 
@@ -21,10 +26,6 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
     setModalOpen(true);
     return () => setModalOpen(false);
   }, []);
-
-  useEffect(() => {
-    if (company?.budget.mode === "capped") setCapInput(String(company.budget.capUsd));
-  }, [company?.budget]);
 
   if (!company) return null;
   const capped = company.budget.mode === "capped";

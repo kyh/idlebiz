@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useStore,
   getPortrait,
@@ -6,6 +6,7 @@ import {
   setModalOpen,
   listTasksFor,
 } from "@/renderer/state/store";
+import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { RichText } from "@/renderer/ui/linkify";
 import type { ActivityEvent, Employee, Task } from "@/shared/domain";
 
@@ -420,32 +421,7 @@ export function Dialogue() {
 
 /** The employee's spoken line: a Pokémon-style typewriter reveal. Click to skip. */
 function Speech({ text, companyId }: { text: string; companyId: string }) {
-  const [shown, setShown] = useState(0);
-  const timerRef = useRef<number | null>(null);
-  useEffect(() => {
-    setShown(0);
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setShown(text.length);
-      return;
-    }
-    let next = 0;
-    const tick = () => {
-      next = Math.min(next + 2, text.length);
-      setShown(next);
-      timerRef.current = next < text.length ? window.setTimeout(tick, 16) : null;
-    };
-    timerRef.current = window.setTimeout(tick, 16);
-    return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    };
-  }, [text]);
-
-  const done = shown >= text.length;
-  const skip = useCallback(() => {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = null;
-    setShown(text.length);
-  }, [text]);
+  const { shown, done, skip } = useTypewriter(text);
   return (
     <div
       onClick={done ? undefined : skip}
@@ -463,7 +439,7 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
       className="text-[14px] leading-relaxed break-words text-[var(--text)]"
       style={{ cursor: done ? "default" : "pointer" }}
     >
-      {done ? <RichText text={text} companyId={companyId} /> : text.slice(0, shown)}
+      {done ? <RichText text={text} companyId={companyId} /> : shown}
       {done ? null : <span className="px-live-dot">▌</span>}
     </div>
   );

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { setModalOpen, refresh, getPortrait } from "@/renderer/state/store";
 import { BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
 import type { BusinessTypeId } from "@/shared/domain";
@@ -25,38 +26,6 @@ const bridge = () => {
   if (!b) throw new Error("appBridge unavailable");
   return b;
 };
-
-/** Typewriter text; click/Enter elsewhere skips to the end. */
-interface TypewriterState {
-  shown: string;
-  done: boolean;
-  skip: () => void;
-}
-
-function useTypewriter(text: string): TypewriterState {
-  const [n, setN] = useState(0);
-  const timerRef = useRef<number | null>(null);
-  useEffect(() => {
-    setN(0);
-    let next = 0;
-    const tick = () => {
-      next = Math.min(next + 2, text.length);
-      setN(next);
-      timerRef.current = next < text.length ? window.setTimeout(tick, 16) : null;
-    };
-    timerRef.current = window.setTimeout(tick, 16);
-    return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    };
-  }, [text]);
-  const done = n >= text.length;
-  const skip = useCallback(() => {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = null;
-    setN(text.length);
-  }, [text]);
-  return { shown: text.slice(0, n), done, skip };
-}
 
 function Narrator({ text }: { text: string }) {
   const { shown, done, skip } = useTypewriter(text);

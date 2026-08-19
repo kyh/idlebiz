@@ -33,10 +33,15 @@ export function TeamChannel() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const feed = activity.filter(inFeed).slice(-30);
+  // keyed on the newest event, not the count — the feed is capped at 30, so the
+  // length stops changing once it fills and auto-scroll would die there.
+  const newest = feed.at(-1)?.createdAt ?? null;
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [feed.length]);
+    if (newest === null) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight });
+  }, [newest]);
 
   // hide while a dialogue/modal is up — a half-covered window reads as broken
   if (!company || modalOpen) return null;

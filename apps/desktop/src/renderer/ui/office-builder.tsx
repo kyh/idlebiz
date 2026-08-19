@@ -59,7 +59,9 @@ export function OfficeBuilder() {
   );
   const [snap, setSnap] = useState<number>(16);
   const [zoom, setZoom] = useState<number>(2);
-  const [showCollision, setShowCollision] = useState(false);
+  const [collisionPinned, setCollisionPinned] = useState(false);
+  // editing collision always shows it; the toggle is for the other tools
+  const showCollision = collisionPinned || tool === "block" || tool === "clear";
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Loaded current office. Place assets, then Save.");
   const stageRef = useRef<HTMLDivElement>(null);
@@ -484,11 +486,6 @@ export function OfficeBuilder() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // show the collision grid whenever you're editing it
-  useEffect(() => {
-    if (tool === "block" || tool === "clear") setShowCollision(true);
-  }, [tool]);
-
   // load the player's saved office from disk (falls back to the bundled default)
   useEffect(() => {
     let cancelled = false;
@@ -617,7 +614,7 @@ export function OfficeBuilder() {
             </button>
             <button
               type="button"
-              onClick={() => setShowCollision((v) => !v)}
+              onClick={() => setCollisionPinned((v) => !v)}
               data-sel={showCollision}
               className="px-opt px-2.5 py-1.5"
             >
@@ -628,7 +625,7 @@ export function OfficeBuilder() {
               onClick={() => {
                 commit((L) => ({ ...L, collision: deriveCollision(L) }));
                 setStatus("Rebuilt collision from floor tiles + solid furniture.");
-                setShowCollision(true);
+                setCollisionPinned(true);
               }}
               className="px-btn px-2.5 py-1.5"
               title="Re-derive walkability from solid furniture (then Save)"

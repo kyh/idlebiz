@@ -4,11 +4,6 @@ import { zeroUsage } from "./events";
 import type { JsonValue } from "./json";
 import type { RunnerResult } from "./runner";
 
-// Every resolution path funnels through the settle() helper below, guarded by
-// a `settled` flag so it resolves exactly once. oxlint's static check can't
-// see that guard, so the rule is disabled for this file.
-/* oxlint-disable promise/no-multiple-resolved */
-
 /** Keep only the tail of stderr — used solely for final error reporting. */
 const STDERR_TAIL_MAX = 16_000;
 

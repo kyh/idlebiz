@@ -28,9 +28,9 @@ function openAsset(companyId: string, token: string): void {
 export function RichText({ text, companyId }: { text: string; companyId: string }) {
   const parts: ReactNode[] = [];
   let last = 0;
-  let m: RegExpExecArray | null;
-  TOKEN.lastIndex = 0;
-  while ((m = TOKEN.exec(text)) !== null) {
+  // matchAll, not exec: exec advances TOKEN.lastIndex, and mutating
+  // module-level state during render breaks on a re-entrant render.
+  for (const m of text.matchAll(TOKEN)) {
     const token = m[0];
     if (m.index > last) parts.push(text.slice(last, m.index));
     parts.push(
