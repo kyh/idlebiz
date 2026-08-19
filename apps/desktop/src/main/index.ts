@@ -178,8 +178,10 @@ function registerIpcHandlers(): void {
 
   handle("getCompany", () => store.getDefaultCompany());
 
-  handle("createCompany", ({ name, mission, businessType, founderName, founderSpriteSeed }) =>
-    store.createCompany({ name, mission, businessType, founderName, founderSpriteSeed }),
+  handle(
+    "createCompany",
+    ({ name, mission, businessType, founderName, founderSpriteSeed, budget }) =>
+      store.createCompany({ name, mission, businessType, founderName, founderSpriteSeed, budget }),
   );
 
   handle("setAutopilot", ({ companyId, running }) => {

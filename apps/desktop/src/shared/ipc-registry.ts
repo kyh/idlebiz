@@ -95,6 +95,9 @@ const CreateCompanySchema = z.object({
   businessType: BusinessTypeSchema,
   founderName: z.string(),
   founderSpriteSeed: z.string(),
+  // the company is born with its cap: agents run on real paid CLI calls, and a
+  // company that exists uncapped for even one scheduler tick can spend
+  budget: BudgetSchema,
 });
 const HireProposalSchema = z.object({
   name: z.string(),

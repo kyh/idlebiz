@@ -302,6 +302,24 @@ canvas {
   }
 }
 
+/* a quiet inline text action — secondary to any px-btn in the same row */
+.px-link {
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.px-link:hover {
+  color: var(--text);
+}
+.px-link-danger:hover {
+  color: var(--danger);
+}
+
 /* a soft blink for "working" indicators */
 .px-live-dot {
   animation: px-pulse 1s ease-in-out infinite;

@@ -703,6 +703,7 @@ export function createCompany(input: {
   businessType: BusinessTypeId;
   founderName: string;
   founderSpriteSeed: string;
+  budget: Budget;
 }): Company {
   const id = uniqueSlug(input.name, (s) => c().companies.has(s) || existsSync(companyDir(s)));
   const co: Company = {
@@ -718,7 +719,7 @@ export function createCompany(input: {
     ships: 0,
     revenueUsd: null,
     users: null,
-    budget: { mode: "infinite" },
+    budget: input.budget,
     spentUsd: 0,
     onboarded: false,
     createdAt: Date.now(),

@@ -106,7 +106,10 @@ class Scheduler {
   /** Top up idle employees with self-directed work (respecting the concurrency cap). */
   private tickAutopilot(): void {
     const company = store.getDefaultCompany();
-    if (!company || !company.autopilot) return;
+    // an un-onboarded company is mid-hire or abandoned: it has employees on
+    // disk but its founder never saw the budget step, so briefing them here
+    // spends money nobody agreed to
+    if (!company || !company.onboarded || !company.autopilot) return;
     if (isOutOfBudget(company)) {
       this.haltForBudget(company);
       return;
@@ -422,6 +425,9 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     const employee = store.getEmployee(employeeId);
     const company = store.getCompany(task.companyId);
     if (!employee || !company) return;
+    // the single choke point for paid work: nothing runs for a company whose
+    // founder hasn't finished onboarding and set a budget
+    if (!company.onboarded) return;
 
     const runId = crypto.randomUUID();
     const locked = store.lockTaskForRun(task.id, runId);
