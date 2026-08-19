@@ -8,9 +8,9 @@ importers:
 
   .:
     devDependencies:
-      '@oxlint/plugins':
-        specifier: 1.79.0
-        version: 1.79.0
+      '@kyh/oxlint':
+        specifier: ^0.1.2
+        version: 0.1.2
       knip:
         specifier: ^6.32.2
         version: 6.32.2
@@ -765,6 +765,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@kyh/oxlint@0.1.2':
+    resolution: {integrity: sha512-jaIXZ+9nE8mk+e7VYSPyGC7akDqD8NG/eQKzQv5Xv7RzPsakf3WCZk8TIgJeC/qLRqOGbcI0gtaDI5blMIZHvg==}
+
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
     engines: {node: '>= 12.13.0'}
@@ -1318,8 +1321,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@oxlint/plugins@1.79.0':
-    resolution: {integrity: sha512-S0uyoxakDINJ4DPgqxGlEEvrdSMeQb7Z2lKVjxoY2gwsbZbfg2Xr8Klfeo5ZeraHmmdBCELFUHkSe6KEmBpMvg==}
+  '@oxlint/plugins@1.78.0':
+    resolution: {integrity: sha512-Ypt8KeRYw+4jUtlPirfcHWMrn5ms12VrrFPD+Mds477/7tJxG1Kcz2Yrg2nVcTQEUx/GdlhS+BUg1kmxNm04Ug==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   '@peculiar/asn1-schema@2.9.3':
@@ -3641,6 +3644,10 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@kyh/oxlint@0.1.2':
+    dependencies:
+      '@oxlint/plugins': 1.78.0
+
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
       cross-spawn: 7.0.6
@@ -3927,7 +3934,7 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.79.0':
     optional: true
 
-  '@oxlint/plugins@1.79.0': {}
+  '@oxlint/plugins@1.78.0': {}
 
   '@peculiar/asn1-schema@2.9.3':
     dependencies:

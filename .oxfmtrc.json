@@ -9,8 +9,7 @@
     ".next",
     ".output",
     "out",
-    ".claude",
-    "tools/oxlint/anti-slop"
+    ".claude"
   ],
   "experimentalSortPackageJson": {}
 }

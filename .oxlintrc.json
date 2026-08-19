@@ -9,11 +9,10 @@
     ".next",
     ".output",
     "out",
-    ".claude",
-    "tools/oxlint/anti-slop"
+    ".claude"
   ],
   "plugins": ["eslint", "typescript", "unicorn", "react", "nextjs", "oxc", "node", "promise"],
-  "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }],
+  "jsPlugins": [{ "name": "anti-slop", "specifier": "@kyh/oxlint/anti-slop" }],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
