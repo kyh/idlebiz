@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { approvalKey, isOutwardFacingCommand } from "@/shared/domain";
+import { approvalKey, classifyCommand } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 import { PERMISSION_HOOK_PATH } from "@/main/paths";
@@ -246,9 +246,10 @@ class ControlPlane {
             return;
           }
           const { command } = body.data;
-          // Anything that stays inside the workspace is the agent's own
-          // business; only outward-facing actions reach the founder.
-          if (!isOutwardFacingCommand(command) || this.isApproved(run.companyId, command)) {
+          // Work that stays inside the workspace is the employee's own
+          // business; only what reaches past it goes to the founder.
+          const verdict = classifyCommand(command);
+          if (verdict.decision === "allow" || this.isApproved(run.companyId, command)) {
             respond(res, 200, { ok: true, decision: "allow" });
             return;
           }
@@ -256,8 +257,7 @@ class ControlPlane {
           respond(res, 200, {
             ok: true,
             decision: "deny",
-            reason:
-              "This is outward-facing, so it needs the founder's sign-off. They now have an approval card — this task resumes automatically once they decide. Continue with anything that doesn't depend on it.",
+            reason: `${verdict.rule.describe} That needs the founder's sign-off, so they now have an approval card — this task resumes automatically once they decide. Continue with anything that doesn't depend on it.`,
           });
           return;
         }

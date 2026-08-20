@@ -7,7 +7,7 @@ import {
   retryTask,
 } from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
-import { INTEGRATION_LABELS } from "@/shared/domain";
+import { INTEGRATION_LABELS, classifyCommand } from "@/shared/domain";
 import type { IntegrationKind, Task } from "@/shared/domain";
 
 /** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
@@ -133,6 +133,7 @@ function ConnectRow({
  *  exact command, because that is what will run if they say yes. */
 function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string }) {
   const [sent, setSent] = useState(false);
+  const verdict = classifyCommand(command);
   const decide = async (approved: boolean) => {
     if (sent) return;
     setSent(true);
@@ -144,7 +145,7 @@ function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string 
         🔐 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
       <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
-        wants to run something that reaches the outside world:
+        {verdict.decision === "ask" ? verdict.rule.describe : "Wants to run this."}
       </div>
       <pre className="px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">

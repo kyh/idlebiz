@@ -53,34 +53,121 @@ export function parseBlockedAsk(s: string): BlockedAsk {
   };
 }
 
-// ---- outward-facing actions (founder sign-off) ------------------------------
+// ---- command policy (founder sign-off) --------------------------------------
 
 /**
- * Shell commands that reach outside the workspace — publishing, spending, or
- * mutating something the founder is accountable for. These are gated by a
- * PreToolUse hook: the agent's own promise to "ask first" is a prompt the
- * model may ignore, so the check lives at the tool boundary instead.
+ * The single decision point for what an employee may do unattended, applied
+ * identically to both runners.
  *
- * Deliberately conservative — a false positive costs one approval card, a
- * false negative publishes something in the founder's name.
+ * It lives here rather than leaning on either CLI's own safeguards because
+ * those are not the same shape: claude has a classifier (`--permission-mode
+ * auto`), codex has an OS sandbox, and neither knows what this game considers
+ * the founder's business. A PreToolUse hook sends every shell command here,
+ * so this is the one place with a complete view of both.
+ *
+ * It is a floor, not the whole story — the CLIs' own protections still sit
+ * underneath. And it fails OPEN by construction: anything unmatched runs. So
+ * a rule earns its place by catching something whose blast radius reaches
+ * past the workspace, and `check:permissions` holds every rule to an example.
+ *
+ * Paths are the load-bearing heuristic for scope: employees work in relative
+ * paths inside their workspace, so an absolute or `~` path in a destructive
+ * command is the signal that something is reaching out of it.
  */
-const OUTWARD_COMMAND_PATTERNS: readonly RegExp[] = [
-  /\bvercel\b[^|;&]*\bdeploy\b/,
-  /\bnetlify\b[^|;&]*\bdeploy\b/,
-  /\bwrangler\b[^|;&]*\b(deploy|publish)\b/,
-  /\bnpm\b[^|;&]*\bpublish\b/,
-  /\bgh\b\s+(pr|release|repo|issue)\s+create\b/,
-  /\bgit\s+push\b/,
-  /\bstripe\b[^|;&]*\b(create|charge|payouts?)\b/,
-  /\bcurl\b[^|;&]*\s-X\s*(POST|PUT|PATCH|DELETE)\b/i,
+export interface CommandRule {
+  id: string;
+  /** Shown on the approval card — what the founder is being asked to allow. */
+  describe: string;
+}
+
+interface Rule extends CommandRule {
+  match: RegExp;
+  /** Skip when everything the command targets is the game's own loopback API. */
+  networked?: boolean;
+}
+
+/** A path argument that leaves the workspace behind. */
+const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
+
+const RULES: readonly Rule[] = [
+  {
+    id: "deploy",
+    describe: "Deploy the product to a live, public URL.",
+    match: /\b(vercel|netlify|wrangler|fly|railway|surge)\b[^|;&]*\b(deploy|publish)\b/,
+  },
+  {
+    id: "publish-package",
+    describe: "Publish a package to a public registry.",
+    match: /\bnpm\b[^|;&]*\bpublish\b|\bnpx\b[^|;&]*\bnpm\s+publish\b/,
+  },
+  { id: "git-push", describe: "Push commits to a remote repository.", match: /\bgit\s+push\b/ },
+  {
+    id: "github-create",
+    describe: "Create something public on GitHub (PR, release, repo, or issue).",
+    match: /\bgh\s+(pr|release|repo|issue|gist)\s+create\b/,
+  },
+  {
+    id: "payments",
+    describe: "Move real money through Stripe.",
+    match: /\bstripe\b[^|;&]*\b(create|charge|payouts?|refunds?|transfers?)\b/,
+  },
+  {
+    id: "http-write",
+    describe: "Send data to a service on the internet.",
+    match:
+      /\bcurl\b[^|;&]*(\s-X\s*(POST|PUT|PATCH|DELETE)\b|\s(--data|--data-raw|--upload-file|-d)\s)/i,
+    networked: true,
+  },
+  {
+    id: "remote-copy",
+    describe: "Copy files to another machine over the network.",
+    match: /\b(scp|rsync)\b[^|;&]*\s[\w.-]+@[\w.-]+:|\bssh\s+[\w.-]+@[\w.-]+/,
+    networked: true,
+  },
+  {
+    id: "pipe-to-shell",
+    describe: "Download code from the internet and run it immediately.",
+    match: /\b(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(bash|sh|zsh|python3?)\b/,
+    networked: true,
+  },
+  {
+    id: "read-credentials",
+    describe: "Read your stored credentials.",
+    match: new RegExp(
+      String.raw`(?:\b(?:cat|less|more|head|tail|strings|grep|cp|base64)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh)\b)` +
+        String.raw`|\bsecurity\s+find-(?:generic|internet)-password\b` +
+        String.raw`|${ESCAPES}/\.ssh/id_[\w]+\b`,
+    ),
+  },
+  {
+    id: "destructive-outside",
+    describe: "Irreversibly delete or overwrite files outside the workspace.",
+    match: new RegExp(String.raw`\b(?:rm|shred|truncate)\b[^|;&]*\s-?[\w-]*\s*${ESCAPES}`),
+  },
+  {
+    id: "write-outside",
+    describe: "Change files or permissions outside the workspace.",
+    match: new RegExp(String.raw`\b(?:chmod|chown|mv|dd\s+of=|tee)\b[^|;&]*${ESCAPES}`),
+  },
 ];
 
-/** Loopback calls are the game's own API — never an outward-facing action. */
-const LOOPBACK = /127\.0\.0\.1|localhost|\$IDLEBIZ_API_URL/;
+/** True when every internet target named is the game's own loopback API. */
+function onlyLoopbackTargets(command: string): boolean {
+  const urls = command.match(/https?:\/\/[^\s"'`)]+/g) ?? [];
+  const remote = urls.filter((u) => !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])/.test(u));
+  if (remote.length > 0) return false;
+  return urls.length > 0 || command.includes("$IDLEBIZ_API_URL");
+}
 
-export function isOutwardFacingCommand(command: string): boolean {
-  if (LOOPBACK.test(command)) return false;
-  return OUTWARD_COMMAND_PATTERNS.some((p) => p.test(command));
+export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: CommandRule };
+
+export function classifyCommand(command: string): CommandVerdict {
+  for (const rule of RULES) {
+    if (!rule.match.test(command)) continue;
+    if (rule.networked && onlyLoopbackTargets(command)) continue;
+    return { decision: "ask", rule: { id: rule.id, describe: rule.describe } };
+  }
+  return { decision: "allow" };
 }
 
 /**
