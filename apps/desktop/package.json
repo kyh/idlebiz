@@ -16,7 +16,8 @@
     "release:publish": "bash scripts/publish-release.sh",
     "with-env": "dotenv -e .env --",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .cache .output"
+    "clean": "rm -rf .cache .output",
+    "check:permissions": "node --experimental-strip-types scripts/check-permission-gate.mjs"
   },
   "dependencies": {
     "@repo/agent-driver": "workspace:*",

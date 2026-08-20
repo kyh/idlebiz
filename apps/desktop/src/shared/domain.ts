@@ -72,7 +72,7 @@ const OUTWARD_COMMAND_PATTERNS: readonly RegExp[] = [
   /\bgh\b\s+(pr|release|repo|issue)\s+create\b/,
   /\bgit\s+push\b/,
   /\bstripe\b[^|;&]*\b(create|charge|payouts?)\b/,
-  /\bcurl\b[^|;&]*\b-X\s*(POST|PUT|PATCH|DELETE)\b/i,
+  /\bcurl\b[^|;&]*\s-X\s*(POST|PUT|PATCH|DELETE)\b/i,
 ];
 
 /** Loopback calls are the game's own API — never an outward-facing action. */
