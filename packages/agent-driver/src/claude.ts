@@ -43,6 +43,8 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
   if (opts.maxTurns && opts.maxTurns > 0) args.push("--max-turns", String(opts.maxTurns));
   for (const dir of opts.addDirs ?? []) args.push("--add-dir", dir);
 
+  const billedMessages = new Set<string>();
+
   return runNdjsonProcess({
     bin: opts.bin,
     args,
@@ -56,7 +58,16 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
       const e = obj(value);
       switch (str(e.type)) {
         case "assistant": {
-          for (const block of arr(obj(e.message).content)) {
+          // One message can arrive as several assistant events (one per
+          // content block), so bill it once — summing every event overstates
+          // the run and would trip a budget stop early.
+          const message = obj(e.message);
+          const id = str(message.id);
+          if (id !== undefined && !billedMessages.has(id)) {
+            billedMessages.add(id);
+            opts.onEvent({ type: "usage", usage: extractUsage(message) });
+          }
+          for (const block of arr(message.content)) {
             const b = obj(block);
             if (b.type === "text") {
               const text = str(b.text) ?? "";

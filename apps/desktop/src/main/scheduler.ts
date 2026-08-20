@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
+import { priceUsage } from "@repo/agent-driver/pricing";
 import * as store from "@/main/store/store";
 import { agentDriver } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
@@ -41,6 +42,13 @@ class Scheduler {
   readonly events = new EventEmitter();
   private active = new Map<string, string>(); // runId -> employeeId
   private busy = new Set<string>(); // employeeId
+  /**
+   * runId -> USD spent by that run so far, priced from streamed token deltas.
+   * An estimate on purpose: the authoritative figure arrives with the result
+   * and is what gets written to spentUsd. This exists only so the cap can be
+   * enforced while runs are still going.
+   */
+  private liveSpend = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   /** Begin the idle-game loop: idle employees self-direct work while autopilot is on. */
@@ -457,6 +465,8 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       })
       .finally(() => {
         this.active.delete(runId);
+        // drop the estimate: finish() has recorded what this run really cost
+        this.liveSpend.delete(runId);
         this.busy.delete(employeeId);
         this.tick();
       });
@@ -500,9 +510,38 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
           });
         }
         break;
+      case "usage":
+        this.trackLiveSpend(runId, emp, ev.usage);
+        break;
       default:
         break;
     }
+  }
+
+  /**
+   * Stop the office the moment the cap is actually reached, rather than at the
+   * next run boundary. A single run can cost several dollars, so "check before
+   * starting" let a $5 cap spend $12.
+   *
+   * Claude reports usage per assistant turn, so its runs are cut off mid-flight.
+   * Codex only reports when a turn completes, so its own run always finishes —
+   * but crossing the line still stops everything else in the office.
+   */
+  private trackLiveSpend(runId: string, emp: Employee, usage: AgentUsage): void {
+    const company = store.getCompany(emp.companyId);
+    if (!company || company.budget.mode !== "capped") return;
+    const cost = usage.costUsd > 0 ? usage.costUsd : priceUsage(emp.model ?? undefined, usage);
+    this.liveSpend.set(runId, (this.liveSpend.get(runId) ?? 0) + cost);
+    const inFlight = [...this.liveSpend.values()].reduce((a, b) => a + b, 0);
+    if (company.spentUsd + inFlight < company.budget.capUsd) return;
+
+    this.emit({
+      kind: "lifecycle",
+      message: "budget.exhausted",
+      payload: { spentUsd: company.spentUsd + inFlight, budget: company.budget },
+    });
+    for (const employeeId of this.active.values()) agentDriver.disposeEmployee(employeeId);
+    if (company.autopilot) store.setAutopilot(company.id, false);
   }
 
   private finish(
@@ -561,10 +600,13 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     if (r.sessionId) store.setEmployeeSession(emp.id, r.sessionId);
     else if (r.staleSession) store.setEmployeeSession(emp.id, null); // dead resume — start fresh next run
 
-    // real AI spend drains the founder's budget (once per run, not per token)
-    if (r.usage.costUsd > 0) {
+    // Real AI spend drains the founder's budget. A run killed for crossing the
+    // cap reports no usage — those tokens were still bought, so fall back to
+    // what the stream had already accounted for rather than losing it.
+    const spend = r.usage.costUsd > 0 ? r.usage.costUsd : (this.liveSpend.get(runId) ?? 0);
+    if (spend > 0) {
       const before = store.getCompany(task.companyId);
-      const after = store.recordSpend(task.companyId, r.usage.costUsd);
+      const after = store.recordSpend(task.companyId, spend);
       if (before && after && !isOutOfBudget(before) && isOutOfBudget(after)) {
         this.haltForBudget(after);
       }

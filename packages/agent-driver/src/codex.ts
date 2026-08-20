@@ -80,9 +80,18 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
         case "turn.completed": {
           turnCompleted = true;
           const u = obj(e.usage);
-          usage.inputTokens += num(u.input_tokens);
-          usage.outputTokens += num(u.output_tokens);
-          usage.cachedTokens += num(u.cached_input_tokens);
+          const delta = {
+            inputTokens: num(u.input_tokens),
+            outputTokens: num(u.output_tokens),
+            cachedTokens: num(u.cached_input_tokens),
+            costUsd: 0,
+          };
+          usage.inputTokens += delta.inputTokens;
+          usage.outputTokens += delta.outputTokens;
+          usage.cachedTokens += delta.cachedTokens;
+          // Codex reports usage only here, so this lands at the end of the
+          // turn — enough to stop sibling runs, too late to stop this one.
+          opts.onEvent({ type: "usage", usage: delta });
           return;
         }
         case "turn.failed": {
