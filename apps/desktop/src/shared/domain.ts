@@ -30,15 +30,20 @@ export const INTEGRATION_LABELS = {
 
 export type BlockedAsk =
   | { type: "question"; question: string }
-  | { type: "integration"; integration: IntegrationKind; reason: string };
+  | { type: "integration"; integration: IntegrationKind; reason: string }
+  | { type: "approval"; command: string };
 
 // TASK.md keeps a single human-editable scalar; the marker syntax exists ONLY
 // at this persistence boundary — everything in memory is the typed union.
 export function serializeBlockedAsk(a: BlockedAsk): string {
-  return a.type === "question" ? a.question : `[connect:${a.integration}] ${a.reason}`;
+  if (a.type === "question") return a.question;
+  if (a.type === "approval") return `[approve] ${a.command}`;
+  return `[connect:${a.integration}] ${a.reason}`;
 }
 
 export function parseBlockedAsk(s: string): BlockedAsk {
+  const approval = /^\[approve\]\s*([\s\S]*)$/.exec(s);
+  if (approval) return { type: "approval", command: (approval[1] ?? "").trim() };
   const m = /^\[connect:(vercel|stripe)\]\s*([\s\S]*)$/.exec(s);
   if (!m) return { type: "question", question: s };
   return {
@@ -46,6 +51,51 @@ export function parseBlockedAsk(s: string): BlockedAsk {
     integration: m[1] === "vercel" ? "vercel" : "stripe",
     reason: (m[2] ?? "").trim(),
   };
+}
+
+// ---- outward-facing actions (founder sign-off) ------------------------------
+
+/**
+ * Shell commands that reach outside the workspace — publishing, spending, or
+ * mutating something the founder is accountable for. These are gated by a
+ * PreToolUse hook: the agent's own promise to "ask first" is a prompt the
+ * model may ignore, so the check lives at the tool boundary instead.
+ *
+ * Deliberately conservative — a false positive costs one approval card, a
+ * false negative publishes something in the founder's name.
+ */
+const OUTWARD_COMMAND_PATTERNS: readonly RegExp[] = [
+  /\bvercel\b[^|;&]*\bdeploy\b/,
+  /\bnetlify\b[^|;&]*\bdeploy\b/,
+  /\bwrangler\b[^|;&]*\b(deploy|publish)\b/,
+  /\bnpm\b[^|;&]*\bpublish\b/,
+  /\bgh\b\s+(pr|release|repo|issue)\s+create\b/,
+  /\bgit\s+push\b/,
+  /\bstripe\b[^|;&]*\b(create|charge|payouts?)\b/,
+  /\bcurl\b[^|;&]*\b-X\s*(POST|PUT|PATCH|DELETE)\b/i,
+];
+
+/** Loopback calls are the game's own API — never an outward-facing action. */
+const LOOPBACK = /127\.0\.0\.1|localhost|\$IDLEBIZ_API_URL/;
+
+export function isOutwardFacingCommand(command: string): boolean {
+  if (LOOPBACK.test(command)) return false;
+  return OUTWARD_COMMAND_PATTERNS.some((p) => p.test(command));
+}
+
+/**
+ * Stable key for "the founder already approved this exact action". The CLIs
+ * decorate commands they run (`… 2>&1; echo "exit=$?"`), so those are stripped
+ * — otherwise a retry of the same action reads as a new one and re-asks.
+ * Still an exact match beyond that: a genuinely different command is a
+ * different decision.
+ */
+export function approvalKey(command: string): string {
+  return command
+    .replace(/\s*2>&1/g, "")
+    .replace(/\s*;\s*echo\s+["']?exit=\$\?["']?\s*$/, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 // ---- team-room mentions --------------------------------------------------------

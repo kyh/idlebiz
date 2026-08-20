@@ -10,15 +10,33 @@ import type { RunnerOptions, RunnerResult } from "./runner";
  * `turn.completed` AND a clean exit. Codex reports tokens but never dollars —
  * usage.costUsd stays 0 and the caller prices it (see pricing.ts).
  */
+/**
+ * Codex takes hooks as a `-c` TOML override. Its shell tool is named `Bash`,
+ * same as claude's, so one hook script serves both runners. Codex ignores a
+ * JSON `permissionDecision` on stdout — only exit 2 with a stderr reason
+ * blocks — which is why the hook signals denial that way.
+ */
+function codexHookConfig(command: string): string {
+  const escaped = command.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `hooks.PreToolUse=[{matcher="^Bash$",hooks=[{type="command",command="${escaped}"}]}]`;
+}
+
 export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
   const args = [
     "exec",
     "--json",
     "--skip-git-repo-check",
-    // Full autonomy, matching the trust level agents already had: they need
-    // network (deploys, the game's control-plane API) and workspace writes.
-    "--dangerously-bypass-approvals-and-sandbox",
+    // Writes are confined to the workspace and --add-dir roots. Network stays
+    // on: it is off by default under workspace-write, which would cut the
+    // agent off from the control-plane API as well as the internet.
+    "--sandbox",
+    "workspace-write",
+    "-c",
+    "sandbox_workspace_write.network_access=true",
   ];
+  if (opts.permissionHookCommand) {
+    args.push("-c", codexHookConfig(opts.permissionHookCommand));
+  }
   if (opts.model) args.push("--model", opts.model);
   for (const dir of opts.addDirs ?? []) args.push("--add-dir", dir);
   if (opts.resumeSessionId) args.push("resume", opts.resumeSessionId);

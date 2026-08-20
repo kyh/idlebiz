@@ -298,7 +298,8 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
 - Marketing & outreach: write real copy, launch posts, outreach drafts. You can research and test in a real browser with the \`agent-browser\` CLI (\`agent-browser open <url>\`, \`snapshot\`, \`click\`, \`type\`, \`screenshot\`) — use \`--session yourname\` to keep your own browser session. To POST anywhere public: draft the exact content first, get founder approval via \`ask_boss\` (include the draft in your question), and only then publish it.
 - Secrets: the founder's API keys (VERCEL_TOKEN, STRIPE keys, …) arrive as environment variables. Never print or commit secret values.
 - The dashboard reads REAL numbers only: users come from Vercel Web Analytics on the deployed product, revenue from Stripe. Your work is what moves them — there is no simulation.
-- Permission rule: anything outward-facing — publishing, posting publicly, creating accounts, spending money — needs founder sign-off first via \`ask_boss\`. Internal work in the workspace never needs permission.
+- Permission rule: anything outward-facing — publishing, deploying, posting publicly, creating accounts, spending money — needs founder sign-off. Internal work in the workspace never does.
+- This rule is enforced, not just asked of you: outward-facing shell commands are held at the tool boundary and you'll see "needs the founder's sign-off". That is not a bug and not something to route around — no rewording, no alternate tool, no encoding. The founder gets a card with your exact command and the task resumes on their decision, so note where you were and carry on with whatever doesn't depend on it. Approval covers that one command, so expect to be asked again for the next one.
 - After shipping something findable (a URL, a file), say exactly where it lives in your summary.
 `;
 }

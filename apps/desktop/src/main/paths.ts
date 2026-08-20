@@ -19,6 +19,8 @@ import { mkdirSync } from "node:fs";
 export const ROOT_DIR = join(homedir(), ".idlebiz");
 /** The player's saved office layout (built in #/ui). Overrides the bundled default. */
 export const OFFICE_DESIGN_PATH = join(ROOT_DIR, "office-design.json");
+/** The permission hook both CLIs run before every shell command. */
+export const PERMISSION_HOOK_PATH = join(ROOT_DIR, "hooks", "permission-hook.mjs");
 
 export const companyDir = (companySlug: string): string => join(ROOT_DIR, companySlug);
 export const companyFile = (companySlug: string): string =>

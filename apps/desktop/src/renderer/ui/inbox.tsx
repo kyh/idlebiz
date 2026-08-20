@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { useStore, setModalOpen, refresh, retryTask } from "@/renderer/state/store";
+import {
+  useStore,
+  setModalOpen,
+  refresh,
+  resolveApproval,
+  retryTask,
+} from "@/renderer/state/store";
 import { RichText } from "@/renderer/ui/linkify";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { IntegrationKind, Task } from "@/shared/domain";
@@ -46,20 +52,29 @@ export function Inbox({
               All clear — nobody's waiting on you.
             </div>
           ) : null}
-          {pendingAsks.map((t) =>
-            t.blocked?.type === "integration" ? (
-              <ConnectRow
-                key={t.id}
-                t={t}
-                by={nameOf(t.assigneeId)}
-                integration={t.blocked.integration}
-                reason={t.blocked.reason}
-                onConnect={onConnect}
-              />
-            ) : (
-              <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
-            ),
-          )}
+          {pendingAsks.map((t) => {
+            if (t.blocked?.type === "integration")
+              return (
+                <ConnectRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  integration={t.blocked.integration}
+                  reason={t.blocked.reason}
+                  onConnect={onConnect}
+                />
+              );
+            if (t.blocked?.type === "approval")
+              return (
+                <ApprovalRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  command={t.blocked.command}
+                />
+              );
+            return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />;
+          })}
           {stuckTasks.length > 0 ? (
             <div className="pt-1 text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
               Stuck — needs a retry
@@ -109,6 +124,51 @@ function ConnectRow({
         >
           Connect {label}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** An outward-facing command held at the tool boundary. The founder sees the
+ *  exact command, because that is what will run if they say yes. */
+function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string }) {
+  const [sent, setSent] = useState(false);
+  const decide = async (approved: boolean) => {
+    if (sent) return;
+    setSent(true);
+    await resolveApproval(t.id, approved);
+  };
+  return (
+    <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
+      <div className="text-[12px] text-[var(--warn)]">
+        🔐 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
+      </div>
+      <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
+        wants to run something that reaches the outside world:
+      </div>
+      <pre className="px-code mt-2 overflow-x-auto p-2">{command}</pre>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-[var(--text-dim)]">
+          Approving covers this exact command, once.
+        </span>
+        <span className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void decide(false)}
+            disabled={sent}
+            className="px-btn"
+          >
+            Deny
+          </button>
+          <button
+            type="button"
+            onClick={() => void decide(true)}
+            disabled={sent}
+            className="px-btn-accent px-btn"
+          >
+            Approve
+          </button>
+        </span>
       </div>
     </div>
   );

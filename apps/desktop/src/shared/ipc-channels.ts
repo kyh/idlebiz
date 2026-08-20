@@ -42,6 +42,7 @@ export const CHANNELS = {
   listTasks: { channel: "task:list", kind: "invoke" },
   assignTask: { channel: "task:assign", kind: "invoke" },
   answerQuestion: { channel: "task:answer", kind: "invoke" },
+  resolveApproval: { channel: "task:resolve-approval", kind: "invoke" },
   openCompanyPath: { channel: "company:open-path", kind: "invoke" },
   openProduct: { channel: "company:open-product", kind: "invoke" },
 

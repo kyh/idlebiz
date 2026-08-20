@@ -302,6 +302,18 @@ canvas {
   }
 }
 
+/* a verbatim shell command shown to the founder for sign-off */
+.px-code {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--face-lo);
+  border: 2px solid var(--ink);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* a quiet inline text action — secondary to any px-btn in the same row */
 .px-link {
   font-family: inherit;

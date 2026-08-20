@@ -120,6 +120,7 @@ export const SCHEMAS = {
   listTasks: z.object({ companyId: z.string() }),
   assignTask: z.object({ taskId: z.string(), employeeId: z.string() }),
   answerQuestion: z.object({ taskId: z.string(), answer: z.string() }),
+  resolveApproval: z.object({ taskId: z.string(), approved: z.boolean() }),
   openCompanyPath: z.object({ companyId: z.string(), rel: z.string() }),
   openProduct: z.object({ companyId: z.string() }),
   generateHires: z.object({
@@ -202,6 +203,7 @@ export interface Contract {
   listTasks: { payload: { companyId: string }; result: Task[] };
   assignTask: { payload: { taskId: string; employeeId: string }; result: Task };
   answerQuestion: { payload: { taskId: string; answer: string }; result: Task };
+  resolveApproval: { payload: { taskId: string; approved: boolean }; result: Task };
   openCompanyPath: { payload: { companyId: string; rel: string }; result: { ok: boolean } };
   openProduct: { payload: { companyId: string }; result: { ok: boolean; opened: string } };
 

@@ -9,14 +9,30 @@ import type { RunnerOptions, RunnerResult } from "./runner";
  * of truth for outcome, cost and session id — a bare exit without one is a
  * failure, never a silent success.
  */
+/** `--settings` accepts inline JSON, so the hook needs no file on disk. */
+function hookSettings(command: string): JsonObject {
+  return {
+    hooks: {
+      PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command }] }],
+    },
+  };
+}
+
 export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
+  // auto, not bypass: the classifier is the general safety net, and the
+  // permission hook below is the game's own founder-approval gate. A hook that
+  // returns no decision falls through to the classifier.
   const args = [
     "--print",
     "--output-format",
     "stream-json",
     "--verbose",
-    "--dangerously-skip-permissions",
+    "--permission-mode",
+    "auto",
   ];
+  if (opts.permissionHookCommand) {
+    args.push("--settings", JSON.stringify(hookSettings(opts.permissionHookCommand)));
+  }
   if (opts.model) args.push("--model", opts.model);
   if (opts.resumeSessionId) {
     // Resumed sessions already carry the instructions — send only the wake prompt.
@@ -27,19 +43,12 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
   if (opts.maxTurns && opts.maxTurns > 0) args.push("--max-turns", String(opts.maxTurns));
   for (const dir of opts.addDirs ?? []) args.push("--add-dir", dir);
 
-  // `--dangerously-skip-permissions` refuses to run as root unless
-  // IS_SANDBOX=1 marks the environment as already isolated. claude only
-  // accepts the literal "1".
-  const env = { ...opts.env };
-  const isRoot = process.getuid?.() === 0;
-  if (isRoot && process.env.IS_SANDBOX !== "1") env.IS_SANDBOX = "1";
-
   return runNdjsonProcess({
     bin: opts.bin,
     args,
     cwd: opts.cwd,
     stdinText: opts.prompt,
-    env,
+    env: opts.env,
     signal: opts.signal,
     idleTimeoutMs: opts.idleTimeoutMs,
     maxSessionMs: opts.maxSessionMs,

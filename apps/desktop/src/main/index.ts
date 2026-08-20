@@ -308,6 +308,23 @@ function registerIpcHandlers(): void {
     return scheduler.assign(continuation.id, continuation.assigneeId);
   });
 
+  handle("resolveApproval", ({ taskId, approved }) => {
+    const task = store.getTask(taskId);
+    if (!task || task.blocked?.type !== "approval")
+      throw new Error("task is not awaiting an approval");
+    // Record before resuming: the agent's retry hits the hook again, and it
+    // must find the sign-off already there.
+    if (approved) controlPlane.approveCommand(task.companyId, task.blocked.command);
+    const continuation = store.resolveBlockedWithAnswer(
+      taskId,
+      approved
+        ? "Approved — run it. This exact command is now signed off; anything else outward-facing still needs a fresh approval."
+        : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.",
+    );
+    if (!continuation || !continuation.assigneeId) throw new Error("could not resume the task");
+    return scheduler.assign(continuation.id, continuation.assigneeId);
+  });
+
   // open a workspace-relative path with the OS default app ("" = the folder itself)
   handle("openCompanyPath", async ({ companyId, rel }) => {
     await openWorkspacePath(companyId, rel);

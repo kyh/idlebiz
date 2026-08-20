@@ -8,10 +8,21 @@ import {
   runnerBin,
 } from "@repo/agent-driver/runner";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
+import { join } from "node:path";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
 import { companyWorkspace, employeeAgentDir } from "@/main/paths";
 import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain";
+
+/**
+ * Keep tool caches inside the workspace. Codex's workspace-write sandbox
+ * denies ~/.npm, which fails every `npx` — including the `npx vercel deploy`
+ * the agents are told to ship with.
+ */
+function workspaceToolEnv(companyId: string) {
+  const cache = join(companyWorkspace(companyId), ".cache");
+  return { npm_config_cache: join(cache, "npm"), XDG_CACHE_HOME: cache };
+}
 
 // ---------------------------------------------------------------------------
 // The employee runtime: each run spawns the employee's CLI (claude / codex),
@@ -161,7 +172,8 @@ class AgentDriver {
         model: emp.model ?? undefined,
         resumeSessionId,
         addDirs: [employeeAgentDir(company.id, emp.id)],
-        env: handle.env,
+        env: { ...handle.env, ...workspaceToolEnv(company.id) },
+        permissionHookCommand: handle.permissionHookCommand,
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         signal: abort.signal,

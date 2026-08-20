@@ -1,8 +1,13 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { z } from "zod";
+import { approvalKey, isOutwardFacingCommand } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
+import { PERMISSION_HOOK_PATH } from "@/main/paths";
+import { PERMISSION_HOOK_SOURCE } from "@/main/permission-hook-source";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
@@ -29,6 +34,7 @@ export interface RunToolHooks {
 interface RunRecord {
   hooks: RunToolHooks;
   blocked: BlockedAsk | null;
+  companyId: string;
 }
 
 export interface RunRegistration {
@@ -41,6 +47,8 @@ export interface RunRegistration {
 export interface RunHandle {
   /** Run-scoped env for the agent process (API URL + bearer token + ids). */
   env: Record<string, string>;
+  /** The PreToolUse hook command for this run, with its API url + token baked in. */
+  permissionHookCommand: string;
   /** What the agent reported back through the API during the run. */
   outcome(): { blocked: BlockedAsk | null };
   /** Invalidate the token. Call after the run settles. */
@@ -68,15 +76,20 @@ const RequestIntegrationBody = z.object({
   kind: z.enum(["vercel", "stripe"]),
   reason: z.string().min(1),
 });
+const PermissionBody = z.object({ command: z.string().min(1) });
 
 class ControlPlane {
   private server: Server | null = null;
   private port = 0;
   private runs = new Map<string, RunRecord>();
+  /** companyId → action keys the founder has signed off, for this app session. */
+  private approvals = new Map<string, Set<string>>();
 
   /** Bind the loopback listener (ephemeral port). Idempotent. */
   async start(): Promise<void> {
     if (this.server) return;
+    mkdirSync(dirname(PERMISSION_HOOK_PATH), { recursive: true });
+    writeFileSync(PERMISSION_HOOK_PATH, PERMISSION_HOOK_SOURCE, "utf8");
     const server = createServer((req, res) => {
       void this.handle(req, res);
     });
@@ -105,7 +118,7 @@ class ControlPlane {
 
   registerRun(reg: RunRegistration): RunHandle {
     const token = randomBytes(24).toString("base64url");
-    const record: RunRecord = { hooks: reg.hooks, blocked: null };
+    const record: RunRecord = { hooks: reg.hooks, blocked: null, companyId: reg.companyId };
     this.runs.set(token, record);
     const base = {
       IDLEBIZ_API_URL: this.baseUrl(),
@@ -115,11 +128,24 @@ class ControlPlane {
     };
     return {
       env: reg.taskId ? { ...base, IDLEBIZ_TASK_ID: reg.taskId } : base,
+      // argv, not env: codex does not give hook processes the parent env
+      permissionHookCommand: `node ${quoteArg(PERMISSION_HOOK_PATH)} ${quoteArg(this.baseUrl())} ${quoteArg(token)}`,
       outcome: () => ({ blocked: record.blocked }),
       release: () => {
         this.runs.delete(token);
       },
     };
+  }
+
+  /** The founder signed off on one action; the agent's retry now passes. */
+  approveCommand(companyId: string, command: string): void {
+    const set = this.approvals.get(companyId) ?? new Set<string>();
+    set.add(approvalKey(command));
+    this.approvals.set(companyId, set);
+  }
+
+  private isApproved(companyId: string, command: string): boolean {
+    return this.approvals.get(companyId)?.has(approvalKey(command)) ?? false;
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -213,6 +239,28 @@ class ControlPlane {
           });
           return;
         }
+        case "POST /v1/permission": {
+          const body = PermissionBody.safeParse(await readJsonBody(req));
+          if (!body.success) {
+            respond(res, 400, { ok: false, error: body.error.message });
+            return;
+          }
+          const { command } = body.data;
+          // Anything that stays inside the workspace is the agent's own
+          // business; only outward-facing actions reach the founder.
+          if (!isOutwardFacingCommand(command) || this.isApproved(run.companyId, command)) {
+            respond(res, 200, { ok: true, decision: "allow" });
+            return;
+          }
+          run.blocked = { type: "approval", command };
+          respond(res, 200, {
+            ok: true,
+            decision: "deny",
+            reason:
+              "This is outward-facing, so it needs the founder's sign-off. They now have an approval card — this task resumes automatically once they decide. Continue with anything that doesn't depend on it.",
+          });
+          return;
+        }
         default: {
           respond(res, 404, { ok: false, error: `no such tool: ${route}` });
           return;
@@ -236,6 +284,13 @@ interface ToolResponse {
   error?: string;
   message?: string;
   messages?: string;
+  decision?: "allow" | "deny";
+  reason?: string;
+}
+
+/** Single-quote for the shell the CLIs run hook commands through. */
+function quoteArg(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function respond(res: ServerResponse, status: number, payload: ToolResponse): void {

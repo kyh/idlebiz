@@ -263,6 +263,12 @@ export async function sendFounderChat(text: string): Promise<void> {
 }
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
+/** Founder decides on a held outward-facing command; the task resumes either way. */
+export async function resolveApproval(taskId: string, approved: boolean): Promise<void> {
+  await bridge().resolveApproval({ taskId, approved });
+  await refresh();
+}
+
 export async function retryTask(task: Task): Promise<void> {
   if (!task.assigneeId) return;
   await bridge().assignTask({ taskId: task.id, employeeId: task.assigneeId });

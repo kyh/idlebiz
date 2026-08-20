@@ -47,6 +47,13 @@ export interface RunnerOptions {
   addDirs?: string[];
   /** Run-scoped env additions (control-plane URL + token, secrets). */
   env?: Record<string, string>;
+  /**
+   * Shell command for the PreToolUse permission hook, already carrying its own
+   * arguments. Both CLIs run it before every Bash call and block when it exits
+   * 2 with a reason on stderr. It takes its config from argv rather than the
+   * environment because codex does not pass the parent env to hook processes.
+   */
+  permissionHookCommand?: string;
   /** Per-session agentic turn ceiling (claude only; 0/omit = CLI default). */
   maxTurns?: number;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
