@@ -253,7 +253,10 @@ class ControlPlane {
             respond(res, 200, { ok: true, decision: "allow" });
             return;
           }
-          run.blocked = { type: "approval", command };
+          // First block wins. A held command is usually followed by the agent
+          // narrating the block, and whatever it does next must not replace
+          // the ask the founder actually needs to decide.
+          run.blocked ??= { type: "approval", command };
           respond(res, 200, {
             ok: true,
             decision: "deny",

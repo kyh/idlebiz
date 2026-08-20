@@ -95,6 +95,13 @@ const MUST_ALLOW = [
   'curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"',
   'curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -d \'{"role":"engineer"}\'',
   "curl -s http://127.0.0.1:8842/v1/team-chat",
+  // Found live: an employee whose push was held then reported it to the team
+  // room, and the rule names quoted inside the payload tripped their own rules.
+  // Reporting a block must never be a blockable act.
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
+  `echo "next step: gh release create v2" >> NOTES.md`,
+  `git commit -m "prepare for git push once approved"`,
 ];
 
 const failures = [];

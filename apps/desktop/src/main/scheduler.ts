@@ -428,6 +428,13 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     // the single choke point for paid work: nothing runs for a company whose
     // founder hasn't finished onboarding and set a budget
     if (!company.onboarded) return;
+    // ...and nothing new starts once the cap is gone. The autopilot tick and
+    // both assign paths already check, but tick() drains the queue straight
+    // through here, so work queued before the cap blew kept spending after it.
+    if (isOutOfBudget(company)) {
+      this.haltForBudget(company);
+      return;
+    }
 
     const runId = crypto.randomUUID();
     const locked = store.lockTaskForRun(task.id, runId);

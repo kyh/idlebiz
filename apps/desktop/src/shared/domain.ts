@@ -89,65 +89,95 @@ interface Rule extends CommandRule {
 /** A path argument that leaves the workspace behind. */
 const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
 
+/**
+ * A shell position where a program name can actually appear: the start of the
+ * line, after an operator, or behind a wrapper like npx/sudo/env.
+ *
+ * Every rule anchors its program here, because matching the bare name anywhere
+ * in the string reads quoted argument text as if it were a command. That is
+ * not hypothetical: an employee whose `git push` was held then tried to post
+ * "I ran git push and it was blocked" to the team room, and the words inside
+ * that JSON payload tripped the git-push rule all over again — so the report
+ * of a block was itself blocked, and it replaced the real ask on the card.
+ */
+const AT_COMMAND =
+  String.raw`(?:^|[\n;&|(]|\$\(|` +
+  "`" +
+  String.raw`)\s*(?:(?:sudo|command|env|time|nohup|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|npm\s+exec)\s+)*(?:--?[\w-]+\s+)*(?:[\w_]+=\S+\s+)*`;
+
+/** Anchor a program pattern to a real invocation site. */
+const invocation = (program: string): RegExp => new RegExp(AT_COMMAND + program);
+
 const RULES: readonly Rule[] = [
   {
     id: "deploy",
     describe: "Deploy the product to a live, public URL.",
-    match: /\b(vercel|netlify|wrangler|fly|railway|surge)\b[^|;&]*\b(deploy|publish)\b/,
+    match: invocation(
+      String.raw`(?:vercel|netlify|wrangler|fly|railway|surge)\b[^|;&]*\b(?:deploy|publish)\b`,
+    ),
   },
   {
     id: "publish-package",
     describe: "Publish a package to a public registry.",
-    match: /\bnpm\b[^|;&]*\bpublish\b|\bnpx\b[^|;&]*\bnpm\s+publish\b/,
+    match: invocation(String.raw`npm\b[^|;&]*\bpublish\b`),
   },
-  { id: "git-push", describe: "Push commits to a remote repository.", match: /\bgit\s+push\b/ },
+  {
+    id: "git-push",
+    describe: "Push commits to a remote repository.",
+    match: invocation(String.raw`git\s+push\b`),
+  },
   {
     id: "github-create",
     describe: "Create something public on GitHub (PR, release, repo, or issue).",
-    match: /\bgh\s+(pr|release|repo|issue|gist)\s+create\b/,
+    match: invocation(String.raw`gh\s+(?:pr|release|repo|issue|gist)\s+create\b`),
   },
   {
     id: "payments",
     describe: "Move real money through Stripe.",
-    match: /\bstripe\b[^|;&]*\b(create|charge|payouts?|refunds?|transfers?)\b/,
+    match: invocation(
+      String.raw`stripe\b[^|;&]*\b(?:create|charge|payouts?|refunds?|transfers?)\b`,
+    ),
   },
   {
     id: "http-write",
     describe: "Send data to a service on the internet.",
-    match:
-      /\bcurl\b[^|;&]*(\s-X\s*(POST|PUT|PATCH|DELETE)\b|\s(--data|--data-raw|--upload-file|-d)\s)/i,
+    match: invocation(
+      String.raw`curl\b[^|;&]*(?:\s-X\s*(?:POST|PUT|PATCH|DELETE)\b|\s(?:--data|--data-raw|--upload-file|-d)\s)`,
+    ),
     networked: true,
   },
   {
     id: "remote-copy",
     describe: "Copy files to another machine over the network.",
-    match: /\b(scp|rsync)\b[^|;&]*\s[\w.-]+@[\w.-]+:|\bssh\s+[\w.-]+@[\w.-]+/,
+    match: invocation(
+      String.raw`(?:(?:scp|rsync)\b[^|;&]*\s[\w.-]+@[\w.-]+:|ssh\s+[\w.-]+@[\w.-]+)`,
+    ),
     networked: true,
   },
   {
     id: "pipe-to-shell",
     describe: "Download code from the internet and run it immediately.",
-    match: /\b(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(bash|sh|zsh|python3?)\b/,
+    match: invocation(String.raw`(?:curl|wget)\b[^;&]*\|\s*(?:sudo\s+)?(?:bash|sh|zsh|python3?)\b`),
     networked: true,
   },
   {
     id: "read-credentials",
     describe: "Read your stored credentials.",
     match: new RegExp(
-      String.raw`(?:\b(?:cat|less|more|head|tail|strings|grep|cp|base64)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh)\b)` +
-        String.raw`|\bsecurity\s+find-(?:generic|internet)-password\b` +
-        String.raw`|${ESCAPES}/\.ssh/id_[\w]+\b`,
+      AT_COMMAND +
+        String.raw`(?:(?:cat|less|more|head|tail|strings|grep|cp|base64|openssl)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh)\b` +
+        String.raw`|security\s+find-(?:generic|internet)-password\b)`,
     ),
   },
   {
     id: "destructive-outside",
     describe: "Irreversibly delete or overwrite files outside the workspace.",
-    match: new RegExp(String.raw`\b(?:rm|shred|truncate)\b[^|;&]*\s-?[\w-]*\s*${ESCAPES}`),
+    match: invocation(String.raw`(?:rm|shred|truncate)\b[^|;&]*\s-?[\w-]*\s*${ESCAPES}`),
   },
   {
     id: "write-outside",
     describe: "Change files or permissions outside the workspace.",
-    match: new RegExp(String.raw`\b(?:chmod|chown|mv|dd\s+of=|tee)\b[^|;&]*${ESCAPES}`),
+    match: invocation(String.raw`(?:chmod|chown|mv|dd\s+of=|tee)\b[^|;&]*${ESCAPES}`),
   },
 ];
 

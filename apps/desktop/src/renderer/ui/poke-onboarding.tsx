@@ -488,7 +488,7 @@ export function PokeOnboarding() {
                 <span className="text-[11px] text-[var(--text-dim)]">
                   {capUsd === null
                     ? "⚠ Uncapped. The office will keep spending while it works."
-                    : `They stop at $${capUsd}. Change it any time from the budget panel.`}
+                    : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}
                 </span>
                 <button
                   type="button"
