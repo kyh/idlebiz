@@ -1,8 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
-import { priceUsage } from "@repo/agent-driver/pricing";
 import * as store from "@/main/store/store";
-import { agentDriver } from "@/main/agents/agent-driver";
+import { agentDriver, priceRun } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { pluginHost } from "@/main/plugins";
 import type { RunContext, RunOutcome } from "@/main/plugins";
@@ -73,6 +72,24 @@ class Scheduler {
     this.timer = null;
   }
 
+  /**
+   * May this company buy work right now? One predicate for the four places
+   * that ask — queueing paths use it to avoid writing task rows for work that
+   * will never run, and startRun uses it because it is the only place a paid
+   * CLI is actually spawned.
+   */
+  private admit(company: Company): boolean {
+    // an un-onboarded company is mid-hire or abandoned: it has employees on
+    // disk but its founder never saw the budget step, so briefing them here
+    // spends money nobody agreed to
+    if (!company.onboarded) return false;
+    if (isOutOfBudget(company)) {
+      this.haltForBudget(company);
+      return false;
+    }
+    return true;
+  }
+
   /** Out-of-budget halt: pause autopilot once and tell the founder why. */
   private haltForBudget(company: Company): void {
     if (!company.autopilot) return;
@@ -114,14 +131,7 @@ class Scheduler {
   /** Top up idle employees with self-directed work (respecting the concurrency cap). */
   private tickAutopilot(): void {
     const company = store.getDefaultCompany();
-    // an un-onboarded company is mid-hire or abandoned: it has employees on
-    // disk but its founder never saw the budget step, so briefing them here
-    // spends money nobody agreed to
-    if (!company || !company.onboarded || !company.autopilot) return;
-    if (isOutOfBudget(company)) {
-      this.haltForBudget(company);
-      return;
-    }
+    if (!company || !company.autopilot || !this.admit(company)) return;
     const employees = store.listEmployees(company.id);
     this.fireDueRoutines(company, employees);
     for (const emp of employees) {
@@ -375,7 +385,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     const emp = store.getEmployee(employeeId);
     if (!emp) return null;
     const company = store.getCompany(emp.companyId);
-    if (!company || isOutOfBudget(company)) return null;
+    if (!company || !this.admit(company)) return null;
     const open = store
       .listTasksForEmployee(employeeId)
       .find((t) => t.title === title && (t.status === "queued" || t.status === "todo"));
@@ -404,7 +414,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
   assign(taskId: string, employeeId: string): Task {
     const task = store.getTask(taskId);
     const company = task ? store.getCompany(task.companyId) : null;
-    if (company && isOutOfBudget(company)) {
+    if (company && !this.admit(company)) {
       throw new Error("Out of budget — raise the budget in the HUD to assign work.");
     }
     const claimed = store.claimTask(taskId, employeeId);
@@ -433,16 +443,10 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     const employee = store.getEmployee(employeeId);
     const company = store.getCompany(task.companyId);
     if (!employee || !company) return;
-    // the single choke point for paid work: nothing runs for a company whose
-    // founder hasn't finished onboarding and set a budget
-    if (!company.onboarded) return;
-    // ...and nothing new starts once the cap is gone. The autopilot tick and
-    // both assign paths already check, but tick() drains the queue straight
-    // through here, so work queued before the cap blew kept spending after it.
-    if (isOutOfBudget(company)) {
-      this.haltForBudget(company);
-      return;
-    }
+    // The choke point: the only place a paid CLI is spawned. The queueing
+    // paths check too, but tick() drains straight through here, so work queued
+    // before the cap blew would otherwise keep spending after it.
+    if (!this.admit(company)) return;
 
     const runId = crypto.randomUUID();
     const locked = store.lockTaskForRun(task.id, runId);
@@ -530,8 +534,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
   private trackLiveSpend(runId: string, emp: Employee, usage: AgentUsage): void {
     const company = store.getCompany(emp.companyId);
     if (!company || company.budget.mode !== "capped") return;
-    const cost = usage.costUsd > 0 ? usage.costUsd : priceUsage(emp.model ?? undefined, usage);
-    this.liveSpend.set(runId, (this.liveSpend.get(runId) ?? 0) + cost);
+    this.liveSpend.set(runId, (this.liveSpend.get(runId) ?? 0) + priceRun(emp, usage));
     const inFlight = [...this.liveSpend.values()].reduce((a, b) => a + b, 0);
     if (company.spentUsd + inFlight < company.budget.capUsd) return;
 
@@ -600,13 +603,11 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     if (r.sessionId) store.setEmployeeSession(emp.id, r.sessionId);
     else if (r.staleSession) store.setEmployeeSession(emp.id, null); // dead resume — start fresh next run
 
-    // Real AI spend drains the founder's budget. A run killed for crossing the
-    // cap reports no usage — those tokens were still bought, so fall back to
-    // what the stream had already accounted for rather than losing it.
-    const spend = r.usage.costUsd > 0 ? r.usage.costUsd : (this.liveSpend.get(runId) ?? 0);
-    if (spend > 0) {
+    // real AI spend drains the founder's budget (the driver reports what a run
+    // cost even when it was killed, so this is truthful either way)
+    if (r.usage.costUsd > 0) {
       const before = store.getCompany(task.companyId);
-      const after = store.recordSpend(task.companyId, spend);
+      const after = store.recordSpend(task.companyId, r.usage.costUsd);
       if (before && after && !isOutOfBudget(before) && isOutOfBudget(after)) {
         this.haltForBudget(after);
       }

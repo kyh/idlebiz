@@ -65,7 +65,9 @@ export function runClaude(opts: RunnerOptions): Promise<RunnerResult> {
           const id = str(message.id);
           if (id !== undefined && !billedMessages.has(id)) {
             billedMessages.add(id);
-            opts.onEvent({ type: "usage", usage: extractUsage(message) });
+            const delta = extractUsage(message);
+            ctl.recordUsage(delta);
+            opts.onEvent({ type: "usage", usage: delta });
           }
           for (const block of arr(message.content)) {
             const b = obj(block);

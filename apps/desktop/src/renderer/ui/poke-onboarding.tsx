@@ -41,7 +41,8 @@ function backStep(step: Step): Step | null {
   }
 }
 
-const CAP_PRESETS = [5, 20, 50] as const;
+/** null is the explicit "no ceiling" choice, not an absent one. */
+const CAP_OPTIONS: readonly (number | null)[] = [5, 20, 50, null];
 const DEFAULT_CAP = 20;
 
 const bridge = () => {
@@ -81,14 +82,12 @@ export function PokeOnboarding() {
   const [error, setError] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   // what a previous finalize attempt already committed to disk
-  const [built, setBuilt] = useState<{ companyId: string | null; hired: boolean }>({
-    companyId: null,
-    hired: false,
-  });
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [hired, setHired] = useState(false);
 
   const budget: Budget = capUsd === null ? { mode: "infinite" } : { mode: "capped", capUsd };
   // the office exists from the first createCompany, so its budget is settled
-  const budgetLocked = built.companyId !== null;
+  const budgetLocked = companyId !== null;
 
   useEffect(() => {
     setModalOpen(true);
@@ -170,8 +169,8 @@ export function PokeOnboarding() {
       // each leg is skipped if a previous attempt already landed it: the office
       // is on disk the moment createCompany returns, and hiring twice would
       // double the payroll
-      let { companyId, hired } = built;
-      if (companyId === null) {
+      let id = companyId;
+      if (id === null) {
         const co = await bridge().createCompany({
           name: companyName.trim(),
           mission: pitch.trim(),
@@ -180,15 +179,14 @@ export function PokeOnboarding() {
           founderSpriteSeed: choices[look]?.seed ?? "founder-player-001",
           budget,
         });
-        companyId = co.id;
-        setBuilt({ companyId, hired });
+        id = co.id;
+        setCompanyId(id);
       }
       if (!hired) {
-        await bridge().batchHire({ companyId, hires });
-        hired = true;
-        setBuilt({ companyId, hired });
+        await bridge().batchHire({ companyId: id, hires });
+        setHired(true);
       }
-      await bridge().completeOnboarding({ companyId });
+      await bridge().completeOnboarding({ companyId: id });
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
     } catch (e: unknown) {
@@ -461,28 +459,21 @@ export function PokeOnboarding() {
           {step === "budget" ? (
             <div className="flex w-full flex-col gap-2">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {CAP_PRESETS.map((usd) => (
+                {CAP_OPTIONS.map((usd) => (
                   <button
                     type="button"
-                    key={usd}
+                    key={usd ?? "uncapped"}
                     onClick={() => setCapUsd(usd)}
                     disabled={budgetLocked}
                     data-sel={capUsd === usd}
                     className="px-opt"
+                    title={
+                      usd === null ? "No ceiling — the office spends whatever it needs" : undefined
+                    }
                   >
-                    ${usd}
+                    {usd === null ? "No cap" : `$${usd}`}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setCapUsd(null)}
-                  disabled={budgetLocked}
-                  data-sel={capUsd === null}
-                  className="px-opt"
-                  title="No ceiling — the office spends whatever it needs"
-                >
-                  No cap
-                </button>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[var(--text-dim)]">

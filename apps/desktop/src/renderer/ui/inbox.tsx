@@ -147,7 +147,7 @@ function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string 
       <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
         {verdict.decision === "ask" ? verdict.rule.describe : "Wants to run this."}
       </div>
-      <pre className="px-code mt-2 overflow-x-auto p-2">{command}</pre>
+      <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-[11px] text-[var(--text-dim)]">
           Approving covers this exact command, once.

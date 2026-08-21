@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
-import { zeroUsage } from "./events";
+import { zeroUsage, type AgentUsage } from "./events";
 import type { JsonValue } from "./json";
 import type { RunnerResult } from "./runner";
 
@@ -18,13 +18,6 @@ const DEFAULT_EXIT_GRACE_MS = 10_000;
 const fmtMs = (ms: number): string =>
   ms >= 60_000 ? `${Math.round(ms / 60_000)}m` : `${Math.round(ms / 1000)}s`;
 
-const failure = (error: string): RunnerResult => ({
-  ok: false,
-  summary: "",
-  usage: zeroUsage(),
-  error,
-});
-
 export interface NdjsonControl {
   /**
    * Stage the terminal result: watchdogs stand down (the outcome is already
@@ -32,6 +25,13 @@ export interface NdjsonControl {
    * the child refuses to exit.
    */
   finish(result: RunnerResult, graceMs?: number): void;
+  /**
+   * Tokens the session has spent so far. A run that is killed — aborted for
+   * budget, hung, over its session limit — never reaches a terminal event, and
+   * those tokens were still bought. Reporting them here is what lets a failed
+   * RunnerResult carry a truthful cost instead of zero.
+   */
+  recordUsage(delta: AgentUsage): void;
 }
 
 export interface NdjsonProcessOptions {
@@ -67,6 +67,15 @@ export function runNdjsonProcess(opts: NdjsonProcessOptions): Promise<RunnerResu
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    const accrued = zeroUsage();
+
+    /** A run that died without a terminal event still spent what it spent. */
+    const failure = (error: string): RunnerResult => ({
+      ok: false,
+      summary: "",
+      usage: { ...accrued },
+      error,
+    });
 
     // Resolve exactly once and release every handle. Tearing down the pipes
     // matters: a killed child's orphaned grandchild can keep stdout open and
@@ -126,6 +135,12 @@ export function runNdjsonProcess(opts: NdjsonProcessOptions): Promise<RunnerResu
           settle(result);
         }, graceMs);
         graceTimer.unref?.();
+      },
+      recordUsage(delta): void {
+        accrued.inputTokens += delta.inputTokens;
+        accrued.outputTokens += delta.outputTokens;
+        accrued.cachedTokens += delta.cachedTokens;
+        accrued.costUsd += delta.costUsd;
       },
     };
 
@@ -200,7 +215,11 @@ export function runNdjsonProcess(opts: NdjsonProcessOptions): Promise<RunnerResu
         settle(staged);
         return;
       }
-      settle(opts.onExit(code, stderrTail.trim()));
+      const exit = opts.onExit(code, stderrTail.trim());
+      // An adapter that has no usage of its own to report still spent what the
+      // stream accounted for — don't let a crash zero the meter.
+      const counted = exit.usage.inputTokens + exit.usage.outputTokens > 0;
+      settle(counted ? exit : { ...exit, usage: { ...accrued } });
     });
   });
 }

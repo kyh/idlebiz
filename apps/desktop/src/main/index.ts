@@ -25,7 +25,7 @@ import {
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
 import { isOutOfBudget } from "@/shared/domain";
-import type { ActivityEvent } from "@/shared/domain";
+import type { ActivityEvent, Task } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -117,6 +117,13 @@ async function openWorkspacePath(companyId: string, rel: string): Promise<void> 
     throw new Error("path escapes the workspace");
   const err = await shell.openPath(target);
   if (err) throw new Error(err);
+}
+
+/** Every blocked-ask type resumes the same way: answer it, then run the continuation. */
+function resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
+  const continuation = store.resolveBlockedWithAnswer(taskId, answer);
+  if (!continuation || !continuation.assigneeId) throw new Error(whenNotBlocked);
+  return scheduler.assign(continuation.id, continuation.assigneeId);
 }
 
 function registerIpcHandlers(): void {
@@ -301,12 +308,9 @@ function registerIpcHandlers(): void {
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 
-  handle("answerQuestion", ({ taskId, answer }) => {
-    const continuation = store.resolveBlockedWithAnswer(taskId, answer);
-    if (!continuation || !continuation.assigneeId)
-      throw new Error("task is not awaiting an answer");
-    return scheduler.assign(continuation.id, continuation.assigneeId);
-  });
+  handle("answerQuestion", ({ taskId, answer }) =>
+    resumeBlocked(taskId, answer, "task is not awaiting an answer"),
+  );
 
   handle("resolveApproval", ({ taskId, approved }) => {
     const task = store.getTask(taskId);
@@ -315,14 +319,13 @@ function registerIpcHandlers(): void {
     // Record before resuming: the agent's retry hits the hook again, and it
     // must find the sign-off already there.
     if (approved) controlPlane.approveCommand(task.companyId, task.blocked.command);
-    const continuation = store.resolveBlockedWithAnswer(
+    return resumeBlocked(
       taskId,
       approved
         ? "Approved — run it. This exact command is now signed off; anything else outward-facing still needs a fresh approval."
         : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.",
+      "could not resume the task",
     );
-    if (!continuation || !continuation.assigneeId) throw new Error("could not resume the task");
-    return scheduler.assign(continuation.id, continuation.assigneeId);
   });
 
   // open a workspace-relative path with the OS default app ("" = the folder itself)

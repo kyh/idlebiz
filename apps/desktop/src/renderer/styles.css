@@ -302,14 +302,14 @@ canvas {
   }
 }
 
-/* a verbatim shell command shown to the founder for sign-off */
+/* a verbatim shell command shown to the founder for sign-off.
+   Composes with .px-inset for the sunken panel — this adds only the typography
+   a command needs (wrapping mid-token, so nothing is hidden off the edge). */
 .px-code {
   font-family: inherit;
   font-size: 12px;
   line-height: 1.5;
   color: var(--text);
-  background: var(--face-lo);
-  border: 2px solid var(--ink);
   white-space: pre-wrap;
   word-break: break-all;
 }

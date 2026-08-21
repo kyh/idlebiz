@@ -3,11 +3,12 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { approvalKey, classifyCommand } from "@/shared/domain";
+import { approvalKey, classifyCommand, normalizeCommand } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 import { PERMISSION_HOOK_PATH } from "@/main/paths";
-import { PERMISSION_HOOK_SOURCE } from "@/main/permission-hook-source";
+// ?raw keeps it a lintable file in the repo while inlining it into the bundle
+import PERMISSION_HOOK_SOURCE from "@/main/permission-hook.mjs?raw";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
@@ -245,7 +246,8 @@ class ControlPlane {
             respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
-          const { command } = body.data;
+          // canonicalise once, here: this is where a command enters the game
+          const command = normalizeCommand(body.data.command);
           // Work that stays inside the workspace is the employee's own
           // business; only what reaches past it goes to the founder.
           const verdict = classifyCommand(command);

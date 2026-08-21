@@ -1,8 +1,10 @@
-// ---------------------------------------------------------------------------
-// The PreToolUse hook, as source text. It is written to disk at boot and run
-// by both CLIs before every Bash call. It cannot import from this repo — it
-// executes as a standalone script inside the agent's own process tree — so it
-// is kept deliberately tiny and dependency-free.
+// The PreToolUse hook both CLIs run before every shell command.
+//
+// This runs standalone inside the agent's own process tree, so it cannot
+// import from this repo — it is written to disk at boot and executed by `node`.
+// It lives as a real file rather than a string constant so it is typechecked,
+// linted and formatted like everything else: it fails OPEN by design, which
+// means a syntax error here is a silently disabled security gate.
 //
 // Contract, verified against claude 2.1.235 and codex-cli 0.144.1:
 //  - both deliver the same JSON on stdin, with tool_input.command
@@ -11,10 +13,11 @@
 //  - exit 0 with no output defers (claude falls through to its classifier)
 //  - codex does NOT pass the parent env to hooks, so the API url and token
 //    arrive as argv instead
-// ---------------------------------------------------------------------------
 
-export const PERMISSION_HOOK_SOURCE = String.raw`
 import { readFileSync } from "node:fs";
+
+/** Loopback, on the same machine: if it has not answered by now, it will not. */
+const HOOK_TIMEOUT_MS = 2000;
 
 const [apiUrl, token] = process.argv.slice(2);
 
@@ -50,7 +53,7 @@ try {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer " + token },
     body: JSON.stringify({ command }),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(HOOK_TIMEOUT_MS),
   });
   if (!res.ok) allow();
   const body = await res.json();
@@ -59,4 +62,3 @@ try {
 } catch {
   allow();
 }
-`.trimStart();

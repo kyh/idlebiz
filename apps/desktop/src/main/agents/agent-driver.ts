@@ -11,17 +11,35 @@ import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { join } from "node:path";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
-import { companyWorkspace, employeeAgentDir } from "@/main/paths";
+import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
 import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain";
 
 /**
- * Keep tool caches inside the workspace. Codex's workspace-write sandbox
- * denies ~/.npm, which fails every `npx` — including the `npx vercel deploy`
- * the agents are told to ship with.
+ * What a run cost in USD. Claude reports real dollars; codex reports only
+ * tokens, and any run that ended without a terminal event reports whatever
+ * the stream accounted for — both get priced from the runner's own rate table
+ * rather than the generic fallback, so the live cap estimate and the recorded
+ * spend can never disagree about the rate.
  */
-function workspaceToolEnv(companyId: string) {
-  const cache = join(companyWorkspace(companyId), ".cache");
-  return { npm_config_cache: join(cache, "npm"), XDG_CACHE_HOME: cache };
+export function priceRun(emp: Employee, usage: AgentUsage): number {
+  if (usage.costUsd > 0) return usage.costUsd;
+  if (usage.inputTokens + usage.outputTokens === 0) return 0;
+  return priceUsage(emp.model ?? RUNNERS[emp.runner].fallbackPricingModel, usage);
+}
+
+/**
+ * Tool caches, kept out of the agent's own working tree.
+ *
+ * Codex's workspace-write sandbox denies `~/.npm`, which fails every `npx` —
+ * including the `npx vercel deploy` agents are told to ship with. Putting the
+ * cache *inside* the workspace fixes that but buries hundreds of MB of
+ * tarballs where every `grep -r` and `git add` the agent runs will walk it, so
+ * it lives beside the companies instead and is granted as a writable root.
+ */
+export const TOOL_CACHE_DIR = join(ROOT_DIR, "cache");
+
+function toolCacheEnv() {
+  return { npm_config_cache: join(TOOL_CACHE_DIR, "npm"), XDG_CACHE_HOME: TOOL_CACHE_DIR };
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +189,8 @@ class AgentDriver {
         bin: runnerBin(emp.runner),
         model: emp.model ?? undefined,
         resumeSessionId,
-        addDirs: [employeeAgentDir(company.id, emp.id)],
-        env: { ...handle.env, ...workspaceToolEnv(company.id) },
+        addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
+        env: { ...handle.env, ...toolCacheEnv() },
         permissionHookCommand: handle.permissionHookCommand,
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
@@ -186,10 +204,7 @@ class AgentDriver {
           }
         },
       });
-      const usage = { ...res.usage };
-      if (usage.costUsd === 0 && usage.inputTokens + usage.outputTokens > 0) {
-        usage.costUsd = priceUsage(emp.model ?? adapter.fallbackPricingModel, usage);
-      }
+      const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       const { blocked } = handle.outcome();
       return {
         result: {

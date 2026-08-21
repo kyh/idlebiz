@@ -74,7 +74,7 @@ export function parseBlockedAsk(s: string): BlockedAsk {
  * paths inside their workspace, so an absolute or `~` path in a destructive
  * command is the signal that something is reaching out of it.
  */
-export interface CommandRule {
+interface CommandRule {
   id: string;
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
@@ -99,6 +99,11 @@ const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)
  * "I ran git push and it was blocked" to the team room, and the words inside
  * that JSON payload tripped the git-push rule all over again — so the report
  * of a block was itself blocked, and it replaced the real ask on the card.
+ *
+ * It is an anchor, not a shell parser: separators are matched regardless of
+ * quoting, so a separator *inside* a quoted argument still opens a command
+ * position. Real parsing is the fix if false positives ever bite; the gate
+ * fails open and the CLIs' own protections sit underneath, so this is a floor.
  */
 const AT_COMMAND =
   String.raw`(?:^|[\n;&|(]|\$\(|` +
@@ -163,9 +168,8 @@ const RULES: readonly Rule[] = [
   {
     id: "read-credentials",
     describe: "Read your stored credentials.",
-    match: new RegExp(
-      AT_COMMAND +
-        String.raw`(?:(?:cat|less|more|head|tail|strings|grep|cp|base64|openssl)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh)\b` +
+    match: invocation(
+      String.raw`(?:(?:cat|less|more|head|tail|strings|grep|cp|base64|openssl)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh)\b` +
         String.raw`|security\s+find-(?:generic|internet)-password\b)`,
     ),
   },
@@ -195,24 +199,34 @@ export function classifyCommand(command: string): CommandVerdict {
   for (const rule of RULES) {
     if (!rule.match.test(command)) continue;
     if (rule.networked && onlyLoopbackTargets(command)) continue;
-    return { decision: "ask", rule: { id: rule.id, describe: rule.describe } };
+    return { decision: "ask", rule };
   }
   return { decision: "allow" };
 }
 
 /**
- * Stable key for "the founder already approved this exact action". The CLIs
- * decorate commands they run (`… 2>&1; echo "exit=$?"`), so those are stripped
- * — otherwise a retry of the same action reads as a new one and re-asks.
- * Still an exact match beyond that: a genuinely different command is a
- * different decision.
+ * Strip the plumbing the CLIs wrap around a command before running it
+ * (`… 2>&1; echo "exit=$?"`) and collapse whitespace.
+ *
+ * Applied once where a command enters the game, so everything downstream —
+ * the policy, the stored ask, the approval card, the approval key — sees the
+ * same canonical string. Without it a retry of the same action reads as a new
+ * one and re-asks, and the founder is shown shell plumbing they did not write.
  */
-export function approvalKey(command: string): string {
+export function normalizeCommand(command: string): string {
   return command
     .replace(/\s*2>&1/g, "")
     .replace(/\s*;\s*echo\s+["']?exit=\$\?["']?\s*$/, "")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+/**
+ * Key for "the founder already approved this exact action". Exact match on the
+ * normalized form: a genuinely different command is a different decision.
+ */
+export function approvalKey(command: string): string {
+  return normalizeCommand(command);
 }
 
 // ---- team-room mentions --------------------------------------------------------

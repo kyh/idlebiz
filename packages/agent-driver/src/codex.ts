@@ -63,7 +63,7 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
     signal: opts.signal,
     idleTimeoutMs: opts.idleTimeoutMs,
     maxSessionMs: opts.maxSessionMs,
-    onValue: (value) => {
+    onValue: (value, ctl) => {
       const e = obj(value);
       switch (str(e.type)) {
         case "thread.started": {
@@ -91,6 +91,7 @@ export function runCodex(opts: RunnerOptions): Promise<RunnerResult> {
           usage.cachedTokens += delta.cachedTokens;
           // Codex reports usage only here, so this lands at the end of the
           // turn — enough to stop sibling runs, too late to stop this one.
+          ctl.recordUsage(delta);
           opts.onEvent({ type: "usage", usage: delta });
           return;
         }
