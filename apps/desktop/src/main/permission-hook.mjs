@@ -3,10 +3,10 @@
 // This runs standalone inside the agent's own process tree, so it cannot
 // import from this repo — it is written to disk at boot and executed by `node`.
 // It lives as a real file rather than a string constant so it is typechecked,
-// linted and formatted like everything else: it fails OPEN by design, which
-// means a syntax error here is a silently disabled security gate.
+// linted and formatted like everything else: a syntax error here would take the
+// gate with it.
 //
-// Contract, verified against claude 2.1.235 and codex-cli 0.144.1:
+// Contract, verified against claude 2.1.238 and codex-cli 0.149.0:
 //  - both deliver the same JSON on stdin, with tool_input.command
 //  - exit 2 with a reason on stderr blocks the call in BOTH
 //  - codex ignores a JSON permissionDecision on stdout; claude honours it
@@ -21,9 +21,8 @@ const HOOK_TIMEOUT_MS = 2000;
 
 const [apiUrl, token] = process.argv.slice(2);
 
-// Fail open: a hook that cannot reach the game must not wedge every shell
-// command. Claude still has its own classifier underneath this.
-const allow = () => process.exit(0);
+/** Defer: claude falls through to its own classifier, codex permits. */
+const defer = () => process.exit(0);
 
 const deny = (reason) => {
   process.stdout.write(
@@ -44,9 +43,25 @@ try {
   const input = JSON.parse(readFileSync(0, "utf8"));
   command = input?.tool_input?.command ?? "";
 } catch {
-  allow();
+  defer(); // nothing parseable to gate
 }
-if (!command || !apiUrl || !token) allow();
+if (!command) defer();
+
+// Fail CLOSED when the game cannot be reached.
+//
+// The tempting default is the opposite — don't wedge the agent over a network
+// blip. But this is loopback to the process that spawned us: unreachable means
+// the app is gone, so the run is already orphaned and should stop rather than
+// keep working unsupervised with the founder's credentials. It also means the
+// gate cannot quietly cease to exist after a port change or a bad refactor and
+// go unnoticed, which is the failure mode that actually bites.
+//
+// Denials are self-limiting: the agent is told why, finishes early, and the
+// run's own watchdogs settle it.
+const unreachable =
+  "IdleBiz is not reachable, so nothing can be approved right now. Stop and report that the office is offline.";
+
+if (!apiUrl || !token) deny(unreachable);
 
 try {
   const res = await fetch(apiUrl + "/v1/permission", {
@@ -55,10 +70,10 @@ try {
     body: JSON.stringify({ command }),
     signal: AbortSignal.timeout(HOOK_TIMEOUT_MS),
   });
-  if (!res.ok) allow();
+  if (!res.ok) deny(unreachable);
   const body = await res.json();
   if (body?.decision === "deny") deny(body.reason ?? "The founder has not approved this action.");
-  allow();
+  defer();
 } catch {
-  allow();
+  deny(unreachable);
 }

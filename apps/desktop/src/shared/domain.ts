@@ -86,6 +86,9 @@ interface Rule extends CommandRule {
   networked?: boolean;
 }
 
+/** Subcommands of the deploy CLIs that only read — everything else ships. */
+const DEPLOY_TOOL_READS = String.raw`(?:--help|--version|-h|-v|help|ls|list|inspect|logs?|whoami|login|logout|link|unlink|env|teams|projects|domains|certs|secrets|dev|build|pull|open|switch)`;
+
 /** A path argument that leaves the workspace behind. */
 const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
 
@@ -116,25 +119,36 @@ const invocation = (program: string): RegExp => new RegExp(AT_COMMAND + program)
 const RULES: readonly Rule[] = [
   {
     id: "deploy",
+    // `vercel` with no subcommand deploys, so this gates the tool and carves
+    // out the read-only subcommands rather than listing deploy verbs — the
+    // verb list missed `vercel --prod --yes`, the most natural way to ship.
     describe: "Deploy the product to a live, public URL.",
     match: invocation(
-      String.raw`(?:vercel|netlify|wrangler|fly|railway|surge)\b[^|;&]*\b(?:deploy|publish)\b`,
+      String.raw`(?:vercel|netlify|wrangler|fly|railway|surge)\b(?!\s+${DEPLOY_TOOL_READS}\b)`,
     ),
   },
   {
     id: "publish-package",
     describe: "Publish a package to a public registry.",
-    match: invocation(String.raw`npm\b[^|;&]*\bpublish\b`),
+    match: invocation(String.raw`(?:npm|pnpm|yarn|bun)\b[^|;&]*\bpublish\b`),
   },
   {
     id: "git-push",
+    // git accepts global options before the subcommand (`git -C dir push`).
+    // Known gap: a quoted option value containing spaces (`-c k='a b'`) breaks
+    // the scan — that needs a parser, not a wider regex.
     describe: "Push commits to a remote repository.",
-    match: invocation(String.raw`git\s+push\b`),
+    match: invocation(
+      String.raw`git\b(?:\s+-[a-zA-Z-]+(?:=\S+)?(?:\s+(?!push\b)-?\S+)?)*\s+push\b`,
+    ),
   },
   {
     id: "github-create",
     describe: "Create something public on GitHub (PR, release, repo, or issue).",
-    match: invocation(String.raw`gh\s+(?:pr|release|repo|issue|gist)\s+create\b`),
+    match: invocation(
+      String.raw`gh\s+(?:(?:pr|release|repo|issue|gist)\s+create\b` +
+        String.raw`|api\b[^|;&]*(?:\s-X\s*|\s--method[=\s])(?:POST|PUT|PATCH|DELETE)\b)`,
+    ),
   },
   {
     id: "payments",
@@ -147,7 +161,10 @@ const RULES: readonly Rule[] = [
     id: "http-write",
     describe: "Send data to a service on the internet.",
     match: invocation(
-      String.raw`curl\b[^|;&]*(?:\s-X\s*(?:POST|PUT|PATCH|DELETE)\b|\s(?:--data|--data-raw|--upload-file|-d)\s)`,
+      String.raw`(?:curl\b[^|;&]*(?:\s-X\s*(?:POST|PUT|PATCH|DELETE)\b` +
+        // --json is shorthand for --data-binary + headers; -F/-T upload files
+        String.raw`|\s(?:--data|--data-raw|--data-binary|--data-urlencode|--json|--form|--upload-file|-d|-F|-T)[\s=])` +
+        String.raw`|wget\b[^|;&]*\s(?:--post-data|--post-file|--method[=\s]*(?:POST|PUT|PATCH|DELETE))\b)`,
     ),
     networked: true,
   },
