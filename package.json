@@ -23,7 +23,7 @@
     "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
     "turbo": "^2.10.11",
-    "typescript": "^7.0.2"
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=24"

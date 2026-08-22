@@ -2,6 +2,12 @@ packages:
   - apps/*
   - packages/*
 
+# One declaration per shared toolchain dep. Three packages each naming their
+# own typescript is how apps/web silently sat on 6.x while everything else
+# moved to 7.x — a catalog makes that drift unrepresentable.
+catalog:
+  typescript: ^7.0.2
+
 onlyBuiltDependencies:
   - electron
   - esbuild
