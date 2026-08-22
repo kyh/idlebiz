@@ -24,6 +24,25 @@ import type {
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
+/**
+ * Slots the office's own background work may never occupy.
+ *
+ * Autopilot refills every free slot each tick with multi-minute runs, and
+ * nothing preempts a run in flight — so without a reserved lane, speaking to
+ * an employee meant waiting for one of them to finish. Measured at six-plus
+ * minutes between saying something and the employee starting on it, which is
+ * the wrong feel for a game whose whole premise is that you are the founder
+ * talking to your staff.
+ *
+ * Priority ordering alone did not fix this: founder-initiated work is already
+ * queued `high`, but priority only orders what is *waiting*, and the slots
+ * were already gone.
+ *
+ * The cost is a third of background throughput while the lane sits idle. For
+ * an idle game that is invisible; being ignored for six minutes is not.
+ */
+const FOUNDER_RESERVED_SLOTS = 1;
+
 /** What a self-directed heartbeat asks an employee to do next. */
 interface TaskBrief {
   title: string;
@@ -105,7 +124,7 @@ class Scheduler {
   private fireDueRoutines(company: Company, employees: Employee[]): void {
     const now = Date.now();
     for (const r of store.listRoutines(company.id)) {
-      if (this.active.size >= GLOBAL_CONCURRENCY_CAP) break;
+      if (this.active.size >= this.backgroundCapacity()) break;
       if (r.lastRunAt !== null && now - r.lastRunAt < r.intervalHours * 3_600_000) continue;
       const idle = employees.filter((e) => e.status === "idle" && !this.busy.has(e.id));
       const assignee =
@@ -135,7 +154,7 @@ class Scheduler {
     const employees = store.listEmployees(company.id);
     this.fireDueRoutines(company, employees);
     for (const emp of employees) {
-      if (this.active.size >= GLOBAL_CONCURRENCY_CAP) break;
+      if (this.active.size >= this.backgroundCapacity()) break;
       if (emp.status !== "idle" || this.busy.has(emp.id)) continue;
       // don't brief employees whose CLI is resting on a usage limit
       if (agentDriver.restingRunner(emp.runner) !== null) continue;
@@ -424,10 +443,19 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     return store.getTask(taskId) ?? claimed;
   }
 
+  /** How many slots the office's own work may fill; the rest is yours. */
+  private backgroundCapacity(): number {
+    return GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
+  }
+
   /** Pull queued tasks into runs while we have capacity. */
   tick(): void {
     while (this.active.size < GLOBAL_CONCURRENCY_CAP) {
+      // Past the background capacity only founder-initiated work starts —
+      // talking to an employee, or resuming what you just answered.
+      const backgroundOk = this.active.size < this.backgroundCapacity();
       const next = store.listQueuedTasks().find((t) => {
+        if (!backgroundOk && t.priority !== "high") return false;
         if (t.assigneeId === null || this.busy.has(t.assigneeId)) return false;
         const runner = store.getEmployee(t.assigneeId)?.runner;
         return runner === undefined || agentDriver.restingRunner(runner) === null;
