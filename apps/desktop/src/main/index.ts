@@ -24,7 +24,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isOutOfBudget } from "@/shared/domain";
+import { approvalKey, isOutOfBudget } from "@/shared/domain";
 import type { ActivityEvent, Task } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 
@@ -318,11 +318,11 @@ function registerIpcHandlers(): void {
       throw new Error("task is not awaiting an approval");
     // Record before resuming: the agent's retry hits the hook again, and it
     // must find the sign-off already there.
-    if (approved) controlPlane.approveCommand(task.companyId, task.blocked.command);
+    if (approved) store.grantApproval(task.companyId, approvalKey(task.blocked.command));
     return resumeBlocked(
       taskId,
       approved
-        ? "Approved — run it. This exact command is now signed off; anything else outward-facing still needs a fresh approval."
+        ? "Approved — run it once. The sign-off covers this one command this one time, so running it again, or anything else outward-facing, needs a fresh approval."
         : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.",
       "could not resume the task",
     );

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { approvalKey, classifyCommand, normalizeCommand } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
+import * as store from "@/main/store/store";
 import { PERMISSION_HOOK_PATH } from "@/main/paths";
 // ?raw keeps it a lintable file in the repo while inlining it into the bundle
 import PERMISSION_HOOK_SOURCE from "@/main/permission-hook.mjs?raw";
@@ -83,8 +84,6 @@ class ControlPlane {
   private server: Server | null = null;
   private port = 0;
   private runs = new Map<string, RunRecord>();
-  /** companyId → action keys the founder has signed off, for this app session. */
-  private approvals = new Map<string, Set<string>>();
 
   /** Bind the loopback listener (ephemeral port). Idempotent. */
   async start(): Promise<void> {
@@ -136,17 +135,6 @@ class ControlPlane {
         this.runs.delete(token);
       },
     };
-  }
-
-  /** The founder signed off on one action; the agent's retry now passes. */
-  approveCommand(companyId: string, command: string): void {
-    const set = this.approvals.get(companyId) ?? new Set<string>();
-    set.add(approvalKey(command));
-    this.approvals.set(companyId, set);
-  }
-
-  private isApproved(companyId: string, command: string): boolean {
-    return this.approvals.get(companyId)?.has(approvalKey(command)) ?? false;
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -251,7 +239,13 @@ class ControlPlane {
           // Work that stays inside the workspace is the employee's own
           // business; only what reaches past it goes to the founder.
           const verdict = classifyCommand(command);
-          if (verdict.decision === "allow" || this.isApproved(run.companyId, command)) {
+          if (verdict.decision === "allow") {
+            respond(res, 200, { ok: true, decision: "allow" });
+            return;
+          }
+          // Spend the founder's sign-off rather than just checking it: one yes
+          // buys one run of that command, which is what the card promises.
+          if (store.consumeApproval(run.companyId, approvalKey(command))) {
             respond(res, 200, { ok: true, decision: "allow" });
             return;
           }

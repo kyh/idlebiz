@@ -16,6 +16,7 @@ import {
   companyWorkspace,
   activityFile,
   agentsDir,
+  approvalsFile,
   alumniDir,
   employeeAgentDir,
   employeeFile,
@@ -44,6 +45,7 @@ import {
 import { z } from "zod";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import { jsonValueSchema } from "@/shared/json";
+import type { JsonValue } from "@/shared/json";
 import {
   BUSINESS_TYPES,
   DEFAULT_MAX_AGENTS,
@@ -984,6 +986,46 @@ export function recordShip(id: string): void {
   patchCompany(id, { ships: co.ships + 1 });
 }
 /** Accumulate real AI spend (USD) from a finished run. */
+// ---- founder approvals -------------------------------------------------------
+// A command the founder signed off but the agent has not run yet. Persisted
+// because the gap between clicking Approve and the agent's retry can span a
+// restart — losing it there means being asked the same question twice.
+//
+// Single-use, matching what the approval card promises: approving covers that
+// one command, once. A second deploy is a second real-world act and gets asked
+// again rather than riding on the first yes.
+
+function readApprovals(companyId: string): string[] {
+  try {
+    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
+    const parsed: JsonValue = JSON.parse(readFileSync(approvalsFile(companyId), "utf8"));
+    return z.array(z.string()).catch([]).parse(parsed);
+  } catch {
+    return []; // no file yet, or unreadable — nothing is approved
+  }
+}
+
+export function grantApproval(companyId: string, key: string): void {
+  const keys = readApprovals(companyId);
+  if (keys.includes(key)) return;
+  atomicWrite(approvalsFile(companyId), JSON.stringify([...keys, key], null, 2));
+}
+
+/** Spend the approval if it is there. True means the command may run now. */
+export function consumeApproval(companyId: string, key: string): boolean {
+  const keys = readApprovals(companyId);
+  if (!keys.includes(key)) return false;
+  atomicWrite(
+    approvalsFile(companyId),
+    JSON.stringify(
+      keys.filter((k) => k !== key),
+      null,
+      2,
+    ),
+  );
+  return true;
+}
+
 export function recordSpend(id: string, costUsd: number): Company | null {
   const co = c().companies.get(id);
   if (!co) return null;

@@ -48,6 +48,10 @@ export const tasksDir = (companySlug: string): string => join(companyDir(company
 export const taskFile = (companySlug: string, taskSlug: string): string =>
   join(tasksDir(companySlug), taskSlug, "TASK.md");
 
+/** Commands the founder has signed off but the agent has not run yet. */
+export const approvalsFile = (companySlug: string): string =>
+  join(companyDir(companySlug), "approvals.json");
+
 export const routinesDir = (companySlug: string): string =>
   join(companyDir(companySlug), "routines");
 export const routineFile = (companySlug: string, routineSlug: string): string =>
