@@ -2,17 +2,37 @@ import { probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { parseRateLimit } from "@repo/agent-driver/rate-limit";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import {
-  DEFAULT_IDLE_TIMEOUT_MS,
-  DEFAULT_MAX_SESSION_MS,
-  runnerBin,
-} from "@repo/agent-driver/runner";
+import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_SESSION_MS } from "@repo/agent-driver/runner";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
+import type { PermissionDecision, PermissionRequest } from "@repo/agent-driver/runner";
 import { join } from "node:path";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
+import { approvalKey, classifyCommand, normalizeCommand } from "@/shared/domain";
 import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain";
+
+/**
+ * The founder-approval gate, now a plain function call.
+ *
+ * Every runner speaks ACP, so a tool call arrives here in-process instead of
+ * through a spawned hook and a loopback request. Work that stays inside the
+ * workspace is the employee's own business; only what reaches past it — a
+ * deploy, a push, a payment — needs the founder, and a sign-off is spent
+ * rather than merely checked, because the card promises one command once.
+ */
+async function decidePermission(
+  companyId: string,
+  request: PermissionRequest,
+  block: (ask: BlockedAsk) => void,
+): Promise<PermissionDecision> {
+  const command = normalizeCommand(request.command);
+  if (!command) return { allow: true };
+  if (classifyCommand(command).decision === "allow") return { allow: true };
+  if (store.consumeApproval(companyId, approvalKey(command))) return { allow: true };
+  block({ type: "approval", command });
+  return { allow: false };
+}
 
 /**
  * What a run cost in USD. Claude reports real dollars; codex reports only
@@ -186,12 +206,11 @@ class AgentDriver {
         prompt,
         systemPrompt: store.employeeInstructions(emp.id),
         cwd: companyWorkspace(company.id),
-        bin: runnerBin(emp.runner),
         model: emp.model ?? undefined,
         resumeSessionId,
         addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
         env: { ...handle.env, ...toolCacheEnv() },
-        permissionHookCommand: handle.permissionHookCommand,
+        onPermission: (request) => decidePermission(company.id, request, handle.block),
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         signal: abort.signal,

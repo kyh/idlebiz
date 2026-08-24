@@ -37,8 +37,6 @@ export interface RunnerOptions {
   systemPrompt: string;
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
-  /** Path to the runner binary (see runnerBin). */
-  bin: string;
   /** Model override; omit to use the CLI's own default. */
   model?: string;
   /** Resume this CLI session instead of starting fresh. */
@@ -48,14 +46,14 @@ export interface RunnerOptions {
   /** Run-scoped env additions (control-plane URL + token, secrets). */
   env?: Record<string, string>;
   /**
-   * Shell command for the PreToolUse permission hook, already carrying its own
-   * arguments. Both CLIs run it before every Bash call and block when it exits
-   * 2 with a reason on stderr. It takes its config from argv rather than the
-   * environment because codex does not pass the parent env to hook processes.
+   * Decides whether a tool call may proceed. Called in-process for every
+   * permission request the agent raises — no subprocess, no loopback call, and
+   * the run token never leaves this process.
+   *
+   * Omitting it allows everything, which is only ever right for a runner the
+   * caller has already sandboxed.
    */
-  permissionHookCommand?: string;
-  /** Per-session agentic turn ceiling (claude only; 0/omit = CLI default). */
-  maxTurns?: number;
+  onPermission?: (request: PermissionRequest) => Promise<PermissionDecision>;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
   idleTimeoutMs: number;
   /** Absolute ceiling on one session regardless of activity. 0 disables. */
@@ -64,6 +62,20 @@ export interface RunnerOptions {
   signal?: AbortSignal;
   /** Receives normalized events as the session streams. */
   onEvent: (e: AgentEvent) => void;
+}
+
+/** A tool call an agent wants to make, as the policy layer sees it. */
+export interface PermissionRequest {
+  /** The shell command, or the tool call's title when it isn't a command. */
+  command: string;
+  /** The agent's own one-line account of what it is doing, when it gives one. */
+  description?: string;
+  /** ACP tool kind — "execute", "edit", "read", … */
+  kind?: string;
+}
+
+export interface PermissionDecision {
+  allow: boolean;
 }
 
 export interface RunnerResult {

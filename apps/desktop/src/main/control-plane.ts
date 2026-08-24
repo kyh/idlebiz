@@ -1,15 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import { z } from "zod";
-import { approvalKey, classifyCommand, normalizeCommand } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
-import * as store from "@/main/store/store";
-import { PERMISSION_HOOK_PATH } from "@/main/paths";
-// ?raw keeps it a lintable file in the repo while inlining it into the bundle
-import PERMISSION_HOOK_SOURCE from "@/main/permission-hook.mjs?raw";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
@@ -49,10 +42,10 @@ export interface RunRegistration {
 export interface RunHandle {
   /** Run-scoped env for the agent process (API URL + bearer token + ids). */
   env: Record<string, string>;
-  /** The PreToolUse hook command for this run, with its API url + token baked in. */
-  permissionHookCommand: string;
   /** What the agent reported back through the API during the run. */
   outcome(): { blocked: BlockedAsk | null };
+  /** Record why this run stopped; the first block is the one the founder sees. */
+  block(ask: BlockedAsk): void;
   /** Invalidate the token. Call after the run settles. */
   release(): void;
 }
@@ -78,7 +71,6 @@ const RequestIntegrationBody = z.object({
   kind: z.enum(["vercel", "stripe"]),
   reason: z.string().min(1),
 });
-const PermissionBody = z.object({ command: z.string().min(1) });
 
 class ControlPlane {
   private server: Server | null = null;
@@ -88,8 +80,6 @@ class ControlPlane {
   /** Bind the loopback listener (ephemeral port). Idempotent. */
   async start(): Promise<void> {
     if (this.server) return;
-    mkdirSync(dirname(PERMISSION_HOOK_PATH), { recursive: true });
-    writeFileSync(PERMISSION_HOOK_PATH, PERMISSION_HOOK_SOURCE, "utf8");
     const server = createServer((req, res) => {
       void this.handle(req, res);
     });
@@ -128,9 +118,11 @@ class ControlPlane {
     };
     return {
       env: reg.taskId ? { ...base, IDLEBIZ_TASK_ID: reg.taskId } : base,
-      // argv, not env: codex does not give hook processes the parent env
-      permissionHookCommand: `node ${quoteArg(PERMISSION_HOOK_PATH)} ${quoteArg(this.baseUrl())} ${quoteArg(token)}`,
       outcome: () => ({ blocked: record.blocked }),
+      /** Record why this run stopped, so the founder gets the first block. */
+      block: (ask: BlockedAsk) => {
+        record.blocked ??= ask;
+      },
       release: () => {
         this.runs.delete(token);
       },
@@ -228,38 +220,6 @@ class ControlPlane {
           });
           return;
         }
-        case "POST /v1/permission": {
-          const body = PermissionBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
-          // canonicalise once, here: this is where a command enters the game
-          const command = normalizeCommand(body.data.command);
-          // Work that stays inside the workspace is the employee's own
-          // business; only what reaches past it goes to the founder.
-          const verdict = classifyCommand(command);
-          if (verdict.decision === "allow") {
-            respond(res, 200, { ok: true, decision: "allow" });
-            return;
-          }
-          // Spend the founder's sign-off rather than just checking it: one yes
-          // buys one run of that command, which is what the card promises.
-          if (store.consumeApproval(run.companyId, approvalKey(command))) {
-            respond(res, 200, { ok: true, decision: "allow" });
-            return;
-          }
-          // First block wins. A held command is usually followed by the agent
-          // narrating the block, and whatever it does next must not replace
-          // the ask the founder actually needs to decide.
-          run.blocked ??= { type: "approval", command };
-          respond(res, 200, {
-            ok: true,
-            decision: "deny",
-            reason: `${verdict.rule.describe} That needs the founder's sign-off, so they now have an approval card — this task resumes automatically once they decide. Continue with anything that doesn't depend on it.`,
-          });
-          return;
-        }
         default: {
           respond(res, 404, { ok: false, error: `no such tool: ${route}` });
           return;
@@ -283,13 +243,6 @@ interface ToolResponse {
   error?: string;
   message?: string;
   messages?: string;
-  decision?: "allow" | "deny";
-  reason?: string;
-}
-
-/** Single-quote for the shell the CLIs run hook commands through. */
-function quoteArg(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function respond(res: ServerResponse, status: number, payload: ToolResponse): void {

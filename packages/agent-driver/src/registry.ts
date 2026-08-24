@@ -3,9 +3,10 @@ import { runCodex } from "./codex";
 import type { RunnerId, RunnerOptions, RunnerResult } from "./runner";
 
 /**
- * The one place the runner axis lives. Adding a CLI = one entry here (plus
- * its adapter file); everything else — dispatch, display names, login
- * commands, pricing anchors — reads this record.
+ * The one place the runner axis lives. Every runner is an ACP agent now, so
+ * adding one is an entry here plus a few lines of adapter config; everything
+ * else — dispatch, display names, login commands, pricing anchors — reads this
+ * record.
  */
 export interface RunnerAdapter {
   run(opts: RunnerOptions): Promise<RunnerResult>;

@@ -108,8 +108,13 @@ const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)
  * position. Real parsing is the fix if false positives ever bite; the gate
  * fails open and the CLIs' own protections sit underneath, so this is a floor.
  */
+// A bare `(` is deliberately NOT a command position. Subshells are vanishingly
+// rare in agent commands, while prose inside a quoted payload is not: an
+// employee's own delegate call carrying "(`npm ci`)" and "do NOT npm publish"
+// in its JSON body was held as if it were publishing a package. Command
+// substitution still opens one, via `$(` and backticks below.
 const AT_COMMAND =
-  String.raw`(?:^|[\n;&|(]|\$\(|` +
+  String.raw`(?:^|[\n;&|]|\$\(|` +
   "`" +
   String.raw`)\s*(?:(?:sudo|command|env|time|nohup|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|npm\s+exec)\s+)*(?:--?[\w-]+\s+)*(?:[\w_]+=\S+\s+)*`;
 

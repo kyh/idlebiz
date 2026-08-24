@@ -121,6 +121,10 @@ const MUST_ALLOW = [
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
   `echo "next step: gh release create v2" >> NOTES.md`,
+  // Found live: an employee's own delegate call, whose JSON body quoted
+  // "(`npm ci`)" and "do NOT npm publish". Parenthesised prose must not open a
+  // command position, or the office asks the founder to approve its own API.
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"role":"engineer","description":"Prove it installs (packaging + CI). Run (npm ci) then npm test. Do NOT npm publish and do not git push origin main; founder sign-off required."}'`,
   `git commit -m "prepare for git push once approved"`,
 ];
 

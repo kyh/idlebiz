@@ -3,7 +3,6 @@ import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import { runnerBin } from "@repo/agent-driver/runner";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { businessTypeById } from "@/shared/domain";
@@ -147,8 +146,6 @@ async function completeOneShot(prompt: string): Promise<string> {
     prompt,
     systemPrompt: "",
     cwd: tmpdir(),
-    bin: runnerBin(runner),
-    maxTurns: 4,
     idleTimeoutMs: 3 * 60_000,
     maxSessionMs: 5 * 60_000,
     onEvent: () => {},
