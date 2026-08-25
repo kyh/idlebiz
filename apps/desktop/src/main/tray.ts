@@ -73,7 +73,7 @@ function badge(s: OfficeStatus, windowless: boolean): string {
   return s.active ? " ●" : "";
 }
 
-export interface TrayHost {
+interface TrayHost {
   /** Show the existing window or create one (also restores the dock icon). */
   openWindow(): void;
   /** Flip autopilot and let the renderer know (if a window is open). */

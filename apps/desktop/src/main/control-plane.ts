@@ -32,14 +32,14 @@ interface RunRecord {
   companyId: string;
 }
 
-export interface RunRegistration {
+interface RunRegistration {
   employeeId: string;
   companyId: string;
   taskId?: string;
   hooks: RunToolHooks;
 }
 
-export interface RunHandle {
+interface RunHandle {
   /** Run-scoped env for the agent process (API URL + bearer token + ids). */
   env: Record<string, string>;
   /** What the agent reported back through the API during the run. */

@@ -89,7 +89,7 @@ const LAYOUT = layoutSchema.parse(rawLayout);
 /** The full parsed layout (for the in-app office builder to load + edit). */
 export type OfficeLayoutData = z.infer<typeof layoutSchema>;
 /** One placed sprite. Carries an anchorY only on the layer that y-sorts. */
-export type OfficeObjectDef = z.infer<typeof objectSchema>;
+type OfficeObjectDef = z.infer<typeof objectSchema>;
 export const OFFICE_LAYOUT_RAW: OfficeLayoutData = LAYOUT;
 
 // These are `let` because the runtime layout can be overridden by the player's
@@ -144,7 +144,7 @@ const STACK_STEP = 1e-3;
  * y-sorts — furniture and actors share it, sorting on floor contact (the +0.5
  * biases furniture to win ties, so a character draws behind what they stand at).
  */
-export function depthFor(obj: OfficeObjectDef, index: number): number {
+function depthFor(obj: OfficeObjectDef, index: number): number {
   switch (obj.layer) {
     case "floor":
       return DEPTH.ground + STACK_STEP * (index + 1);

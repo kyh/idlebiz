@@ -73,9 +73,6 @@ for (const asset of OFFICE_OBJECT_ASSETS) {
 export const ALL_OBJECT_IDS: readonly string[] = OFFICE_OBJECT_ASSETS.map((a) => a.id);
 export const ROOM_TILES: readonly RoomBuilderTile[] = ROOM_BUILDER_TILES;
 
-export function variant32(id: string): OfficeObjectVariant | null {
-  return V32.get(id) ?? null;
-}
 function rawBounds(id: string): { canvasW: number; canvasH: number; b: Rect } {
   const v = V32.get(id);
   return v
@@ -94,7 +91,7 @@ export function contentBounds(o: Pick<EditableObject, "id" | "flipX" | "flipY">)
   };
 }
 /** y-sort anchor for an object placed at world y = bottom of its (flipped) content. */
-export function anchorFor(o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number): number {
+function anchorFor(o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number): number {
   const b = contentBounds(o);
   return y + b.y + b.h;
 }
