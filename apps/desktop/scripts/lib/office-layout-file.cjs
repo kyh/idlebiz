@@ -49,4 +49,4 @@ function canonicalizeLegacyAnchors(objects) {
     .map(({ obj }) => obj);
 }
 
-module.exports = { LAYOUT_PATH, readLayout, writeLayout, canonicalizeLegacyAnchors };
+module.exports = { readLayout, writeLayout, canonicalizeLegacyAnchors };

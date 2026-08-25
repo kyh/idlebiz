@@ -1,18 +1,10 @@
 // Draw-order math for the office layout, for the node-side asset scripts.
 //
-// MUST stay in lockstep with the renderer: DEPTH in src/renderer/game/config.ts
-// and depthFor() in src/renderer/game/office-layout.ts. A script that sorts
-// differently than the game is worse than no script — it reports occlusion that
-// doesn't happen and misses occlusion that does.
-const DEPTH = { ground: 0, entityBase: 1000, overhead: 2000, emote: 3000 };
-const STACK_STEP = 1e-3;
-
-/** Draw depth of the object at `index` in the paint-ordered array. */
-function depthFor(obj, index) {
-  if (obj.layer === "floor") return DEPTH.ground + STACK_STEP * (index + 1);
-  if (obj.layer === "overhead") return DEPTH.overhead + STACK_STEP * (index + 1);
-  return DEPTH.entityBase + obj.anchorY + 0.5;
-}
+// MUST stay in lockstep with how the renderer paints — DEPTH in
+// src/renderer/game/config.ts and depthFor() in
+// src/renderer/game/office-layout.ts. A script that sorts differently than the
+// game is worse than no script — it reports occlusion that doesn't happen and
+// misses occlusion that does.
 
 const BAND = { floor: 0, object: 1, overhead: 2 };
 
@@ -36,4 +28,4 @@ function paintOrder(objects) {
     );
 }
 
-module.exports = { DEPTH, STACK_STEP, depthFor, paintOrder };
+module.exports = { paintOrder };
