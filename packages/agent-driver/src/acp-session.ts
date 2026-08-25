@@ -33,9 +33,8 @@ const fmtMs = (ms: number): string =>
  * ACP has no usage channel of its own, so this is an agent extension and is
  * read by shape. Claude sends a running dollar total here; codex sends nothing
  * until the turn completes. It is the only thing standing between a spend cap
- * and a run that blows through it, so getting the field name wrong costs the
- * ceiling silently — which is exactly what happened when this looked for
- * `inputTokens` on an update that only ever carries `cost`.
+ * and a run that blows through it, so a wrong field name costs the ceiling
+ * silently — nothing fails, the cap just stops being enforced.
  */
 const LiveSpend = z.object({ cost: z.object({ amount: z.number() }).loose() }).loose();
 
@@ -87,14 +86,7 @@ function webWritable(stream: Writable): WritableStream<Uint8Array> {
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
   command: readonly string[];
-  /**
-   * Session mode to select once the session exists, when the agent offers one.
-   *
-   * Load-bearing for the founder gate: codex defaults to a mode that runs
-   * commands without asking, so nothing would ever reach the permission
-   * handler. Choosing a mode that requires approval is what turns the gate on,
-   * and a wrong value here disables it silently.
-   */
+  /** Session mode to select once the session exists — see `RunnerAdapter`. */
   sessionModeId?: string;
   /** Environment this agent needs to find its own CLI. */
   env?: Record<string, string>;
@@ -169,7 +161,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionId: string | undefined;
-    let transcript = "";
+    let lastMessage = "";
     let pending = "";
     let billed = 0;
     let total = zeroUsage();
@@ -186,8 +178,8 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       const text = pending.trim();
       pending = "";
       if (!text) return;
-      transcript = text;
-      opts.onEvent({ type: "message_end", role: "assistant", text });
+      lastMessage = text;
+      opts.onEvent({ type: "message_end", text });
     };
 
     const settle = (res: AcpTurnResult): void => {
@@ -208,11 +200,11 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     };
 
     /** A turn that died mid-flight still spent what it spent. */
-    const failure = (error: string): AcpTurnResult => ({
-      ok: false,
-      summary: transcript,
+    const result = (ok: boolean, error?: string): AcpTurnResult => ({
+      ok,
+      summary: lastMessage,
       sessionId,
-      usage: { ...total },
+      usage: total,
       error,
     });
 
@@ -220,14 +212,16 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       if (opts.idleTimeoutMs <= 0 || settled) return;
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
-        settle(failure(`no output for ${fmtMs(opts.idleTimeoutMs)} — treating the agent as hung`));
+        settle(
+          result(false, `no output for ${fmtMs(opts.idleTimeoutMs)} — treating the agent as hung`),
+        );
       }, opts.idleTimeoutMs);
       idleTimer.unref?.();
     };
 
     const [bin, ...args] = opts.agent.command;
     if (bin === undefined) {
-      settle(failure("no ACP agent command configured"));
+      settle(result(false, "no ACP agent command configured"));
       return;
     }
 
@@ -244,14 +238,17 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       });
     } catch (err) {
       settle(
-        failure(`failed to spawn ${bin}: ${err instanceof Error ? err.message : String(err)}`),
+        result(
+          false,
+          `failed to spawn ${bin}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
       );
       return;
     }
 
     const { stdin, stdout, stderr } = child;
     if (!stdin || !stdout || !stderr) {
-      settle(failure(`${bin}: stdio pipes unavailable`));
+      settle(result(false, `${bin}: stdio pipes unavailable`));
       return;
     }
     // The agent keeps writing for a moment after we kill it; that EPIPE is
@@ -262,15 +259,15 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       pokeIdle();
       stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_MAX);
     });
-    child.on("error", (err: Error) => settle(failure(`${bin}: ${err.message}`)));
+    child.on("error", (err: Error) => settle(result(false, `${bin}: ${err.message}`)));
     child.on("close", (code) =>
-      settle(failure(stderrTail.trim() || `${bin} exited with code ${code} mid-turn`)),
+      settle(result(false, stderrTail.trim() || `${bin} exited with code ${code} mid-turn`)),
     );
 
     pokeIdle();
     if (opts.maxSessionMs > 0) {
       sessionTimer = setTimeout(() => {
-        settle(failure(`exceeded the ${fmtMs(opts.maxSessionMs)} session limit — killed`));
+        settle(result(false, `exceeded the ${fmtMs(opts.maxSessionMs)} session limit — killed`));
       }, opts.maxSessionMs);
       sessionTimer.unref?.();
     }
@@ -285,19 +282,16 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           description: input.description,
           kind: ctx.params.toolCall.kind ?? undefined,
         };
-        const decision = opts.onPermission
-          ? await opts.onPermission(request)
-          : { allow: true as const };
+        const decision = opts.onPermission ? await opts.onPermission(request) : { allow: true };
         // `kind` is a required, spec'd discriminant — matching on option id
         // prefixes would guess at agent-specific spellings and could pick
         // something like "allowlist_edit". Prefer the once-only option: one
         // yes buys one command, which is what the approval card promises.
-        const wanted = decision.allow
-          ? (["allow_once", "allow_always"] as const)
-          : (["reject_once", "reject_always"] as const);
-        const optionId = wanted
-          .map((kind) => ctx.params.options.find((o) => o.kind === kind)?.optionId)
-          .find((id) => id !== undefined);
+        const pick = (kind: string): string | undefined =>
+          ctx.params.options.find((o) => o.kind === kind)?.optionId;
+        const optionId = decision.allow
+          ? (pick("allow_once") ?? pick("allow_always"))
+          : (pick("reject_once") ?? pick("reject_always"));
         if (optionId === undefined) return { outcome: { outcome: "cancelled" } };
         return { outcome: { outcome: "selected", optionId } };
       })
@@ -320,9 +314,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           return;
         }
         // Live spend, so the budget can stop a run in flight rather than at
-        // the next boundary. Claude reports a running dollar total here; codex
-        // reports nothing until the turn ends, so its runs are only ever
-        // stopped between turns.
+        // the next boundary.
         const live = LiveSpend.safeParse(update);
         if (!live.success) return;
         const spent = live.data.cost.amount;
@@ -343,7 +335,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           clientCapabilities: {},
         });
 
-        const additionalDirectories = [...(opts.addDirs ?? [])];
+        const additionalDirectories = opts.addDirs ?? [];
 
         /**
          * Resume-first: an employee's session IS their working memory, so
@@ -364,26 +356,23 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
                 .catch(() => undefined)
             : undefined;
 
-        if (resumed === undefined) {
+        const startFresh = async (): Promise<string> => {
           const builder = agent.buildSession(opts.cwd);
           if (additionalDirectories.length > 0) {
             builder.withAdditionalDirectories(additionalDirectories);
           }
-          sessionId = (await builder.start()).sessionId;
-        } else {
-          sessionId = resumed;
-        }
+          return (await builder.start()).sessionId;
+        };
+        sessionId = resumed ?? (await startFresh());
 
         // Every turn, not just fresh ones: a resumed session comes back in the
         // agent's default mode, and codex's default runs commands without ever
-        // raising a permission request — so setting this only at session
-        // creation left the gate working for an employee's first task and off
-        // for every task after it.
+        // raising a permission request, so a mode set only at session creation
+        // would leave later turns unsupervised.
         //
-        // And it throws rather than shrugging. For an agent that only asks in
-        // a particular mode, failing to select it means the whole run would go
-        // unsupervised; refusing to start is the only safe reading, and a
-        // swallowed error here is indistinguishable from a working gate.
+        // It throws rather than shrugging, because for an agent that only asks
+        // in a particular mode, a swallowed failure here is indistinguishable
+        // from a working gate.
         if (opts.agent.sessionModeId !== undefined) {
           await agent.request("session/set_mode", {
             sessionId,
@@ -417,17 +406,11 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       })
       .then((stopReason) => {
         const ok = stopReason === "end_turn" || stopReason === "max_tokens";
-        settle({
-          ok,
-          summary: transcript,
-          sessionId,
-          usage: { ...total },
-          error: ok ? undefined : stderrTail.trim() || `agent stopped: ${stopReason}`,
-        });
+        settle(result(ok, ok ? undefined : stderrTail.trim() || `agent stopped: ${stopReason}`));
         return null;
       })
       .catch((cause: unknown) =>
-        settle(failure(cause instanceof Error ? cause.message : String(cause))),
+        settle(result(false, cause instanceof Error ? cause.message : String(cause))),
       );
   });
 }

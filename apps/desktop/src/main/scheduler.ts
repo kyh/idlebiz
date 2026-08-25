@@ -532,7 +532,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
         });
         break;
       case "message_end":
-        if (ev.role === "assistant" && ev.text) {
+        if (ev.text) {
           this.emit({
             runId,
             taskId: task.id,

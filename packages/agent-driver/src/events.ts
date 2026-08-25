@@ -19,7 +19,7 @@ export interface AgentUsage {
 }
 
 export type AgentEvent =
-  | { type: "message_end"; role: string; text: string }
+  | { type: "message_end"; text: string }
   | { type: "tool_start"; toolName: string; args: unknown }
   /** Tokens spent since the last usage event — a delta, never a running total. */
   | { type: "usage"; usage: AgentUsage };
