@@ -9,7 +9,18 @@
         "scripts/*.cjs"
       ],
       "project": ["src/**", "scripts/**"],
-      "ignoreDependencies": ["@tailwindcss/vite", "@vitejs/plugin-react", "electron-builder"]
+      "ignoreDependencies": [
+        "@agentclientprotocol/claude-agent-acp",
+        "@agentclientprotocol/codex-acp",
+        "@agentclientprotocol/sdk",
+        "@tailwindcss/vite",
+        "@vitejs/plugin-react",
+        "electron-builder"
+      ]
+    },
+    "packages/agent-driver": {
+      "entry": ["src/*.ts"],
+      "project": ["src/**"]
     }
   }
 }

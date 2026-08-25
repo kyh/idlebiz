@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
-import { agentDriver } from "@/main/agents/agent-driver";
+import { acpSpecFor, agentDriver } from "@/main/agents/agent-driver";
+import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { businessTypeById } from "@/shared/domain";
 import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
 
@@ -142,14 +143,20 @@ const CandidatesSchema = z.array(CandidateSchema).min(3).max(8);
 /** One-shot completion on whichever CLI is available (no tools, no session). */
 async function completeOneShot(prompt: string): Promise<string> {
   const runner: AgentRunner = agentDriver.pickRunner(0);
-  const res = await RUNNERS[runner].run({
-    prompt,
-    systemPrompt: "",
-    cwd: tmpdir(),
-    idleTimeoutMs: 3 * 60_000,
-    maxSessionMs: 5 * 60_000,
-    onEvent: () => {},
-  });
+  const res = await runAcpTurn(
+    {
+      prompt,
+      systemPrompt: "",
+      cwd: tmpdir(),
+      idleTimeoutMs: 3 * 60_000,
+      maxSessionMs: 5 * 60_000,
+      // Casting a roster is one JSON answer in a temp dir — it has no business
+      // touching anything. Saying so beats trusting the model not to try.
+      onPermission: () => Promise.resolve({ allow: false }),
+      onEvent: () => {},
+    },
+    acpSpecFor(runner),
+  );
   if (!res.ok) throw new Error(res.error ?? "generation failed");
   return res.summary;
 }

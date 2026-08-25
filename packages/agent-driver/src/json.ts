@@ -1,6 +1,8 @@
-// Safe accessors for narrowing parsed-JSON values (single parse-boundary
-// narrowing — same pattern the pi-driver event parser established). All of
-// them tolerate any input and never throw.
+// Safe narrowing for parsed-JSON values: tolerates any input, never throws.
+//
+// Once the ACP migration removed stdout parsing, `detect.ts` reading the CLI's
+// auth output is the only caller left — the rest of the driver gets typed
+// params from the protocol.
 
 import { z } from "zod";
 
@@ -17,15 +19,3 @@ export function obj(v: JsonValue | undefined): JsonObject {
   const parsed = jsonObjectSchema.safeParse(v);
   return parsed.success ? parsed.data : {};
 }
-
-export const str = (v: JsonValue | undefined): string | undefined => {
-  const parsed = z.string().safeParse(v);
-  return parsed.success ? parsed.data : undefined;
-};
-
-export const num = (v: JsonValue | undefined): number => {
-  const parsed = z.number().safeParse(v);
-  return parsed.success ? parsed.data : 0;
-};
-
-export const arr = (v: JsonValue | undefined): JsonValue[] => (Array.isArray(v) ? v : []);

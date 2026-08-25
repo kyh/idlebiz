@@ -1,16 +1,35 @@
 import { probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { parseRateLimit } from "@repo/agent-driver/rate-limit";
-import { RUNNERS } from "@repo/agent-driver/registry";
+import { RUNNERS, type RunnerAdapter } from "@repo/agent-driver/registry";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_SESSION_MS } from "@repo/agent-driver/runner";
+import { runAcpTurn, type AcpAgentSpec } from "@repo/agent-driver/acp-session";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import type { PermissionDecision, PermissionRequest } from "@repo/agent-driver/runner";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
 import { approvalKey, classifyCommand, normalizeCommand } from "@/shared/domain";
 import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain";
+
+/**
+ * Where to find a runner's ACP agent, and how to make it ask.
+ *
+ * Resolution lives here rather than in the driver package because the agents
+ * are spawned binaries, not imports: the app is what ships them, so the app is
+ * what knows where they landed. `import.meta.url` is the bundled main process,
+ * which resolves against the desktop app's own node_modules.
+ */
+export function acpSpecFor(runner: AgentRunner): AcpAgentSpec {
+  const adapter: RunnerAdapter = RUNNERS[runner];
+  const require = createRequire(import.meta.url);
+  return {
+    command: [process.execPath, require.resolve(`${adapter.acpPackage}/dist/index.js`)],
+    sessionModeId: adapter.sessionModeId,
+  };
+}
 
 /**
  * The founder-approval gate, now a plain function call.
@@ -44,7 +63,9 @@ async function decidePermission(
 export function priceRun(emp: Employee, usage: AgentUsage): number {
   if (usage.costUsd > 0) return usage.costUsd;
   if (usage.inputTokens + usage.outputTokens === 0) return 0;
-  return priceUsage(emp.model ?? RUNNERS[emp.runner].fallbackPricingModel, usage);
+  // Priced by the runner's anchor, not emp.model: ACP gives no way to pick a
+  // model per session yet, so billing a model that never ran would be fiction.
+  return priceUsage(RUNNERS[emp.runner].fallbackPricingModel, usage);
 }
 
 /**
@@ -200,29 +221,30 @@ class AgentDriver {
       hooks,
     });
     let sawOutput = false;
-    const adapter = RUNNERS[emp.runner];
     try {
-      const res = await adapter.run({
-        prompt,
-        systemPrompt: store.employeeInstructions(emp.id),
-        cwd: companyWorkspace(company.id),
-        model: emp.model ?? undefined,
-        resumeSessionId,
-        addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
-        env: { ...handle.env, ...toolCacheEnv() },
-        onPermission: (request) => decidePermission(company.id, request, handle.block),
-        idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
-        maxSessionMs: DEFAULT_MAX_SESSION_MS,
-        signal: abort.signal,
-        onEvent: (e) => {
-          sawOutput = true;
-          try {
-            onEvent(e);
-          } catch {
-            /* a listener must never break the run */
-          }
+      const res = await runAcpTurn(
+        {
+          prompt,
+          systemPrompt: store.employeeInstructions(emp.id),
+          cwd: companyWorkspace(company.id),
+          resumeSessionId,
+          addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
+          env: { ...handle.env, ...toolCacheEnv() },
+          onPermission: (request) => decidePermission(company.id, request, handle.block),
+          idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
+          maxSessionMs: DEFAULT_MAX_SESSION_MS,
+          signal: abort.signal,
+          onEvent: (e) => {
+            sawOutput = true;
+            try {
+              onEvent(e);
+            } catch {
+              /* a listener must never break the run */
+            }
+          },
         },
-      });
+        acpSpecFor(emp.runner),
+      );
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       const { blocked } = handle.outcome();
       return {

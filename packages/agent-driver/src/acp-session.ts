@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { z } from "zod";
-import { zeroUsage, type AgentUsage } from "./events";
+import { zeroUsage } from "./events";
 import type { PermissionRequest, RunnerOptions, RunnerResult } from "./runner";
 
 // ---------------------------------------------------------------------------
@@ -29,46 +29,36 @@ const fmtMs = (ms: number): string =>
   ms >= 60_000 ? `${Math.round(ms / 60_000)}m` : `${Math.round(ms / 1000)}s`;
 
 /**
- * Token counts, wherever they appear. ACP leaves usage to the agent, so these
- * ride in as loosely-typed extras on both the turn result and the live update;
- * every field is optional and absent means unknown, never zero.
+ * What an agent reports while a turn is still running.
+ *
+ * ACP has no usage channel of its own, so this is an agent extension and is
+ * read by shape. Claude sends a running dollar total here; codex sends nothing
+ * until the turn completes. It is the only thing standing between a spend cap
+ * and a run that blows through it, so getting the field name wrong costs the
+ * ceiling silently — which is exactly what happened when this looked for
+ * `inputTokens` on an update that only ever carries `cost`.
  */
-const AgentTokenCounts = z
-  .object({
-    inputTokens: z.number().optional(),
-    outputTokens: z.number().optional(),
-    cachedReadTokens: z.number().optional(),
-    cachedWriteTokens: z.number().optional(),
-  })
-  .loose();
-type AgentTokenCounts = z.infer<typeof AgentTokenCounts>;
+const LiveSpend = z.object({ cost: z.object({ amount: z.number() }).loose() }).loose();
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
 const ToolCallInput = z
   .object({ command: z.string().optional(), description: z.string().optional() })
   .loose();
 
-export interface AcpAgentSpec {
-  /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
-  command: readonly string[];
-  /**
-   * Session mode to select once the session exists, when the agent offers one.
-   *
-   * Load-bearing for the founder gate: codex defaults to a mode that runs
-   * commands without asking, so nothing would ever reach the permission
-   * handler. Choosing a mode that requires approval is what turns the gate on,
-   * and a wrong value here disables it silently.
-   */
-  sessionModeId?: string;
-}
-
-/** Node stream → web stream, written out rather than asserted across the skew. */
+/**
+ * Node stream → web stream.
+ *
+ * `Readable.toWeb` would do this in one line, and it typechecks fine inside
+ * this package — but this file is compiled again as part of the desktop app,
+ * whose tsconfig pulls in the DOM lib, and there `ReadableStream<any>` and the
+ * DOM's `ReadableStream<Uint8Array>` are not assignable. Written out so both
+ * builds agree, without an assertion papering over the difference.
+ */
 function webReadable(stream: Readable): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      // `end` and `error` can both fire, and closing a controller twice throws
-      // — which surfaces as an unhandled crash during teardown rather than as
-      // the run failure that actually happened.
+      // `end` and `error` can both fire, and closing twice throws — which
+      // surfaces as a teardown crash instead of the real run failure.
       let closed = false;
       const close = (): void => {
         if (closed) return;
@@ -95,14 +85,18 @@ function webWritable(stream: Writable): WritableStream<Uint8Array> {
   });
 }
 
-/** Cache creation is billed as input; cache reads are counted separately. */
-function toUsage(counts: AgentTokenCounts): AgentUsage {
-  return {
-    inputTokens: (counts.inputTokens ?? 0) + (counts.cachedWriteTokens ?? 0),
-    outputTokens: counts.outputTokens ?? 0,
-    cachedTokens: counts.cachedReadTokens ?? 0,
-    costUsd: 0,
-  };
+export interface AcpAgentSpec {
+  /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
+  command: readonly string[];
+  /**
+   * Session mode to select once the session exists, when the agent offers one.
+   *
+   * Load-bearing for the founder gate: codex defaults to a mode that runs
+   * commands without asking, so nothing would ever reach the permission
+   * handler. Choosing a mode that requires approval is what turns the gate on,
+   * and a wrong value here disables it silently.
+   */
+  sessionModeId?: string;
 }
 
 export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<RunnerResult> {
@@ -113,8 +107,26 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionId: string | undefined;
-    let lastMessage = "";
+    let transcript = "";
+    let pending = "";
+    let billed = 0;
     let total = zeroUsage();
+
+    /**
+     * Release what the agent has said so far as one feed line.
+     *
+     * ACP streams prose in chunks with no end-of-message marker, so a boundary
+     * has to be chosen: a tool call, or the end of the turn. Without this the
+     * office shows tool calls and no narration at all — every employee works
+     * in silence, which is most of what the team room is for.
+     */
+    const flushMessage = (): void => {
+      const text = pending.trim();
+      pending = "";
+      if (!text) return;
+      transcript = text;
+      opts.onEvent({ type: "message_end", role: "assistant", text });
+    };
 
     const settle = (res: RunnerResult): void => {
       if (settled) return;
@@ -136,7 +148,7 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
     /** A turn that died mid-flight still spent what it spent. */
     const failure = (error: string): RunnerResult => ({
       ok: false,
-      summary: lastMessage.trim(),
+      summary: transcript,
       sessionId,
       usage: { ...total },
       error,
@@ -210,13 +222,16 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
         const decision = opts.onPermission
           ? await opts.onPermission(request)
           : { allow: true as const };
-        // Option ids are agent-specific ("allow" vs "allow_once", "reject" vs
-        // "reject_once"), so match by prefix rather than one vocabulary.
-        const pick = (want: string): string | undefined =>
-          ctx.params.options.find((o) => o.optionId.startsWith(want))?.optionId;
-        const optionId = decision.allow
-          ? (pick("allow") ?? pick("accept"))
-          : (pick("reject") ?? pick("deny"));
+        // `kind` is a required, spec'd discriminant — matching on option id
+        // prefixes would guess at agent-specific spellings and could pick
+        // something like "allowlist_edit". Prefer the once-only option: one
+        // yes buys one command, which is what the approval card promises.
+        const wanted = decision.allow
+          ? (["allow_once", "allow_always"] as const)
+          : (["reject_once", "reject_always"] as const);
+        const optionId = wanted
+          .map((kind) => ctx.params.options.find((o) => o.kind === kind)?.optionId)
+          .find((id) => id !== undefined);
         if (optionId === undefined) return { outcome: { outcome: "cancelled" } };
         return { outcome: { outcome: "selected", optionId } };
       })
@@ -224,33 +239,30 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
         pokeIdle();
         const update = ctx.params.update;
         if (update.sessionUpdate === "agent_message_chunk") {
-          if (update.content.type === "text") lastMessage += update.content.text;
+          if (update.content.type === "text") pending += update.content.text;
           return;
         }
         if (update.sessionUpdate === "tool_call") {
+          // Whatever the agent was saying is finished the moment it acts, so
+          // the feed gets the line before the tool call that followed it.
+          flushMessage();
           opts.onEvent({
             type: "tool_start",
-            toolName: update.kind ?? "tool",
+            toolName: update.title || update.kind || "tool",
             args: update.rawInput,
           });
           return;
         }
-        // Usage rides in as an agent extension, so it is read by shape rather
-        // than by the protocol's own union. It is a running total; the
-        // scheduler's budget wants deltas.
-        const counts = AgentTokenCounts.safeParse(update);
-        if (!counts.success) return;
-        const running = toUsage(counts.data);
-        if (running.inputTokens + running.outputTokens === 0) return;
-        const delta: AgentUsage = {
-          inputTokens: Math.max(0, running.inputTokens - total.inputTokens),
-          outputTokens: Math.max(0, running.outputTokens - total.outputTokens),
-          cachedTokens: Math.max(0, running.cachedTokens - total.cachedTokens),
-          costUsd: 0,
-        };
-        total = running;
-        if (delta.inputTokens + delta.outputTokens > 0) {
-          opts.onEvent({ type: "usage", usage: delta });
+        // Live spend, so the budget can stop a run in flight rather than at
+        // the next boundary. Claude reports a running dollar total here; codex
+        // reports nothing until the turn ends, so its runs are only ever
+        // stopped between turns.
+        const live = LiveSpend.safeParse(update);
+        if (!live.success) return;
+        const spent = live.data.cost.amount;
+        if (spent > billed) {
+          opts.onEvent({ type: "usage", usage: { ...zeroUsage(), costUsd: spent - billed } });
+          billed = spent;
         }
       });
 
@@ -259,31 +271,71 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
       .connectWith(stream, async (agent) => {
         // Required before anything else. claude's adapter tolerates its
         // absence; codex's answers every later call with "Not initialized".
-        await agent.request("initialize", {
+        const init = await agent.request("initialize", {
           protocolVersion: PROTOCOL_VERSION,
           clientInfo: { name: "idlebiz", version: "1" },
           clientCapabilities: {},
         });
-        const builder = agent.buildSession(opts.cwd);
-        const extra = opts.addDirs ?? [];
-        if (extra.length > 0) builder.withAdditionalDirectories([...extra]);
-        const session = await builder.start();
-        sessionId = session.sessionId;
-        if (spec.sessionModeId !== undefined) {
-          // Best effort: an agent that offers no modes still runs, it just
-          // keeps whatever default it shipped with.
-          await agent
-            .request("session/set_mode", { sessionId, modeId: spec.sessionModeId })
-            .catch(() => undefined);
+
+        const additionalDirectories = [...(opts.addDirs ?? [])];
+
+        /**
+         * Resume-first: an employee's session IS their working memory, so
+         * starting fresh every run would begin each task with amnesia.
+         * `session/resume` continues without replaying history, which is what
+         * the wake-delta prompt assumes. A refusal falls through to a new
+         * session and the caller clears the dead id.
+         */
+        const resumed =
+          opts.resumeSessionId !== undefined && init.agentCapabilities?.loadSession === true
+            ? await agent
+                .request("session/resume", {
+                  sessionId: opts.resumeSessionId,
+                  cwd: opts.cwd,
+                  additionalDirectories,
+                })
+                .then(() => opts.resumeSessionId)
+                .catch(() => undefined)
+            : undefined;
+
+        if (resumed === undefined) {
+          const builder = agent.buildSession(opts.cwd);
+          if (additionalDirectories.length > 0) {
+            builder.withAdditionalDirectories(additionalDirectories);
+          }
+          sessionId = (await builder.start()).sessionId;
+          if (spec.sessionModeId !== undefined) {
+            // Best effort: an agent offering no modes still runs, it just keeps
+            // whatever default it shipped with.
+            await agent
+              .request("session/set_mode", { sessionId, modeId: spec.sessionModeId })
+              .catch(() => undefined);
+          }
+        } else {
+          sessionId = resumed;
         }
-        const prompt = opts.systemPrompt
-          ? `${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`
-          : opts.prompt;
-        const res = await session.prompt(prompt);
-        const counts = AgentTokenCounts.safeParse(res.usage);
-        if (counts.success) {
-          const final = toUsage(counts.data);
-          if (final.inputTokens + final.outputTokens > 0) total = final;
+
+        // A resumed session already carries the instructions; sending them
+        // again would re-pay for the whole system prompt every wake.
+        const text =
+          resumed === undefined && opts.systemPrompt
+            ? `${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`
+            : opts.prompt;
+        const res = await agent.request("session/prompt", {
+          sessionId,
+          prompt: [{ type: "text", text }],
+        });
+        flushMessage();
+        // The turn's own totals are authoritative; the live cost above only
+        // exists to stop a run mid-flight.
+        const u = res.usage;
+        if (u) {
+          total = {
+            inputTokens: (u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0),
+            outputTokens: u.outputTokens ?? 0,
+            cachedTokens: u.cachedReadTokens ?? 0,
+            costUsd: billed,
+          };
         }
         return res.stopReason;
       })
@@ -291,7 +343,7 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
         const ok = stopReason === "end_turn" || stopReason === "max_tokens";
         settle({
           ok,
-          summary: lastMessage.trim(),
+          summary: transcript,
           sessionId,
           usage: { ...total },
           error: ok ? undefined : stderrTail.trim() || `agent stopped: ${stopReason}`,

@@ -2,7 +2,7 @@
   "name": "@repo/agent-driver",
   "version": "0.1.0",
   "private": true,
-  "description": "CLI coding-agent runners (claude, codex): spawn, stream NDJSON events, price usage",
+  "description": "CLI coding-agent runners (claude, codex) over the Agent Client Protocol: spawn, run one turn, price usage",
   "type": "module",
   "exports": {
     "./*": "./src/*.ts"
@@ -12,8 +12,6 @@
     "clean": "rm -rf .cache .turbo"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.70.0",
-    "@agentclientprotocol/codex-acp": "^1.6.2",
     "@agentclientprotocol/sdk": "^1.4.0",
     "zod": "^4.4.3"
   },

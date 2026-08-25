@@ -1,10 +1,9 @@
 import type { AgentEvent, AgentUsage } from "./events";
 
 /**
- * Which coding-agent CLI executes a run. Both runners share one contract:
- * spawn a headless CLI session (fresh or resumed), stream normalized
- * AgentEvents while it works, and resolve a RunnerResult when it ends.
- * Continuity lives in the CLI's own session store — resume by id.
+ * Which coding-agent CLI executes a run. Every runner is an ACP agent: spawn
+ * it, open or resume a session, send one turn, resolve a RunnerResult when it
+ * ends. Continuity lives in the agent's own session store — resume by id.
  *
  * This module is type/metadata only (no node imports beyond env reads), so
  * `RunnerId` can be type-re-exported into renderer-safe shared code. The
@@ -37,8 +36,6 @@ export interface RunnerOptions {
   systemPrompt: string;
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
-  /** Model override; omit to use the CLI's own default. */
-  model?: string;
   /** Resume this CLI session instead of starting fresh. */
   resumeSessionId?: string;
   /** Extra dirs the agent may read/write (e.g. its own agent package dir). */
