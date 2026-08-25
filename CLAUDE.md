@@ -47,7 +47,6 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   `ls ~/.idlebiz` first; don't boot it on a machine with a live company.
 
 Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
-`pnpm knip` is exploratory, not a gate (it's not in `verify`) and currently exits 1 on
-pre-existing unused exports in `apps/desktop` — treat its output as a cleanup backlog,
-not as something your change broke.
+`pnpm knip` is exploratory, not a gate (it's not in `verify`), but it exits 0 today — so
+anything it reports is something your change introduced, not a backlog to skim past.
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
