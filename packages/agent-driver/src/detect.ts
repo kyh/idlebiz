@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { obj, type JsonValue } from "./json";
+import { z } from "zod";
 import { runnerBin, RUNNER_IDS, type RunnerId } from "./runner";
 
 // Preflight probes: which coding-agent CLIs exist on this machine and whether
@@ -54,16 +54,19 @@ function run(bin: string, args: string[]): Promise<{ ok: boolean; output: string
   });
 }
 
+const authStatusSchema = z.object({ loggedIn: z.boolean() });
+
 /** `claude auth status` prints JSON with a loggedIn flag. */
 async function claudeAuthed(bin: string): Promise<boolean> {
   const r = await run(bin, ["auth", "status"]);
   if (!r.ok) return false;
+  const start = r.output.indexOf("{");
+  if (start < 0) return false;
   try {
-    const start = r.output.indexOf("{");
-    if (start < 0) return false;
-    // JSON.parse is typed `any`, but its actual return domain is exactly JsonValue.
-    const parsed: JsonValue = JSON.parse(r.output.slice(start, r.output.lastIndexOf("}") + 1));
-    return obj(parsed).loggedIn === true;
+    const parsed = authStatusSchema.safeParse(
+      JSON.parse(r.output.slice(start, r.output.lastIndexOf("}") + 1)),
+    );
+    return parsed.success && parsed.data.loggedIn;
   } catch {
     return false;
   }
