@@ -370,15 +370,25 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
             builder.withAdditionalDirectories(additionalDirectories);
           }
           sessionId = (await builder.start()).sessionId;
-          if (opts.agent.sessionModeId !== undefined) {
-            // Best effort: an agent offering no modes still runs, it just keeps
-            // whatever default it shipped with.
-            await agent
-              .request("session/set_mode", { sessionId, modeId: opts.agent.sessionModeId })
-              .catch(() => undefined);
-          }
         } else {
           sessionId = resumed;
+        }
+
+        // Every turn, not just fresh ones: a resumed session comes back in the
+        // agent's default mode, and codex's default runs commands without ever
+        // raising a permission request — so setting this only at session
+        // creation left the gate working for an employee's first task and off
+        // for every task after it.
+        //
+        // And it throws rather than shrugging. For an agent that only asks in
+        // a particular mode, failing to select it means the whole run would go
+        // unsupervised; refusing to start is the only safe reading, and a
+        // swallowed error here is indistinguishable from a working gate.
+        if (opts.agent.sessionModeId !== undefined) {
+          await agent.request("session/set_mode", {
+            sessionId,
+            modeId: opts.agent.sessionModeId,
+          });
         }
 
         // A resumed session already carries the instructions; sending them
