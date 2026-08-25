@@ -522,7 +522,7 @@ export function OfficeBuilder() {
     <main className="flex h-full w-full bg-[#bfc2c4] text-[var(--text)]">
       {/* palette */}
       <aside className="px-window m-2 flex w-52 shrink-0 flex-col overflow-hidden">
-        <div className="px-titlebar flex gap-1 px-2 py-2 text-[13px]">
+        <div className="px-titlebar flex gap-1 px-2 py-2 text-sm">
           {(["objects", "tiles"] as const).map((m) => (
             <button
               type="button"
@@ -570,7 +570,7 @@ export function OfficeBuilder() {
       {/* canvas */}
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="px-window m-2 mb-0 shrink-0">
-          <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
             {TOOLS.map((t) => (
               <button
                 type="button"
@@ -649,7 +649,7 @@ export function OfficeBuilder() {
             </span>
           </div>
         </header>
-        <div className="px-3 py-1 text-[11px] text-[var(--text-dim)]">{status}</div>
+        <div className="px-3 py-1 text-xs text-[var(--text-dim)]">{status}</div>
         <div className="px-scroll m-2 mt-0 min-h-0 flex-1 overflow-auto bg-[#14161f] p-4">
           <div
             ref={stageRef}
@@ -757,8 +757,8 @@ export function OfficeBuilder() {
       </section>
 
       {/* inspector */}
-      <aside className="px-window m-2 flex w-60 shrink-0 flex-col gap-2 overflow-y-auto p-3 text-[12px]">
-        <div className="px-titlebar -m-3 mb-1 px-3 py-2 text-[13px]">Inspector</div>
+      <aside className="px-window m-2 flex w-60 shrink-0 flex-col gap-2 overflow-y-auto p-3 text-xs">
+        <div className="px-titlebar -m-3 mb-1 px-3 py-2 text-sm">Inspector</div>
         {selected ? (
           <Inspector
             key={selected.uid}
@@ -770,7 +770,7 @@ export function OfficeBuilder() {
         ) : selectedUids.length > 1 ? (
           <div className="flex flex-col gap-2">
             <p>{selectedUids.length} objects selected.</p>
-            <p className="text-[11px] text-[var(--text-dim)]">
+            <p className="text-xs text-[var(--text-dim)]">
               Drag to move them together; arrows nudge; Delete removes all.
             </p>
             <button
@@ -790,7 +790,7 @@ export function OfficeBuilder() {
                   : "Pick an asset from the left."
                 : "Click to select, or drag a box to select many."}
             </p>
-            <div className="px-inset p-2 text-[10px] leading-relaxed">
+            <div className="px-inset p-2 text-xs leading-relaxed">
               V select · P place · S spawn · T seat · B/X collision
               <br />
               ⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
@@ -805,7 +805,7 @@ export function OfficeBuilder() {
             </div>
           </div>
         )}
-        <div className="mt-auto text-[10px] text-[var(--text-dim)]">
+        <div className="mt-auto text-xs text-[var(--text-dim)]">
           {layout.objects.length} objects · {layout.workSeats.length} seats · {layout.width}×
           {layout.height}
         </div>

@@ -237,7 +237,7 @@ canvas {
 .px-badge {
   border: 2px solid var(--ink);
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* a HUD plate (compact info box, slate) */

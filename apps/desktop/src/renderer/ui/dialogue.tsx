@@ -269,8 +269,8 @@ export function Dialogue() {
               />
             )}
             <div className="flex-1">
-              <div className="text-[16px] uppercase tracking-wide">{emp.name}</div>
-              <div className="text-[12px] text-[var(--accent-lo)]">{emp.title || emp.role}</div>
+              <div className="text-base uppercase tracking-wide">{emp.name}</div>
+              <div className="text-xs text-[var(--accent-lo)]">{emp.title || emp.role}</div>
               <span
                 className="px-badge mt-1 inline-block"
                 style={
@@ -286,8 +286,8 @@ export function Dialogue() {
 
           {blocked ? (
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
-              <div className="text-[12px] text-[var(--danger)]">❗ {emp.name} needs your call:</div>
-              <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
+              <div className="text-xs text-[var(--danger)]">❗ {emp.name} needs your call:</div>
+              <div className="mt-1 text-sm leading-snug text-[var(--text)]">
                 <RichText
                   text={blocked.blocked?.type === "question" ? blocked.blocked.question : ""}
                   companyId={company.id}
@@ -325,7 +325,7 @@ export function Dialogue() {
                 companyId={company.id}
               />
               {trail.length > 0 ? (
-                <div className="mt-auto space-y-0.5 pt-2 text-[11px] leading-snug opacity-70">
+                <div className="mt-auto space-y-0.5 pt-2 text-xs leading-snug opacity-70">
                   {trail.map((a, i) => (
                     <FeedLine key={a.id ?? i} e={a} companyId={company.id} />
                   ))}
@@ -363,15 +363,13 @@ export function Dialogue() {
                     Talk…
                   </button>
                 </div>
-                <div className="text-right text-[10px] text-[var(--text-dim)]">
-                  ↑↓ select · ⏎ · esc
+                <div className="text-right text-xs text-[var(--text-dim)]">
+                  ↑↓ move · ⏎ select · esc close
                 </div>
               </>
             ) : (
               <div className="flex h-full flex-col gap-2">
-                <div className="text-[12px] text-[var(--text-dim)]">
-                  Tell {emp.name} what to do:
-                </div>
+                <div className="text-xs text-[var(--text-dim)]">Tell {emp.name} what to do:</div>
                 <input
                   ref={inputRef}
                   value={input}
@@ -401,16 +399,14 @@ export function Dialogue() {
               </div>
             )}
           </div>
-          {note ? (
-            <div className="mt-1 text-center text-[12px] text-[var(--ok)]">{note}</div>
-          ) : null}
+          {note ? <div className="mt-1 text-center text-xs text-[var(--ok)]">{note}</div> : null}
         </div>
 
         <button
           type="button"
           onClick={close}
           title="Close (esc)"
-          className="absolute top-0 right-0 p-2.5 text-[15px] leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
+          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
         >
           ✕
         </button>
@@ -436,7 +432,7 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
       }
       role={done ? undefined : "button"}
       tabIndex={done ? undefined : 0}
-      className="text-[14px] leading-relaxed break-words text-[var(--text)]"
+      className="text-sm leading-relaxed break-words text-[var(--text)]"
       style={{ cursor: done ? "default" : "pointer" }}
     >
       {done ? <RichText text={text} companyId={companyId} /> : shown}

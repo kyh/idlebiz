@@ -36,8 +36,8 @@ export function Inbox({
       <div className="px-window flex max-h-[80vh] w-full max-w-2xl flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
-            <div className="text-[16px]">Inbox</div>
-            <div className="text-[12px] text-[#c4c9dd]">
+            <div className="text-base">Inbox</div>
+            <div className="text-xs text-[#c4c9dd]">
               {pendingAsks.length} question{pendingAsks.length === 1 ? "" : "s"} ·{" "}
               {stuckTasks.length} stuck
             </div>
@@ -48,7 +48,7 @@ export function Inbox({
         </div>
         <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
           {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
-            <div className="text-[13px] text-[var(--text-dim)]">
+            <div className="text-sm text-[var(--text-dim)]">
               All clear — nobody's waiting on you.
             </div>
           ) : null}
@@ -76,7 +76,7 @@ export function Inbox({
             return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />;
           })}
           {stuckTasks.length > 0 ? (
-            <div className="pt-1 text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
+            <div className="pt-1 text-xs uppercase tracking-wide text-[var(--text-dim)]">
               Stuck — needs a retry
             </div>
           ) : null}
@@ -107,14 +107,14 @@ function ConnectRow({
   const label = INTEGRATION_LABELS[integration];
   return (
     <div className="px-inset p-3">
-      <div className="text-[12px] text-[var(--accent-lo)]">
+      <div className="text-xs text-[var(--accent-lo)]">
         🔌 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
-      <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
+      <div className="mt-1 text-sm leading-snug text-[var(--text)]">
         {reason || `The team needs ${label} connected to keep going.`}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-[var(--text-dim)]">
+        <span className="text-xs text-[var(--text-dim)]">
           Their task resumes automatically once connected.
         </span>
         <button
@@ -141,15 +141,15 @@ function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string 
   };
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
-      <div className="text-[12px] text-[var(--warn)]">
+      <div className="text-xs text-[var(--warn)]">
         🔐 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
-      <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
+      <div className="mt-1 text-sm leading-snug text-[var(--text)]">
         {verdict.decision === "ask" ? verdict.rule.describe : "Wants to run this."}
       </div>
       <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-[var(--text-dim)]">
+        <span className="text-xs text-[var(--text-dim)]">
           Approving covers this exact command, once.
         </span>
         <span className="flex gap-2">
@@ -184,12 +184,12 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
   };
   return (
     <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
-      <div className="text-[12px] text-[var(--danger)]">
+      <div className="text-xs text-[var(--danger)]">
         {t.status === "dead" ? "💀" : "⚠"} {by} ·{" "}
         <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
       {t.lastError ? (
-        <div className="mt-1 text-[12px] leading-snug text-[var(--text-dim)]">{t.lastError}</div>
+        <div className="mt-1 text-xs leading-snug text-[var(--text-dim)]">{t.lastError}</div>
       ) : null}
       <div className="mt-2 flex justify-end">
         <button
@@ -220,10 +220,10 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
 
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
-      <div className="text-[12px] text-[var(--danger)]">
+      <div className="text-xs text-[var(--danger)]">
         ❗ {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
       </div>
-      <div className="mt-1 text-[13px] leading-snug text-[var(--text)]">
+      <div className="mt-1 text-sm leading-snug text-[var(--text)]">
         <RichText
           text={t.blocked?.type === "question" ? t.blocked.question : ""}
           companyId={companyId}

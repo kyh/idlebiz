@@ -56,7 +56,7 @@ function Narrator({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-[14px] leading-relaxed text-[var(--text)]"
+      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-[var(--text)]"
       onClick={skip}
     >
       {shown}
@@ -238,9 +238,7 @@ export function PokeOnboarding() {
         <div className="text-6xl text-[#f5f3ea]" style={{ textShadow: "4px 4px 0 #1d2136" }}>
           IDLEBIZ
         </div>
-        <div className="mt-2 text-[12px] tracking-wide text-[#8a90ab]">
-          a startup that runs itself
-        </div>
+        <div className="mt-2 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
       </div>
 
       {/* step content above the battle box */}
@@ -275,10 +273,10 @@ export function PokeOnboarding() {
               <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
                 <Portrait seed={h.spriteSeed} />
                 <span>
-                  <span className="block text-[13px] text-[var(--text)]">
+                  <span className="block text-sm text-[var(--text)]">
                     {h.name} · <span className="text-[var(--accent-lo)]">{h.title}</span>
                   </span>
-                  <span className="block text-[10px] text-[var(--text-dim)]">{h.blurb}</span>
+                  <span className="block text-xs text-[var(--text-dim)]">{h.blurb}</span>
                 </span>
               </div>
             ))}
@@ -293,7 +291,7 @@ export function PokeOnboarding() {
       {/* the battle box */}
       <div className="px-battle w-full max-w-2xl p-4">
         <Narrator text={narration[step]} />
-        {error ? <div className="mt-1 text-[12px] text-[var(--danger)]">{error}</div> : null}
+        {error ? <div className="mt-1 text-xs text-[var(--danger)]">{error}</div> : null}
 
         {backStep(step) !== null ? (
           <button type="button" onClick={back} className="px-link mt-2" title="Esc">
@@ -316,7 +314,7 @@ export function PokeOnboarding() {
           {step === "auth" ? (
             <div className="flex w-full flex-col gap-2">
               {authLines.length > 0 ? (
-                <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-[11px] text-[var(--text-dim)]">
+                <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-[var(--text-dim)]">
                   {authLines.join("\n")}
                 </div>
               ) : null}
@@ -476,7 +474,7 @@ export function PokeOnboarding() {
                 ))}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[var(--text-dim)]">
+                <span className="text-xs text-[var(--text-dim)]">
                   {capUsd === null
                     ? "⚠ Uncapped. The office will keep spending while it works."
                     : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}

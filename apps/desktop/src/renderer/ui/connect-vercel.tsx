@@ -61,7 +61,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
     <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
       <div className="px-window flex max-h-[80vh] w-full max-w-lg flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
-          <div className="text-[16px]">Connect Vercel</div>
+          <div className="text-base">Connect Vercel</div>
           <button type="button" onClick={onClose} className="px-btn">
             Close
           </button>
@@ -70,7 +70,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
         <div className="px-scroll space-y-3 overflow-y-auto p-4">
           {vercelStatus.state === "connected" ? (
             <div className="px-inset space-y-2 p-3">
-              <div className="text-[13px] text-[var(--text)]">
+              <div className="text-sm text-[var(--text)]">
                 ✓ Connected to <b>{vercelStatus.projectName}</b> — users come from its Web
                 Analytics, and your team deploys to it for real.
               </div>
@@ -80,7 +80,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <>
-              <div className="text-[13px] leading-snug text-[var(--text)]">
+              <div className="text-sm leading-snug text-[var(--text)]">
                 Users are REAL — they come from Vercel Web Analytics on your deployed product. Paste
                 a Vercel access token (vercel.com/account/tokens); your team also uses it to ship
                 deploys.
@@ -104,11 +104,11 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
               {account ? (
-                <div className="text-[11px] text-[var(--text-dim)]">Signed in as {account}</div>
+                <div className="text-xs text-[var(--text-dim)]">Signed in as {account}</div>
               ) : null}
               {projects && projects.length > 0 ? (
                 <div className="px-inset max-h-64 overflow-y-auto p-2">
-                  <div className="mb-1 text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
+                  <div className="mb-1 text-xs uppercase tracking-wide text-[var(--text-dim)]">
                     Pick the product's project
                   </div>
                   {projects.map((p) => (
@@ -121,7 +121,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                     >
                       {p.name}
                       {p.teamId ? (
-                        <span className="ml-2 text-[10px] text-[var(--text-dim)]">team</span>
+                        <span className="ml-2 text-xs text-[var(--text-dim)]">team</span>
                       ) : null}
                     </button>
                   ))}
@@ -129,7 +129,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
               ) : null}
             </>
           )}
-          {error ? <div className="text-[12px] text-[var(--danger)]">{error}</div> : null}
+          {error ? <div className="text-xs text-[var(--danger)]">{error}</div> : null}
         </div>
       </div>
     </div>

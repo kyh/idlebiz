@@ -38,8 +38,8 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
       <div className="px-window flex max-h-[85vh] w-full max-w-xl flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
-            <div className="text-[16px]">Budget</div>
-            <div className="text-[12px] text-[#c4c9dd]">
+            <div className="text-base">Budget</div>
+            <div className="text-xs text-[#c4c9dd]">
               AI tokens cost real money — set how much the office may burn
             </div>
           </div>
@@ -51,7 +51,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
         <div className="px-scroll flex-1 space-y-4 overflow-y-auto p-4">
           {out ? (
             <div
-              className="px-inset p-3 text-[13px]"
+              className="px-inset p-3 text-sm"
               style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
             >
               ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite) to get the team
@@ -60,7 +60,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
           ) : null}
 
           <div>
-            <div className="mb-2 text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
+            <div className="mb-2 text-xs uppercase tracking-wide text-[var(--text-dim)]">
               Spending cap
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -84,7 +84,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[14px] text-[var(--text)]">$</span>
+              <span className="text-sm text-[var(--text)]">$</span>
               <input
                 value={capInput}
                 onChange={(e) => setCapInput(e.target.value)}
@@ -107,14 +107,14 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
 
           <div className="px-inset flex items-center justify-between p-3">
             <div>
-              <div className="text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
+              <div className="text-xs uppercase tracking-wide text-[var(--text-dim)]">
                 Spent so far
               </div>
-              <div className="text-[16px] tabular-nums text-[var(--text)]">
+              <div className="text-base tabular-nums text-[var(--text)]">
                 ${company.spentUsd.toFixed(2)}
               </div>
               {capped && company.budget.mode === "capped" ? (
-                <div className="text-[11px] tabular-nums text-[var(--text-dim)]">
+                <div className="text-xs tabular-nums text-[var(--text-dim)]">
                   of ${company.budget.capUsd.toFixed(2)} budget
                 </div>
               ) : null}
@@ -125,17 +125,17 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <div className="mb-2 text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
+            <div className="mb-2 text-xs uppercase tracking-wide text-[var(--text-dim)]">
               Real numbers · Stripe
             </div>
             <div className="px-inset space-y-2 p-3">
-              <div className="text-[13px] leading-snug text-[var(--text)]">
+              <div className="text-sm leading-snug text-[var(--text)]">
                 Connect your Stripe account to see your REAL revenue and customers — there are no
                 numbers without it{liveMetrics ? " — live now ⚡" : ""}.
               </div>
               {stripeStatus.state === "connected" ? (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] text-[var(--text)]">
+                  <span className="text-sm text-[var(--text)]">
                     ✓ {stripeStatus.accountId}
                     <span
                       className="px-badge ml-2"
@@ -151,15 +151,15 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
                   </button>
                 </div>
               ) : stripeStatus.state === "connecting" ? (
-                <div className="px-live-dot text-[13px] text-[var(--text-dim)]">
+                <div className="px-live-dot text-sm text-[var(--text-dim)]">
                   Waiting for Stripe in your browser…
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-2">
                   {stripeStatus.state === "error" ? (
-                    <span className="text-[12px] text-[var(--danger)]">{stripeStatus.message}</span>
+                    <span className="text-xs text-[var(--danger)]">{stripeStatus.message}</span>
                   ) : (
-                    <span className="text-[12px] text-[var(--text-dim)]">Not connected</span>
+                    <span className="text-xs text-[var(--text-dim)]">Not connected</span>
                   )}
                   <button
                     type="button"

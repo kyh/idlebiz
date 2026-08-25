@@ -22,18 +22,18 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
         onClick={() => setOpen(!open)}
         className="flex w-full items-baseline gap-2 text-left"
       >
-        <span className="text-[11px] text-[var(--text-dim)]">{open ? "▼" : "▶"}</span>
+        <span className="text-xs text-[var(--text-dim)]">{open ? "▼" : "▶"}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] text-[var(--text)]">
+          <span className="block truncate text-sm text-[var(--text)]">
             📦 {firstLine || t.title}
           </span>
         </span>
-        <span className="shrink-0 text-[11px] text-[var(--text-dim)]">
+        <span className="shrink-0 text-xs text-[var(--text-dim)]">
           {by} · {formatDate(t.completedAt ?? t.createdAt)}
         </span>
       </button>
       {open ? (
-        <p className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-[#4c5064]">
+        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#4c5064]">
           <RichText text={summary.slice(0, 1500)} companyId={companyId} />
         </p>
       ) : null}
@@ -83,8 +83,8 @@ export function Ships({ onClose }: { onClose: () => void }) {
       <div className="px-window flex max-h-[88vh] w-full max-w-3xl flex-col">
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
-            <div className="text-[16px]">Shipping log</div>
-            <div className="text-[12px] text-[#c4c9dd]">
+            <div className="text-base">Shipping log</div>
+            <div className="text-xs text-[#c4c9dd]">
               {company.ships} shipped · everything your team built lives in the workspace
             </div>
           </div>
@@ -118,13 +118,13 @@ export function Ships({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {note ? <div className="px-3 pt-2 text-[12px] text-[var(--danger)]">{note}</div> : null}
+        {note ? <div className="px-3 pt-2 text-xs text-[var(--danger)]">{note}</div> : null}
 
         <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
           {ships === null ? (
-            <div className="text-[13px] text-[var(--text-dim)]">Loading…</div>
+            <div className="text-sm text-[var(--text-dim)]">Loading…</div>
           ) : ships.length === 0 ? (
-            <div className="text-[13px] text-[var(--text-dim)]">
+            <div className="text-sm text-[var(--text-dim)]">
               Nothing shipped yet — the team is just getting started.
             </div>
           ) : (

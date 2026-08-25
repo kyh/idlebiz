@@ -28,14 +28,14 @@ function Stat({
 }) {
   const body = (
     <>
-      <div className="text-[10px] uppercase tracking-wide text-[#c3c9de]">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-[#c3c9de]">{label}</div>
       <div
-        className="text-[17px] leading-tight tabular-nums"
+        className="text-base leading-tight tabular-nums"
         style={accent ? { color: accent } : undefined}
       >
         {value}
       </div>
-      {sub ? <div className="text-[10px] tabular-nums text-[#a7adc6]">{sub}</div> : null}
+      {sub ? <div className="text-xs tabular-nums text-[#a7adc6]">{sub}</div> : null}
     </>
   );
   if (onClick) {

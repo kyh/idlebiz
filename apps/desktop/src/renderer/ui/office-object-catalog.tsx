@@ -29,8 +29,8 @@ export function OfficeObjectCatalog() {
         <header className="px-window m-3 shrink-0 overflow-hidden">
           <div className="px-titlebar flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-[17px]">Office Objects</h1>
-              <p className="text-[11px] text-[#d6d9e7]">
+              <h1 className="text-base">Office Objects</h1>
+              <p className="text-xs text-[#d6d9e7]">
                 {visibleAssets.length} / {OFFICE_OBJECT_ASSETS.length} objects
               </p>
             </div>
@@ -65,7 +65,7 @@ export function OfficeObjectCatalog() {
               ))}
             </div>
           ) : (
-            <div className="px-window p-6 text-[13px]">No matching office objects.</div>
+            <div className="px-window p-6 text-sm">No matching office objects.</div>
           )}
         </section>
       </div>
@@ -86,8 +86,8 @@ function ObjectCard({
     <article className="px-window flex min-h-[230px] flex-col overflow-hidden">
       <div className="px-titlebar flex items-center justify-between gap-2 px-3 py-2">
         <div className="min-w-0">
-          <h2 className="truncate text-[13px]">{asset.id}</h2>
-          <p className="text-[10px] text-[#d6d9e7]">source {asset.sourceId}</p>
+          <h2 className="truncate text-sm">{asset.id}</h2>
+          <p className="text-xs text-[#d6d9e7]">source {asset.sourceId}</p>
         </div>
         <button type="button" onClick={onCopy} className="px-chip shrink-0">
           {copied ? "Copied" : "Copy"}
@@ -123,7 +123,7 @@ function ObjectVariant({ variant, assetId }: { variant: OfficeObjectVariant; ass
           className="max-w-none shrink-0 [image-rendering:pixelated]"
         />
       </div>
-      <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--text-dim)]">
+      <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-dim)]">
         <span>{variant.scale}x</span>
         <span>
           {variant.w}x{variant.h}

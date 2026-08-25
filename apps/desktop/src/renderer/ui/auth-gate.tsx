@@ -39,12 +39,12 @@ export function AuthGate() {
   return (
     <div className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-[#10121b]/90 p-6">
       <div className="px-battle w-full max-w-lg p-4">
-        <div className="text-[14px] leading-relaxed text-[var(--text)]">
+        <div className="text-sm leading-relaxed text-[var(--text)]">
           Your team can't work — no signed-in coding CLI (Claude Code or Codex) was found. Set one
           up to get the office moving again.
         </div>
         {lines.length > 0 ? (
-          <div className="px-inset mt-2 max-h-20 overflow-y-auto whitespace-pre-line p-2 text-[11px] text-[var(--text-dim)]">
+          <div className="px-inset mt-2 max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-[var(--text-dim)]">
             {lines.join("\n")}
           </div>
         ) : null}
