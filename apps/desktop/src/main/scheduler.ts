@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
-import { agentDriver, priceRun } from "@/main/agents/agent-driver";
+import { agentDriver, priceRun, type RunResult } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { pluginHost } from "@/main/plugins";
 import type { RunContext, RunOutcome } from "@/main/plugins";
@@ -13,14 +13,7 @@ import {
   resolveMentions,
   retryDelayMs,
 } from "@/shared/domain";
-import type {
-  ActivityEvent,
-  BlockedAsk,
-  Company,
-  Employee,
-  IntegrationKind,
-  Task,
-} from "@/shared/domain";
+import type { ActivityEvent, Company, Employee, IntegrationKind, Task } from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -575,21 +568,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     if (company.autopilot) store.setAutopilot(company.id, false);
   }
 
-  private finish(
-    runId: string,
-    task: Task,
-    emp: Employee,
-    r: {
-      ok: boolean;
-      error?: string;
-      summary: string;
-      usage: AgentUsage;
-      sessionId?: string;
-      blocked?: BlockedAsk;
-      staleSession?: boolean;
-      rateLimitedUntil?: number;
-    },
-  ): void {
+  private finish(runId: string, task: Task, emp: Employee, r: RunResult): void {
     // Decide the outcome. A failed run is retried with exponential backoff up to
     // MAX_TASK_ATTEMPTS, then dead-lettered rather than silently abandoned.
     let taskStatus: RunOutcome["status"];

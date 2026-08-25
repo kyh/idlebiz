@@ -11,6 +11,7 @@ import {
   runAcpTurn,
   type AcpAgent,
   type PermissionDecision,
+  type AcpTurnResult,
   type PermissionRequest,
 } from "@repo/agent-driver/acp-session";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
@@ -110,33 +111,26 @@ export function priceRun(emp: Employee, usage: AgentUsage): number {
  * tarballs where every `grep -r` and `git add` the agent runs will walk it, so
  * it lives beside the companies instead and is granted as a writable root.
  */
-export const TOOL_CACHE_DIR = join(ROOT_DIR, "cache");
+const TOOL_CACHE_DIR = join(ROOT_DIR, "cache");
 
-function toolCacheEnv() {
-  return { npm_config_cache: join(TOOL_CACHE_DIR, "npm"), XDG_CACHE_HOME: TOOL_CACHE_DIR };
-}
+const TOOL_CACHE_ENV = {
+  npm_config_cache: join(TOOL_CACHE_DIR, "npm"),
+  XDG_CACHE_HOME: TOOL_CACHE_DIR,
+};
 
 // ---------------------------------------------------------------------------
-// The employee runtime: each run spawns the employee's CLI (claude / codex),
-// resume-first (the CLI session store is the employee's working memory), with
-// the game's control-plane API exposed via run-scoped env. Paperclip
-// convention, minus the human gates.
+// The employee runtime: each run spawns the employee's ACP agent, resume-first
+// (the agent's session store is the employee's working memory), with the game's
+// control-plane API reachable through run-scoped env.
 // ---------------------------------------------------------------------------
 
-export interface RunResult {
-  ok: boolean;
-  error?: string;
-  summary: string;
-  usage: AgentUsage;
-  sessionId?: string;
+export interface RunResult extends AcpTurnResult {
   blocked?: BlockedAsk;
   /** The stored session id failed to resume — the caller should clear it. */
   staleSession?: boolean;
   /** The CLI hit its usage/session limit; park work until this epoch instead of retrying. */
   rateLimitedUntil?: number;
 }
-
-export type { RunToolHooks };
 
 class AgentDriver {
   // CLI probes run async in the background; `probes` holds the latest results
@@ -181,8 +175,7 @@ class AgentDriver {
     const available = this.availableRunners();
     const awake = available.filter((r) => this.restingRunner(r) === null);
     const pool = awake.length > 0 ? awake : available;
-    const pick = pool[index % Math.max(1, pool.length)];
-    return pick ?? "codex";
+    return pool[index % pool.length] ?? "codex";
   }
 
   /** Epoch until which this runner's usage limit holds, or null if it's awake. */
@@ -210,37 +203,29 @@ class AgentDriver {
       const prompt = `${task.title}\n\n${task.description ?? ""}`.trim();
       const resumeId = emp.sessionId ?? undefined;
       const first = await this.invoke(emp, company, task, prompt, onEvent, hooks, resumeId, abort);
-      // A usage/session limit is a wall, not a flake — park the runner and
-      // hand the reset time up; never burn the fresh-session retry on it.
-      const limit = parseRateLimit(first.result.error);
-      if (!first.result.ok && limit) {
-        this.restingUntil.set(emp.runner, limit.resetsAt);
-        return { ...first.result, rateLimitedUntil: limit.resetsAt };
-      }
+      const parked = this.parkIfRateLimited(emp.runner, first.result);
+      if (parked) return parked;
       // A resume that dies without producing any output is almost always a
       // stale/unknown session — retry once with a fresh one before failing.
-      if (!first.result.ok && !first.sawOutput && resumeId) {
-        const retry = await this.invoke(
-          emp,
-          company,
-          task,
-          prompt,
-          onEvent,
-          hooks,
-          undefined,
-          abort,
-        );
-        const retryLimit = parseRateLimit(retry.result.error);
-        if (!retry.result.ok && retryLimit) {
-          this.restingUntil.set(emp.runner, retryLimit.resetsAt);
-          return { ...retry.result, rateLimitedUntil: retryLimit.resetsAt };
+      if (first.result.ok || first.sawOutput || !resumeId) return first.result;
+      const retry = await this.invoke(emp, company, task, prompt, onEvent, hooks, undefined, abort);
+      return (
+        this.parkIfRateLimited(emp.runner, retry.result) ?? {
+          ...retry.result,
+          staleSession: retry.result.sessionId === undefined,
         }
-        return { ...retry.result, staleSession: retry.result.sessionId === undefined };
-      }
-      return first.result;
+      );
     } finally {
       this.active.delete(emp.id);
     }
+  }
+
+  /** A usage/session limit is a wall, not a flake: park the runner, never retry into it. */
+  private parkIfRateLimited(runner: AgentRunner, result: RunResult): RunResult | null {
+    const limit = result.ok ? null : parseRateLimit(result.error);
+    if (!limit) return null;
+    this.restingUntil.set(runner, limit.resetsAt);
+    return { ...result, rateLimitedUntil: limit.resetsAt };
   }
 
   private async invoke(
@@ -268,7 +253,7 @@ class AgentDriver {
         cwd: companyWorkspace(company.id),
         resumeSessionId,
         addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
-        env: { ...handle.env, ...toolCacheEnv() },
+        env: { ...handle.env, ...TOOL_CACHE_ENV },
         onPermission: (request) => decidePermission(company.id, request, handle.block),
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
@@ -284,17 +269,7 @@ class AgentDriver {
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       const { blocked } = handle.outcome();
-      return {
-        result: {
-          ok: res.ok,
-          error: res.error,
-          summary: res.summary,
-          usage,
-          sessionId: res.sessionId,
-          blocked: blocked ?? undefined,
-        },
-        sawOutput,
-      };
+      return { result: { ...res, usage, blocked: blocked ?? undefined }, sawOutput };
     } finally {
       handle.release();
     }
