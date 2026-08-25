@@ -2,8 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { z } from "zod";
-import { zeroUsage } from "./events";
-import type { PermissionRequest, RunnerOptions, RunnerResult } from "./runner";
+import { zeroUsage, type AgentEvent, type AgentUsage } from "./events";
 
 // ---------------------------------------------------------------------------
 // One ACP turn, start to finish.
@@ -85,7 +84,7 @@ function webWritable(stream: Writable): WritableStream<Uint8Array> {
   });
 }
 
-export interface AcpAgentSpec {
+export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
   command: readonly string[];
   /**
@@ -97,9 +96,72 @@ export interface AcpAgentSpec {
    * and a wrong value here disables it silently.
    */
   sessionModeId?: string;
+  /** Environment this agent needs to find its own CLI. */
+  env?: Record<string, string>;
 }
 
-export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<RunnerResult> {
+/** A tool call an agent wants to make, as the policy layer sees it. */
+export interface PermissionRequest {
+  /** The shell command, or the tool call's title when it isn't a command. */
+  command: string;
+  /** The agent's own one-line account of what it is doing, when it gives one. */
+  description?: string;
+  /** ACP tool kind — "execute", "edit", "read", … */
+  kind?: string;
+}
+
+export interface PermissionDecision {
+  allow: boolean;
+}
+
+export interface AcpTurnOptions {
+  /** Which agent to spawn, and how to make it ask before acting. */
+  agent: AcpAgent;
+  /** The task, or the wake prompt when resuming. */
+  prompt: string;
+  /**
+   * Durable instructions (the employee's AGENTS.md body), sent only when a
+   * fresh session is opened. A resumed session already carries them, so
+   * re-sending would re-pay for the whole prompt on every wake.
+   */
+  systemPrompt: string;
+  /** Working directory — the company workspace where real work lands. */
+  cwd: string;
+  /** Continue this session instead of starting fresh (the employee's memory). */
+  resumeSessionId?: string;
+  /** Extra dirs the agent may read/write (e.g. its own agent package dir). */
+  addDirs?: string[];
+  /** Run-scoped env additions (control-plane URL + token, secrets). */
+  env?: Record<string, string>;
+  /**
+   * Decides whether a tool call may proceed, in-process, for every permission
+   * request the agent raises.
+   *
+   * Omitting it allows everything, which is only right for a runner the caller
+   * has already confined some other way.
+   */
+  onPermission?: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /** Kill + fail after this long with NO output (wedged process). 0 disables. */
+  idleTimeoutMs: number;
+  /** Absolute ceiling on one turn regardless of activity. 0 disables. */
+  maxSessionMs: number;
+  /** Aborts the underlying process. */
+  signal?: AbortSignal;
+  /** Receives normalized events as the turn streams. */
+  onEvent: (e: AgentEvent) => void;
+}
+
+export interface AcpTurnResult {
+  ok: boolean;
+  /** The agent's final message (the run summary). */
+  summary: string;
+  /** Session id — persist it to continue this employee's context later. */
+  sessionId?: string;
+  usage: AgentUsage;
+  error?: string;
+}
+
+export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
   return new Promise((resolvePromise) => {
     let child: ChildProcess | undefined;
     let settled = false;
@@ -128,7 +190,7 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
       opts.onEvent({ type: "message_end", role: "assistant", text });
     };
 
-    const settle = (res: RunnerResult): void => {
+    const settle = (res: AcpTurnResult): void => {
       if (settled) return;
       settled = true;
       if (idleTimer) clearTimeout(idleTimer);
@@ -146,7 +208,7 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
     };
 
     /** A turn that died mid-flight still spent what it spent. */
-    const failure = (error: string): RunnerResult => ({
+    const failure = (error: string): AcpTurnResult => ({
       ok: false,
       summary: transcript,
       sessionId,
@@ -163,7 +225,7 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
       idleTimer.unref?.();
     };
 
-    const [bin, ...args] = spec.command;
+    const [bin, ...args] = opts.agent.command;
     if (bin === undefined) {
       settle(failure("no ACP agent command configured"));
       return;
@@ -172,7 +234,11 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
     try {
       child = spawn(bin, args, {
         cwd: opts.cwd,
-        env: { ...process.env, ...opts.env },
+        // ELECTRON_RUN_AS_NODE: in a packaged app `process.execPath` is the
+        // Electron binary, which would otherwise treat the agent's entry file
+        // as a new Electron app instead of running it as node. Harmless when
+        // the parent is a plain node process.
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...opts.agent.env, ...opts.env },
         stdio: ["pipe", "pipe", "pipe"],
         signal: opts.signal,
       });
@@ -304,11 +370,11 @@ export function runAcpTurn(opts: RunnerOptions, spec: AcpAgentSpec): Promise<Run
             builder.withAdditionalDirectories(additionalDirectories);
           }
           sessionId = (await builder.start()).sessionId;
-          if (spec.sessionModeId !== undefined) {
+          if (opts.agent.sessionModeId !== undefined) {
             // Best effort: an agent offering no modes still runs, it just keeps
             // whatever default it shipped with.
             await agent
-              .request("session/set_mode", { sessionId, modeId: spec.sessionModeId })
+              .request("session/set_mode", { sessionId, modeId: opts.agent.sessionModeId })
               .catch(() => undefined);
           }
         } else {

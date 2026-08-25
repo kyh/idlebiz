@@ -7,8 +7,12 @@ import type { RunnerId } from "./runner";
  * reads this record.
  */
 export interface RunnerAdapter {
-  /** npm package providing this runner's ACP agent, spawned as a subprocess. */
-  acpPackage: string;
+  /**
+   * Module specifier of this runner's ACP agent, spawned as a subprocess.
+   * The whole specifier lives here so no other file has to know a third-party
+   * package's internal layout.
+   */
+  acpEntry: string;
   /**
    * Session mode that makes this agent ask before it acts, where it needs one.
    *
@@ -18,6 +22,16 @@ export interface RunnerAdapter {
    * already asks.
    */
   sessionModeId?: string;
+  /**
+   * Env var this runner's ACP agent uses to find the CLI binary.
+   *
+   * Both adapters ship a native CLI as an *optional* dependency and exec it.
+   * Optional deps do not survive packaging, so a built app fails with "native
+   * binary not found" while dev works fine. Pointing each adapter at the
+   * player's own install fixes that, keeps the "runs on your signed-in CLI"
+   * promise, and keeps a second copy of each CLI out of the build.
+   */
+  binEnvVar?: string;
   displayName: string;
   /** Subcommand that starts the CLI's own interactive login. */
   loginArgs: string[];
@@ -27,14 +41,16 @@ export interface RunnerAdapter {
 
 export const RUNNERS = {
   claude: {
-    acpPackage: "@agentclientprotocol/claude-agent-acp",
+    acpEntry: "@agentclientprotocol/claude-agent-acp/dist/index.js",
+    binEnvVar: "CLAUDE_CODE_EXECUTABLE",
     displayName: "Claude Code",
     loginArgs: ["auth", "login"],
     fallbackPricingModel: "claude-sonnet",
   },
   codex: {
-    acpPackage: "@agentclientprotocol/codex-acp",
+    acpEntry: "@agentclientprotocol/codex-acp/dist/index.js",
     sessionModeId: "read-only",
+    binEnvVar: "CODEX_PATH",
     displayName: "Codex",
     loginArgs: ["login"],
     fallbackPricingModel: "gpt-5.5-codex",

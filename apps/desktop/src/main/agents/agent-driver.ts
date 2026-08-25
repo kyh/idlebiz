@@ -2,11 +2,19 @@ import { probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { parseRateLimit } from "@repo/agent-driver/rate-limit";
 import { RUNNERS, type RunnerAdapter } from "@repo/agent-driver/registry";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_SESSION_MS } from "@repo/agent-driver/runner";
-import { runAcpTurn, type AcpAgentSpec } from "@repo/agent-driver/acp-session";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_MAX_SESSION_MS,
+  runnerBin,
+} from "@repo/agent-driver/runner";
+import {
+  runAcpTurn,
+  type AcpAgent,
+  type PermissionDecision,
+  type PermissionRequest,
+} from "@repo/agent-driver/acp-session";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
-import type { PermissionDecision, PermissionRequest } from "@repo/agent-driver/runner";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { createRequire } from "node:module";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
@@ -22,13 +30,38 @@ import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain
  * what knows where they landed. `import.meta.url` is the bundled main process,
  * which resolves against the desktop app's own node_modules.
  */
-export function acpSpecFor(runner: AgentRunner): AcpAgentSpec {
+const resolveFromApp = createRequire(import.meta.url);
+
+export function acpAgentFor(runner: AgentRunner): AcpAgent {
   const adapter: RunnerAdapter = RUNNERS[runner];
-  const require = createRequire(import.meta.url);
   return {
-    command: [process.execPath, require.resolve(`${adapter.acpPackage}/dist/index.js`)],
+    command: [process.execPath, unpacked(resolveFromApp.resolve(adapter.acpEntry))],
     sessionModeId: adapter.sessionModeId,
+    env: adapter.binEnvVar ? { [adapter.binEnvVar]: runnerBin(runner) } : undefined,
   };
+}
+
+/**
+ * Point at the real file, not the one inside the archive.
+ *
+ * Electron reads transparently through `app.asar`, so resolution succeeds and
+ * everything looks fine — but a child process cannot execute a script that
+ * exists only inside the archive, and the failure is silent: the agent spawns
+ * and answers nothing. electron-builder puts these packages in
+ * `app.asar.unpacked` (see asarUnpack); this is the matching half.
+ */
+function unpacked(path: string): string {
+  return path.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+}
+
+/** Is this runner's ACP agent actually installed? */
+function acpAgentInstalled(runner: AgentRunner): boolean {
+  try {
+    resolveFromApp.resolve(RUNNERS[runner].acpEntry);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -134,7 +167,13 @@ class AgentDriver {
 
   /** Runners that can execute work, per the most recent probe. */
   availableRunners(): AgentRunner[] {
-    return this.probes.filter((p) => p.installed && p.authed).map((p) => p.id);
+    // The probe answers for the CLI's login, which the ACP adapter rides on.
+    // The adapter itself is a separate thing that can be missing from a build,
+    // and a runner whose agent won't resolve should read as unavailable at
+    // boot rather than throwing mid-run.
+    return this.probes
+      .filter((p) => p.installed && p.authed && acpAgentInstalled(p.id))
+      .map((p) => p.id);
   }
 
   /** Mixed-roster assignment: round-robin across whatever is available (awake first). */
@@ -222,29 +261,27 @@ class AgentDriver {
     });
     let sawOutput = false;
     try {
-      const res = await runAcpTurn(
-        {
-          prompt,
-          systemPrompt: store.employeeInstructions(emp.id),
-          cwd: companyWorkspace(company.id),
-          resumeSessionId,
-          addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
-          env: { ...handle.env, ...toolCacheEnv() },
-          onPermission: (request) => decidePermission(company.id, request, handle.block),
-          idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
-          maxSessionMs: DEFAULT_MAX_SESSION_MS,
-          signal: abort.signal,
-          onEvent: (e) => {
-            sawOutput = true;
-            try {
-              onEvent(e);
-            } catch {
-              /* a listener must never break the run */
-            }
-          },
+      const res = await runAcpTurn({
+        agent: acpAgentFor(emp.runner),
+        prompt,
+        systemPrompt: store.employeeInstructions(emp.id),
+        cwd: companyWorkspace(company.id),
+        resumeSessionId,
+        addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
+        env: { ...handle.env, ...toolCacheEnv() },
+        onPermission: (request) => decidePermission(company.id, request, handle.block),
+        idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
+        maxSessionMs: DEFAULT_MAX_SESSION_MS,
+        signal: abort.signal,
+        onEvent: (e) => {
+          sawOutput = true;
+          try {
+            onEvent(e);
+          } catch {
+            /* a listener must never break the run */
+          }
         },
-        acpSpecFor(emp.runner),
-      );
+      });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       const { blocked } = handle.outcome();
       return {

@@ -8,8 +8,12 @@ files:
   - package.json
 asarUnpack:
   - resources/**
-  - node_modules/sharp/**/*
-  - node_modules/@img/**/*
+  # All of node_modules, not a hand-picked list. The ACP agents are spawned as
+  # child processes, and nothing inside an asar archive can be executed — but
+  # unpacking only the agent packages breaks them differently, because their
+  # own dependencies stay archived and module resolution fails. Unpacking the
+  # closure by hand is whack-a-mole; the app's own code stays in the asar.
+  - node_modules/**
 mac:
   # zip alongside dmg so electron-updater (latest-mac.yml) works when we add it
   target:

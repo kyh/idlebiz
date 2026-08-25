@@ -1,13 +1,10 @@
-import type { AgentEvent, AgentUsage } from "./events";
-
 /**
- * Which coding-agent CLI executes a run. Every runner is an ACP agent: spawn
- * it, open or resume a session, send one turn, resolve a RunnerResult when it
- * ends. Continuity lives in the agent's own session store — resume by id.
+ * Which coding-agent CLI backs an employee.
  *
- * This module is type/metadata only (no node imports beyond env reads), so
- * `RunnerId` can be type-re-exported into renderer-safe shared code. The
- * executable adapter record lives in registry.ts.
+ * Identity only — the vocabulary of actually running a turn lives with the
+ * code that runs it, in acp-session.ts. Keeping this module free of node
+ * imports beyond env reads is what lets `RunnerId` be type-re-exported into
+ * renderer-safe shared code.
  */
 export type RunnerId = "claude" | "codex";
 
@@ -15,72 +12,16 @@ export const RUNNER_IDS: readonly RunnerId[] = ["claude", "codex"];
 
 export const isRunnerId = (v: string): v is RunnerId => RUNNER_IDS.some((id) => id === v);
 
-/** Binary override hooks, mirroring the CLIs' own conventions. */
+/**
+ * The underlying CLI binary, with the same override hooks the CLIs use.
+ *
+ * We spawn ACP adapters rather than these directly, but the adapters run on
+ * the CLI's own login — so this is still what gets probed to answer "can this
+ * runner work at all".
+ */
 export const runnerBin = (id: RunnerId): string =>
   id === "claude" ? (process.env.CLAUDE_BIN ?? "claude") : (process.env.CODEX_BIN ?? "codex");
 
 /** Watchdog defaults sized for game tasks (minutes, not factory-scale hours). */
 export const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_MAX_SESSION_MS = 45 * 60_000;
-
-export interface RunnerOptions {
-  /** The task / wake prompt (delivered on stdin). */
-  prompt: string;
-  /**
-   * Durable agent instructions (the employee's AGENTS.md body). Injected on
-   * fresh sessions only — resumed sessions already carry them, so resume
-   * sends just the wake prompt (paperclip's cheap "wake delta" convention).
-   * Claude gets it via --append-system-prompt; codex has no system channel,
-   * so it's prepended to the prompt.
-   */
-  systemPrompt: string;
-  /** Working directory — the company workspace where real work lands. */
-  cwd: string;
-  /** Resume this CLI session instead of starting fresh. */
-  resumeSessionId?: string;
-  /** Extra dirs the agent may read/write (e.g. its own agent package dir). */
-  addDirs?: string[];
-  /** Run-scoped env additions (control-plane URL + token, secrets). */
-  env?: Record<string, string>;
-  /**
-   * Decides whether a tool call may proceed. Called in-process for every
-   * permission request the agent raises — no subprocess, no loopback call, and
-   * the run token never leaves this process.
-   *
-   * Omitting it allows everything, which is only ever right for a runner the
-   * caller has already sandboxed.
-   */
-  onPermission?: (request: PermissionRequest) => Promise<PermissionDecision>;
-  /** Kill + fail after this long with NO output (wedged process). 0 disables. */
-  idleTimeoutMs: number;
-  /** Absolute ceiling on one session regardless of activity. 0 disables. */
-  maxSessionMs: number;
-  /** Aborts the underlying process. */
-  signal?: AbortSignal;
-  /** Receives normalized events as the session streams. */
-  onEvent: (e: AgentEvent) => void;
-}
-
-/** A tool call an agent wants to make, as the policy layer sees it. */
-export interface PermissionRequest {
-  /** The shell command, or the tool call's title when it isn't a command. */
-  command: string;
-  /** The agent's own one-line account of what it is doing, when it gives one. */
-  description?: string;
-  /** ACP tool kind — "execute", "edit", "read", … */
-  kind?: string;
-}
-
-export interface PermissionDecision {
-  allow: boolean;
-}
-
-export interface RunnerResult {
-  ok: boolean;
-  /** The session's final assistant text (the run summary). */
-  summary: string;
-  /** CLI session id — persist it to resume this employee's context later. */
-  sessionId?: string;
-  usage: AgentUsage;
-  error?: string;
-}
