@@ -7,7 +7,14 @@ import {
   comparePaintOrder,
   type OfficeLayer,
   type OfficeLayoutData,
+  type OfficePoi,
+  type OfficeSeat,
 } from "@/renderer/game/office-layout";
+import {
+  OFFICE_LAYOUT_VERSION,
+  canonicalOfficeLayout,
+  type OfficeObjectDef,
+} from "@/shared/office-layout-schema";
 import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectVariant,
@@ -17,7 +24,16 @@ import {
   type RoomBuilderTile,
 } from "@/renderer/game/room-builder-tiles.generated";
 
-export type Tool = "select" | "place" | "spawn" | "seat" | "block" | "clear";
+export type Tool =
+  | "select"
+  | "place"
+  | "spawn"
+  | "door"
+  | "seat"
+  | "rest"
+  | "poi"
+  | "block"
+  | "clear";
 
 interface Pt {
   x: number;
@@ -57,7 +73,10 @@ export interface EditableLayout {
   cols: number;
   rows: number;
   spawn: Pt;
-  workSeats: Pt[];
+  /** Where hires walk in from and released employees walk out to. */
+  door: Pt;
+  seats: OfficeSeat[];
+  pois: OfficePoi[];
   objects: EditableObject[];
   collision: string[]; // authored grid; preserved on save, re-derived on demand
 }
@@ -193,7 +212,13 @@ export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableL
     cols: r.cols,
     rows: r.rows,
     spawn: { x: r.spawn.x, y: r.spawn.y },
-    workSeats: r.workSeats.map((s) => ({ x: s.x, y: s.y })),
+    door: { x: r.door.x, y: r.door.y },
+    seats: r.seats.map((s) =>
+      s.role === "work"
+        ? { role: "work", x: s.x, y: s.y }
+        : { role: "rest", x: s.x, y: s.y, sit: s.sit },
+    ),
+    pois: r.pois.map((p) => ({ x: p.x, y: p.y, face: p.face })),
     objects,
     collision: [...r.collision],
   };
@@ -225,7 +250,8 @@ function inferSolid(
 
 // --- serialize --------------------------------------------------------------
 /** Re-derive the collision grid from the placed pieces: floor-layer tiles carve
- * walkable space, solid furniture paints back solid, seats stay reachable. */
+ * walkable space, solid furniture paints back solid, and every spot the layout
+ * sends someone to (seats, points of interest, the door) is carved back open. */
 export function deriveCollision(L: EditableLayout): string[] {
   const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 1));
   for (const o of L.objects) {
@@ -239,7 +265,7 @@ export function deriveCollision(L: EditableLayout): string[] {
     const fp = footprintRect(o);
     if (fp) paint(grid, L.cell, L.cols, L.rows, fp, 1);
   }
-  for (const s of L.workSeats) {
+  for (const s of [...L.seats, ...L.pois, L.door]) {
     const c = Math.floor(s.x / L.cell);
     const r = Math.floor(s.y / L.cell);
     if (r >= 0 && c >= 0 && r < L.rows && c < L.cols) grid[r][c] = 0;
@@ -247,31 +273,39 @@ export function deriveCollision(L: EditableLayout): string[] {
   return grid.map((row) => row.join(""));
 }
 
-/** One object row in office-design.json — optional keys are omitted, not nulled. */
-interface SerializedObject {
+/** The keys every placed object may carry, whichever band it is in. */
+interface PlacedFields {
   id: string;
   x: number;
   y: number;
-  layer: OfficeLayer;
-  anchorY?: number;
   path?: string;
   flipX?: boolean;
   flipY?: boolean;
 }
 
-/** Serialize to the exact office-design.json string the game reads. */
-export function serializeLayout(L: EditableLayout): string {
+/** One object row as the game reads it: builder-only fields dropped, unset keys absent. */
+function toObjectDef(o: EditableObject): OfficeObjectDef {
+  const placed: PlacedFields = { id: o.id, x: o.x, y: o.y };
+  if (o.path !== undefined) placed.path = o.path;
+  if (o.flipX) placed.flipX = true;
+  if (o.flipY) placed.flipY = true;
+  switch (o.layer) {
+    case "floor":
+      return { layer: "floor", ...placed };
+    case "overhead":
+      return { layer: "overhead", ...placed };
+    case "object":
+      return { layer: "object", anchorY: o.anchorY, ...placed };
+  }
+}
+
+/** The layout as the game reads it. Runs the same canonicaliser main writes with. */
+export function toLayoutData(L: EditableLayout): OfficeLayoutData {
   // paint order is load-bearing on disk: the flat bands have no depth of their
   // own, so the array order IS their draw order
-  const objects = paintOrder(L.objects).map((o) => {
-    const out: SerializedObject = { id: o.id, x: o.x, y: o.y, layer: o.layer };
-    if (o.layer === "object") out.anchorY = o.anchorY;
-    if (o.path) out.path = o.path;
-    if (o.flipX) out.flipX = true;
-    if (o.flipY) out.flipY = true;
-    return out;
-  });
-  const out = {
+  const objects = paintOrder(L.objects).map(toObjectDef);
+  return canonicalOfficeLayout({
+    version: OFFICE_LAYOUT_VERSION,
     tile: L.tile,
     width: L.width,
     height: L.height,
@@ -279,11 +313,17 @@ export function serializeLayout(L: EditableLayout): string {
     cols: L.cols,
     rows: L.rows,
     spawn: L.spawn,
+    door: L.door,
+    seats: L.seats,
+    pois: L.pois,
     objects,
     collision: L.collision,
-    workSeats: L.workSeats,
-  };
-  return JSON.stringify(out);
+  });
+}
+
+/** Serialize to the exact office-design.json string the game reads. */
+export function serializeLayout(L: EditableLayout): string {
+  return JSON.stringify(toLayoutData(L));
 }
 
 /** Place by the sprite's CONTENT top-left at (cx, cy) — so the visible sprite lands

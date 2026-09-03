@@ -1,0 +1,253 @@
+import type { OfficeLayoutData, PixelPoint } from "./office-layout-schema.ts";
+
+// ---------------------------------------------------------------------------
+// Walking, as pure math over the authored collision grid.
+//
+// The scene paths NPCs and the player over this; main and the office builder
+// validate a layout with it before saving; the static gate walks it from the
+// command line. One implementation, so "reachable" means the same thing to
+// the check that passed and the employee who then gets stuck.
+//
+// The body that collides is a 16x12 box probed at its four corners; paths are
+// found by BFS over a half-tile node grid (a node is walkable when the body
+// fits at its centre). Imports nothing but types so node can load it as-is.
+// ---------------------------------------------------------------------------
+
+/** Node spacing of the path grid, in px (half a 32px tile). */
+const PATH_STEP = 16;
+/** Half-extents of the body box that collides with the grid. */
+const BODY_HALF_WIDTH = 8;
+const BODY_HALF_HEIGHT = 6;
+/** How far (in nodes) a blocked target is allowed to snap to reach a walkable one. */
+const PATH_SEARCH_RADIUS = 6;
+
+const CARDINAL_STEPS: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [0, -1],
+  [1, 0],
+  [-1, 0],
+];
+
+export interface PathTile {
+  readonly tx: number;
+  readonly ty: number;
+}
+
+/** The collision grid plus the world it covers, ready to probe. */
+export interface WalkGrid {
+  readonly cell: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly width: number;
+  readonly height: number;
+  readonly solid: readonly (readonly boolean[])[];
+  /** Path-grid extent: ceil(width / PATH_STEP) by ceil(height / PATH_STEP). */
+  readonly pathCols: number;
+  readonly pathRows: number;
+}
+
+export function walkGridOf(
+  layout: Pick<OfficeLayoutData, "cell" | "cols" | "rows" | "width" | "height" | "collision">,
+): WalkGrid {
+  return {
+    cell: layout.cell,
+    cols: layout.cols,
+    rows: layout.rows,
+    width: layout.width,
+    height: layout.height,
+    solid: layout.collision.map((row) => Array.from(row, (ch) => ch === "1")),
+    pathCols: Math.ceil(layout.width / PATH_STEP),
+    pathRows: Math.ceil(layout.height / PATH_STEP),
+  };
+}
+
+/** Is the collision cell under this pixel solid? Off-grid is solid. */
+export function solidAt(grid: WalkGrid, x: number, y: number): boolean {
+  const c = Math.floor(x / grid.cell);
+  const r = Math.floor(y / grid.cell);
+  if (r < 0 || c < 0 || r >= grid.rows || c >= grid.cols) return true;
+  return grid.solid[r]?.[c] ?? true;
+}
+
+/** Can a body centred here stand without any corner inside a solid cell? */
+export function bodyBlockedAt(grid: WalkGrid, x: number, y: number): boolean {
+  return (
+    solidAt(grid, x - BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
+    solidAt(grid, x + BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
+    solidAt(grid, x - BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT) ||
+    solidAt(grid, x + BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT)
+  );
+}
+
+/** Pixel centre of a path node. */
+export function nodeCenter(tile: PathTile): PixelPoint {
+  return { x: tile.tx * PATH_STEP + PATH_STEP / 2, y: tile.ty * PATH_STEP + PATH_STEP / 2 };
+}
+
+/** The path node a pixel falls in. */
+export function tileOf(x: number, y: number): PathTile {
+  return { tx: Math.floor(x / PATH_STEP), ty: Math.floor(y / PATH_STEP) };
+}
+
+export function walkableNode(grid: WalkGrid, tile: PathTile): boolean {
+  if (tile.tx < 0 || tile.ty < 0 || tile.tx >= grid.pathCols || tile.ty >= grid.pathRows)
+    return false;
+  const p = nodeCenter(tile);
+  return !bodyBlockedAt(grid, p.x, p.y);
+}
+
+/** The node itself if walkable, else the nearest walkable node in a growing ring. */
+function nearestWalkable(grid: WalkGrid, tile: PathTile): PathTile | null {
+  if (walkableNode(grid, tile)) return tile;
+  for (let radius = 1; radius <= PATH_SEARCH_RADIUS; radius += 1) {
+    for (let oy = -radius; oy <= radius; oy += 1) {
+      for (let ox = -radius; ox <= radius; ox += 1) {
+        if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
+        const candidate = { tx: tile.tx + ox, ty: tile.ty + oy };
+        if (walkableNode(grid, candidate)) return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+/** Nearest walkable node centre to a pixel, or null when nothing is in range. */
+export function nearestFloor(grid: WalkGrid, x: number, y: number): PixelPoint | null {
+  const tile = nearestWalkable(grid, tileOf(x, y));
+  return tile ? nodeCenter(tile) : null;
+}
+
+const tileKey = (tile: PathTile): string => `${tile.tx},${tile.ty}`;
+
+function parseTileKey(key: string): PathTile {
+  const comma = key.indexOf(",");
+  return { tx: Number(key.slice(0, comma)), ty: Number(key.slice(comma + 1)) };
+}
+
+function samePoint(a: PixelPoint, b: PixelPoint): boolean {
+  return Math.hypot(a.x - b.x, a.y - b.y) < 1;
+}
+
+/**
+ * Waypoints (px) from one pixel to another, or null when unreachable.
+ *
+ * Either end snaps to the nearest walkable node, so walking "to a desk" walks up to
+ * it. The final waypoint is the exact target when the body fits there, else the
+ * node it snapped to — the walker ends where it can actually stand.
+ */
+export function findPath(grid: WalkGrid, from: PixelPoint, to: PixelPoint): PixelPoint[] | null {
+  const start = nearestWalkable(grid, tileOf(from.x, from.y));
+  const goal = nearestWalkable(grid, tileOf(to.x, to.y));
+  if (!start || !goal) return null;
+  const goalPoint = bodyBlockedAt(grid, to.x, to.y) ? nodeCenter(goal) : to;
+  const startKey = tileKey(start);
+  const goalKey = tileKey(goal);
+  const parent = new Map<string, string | null>([[startKey, null]]);
+  const queue: PathTile[] = [start];
+  let cursor = 0;
+  let found = startKey === goalKey;
+  while (cursor < queue.length && !found) {
+    const cur = queue[cursor];
+    cursor += 1;
+    if (!cur) break;
+    for (const [dx, dy] of CARDINAL_STEPS) {
+      const next = { tx: cur.tx + dx, ty: cur.ty + dy };
+      const nextKey = tileKey(next);
+      if (!walkableNode(grid, next) || parent.has(nextKey)) continue;
+      parent.set(nextKey, tileKey(cur));
+      if (nextKey === goalKey) {
+        found = true;
+        break;
+      }
+      queue.push(next);
+    }
+  }
+  if (!found) return null;
+  const keys: string[] = [];
+  let walkBack: string | null = goalKey;
+  while (walkBack) {
+    keys.unshift(walkBack);
+    walkBack = parent.get(walkBack) ?? null;
+  }
+  const points = keys.map((key) => nodeCenter(parseTileKey(key)));
+  points.shift(); // the start node is where the walker already stands
+  const last = points[points.length - 1];
+  if (!last || !samePoint(last, goalPoint)) points.push(goalPoint);
+  return points;
+}
+
+/** Every node key a walker starting at `from` can reach (BFS, flood fill). */
+export function reachableTiles(grid: WalkGrid, from: PixelPoint): ReadonlySet<string> {
+  const start = nearestWalkable(grid, tileOf(from.x, from.y));
+  const seen = new Set<string>();
+  if (!start) return seen;
+  seen.add(tileKey(start));
+  const queue: PathTile[] = [start];
+  let cursor = 0;
+  while (cursor < queue.length) {
+    const cur = queue[cursor];
+    cursor += 1;
+    if (!cur) break;
+    for (const [dx, dy] of CARDINAL_STEPS) {
+      const next = { tx: cur.tx + dx, ty: cur.ty + dy };
+      const key = tileKey(next);
+      if (seen.has(key) || !walkableNode(grid, next)) continue;
+      seen.add(key);
+      queue.push(next);
+    }
+  }
+  return seen;
+}
+
+/** Every node centre a walker starting at `from` can stand on. */
+export function reachableNodes(grid: WalkGrid, from: PixelPoint): PixelPoint[] {
+  return [...reachableTiles(grid, from)].map((key) => nodeCenter(parseTileKey(key)));
+}
+
+/** Can a walker whose reachable set is `reachable` get to (or beside) this pixel? */
+export function canReach(grid: WalkGrid, reachable: ReadonlySet<string>, to: PixelPoint): boolean {
+  const goal = nearestWalkable(grid, tileOf(to.x, to.y));
+  return goal !== null && reachable.has(tileKey(goal));
+}
+
+const at = (p: PixelPoint): string => `${p.x},${p.y}`;
+
+/**
+ * Everything wrong with a layout that the schema cannot see: places the office
+ * promises people can go, that nobody can actually walk to. Empty means clean.
+ *
+ * Reachability is from the founder's spawn, the one point every walker shares
+ * the floor with. A seat off in a sealed room passes the schema and fails here.
+ */
+export function layoutIssues(layout: OfficeLayoutData): string[] {
+  const grid = walkGridOf(layout);
+  const issues: string[] = [];
+  const inWorld = (p: PixelPoint): boolean =>
+    p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;
+
+  if (!inWorld(layout.spawn)) issues.push(`spawn ${at(layout.spawn)} is outside the world`);
+  else if (nearestFloor(grid, layout.spawn.x, layout.spawn.y) === null)
+    issues.push(`spawn ${at(layout.spawn)} has no walkable floor near it`);
+  if (issues.length > 0) return issues; // nothing else can be judged without a start
+
+  const reachable = reachableTiles(grid, layout.spawn);
+  if (!inWorld(layout.door)) issues.push(`door ${at(layout.door)} is outside the world`);
+  else if (!canReach(grid, reachable, layout.door))
+    issues.push(`door ${at(layout.door)} is unreachable from spawn`);
+
+  const seen = new Map<string, number>();
+  layout.seats.forEach((seat, i) => {
+    const label = `seat ${i} (${seat.role} at ${at(seat)})`;
+    const prior = seen.get(at(seat));
+    if (prior !== undefined) issues.push(`${label} duplicates seat ${prior}`);
+    else seen.set(at(seat), i);
+    if (!inWorld(seat)) issues.push(`${label} is outside the world`);
+    else if (!canReach(grid, reachable, seat)) issues.push(`${label} is unreachable from spawn`);
+  });
+  layout.pois.forEach((poi, i) => {
+    const label = `poi ${i} (facing ${poi.face} at ${at(poi)})`;
+    if (!inWorld(poi)) issues.push(`${label} is outside the world`);
+    else if (!canReach(grid, reachable, poi)) issues.push(`${label} is unreachable from spawn`);
+  });
+  return issues;
+}

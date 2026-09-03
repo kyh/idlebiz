@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { z } from "zod";
-import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
+import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import {
   loadCharacter,
   ensureWalkAnims,
@@ -21,16 +21,27 @@ import {
 import {
   OFFICE_CELL,
   OFFICE_COLS,
+  OFFICE_DOOR,
+  OFFICE_GRID,
   OFFICE_H,
   OFFICE_OBJECT_PLACEMENTS,
+  OFFICE_POIS,
   OFFICE_ROWS,
-  OFFICE_SOLID_GRID,
+  OFFICE_SEATS,
   OFFICE_SPAWN,
   OFFICE_W,
-  OFFICE_WORK_SEATS,
-  officeSolidAt,
   type PixelPoint,
 } from "@/renderer/game/office-layout";
+import { poseForToolKind } from "@/renderer/game/office-poses";
+import {
+  bodyBlockedAt,
+  findPath,
+  nearestFloor,
+  nodeCenter,
+  solidAt,
+  tileOf,
+  walkableNode,
+} from "@/shared/office-grid";
 import type { ActivityEvent, Employee } from "@/shared/domain";
 
 const FACING_OFFSET = {
@@ -41,9 +52,9 @@ const FACING_OFFSET = {
 } satisfies Record<Dir, { x: number; y: number }>;
 
 const WORKSPACE_KIT_PATH = "workspace-kit";
-const PATH_STEP = TILE / 2;
-const BODY_HALF_WIDTH = 8;
-const BODY_HALF_HEIGHT = 6;
+
+/** tool_call payloads carry ACP's `kind` beside the raw args; only the kind matters here. */
+const ToolCallPayload = z.object({ kind: z.string().optional() });
 
 /** How far above their workstation a seated employee is lifted (see seatDepth). */
 const SEAT_LIFT = 0.25;
@@ -53,45 +64,6 @@ interface OpaqueMask {
   readonly opaque: Uint8Array;
   readonly w: number;
   readonly h: number;
-}
-
-// Idle-life points of interest on the current map: the water cooler and the
-// printer get faced, the break-room chair gets sat on.
-const OFFICE_POIS: readonly Poi[] = [
-  { x: 304, y: 408, face: "up" }, // water cooler (break-room entrance)
-  { x: 440, y: 168, face: "up" }, // printer cart (top right)
-  { x: 240, y: 400, face: "down", sit: "left" }, // break-room office chair
-  { x: 200, y: 424, face: "down" }, // the money corner
-];
-const PATH_SEARCH_RADIUS = 6;
-
-const CARDINAL_STEPS: ReadonlyArray<readonly [number, number]> = [
-  [0, 1],
-  [0, -1],
-  [1, 0],
-  [-1, 0],
-];
-
-interface PathTile {
-  readonly tx: number;
-  readonly ty: number;
-}
-
-interface PathTarget {
-  readonly tile: PathTile;
-  readonly point: PixelPoint;
-}
-
-function parseTileKey(tileKey: string): PathTile {
-  const comma = tileKey.indexOf(",");
-  return {
-    tx: Number(tileKey.slice(0, comma)),
-    ty: Number(tileKey.slice(comma + 1)),
-  };
-}
-
-function samePoint(a: PixelPoint, b: PixelPoint): boolean {
-  return Math.hypot(a.x - b.x, a.y - b.y) < 1;
 }
 
 /**
@@ -116,8 +88,6 @@ export class OfficeScene extends Phaser.Scene {
   private founderSeed = "founder-player-001";
   private playerKey = "player";
   private debugGfx?: Phaser.GameObjects.Graphics;
-  private pathCols = Math.ceil(OFFICE_W / PATH_STEP);
-  private pathRows = Math.ceil(OFFICE_H / PATH_STEP);
   private npcs?: NpcManager;
   private paths?: PathProvider;
   private walk: ClickWalk | null = null;
@@ -130,21 +100,12 @@ export class OfficeScene extends Phaser.Scene {
     super("office");
   }
 
-  private key(tx: number, ty: number): string {
-    return `${tx},${ty}`;
-  }
-
   private solidAtPx(x: number, y: number): boolean {
-    return officeSolidAt(x, y);
+    return solidAt(OFFICE_GRID, x, y);
   }
 
   private bodyBlockedAt(x: number, y: number): boolean {
-    return (
-      this.solidAtPx(x - BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-      this.solidAtPx(x + BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-      this.solidAtPx(x - BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT) ||
-      this.solidAtPx(x + BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT)
-    );
+    return bodyBlockedAt(OFFICE_GRID, x, y);
   }
 
   preload() {
@@ -184,8 +145,9 @@ export class OfficeScene extends Phaser.Scene {
     void this.boot();
     this.exposeDebug();
 
-    const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp);
-    const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId);
+    // live hires and releases come and go through the door
+    const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp, "door");
+    const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId, "door");
     const onModal = (open: boolean) => {
       this.modalOpen = open;
       if (open) this.cancelWalk();
@@ -226,7 +188,7 @@ export class OfficeScene extends Phaser.Scene {
     this.centerCameraOn(OFFICE_SPAWN);
 
     this.paths = this.makePathProvider();
-    this.npcs = new NpcManager(this, seats, this.paths, OFFICE_POIS);
+    this.npcs = new NpcManager(this, seats, this.paths, this.idlePois(), OFFICE_DOOR);
 
     const bridge = window.appBridge;
     const company = bridge ? await bridge.getCompany() : null;
@@ -235,7 +197,8 @@ export class OfficeScene extends Phaser.Scene {
     this.founderSeed = company?.founderSpriteSeed ?? "founder-player-001";
 
     await this.spawnPlayer(OFFICE_SPAWN);
-    for (const emp of employees) await this.npcs.spawn(emp);
+    // the office is already staffed when it opens: nobody parades in on boot
+    for (const emp of employees) await this.npcs.spawn(emp, "settled");
 
     if (company && bridge) {
       const tasks = await bridge.listTasks({ companyId: company.id });
@@ -256,11 +219,21 @@ export class OfficeScene extends Phaser.Scene {
         .setDepth(placement.depth)
         .setFlip(placement.flipX, placement.flipY),
     );
-    return OFFICE_WORK_SEATS.map((seat) => ({
-      x: seat.x,
-      y: seat.y,
-      depth: this.seatDepth(seat, room),
-    }));
+    const seats: Seat[] = [];
+    for (const seat of OFFICE_SEATS) {
+      if (seat.role !== "work") continue;
+      seats.push({ x: seat.x, y: seat.y, depth: this.seatDepth(seat, room) });
+    }
+    return seats;
+  }
+
+  /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
+  private idlePois(): Poi[] {
+    const spots: Poi[] = OFFICE_POIS.map((p) => ({ x: p.x, y: p.y, face: p.face }));
+    for (const seat of OFFICE_SEATS) {
+      if (seat.role === "rest") spots.push({ x: seat.x, y: seat.y, face: "down", sit: seat.sit });
+    }
+    return spots;
   }
 
   /**
@@ -350,7 +323,7 @@ export class OfficeScene extends Phaser.Scene {
     gfx.fillStyle(0xff3366, 0.35);
     for (let r = 0; r < OFFICE_ROWS; r++) {
       for (let c = 0; c < OFFICE_COLS; c++) {
-        if (OFFICE_SOLID_GRID[r]?.[c])
+        if (OFFICE_GRID.solid[r]?.[c])
           gfx.fillRect(c * OFFICE_CELL, r * OFFICE_CELL, OFFICE_CELL, OFFICE_CELL);
       }
     }
@@ -372,7 +345,8 @@ export class OfficeScene extends Phaser.Scene {
           x: this.player?.x ?? null,
           y: this.player?.y ?? null,
         },
-        seats: OFFICE_WORK_SEATS.length,
+        door: OFFICE_DOOR,
+        seats: OFFICE_SEATS.length,
         world: {
           h: OFFICE_H,
           w: OFFICE_W,
@@ -394,99 +368,19 @@ export class OfficeScene extends Phaser.Scene {
     return result;
   }
 
-  /** BFS over a half-tile grid; collision itself uses the authored grid. */
+  /** Walking, from the shared grid — so the scene, the builder and the gate agree. */
   private makePathProvider(): PathProvider {
-    const nodePx = (gx: number, gy: number): PixelPoint => ({
-      x: gx * PATH_STEP + PATH_STEP / 2,
-      y: gy * PATH_STEP + PATH_STEP / 2,
-    });
-    const walkable = (gx: number, gy: number): boolean => {
-      if (gx < 0 || gy < 0 || gx >= this.pathCols || gy >= this.pathRows) return false;
-      const pt = nodePx(gx, gy);
-      return !this.bodyBlockedAt(pt.x, pt.y);
-    };
-    const nearestWalkable = (tx: number, ty: number): PathTile | null => {
-      if (walkable(tx, ty)) return { tx, ty };
-      for (let radius = 1; radius <= PATH_SEARCH_RADIUS; radius += 1) {
-        for (let oy = -radius; oy <= radius; oy += 1) {
-          for (let ox = -radius; ox <= radius; ox += 1) {
-            if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
-            const nx = tx + ox;
-            const ny = ty + oy;
-            if (walkable(nx, ny)) return { tx: nx, ty: ny };
-          }
-        }
-      }
-      return null;
-    };
-    const toTile = (px: number, py: number): PathTile | null => {
-      const tx = Math.floor(px / PATH_STEP);
-      const ty = Math.floor(py / PATH_STEP);
-      return nearestWalkable(tx, ty);
-    };
-    const toTarget = (px: number, py: number): PathTarget | null => {
-      const tile = toTile(px, py);
-      if (!tile) return null;
-      const exactPoint = { x: px, y: py };
-      return {
-        tile,
-        point: this.bodyBlockedAt(px, py) ? nodePx(tile.tx, tile.ty) : exactPoint,
-      };
-    };
     return {
-      findPath: (fromX, fromY, toX, toY) => {
-        const start = toTile(fromX, fromY);
-        const goal = toTarget(toX, toY);
-        if (!start || !goal) return null;
-        const startKey = this.key(start.tx, start.ty);
-        const goalKey = this.key(goal.tile.tx, goal.tile.ty);
-        const parent = new Map<string, string | null>([[startKey, null]]);
-        const queue: Array<{ tx: number; ty: number }> = [start];
-        let cursor = 0;
-        let found = startKey === goalKey;
-        while (cursor < queue.length && !found) {
-          const cur = queue[cursor];
-          cursor += 1;
-          if (!cur) break;
-          for (const [dx, dy] of CARDINAL_STEPS) {
-            const nx = cur.tx + dx;
-            const ny = cur.ty + dy;
-            const nk = this.key(nx, ny);
-            if (!walkable(nx, ny) || parent.has(nk)) continue;
-            parent.set(nk, this.key(cur.tx, cur.ty));
-            if (nk === goalKey) {
-              found = true;
-              break;
-            }
-            queue.push({ tx: nx, ty: ny });
-          }
-        }
-        if (!found) return null;
-        const tiles: string[] = [];
-        let parentCursor: string | null = goalKey;
-        while (parentCursor) {
-          tiles.unshift(parentCursor);
-          parentCursor = parent.get(parentCursor) ?? null;
-        }
-        const pts = tiles.map((tileKey) => {
-          const tile = parseTileKey(tileKey);
-          return nodePx(tile.tx, tile.ty);
-        });
-        pts.shift();
-        const last = pts[pts.length - 1];
-        if (!last || !samePoint(last, goal.point)) pts.push(goal.point);
-        return pts;
-      },
-      nearestFloor: (x, y) => {
-        const tile = toTile(x, y);
-        if (!tile) return null;
-        return nodePx(tile.tx, tile.ty);
-      },
+      findPath: (fromX, fromY, toX, toY) =>
+        findPath(OFFICE_GRID, { x: fromX, y: fromY }, { x: toX, y: toY }),
+      nearestFloor: (x, y) => nearestFloor(OFFICE_GRID, x, y),
       randomFloor: (x, y, radius) => {
         for (let i = 0; i < 24; i++) {
-          const tx = Math.floor((x + (Math.random() * 2 - 1) * radius) / PATH_STEP);
-          const ty = Math.floor((y + (Math.random() * 2 - 1) * radius) / PATH_STEP);
-          if (walkable(tx, ty)) return nodePx(tx, ty);
+          const tile = tileOf(
+            x + (Math.random() * 2 - 1) * radius,
+            y + (Math.random() * 2 - 1) * radius,
+          );
+          if (walkableNode(OFFICE_GRID, tile)) return nodeCenter(tile);
         }
         return null;
       },
@@ -501,6 +395,18 @@ export class OfficeScene extends Phaser.Scene {
       if (e.kind === "chat" && e.message != null) {
         const m = /^→ ([^(]+) \(/.exec(e.message);
         this.npcs?.onChat(e.employeeId, e.message, m?.[1]?.trim() ?? null);
+        return;
+      }
+      if (e.kind === "tool_call") {
+        // what they are doing right now, as the sprite can show it
+        const payload = ToolCallPayload.safeParse(e.payload);
+        const kind = payload.success ? payload.data.kind : undefined;
+        this.npcs?.onTool(e.employeeId, poseForToolKind(kind));
+        return;
+      }
+      if (e.kind === "lifecycle") {
+        // an ask raised mid-run: the "!" goes up now, not when the run settles
+        if (e.message === "run.ask") this.npcs?.onAsk(e.employeeId);
         return;
       }
       if (e.kind !== "status") return;

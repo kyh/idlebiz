@@ -15,7 +15,7 @@
     "format:fix": "oxfmt --write",
     "knip": "knip",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm -F @repo/desktop check:permissions && pnpm build"
+    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm -F @repo/desktop test && pnpm build"
   },
   "devDependencies": {
     "@kyh/oxlint": "^0.2.0",

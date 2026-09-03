@@ -1,0 +1,107 @@
+import { describe, expect, it } from "vitest";
+import bundled from "@/renderer/game/office-design.json";
+import type { JsonValue } from "./json";
+import {
+  OFFICE_LAYOUT_VERSION,
+  canonicalOfficeLayout,
+  officeLayoutSchema,
+  parseOfficeLayout,
+  type OfficeLayoutData,
+} from "./office-layout-schema";
+
+/** A pre-semantic (v1) office as the builder used to write it. */
+const legacy: JsonValue = {
+  tile: 32,
+  width: 64,
+  height: 64,
+  cell: 16,
+  cols: 4,
+  rows: 4,
+  spawn: { x: 24, y: 24 },
+  objects: [
+    { id: "floor-a", layer: "floor", x: 0, y: 0, path: "tiles/a.png" },
+    { id: "office-object-desk", layer: "object", x: 0, y: 0, anchorY: 32, flipX: true },
+  ],
+  collision: ["1111", "1001", "1001", "1111"],
+  workSeats: [{ x: 24, y: 40 }],
+};
+
+describe("parseOfficeLayout", () => {
+  it("upgrades a v1 layout: seats become work seats, the door is the spawn, no POIs", () => {
+    const out = parseOfficeLayout(legacy);
+    expect(out.version).toBe(OFFICE_LAYOUT_VERSION);
+    expect(out.seats).toEqual([{ role: "work", x: 24, y: 40 }]);
+    expect(out.door).toEqual({ x: 24, y: 24 });
+    expect(out.pois).toEqual([]);
+    expect(out.objects).toHaveLength(2);
+  });
+
+  it("accepts a v2 layout as-is", () => {
+    const v2 = canonicalOfficeLayout(parseOfficeLayout(legacy));
+    expect(parseOfficeLayout(v2)).toEqual(v2);
+  });
+
+  it("rejects a layout that fits neither schema, naming the current one", () => {
+    expect(() => parseOfficeLayout({ version: 2, tile: 32 })).toThrow(/schema v2/);
+    expect(() => parseOfficeLayout("nope")).toThrow(/schema v2/);
+  });
+
+  it("rejects a floor line the entity band cannot hold", () => {
+    const tooTall: JsonValue = {
+      ...legacy,
+      objects: [{ id: "x", layer: "object", x: 0, y: 0, anchorY: 5000 }],
+    };
+    expect(() => parseOfficeLayout(tooTall)).toThrow(/anchorY/);
+  });
+
+  it("rejects a rest seat without a side to sit on", () => {
+    const v2 = canonicalOfficeLayout(parseOfficeLayout(legacy));
+    const bad: JsonValue = { ...v2, seats: [{ role: "rest", x: 24, y: 40 }] };
+    expect(() => parseOfficeLayout(bad)).toThrow(/sit/);
+  });
+
+  it("ships the bundled office at the current version, with the semantic layer filled in", () => {
+    const out = officeLayoutSchema.parse(bundled);
+    expect(out.version).toBe(OFFICE_LAYOUT_VERSION);
+    expect(out.seats.filter((s) => s.role === "work").length).toBeGreaterThan(0);
+    expect(out.pois.length).toBeGreaterThan(0);
+  });
+});
+
+describe("canonicalOfficeLayout", () => {
+  it("stamps the version, fixes key order, and drops unset optional keys", () => {
+    const parsed: OfficeLayoutData = parseOfficeLayout(legacy);
+    const out = canonicalOfficeLayout(parsed);
+    expect(Object.keys(out)).toEqual([
+      "version",
+      "tile",
+      "width",
+      "height",
+      "cell",
+      "cols",
+      "rows",
+      "spawn",
+      "door",
+      "seats",
+      "pois",
+      "objects",
+      "collision",
+    ]);
+    expect(out.objects[0]).toEqual({
+      layer: "floor",
+      id: "floor-a",
+      x: 0,
+      y: 0,
+      path: "tiles/a.png",
+    });
+    expect(out.objects[1]).toEqual({
+      layer: "object",
+      anchorY: 32,
+      id: "office-object-desk",
+      x: 0,
+      y: 0,
+      flipX: true,
+    });
+    expect(JSON.stringify(out)).not.toContain("flipY");
+  });
+});

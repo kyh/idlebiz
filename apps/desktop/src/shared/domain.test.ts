@@ -1,4 +1,17 @@
-// Guards the command policy in shared/domain.ts.
+import { describe, expect, it } from "vitest";
+import {
+  approvalKey,
+  classifyCommand,
+  normalizeCommand,
+  parseBlockedAsk,
+  resolveMentions,
+  retryDelayMs,
+  serializeBlockedAsk,
+  type BlockedAsk,
+} from "./domain";
+
+// ---------------------------------------------------------------------------
+// The command policy.
 //
 // Employees run unattended against the founder's real credentials, and this
 // policy is the only thing that is the same on both runners — claude has its
@@ -15,14 +28,7 @@
 // all day owe an assertion that they are NOT held: a gate that cries wolf
 // trains founders to click Approve without reading, which is worse than no
 // gate at all.
-//
-// Usage: node scripts/check-permission-gate.mjs  — exit 0 clean, 1 on any miss
-import {
-  approvalKey,
-  classifyCommand,
-  parseBlockedAsk,
-  serializeBlockedAsk,
-} from "../src/shared/domain.ts";
+// ---------------------------------------------------------------------------
 
 /** ruleId → commands that must be held for that reason. */
 const MUST_ASK = {
@@ -82,7 +88,7 @@ const MUST_ASK = {
     "shred -u ~/.bash_history",
   ],
   "write-outside": ["chmod -R 777 /etc/hosts", "mv ./thing ~/Library/LaunchAgents/x.plist"],
-};
+} satisfies Record<string, readonly string[]>;
 
 // Everyday work. Employees do this all day and must never be interrupted for it.
 const MUST_ALLOW = [
@@ -128,76 +134,74 @@ const MUST_ALLOW = [
   `git commit -m "prepare for git push once approved"`,
 ];
 
-const failures = [];
-let asked = 0;
+describe("classifyCommand", () => {
+  describe.each(Object.entries(MUST_ASK))("holds for %s", (ruleId, commands) => {
+    it.each(commands)("%s", (command) => {
+      const verdict = classifyCommand(command);
+      // FAILS OPEN means an employee can do that unattended, with no card and no trace
+      expect(verdict.decision).toBe("ask");
+      // a mislabelled rule shows the founder the wrong reason on the card
+      if (verdict.decision === "ask") expect(verdict.rule.id).toBe(ruleId);
+    });
+  });
 
-for (const [ruleId, commands] of Object.entries(MUST_ASK)) {
-  for (const command of commands) {
-    asked++;
-    const verdict = classifyCommand(command);
-    if (verdict.decision !== "ask") {
-      failures.push(`FAILS OPEN (expected rule "${ruleId}"): ${command}`);
-    } else if (verdict.rule.id !== ruleId) {
-      // Not fatal for safety, but a mislabelled rule shows the founder the
-      // wrong reason on the card.
-      failures.push(
-        `WRONG REASON: ${command}\n      matched "${verdict.rule.id}", want "${ruleId}"`,
-      );
-    }
-  }
-}
+  // CRIES WOLF means founders learn to approve without reading
+  it.each(MUST_ALLOW)("lets everyday work through: %s", (command) => {
+    expect(classifyCommand(command)).toEqual({ decision: "allow" });
+  });
 
-for (const command of MUST_ALLOW) {
-  const verdict = classifyCommand(command);
-  if (verdict.decision !== "allow") {
-    failures.push(`CRIES WOLF (matched "${verdict.rule.id}"): ${command}`);
-  }
-}
+  it("is not laundered by a loopback call elsewhere in the line", () => {
+    const laundered = "rm -rf ~/Documents && curl -s $IDLEBIZ_API_URL/v1/team-chat";
+    expect(classifyCommand(laundered).decision).toBe("ask");
+  });
+});
 
-// A loopback call elsewhere in the line must not launder a real offence.
-const laundered = "rm -rf ~/Documents && curl -s $IDLEBIZ_API_URL/v1/team-chat";
-if (classifyCommand(laundered).decision !== "ask") {
-  failures.push(`LAUNDERED by a loopback call: ${laundered}`);
-}
+describe("approvalKey", () => {
+  it("strips the plumbing the CLIs wrap around a command, so a retry reuses the sign-off", () => {
+    expect(approvalKey('git push origin main 2>&1; echo "exit=$?"')).toBe(
+      approvalKey("git push  origin   main"),
+    );
+  });
 
-// The CLIs decorate what they run; a decorated retry must reuse the approval
-// the founder already gave, or they get asked the same question forever.
-const decorated = approvalKey('git push origin main 2>&1; echo "exit=$?"');
-const plain = approvalKey("git push  origin   main");
-if (decorated !== plain) {
-  failures.push(
-    `approvalKey does not normalize: ${JSON.stringify(decorated)} vs ${JSON.stringify(plain)}`,
-  );
-}
-if (approvalKey("git push origin main") === approvalKey("git push origin production")) {
-  failures.push("approvalKey collapses genuinely different commands");
-}
+  it("keeps genuinely different commands apart", () => {
+    expect(approvalKey("git push origin main")).not.toBe(approvalKey("git push origin production"));
+  });
 
-// TASK.md stores one scalar; a broken round-trip loses why a task is blocked.
-for (const ask of [
-  { type: "question", question: "ship it?" },
-  { type: "question", question: "why did [approve] show up here?" },
-  { type: "integration", integration: "vercel", reason: "need hosting" },
-  { type: "approval", command: "npx vercel deploy --prod" },
-]) {
-  const round = parseBlockedAsk(serializeBlockedAsk(ask));
-  if (JSON.stringify(round) !== JSON.stringify(ask)) {
-    failures.push(`BlockedAsk round-trip: ${JSON.stringify(ask)} -> ${JSON.stringify(round)}`);
-  }
-}
+  it("normalizes to one canonical string", () => {
+    expect(normalizeCommand("  npm   test 2>&1 ; echo exit=$?")).toBe("npm test");
+  });
+});
 
-if (failures.length === 0) {
-  console.log(
-    `permission gate ok — ${asked} held across ${Object.keys(MUST_ASK).length} rules, ` +
-      `${MUST_ALLOW.length} allowed, round-trips clean`,
-  );
-} else {
-  console.log("Permission gate check FAILED:\n");
-  for (const f of failures) console.log(`  ${f}`);
-  console.log(
-    "\nFAILS OPEN means an employee can do that unattended, with no card and no\n" +
-      "trace. CRIES WOLF means founders learn to approve without reading. Both are\n" +
-      "fixed in the RULES table in src/shared/domain.ts.",
-  );
-  process.exitCode = 1;
-}
+describe("BlockedAsk round-trip through TASK.md", () => {
+  it.each<BlockedAsk>([
+    { type: "question", question: "ship it?" },
+    { type: "question", question: "why did [approve] show up here?" },
+    { type: "integration", integration: "vercel", reason: "need hosting" },
+    { type: "approval", command: "npx vercel deploy --prod" },
+  ])("%j", (ask) => {
+    expect(parseBlockedAsk(serializeBlockedAsk(ask))).toEqual(ask);
+  });
+});
+
+describe("resolveMentions", () => {
+  const roster = [
+    { id: "sam-okafor", name: "Sam Okafor" },
+    { id: "samantha-cruz", name: "Samantha Cruz" },
+    { id: "lee", name: "Lee Park" },
+  ];
+
+  it("matches a slug, then a whole first name, never a prefix", () => {
+    expect(resolveMentions("@sam-okafor ship it", roster)).toEqual(["sam-okafor"]);
+    expect(resolveMentions("@sam, thoughts?", roster)).toEqual(["sam-okafor"]);
+    expect(resolveMentions("@Samantha and @lee", roster)).toEqual(["samantha-cruz", "lee"]);
+    expect(resolveMentions("email me@example.com", roster)).toEqual([]);
+  });
+});
+
+describe("retryDelayMs", () => {
+  it("backs off exponentially and caps", () => {
+    expect(retryDelayMs(1)).toBe(15_000);
+    expect(retryDelayMs(2)).toBe(30_000);
+    expect(retryDelayMs(10)).toBe(10 * 60_000);
+  });
+});

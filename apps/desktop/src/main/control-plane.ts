@@ -24,12 +24,23 @@ export interface RunToolHooks {
   hire(input: { role: string; title: string; name?: string; persona?: string }): string;
   /** Team-lead only: release a teammate (their package is archived, not deleted). */
   release(slug: string, reason: string): string;
+  /**
+   * The run just asked the founder for something. Fired the moment the ask is
+   * made, not when the run settles, so the office can show who is waiting.
+   */
+  raiseAsk(ask: BlockedAsk): void;
 }
 
 interface RunRecord {
   hooks: RunToolHooks;
   blocked: BlockedAsk | null;
   companyId: string;
+}
+
+/** Record why this run stopped (the first block is the one the founder sees) and say so. */
+function raise(record: RunRecord, ask: BlockedAsk): void {
+  record.blocked ??= ask;
+  record.hooks.raiseAsk(ask);
 }
 
 interface RunRegistration {
@@ -119,10 +130,7 @@ class ControlPlane {
     return {
       env: reg.taskId ? { ...base, IDLEBIZ_TASK_ID: reg.taskId } : base,
       outcome: () => ({ blocked: record.blocked }),
-      /** Record why this run stopped, so the founder gets the first block. */
-      block: (ask: BlockedAsk) => {
-        record.blocked ??= ask;
-      },
+      block: (ask: BlockedAsk) => raise(record, ask),
       release: () => {
         this.runs.delete(token);
       },
@@ -152,7 +160,7 @@ class ControlPlane {
             respond(res, 400, { ok: false, error: body.error.message });
             return;
           }
-          run.blocked = { type: "question", question: body.data.question.trim() };
+          raise(run, { type: "question", question: body.data.question.trim() });
           respond(res, 200, {
             ok: true,
             message:
@@ -209,11 +217,11 @@ class ControlPlane {
           }
           // A typed ask: the notification renders a [Connect] button and this
           // task auto-resumes when the founder connects.
-          run.blocked = {
+          raise(run, {
             type: "integration",
             integration: body.data.kind,
             reason: body.data.reason.trim(),
-          };
+          });
           respond(res, 200, {
             ok: true,
             message: `The founder has a ${body.data.kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,

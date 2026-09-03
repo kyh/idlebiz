@@ -11,8 +11,12 @@ import {
   applyOfficeLayout,
   parseOfficeLayout,
   type OfficeLayer,
+  type OfficePoi,
+  type OfficeSeat,
   type PixelPoint,
 } from "@/renderer/game/office-layout";
+import { layoutIssues } from "@/shared/office-grid";
+import type { Facing } from "@/shared/office-layout-schema";
 import {
   ALL_OBJECT_IDS,
   assetSrc,
@@ -29,6 +33,7 @@ import {
   setCollisionCell,
   setLayer,
   srcForObject,
+  toLayoutData,
   type EditableLayout,
   type EditableObject,
   type Tool,
@@ -42,11 +47,55 @@ const TOOLS: readonly { tool: Tool; label: string; hotkey: string }[] = [
   { tool: "select", label: "Select", hotkey: "v" },
   { tool: "place", label: "Place", hotkey: "p" },
   { tool: "spawn", label: "Spawn", hotkey: "s" },
+  { tool: "door", label: "Door", hotkey: "d" },
   { tool: "seat", label: "Seat", hotkey: "t" },
+  { tool: "rest", label: "Rest chair", hotkey: "r" },
+  { tool: "poi", label: "POI", hotkey: "i" },
   { tool: "block", label: "+Collision", hotkey: "b" },
   { tool: "clear", label: "−Collision", hotkey: "x" },
 ];
 const HISTORY_CAP = 100;
+/** How close a click must land to an existing marker to mean that marker. */
+const MARKER_HIT_PX = 12;
+const NEXT_FACING = { up: "right", right: "down", down: "left", left: "up" } satisfies Record<
+  Facing,
+  Facing
+>;
+const FACING_GLYPH = { up: "↑", right: "→", down: "↓", left: "←" } satisfies Record<Facing, string>;
+
+const near = (a: PixelPoint, b: PixelPoint): boolean =>
+  Math.hypot(a.x - b.x, a.y - b.y) < MARKER_HIT_PX;
+
+/**
+ * Markers share one gesture: click empty floor to add, click a marker to remove
+ * it, ⇧click a marker to turn it (a rest chair's side, a POI's facing).
+ */
+function toggleSeat(
+  seats: OfficeSeat[],
+  role: OfficeSeat["role"],
+  at: PixelPoint,
+  turn: boolean,
+): OfficeSeat[] {
+  const i = seats.findIndex((s) => s.role === role && near(s, at));
+  if (i < 0) {
+    const added: OfficeSeat =
+      role === "work" ? { role, x: at.x, y: at.y } : { role, x: at.x, y: at.y, sit: "left" };
+    return [...seats, added];
+  }
+  const hit = seats[i];
+  if (!turn || !hit || hit.role !== "rest") return seats.filter((_, j) => j !== i);
+  return seats.map((s, j) =>
+    j === i ? { ...hit, sit: hit.sit === "left" ? "right" : "left" } : s,
+  );
+}
+
+function togglePoi(pois: OfficePoi[], at: PixelPoint, turn: boolean): OfficePoi[] {
+  const i = pois.findIndex((p) => near(p, at));
+  if (i < 0) return [...pois, { x: at.x, y: at.y, face: "up" }];
+  const hit = pois[i];
+  if (!turn || !hit) return pois.filter((_, j) => j !== i);
+  return pois.map((p, j) => (j === i ? { ...hit, face: NEXT_FACING[hit.face] } : p));
+}
 
 export function OfficeBuilder() {
   const [layout, setLayout] = useState<EditableLayout>(loadLayout);
@@ -268,13 +317,17 @@ export function OfficeBuilder() {
         commit((L) => ({ ...L, spawn: { x: sx, y: sy } }));
         return;
       }
-      if (tool === "seat") {
-        commit((L) => {
-          const near = L.workSeats.findIndex((s) => Math.hypot(s.x - p.x, s.y - p.y) < 12);
-          return near >= 0
-            ? { ...L, workSeats: L.workSeats.filter((_, i) => i !== near) }
-            : { ...L, workSeats: [...L.workSeats, { x: sx, y: sy }] };
-        });
+      if (tool === "door") {
+        commit((L) => ({ ...L, door: { x: sx, y: sy } }));
+        return;
+      }
+      if (tool === "seat" || tool === "rest") {
+        const role = tool === "seat" ? "work" : "rest";
+        commit((L) => ({ ...L, seats: toggleSeat(L.seats, role, { x: sx, y: sy }, e.shiftKey) }));
+        return;
+      }
+      if (tool === "poi") {
+        commit((L) => ({ ...L, pois: togglePoi(L.pois, { x: sx, y: sy }, e.shiftKey) }));
         return;
       }
       // select / drag (clicking an object) or marquee (dragging empty space)
@@ -387,6 +440,13 @@ export function OfficeBuilder() {
     const bridge = window.appBridge;
     if (!bridge) {
       setStatus("No app bridge available.");
+      return;
+    }
+    // The same judge main applies before writing, run here first so the reasons
+    // land in the status line instead of an IPC error.
+    const issues = layoutIssues(toLayoutData(layout));
+    if (issues.length > 0) {
+      setStatus(`Not saved — ${issues.join("; ")}`);
       return;
     }
     try {
@@ -708,22 +768,65 @@ export function OfficeBuilder() {
                   }}
                 />
               ))}
-            {layout.workSeats.map((s) => (
+            {layout.seats.map((s) => (
               <div
                 key={`s-${s.x}-${s.y}`}
+                title={s.role === "work" ? "work seat" : `rest chair · sit ${s.sit}`}
                 style={{
                   position: "absolute",
-                  left: s.x - 3,
-                  top: s.y - 3,
-                  width: 6,
-                  height: 6,
+                  left: s.x - 4,
+                  top: s.y - 4,
+                  width: 8,
+                  height: 8,
                   zIndex: 100001,
-                  background: "#38bdf8",
-                  borderRadius: 6,
+                  background: s.role === "work" ? "#38bdf8" : "#34d399",
+                  borderRadius: s.role === "work" ? 8 : 2,
+                  color: "#0b1a14",
+                  fontSize: 7,
+                  lineHeight: "8px",
+                  textAlign: "center",
                   pointerEvents: "none",
                 }}
-              />
+              >
+                {s.role === "rest" ? s.sit[0]?.toUpperCase() : null}
+              </div>
             ))}
+            {layout.pois.map((p) => (
+              <div
+                key={`p-${p.x}-${p.y}`}
+                title={`point of interest · faces ${p.face}`}
+                style={{
+                  position: "absolute",
+                  left: p.x - 4,
+                  top: p.y - 4,
+                  width: 8,
+                  height: 8,
+                  zIndex: 100001,
+                  background: "#f472b6",
+                  color: "#2a0a1c",
+                  fontSize: 8,
+                  lineHeight: "8px",
+                  textAlign: "center",
+                  pointerEvents: "none",
+                }}
+              >
+                {FACING_GLYPH[p.face]}
+              </div>
+            ))}
+            <div
+              title="door"
+              style={{
+                position: "absolute",
+                left: layout.door.x - 4,
+                top: layout.door.y - 4,
+                width: 8,
+                height: 8,
+                zIndex: 100002,
+                background: "#fb923c",
+                outline: "1px solid #431407",
+                pointerEvents: "none",
+              }}
+            />
             <div
               style={{
                 position: "absolute",
@@ -791,7 +894,10 @@ export function OfficeBuilder() {
                 : "Click to select, or drag a box to select many."}
             </p>
             <div className="px-inset p-2 text-xs leading-relaxed">
-              V select · P place · S spawn · T seat · B/X collision
+              V select · P place · S spawn · D door · B/X collision
+              <br />
+              T seat · R rest chair · I point of interest: click to add, click again to remove,
+              ⇧click to turn
               <br />
               ⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
               <br />
@@ -806,8 +912,8 @@ export function OfficeBuilder() {
           </div>
         )}
         <div className="mt-auto text-xs text-[var(--text-dim)]">
-          {layout.objects.length} objects · {layout.workSeats.length} seats · {layout.width}×
-          {layout.height}
+          {layout.objects.length} objects · {layout.seats.length} seats · {layout.pois.length} POIs
+          · {layout.width}×{layout.height}
         </div>
       </aside>
     </main>

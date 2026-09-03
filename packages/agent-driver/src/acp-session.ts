@@ -309,6 +309,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           opts.onEvent({
             type: "tool_start",
             toolName: update.title || update.kind || "tool",
+            kind: update.kind ?? undefined,
             args: update.rawInput,
           });
           return;
