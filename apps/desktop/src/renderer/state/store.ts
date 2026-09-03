@@ -14,7 +14,13 @@ import type { ProductStatus, StripeStatus, VercelStatus } from "@/shared/ipc-reg
 import { applyOfficeLayout } from "@/renderer/game/office-layout";
 
 interface State {
+  /** The first refresh finished: company, roster and tasks are known (or known absent). */
   booted: boolean;
+  /**
+   * The office layout is settled — saved office applied, or the bundled default kept.
+   * Set before the bridge calls that can fail, so the room still opens when they do.
+   */
+  layoutReady: boolean;
   authed: boolean;
   stripeStatus: StripeStatus;
   vercelStatus: VercelStatus;
@@ -32,6 +38,7 @@ interface State {
 
 let state: State = {
   booted: false,
+  layoutReady: false,
   authed: true,
   stripeStatus: { state: "disconnected" },
   vercelStatus: { state: "disconnected" },
@@ -119,6 +126,10 @@ export async function refresh(): Promise<void> {
   } catch {
     // keep the bundled default layout
   }
+  // The scene may mount now. Not `booted`: that also opens the HUD and the
+  // onboarding modal, and a founder shown onboarding because the bridge is down
+  // would create a second company on top of the one they have.
+  set({ layoutReady: true });
   const company = await bridge().getCompany();
   const employees = company ? await bridge().listEmployees({ companyId: company.id }) : [];
   const teams = company ? await bridge().listTeams({ companyId: company.id }) : [];

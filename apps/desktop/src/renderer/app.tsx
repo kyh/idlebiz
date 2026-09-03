@@ -23,7 +23,7 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 const getHash = (): string => window.location.hash;
 
 export function App() {
-  const { booted, authed, company, game } = useStore();
+  const { booted, layoutReady, authed, company, game } = useStore();
   const [ships, setShips] = useState(false);
   const [inbox, setInbox] = useState(false);
   const [teams, setTeams] = useState(false);
@@ -56,10 +56,11 @@ export function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {/* Not before the store has booted: refresh() applies the saved office layout
-          to the live bindings, and the scene's preload reads them the moment the game
-          exists — mounting first would build the bundled office instead. */}
-      {booted ? <PhaserGame key="office-game" onGame={setGame} /> : null}
+      {/* Not before the layout is settled: refresh() applies the saved office to the
+          live bindings, and the scene's preload reads them the moment the game exists —
+          mounting first would build the bundled office instead. Only the layout step
+          gates it, so a bridge failure later in refresh() still leaves an office open. */}
+      {layoutReady ? <PhaserGame key="office-game" onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
         {needsOnboarding ? <PokeOnboarding /> : null}
