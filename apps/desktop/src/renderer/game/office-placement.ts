@@ -48,7 +48,9 @@ export function planSeats(
       plan.set(emp.id, null);
       continue;
     }
-    const preferred = ((emp.deskIndex % seatCount) + seatCount) % seatCount;
+    // the index is read back from a markdown file: a hand edit can make it anything
+    const hired = Number.isFinite(emp.deskIndex) ? Math.trunc(emp.deskIndex) : 0;
+    const preferred = ((hired % seatCount) + seatCount) % seatCount;
     if (!taken.has(preferred)) {
       claim(emp.id, preferred);
       continue;

@@ -37,9 +37,13 @@ interface RunRecord {
   companyId: string;
 }
 
-/** Record why this run stopped (the first block is the one the founder sees) and say so. */
+/**
+ * Record why this run stopped and say so. The first ask is the one the task
+ * keeps and the founder answers, so it is the only one the office hears about.
+ */
 function raise(record: RunRecord, ask: BlockedAsk): void {
-  record.blocked ??= ask;
+  if (record.blocked) return;
+  record.blocked = ask;
   record.hooks.raiseAsk(ask);
 }
 

@@ -50,6 +50,12 @@ describe("planSeats", () => {
     expect(planSeats(2, [emp("a", 1)], before).get("a")).toBe(1);
   });
 
+  it("tolerates a hire index that is not a whole number", () => {
+    expect(planSeats(3, [emp("a", 1.7)], none).get("a")).toBe(1);
+    expect(planSeats(3, [emp("b", Number.NaN)], none).get("b")).toBe(0);
+    expect(planSeats(3, [emp("c", -1)], none).get("c")).toBe(2);
+  });
+
   it("answers null for everyone when there are no work seats at all", () => {
     const out = planSeats(0, [emp("a", 0), emp("b", 3)], none);
     expect(out.get("a")).toBeNull();

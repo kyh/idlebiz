@@ -346,7 +346,7 @@ export class OfficeScene extends Phaser.Scene {
           y: this.player?.y ?? null,
         },
         door: OFFICE_DOOR,
-        seats: OFFICE_SEATS.length,
+        seats: OFFICE_SEATS.filter((seat) => seat.role === "work").length,
         world: {
           h: OFFICE_H,
           w: OFFICE_W,

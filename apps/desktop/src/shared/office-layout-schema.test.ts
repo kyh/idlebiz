@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import bundled from "@/renderer/game/office-design.json";
 import type { JsonValue } from "./json";
 import {
+  MAX_FLOOR_LINE,
   OFFICE_LAYOUT_VERSION,
   canonicalOfficeLayout,
   officeLayoutSchema,
   parseOfficeLayout,
+  schemaIssues,
   type OfficeLayoutData,
 } from "./office-layout-schema";
 
@@ -46,12 +48,26 @@ describe("parseOfficeLayout", () => {
     expect(() => parseOfficeLayout("nope")).toThrow(/schema v2/);
   });
 
-  it("rejects a floor line the entity band cannot hold", () => {
-    const tooTall: JsonValue = {
+  it("holds a floor line at the top of the entity band and rejects the next one", () => {
+    const withAnchor = (anchorY: number): JsonValue => ({
       ...legacy,
-      objects: [{ id: "x", layer: "object", x: 0, y: 0, anchorY: 5000 }],
+      objects: [{ id: "x", layer: "object", x: 0, y: 0, anchorY }],
+    });
+    expect(parseOfficeLayout(withAnchor(MAX_FLOOR_LINE)).objects).toHaveLength(1);
+    expect(() => parseOfficeLayout(withAnchor(MAX_FLOOR_LINE + 1))).toThrow(/anchorY/);
+  });
+
+  it("rejects an object with nothing to resolve a sprite from", () => {
+    const blank: JsonValue = {
+      ...legacy,
+      objects: [{ id: "", layer: "overhead", x: 0, y: 0 }],
     };
-    expect(() => parseOfficeLayout(tooTall)).toThrow(/anchorY/);
+    expect(() => parseOfficeLayout(blank)).toThrow(/id/);
+  });
+
+  it("rejects a collision row that is not 0s and 1s", () => {
+    const smudged: JsonValue = { ...legacy, collision: ["1111", "1x01", "1001", "1111"] };
+    expect(() => parseOfficeLayout(smudged)).toThrow(/0s and 1s/);
   });
 
   it("rejects a rest seat without a side to sit on", () => {
@@ -65,6 +81,21 @@ describe("parseOfficeLayout", () => {
     expect(out.version).toBe(OFFICE_LAYOUT_VERSION);
     expect(out.seats.filter((s) => s.role === "work").length).toBeGreaterThan(0);
     expect(out.pois.length).toBeGreaterThan(0);
+  });
+});
+
+describe("schemaIssues", () => {
+  it("is empty for a layout that parses", () => {
+    expect(schemaIssues(parseOfficeLayout(legacy))).toEqual([]);
+  });
+
+  it("names the field when typed data still breaks a bound", () => {
+    const data: OfficeLayoutData = parseOfficeLayout(legacy);
+    const tooTall: OfficeLayoutData = {
+      ...data,
+      objects: [{ id: "x", layer: "object", x: 0, y: 0, anchorY: MAX_FLOOR_LINE + 1 }],
+    };
+    expect(schemaIssues(tooTall)).toEqual([expect.stringMatching(/^objects\.0\.anchorY: /)]);
   });
 });
 

@@ -225,9 +225,19 @@ export function layoutIssues(layout: OfficeLayoutData): string[] {
   const inWorld = (p: PixelPoint): boolean =>
     p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;
 
+  if (layout.collision.length !== layout.rows)
+    issues.push(`collision has ${layout.collision.length} rows, expected ${layout.rows}`);
+  layout.collision.forEach((row, r) => {
+    if (row.length !== layout.cols)
+      issues.push(`collision row ${r} has ${row.length} cells, expected ${layout.cols}`);
+  });
+  if (issues.length > 0) return issues; // the grid itself is wrong; nothing on it can be judged
+
+  // The founder is placed at the spawn exactly, never snapped: a body inside a
+  // wall there can't take a single step.
   if (!inWorld(layout.spawn)) issues.push(`spawn ${at(layout.spawn)} is outside the world`);
-  else if (nearestFloor(grid, layout.spawn.x, layout.spawn.y) === null)
-    issues.push(`spawn ${at(layout.spawn)} has no walkable floor near it`);
+  else if (bodyBlockedAt(grid, layout.spawn.x, layout.spawn.y))
+    issues.push(`spawn ${at(layout.spawn)} is inside collision`);
   if (issues.length > 0) return issues; // nothing else can be judged without a start
 
   const reachable = reachableTiles(grid, layout.spawn);

@@ -121,6 +121,15 @@ describe("layoutIssues", () => {
   it("refuses to judge anything else when the spawn itself is off the floor", () => {
     const stranded = office(OPEN, { spawn: { x: 400, y: 400 } });
     expect(layoutIssues(stranded)).toEqual(["spawn 400,400 is outside the world"]);
+    // the founder is placed exactly there, so "near some floor" is not good enough
+    const walled = office(OPEN, { spawn: { x: 88, y: 24 } });
+    expect(layoutIssues(walled)).toEqual(["spawn 88,24 is inside collision"]);
+  });
+
+  it("rejects a collision grid that is not rows by cols before judging anything on it", () => {
+    expect(layoutIssues(office(OPEN.slice(0, 5)))).toEqual(["collision has 5 rows, expected 6"]);
+    const ragged = [...OPEN.slice(0, 3), "100000000", ...OPEN.slice(4)];
+    expect(layoutIssues(office(ragged))).toEqual(["collision row 3 has 9 cells, expected 10"]);
   });
 
   it("passes the bundled office", () => {

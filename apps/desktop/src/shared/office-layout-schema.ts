@@ -41,7 +41,7 @@ export type OfficeLayer = "floor" | "object" | "overhead";
  * sprite height at the top of the band for the ones standing at the world's bottom edge.
  */
 const CHAR_FRAME_H = 64;
-const MAX_FLOOR_LINE = ENTITY_BAND_HEIGHT - CHAR_FRAME_H;
+export const MAX_FLOOR_LINE = ENTITY_BAND_HEIGHT - CHAR_FRAME_H;
 
 /** A floor line the entity band can hold. Custom layouts are user input — bound it here. */
 const floorLineSchema = z.number().min(0).max(MAX_FLOOR_LINE);
@@ -49,7 +49,9 @@ const floorLineSchema = z.number().min(0).max(MAX_FLOOR_LINE);
 const rectSchema = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
 const pointSchema = z.object({ x: z.number(), y: z.number() });
 const placedSchema = {
-  id: z.string(),
+  // the id resolves to a catalog sprite when there is no explicit path; an
+  // empty one parses and then throws while the room is being built
+  id: z.string().min(1),
   x: z.number(),
   y: z.number(),
   flipX: z.boolean().optional(),
@@ -100,7 +102,8 @@ const worldSchema = {
   /** Where the founder stands when the office opens. */
   spawn: pointSchema,
   objects: z.array(objectSchema),
-  collision: z.array(z.string()),
+  // the walk grid reads anything that is not "1" as open floor
+  collision: z.array(z.string().regex(/^[01]+$/, "a collision row is 0s and 1s only")),
 };
 
 export const officeLayoutSchema = z.object({
@@ -153,6 +156,19 @@ export function parseOfficeLayout(raw: JsonValue): OfficeLayoutData {
   if (legacy.success) return upgradeLegacy(legacy.data);
   throw new Error(
     `office layout does not match schema v${OFFICE_LAYOUT_VERSION}:\n${z.prettifyError(current.error)}`,
+  );
+}
+
+/**
+ * Why a layout the type system already accepts still fails the schema: a floor
+ * line past the band, a collision row with a stray character. The builder runs
+ * this before saving so the reason lands in its status line, not in an IPC error.
+ */
+export function schemaIssues(layout: OfficeLayoutData): string[] {
+  const parsed = officeLayoutSchema.safeParse(layout);
+  if (parsed.success) return [];
+  return parsed.error.issues.map(
+    (issue) => `${issue.path.map((key) => String(key)).join(".")}: ${issue.message}`,
   );
 }
 

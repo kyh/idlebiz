@@ -81,6 +81,8 @@ interface Npc {
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
   emote?: Phaser.GameObjects.Sprite;
+  /** The emote's bob, tweened on its own so the emote can also follow a walker. */
+  emoteBob?: { dy: number };
   bubble?: Bubble;
   /** Their workstation, or null when the office has run out of desks. */
   seat: Seat | null;
@@ -105,6 +107,9 @@ const ARRIVAL_INTERVAL_MS = 480;
 const FADE_MS = 220;
 /** The hover label hangs below the feet: above the head is where bubbles and emotes live. */
 const LABEL_DY = 10;
+const EMOTE_DY = -58;
+const BUBBLE_DY = -56;
+const HOVERABLE = { useHandCursor: true };
 const IDLE_CHAT_LINES: readonly string[] = [
   "quick sync",
   "looks good",
@@ -156,8 +161,9 @@ export class NpcManager {
 
     const sprite = this.scene.add
       .sprite(start.x, start.y, key, idleFrame("up"))
-      .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y)
-      .setInteractive({ useHandCursor: true });
+      .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
+    // hoverable once they are actually in the room, not while queued unseen at the door
+    if (passage === "settled") sprite.setInteractive(HOVERABLE);
 
     // Who this is and what runs them: the roster is mixed, and nothing else in
     // the office says which CLI a colleague is.
@@ -239,6 +245,7 @@ export class NpcManager {
     this.nextArrivalAt = now + ARRIVAL_INTERVAL_MS;
     npc.phase = "entering";
     npc.sprite.setPosition(this.door.x, this.door.y);
+    npc.sprite.setInteractive(HOVERABLE);
     this.scene.tweens.add({ targets: npc.sprite, alpha: 1, duration: FADE_MS });
     this.routeIn(npc);
   }
@@ -466,18 +473,21 @@ export class NpcManager {
   // ---- visuals ---------------------------------------------------------------
   private showEmote(npc: Npc, frame: number): void {
     if (!npc.emote) {
-      const e = this.scene.add
-        .sprite(npc.sprite.x, npc.sprite.y - 58, "emotes", frame)
+      npc.emote = this.scene.add
+        .sprite(npc.sprite.x, npc.sprite.y + EMOTE_DY, "emotes", frame)
         .setDepth(DEPTH.emote);
+      // the bob is an offset, not the emote's y: the "!" can go up mid-walk
+      // (an ask while heading back to the desk) and has to keep up
+      const bob = { dy: 0 };
       this.scene.tweens.add({
-        targets: e,
-        y: "-=4",
+        targets: bob,
+        dy: -4,
         duration: 480,
         yoyo: true,
         repeat: -1,
         ease: "Sine.InOut",
       });
-      npc.emote = e;
+      npc.emoteBob = bob;
     }
     npc.emote.setFrame(frame).setVisible(true);
   }
@@ -504,7 +514,7 @@ export class NpcManager {
     g.fillTriangle(-4, -5, 4, -5, 0, 1).lineStyle(2, 0x1d2136, 1);
     text.setY(-9);
     const root = this.scene.add
-      .container(npc.sprite.x, npc.sprite.y - 56, [g, text])
+      .container(npc.sprite.x, npc.sprite.y + BUBBLE_DY, [g, text])
       .setDepth(DEPTH.emote + 1)
       .setAlpha(0);
     this.scene.tweens.add({ targets: root, alpha: 1, duration: 140 });
@@ -520,9 +530,11 @@ export class NpcManager {
     for (const npc of this.npcs.values()) {
       // follow attachments
       npc.label.setPosition(npc.sprite.x, npc.sprite.y + LABEL_DY);
-      if (npc.emote) npc.emote.x = npc.sprite.x; // x follows; y owned by tween
+      if (npc.emote) {
+        npc.emote.setPosition(npc.sprite.x, npc.sprite.y + EMOTE_DY + (npc.emoteBob?.dy ?? 0));
+      }
       if (npc.bubble) {
-        npc.bubble.root.setPosition(npc.sprite.x, npc.sprite.y - 56);
+        npc.bubble.root.setPosition(npc.sprite.x, npc.sprite.y + BUBBLE_DY);
         if (now > npc.bubble.until) {
           const b = npc.bubble.root;
           npc.bubble = undefined;
@@ -665,7 +677,7 @@ export class NpcManager {
     npc.pendingTimer?.remove();
     // a fade or bob still running would keep driving a destroyed object
     this.scene.tweens.killTweensOf(npc.sprite);
-    if (npc.emote) this.scene.tweens.killTweensOf(npc.emote);
+    if (npc.emoteBob) this.scene.tweens.killTweensOf(npc.emoteBob);
     npc.bubble?.root.destroy();
     npc.emote?.destroy();
     npc.label.destroy();

@@ -56,7 +56,10 @@ export function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <PhaserGame key="office-game" onGame={setGame} />
+      {/* Not before the store has booted: refresh() applies the saved office layout
+          to the live bindings, and the scene's preload reads them the moment the game
+          exists — mounting first would build the bundled office instead. */}
+      {booted ? <PhaserGame key="office-game" onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
         {needsOnboarding ? <PokeOnboarding /> : null}

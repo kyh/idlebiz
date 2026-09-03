@@ -16,7 +16,7 @@ import {
   type PixelPoint,
 } from "@/renderer/game/office-layout";
 import { layoutIssues } from "@/shared/office-grid";
-import type { Facing } from "@/shared/office-layout-schema";
+import { schemaIssues, type Facing } from "@/shared/office-layout-schema";
 import {
   ALL_OBJECT_IDS,
   assetSrc,
@@ -442,9 +442,10 @@ export function OfficeBuilder() {
       setStatus("No app bridge available.");
       return;
     }
-    // The same judge main applies before writing, run here first so the reasons
+    // The same judges main applies before writing, run here first so the reasons
     // land in the status line instead of an IPC error.
-    const issues = layoutIssues(toLayoutData(layout));
+    const data = toLayoutData(layout);
+    const issues = [...schemaIssues(data), ...layoutIssues(data)];
     if (issues.length > 0) {
       setStatus(`Not saved — ${issues.join("; ")}`);
       return;
