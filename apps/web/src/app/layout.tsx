@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 
 import { siteConfig } from "@/lib/site-config";
 
@@ -34,16 +35,10 @@ export const viewport: Viewport = {
   themeColor: "#12141c",
 };
 
-type LayoutProps = {
-  children: React.ReactNode;
-};
-
-const RootLayout = (props: LayoutProps) => {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{props.children}</body>
+      <body>{children}</body>
     </html>
   );
-};
-
-export default RootLayout;
+}

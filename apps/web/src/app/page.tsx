@@ -92,10 +92,7 @@ export default async function Page() {
           </div>
 
           <div className="flex flex-col items-center gap-2.5">
-            <a
-              href={downloadUrl}
-              className="px-btn-accent inline-flex items-center gap-2.5 text-[15px] uppercase tracking-wide no-underline"
-            >
+            <a href={downloadUrl} className="px-btn-accent">
               <MacLogoIcon className="size-5 shrink-0" />
               Download for Mac
             </a>

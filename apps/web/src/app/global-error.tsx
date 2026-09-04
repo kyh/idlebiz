@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { StatusPage } from "@/app/status-page";
+
 type GlobalErrorProps = {
   error: Error & { digest?: string };
   reset: () => void;
@@ -10,7 +12,7 @@ type GlobalErrorProps = {
 // Catches errors thrown by the root layout itself, so it replaces the layout
 // entirely and must render its own <html>/<body>. Kept dependency-free — the
 // providers and fonts the app usually supplies may be exactly what failed.
-const GlobalError = ({ error, reset }: GlobalErrorProps) => {
+export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -18,22 +20,16 @@ const GlobalError = ({ error, reset }: GlobalErrorProps) => {
   return (
     <html lang="en">
       <body>
-        <main className="flex min-h-dvh flex-col items-center justify-center gap-6 px-4 py-10 text-center">
-          <div className="space-y-2">
-            <h1 className="text-2xl text-[var(--light)]">Something went wrong</h1>
-            <p className="text-[var(--text-dim)]">The application failed to load.</p>
-          </div>
-          <button
-            type="button"
-            onClick={reset}
-            className="px-btn-accent inline-flex items-center text-[15px] uppercase tracking-wide"
-          >
-            Try again
-          </button>
-        </main>
+        <StatusPage
+          title="Something went wrong"
+          description="The application failed to load."
+          action={
+            <button type="button" onClick={reset} className="px-btn-accent">
+              Try again
+            </button>
+          }
+        />
       </body>
     </html>
   );
-};
-
-export default GlobalError;
+}

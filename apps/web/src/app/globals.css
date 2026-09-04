@@ -83,7 +83,14 @@ img {
 }
 
 .px-btn-accent {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: inherit;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  text-decoration: none;
   color: var(--light);
   background: var(--accent);
   border: 3px solid var(--ink);
