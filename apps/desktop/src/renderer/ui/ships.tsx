@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
-import { useStore, setModalOpen } from "@/renderer/state/store";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
+import { bridge, useStore } from "@/renderer/state/store";
+import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
+import { Modal } from "@/renderer/ui/modal";
 import type { Task } from "@/shared/domain";
+import { errorMessage } from "@/shared/errors";
 import { formatDate } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
@@ -42,21 +46,16 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
 }
 
 export function Ships({ onClose }: { onClose: () => void }) {
-  const { company, employees } = useStore();
+  const company = useStore((s) => s.company);
+  const employees = useStore((s) => s.employees);
   const [ships, setShips] = useState<Task[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, showNote] = useTransientNote(2500);
 
   useEffect(() => {
-    setModalOpen(true);
-    return () => setModalOpen(false);
-  }, []);
-
-  useEffect(() => {
-    const bridge = window.appBridge;
-    if (!company || !bridge) return;
+    if (!company) return;
     let alive = true;
     void (async () => {
-      const tasks = await bridge.listTasks({ companyId: company.id });
+      const tasks = await bridge().listTasks({ companyId: company.id });
       if (alive) setShips(tasks.filter((t) => t.status === "done" && t.summary));
     })();
     return () => {
@@ -65,77 +64,65 @@ export function Ships({ onClose }: { onClose: () => void }) {
   }, [company]);
 
   if (!company) return null;
-  const nameOf = (id: string | null): string => employees.find((e) => e.id === id)?.name ?? "team";
+  const companyId = company.id;
 
-  const open = async (rel: string) => {
-    const bridge = window.appBridge;
-    if (!bridge) return;
-    try {
-      await bridge.openCompanyPath({ companyId: company.id, rel });
-    } catch (e: unknown) {
-      setNote(e instanceof Error ? e.message : String(e));
-      window.setTimeout(() => setNote(null), 2500);
-    }
-  };
+  const openWorkspace = () =>
+    bridge()
+      .openCompanyPath({ companyId, rel: "" })
+      .catch((cause) => showNote(errorMessage(cause)));
+  const openProduct = () =>
+    bridge()
+      .openProduct({ companyId })
+      .catch((cause) => showNote(errorMessage(cause)));
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
-      <div className="px-window flex max-h-[88vh] w-full max-w-3xl flex-col">
-        <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
-          <div>
-            <div className="text-base">Shipping log</div>
-            <div className="text-xs text-[#c4c9dd]">
-              {company.ships} shipped · everything your team built lives in the workspace
-            </div>
+    <Modal
+      title="Shipping log"
+      subtitle={`${company.ships} shipped · everything your team built lives in the workspace`}
+      width="3xl"
+      onClose={onClose}
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={() => void openWorkspace()}
+            className="px-btn"
+            title="Reveal the real folder where the team works"
+          >
+            📁 Workspace
+          </button>
+          <button
+            type="button"
+            onClick={() => void openProduct()}
+            className="px-btn"
+            title="Open the product (via workspace/PRODUCT.md, falls back to index.html)"
+          >
+            ▶ Product
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        {note ? <div className="text-xs text-[var(--danger)]">{note}</div> : null}
+        {ships === null ? (
+          <div className="text-sm text-[var(--text-dim)]">Loading…</div>
+        ) : ships.length === 0 ? (
+          <div className="text-sm text-[var(--text-dim)]">
+            Nothing shipped yet — the team is just getting started.
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void open("")}
-              className="px-btn"
-              title="Reveal the real folder where the team works"
-            >
-              📁 Workspace
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const bridge = window.appBridge;
-                if (!bridge) return;
-                bridge.openProduct({ companyId: company.id }).catch((cause: unknown) => {
-                  setNote(cause instanceof Error ? cause.message : String(cause));
-                  window.setTimeout(() => setNote(null), 2500);
-                });
-              }}
-              className="px-btn"
-              title="Open the product (via workspace/PRODUCT.md, falls back to index.html)"
-            >
-              ▶ Product
-            </button>
-            <button type="button" onClick={onClose} className="px-btn">
-              Done
-            </button>
-          </div>
-        </div>
-
-        {note ? <div className="px-3 pt-2 text-xs text-[var(--danger)]">{note}</div> : null}
-
-        <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
-          {ships === null ? (
-            <div className="text-sm text-[var(--text-dim)]">Loading…</div>
-          ) : ships.length === 0 ? (
-            <div className="text-sm text-[var(--text-dim)]">
-              Nothing shipped yet — the team is just getting started.
-            </div>
-          ) : (
-            ships
-              .toReversed()
-              .map((t) => (
-                <ShipRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
-              ))
-          )}
-        </div>
+        ) : (
+          ships
+            .toReversed()
+            .map((t) => (
+              <ShipRow
+                key={t.id}
+                t={t}
+                by={employeeName(employees, t.assigneeId, "team")}
+                companyId={companyId}
+              />
+            ))
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useStore,
-  getPortrait,
-  sendFounderChat,
-  setModalOpen,
-  listTasksFor,
-} from "@/renderer/state/store";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useStore, sendFounderChat, listTasksFor } from "@/renderer/state/store";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
+import { AnswerForm } from "@/renderer/ui/answer-form";
 import { RichText } from "@/renderer/ui/linkify";
+import { useModal } from "@/renderer/ui/modal";
+import { Portrait } from "@/renderer/ui/portrait";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import type { Employee, Task } from "@/shared/domain";
 
-const COLS = 1;
+const NOTE_MS = 1800;
 
 interface ChatOption {
   label: string;
@@ -95,90 +93,76 @@ function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
   return out.slice(0, 4);
 }
 
+/** Walk up to someone and press E: the battle-box conversation with that employee. */
 export function Dialogue() {
-  const { game, employees, activity, company } = useStore();
+  const game = useStore((s) => s.game);
+  const employees = useStore((s) => s.employees);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [portrait, setPortrait] = useState<string | null>(null);
-  const [mode, setMode] = useState<"menu" | "talk">("menu");
-  const [sel, setSel] = useState(0);
-  const [input, setInput] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [answer, setAnswer] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const emp = useMemo(() => employees.find((e) => e.id === openId) ?? null, [employees, openId]);
-  // only free-text questions get the inline answer form; integration asks
-  // live in the inbox where the [Connect] button is
-  const blocked = useMemo(
-    () => tasks.find((t) => t.status === "blocked" && t.blocked?.type === "question") ?? null,
-    [tasks],
-  );
-  const options = useMemo(() => (emp ? buildOptions(emp, tasks) : []), [emp, tasks]);
-  const talkIndex = options.length; // trailing "Talk…" command
 
   useEffect(() => {
     if (!game) return;
-    const onInteract = (p: { employeeId: string }) => {
-      setOpenId(p.employeeId);
-      setMode("menu");
-      setSel(0);
-      setNote(null);
-    };
+    const onInteract = (p: { employeeId: string }) => setOpenId(p.employeeId);
     game.events.on("npc-interact", onInteract);
     return () => {
       game.events.off("npc-interact", onInteract);
     };
   }, [game]);
 
-  useEffect(() => {
-    setModalOpen(openId !== null);
-  }, [openId]);
+  const emp = employees.find((e) => e.id === openId);
+  if (!emp) return null;
+  return <DialoguePanel key={emp.id} emp={emp} onClose={() => setOpenId(null)} />;
+}
 
+/** What they SAY, as opposed to what they do: chat, a message, a ship. */
+const isSpoken = (
+  a: ActivityEvent,
+): a is Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }> =>
+  a.kind === "chat" || a.kind === "message" || a.kind === "ship";
+
+function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void }) {
+  useModal();
+  const company = useStore((s) => s.company);
+  const activity = useStore((s) => s.activity);
+  const [mode, setMode] = useState<"menu" | "talk">("menu");
+  const [sel, setSel] = useState(0);
+  const [input, setInput] = useState("");
+  const [note, showNote] = useTransientNote(NOTE_MS);
+  const [fetched, setFetched] = useState<{ asOf: number | null; list: Task[] } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const mine = useMemo(() => activity.filter((a) => a.employeeId === emp.id), [activity, emp.id]);
+  // Only a status event moves a task, so its id is what a task list is current
+  // "as of" — and what makes a refetch worth making. Not the feed length: the
+  // feed is a 300-event ring, and a length-keyed refetch stops once it fills.
+  const lastStatusId = mine.findLast((a) => a.kind === "status")?.id ?? null;
   useEffect(() => {
-    setTasks([]);
-    setAnswer("");
-    if (!emp) {
-      setPortrait(null);
-      return;
-    }
     let alive = true;
     void (async () => {
-      const [url, t] = await Promise.all([getPortrait(emp.spriteSeed), listTasksFor(emp.id)]);
-      if (alive) {
-        setPortrait(url);
-        setTasks(t);
-      }
+      const list = await listTasksFor(emp.id);
+      if (alive) setFetched({ asOf: lastStatusId, list });
     })();
     return () => {
       alive = false;
     };
-  }, [emp, activity.length]);
+  }, [emp.id, lastStatusId]);
+  const tasks = fetched?.list ?? [];
 
-  const close = () => {
-    setOpenId(null);
-    setInput("");
-    setMode("menu");
-  };
+  // only free-text questions get the inline answer form; integration asks
+  // live in the inbox where the [Connect] button is. Shown only for a current
+  // list: the moment an answer lands, the status event makes this one stale,
+  // and a form for a question already answered would send twice.
+  const blocked =
+    fetched?.asOf === lastStatusId
+      ? tasks.find((t) => t.status === "blocked" && t.blocked?.type === "question")
+      : undefined;
+  const options = buildOptions(emp, tasks);
+  const talkIndex = options.length; // trailing "Talk…" command
 
   // everything the founder says goes through the team channel; the @slug
   // mention wakes exactly this employee with the message as their brief
-  const send = async (instruction: string) => {
-    if (!emp) return;
-    setNote(`Sent to ${emp.name} ✓`);
-    await sendFounderChat(`@${emp.id} ${instruction}`);
-    window.setTimeout(() => setNote(null), 1800);
-  };
-
-  const sendAnswer = async () => {
-    const text = answer.trim();
-    const bridge = window.appBridge;
-    if (!text || !blocked || !bridge) return;
-    setNote("Answer sent ✓");
-    setTasks((t) => t.filter((x) => x.id !== blocked.id));
-    setAnswer("");
-    await bridge.answerQuestion({ taskId: blocked.id, answer: text });
-    window.setTimeout(() => setNote(null), 1800);
+  const send = (instruction: string) => {
+    showNote(`Sent to ${emp.name} ✓`);
+    void sendFounderChat(`@${emp.id} ${instruction}`);
   };
 
   const choose = (i: number) => {
@@ -188,49 +172,42 @@ export function Dialogue() {
       return;
     }
     const q = options[i];
-    if (q) void send(q.instr);
+    if (q) send(q.instr);
   };
 
   const submitTalk = () => {
     const text = input.trim();
     if (!text) return;
-    void send(text);
+    send(text);
     setInput("");
     setMode("menu");
   };
 
-  // keyboard: arrows navigate the menu grid; Enter selects; Esc backs out / closes
-  useEffect(() => {
-    if (!emp) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (mode === "talk") {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          setMode("menu");
-        }
-        return;
-      }
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return; // typing an answer
-      const n = options.length + 1;
-      if (e.key === "ArrowRight") setSel((s) => Math.min(n - 1, s + 1));
-      else if (e.key === "ArrowLeft") setSel((s) => Math.max(0, s - 1));
-      else if (e.key === "ArrowDown") setSel((s) => Math.min(n - 1, s + COLS));
-      else if (e.key === "ArrowUp") setSel((s) => Math.max(0, s - COLS));
-      else if (e.key === "Enter" || e.key === " ") {
+  // keyboard: arrows walk the menu; Enter selects; Esc backs out / closes
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (mode === "talk") {
+      if (e.key === "Escape") {
         e.preventDefault();
-        choose(sel);
-      } else if (e.key === "Escape") close();
-      else return;
-      e.preventDefault();
-    };
+        setMode("menu");
+      }
+      return;
+    }
+    const tag = document.activeElement?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return; // typing an answer
+    const last = options.length; // the Talk… row
+    if (e.key === "ArrowDown") setSel((s) => Math.min(last, s + 1));
+    else if (e.key === "ArrowUp") setSel((s) => Math.max(0, s - 1));
+    else if (e.key === "Enter" || e.key === " ") choose(sel);
+    else if (e.key === "Escape") onClose();
+    else return;
+    e.preventDefault();
+  });
+  useEffect(() => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emp, mode, sel, options]);
+  }, []);
 
-  if (!emp || !company) return null;
-  const mine = activity.filter((a) => a.employeeId === emp.id);
+  if (!company) return null;
   // what they SAY: the latest real utterance (chat/message/ship), Pokémon-style
   const spoken = mine.filter(isSpoken).filter((a) => a.message);
   const latest = spoken[spoken.length - 1];
@@ -251,38 +228,8 @@ export function Dialogue() {
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center p-4">
       <div className="px-battle flex w-full max-w-3xl gap-3 p-3">
-        {/* left: portrait + identity + recent activity (their "speech") */}
         <div className="flex w-[58%] flex-col gap-2">
-          <div className="flex items-center gap-3">
-            {portrait ? (
-              <img
-                src={portrait}
-                alt={emp.name}
-                className="h-16 w-16 [image-rendering:pixelated]"
-                style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }}
-              />
-            ) : (
-              <div
-                className="h-16 w-16"
-                style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }}
-              />
-            )}
-            <div className="flex-1">
-              <div className="text-base uppercase tracking-wide">{emp.name}</div>
-              <div className="text-xs text-[var(--accent-lo)]">{emp.title || emp.role}</div>
-              <span
-                className="px-badge mt-1 inline-block"
-                style={
-                  working
-                    ? { background: "var(--warn)", color: "#3a2c0a" }
-                    : { background: "#d8d4c4", color: "var(--text)" }
-                }
-              >
-                {working ? <span className="px-live-dot">● working</span> : "idle"}
-              </span>
-            </div>
-          </div>
-
+          <Identity emp={emp} working={working} />
           {blocked ? (
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
               <div className="text-xs text-[var(--danger)]">❗ {emp.name} needs your call:</div>
@@ -292,41 +239,19 @@ export function Dialogue() {
                   companyId={company.id}
                 />
               </div>
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void sendAnswer();
-                    }
-                  }}
-                  placeholder="Your answer…"
-                  className="px-field min-w-0 flex-1"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => void sendAnswer()}
-                  disabled={!answer.trim()}
-                  className="px-btn-accent px-btn"
-                >
-                  Answer
-                </button>
-              </div>
+              <AnswerForm task={blocked} autoFocus onSent={() => showNote("Answer sent ✓")} />
             </div>
           ) : (
             <div className="px-inset px-scroll flex min-h-[72px] flex-1 flex-col overflow-y-auto p-2.5">
               <Speech
-                key={`${emp.id}:${latest?.id ?? "flavor"}`}
+                key={latest?.id ?? "flavor"}
                 text={speech.slice(0, 280)}
                 companyId={company.id}
               />
               {trail.length > 0 ? (
                 <div className="mt-auto space-y-0.5 pt-2 text-xs leading-snug opacity-70">
-                  {trail.map((a, i) => (
-                    <FeedLine key={a.id ?? i} e={a} companyId={company.id} />
+                  {trail.map((a) => (
+                    <FeedLine key={a.id} e={a} companyId={company.id} />
                   ))}
                 </div>
               ) : null}
@@ -334,38 +259,10 @@ export function Dialogue() {
           )}
         </div>
 
-        {/* right: command menu (battle style) or free-text */}
         <div className="flex w-[42%] flex-col">
           <div className="px-inset flex flex-1 flex-col p-2">
             {mode === "menu" ? (
-              <>
-                <div className="mb-1 grid flex-1 grid-cols-1 content-start gap-y-0.5">
-                  {options.map((q, i) => (
-                    <button
-                      type="button"
-                      key={q.label}
-                      data-sel={sel === i}
-                      onMouseEnter={() => setSel(i)}
-                      onClick={() => choose(i)}
-                      className="px-cmd truncate"
-                    >
-                      {q.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    data-sel={sel === talkIndex}
-                    onMouseEnter={() => setSel(talkIndex)}
-                    onClick={() => choose(talkIndex)}
-                    className="px-cmd"
-                  >
-                    Talk…
-                  </button>
-                </div>
-                <div className="text-right text-xs text-[var(--text-dim)]">
-                  ↑↓ move · ⏎ select · esc close
-                </div>
-              </>
+              <CommandMenu options={options} sel={sel} onHover={setSel} onChoose={choose} />
             ) : (
               <div className="flex h-full flex-col gap-2">
                 <div className="text-xs text-[var(--text-dim)]">Tell {emp.name} what to do:</div>
@@ -403,7 +300,7 @@ export function Dialogue() {
 
         <button
           type="button"
-          onClick={close}
+          onClick={onClose}
           title="Close (esc)"
           className="absolute top-0 right-0 p-2.5 text-sm leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
         >
@@ -411,6 +308,74 @@ export function Dialogue() {
         </button>
       </div>
     </div>
+  );
+}
+
+/** Portrait, name, title and the working/idle badge. */
+function Identity({ emp, working }: { emp: Employee; working: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <Portrait seed={emp.spriteSeed} size="md" alt={emp.name} />
+      <div className="flex-1">
+        <div className="text-base uppercase tracking-wide">{emp.name}</div>
+        <div className="text-xs text-[var(--accent-lo)]">{emp.title || emp.role}</div>
+        <span
+          className="px-badge mt-1 inline-block"
+          style={
+            working
+              ? { background: "var(--warn)", color: "#3a2c0a" }
+              : { background: "#d8d4c4", color: "var(--text)" }
+          }
+        >
+          {working ? <span className="px-live-dot">● working</span> : "idle"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** The battle-style command list: the role options, then Talk… for free text. */
+function CommandMenu({
+  options,
+  sel,
+  onHover,
+  onChoose,
+}: {
+  options: ChatOption[];
+  sel: number;
+  onHover: (i: number) => void;
+  onChoose: (i: number) => void;
+}) {
+  const talkIndex = options.length;
+  return (
+    <>
+      <div className="mb-1 flex flex-1 flex-col content-start gap-y-0.5">
+        {options.map((q, i) => (
+          <button
+            type="button"
+            key={q.label}
+            data-sel={sel === i}
+            onMouseEnter={() => onHover(i)}
+            onClick={() => onChoose(i)}
+            className="px-cmd truncate"
+          >
+            {q.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-sel={sel === talkIndex}
+          onMouseEnter={() => onHover(talkIndex)}
+          onClick={() => onChoose(talkIndex)}
+          className="px-cmd"
+        >
+          Talk…
+        </button>
+      </div>
+      <div className="text-right text-xs text-[var(--text-dim)]">
+        ↑↓ move · ⏎ select · esc close
+      </div>
+    </>
   );
 }
 
@@ -453,12 +418,6 @@ const LINE_STYLES = new Map<ActivityKind, LineStyle>([
   ["status", { color: "#6d7187", prefix: "› " }],
 ]);
 const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
-
-/** What they SAY, as opposed to what they do: chat, a message, a ship. */
-const isSpoken = (
-  a: ActivityEvent,
-): a is Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }> =>
-  a.kind === "chat" || a.kind === "message" || a.kind === "ship";
 
 function FeedLine({ e, companyId }: { e: ActivityEvent; companyId: string }) {
   const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;

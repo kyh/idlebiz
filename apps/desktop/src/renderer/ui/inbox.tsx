@@ -1,12 +1,9 @@
-import { useEffect, useState } from "react";
-import {
-  useStore,
-  setModalOpen,
-  refresh,
-  resolveApproval,
-  retryTask,
-} from "@/renderer/state/store";
+import { useState } from "react";
+import { useStore, resolveApproval, retryTask } from "@/renderer/state/store";
+import { AnswerForm } from "@/renderer/ui/answer-form";
+import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
+import { Modal } from "@/renderer/ui/modal";
 import { INTEGRATION_LABELS, classifyCommand } from "@/shared/domain";
 import type { IntegrationKind, Task } from "@/shared/domain";
 
@@ -20,72 +17,53 @@ export function Inbox({
   /** Launch the connect flow for a typed integration ask. */
   onConnect: (kind: IntegrationKind) => void;
 }) {
-  const { company, employees, pendingAsks, stuckTasks } = useStore();
-
-  useEffect(() => {
-    setModalOpen(true);
-    return () => setModalOpen(false);
-  }, []);
+  const company = useStore((s) => s.company);
+  const employees = useStore((s) => s.employees);
+  const pendingAsks = useStore((s) => s.pendingAsks);
+  const stuckTasks = useStore((s) => s.stuckTasks);
 
   if (!company) return null;
-  const nameOf = (id: string | null): string =>
-    employees.find((e) => e.id === id)?.name ?? "someone";
+  const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
-      <div className="px-window flex max-h-[80vh] w-full max-w-2xl flex-col">
-        <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
-          <div>
-            <div className="text-base">Inbox</div>
-            <div className="text-xs text-[#c4c9dd]">
-              {pendingAsks.length} question{pendingAsks.length === 1 ? "" : "s"} ·{" "}
-              {stuckTasks.length} stuck
-            </div>
+    <Modal
+      title="Inbox"
+      subtitle={`${pendingAsks.length} question${pendingAsks.length === 1 ? "" : "s"} · ${stuckTasks.length} stuck`}
+      width="2xl"
+      onClose={onClose}
+    >
+      <div className="space-y-2">
+        {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
+          <div className="text-sm text-[var(--text-dim)]">All clear — nobody's waiting on you.</div>
+        ) : null}
+        {pendingAsks.map((t) => {
+          if (t.blocked?.type === "integration")
+            return (
+              <ConnectRow
+                key={t.id}
+                t={t}
+                by={nameOf(t.assigneeId)}
+                integration={t.blocked.integration}
+                reason={t.blocked.reason}
+                onConnect={onConnect}
+              />
+            );
+          if (t.blocked?.type === "approval")
+            return (
+              <ApprovalRow key={t.id} t={t} by={nameOf(t.assigneeId)} command={t.blocked.command} />
+            );
+          return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />;
+        })}
+        {stuckTasks.length > 0 ? (
+          <div className="pt-1 text-xs uppercase tracking-wide text-[var(--text-dim)]">
+            Stuck — needs a retry
           </div>
-          <button type="button" onClick={onClose} className="px-btn">
-            Done
-          </button>
-        </div>
-        <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
-          {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
-            <div className="text-sm text-[var(--text-dim)]">
-              All clear — nobody's waiting on you.
-            </div>
-          ) : null}
-          {pendingAsks.map((t) => {
-            if (t.blocked?.type === "integration")
-              return (
-                <ConnectRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  integration={t.blocked.integration}
-                  reason={t.blocked.reason}
-                  onConnect={onConnect}
-                />
-              );
-            if (t.blocked?.type === "approval")
-              return (
-                <ApprovalRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  command={t.blocked.command}
-                />
-              );
-            return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />;
-          })}
-          {stuckTasks.length > 0 ? (
-            <div className="pt-1 text-xs uppercase tracking-wide text-[var(--text-dim)]">
-              Stuck — needs a retry
-            </div>
-          ) : null}
-          {stuckTasks.map((t) => (
-            <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
-          ))}
-        </div>
+        ) : null}
+        {stuckTasks.map((t) => (
+          <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
+        ))}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -206,18 +184,7 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
 }
 
 function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }) {
-  const [answer, setAnswer] = useState("");
   const [sent, setSent] = useState(false);
-
-  const send = async () => {
-    const text = answer.trim();
-    const bridge = window.appBridge;
-    if (!text || !bridge || sent) return;
-    setSent(true);
-    await bridge.answerQuestion({ taskId: t.id, answer: text });
-    await refresh();
-  };
-
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
       <div className="text-xs text-[var(--danger)]">
@@ -229,29 +196,7 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
           companyId={companyId}
         />
       </div>
-      <div className="mt-2 flex gap-2">
-        <input
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          placeholder="Your answer…"
-          className="px-field min-w-0 flex-1"
-          disabled={sent}
-        />
-        <button
-          type="button"
-          onClick={() => void send()}
-          disabled={!answer.trim() || sent}
-          className="px-btn-accent px-btn"
-        >
-          {sent ? "Sent ✓" : "Answer"}
-        </button>
-      </div>
+      <AnswerForm task={t} onSent={() => setSent(true)} />
     </div>
   );
 }

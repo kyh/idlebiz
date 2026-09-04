@@ -233,6 +233,15 @@ canvas {
   color: var(--light);
 }
 
+/* a character portrait: the frame every composed face sits in */
+.px-portrait {
+  display: inline-block;
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+  background: #cfd6ea;
+  image-rendering: pixelated;
+}
+
 /* status badge */
 .px-badge {
   border: 2px solid var(--ink);

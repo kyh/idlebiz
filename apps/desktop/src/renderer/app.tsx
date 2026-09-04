@@ -3,7 +3,7 @@ import { PhaserGame } from "@/renderer/game/phaser-game";
 import { initStore, setGame, useStore } from "@/renderer/state/store";
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
 import { AuthGate } from "@/renderer/ui/auth-gate";
-import { Hud } from "@/renderer/ui/hud";
+import { Hud, type Overlay } from "@/renderer/ui/hud";
 import { Dialogue } from "@/renderer/ui/dialogue";
 import { Ships } from "@/renderer/ui/ships";
 import { Inbox } from "@/renderer/ui/inbox";
@@ -22,14 +22,46 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 
 const getHash = (): string => window.location.hash;
 
+function OpenOverlay({
+  overlay,
+  onOpen,
+  onClose,
+}: {
+  overlay: Overlay | null;
+  onOpen: (overlay: Overlay) => void;
+  onClose: () => void;
+}) {
+  switch (overlay) {
+    case null:
+      return null;
+    case "ships":
+      return <Ships onClose={onClose} />;
+    case "inbox":
+      // Stripe connect lives in the budget modal
+      return (
+        <Inbox
+          onClose={onClose}
+          onConnect={(kind) => onOpen(kind === "vercel" ? "vercel" : "budget")}
+        />
+      );
+    case "teams":
+      return <Teams onClose={onClose} />;
+    case "budget":
+      return <BudgetModal onClose={onClose} />;
+    case "vercel":
+      return <ConnectVercel onClose={onClose} />;
+    case "settings":
+      return <Settings onClose={onClose} />;
+  }
+}
+
 export function App() {
-  const { booted, layoutReady, authed, company, game } = useStore();
-  const [ships, setShips] = useState(false);
-  const [inbox, setInbox] = useState(false);
-  const [teams, setTeams] = useState(false);
-  const [budget, setBudget] = useState(false);
-  const [vercel, setVercel] = useState(false);
-  const [settings, setSettings] = useState(false);
+  const booted = useStore((s) => s.booted);
+  const layoutReady = useStore((s) => s.layoutReady);
+  const authed = useStore((s) => s.authed);
+  const company = useStore((s) => s.company);
+  const game = useStore((s) => s.game);
+  const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
 
   useEffect(() => {
@@ -45,6 +77,7 @@ export function App() {
   }, [game]);
 
   const needsOnboarding = booted && (!company || !company.onboarded);
+  const inOffice = booted && company !== null && company.onboarded;
 
   if (route === "#/office-assets") {
     return <OfficeObjectCatalog />;
@@ -60,34 +93,13 @@ export function App() {
 
       <div className="pointer-events-none absolute inset-0">
         {needsOnboarding ? <PokeOnboarding /> : null}
-        {booted && company && company.onboarded && !authed ? <AuthGate /> : null}
-        {booted && company && company.onboarded ? (
+        {inOffice && !authed ? <AuthGate /> : null}
+        {inOffice ? (
           <>
-            <Hud
-              onShips={() => setShips(true)}
-              onInbox={() => setInbox(true)}
-              onBudget={() => setBudget(true)}
-              onUsers={() => setVercel(true)}
-              onSettings={() => setSettings(true)}
-              onTeams={() => setTeams(true)}
-            />
+            <Hud onOpen={setOverlay} />
             <TeamChannel />
             <Dialogue />
-            {ships && <Ships onClose={() => setShips(false)} />}
-            {inbox && (
-              <Inbox
-                onClose={() => setInbox(false)}
-                onConnect={(kind) => {
-                  setInbox(false);
-                  if (kind === "vercel") setVercel(true);
-                  else setBudget(true); // Stripe connect lives in the budget modal
-                }}
-              />
-            )}
-            {teams && <Teams onClose={() => setTeams(false)} />}
-            {budget && <BudgetModal onClose={() => setBudget(false)} />}
-            {vercel && <ConnectVercel onClose={() => setVercel(false)} />}
-            {settings && <Settings onClose={() => setSettings(false)} />}
+            <OpenOverlay overlay={overlay} onOpen={setOverlay} onClose={() => setOverlay(null)} />
           </>
         ) : null}
       </div>

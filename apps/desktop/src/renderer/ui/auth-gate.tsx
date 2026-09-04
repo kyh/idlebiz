@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { setAuthed, setModalOpen } from "@/renderer/state/store";
+import { bridge, setAuthed } from "@/renderer/state/store";
+import { useModal } from "@/renderer/ui/modal";
 import type { AuthFlowEvent } from "@/shared/ipc-registry";
 
 /** Shown when an existing company has no working coding CLI (new machine,
@@ -8,15 +9,10 @@ export function AuthGate() {
   const [lines, setLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    setModalOpen(true);
-    return () => setModalOpen(false);
-  }, []);
+  useModal();
 
   useEffect(() => {
-    const bridge = window.appBridge;
-    if (!bridge) return;
-    const off = bridge.onAuthEvent((e: AuthFlowEvent) => {
+    const off = bridge().onAuthEvent((e: AuthFlowEvent) => {
       if (e.type === "url") setLines((l) => [...l.slice(-3), `Browser opened: ${e.url}`]);
       else if (e.type === "progress") setLines((l) => [...l.slice(-3), e.message]);
       else if (e.type === "done") {
@@ -33,7 +29,7 @@ export function AuthGate() {
   const start = () => {
     setBusy(true);
     setLines([]);
-    void window.appBridge?.startLogin();
+    void bridge().startLogin();
   };
 
   return (

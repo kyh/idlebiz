@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
+import { employeeName } from "@/renderer/ui/employee-name";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { formatTime } from "@/shared/format";
 
@@ -39,8 +40,7 @@ export function TeamChannel() {
   // hide while a dialogue/modal is up — a half-covered window reads as broken
   if (!company || modalOpen) return null;
 
-  const nameOf = (id?: string | null): string =>
-    id ? (employees.find((e) => e.id === id)?.name ?? "team") : "you";
+  const nameOf = (id?: string | null): string => (id ? employeeName(employees, id, "team") : "you");
 
   const send = () => {
     const text = draft.trim();
@@ -64,7 +64,7 @@ export function TeamChannel() {
             {company.autopilot ? "The team is getting to work…" : "Autopilot paused."}
           </div>
         ) : (
-          feed.map((e, i) => <FeedRow key={e.id ?? i} e={e} name={nameOf(e.employeeId)} />)
+          feed.map((e) => <FeedRow key={e.id} e={e} name={nameOf(e.employeeId)} />)
         )}
       </div>
       <div className="flex gap-1 p-1.5">
