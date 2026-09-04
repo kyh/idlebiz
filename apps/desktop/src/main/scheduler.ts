@@ -248,7 +248,11 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
   }
 
   /** Tools the running agent can call to operate the business with teammates. */
-  private hooksFor(emp: Employee, company: Company): RunToolHooks {
+  private hooksFor(
+    emp: Employee,
+    company: Company,
+    run: { runId: string; taskId: string },
+  ): RunToolHooks {
     const team = store.teamForEmployee(emp.id);
     const isLeader = team?.leaderId === emp.id;
 
@@ -343,6 +347,18 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
           payload: { by: emp.id, name: target.name, reason },
         });
         return `Released ${target.name}. Their workspace contributions and memory are archived under alumni/.`;
+      },
+      // The task only turns `blocked` when the run settles, but the ask exists
+      // now — so the office raises the "!" over the employee's head at once.
+      raiseAsk: (ask): void => {
+        this.emit({
+          runId: run.runId,
+          taskId: run.taskId,
+          employeeId: emp.id,
+          kind: "lifecycle",
+          message: "run.ask",
+          payload: { ask },
+        });
       },
     };
   }
@@ -507,7 +523,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       company,
       { id: task.id, title: task.title, description },
       (ev: AgentEvent) => this.onAgentEvent(runId, task, emp, ev),
-      this.hooksFor(emp, company),
+      this.hooksFor(emp, company, { runId, taskId: task.id }),
     );
     this.finish(runId, task, emp, result);
   }
@@ -521,7 +537,9 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
           employeeId: emp.id,
           kind: "tool_call",
           message: ev.toolName,
-          payload: { args: ev.args },
+          // `kind` is ACP's discriminant for what the call does; the office
+          // poses the employee on it (reading vs typing)
+          payload: { kind: ev.kind, args: ev.args },
         });
         break;
       case "message_end":

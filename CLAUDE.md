@@ -24,17 +24,21 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   `.px-chip` `.px-cmd` `.px-badge`. Size and colour belong in styles.css as a kit class,
   never per-component. Icons are font glyphs, so "icon size" is font-size: use `.px-icon`.
 - **The office's art and its collision don't know about each other.** `buildRoom` reads
-  `objects`, `officeSolidAt` reads `collision` — two independent sections of
+  `objects`, the walk grid reads `collision` — two independent sections of
   office-design.json, nothing reconciles them. The body probe is 16x12 but the sprite is
   32x64, so art overhangs the body by ~8px and any disagreement renders the character
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
-  it fails on any reachable spot where the player's art hangs over nothing.
+  it fails on any reachable spot where the player's art hangs over nothing, and on any
+  seat, point of interest or door the layout names that cannot be walked to from spawn.
+  The schema (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`, `door`)
+  and the walk grid (`shared/office-grid.ts`) are shared by the scene, the save handler
+  and that script — a layout main refuses to save is exactly one the check would fail.
 
 ## Agent-driven development
 
 `AGENTS.md` is the full workflow — read it before driving this repo. The essentials:
 
-- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · build). There is no
+- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · test · build). There is no
   GitHub Actions; Vercel's build of `apps/web` is the only remote gate and `verify` runs it.
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.
@@ -50,3 +54,5 @@ Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 `pnpm knip` is exploratory, not a gate (it's not in `verify`), but it exits 0 today — so
 anything it reports is something your change introduced, not a backlog to skim past.
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
+Unit tests: `pnpm --filter @repo/desktop test` (vitest; the pure parts — seating, poses,
+layout schema, walk grid, command policy)

@@ -68,7 +68,7 @@ export function parseBlockedAsk(s: string): BlockedAsk {
  * It is a floor, not the whole story — the CLIs' own protections still sit
  * underneath. And it fails OPEN by construction: anything unmatched runs. So
  * a rule earns its place by catching something whose blast radius reaches
- * past the workspace, and `check:permissions` holds every rule to an example.
+ * past the workspace, and domain.test.ts holds every rule to an example.
  *
  * Paths are the load-bearing heuristic for scope: employees work in relative
  * paths inside their workspace, so an absolute or `~` path in a destructive

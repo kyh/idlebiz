@@ -15,7 +15,7 @@ tool-agnostic guide for coding agents — meant to be run, not just read. Claude
 
 ```sh
 pnpm install
-pnpm verify        # static gate: typecheck · lint · format · check:office · build
+pnpm verify        # static gate: typecheck · lint · format · check:office · test · build
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:desktop   # Electron window + CDP on :9222
 ```
@@ -165,6 +165,14 @@ rather than crashing boot.
   `styles.css` as a kit class, never per-component. Full explanation in `CLAUDE.md`.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
+  It also proves every seat, point of interest and the door reachable from spawn — the
+  layout's semantic layer (schema v2 in `shared/office-layout-schema.ts`) is data the
+  scene trusts, so the gate is where it earns that trust.
+- **Unit tests cover the pure parts only.** `pnpm --filter @repo/desktop test` runs vitest
+  over seating (`office-placement.ts`), poses, the layout schema and migration, the walk
+  grid, and the command policy in `shared/domain.ts` (every rule owes an example it must
+  catch, and everyday commands owe an assertion they are not held). Nothing that needs
+  Electron or Phaser is unit-tested; drive it live instead.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
   for channel names and must stay dependency-free (the sandboxed preload imports it);
   zod payload schemas live in `shared/ipc-registry.ts`.
@@ -177,7 +185,9 @@ rather than crashing boot.
   `secrets.ts`, `metrics.ts`, `tray.ts`.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a
   hand-rolled external store in `state/store.ts`.
-- `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`, `format.ts`.
+- `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`, `format.ts`,
+  `office-layout-schema.ts` (office-design.json, versioned and migrated) and `office-grid.ts`
+  (walking as pure math; the scene, the save handler and `check:office` all use it).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns `claude` / `codex`, normalizes their NDJSON event streams,
   prices usage, tracks rate limits. Source-only, no build step.

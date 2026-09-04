@@ -23,7 +23,7 @@ Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 pnpm install
 pnpm dev:desktop
 pnpm dev:web
-pnpm verify        # typecheck · lint · format · check:office · build
+pnpm verify        # typecheck · lint · format · check:office · test · build
 ```
 
 Employees run on your own signed-in `claude` or `codex` CLI — the app needs one on

@@ -1041,7 +1041,12 @@ async function main() {
       );
     }
 
+    // Schema v2 (src/shared/office-layout-schema.ts): the game parses the
+    // bundled file strictly, so this must be the current version. The
+    // classification knows workstations only — place the door, rest chairs and
+    // points of interest in the builder (#/ui) afterwards.
     return {
+      version: 2,
       tile: 32,
       width: 512,
       height: 544,
@@ -1049,9 +1054,11 @@ async function main() {
       cols,
       rows,
       spawn: CLASS.spawn,
+      door: CLASS.spawn,
+      seats: workSeats.map((s) => ({ role: "work", x: s.x, y: s.y })),
+      pois: [],
       objects,
       collision: solid.map((row) => row.map((v) => (v ? "1" : "0")).join("")),
-      workSeats,
     };
   }
 

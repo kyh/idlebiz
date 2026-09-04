@@ -1,25 +1,40 @@
-// Finds places the player can stand where their art hangs over nothing.
+// The static gate for office-design.json: does the office the data promises exist?
 //
-// The office keeps its art and its collision in two independent sections of
-// office-design.json — sprites come from `objects`, solidity from `collision` — and
-// nothing reconciles them. They disagree easily, because the probe that stops the player
-// is a 16x12 box while the sprite drawn is 32x64: the art overhangs the body by ~8px per
-// side. Let the body reach a wall tile whose opaque face starts inboard of its cell and
-// the character renders against the background, sliced at the wall's edge. That is a real
-// bug we shipped (the left wall marked one column solid where its tile is two wide).
+// Two classes of lie are checked here, both of which the game renders without
+// complaint:
 //
-// Fixing the data fixes one wall. This checks the class: for every place the player can
-// actually reach, does any OPAQUE pixel of their sprite land on a pixel the room paints
-// nothing at? If so, that pixel renders against COLORS.bg — the void.
+//  1. Places nobody can reach. The layout names seats, points of interest and a
+//     door; each must be walkable from the founder's spawn, or an employee is
+//     told to sit somewhere and stands in a corridor forever. `layoutIssues` in
+//     src/shared/office-grid.ts is the judge — the same BFS the scene walks.
 //
-// The office builder can author this back at any time, so run it after editing a layout.
+//  2. Places the player can stand where their art hangs over nothing. The office
+//     keeps its art and its collision in two independent sections — sprites come
+//     from `objects`, solidity from `collision` — and nothing reconciles them.
+//     They disagree easily, because the probe that stops the player is a 16x12
+//     box while the sprite drawn is 32x64: the art overhangs the body by ~8px per
+//     side. Let the body reach a wall tile whose opaque face starts inboard of its
+//     cell and the character renders against the background, sliced at the wall's
+//     edge. That is a real bug we shipped (the left wall marked one column solid
+//     where its tile is two wide). Fixing the data fixes one wall; this checks the
+//     class: for every place the player can actually reach, does any OPAQUE pixel
+//     of their sprite land on a pixel the room paints nothing at?
 //
-// Usage: node scripts/check-office-void.cjs [--layout path.json] [--sheet path.png]
-//        exit 0 = clean, 1 = the player can stand somewhere their art shows void
-const fs = require("node:fs");
-const path = require("node:path");
+// The office builder can author both back at any time, so run it after editing a
+// layout. The schema and the grid are imported from src/shared as-is (node strips
+// the types), so this cannot drift from what the game and the save handler check.
+//
+// Usage: node --experimental-strip-types scripts/check-office-void.mjs [--layout path.json] [--sheet path.png]
+//        exit 0 = clean, 1 = something is unreachable or the player's art can show void
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { parseOfficeLayout } from "../src/shared/office-layout-schema.ts";
+import { layoutIssues, reachableNodes, walkGridOf } from "../src/shared/office-grid.ts";
 
-const appRoot = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { objectFile } = require("./lib/office-assets.cjs");
 const { paintOrder } = require("./lib/depth.cjs");
 const { loadRaw } = require("./lib/pixels.cjs");
@@ -36,15 +51,11 @@ const sheetPath = flag(
   path.join(appRoot, "resources/employee-sheets/employee-sheet-01.png"),
 );
 
-// MUST match the renderer. characters.ts: FRAME_W/FRAME_H, CHAR_ORIGIN_X/Y.
-// office-scene.ts: BODY_HALF_WIDTH/HEIGHT, PATH_STEP.
+// MUST match the renderer: characters.ts FRAME_W/FRAME_H, CHAR_ORIGIN_X/Y.
 const FRAME_W = 32;
 const FRAME_H = 64;
 const CHAR_ORIGIN_X = 0.5;
 const CHAR_ORIGIN_Y = 0.86;
-const BODY_HALF_WIDTH = 8;
-const BODY_HALF_HEIGHT = 6;
-const PATH_STEP = 16;
 
 /** Alpha of the room as the scene paints it: 1 where any object has an opaque pixel. */
 async function paintedMask(layout) {
@@ -81,66 +92,31 @@ async function characterSilhouette() {
   return opaque;
 }
 
-function makeGrid(layout) {
-  const cell = layout.cell;
-  const g = layout.collision.map((row) => Array.from(row, (ch) => ch === "1"));
-  const solid = (x, y) => {
-    const tx = Math.floor(x / cell);
-    const ty = Math.floor(y / cell);
-    if (ty < 0 || ty >= g.length) return true;
-    const row = g[ty];
-    if (!row || tx < 0 || tx >= row.length) return true;
-    return row[tx];
-  };
-  const blocked = (x, y) =>
-    solid(x - BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-    solid(x + BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-    solid(x - BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT) ||
-    solid(x + BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT);
-  return { blocked };
-}
-
-/** Node centres the player can actually walk to from spawn (BFS, as the scene paths). */
-function reachableNodes(layout, blocked) {
-  const cols = Math.ceil(layout.width / PATH_STEP);
-  const rows = Math.ceil(layout.height / PATH_STEP);
-  const at = (gx, gy) => ({ x: gx * PATH_STEP + PATH_STEP / 2, y: gy * PATH_STEP + PATH_STEP / 2 });
-  const ok = (gx, gy) => {
-    if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) return false;
-    const p = at(gx, gy);
-    return !blocked(p.x, p.y);
-  };
-  const start = [Math.floor(layout.spawn.x / PATH_STEP), Math.floor(layout.spawn.y / PATH_STEP)];
-  const seen = new Set([start.join(",")]);
-  const queue = [start];
-  const out = [];
-  while (queue.length) {
-    const cur = queue.shift();
-    out.push(at(cur[0], cur[1]));
-    for (const [dx, dy] of [
-      [0, 1],
-      [0, -1],
-      [1, 0],
-      [-1, 0],
-    ]) {
-      const nx = cur[0] + dx;
-      const ny = cur[1] + dy;
-      const k = `${nx},${ny}`;
-      if (seen.has(k) || !ok(nx, ny)) continue;
-      seen.add(k);
-      queue.push([nx, ny]);
-    }
-  }
-  return out;
-}
-
 async function main() {
-  const layout = JSON.parse(fs.readFileSync(layoutPath, "utf8"));
+  const layout = parseOfficeLayout(JSON.parse(fs.readFileSync(layoutPath, "utf8")));
   const { width: W, height: H } = layout;
+  console.log(`layout : ${path.relative(appRoot, layoutPath)}`);
+
+  const issues = layoutIssues(layout);
+  console.log(
+    `checked: ${layout.seats.length} seats, ${layout.pois.length} points of interest, the door`,
+  );
+  if (issues.length === 0) {
+    console.log("clean  : everyone can reach everywhere the layout sends them");
+  } else {
+    console.log(`FOUND  : ${issues.length} place(s) the layout promises that nobody can reach\n`);
+    for (const issue of issues) console.log(`  ${issue}`);
+    console.log(
+      "\nThe scene snaps an unreachable target to the nearest floor within six nodes and\n" +
+        "otherwise gives up silently. Open the lane in the collision grid, or move the\n" +
+        "seat / POI / door onto floor the founder can walk to.\n",
+    );
+    process.exitCode = 1;
+  }
+
   const painted = await paintedMask(layout);
   const silhouette = await characterSilhouette();
-  const { blocked } = makeGrid(layout);
-  const nodes = reachableNodes(layout, blocked);
+  const nodes = reachableNodes(walkGridOf(layout), layout.spawn);
 
   const offenders = [];
   for (const node of nodes) {
@@ -160,7 +136,6 @@ async function main() {
   }
 
   const total = FRAME_W * FRAME_H;
-  console.log(`layout : ${path.relative(appRoot, layoutPath)}`);
   console.log(`checked: ${nodes.length} reachable standing positions`);
   if (offenders.length === 0) {
     console.log("clean  : nowhere the player can stand shows their art against the void");

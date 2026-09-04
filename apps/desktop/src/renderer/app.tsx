@@ -23,7 +23,7 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 const getHash = (): string => window.location.hash;
 
 export function App() {
-  const { booted, authed, company, game } = useStore();
+  const { booted, layoutReady, authed, company, game } = useStore();
   const [ships, setShips] = useState(false);
   const [inbox, setInbox] = useState(false);
   const [teams, setTeams] = useState(false);
@@ -56,7 +56,7 @@ export function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <PhaserGame key="office-game" onGame={setGame} />
+      {layoutReady ? <PhaserGame key="office-game" onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
         {needsOnboarding ? <PokeOnboarding /> : null}

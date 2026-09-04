@@ -25,6 +25,8 @@ import {
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
 import { approvalKey, isOutOfBudget } from "@/shared/domain";
+import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
+import { layoutIssues } from "@/shared/office-grid";
 import type { ActivityEvent, Task } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 
@@ -221,9 +223,17 @@ function registerIpcHandlers(): void {
 
   // The office builder (#/ui) persists the layout to ~/.idlebiz, recovered at next
   // launch (see store.refresh → applyOfficeLayout). Survives rebuilds + packaging.
+  //
+  // Refused here, with reasons, rather than written and then silently replaced by
+  // the bundled office at next boot: a layout that fits the schema but seats
+  // someone in a sealed room is as broken as one that does not parse.
   handle("saveOfficeDesign", ({ json }) => {
-    const parsed: unknown = JSON.parse(json); // reject malformed before writing
-    const body = `${JSON.stringify(parsed, null, 2)}\n`;
+    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
+    const raw: JsonValue = JSON.parse(json);
+    const layout = parseOfficeLayout(raw);
+    const issues = layoutIssues(layout);
+    if (issues.length > 0) throw new Error(`office layout rejected:\n${issues.join("\n")}`);
+    const body = `${JSON.stringify(canonicalOfficeLayout(layout), null, 2)}\n`;
     mkdirSync(ROOT_DIR, { recursive: true });
     writeFileSync(OFFICE_DESIGN_PATH, body);
     // dev: mirror into the repo source so edited maps ship as the bundled

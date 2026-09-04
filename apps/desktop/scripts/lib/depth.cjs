@@ -1,7 +1,7 @@
 // Draw-order math for the office layout, for the node-side asset scripts.
 //
 // MUST stay in lockstep with how the renderer paints — DEPTH in
-// src/renderer/game/config.ts and depthFor() in
+// src/shared/office-depth.ts and depthFor() in
 // src/renderer/game/office-layout.ts. A script that sorts differently than the
 // game is worse than no script — it reports occlusion that doesn't happen and
 // misses occlusion that does.

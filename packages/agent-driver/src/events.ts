@@ -10,6 +10,8 @@
 // Granularity is whatever the CLI gives us — claude reports per assistant
 // turn, codex only once when the turn completes.
 
+import type { ToolKind } from "@agentclientprotocol/sdk";
+
 export interface AgentUsage {
   inputTokens: number;
   outputTokens: number;
@@ -20,7 +22,14 @@ export interface AgentUsage {
 
 export type AgentEvent =
   | { type: "message_end"; text: string }
-  | { type: "tool_start"; toolName: string; args: unknown }
+  | {
+      type: "tool_start";
+      /** The agent's title for the call ("Read src/app.ts") — prose, differs per CLI. */
+      toolName: string;
+      /** ACP's own discriminant for what the call does. The stable key to react on. */
+      kind?: ToolKind;
+      args: unknown;
+    }
   /** Tokens spent since the last usage event — a delta, never a running total. */
   | { type: "usage"; usage: AgentUsage };
 
