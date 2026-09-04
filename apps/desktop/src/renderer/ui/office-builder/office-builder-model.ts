@@ -1,7 +1,7 @@
-// State + (de)serialization for the in-app office builder (#/office-builder).
-// Loads the current office-design.json, lets the user place catalog singles by
-// hand, and serializes back to the exact schema the game reads — re-deriving the
-// collision grid from the placed furniture so the result stays playable.
+// The office builder's layout model (#/ui): the editable form of
+// office-design.json, the catalog lookups behind it, and the way back to the
+// exact schema the game reads — re-deriving the collision grid from the placed
+// furniture so the result stays playable. No React in here.
 import {
   OFFICE_LAYOUT_RAW,
   comparePaintOrder,
@@ -64,6 +64,12 @@ interface EditableBase {
 }
 export type EditableObject = EditableBase &
   ({ layer: "floor" } | { layer: "overhead" } | { layer: "object"; anchorY: number });
+
+/** The document under edit: the layout and which of its objects are selected. */
+export interface BuilderDoc {
+  layout: EditableLayout;
+  selection: readonly string[];
+}
 
 export interface EditableLayout {
   tile: number;
@@ -132,6 +138,11 @@ export function paintOrder(objects: readonly EditableObject[]): EditableObject[]
   return objects.toSorted(comparePaintOrder);
 }
 
+/** The CSS transform that mirrors a sprite the way the game draws its flips. */
+export function flipTransform(o: Pick<EditableObject, "flipX" | "flipY">): string | undefined {
+  return o.flipX || o.flipY ? `scale(${o.flipX ? -1 : 1}, ${o.flipY ? -1 : 1})` : undefined;
+}
+
 /** Move an object, keeping the floor line it y-sorts on in step with its sprite. */
 export function moveObject(o: EditableObject, x: number, y: number): EditableObject {
   if (o.layer !== "object") return { ...o, x, y };
@@ -153,7 +164,7 @@ export function setLayer(o: EditableObject, layer: OfficeLayer): EditableObject 
   const base = { uid, id, x, y, solid, flipX, flipY, path };
   return layer === "object" ? { ...base, layer, anchorY: anchorFor(o, y) } : { ...base, layer };
 }
-function footprintRect(o: EditableObject): Rect | null {
+function footprintRect(o: EditableObject): Rect {
   const b = contentBounds(o);
   // full content footprint (a solid desk blocks its whole base, matching the
   // generator); FOOT trims very tall sprites so a wall-mounted item that's
@@ -191,15 +202,14 @@ function paint(
 // --- load -------------------------------------------------------------------
 /** Build an editable layout from a parsed layout (the saved office, or the bundled default). */
 export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableLayout {
-  const r: OfficeLayoutData = raw;
-  const grid = r.collision.map((row) => Array.from(row, (ch) => (ch === "1" ? 1 : 0)));
-  const objects: EditableObject[] = r.objects.map((o) => {
+  const grid = raw.collision.map((row) => Array.from(row, (ch) => (ch === "1" ? 1 : 0)));
+  const objects: EditableObject[] = raw.objects.map((o) => {
     const base = {
       uid: newUid(),
       id: o.id,
       x: o.x,
       y: o.y,
-      solid: inferSolid(o, grid, r.cell),
+      solid: inferSolid(o, grid, raw.cell),
       flipX: o.flipX ?? false,
       flipY: o.flipY ?? false,
       path: o.path,
@@ -209,22 +219,22 @@ export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableL
       : { ...base, layer: o.layer };
   });
   return {
-    tile: r.tile,
-    width: r.width,
-    height: r.height,
-    cell: r.cell,
-    cols: r.cols,
-    rows: r.rows,
-    spawn: { x: r.spawn.x, y: r.spawn.y },
-    door: { x: r.door.x, y: r.door.y },
-    seats: r.seats.map((s) =>
+    tile: raw.tile,
+    width: raw.width,
+    height: raw.height,
+    cell: raw.cell,
+    cols: raw.cols,
+    rows: raw.rows,
+    spawn: { x: raw.spawn.x, y: raw.spawn.y },
+    door: { x: raw.door.x, y: raw.door.y },
+    seats: raw.seats.map((s) =>
       s.role === "work"
         ? { role: "work", x: s.x, y: s.y }
         : { role: "rest", x: s.x, y: s.y, sit: s.sit },
     ),
-    pois: r.pois.map((p) => ({ x: p.x, y: p.y, face: p.face })),
+    pois: raw.pois.map((p) => ({ x: p.x, y: p.y, face: p.face })),
     objects,
-    collision: [...r.collision],
+    collision: [...raw.collision],
   };
 }
 
@@ -265,9 +275,7 @@ export function deriveCollision(L: EditableLayout): string[] {
     paint(grid, L.cell, L.cols, L.rows, { x: o.x + b.x, y: o.y + b.y, w: b.w, h: b.h }, 0);
   }
   for (const o of L.objects) {
-    if (!o.solid) continue;
-    const fp = footprintRect(o);
-    if (fp) paint(grid, L.cell, L.cols, L.rows, fp, 1);
+    if (o.solid) paint(grid, L.cell, L.cols, L.rows, footprintRect(o), 1);
   }
   for (const s of [...L.seats, ...L.pois, L.door]) {
     const row = grid[Math.floor(s.y / L.cell)];
@@ -323,11 +331,6 @@ export function toLayoutData(L: EditableLayout): OfficeLayoutData {
     objects,
     collision: L.collision,
   });
-}
-
-/** Serialize to the exact office-design.json string the game reads. */
-export function serializeLayout(L: EditableLayout): string {
-  return JSON.stringify(toLayoutData(L));
 }
 
 /** Place by the sprite's CONTENT top-left at (cx, cy) — so the visible sprite lands

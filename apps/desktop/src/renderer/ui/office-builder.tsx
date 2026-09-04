@@ -1,48 +1,35 @@
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   applyOfficeLayout,
   parseOfficeLayout,
-  type OfficeLayer,
-  type OfficePoi,
-  type OfficeSeat,
   type PixelPoint,
 } from "@/renderer/game/office-layout";
-import { layoutIssues } from "@/shared/office-grid";
-import { schemaIssues, type Facing } from "@/shared/office-layout-schema";
+import { useHistory } from "@/renderer/hooks/use-history";
+import { bridge } from "@/renderer/state/store";
+import { Inspector } from "@/renderer/ui/office-builder/inspector";
 import {
   ALL_OBJECT_IDS,
   assetSrc,
   cloneObject,
-  contentBounds,
   deriveCollision,
   flipObject,
   loadLayout,
-  makeObject,
   moveObject,
-  paintOrder,
   ROOM_TILES,
-  serializeLayout,
-  setCollisionCell,
-  setLayer,
-  srcForObject,
   toLayoutData,
+  type BuilderDoc,
   type EditableLayout,
   type EditableObject,
   type Tool,
-} from "@/renderer/ui/office-builder/use-builder-state";
+} from "@/renderer/ui/office-builder/office-builder-model";
+import { Stage, type Placing } from "@/renderer/ui/office-builder/stage";
+import { errorMessage } from "@/shared/errors";
+import { layoutIssues } from "@/shared/office-grid";
+import { schemaIssues } from "@/shared/office-layout-schema";
 
 type PaletteMode = "objects" | "tiles";
 
 const SNAPS = [1, 8, 16, 32] as const;
-const LAYERS: readonly OfficeLayer[] = ["floor", "object", "overhead"];
 const TOOLS: readonly { tool: Tool; label: string; hotkey: string }[] = [
   { tool: "select", label: "Select", hotkey: "v" },
   { tool: "place", label: "Place", hotkey: "p" },
@@ -54,58 +41,217 @@ const TOOLS: readonly { tool: Tool; label: string; hotkey: string }[] = [
   { tool: "block", label: "+Collision", hotkey: "b" },
   { tool: "clear", label: "−Collision", hotkey: "x" },
 ];
-const HISTORY_CAP = 100;
-/** How close a click must land to an existing marker to mean that marker. */
-const MARKER_HIT_PX = 12;
-const NEXT_FACING = { up: "right", right: "down", down: "left", left: "up" } satisfies Record<
-  Facing,
-  Facing
->;
-const FACING_GLYPH = { up: "↑", right: "→", down: "↓", left: "←" } satisfies Record<Facing, string>;
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 5;
+const ZOOM_STEP = 0.5;
+const NUDGE = new Map<string, PixelPoint>([
+  ["ArrowLeft", { x: -1, y: 0 }],
+  ["ArrowRight", { x: 1, y: 0 }],
+  ["ArrowUp", { x: 0, y: -1 }],
+  ["ArrowDown", { x: 0, y: 1 }],
+]);
 
-const near = (a: PixelPoint, b: PixelPoint): boolean =>
-  Math.hypot(a.x - b.x, a.y - b.y) < MARKER_HIT_PX;
+const isTyping = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
 
-/**
- * Markers share one gesture: click empty floor to add, click a marker to remove
- * it, ⇧click a marker to turn it (a rest chair's side, a POI's facing).
- */
-function toggleSeat(
-  seats: OfficeSeat[],
-  role: OfficeSeat["role"],
-  at: PixelPoint,
-  turn: boolean,
-): OfficeSeat[] {
-  const i = seats.findIndex((s) => s.role === role && near(s, at));
-  if (i < 0) {
-    const added: OfficeSeat =
-      role === "work" ? { role, x: at.x, y: at.y } : { role, x: at.x, y: at.y, sit: "left" };
-    return [...seats, added];
-  }
-  const hit = seats[i];
-  if (!turn || !hit || hit.role !== "rest") return seats.filter((_, j) => j !== i);
-  return seats.map((s, j) =>
-    j === i ? { ...hit, sit: hit.sit === "left" ? "right" : "left" } : s,
+interface PaletteItem {
+  id: string;
+  src: string | null;
+}
+
+function Palette({
+  mode,
+  onMode,
+  query,
+  onQuery,
+  items,
+  picked,
+  onPick,
+}: {
+  mode: PaletteMode;
+  onMode: (mode: PaletteMode) => void;
+  query: string;
+  onQuery: (query: string) => void;
+  items: PaletteItem[];
+  picked: string | null;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <aside className="px-window m-2 flex w-52 shrink-0 flex-col overflow-hidden">
+      <div className="px-titlebar flex gap-1 px-2 py-2 text-sm">
+        {(["objects", "tiles"] as const).map((m) => (
+          <button
+            type="button"
+            key={m}
+            onClick={() => onMode(m)}
+            data-sel={mode === m}
+            className="px-opt flex-1 px-2 py-1 capitalize"
+          >
+            {m === "tiles" ? "Room tiles" : "Objects"}
+          </button>
+        ))}
+      </div>
+      <input
+        value={query}
+        onChange={(e) => onQuery(e.currentTarget.value)}
+        placeholder="Search id…"
+        className="px-field m-2"
+      />
+      <div className="px-scroll grid min-h-0 flex-1 grid-cols-3 gap-1 overflow-y-auto p-2">
+        {items.map((it) => {
+          if (!it.src) return null;
+          return (
+            <button
+              type="button"
+              key={it.id}
+              onClick={() => onPick(it.id)}
+              title={it.id}
+              data-sel={picked === it.id}
+              className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
+            >
+              <img
+                src={it.src}
+                alt={it.id}
+                className="max-h-10 max-w-none [image-rendering:pixelated]"
+              />
+            </button>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 
-function togglePoi(pois: OfficePoi[], at: PixelPoint, turn: boolean): OfficePoi[] {
-  const i = pois.findIndex((p) => near(p, at));
-  if (i < 0) return [...pois, { x: at.x, y: at.y, face: "up" }];
-  const hit = pois[i];
-  if (!turn || !hit) return pois.filter((_, j) => j !== i);
-  return pois.map((p, j) => (j === i ? { ...hit, face: NEXT_FACING[hit.face] } : p));
+function Toolbar({
+  tool,
+  onTool,
+  snap,
+  onSnap,
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  showCollision,
+  onToggleCollision,
+  onRebuildCollision,
+  onSave,
+}: {
+  tool: Tool;
+  onTool: (tool: Tool) => void;
+  snap: number;
+  onSnap: (snap: number) => void;
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  showCollision: boolean;
+  onToggleCollision: () => void;
+  onRebuildCollision: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <header className="px-window m-2 mb-0 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+        {TOOLS.map((t) => (
+          <button
+            type="button"
+            key={t.tool}
+            onClick={() => onTool(t.tool)}
+            data-sel={tool === t.tool}
+            title={`${t.label} (${t.hotkey.toUpperCase()})`}
+            className="px-opt px-2.5 py-1.5"
+          >
+            {t.label}
+          </button>
+        ))}
+        <span className="mx-1 opacity-40">|</span>
+        <span className="text-[var(--text-dim)]">snap</span>
+        {SNAPS.map((s) => (
+          <button
+            type="button"
+            key={s}
+            onClick={() => onSnap(s)}
+            data-sel={snap === s}
+            className="px-opt px-2 py-1.5"
+          >
+            {s === 1 ? "free" : s}
+          </button>
+        ))}
+        <span className="mx-1 opacity-40">|</span>
+        <button type="button" onClick={onZoomOut} className="px-btn px-2 py-1.5">
+          −
+        </button>
+        <span className="w-8 text-center">{zoom}×</span>
+        <button type="button" onClick={onZoomIn} className="px-btn px-2 py-1.5">
+          +
+        </button>
+        <button
+          type="button"
+          onClick={onToggleCollision}
+          data-sel={showCollision}
+          className="px-opt px-2.5 py-1.5"
+        >
+          Collision
+        </button>
+        <button
+          type="button"
+          onClick={onRebuildCollision}
+          className="px-btn px-2.5 py-1.5"
+          title="Re-derive walkability from solid furniture (then Save)"
+        >
+          Rebuild collision
+        </button>
+        <span className="ml-auto flex items-center gap-2">
+          <a href="#/office-assets" className="px-btn px-2.5 py-1.5">
+            Assets
+          </a>
+          <a href="#/" className="px-btn px-2.5 py-1.5">
+            Game
+          </a>
+          <button type="button" onClick={onSave} className="px-btn-accent px-3 py-1.5">
+            Save
+          </button>
+        </span>
+      </div>
+    </header>
+  );
+}
+
+function Hints({ tool, placing }: { tool: Tool; placing: Placing | null }) {
+  return (
+    <div className="flex flex-col gap-2 text-[var(--text-dim)]">
+      <p>
+        {tool === "place"
+          ? placing
+            ? `Click the canvas to place ${placing.id}.`
+            : "Pick an asset from the left."
+          : "Click to select, or drag a box to select many."}
+      </p>
+      <div className="px-inset p-2 text-xs leading-relaxed">
+        V select · P place · S spawn · D door · B/X collision
+        <br />
+        T seat · R rest chair · I point of interest: click to add, click again to remove, ⇧click to
+        turn
+        <br />
+        ⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
+        <br />
+        ⇧H flip horizontal · ⇧V flip vertical
+        <br />
+        arrows nudge (⇧ = snap step) · Delete remove · Esc deselect
+        <br />
+        <br />
+        Layers: floor = flat under everyone · object = y-sorts with walkers (in front when they're
+        above it, behind when below) · overhead = always on top.
+      </div>
+    </div>
+  );
 }
 
 export function OfficeBuilder() {
-  const [layout, setLayout] = useState<EditableLayout>(loadLayout);
+  const history = useHistory<BuilderDoc>(() => ({ layout: loadLayout(), selection: [] }));
+  const { layout, selection } = history.present;
   const [tool, setTool] = useState<Tool>("select");
   const [paletteId, setPaletteId] = useState<string | null>(null);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("objects");
-  const [selectedUids, setSelectedUids] = useState<string[]>([]);
-  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(
-    null,
-  );
   const [snap, setSnap] = useState<number>(16);
   const [zoom, setZoom] = useState<number>(2);
   const [collisionPinned, setCollisionPinned] = useState(false);
@@ -113,335 +259,84 @@ export function OfficeBuilder() {
   const showCollision = collisionPinned || tool === "block" || tool === "clear";
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Loaded current office. Place assets, then Save.");
-  const stageRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{
-    sx: number;
-    sy: number;
-    origins: { uid: string; x: number; y: number }[];
-  } | null>(null);
-  const paintRef = useRef<0 | 1 | null>(null);
-  const selSet = new Set(selectedUids);
 
   const selected =
-    selectedUids.length === 1
-      ? (layout.objects.find((o) => o.uid === selectedUids[0]) ?? null)
-      : null;
+    selection.length === 1 ? (layout.objects.find((o) => o.uid === selection[0]) ?? null) : null;
 
-  // ---- undo/redo: snapshot history over the whole layout ----
-  const layoutRef = useRef(layout);
-  const selectedRef = useRef(selectedUids);
-  useLayoutEffect(() => {
-    layoutRef.current = layout;
-  }, [layout]);
-  useLayoutEffect(() => {
-    selectedRef.current = selectedUids;
-  }, [selectedUids]);
-  interface HistoryEntry {
-    layout: EditableLayout;
-    selection: string[];
-  }
-  const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({
-    past: [],
-    future: [],
-  });
+  const commitLayout = (updater: (L: EditableLayout) => EditableLayout) =>
+    history.commit((d) => {
+      const next = updater(d.layout);
+      return next === d.layout ? d : { ...d, layout: next };
+    });
+  const select = (uids: readonly string[]) => history.live((d) => ({ ...d, selection: uids }));
+  const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP));
+  const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP));
 
-  /** Apply without recording (mid-drag / mid-paint frames). */
-  const applyLive = useCallback((updater: (L: EditableLayout) => EditableLayout) => {
-    const next = updater(layoutRef.current);
-    layoutRef.current = next;
-    setLayout(next);
-  }, []);
-  /** Record the current state as an undo step (start of a stroke/gesture). */
-  const beginStroke = useCallback(() => {
-    const h = historyRef.current;
-    h.past.push({ layout: layoutRef.current, selection: selectedRef.current });
-    if (h.past.length > HISTORY_CAP) h.past.shift();
-    h.future = [];
-  }, []);
-  /** One-shot undoable change. */
-  const commit = useCallback(
-    (updater: (L: EditableLayout) => EditableLayout) => {
-      const next = updater(layoutRef.current);
-      if (next === layoutRef.current) return;
-      beginStroke();
-      layoutRef.current = next;
-      setLayout(next);
-    },
-    [beginStroke],
-  );
-  const restore = useCallback((entry: HistoryEntry) => {
-    layoutRef.current = entry.layout;
-    setLayout(entry.layout);
-    // restore the selection as it was, minus anything that no longer exists
-    setSelectedUids(entry.selection.filter((u) => entry.layout.objects.some((o) => o.uid === u)));
-  }, []);
-  const undo = useCallback(() => {
-    const h = historyRef.current;
-    const prev = h.past.pop();
-    if (!prev) return;
-    h.future.push({ layout: layoutRef.current, selection: selectedRef.current });
-    restore(prev);
-  }, [restore]);
-  const redo = useCallback(() => {
-    const h = historyRef.current;
-    const next = h.future.pop();
-    if (!next) return;
-    h.past.push({ layout: layoutRef.current, selection: selectedRef.current });
-    restore(next);
-  }, [restore]);
-
-  const snapTo = useCallback(
-    (v: number) => (snap > 1 ? Math.round(v / snap) * snap : Math.round(v)),
-    [snap],
-  );
-
-  const updateObject = useCallback(
-    (uid: string, next: EditableObject) => {
-      commit((L) => ({
-        ...L,
-        objects: L.objects.map((o) => (o.uid === uid ? next : o)),
-      }));
-    },
-    [commit],
-  );
+  const updateObject = (uid: string, next: EditableObject) =>
+    commitLayout((L) => ({ ...L, objects: L.objects.map((o) => (o.uid === uid ? next : o)) }));
 
   // Restack a flat-band object: those paint in list order, so raising one is
   // literally moving it later in the list (past the next sibling in its band).
-  const restackObject = useCallback(
-    (uid: string, dir: 1 | -1) => {
-      commit((L) => {
-        const i = L.objects.findIndex((o) => o.uid === uid);
-        const self = L.objects[i];
-        if (!self) return L;
-        const step = (n: number): number => {
-          for (let j = n + dir; j >= 0 && j < L.objects.length; j += dir)
-            if (L.objects[j]?.layer === self.layer) return j;
-          return n;
-        };
-        const j = step(i);
-        if (j === i) return L;
-        const objects = L.objects.slice();
-        objects.splice(i, 1);
-        objects.splice(j, 0, self);
-        return { ...L, objects };
-      });
-    },
-    [commit],
-  );
+  const restackObject = (uid: string, dir: 1 | -1) =>
+    commitLayout((L) => {
+      const i = L.objects.findIndex((o) => o.uid === uid);
+      const self = L.objects[i];
+      if (!self) return L;
+      let j = i;
+      for (let k = i + dir; k >= 0 && k < L.objects.length; k += dir) {
+        if (L.objects[k]?.layer === self.layer) {
+          j = k;
+          break;
+        }
+      }
+      if (j === i) return L;
+      const objects = L.objects.slice();
+      objects.splice(i, 1);
+      objects.splice(j, 0, self);
+      return { ...L, objects };
+    });
 
-  const deleteUids = useCallback(
-    (uids: readonly string[]) => {
-      if (uids.length === 0) return;
-      const kill = new Set(uids);
-      commit((L) => ({ ...L, objects: L.objects.filter((o) => !kill.has(o.uid)) }));
-      setSelectedUids((cur) => cur.filter((u) => !kill.has(u)));
-    },
-    [commit],
-  );
+  const deleteUids = (uids: readonly string[]) => {
+    if (uids.length === 0) return;
+    const kill = new Set(uids);
+    history.commit((d) => ({
+      layout: { ...d.layout, objects: d.layout.objects.filter((o) => !kill.has(o.uid)) },
+      selection: d.selection.filter((u) => !kill.has(u)),
+    }));
+  };
 
-  const duplicateUids = useCallback(
-    (uids: readonly string[]) => {
-      if (uids.length === 0) return;
-      const src = new Set(uids);
-      const clones = layoutRef.current.objects
+  const duplicateUids = (uids: readonly string[]) => {
+    if (uids.length === 0) return;
+    const src = new Set(uids);
+    history.commit((d) => {
+      const clones = d.layout.objects
         .filter((o) => src.has(o.uid))
         .map((o) => moveObject(cloneObject(o), o.x + 8, o.y + 8));
-      commit((L) => ({ ...L, objects: [...L.objects, ...clones] }));
-      setSelectedUids(clones.map((o) => o.uid));
-    },
-    [commit],
-  );
+      return {
+        layout: { ...d.layout, objects: [...d.layout.objects, ...clones] },
+        selection: clones.map((o) => o.uid),
+      };
+    });
+  };
 
-  const flipSelection = useCallback(
-    (axis: "x" | "y") => {
-      const sel = new Set(selectedUids);
-      if (sel.size === 0) return;
-      commit((L) => ({
-        ...L,
-        objects: L.objects.map((o) => (sel.has(o.uid) ? flipObject(o, axis) : o)),
-      }));
-    },
-    [selectedUids, commit],
-  );
+  const flipSelection = (axis: "x" | "y") => {
+    const sel = new Set(selection);
+    if (sel.size === 0) return;
+    commitLayout((L) => ({
+      ...L,
+      objects: L.objects.map((o) => (sel.has(o.uid) ? flipObject(o, axis) : o)),
+    }));
+  };
 
-  // hit-test: the object you'd see at (x,y) — the LAST one painted over it
-  const hitTest = useCallback(
-    (x: number, y: number): EditableObject | null => {
-      let best: EditableObject | null = null;
-      for (const o of paintOrder(layout.objects)) {
-        const b = contentBounds(o);
-        const bx = o.x + b.x;
-        const by = o.y + b.y;
-        if (x < bx || y < by || x >= bx + b.w || y >= by + b.h) continue;
-        best = o;
-      }
-      return best;
-    },
-    [layout.objects],
-  );
+  const nudgeSelection = (d: PixelPoint) => {
+    const sel = new Set(selection);
+    commitLayout((L) => ({
+      ...L,
+      objects: L.objects.map((o) => (sel.has(o.uid) ? moveObject(o, o.x + d.x, o.y + d.y) : o)),
+    }));
+  };
 
-  const worldFromEvent = useCallback(
-    (e: { clientX: number; clientY: number }): PixelPoint => {
-      const rect = stageRef.current?.getBoundingClientRect();
-      if (!rect) return { x: 0, y: 0 };
-      return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
-    },
-    [zoom],
-  );
-
-  const onStagePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      const p = worldFromEvent(e);
-      const sx = snapTo(p.x);
-      const sy = snapTo(p.y);
-      if (tool === "block" || tool === "clear") {
-        const val: 0 | 1 = tool === "block" ? 1 : 0;
-        paintRef.current = val;
-        beginStroke(); // the whole paint stroke is one undo step
-        const c = Math.floor(p.x / layout.cell);
-        const r = Math.floor(p.y / layout.cell);
-        applyLive((L) => ({ ...L, collision: setCollisionCell(L.collision, L.cols, c, r, val) }));
-        e.currentTarget.setPointerCapture(e.pointerId);
-        return;
-      }
-      if (tool === "place" && paletteId) {
-        const tile = paletteMode === "tiles" ? ROOM_TILES.find((t) => t.id === paletteId) : null;
-        const obj = tile
-          ? makeObject(tile.id, sx, sy, { path: tile.path, layer: "floor" })
-          : makeObject(paletteId, sx, sy);
-        commit((L) => ({ ...L, objects: [...L.objects, obj] }));
-        setSelectedUids([obj.uid]); // stay in Place mode so you can keep placing
-        return;
-      }
-      if (tool === "spawn") {
-        commit((L) => ({ ...L, spawn: { x: sx, y: sy } }));
-        return;
-      }
-      if (tool === "door") {
-        commit((L) => ({ ...L, door: { x: sx, y: sy } }));
-        return;
-      }
-      if (tool === "seat" || tool === "rest") {
-        const role = tool === "seat" ? "work" : "rest";
-        commit((L) => ({ ...L, seats: toggleSeat(L.seats, role, { x: sx, y: sy }, e.shiftKey) }));
-        return;
-      }
-      if (tool === "poi") {
-        commit((L) => ({ ...L, pois: togglePoi(L.pois, { x: sx, y: sy }, e.shiftKey) }));
-        return;
-      }
-      // select / drag (clicking an object) or marquee (dragging empty space)
-      const hit = hitTest(p.x, p.y);
-      e.currentTarget.setPointerCapture(e.pointerId);
-      if (hit) {
-        // if the hit isn't already in the selection, select just it; then drag the whole selection
-        const inSel = selectedUids.includes(hit.uid);
-        const group = inSel ? selectedUids : [hit.uid];
-        const groupSet = new Set(group);
-        beginStroke(); // the whole gesture (clone included) is one undo step
-        if (e.altKey) {
-          // Figma-style alt-drag: duplicate the selection and drag the copies
-          const clones = layoutRef.current.objects
-            .filter((o) => groupSet.has(o.uid))
-            .map((o) => cloneObject(o));
-          applyLive((L) => ({ ...L, objects: [...L.objects, ...clones] }));
-          setSelectedUids(clones.map((o) => o.uid));
-          dragRef.current = {
-            sx: p.x,
-            sy: p.y,
-            origins: clones.map((o) => ({ uid: o.uid, x: o.x, y: o.y })),
-          };
-          return;
-        }
-        if (!inSel) setSelectedUids([hit.uid]);
-        dragRef.current = {
-          sx: p.x,
-          sy: p.y,
-          origins: layout.objects
-            .filter((o) => groupSet.has(o.uid))
-            .map((o) => ({ uid: o.uid, x: o.x, y: o.y })),
-        };
-      } else {
-        setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
-      }
-    },
-    [
-      tool,
-      paletteId,
-      paletteMode,
-      snapTo,
-      worldFromEvent,
-      hitTest,
-      layout.objects,
-      layout.cell,
-      selectedUids,
-      beginStroke,
-      commit,
-      applyLive,
-    ],
-  );
-
-  const onStagePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const p = worldFromEvent(e);
-      if (paintRef.current !== null) {
-        const val = paintRef.current;
-        const c = Math.floor(p.x / layout.cell);
-        const r = Math.floor(p.y / layout.cell);
-        applyLive((L) => ({ ...L, collision: setCollisionCell(L.collision, L.cols, c, r, val) }));
-        return;
-      }
-      const drag = dragRef.current;
-      if (drag) {
-        const dx = snapTo(p.x - drag.sx);
-        const dy = snapTo(p.y - drag.sy);
-        const moves = new Map(drag.origins.map((o) => [o.uid, o]));
-        applyLive((L) => ({
-          ...L,
-          objects: L.objects.map((o) => {
-            const orig = moves.get(o.uid);
-            if (!orig) return o;
-            return moveObject(o, orig.x + dx, orig.y + dy);
-          }),
-        }));
-        return;
-      }
-      setMarquee((m) => (m ? { ...m, x1: p.x, y1: p.y } : m));
-    },
-    [worldFromEvent, snapTo, layout.cell, applyLive],
-  );
-
-  const onStagePointerUp = useCallback(() => {
-    paintRef.current = null;
-    if (marquee) {
-      const x0 = Math.min(marquee.x0, marquee.x1);
-      const x1 = Math.max(marquee.x0, marquee.x1);
-      const y0 = Math.min(marquee.y0, marquee.y1);
-      const y1 = Math.max(marquee.y0, marquee.y1);
-      if (x1 - x0 > 3 || y1 - y0 > 3) {
-        const hits = layout.objects
-          .filter((o) => {
-            const b = contentBounds(o);
-            const bx = o.x + b.x;
-            const by = o.y + b.y;
-            return !(x1 < bx || x0 > bx + b.w || y1 < by || y0 > by + b.h);
-          })
-          .map((o) => o.uid);
-        setSelectedUids(hits);
-      } else {
-        setSelectedUids([]); // a click on empty space clears the selection
-      }
-      setMarquee(null);
-    }
-    dragRef.current = null;
-  }, [marquee, layout.objects]);
-
-  const save = useCallback(async () => {
-    const bridge = window.appBridge;
-    if (!bridge) {
-      setStatus("No app bridge available.");
-      return;
-    }
+  const save = async () => {
     // The same judges main applies before writing, run here first so the reasons
     // land in the status line instead of an IPC error.
     const data = toLayoutData(layout);
@@ -451,115 +346,99 @@ export function OfficeBuilder() {
       return;
     }
     try {
-      const json = serializeLayout(layout);
-      await bridge.saveOfficeDesign({ json });
+      await bridge().saveOfficeDesign({ json: JSON.stringify(data) });
       // apply to the live layout bindings: the game scene rebuilds from them
       // when you switch back, so the save is visible immediately
-      applyOfficeLayout(JSON.parse(json));
+      applyOfficeLayout(data);
       setStatus("Saved ✓ — switch to Game to see it.");
     } catch (err) {
-      setStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      setStatus(`Save failed: ${errorMessage(err)}`);
     }
-  }, [layout]);
+  };
 
+  // keyboard: Figma-style hotkeys (see the cheat sheet in the inspector)
   const onKey = useEffectEvent((e: KeyboardEvent) => {
-    const target = e.target;
-    if (
-      target instanceof HTMLElement &&
-      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
-    )
-      return;
+    if (isTyping(e.target)) return;
     const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.toLowerCase();
 
-    if (mod && e.key.toLowerCase() === "z") {
+    if (mod && key === "z") {
       e.preventDefault();
-      if (e.shiftKey) redo();
-      else undo();
+      if (e.shiftKey) history.redo();
+      else history.undo();
       return;
     }
-    if (mod && e.key.toLowerCase() === "s") {
+    if (mod && key === "s") {
       e.preventDefault();
       void save();
       return;
     }
-    if (mod && e.key.toLowerCase() === "d") {
+    if (mod && key === "d") {
       e.preventDefault();
-      duplicateUids(selectedUids);
+      duplicateUids(selection);
       return;
     }
     if (mod) return; // don't shadow other app/browser shortcuts
 
     if (e.key === "Escape") {
-      setSelectedUids([]);
+      select([]);
       setTool("select");
       return;
     }
-    if (e.shiftKey && (e.key === "H" || e.key === "h")) {
+    if (e.shiftKey && key === "h") {
       e.preventDefault();
       flipSelection("x");
       return;
     }
-    if (e.shiftKey && (e.key === "V" || e.key === "v")) {
+    if (e.shiftKey && key === "v") {
       e.preventDefault();
       flipSelection("y");
       return;
     }
     if (!e.shiftKey) {
-      const toolFor = TOOLS.find((t) => t.hotkey === e.key.toLowerCase());
+      const toolFor = TOOLS.find((t) => t.hotkey === key);
       if (toolFor) {
         setTool(toolFor.tool);
         return;
       }
       if (e.key === "-") {
-        setZoom((z) => Math.max(1, z - 0.5));
+        zoomOut();
         return;
       }
       if (e.key === "=" || e.key === "+") {
-        setZoom((z) => Math.min(5, z + 0.5));
+        zoomIn();
         return;
       }
     }
 
-    if (selectedUids.length === 0) return;
+    if (selection.length === 0) return;
     const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
-    const nudge = new Map<string, PixelPoint>([
-      ["ArrowLeft", { x: -step, y: 0 }],
-      ["ArrowRight", { x: step, y: 0 }],
-      ["ArrowUp", { x: 0, y: -step }],
-      ["ArrowDown", { x: 0, y: step }],
-    ]);
-    const d = nudge.get(e.key);
-    const sel = new Set(selectedUids);
+    const d = NUDGE.get(e.key);
     if (d) {
       e.preventDefault();
-      commit((L) => ({
-        ...L,
-        objects: L.objects.map((o) => (sel.has(o.uid) ? moveObject(o, o.x + d.x, o.y + d.y) : o)),
-      }));
+      nudgeSelection({ x: d.x * step, y: d.y * step });
     } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      deleteUids(selectedUids);
+      deleteUids(selection);
     }
   });
-
-  // keyboard: Figma-style hotkeys (see the cheat sheet in the inspector)
   useEffect(() => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // load the player's saved office from disk (falls back to the bundled default)
+  const loadSaved = useEffectEvent((layout: EditableLayout) => {
+    history.reset({ layout, selection: [] });
+    setStatus("Loaded your saved office from disk.");
+  });
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const res = await window.appBridge?.loadOfficeDesign();
-      if (cancelled || !res || !res.layout) return;
+      const res = await bridge().loadOfficeDesign();
+      if (cancelled || !res.layout) return;
       try {
-        const loaded = loadLayout(parseOfficeLayout(res.layout));
-        layoutRef.current = loaded;
-        historyRef.current = { past: [], future: [] };
-        setLayout(loaded);
-        setStatus("Loaded your saved office from disk.");
+        loadSaved(loadLayout(parseOfficeLayout(res.layout)));
       } catch {
         // keep the bundled default if the saved file is from an older schema
       }
@@ -569,8 +448,7 @@ export function OfficeBuilder() {
     };
   }, []);
 
-  const sortedObjects = useMemo(() => paintOrder(layout.objects), [layout.objects]);
-  const visibleItems = useMemo<{ id: string; src: string | null }[]>(() => {
+  const paletteItems = useMemo<PaletteItem[]>(() => {
     const q = query.trim().toLowerCase();
     if (paletteMode === "tiles") {
       const tiles = q ? ROOM_TILES.filter((t) => t.id.includes(q)) : ROOM_TILES;
@@ -580,288 +458,59 @@ export function OfficeBuilder() {
     return ids.map((id) => ({ id, src: assetSrc(id) }));
   }, [query, paletteMode]);
 
+  const placing = useMemo<Placing | null>(() => {
+    if (!paletteId) return null;
+    const tile = paletteMode === "tiles" ? ROOM_TILES.find((t) => t.id === paletteId) : undefined;
+    return tile ? { id: tile.id, path: tile.path, layer: "floor" } : { id: paletteId };
+  }, [paletteId, paletteMode]);
+
   return (
     <main className="flex h-full w-full bg-[#bfc2c4] text-[var(--text)]">
-      {/* palette */}
-      <aside className="px-window m-2 flex w-52 shrink-0 flex-col overflow-hidden">
-        <div className="px-titlebar flex gap-1 px-2 py-2 text-sm">
-          {(["objects", "tiles"] as const).map((m) => (
-            <button
-              type="button"
-              key={m}
-              onClick={() => setPaletteMode(m)}
-              data-sel={paletteMode === m}
-              className="px-opt flex-1 px-2 py-1 capitalize"
-            >
-              {m === "tiles" ? "Room tiles" : "Objects"}
-            </button>
-          ))}
-        </div>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.currentTarget.value)}
-          placeholder="Search id…"
-          className="px-field m-2"
-        />
-        <div className="px-scroll grid min-h-0 flex-1 grid-cols-3 gap-1 overflow-y-auto p-2">
-          {visibleItems.map((it) => {
-            if (!it.src) return null;
-            return (
-              <button
-                type="button"
-                key={it.id}
-                onClick={() => {
-                  setPaletteId(it.id);
-                  setTool("place");
-                }}
-                title={it.id}
-                data-sel={paletteId === it.id}
-                className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
-              >
-                <img
-                  src={it.src}
-                  alt={it.id}
-                  className="max-h-10 max-w-none [image-rendering:pixelated]"
-                />
-              </button>
-            );
-          })}
-        </div>
-      </aside>
+      <Palette
+        mode={paletteMode}
+        onMode={setPaletteMode}
+        query={query}
+        onQuery={setQuery}
+        items={paletteItems}
+        picked={paletteId}
+        onPick={(id) => {
+          setPaletteId(id);
+          setTool("place");
+        }}
+      />
 
-      {/* canvas */}
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="px-window m-2 mb-0 shrink-0">
-          <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
-            {TOOLS.map((t) => (
-              <button
-                type="button"
-                key={t.tool}
-                onClick={() => setTool(t.tool)}
-                data-sel={tool === t.tool}
-                title={`${t.label} (${t.hotkey.toUpperCase()})`}
-                className="px-opt px-2.5 py-1.5"
-              >
-                {t.label}
-              </button>
-            ))}
-            <span className="mx-1 opacity-40">|</span>
-            <span className="text-[var(--text-dim)]">snap</span>
-            {SNAPS.map((s) => (
-              <button
-                type="button"
-                key={s}
-                onClick={() => setSnap(s)}
-                data-sel={snap === s}
-                className="px-opt px-2 py-1.5"
-              >
-                {s === 1 ? "free" : s}
-              </button>
-            ))}
-            <span className="mx-1 opacity-40">|</span>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
-              className="px-btn px-2 py-1.5"
-            >
-              −
-            </button>
-            <span className="w-8 text-center">{zoom}×</span>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.min(5, z + 0.5))}
-              className="px-btn px-2 py-1.5"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollisionPinned((v) => !v)}
-              data-sel={showCollision}
-              className="px-opt px-2.5 py-1.5"
-            >
-              Collision
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                commit((L) => ({ ...L, collision: deriveCollision(L) }));
-                setStatus("Rebuilt collision from floor tiles + solid furniture.");
-                setCollisionPinned(true);
-              }}
-              className="px-btn px-2.5 py-1.5"
-              title="Re-derive walkability from solid furniture (then Save)"
-            >
-              Rebuild collision
-            </button>
-            <span className="ml-auto flex items-center gap-2">
-              <a href="#/office-assets" className="px-btn px-2.5 py-1.5">
-                Assets
-              </a>
-              <a href="#/" className="px-btn px-2.5 py-1.5">
-                Game
-              </a>
-              <button
-                type="button"
-                onClick={() => void save()}
-                className="px-btn-accent px-3 py-1.5"
-              >
-                Save
-              </button>
-            </span>
-          </div>
-        </header>
+        <Toolbar
+          tool={tool}
+          onTool={setTool}
+          snap={snap}
+          onSnap={setSnap}
+          zoom={zoom}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+          showCollision={showCollision}
+          onToggleCollision={() => setCollisionPinned((v) => !v)}
+          onRebuildCollision={() => {
+            commitLayout((L) => ({ ...L, collision: deriveCollision(L) }));
+            setStatus("Rebuilt collision from floor tiles + solid furniture.");
+            setCollisionPinned(true);
+          }}
+          onSave={() => void save()}
+        />
         <div className="px-3 py-1 text-xs text-[var(--text-dim)]">{status}</div>
         <div className="px-scroll m-2 mt-0 min-h-0 flex-1 overflow-auto bg-[#14161f] p-4">
-          <div
-            ref={stageRef}
-            onPointerDown={onStagePointerDown}
-            onPointerMove={onStagePointerMove}
-            onPointerUp={onStagePointerUp}
-            style={{
-              position: "relative",
-              width: layout.width,
-              height: layout.height,
-              transform: `scale(${zoom})`,
-              transformOrigin: "top left",
-              imageRendering: "pixelated",
-              outline: "1px solid #333",
-              cursor: tool === "select" ? "default" : "crosshair",
-            }}
-          >
-            {sortedObjects.map((o, i) => {
-              const src = srcForObject(o);
-              if (!src) return null;
-              return (
-                <img
-                  key={o.uid}
-                  src={src}
-                  alt={o.id}
-                  draggable={false}
-                  style={{
-                    position: "absolute",
-                    left: o.x,
-                    top: o.y,
-                    zIndex: 10 + i,
-                    pointerEvents: "none",
-                    outline: selSet.has(o.uid) ? "1px solid #34d399" : "none",
-                    transform:
-                      o.flipX || o.flipY
-                        ? `scale(${o.flipX ? -1 : 1}, ${o.flipY ? -1 : 1})`
-                        : undefined,
-                  }}
-                  className="max-w-none [image-rendering:pixelated]"
-                />
-              );
-            })}
-            {showCollision &&
-              collisionCells(layout).map((c) => (
-                <div
-                  key={`c-${c.x}-${c.y}`}
-                  style={{
-                    position: "absolute",
-                    left: c.x,
-                    top: c.y,
-                    width: layout.cell,
-                    height: layout.cell,
-                    zIndex: 100000,
-                    background: "rgba(255,51,102,0.35)",
-                    pointerEvents: "none",
-                  }}
-                />
-              ))}
-            {layout.seats.map((s) => (
-              <div
-                key={`s-${s.x}-${s.y}`}
-                title={s.role === "work" ? "work seat" : `rest chair · sit ${s.sit}`}
-                style={{
-                  position: "absolute",
-                  left: s.x - 4,
-                  top: s.y - 4,
-                  width: 8,
-                  height: 8,
-                  zIndex: 100001,
-                  background: s.role === "work" ? "#38bdf8" : "#34d399",
-                  borderRadius: s.role === "work" ? 8 : 2,
-                  color: "#0b1a14",
-                  fontSize: 7,
-                  lineHeight: "8px",
-                  textAlign: "center",
-                  pointerEvents: "none",
-                }}
-              >
-                {s.role === "rest" ? s.sit[0]?.toUpperCase() : null}
-              </div>
-            ))}
-            {layout.pois.map((p) => (
-              <div
-                key={`p-${p.x}-${p.y}`}
-                title={`point of interest · faces ${p.face}`}
-                style={{
-                  position: "absolute",
-                  left: p.x - 4,
-                  top: p.y - 4,
-                  width: 8,
-                  height: 8,
-                  zIndex: 100001,
-                  background: "#f472b6",
-                  color: "#2a0a1c",
-                  fontSize: 8,
-                  lineHeight: "8px",
-                  textAlign: "center",
-                  pointerEvents: "none",
-                }}
-              >
-                {FACING_GLYPH[p.face]}
-              </div>
-            ))}
-            <div
-              title="door"
-              style={{
-                position: "absolute",
-                left: layout.door.x - 4,
-                top: layout.door.y - 4,
-                width: 8,
-                height: 8,
-                zIndex: 100002,
-                background: "#fb923c",
-                outline: "1px solid #431407",
-                pointerEvents: "none",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                left: layout.spawn.x - 4,
-                top: layout.spawn.y - 4,
-                width: 8,
-                height: 8,
-                zIndex: 100002,
-                background: "#facc15",
-                borderRadius: 8,
-                pointerEvents: "none",
-              }}
-            />
-            {marquee && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: Math.min(marquee.x0, marquee.x1),
-                  top: Math.min(marquee.y0, marquee.y1),
-                  width: Math.abs(marquee.x1 - marquee.x0),
-                  height: Math.abs(marquee.y1 - marquee.y0),
-                  zIndex: 100003,
-                  background: "rgba(52,211,153,0.15)",
-                  border: "1px solid #34d399",
-                  pointerEvents: "none",
-                }}
-              />
-            )}
-          </div>
+          <Stage
+            doc={history.present}
+            edit={history}
+            tool={tool}
+            snap={snap}
+            zoom={zoom}
+            placing={placing}
+            showCollision={showCollision}
+          />
         </div>
       </section>
 
-      {/* inspector */}
       <aside className="px-window m-2 flex w-60 shrink-0 flex-col gap-2 overflow-y-auto p-3 text-xs">
         <div className="px-titlebar -m-3 mb-1 px-3 py-2 text-sm">Inspector</div>
         {selected ? (
@@ -872,46 +521,22 @@ export function OfficeBuilder() {
             onRestack={(dir) => restackObject(selected.uid, dir)}
             onDelete={() => deleteUids([selected.uid])}
           />
-        ) : selectedUids.length > 1 ? (
+        ) : selection.length > 1 ? (
           <div className="flex flex-col gap-2">
-            <p>{selectedUids.length} objects selected.</p>
+            <p>{selection.length} objects selected.</p>
             <p className="text-xs text-[var(--text-dim)]">
               Drag to move them together; arrows nudge; Delete removes all.
             </p>
             <button
               type="button"
-              onClick={() => deleteUids(selectedUids)}
+              onClick={() => deleteUids(selection)}
               className="px-btn px-btn-danger py-1.5"
             >
-              Delete {selectedUids.length}
+              Delete {selection.length}
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-2 text-[var(--text-dim)]">
-            <p>
-              {tool === "place"
-                ? paletteId
-                  ? `Click the canvas to place ${paletteId}.`
-                  : "Pick an asset from the left."
-                : "Click to select, or drag a box to select many."}
-            </p>
-            <div className="px-inset p-2 text-xs leading-relaxed">
-              V select · P place · S spawn · D door · B/X collision
-              <br />
-              T seat · R rest chair · I point of interest: click to add, click again to remove,
-              ⇧click to turn
-              <br />
-              ⌘Z undo · ⇧⌘Z redo · ⌘D / ⌥drag duplicate · ⌘S save
-              <br />
-              ⇧H flip horizontal · ⇧V flip vertical
-              <br />
-              arrows nudge (⇧ = snap step) · Delete remove · Esc deselect
-              <br />
-              <br />
-              Layers: floor = flat under everyone · object = y-sorts with walkers (in front when
-              they're above it, behind when below) · overhead = always on top.
-            </div>
-          </div>
+          <Hints tool={tool} placing={placing} />
         )}
         <div className="mt-auto text-xs text-[var(--text-dim)]">
           {layout.objects.length} objects · {layout.seats.length} seats · {layout.pois.length} POIs
@@ -920,161 +545,4 @@ export function OfficeBuilder() {
       </aside>
     </main>
   );
-}
-
-function Inspector({
-  obj,
-  onChange,
-  onRestack,
-  onDelete,
-}: {
-  obj: EditableObject;
-  onChange: (next: EditableObject) => void;
-  onRestack: (dir: 1 | -1) => void;
-  onDelete: () => void;
-}) {
-  const src = srcForObject(obj);
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="px-inset flex items-center gap-2 p-2">
-        {src ? (
-          <img
-            src={src}
-            alt={obj.id}
-            style={{
-              transform:
-                obj.flipX || obj.flipY
-                  ? `scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1})`
-                  : undefined,
-            }}
-            className="max-h-12 max-w-none [image-rendering:pixelated]"
-          />
-        ) : null}
-        <span className="truncate">{obj.id}</span>
-      </div>
-      <label className="flex items-center justify-between gap-2">
-        x
-        <input
-          type="number"
-          value={obj.x}
-          onChange={(e) => onChange(moveObject(obj, Number(e.currentTarget.value), obj.y))}
-          className="px-field w-20 text-right"
-        />
-      </label>
-      <label className="flex items-center justify-between gap-2">
-        y
-        <input
-          type="number"
-          value={obj.y}
-          onChange={(e) => onChange(moveObject(obj, obj.x, Number(e.currentTarget.value)))}
-          className="px-field w-20 text-right"
-        />
-      </label>
-      <label className="flex items-center justify-between gap-2">
-        layer
-        <select
-          value={obj.layer}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            if (v === "floor" || v === "object" || v === "overhead") onChange(setLayer(obj, v));
-          }}
-          className="px-field"
-        >
-          {LAYERS.map((l) => (
-            <option key={l} value={l}>
-              {l === "floor"
-                ? "floor — flat, under everyone"
-                : l === "object"
-                  ? "object — y-sorts with walkers"
-                  : "overhead — always on top"}
-            </option>
-          ))}
-        </select>
-      </label>
-      {/* Only the y-sorting band has a floor line. The flat bands paint in list
-          order instead, so what they get is a way to move within that order. */}
-      {obj.layer === "object" ? (
-        <>
-          <label className="flex items-center justify-between gap-2">
-            anchorY
-            <input
-              type="number"
-              value={obj.anchorY}
-              onChange={(e) => onChange({ ...obj, anchorY: Number(e.currentTarget.value) })}
-              className="px-field w-20 text-right"
-            />
-          </label>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => onChange(moveObject(obj, obj.x, obj.y))}
-              className="px-btn flex-1 py-1.5"
-              title="Snap the anchor back to the sprite's floor line"
-            >
-              Auto anchor
-            </button>
-          </div>
-        </>
-      ) : (
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => onRestack(-1)}
-            className="px-btn flex-1 py-1.5"
-            title="Paint this one earlier — behind its neighbours in this layer"
-          >
-            Send back
-          </button>
-          <button
-            type="button"
-            onClick={() => onRestack(1)}
-            className="px-btn flex-1 py-1.5"
-            title="Paint this one later — in front of its neighbours in this layer"
-          >
-            Bring forward
-          </button>
-        </div>
-      )}
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => onChange(flipObject(obj, "x"))}
-          data-sel={obj.flipX}
-          className="px-opt flex-1 py-1.5"
-          title="Flip horizontal (⇧H)"
-        >
-          Flip H
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(flipObject(obj, "y"))}
-          data-sel={obj.flipY}
-          className="px-opt flex-1 py-1.5"
-          title="Flip vertical (⇧V)"
-        >
-          Flip V
-        </button>
-      </div>
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={obj.solid}
-          onChange={(e) => onChange({ ...obj, solid: e.currentTarget.checked })}
-        />
-        solid (blocks walking)
-      </label>
-      <button type="button" onClick={onDelete} className="px-btn px-btn-danger py-1.5">
-        Delete
-      </button>
-    </div>
-  );
-}
-
-function collisionCells(L: EditableLayout): { x: number; y: number }[] {
-  const cells: { x: number; y: number }[] = [];
-  L.collision.forEach((row, r) => {
-    for (let c = 0; c < row.length; c++)
-      if (row[c] === "1") cells.push({ x: c * L.cell, y: r * L.cell });
-  });
-  return cells;
 }
