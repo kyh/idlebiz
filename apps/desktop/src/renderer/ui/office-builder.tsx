@@ -164,7 +164,7 @@ function Toolbar({
           </button>
         ))}
         <span className="mx-1 opacity-40">|</span>
-        <span className="text-[var(--text-dim)]">snap</span>
+        <span className="text-text-dim">snap</span>
         {SNAPS.map((s) => (
           <button
             type="button"
@@ -218,7 +218,7 @@ function Toolbar({
 
 function Hints({ tool, placing }: { tool: Tool; placing: Placing | null }) {
   return (
-    <div className="flex flex-col gap-2 text-[var(--text-dim)]">
+    <div className="flex flex-col gap-2 text-text-dim">
       <p>
         {tool === "place"
           ? placing
@@ -465,7 +465,7 @@ export function OfficeBuilder() {
   }, [paletteId, paletteMode]);
 
   return (
-    <main className="flex h-full w-full bg-[#bfc2c4] text-[var(--text)]">
+    <main className="flex h-full w-full bg-[#bfc2c4] text-text">
       <Palette
         mode={paletteMode}
         onMode={setPaletteMode}
@@ -497,7 +497,7 @@ export function OfficeBuilder() {
           }}
           onSave={() => void save()}
         />
-        <div className="px-3 py-1 text-xs text-[var(--text-dim)]">{status}</div>
+        <div className="px-3 py-1 text-xs text-text-dim">{status}</div>
         <div className="px-scroll m-2 mt-0 min-h-0 flex-1 overflow-auto bg-[#14161f] p-4">
           <Stage
             doc={history.present}
@@ -524,7 +524,7 @@ export function OfficeBuilder() {
         ) : selection.length > 1 ? (
           <div className="flex flex-col gap-2">
             <p>{selection.length} objects selected.</p>
-            <p className="text-xs text-[var(--text-dim)]">
+            <p className="text-xs text-text-dim">
               Drag to move them together; arrows nudge; Delete removes all.
             </p>
             <button
@@ -538,7 +538,7 @@ export function OfficeBuilder() {
         ) : (
           <Hints tool={tool} placing={placing} />
         )}
-        <div className="mt-auto text-xs text-[var(--text-dim)]">
+        <div className="mt-auto text-xs text-text-dim">
           {layout.objects.length} objects · {layout.seats.length} seats · {layout.pois.length} POIs
           · {layout.width}×{layout.height}
         </div>

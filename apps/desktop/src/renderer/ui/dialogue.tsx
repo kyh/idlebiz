@@ -232,8 +232,8 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
           <Identity emp={emp} working={working} />
           {blocked ? (
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
-              <div className="text-xs text-[var(--danger)]">❗ {emp.name} needs your call:</div>
-              <div className="mt-1 text-sm leading-snug text-[var(--text)]">
+              <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
+              <div className="mt-1 text-sm leading-snug text-text">
                 <RichText
                   text={blocked.blocked?.type === "question" ? blocked.blocked.question : ""}
                   companyId={company.id}
@@ -265,7 +265,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
               <CommandMenu options={options} sel={sel} onHover={setSel} onChoose={choose} />
             ) : (
               <div className="flex h-full flex-col gap-2">
-                <div className="text-xs text-[var(--text-dim)]">Tell {emp.name} what to do:</div>
+                <div className="text-xs text-text-dim">Tell {emp.name} what to do:</div>
                 <input
                   ref={inputRef}
                   value={input}
@@ -295,14 +295,14 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
               </div>
             )}
           </div>
-          {note ? <div className="mt-1 text-center text-xs text-[var(--ok)]">{note}</div> : null}
+          {note ? <div className="mt-1 text-center text-xs text-ok">{note}</div> : null}
         </div>
 
         <button
           type="button"
           onClick={onClose}
           title="Close (esc)"
-          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
+          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-text-dim hover:text-text"
         >
           ✕
         </button>
@@ -318,7 +318,7 @@ function Identity({ emp, working }: { emp: Employee; working: boolean }) {
       <Portrait seed={emp.spriteSeed} size="md" alt={emp.name} />
       <div className="flex-1">
         <div className="text-base uppercase tracking-wide">{emp.name}</div>
-        <div className="text-xs text-[var(--accent-lo)]">{emp.title || emp.role}</div>
+        <div className="text-xs text-accent-lo">{emp.title || emp.role}</div>
         <span
           className="px-badge mt-1 inline-block"
           style={
@@ -372,9 +372,7 @@ function CommandMenu({
           Talk…
         </button>
       </div>
-      <div className="text-right text-xs text-[var(--text-dim)]">
-        ↑↓ move · ⏎ select · esc close
-      </div>
+      <div className="text-right text-xs text-text-dim">↑↓ move · ⏎ select · esc close</div>
     </>
   );
 }
@@ -396,7 +394,7 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
       }
       role={done ? undefined : "button"}
       tabIndex={done ? undefined : 0}
-      className="text-sm leading-relaxed break-words text-[var(--text)]"
+      className="text-sm leading-relaxed break-words text-text"
       style={{ cursor: done ? "default" : "pointer" }}
     >
       {done ? <RichText text={text} companyId={companyId} /> : shown}

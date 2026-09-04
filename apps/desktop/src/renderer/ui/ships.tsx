@@ -26,13 +26,11 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
         onClick={() => setOpen(!open)}
         className="flex w-full items-baseline gap-2 text-left"
       >
-        <span className="text-xs text-[var(--text-dim)]">{open ? "▼" : "▶"}</span>
+        <span className="text-xs text-text-dim">{open ? "▼" : "▶"}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-[var(--text)]">
-            📦 {firstLine || t.title}
-          </span>
+          <span className="block truncate text-sm text-text">📦 {firstLine || t.title}</span>
         </span>
-        <span className="shrink-0 text-xs text-[var(--text-dim)]">
+        <span className="shrink-0 text-xs text-text-dim">
           {by} · {formatDate(t.completedAt ?? t.createdAt)}
         </span>
       </button>
@@ -103,11 +101,11 @@ export function Ships({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="space-y-2">
-        {note ? <div className="text-xs text-[var(--danger)]">{note}</div> : null}
+        {note ? <div className="text-xs text-danger">{note}</div> : null}
         {ships === null ? (
-          <div className="text-sm text-[var(--text-dim)]">Loading…</div>
+          <div className="text-sm text-text-dim">Loading…</div>
         ) : ships.length === 0 ? (
-          <div className="text-sm text-[var(--text-dim)]">
+          <div className="text-sm text-text-dim">
             Nothing shipped yet — the team is just getting started.
           </div>
         ) : (

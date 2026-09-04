@@ -50,6 +50,29 @@ canvas {
   letter-spacing: 0.02em;
 }
 
+/* The palette as Tailwind colour tokens — `text-text-dim`, `bg-ink`, `border-danger`.
+ * `inline` so a utility compiles to `var(--ink)` and the :root palette above stays the
+ * one place a value lives (for the kit and inline styles alike). */
+@theme inline {
+  --color-ink: var(--ink);
+  --color-edge: var(--edge);
+  --color-chrome: var(--chrome);
+  --color-chrome-hi: var(--chrome-hi);
+  --color-chrome-lo: var(--chrome-lo);
+  --color-face: var(--face);
+  --color-face-hi: var(--face-hi);
+  --color-face-lo: var(--face-lo);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-light: var(--light);
+  --color-accent: var(--accent);
+  --color-accent-hi: var(--accent-hi);
+  --color-accent-lo: var(--accent-lo);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+}
+
 /* ---- pixel-UI kit -------------------------------------------------------- */
 
 /* a beveled window/dialog: dark outline + inner light/dark bevel + drop */

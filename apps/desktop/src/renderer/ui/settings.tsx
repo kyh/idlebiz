@@ -23,18 +23,16 @@ export function Settings({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Settings" onClose={onClose}>
       <div className="space-y-4">
-        <div className="px-inset p-3 text-sm text-[var(--text)]">
-          <div className="text-xs uppercase tracking-wide text-[var(--text-dim)]">Company</div>
+        <div className="px-inset p-3 text-sm text-text">
+          <div className="text-xs uppercase tracking-wide text-text-dim">Company</div>
           <div className="mt-1">{company.name}</div>
-          <div className="text-xs text-[var(--text-dim)]">{company.mission}</div>
-          <div className="mt-1 truncate text-xs text-[var(--text-dim)]">{company.workspaceDir}</div>
+          <div className="text-xs text-text-dim">{company.mission}</div>
+          <div className="mt-1 truncate text-xs text-text-dim">{company.workspaceDir}</div>
         </div>
 
-        <div className="px-inset p-3 text-sm text-[var(--text)]">
-          <div className="text-xs uppercase tracking-wide text-[var(--text-dim)]">
-            Team size cap
-          </div>
-          <div className="mt-1 text-xs text-[var(--text-dim)]">
+        <div className="px-inset p-3 text-sm text-text">
+          <div className="text-xs uppercase tracking-wide text-text-dim">Team size cap</div>
+          <div className="mt-1 text-xs text-text-dim">
             The team lead hires and releases on their own — this is the hard ceiling.
           </div>
           <div className="mt-2 flex gap-2">
@@ -56,19 +54,19 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="px-inset p-3 text-sm text-[var(--text)]">
-          <div className="text-xs uppercase tracking-wide text-[var(--text-dim)]">Controls</div>
-          <div className="mt-1 text-xs text-[var(--text-dim)]">
+        <div className="px-inset p-3 text-sm text-text">
+          <div className="text-xs uppercase tracking-wide text-text-dim">Controls</div>
+          <div className="mt-1 text-xs text-text-dim">
             WASD / arrows to move · walk up to someone and press E
           </div>
-          <div className="mt-1 text-xs text-[var(--text-dim)]">
+          <div className="mt-1 text-xs text-text-dim">
             Closing this window keeps the office running — the 💼 in the menu bar shows status and
             is where you quit.
           </div>
         </div>
 
-        <div className="px-inset p-3 text-sm text-[var(--text)]">
-          <div className="text-xs uppercase tracking-wide text-[var(--text-dim)]">Tools</div>
+        <div className="px-inset p-3 text-sm text-text">
+          <div className="text-xs uppercase tracking-wide text-text-dim">Tools</div>
           <div className="mt-2 flex gap-2">
             <a href="#/ui" className="px-btn inline-block">
               Open office builder
@@ -83,7 +81,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div className="text-xs uppercase tracking-wide" style={{ color: "var(--danger)" }}>
             Danger zone
           </div>
-          <div className="mt-1 text-sm leading-snug text-[var(--text)]">
+          <div className="mt-1 text-sm leading-snug text-text">
             Reset demolishes the office: every employee, task, and workspace file your team created,
             plus stored secrets and connections. The game restarts from scratch. There is no undo.
           </div>

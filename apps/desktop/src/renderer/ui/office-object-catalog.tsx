@@ -24,7 +24,7 @@ export function OfficeObjectCatalog() {
   };
 
   return (
-    <main className="h-full w-full bg-[#bfc2c4] text-[var(--text)]">
+    <main className="h-full w-full bg-[#bfc2c4] text-text">
       <div className="flex h-full flex-col">
         <header className="px-window m-3 shrink-0 overflow-hidden">
           <div className="px-titlebar flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -123,7 +123,7 @@ function ObjectVariant({ variant, assetId }: { variant: OfficeObjectVariant; ass
           className="max-w-none shrink-0 [image-rendering:pixelated]"
         />
       </div>
-      <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-dim)]">
+      <div className="flex items-center justify-between gap-2 text-xs text-text-dim">
         <span>{variant.scale}x</span>
         <span>
           {variant.w}x{variant.h}

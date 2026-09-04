@@ -37,7 +37,7 @@ export function Teams({ onClose }: { onClose: () => void }) {
     <Modal title={title} subtitle={subtitle} width="2xl" onClose={onClose}>
       <div className="space-y-3">
         {teams.length === 0 ? (
-          <div className="text-sm text-[var(--text-dim)]">No teams yet.</div>
+          <div className="text-sm text-text-dim">No teams yet.</div>
         ) : (
           teams.map((t) => {
             const members = employees.filter((e) => t.memberIds.includes(e.id));
@@ -45,9 +45,7 @@ export function Teams({ onClose }: { onClose: () => void }) {
             return (
               <div key={t.id} className="px-inset p-3">
                 <div className="text-sm">{t.name}</div>
-                {t.purpose ? (
-                  <div className="mt-0.5 text-xs text-[var(--text-dim)]">{t.purpose}</div>
-                ) : null}
+                {t.purpose ? <div className="mt-0.5 text-xs text-text-dim">{t.purpose}</div> : null}
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {members.map((e) => (
                     <span
@@ -61,19 +59,17 @@ export function Teams({ onClose }: { onClose: () => void }) {
                     </span>
                   ))}
                 </div>
-                <div className="mt-3 text-xs uppercase tracking-wide text-[var(--text-dim)]">
-                  Team room
-                </div>
+                <div className="mt-3 text-xs uppercase tracking-wide text-text-dim">Team room</div>
                 <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
                   {room.length === 0 ? (
-                    <div className="text-xs text-[var(--text-dim)]">Quiet so far.</div>
+                    <div className="text-xs text-text-dim">Quiet so far.</div>
                   ) : (
                     room.map((m) => (
                       <div key={m.id} className="text-xs leading-snug">
                         <span className="text-[#3a76b8]">
                           {employeeName(employees, m.fromEmployeeId, "founder")}
                         </span>
-                        <span className="text-[var(--text)]">: {m.text}</span>
+                        <span className="text-text">: {m.text}</span>
                       </div>
                     ))
                   )}

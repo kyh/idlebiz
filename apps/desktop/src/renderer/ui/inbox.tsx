@@ -34,7 +34,7 @@ export function Inbox({
     >
       <div className="space-y-2">
         {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
-          <div className="text-sm text-[var(--text-dim)]">All clear — nobody's waiting on you.</div>
+          <div className="text-sm text-text-dim">All clear — nobody's waiting on you.</div>
         ) : null}
         {pendingAsks.map((t) => {
           if (t.blocked?.type === "integration")
@@ -55,7 +55,7 @@ export function Inbox({
           return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />;
         })}
         {stuckTasks.length > 0 ? (
-          <div className="pt-1 text-xs uppercase tracking-wide text-[var(--text-dim)]">
+          <div className="pt-1 text-xs uppercase tracking-wide text-text-dim">
             Stuck — needs a retry
           </div>
         ) : null}
@@ -85,14 +85,14 @@ function ConnectRow({
   const label = INTEGRATION_LABELS[integration];
   return (
     <div className="px-inset p-3">
-      <div className="text-xs text-[var(--accent-lo)]">
-        🔌 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
+      <div className="text-xs text-accent-lo">
+        🔌 {by} · <span className="text-text-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-[var(--text)]">
+      <div className="mt-1 text-sm leading-snug text-text">
         {reason || `The team needs ${label} connected to keep going.`}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-[var(--text-dim)]">
+        <span className="text-xs text-text-dim">
           Their task resumes automatically once connected.
         </span>
         <button
@@ -119,17 +119,15 @@ function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string 
   };
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
-      <div className="text-xs text-[var(--warn)]">
-        🔐 {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
+      <div className="text-xs text-warn">
+        🔐 {by} · <span className="text-text-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-[var(--text)]">
+      <div className="mt-1 text-sm leading-snug text-text">
         {verdict.decision === "ask" ? verdict.rule.describe : "Wants to run this."}
       </div>
       <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-[var(--text-dim)]">
-          Approving covers this exact command, once.
-        </span>
+        <span className="text-xs text-text-dim">Approving covers this exact command, once.</span>
         <span className="flex gap-2">
           <button
             type="button"
@@ -162,12 +160,11 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
   };
   return (
     <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
-      <div className="text-xs text-[var(--danger)]">
-        {t.status === "dead" ? "💀" : "⚠"} {by} ·{" "}
-        <span className="text-[var(--text-dim)]">{t.title}</span>
+      <div className="text-xs text-danger">
+        {t.status === "dead" ? "💀" : "⚠"} {by} · <span className="text-text-dim">{t.title}</span>
       </div>
       {t.lastError ? (
-        <div className="mt-1 text-xs leading-snug text-[var(--text-dim)]">{t.lastError}</div>
+        <div className="mt-1 text-xs leading-snug text-text-dim">{t.lastError}</div>
       ) : null}
       <div className="mt-2 flex justify-end">
         <button
@@ -187,10 +184,10 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
   const [sent, setSent] = useState(false);
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
-      <div className="text-xs text-[var(--danger)]">
-        ❗ {by} · <span className="text-[var(--text-dim)]">{t.title}</span>
+      <div className="text-xs text-danger">
+        ❗ {by} · <span className="text-text-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-[var(--text)]">
+      <div className="mt-1 text-sm leading-snug text-text">
         <RichText
           text={t.blocked?.type === "question" ? t.blocked.question : ""}
           companyId={companyId}
