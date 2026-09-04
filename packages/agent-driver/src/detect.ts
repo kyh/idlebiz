@@ -1,18 +1,19 @@
 import { spawn } from "node:child_process";
-import { z } from "zod";
+import { RUNNERS } from "./registry";
 import { runnerBin, RUNNER_IDS, type RunnerId } from "./runner";
 
 // Preflight probes: which coding-agent CLIs exist on this machine and whether
 // they're signed in. Fully async — probes must never block the main process
 // (boot runs them before the window shows; onboarding re-runs them mid-flow).
 
-export interface RunnerProbe {
-  id: RunnerId;
-  bin: string;
-  installed: boolean;
-  version: string | null;
-  authed: boolean;
-}
+/** What the machine has: nothing at `bin`, or a CLI that is or is not signed in. */
+export type RunnerProbe = { id: RunnerId; bin: string } & (
+  | { installed: false }
+  | { installed: true; version: string | null; authed: boolean }
+);
+
+/** A runner work can run on right now. */
+export const isReady = (p: RunnerProbe): boolean => p.installed && p.authed;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
@@ -54,40 +55,18 @@ function run(bin: string, args: string[]): Promise<{ ok: boolean; output: string
   });
 }
 
-const authStatusSchema = z.object({ loggedIn: z.boolean() });
-
-/** `claude auth status` prints JSON with a loggedIn flag. */
-async function claudeAuthed(bin: string): Promise<boolean> {
-  const r = await run(bin, ["auth", "status"]);
-  if (!r.ok) return false;
-  const start = r.output.indexOf("{");
-  if (start < 0) return false;
-  try {
-    const parsed = authStatusSchema.safeParse(
-      JSON.parse(r.output.slice(start, r.output.lastIndexOf("}") + 1)),
-    );
-    return parsed.success && parsed.data.loggedIn;
-  } catch {
-    return false;
-  }
-}
-
-/** `codex login status` exits 0 and says how you're logged in. */
-async function codexAuthed(bin: string): Promise<boolean> {
-  const r = await run(bin, ["login", "status"]);
-  return r.ok && !/not logged in/i.test(r.output);
-}
-
 async function probeRunner(id: RunnerId): Promise<RunnerProbe> {
   const bin = runnerBin(id);
   const version = await run(bin, ["--version"]);
-  if (!version.ok) return { id, bin, installed: false, version: null, authed: false };
+  if (!version.ok) return { id, bin, installed: false };
+  const { authProbe } = RUNNERS[id];
+  const auth = await run(bin, authProbe.args);
   return {
     id,
     bin,
     installed: true,
     version: version.output.trim().split("\n")[0] ?? null,
-    authed: id === "claude" ? await claudeAuthed(bin) : await codexAuthed(bin),
+    authed: auth.ok && authProbe.loggedIn(auth.output),
   };
 }
 

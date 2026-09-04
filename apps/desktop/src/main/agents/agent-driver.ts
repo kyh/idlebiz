@@ -1,4 +1,4 @@
-import { probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
+import { isReady, probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { parseRateLimit } from "@repo/agent-driver/rate-limit";
 import { RUNNERS, type RunnerAdapter } from "@repo/agent-driver/registry";
@@ -20,7 +20,7 @@ import { createRequire } from "node:module";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
-import { classifyCommand, normalizeCommand } from "@/shared/domain";
+import { classifyCommand, normalizeCommand } from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
 /**
@@ -171,17 +171,21 @@ class AgentDriver {
     // The adapter itself is a separate thing that can be missing from a build,
     // and a runner whose agent won't resolve should read as unavailable at
     // boot rather than throwing mid-run.
-    return this.probes
-      .filter((p) => p.installed && p.authed && acpAgentInstalled(p.id))
-      .map((p) => p.id);
+    return this.probes.filter((p) => isReady(p) && acpAgentInstalled(p.id)).map((p) => p.id);
   }
 
-  /** Mixed-roster assignment: round-robin across whatever is available (awake first). */
+  /**
+   * Mixed-roster assignment: round-robin across whatever is available (awake
+   * first). Throws when nothing is: an employee bound to a CLI that is not
+   * signed in would sit forever, and every hire path can say so instead.
+   */
   pickRunner(index: number): AgentRunner {
     const available = this.availableRunners();
     const awake = available.filter((r) => this.restingRunner(r) === null);
     const pool = awake.length > 0 ? awake : available;
-    return pool[index % pool.length] ?? "codex";
+    const runner = pool[index % pool.length];
+    if (runner === undefined) throw new Error("no signed-in coding CLI to run on");
+    return runner;
   }
 
   /** Epoch until which this runner's usage limit holds, or null if it's awake. */

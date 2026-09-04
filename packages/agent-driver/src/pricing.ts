@@ -13,8 +13,6 @@ interface Rates {
 
 /** Longest-prefix match wins; the bare fallback covers unknown models. */
 const RATE_TABLE: readonly (readonly [prefix: string, rates: Rates])[] = [
-  ["gpt-5.5-codex", { input: 1.25, cachedInput: 0.125, output: 10 }],
-  ["gpt-5.5", { input: 1.25, cachedInput: 0.125, output: 10 }],
   ["gpt-5", { input: 1.25, cachedInput: 0.125, output: 10 }],
   ["claude-fable", { input: 10, cachedInput: 1, output: 50 }],
   ["claude-opus", { input: 5, cachedInput: 0.5, output: 25 }],

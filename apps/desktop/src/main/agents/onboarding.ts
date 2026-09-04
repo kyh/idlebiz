@@ -3,10 +3,11 @@ import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import type { RunnerProbe } from "@repo/agent-driver/detect";
+import { isReady, type RunnerProbe } from "@repo/agent-driver/detect";
 import { acpAgentFor, agentDriver } from "@/main/agents/agent-driver";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { businessTypeById } from "@/shared/domain";
+import { errorMessage } from "@/shared/errors";
 import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
 import { HireCandidateSchema, type AuthFlowEvent, type HireCandidate } from "@/shared/ipc-registry";
 
@@ -95,7 +96,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
     }
 
     probes = await agentDriver.refresh();
-    const ready = probes.filter((p) => p.installed && p.authed);
+    const ready = probes.filter(isReady);
     if (ready.length > 0) {
       emit({ type: "progress", message: `Workforce ready: ${ready.map(label).join(" + ")}.` });
       emit({ type: "done" });
@@ -106,7 +107,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
       });
     }
   } catch (err) {
-    emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+    emit({ type: "error", message: errorMessage(err) });
   } finally {
     setupRunning = false;
   }
