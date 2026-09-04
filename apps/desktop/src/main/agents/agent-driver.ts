@@ -5,6 +5,7 @@ import { RUNNERS, type RunnerAdapter } from "@repo/agent-driver/registry";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_MS,
+  RUNNER_IDS,
   runnerBin,
 } from "@repo/agent-driver/runner";
 import {
@@ -18,6 +19,7 @@ import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { join, sep } from "node:path";
 import { createRequire } from "node:module";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
+import type { RestingRunners } from "@/shared/ipc-registry";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
 import { classifyCommand, normalizeCommand } from "@/shared/command-policy";
@@ -186,6 +188,16 @@ class AgentDriver {
     const runner = pool[index % pool.length];
     if (runner === undefined) throw new Error("no signed-in coding CLI to run on");
     return runner;
+  }
+
+  /** Every runner currently parked on a usage limit, and until when. */
+  restingRunners(): RestingRunners {
+    const resting: RestingRunners = {};
+    for (const runner of RUNNER_IDS) {
+      const until = this.restingRunner(runner);
+      if (until !== null) resting[runner] = until;
+    }
+    return resting;
   }
 
   /** Epoch until which this runner's usage limit holds, or null if it's awake. */

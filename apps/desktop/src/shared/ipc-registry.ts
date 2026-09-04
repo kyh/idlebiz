@@ -6,6 +6,7 @@ import {
   BUSINESS_TYPE_IDS,
   BudgetSchema,
   TASK_STATUSES,
+  type AgentRunner,
   type Company,
   type Employee,
   type Task,
@@ -22,6 +23,9 @@ export type AuthFlowEvent =
   | { type: "progress"; message: string }
   | { type: "done" }
   | { type: "error"; message: string };
+
+/** runner → epoch its usage limit lifts, for every runner currently parked. */
+export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
 /** A founder appearance option for onboarding. */
 export type FounderChoice = { seed: string; portraitDataUrl: string };
@@ -161,6 +165,7 @@ interface Results {
   productStatus: ProductStatus;
 
   listEmployees: Employee[];
+  restingRunners: RestingRunners;
 
   listTeams: Team[];
   teamMessages: TeamMessage[];

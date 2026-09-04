@@ -12,7 +12,13 @@ import {
   routineBrief,
   type TaskBrief,
 } from "@/main/prompts/briefs";
-import { MAX_TASK_ATTEMPTS, isOutOfBudget, resolveMentions, retryDelayMs } from "@/shared/domain";
+import {
+  MAX_TASK_ATTEMPTS,
+  isOutOfBudget,
+  resolveMentions,
+  retryDelayMs,
+  spriteSeedFor,
+} from "@/shared/domain";
 import type {
   Company,
   Employee,
@@ -251,7 +257,7 @@ class Scheduler {
             title,
             persona: persona ?? `A focused, pragmatic ${title} who ships.`,
             runner: agentDriver.pickRunner(all.length),
-            spriteSeed: `${role}-${hireName}-${Date.now().toString(36)}`,
+            spriteSeed: spriteSeedFor(role, hireName),
             deskIndex: all.length,
           });
         } catch (err) {

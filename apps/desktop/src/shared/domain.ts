@@ -18,6 +18,13 @@ import { z } from "zod";
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
 
+/** The founder's look when none was chosen: pins a bundled sheet (see compositor). */
+export const DEFAULT_FOUNDER_SEED = "founder-player-001";
+
+/** A new employee's look: a seed the compositor maps to a bundled sheet, unique per hire. */
+export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
+  `${role}-${name}-${Date.now().toString(36)}${salt}`;
+
 // ---- blocked asks ------------------------------------------------------------
 // Why a task is waiting on the founder. Structured end-to-end: a free-text
 // question gets an answer box; an integration request renders a [Connect]

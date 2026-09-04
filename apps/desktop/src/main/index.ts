@@ -31,7 +31,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isOutOfBudget } from "@/shared/domain";
+import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
 import { layoutIssues } from "@/shared/office-grid";
 import type { ActivityEvent } from "@/shared/activity";
@@ -145,7 +145,7 @@ function registerIpcHandlers(): void {
   handle("generateHires", async ({ companyName, mission, businessType }) => {
     const candidates = await generateCandidates({ companyName, mission, businessType });
     return candidates.map((c, i) =>
-      Object.assign(c, { spriteSeed: `${c.role}-${c.name}-${Date.now().toString(36)}-${i}` }),
+      Object.assign(c, { spriteSeed: spriteSeedFor(c.role, c.name, `-${i}`) }),
     );
   });
 
@@ -246,6 +246,7 @@ function registerIpcHandlers(): void {
   });
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
+  handle("restingRunners", () => agentDriver.restingRunners());
 
   handle("listTeams", ({ companyId }) => store.listTeams(companyId));
 

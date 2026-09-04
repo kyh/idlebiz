@@ -33,6 +33,7 @@ export const CHANNELS = {
   productStatus: { channel: "company:product-status", kind: "invoke" },
 
   listEmployees: { channel: "employee:list", kind: "invoke" },
+  restingRunners: { channel: "runner:resting", kind: "invoke-void" },
 
   listTeams: { channel: "team:list", kind: "invoke" },
   teamMessages: { channel: "team:messages", kind: "invoke" },

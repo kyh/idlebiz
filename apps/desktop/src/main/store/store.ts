@@ -42,6 +42,7 @@ import { standingInstructions } from "@/main/prompts/instructions";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
+  DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
   TASK_PRIORITIES,
@@ -240,7 +241,7 @@ function docToCompany(doc: FrontmatterDoc): Company {
     businessType: parseBusinessType(optStr(m, "businessType")),
     workspaceDir: companyWorkspace(id),
     founderName: optStr(m, "founderName") ?? "Founder",
-    founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? "founder-player-001",
+    founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? DEFAULT_FOUNDER_SEED,
     autopilot: optBool(m, "autopilot", true),
     maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
     ships: optNum(m, "ships", 0),

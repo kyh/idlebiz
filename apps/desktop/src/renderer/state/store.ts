@@ -2,7 +2,6 @@ import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
 import type {
-  AgentRunner,
   Budget,
   Company,
   Employee,
@@ -10,7 +9,13 @@ import type {
   Team,
   TeamMessage,
 } from "@/shared/domain";
-import type { AppBridge, ProductStatus, StripeStatus, VercelStatus } from "@/shared/ipc-registry";
+import type {
+  AppBridge,
+  ProductStatus,
+  RestingRunners,
+  StripeStatus,
+  VercelStatus,
+} from "@/shared/ipc-registry";
 import { applyOfficeLayout } from "@/renderer/game/office-layout";
 
 interface State {
@@ -28,7 +33,7 @@ interface State {
   stripeStatus: StripeStatus;
   vercelStatus: VercelStatus;
   product: ProductStatus | null; // PRODUCT.md entry + latest deploy
-  resting: Partial<Record<AgentRunner, number>>; // runner -> epoch its usage limit lifts
+  resting: RestingRunners;
   company: Company | null;
   employees: Employee[];
   teams: Team[];
@@ -149,7 +154,10 @@ async function settleLayout(): Promise<void> {
 
 export async function refresh(): Promise<void> {
   await settleLayout();
-  const company = await bridge().getCompany();
+  const [company, resting] = await Promise.all([
+    bridge().getCompany(),
+    bridge().restingRunners(),
+  ]);
   const [employees, teams, tasks] = company
     ? await Promise.all([
         bridge().listEmployees({ companyId: company.id }),
@@ -159,7 +167,7 @@ export async function refresh(): Promise<void> {
     : [[], [], []];
   const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blocked !== null);
   const stuckTasks = tasks.filter((t) => t.status === "dead");
-  set({ booted: true, company, employees, teams, pendingAsks, stuckTasks });
+  set({ booted: true, company, resting, employees, teams, pendingAsks, stuckTasks });
   // product state rides along (deploy lookup is a no-op until Vercel is connected)
   if (company) {
     void bridge()
