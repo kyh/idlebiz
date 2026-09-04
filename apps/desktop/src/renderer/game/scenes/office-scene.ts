@@ -17,20 +17,7 @@ import {
   type PathProvider,
   type Poi,
 } from "@/renderer/game/npcs";
-import {
-  OFFICE_CELL,
-  OFFICE_COLS,
-  OFFICE_DOOR,
-  OFFICE_GRID,
-  OFFICE_H,
-  OFFICE_OBJECT_PLACEMENTS,
-  OFFICE_POIS,
-  OFFICE_ROWS,
-  OFFICE_SEATS,
-  OFFICE_SPAWN,
-  OFFICE_W,
-  type PixelPoint,
-} from "@/renderer/game/office-layout";
+import { OFFICE, type PixelPoint } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import {
   bodyBlockedAt,
@@ -98,16 +85,16 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private solidAtPx(x: number, y: number): boolean {
-    return solidAt(OFFICE_GRID, x, y);
+    return solidAt(OFFICE.grid, x, y);
   }
 
   private bodyBlockedAt(x: number, y: number): boolean {
-    return bodyBlockedAt(OFFICE_GRID, x, y);
+    return bodyBlockedAt(OFFICE.grid, x, y);
   }
 
   preload() {
     const loaded = new Set<string>();
-    for (const placement of OFFICE_OBJECT_PLACEMENTS) {
+    for (const placement of OFFICE.placements) {
       if (loaded.has(placement.key)) continue;
       loaded.add(placement.key);
       this.load.image(placement.key, placement.path);
@@ -182,10 +169,10 @@ export class OfficeScene extends Phaser.Scene {
     cam.removeBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);
-    this.centerCameraOn(OFFICE_SPAWN);
+    this.centerCameraOn(OFFICE.spawn);
 
     this.paths = this.makePathProvider();
-    this.npcs = new NpcManager(this, seats, this.paths, this.idlePois(), OFFICE_DOOR);
+    this.npcs = new NpcManager(this, seats, this.paths, this.idlePois(), OFFICE.door);
 
     const bridge = window.appBridge;
     const company = bridge ? await bridge.getCompany() : null;
@@ -193,7 +180,7 @@ export class OfficeScene extends Phaser.Scene {
       company && bridge ? await bridge.listEmployees({ companyId: company.id }) : [];
     this.founderSeed = company?.founderSpriteSeed ?? "founder-player-001";
 
-    await this.spawnPlayer(OFFICE_SPAWN);
+    await this.spawnPlayer(OFFICE.spawn);
     // the office is already staffed when it opens: nobody parades in on boot
     for (const emp of employees) await this.npcs.spawn(emp, "settled");
 
@@ -209,7 +196,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private buildRoom(): Seat[] {
-    const room = OFFICE_OBJECT_PLACEMENTS.map((placement) =>
+    const room = OFFICE.placements.map((placement) =>
       this.add
         .image(placement.x, placement.y, placement.key)
         .setOrigin(0, 0)
@@ -217,7 +204,7 @@ export class OfficeScene extends Phaser.Scene {
         .setFlip(placement.flipX, placement.flipY),
     );
     const seats: Seat[] = [];
-    for (const seat of OFFICE_SEATS) {
+    for (const seat of OFFICE.seats) {
       if (seat.role !== "work") continue;
       seats.push({ x: seat.x, y: seat.y, depth: this.seatDepth(seat, room) });
     }
@@ -226,8 +213,8 @@ export class OfficeScene extends Phaser.Scene {
 
   /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
   private idlePois(): Poi[] {
-    const spots: Poi[] = OFFICE_POIS.map((p) => ({ x: p.x, y: p.y, face: p.face }));
-    for (const seat of OFFICE_SEATS) {
+    const spots: Poi[] = OFFICE.pois.map((p) => ({ x: p.x, y: p.y, face: p.face }));
+    for (const seat of OFFICE.seats) {
       if (seat.role === "rest") spots.push({ x: seat.x, y: seat.y, face: "down", sit: seat.sit });
     }
     return spots;
@@ -318,10 +305,15 @@ export class OfficeScene extends Phaser.Scene {
     }
     const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
     gfx.fillStyle(0xff3366, 0.35);
-    for (let r = 0; r < OFFICE_ROWS; r++) {
-      for (let c = 0; c < OFFICE_COLS; c++) {
-        if (OFFICE_GRID.solid[r]?.[c])
-          gfx.fillRect(c * OFFICE_CELL, r * OFFICE_CELL, OFFICE_CELL, OFFICE_CELL);
+    for (let r = 0; r < OFFICE.grid.rows; r++) {
+      for (let c = 0; c < OFFICE.grid.cols; c++) {
+        if (OFFICE.grid.solid[r]?.[c])
+          gfx.fillRect(
+            c * OFFICE.grid.cell,
+            r * OFFICE.grid.cell,
+            OFFICE.grid.cell,
+            OFFICE.grid.cell,
+          );
       }
     }
     this.debugGfx = gfx;
@@ -337,16 +329,16 @@ export class OfficeScene extends Phaser.Scene {
           y: this.cameras.main.scrollY,
           zoom: this.cameras.main.zoom,
         },
-        objects: OFFICE_OBJECT_PLACEMENTS.length,
+        objects: OFFICE.placements.length,
         player: {
           x: this.player?.x ?? null,
           y: this.player?.y ?? null,
         },
-        door: OFFICE_DOOR,
-        seats: OFFICE_SEATS.filter((seat) => seat.role === "work").length,
+        door: OFFICE.door,
+        seats: OFFICE.seats.filter((seat) => seat.role === "work").length,
         world: {
-          h: OFFICE_H,
-          w: OFFICE_W,
+          h: OFFICE.grid.height,
+          w: OFFICE.grid.width,
         },
       }),
       probeMove: (start: PixelPoint, delta: PixelPoint) => this.probeMove(start, delta),
@@ -369,15 +361,15 @@ export class OfficeScene extends Phaser.Scene {
   private makePathProvider(): PathProvider {
     return {
       findPath: (fromX, fromY, toX, toY) =>
-        findPath(OFFICE_GRID, { x: fromX, y: fromY }, { x: toX, y: toY }),
-      nearestFloor: (x, y) => nearestFloor(OFFICE_GRID, x, y),
+        findPath(OFFICE.grid, { x: fromX, y: fromY }, { x: toX, y: toY }),
+      nearestFloor: (x, y) => nearestFloor(OFFICE.grid, x, y),
       randomFloor: (x, y, radius) => {
         for (let i = 0; i < 24; i++) {
           const tile = tileOf(
             x + (Math.random() * 2 - 1) * radius,
             y + (Math.random() * 2 - 1) * radius,
           );
-          if (walkableNode(OFFICE_GRID, tile)) return nodeCenter(tile);
+          if (walkableNode(OFFICE.grid, tile)) return nodeCenter(tile);
         }
         return null;
       },
