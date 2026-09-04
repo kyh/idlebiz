@@ -14,3 +14,17 @@ export const formatTime = (epoch: number): string => timeFmt.format(epoch);
 
 /** Short calendar date from an epoch-ms timestamp. */
 export const formatDate = (epoch: number): string => dateFmt.format(epoch);
+
+const compactFmt = new Intl.NumberFormat(undefined, {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/** "1.2k", "3.4M" — a scoreboard number. */
+export const formatCompact = (n: number): string => compactFmt.format(n);
+
+/** "$12.34" — money the founder is spending, always to the cent. */
+export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
+
+/** The office naps until a CLI's usage limit lifts. */
+export const napLabel = (until: number): string => `☕ resting til ${formatTime(until)}`;

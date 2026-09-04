@@ -3,7 +3,7 @@ import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import * as store from "@/main/store/store";
-import { formatTime } from "@/shared/format";
+import { formatUsd, napLabel } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
 // The menu-bar presence: IdleBiz is a background mac app. Closing the window
@@ -57,11 +57,10 @@ function officeStatus(): OfficeStatus {
 /** One line of truth for the menu: what is the office doing right now? */
 function statusLine(s: OfficeStatus): string {
   if (!s.company || !s.company.onboarded) return "No company yet";
-  if (s.working > 0) return `${s.working} working · spent $${s.company.spentUsd.toFixed(2)}`;
-  if (s.napUntil !== undefined) return `☕ resting til ${formatTime(s.napUntil)}`;
-  return s.company.autopilot
-    ? `idle · spent $${s.company.spentUsd.toFixed(2)}`
-    : `paused · spent $${s.company.spentUsd.toFixed(2)}`;
+  const spent = `spent ${formatUsd(s.company.spentUsd)}`;
+  if (s.working > 0) return `${s.working} working · ${spent}`;
+  if (s.napUntil !== undefined) return napLabel(s.napUntil);
+  return `${s.company.autopilot ? "idle" : "paused"} · ${spent}`;
 }
 
 /** Badge text beside the menu-bar icon — only while running windowless, so

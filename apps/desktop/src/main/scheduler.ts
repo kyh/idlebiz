@@ -4,6 +4,7 @@ import { publishActivity } from "@/main/activity";
 import { agentDriver, priceRun, type RunResult } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { errorMessage } from "@/shared/errors";
+import { formatUsd } from "@/shared/format";
 import {
   INTEGRATION_LABELS,
   MAX_TASK_ATTEMPTS,
@@ -212,8 +213,8 @@ class Scheduler {
 
     const budgetLine =
       company.budget.mode === "capped"
-        ? `AI budget: $${company.spentUsd.toFixed(2)} of $${company.budget.capUsd.toFixed(2)} spent${company.spentUsd >= company.budget.capUsd * 0.8 ? " — over 80%: critical work only, keep runs short" : ""}.`
-        : `AI spend so far: $${company.spentUsd.toFixed(2)} (no cap set).`;
+        ? `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent${company.spentUsd >= company.budget.capUsd * 0.8 ? " — over 80%: critical work only, keep runs short" : ""}.`
+        : `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
 
     const coordinate = isLeader
       ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.
