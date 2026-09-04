@@ -1,13 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import Phaser from "phaser";
 import { OfficeScene } from "@/renderer/game/scenes/office-scene";
 
 export function PhaserGame({ onGame }: { onGame?: (game: Phaser.Game) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const gameRef = useRef<Phaser.Game | null>(null);
+  const handOff = useEffectEvent((game: Phaser.Game) => onGame?.(game));
 
   useEffect(() => {
-    if (gameRef.current || !containerRef.current) return; // StrictMode double-mount guard
+    if (!containerRef.current) return;
 
     const game = new Phaser.Game({
       type: Phaser.AUTO,
@@ -19,19 +19,19 @@ export function PhaserGame({ onGame }: { onGame?: (game: Phaser.Game) => void })
       render: { preserveDrawingBuffer: import.meta.env.DEV },
       audio: { noAudio: true },
       scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
-      physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
       scene: [OfficeScene],
     });
-    gameRef.current = game;
-    // Debug/test handle for CDP probes.
-    void Reflect.set(window, "__game", game);
-    onGame?.(game);
+    // The CDP handle, set here rather than waiting for the scene: under headless
+    // automation the boot stalls before create() and the probe has to kick it.
+    // oxlint-disable-next-line eslint/no-underscore-dangle -- the name AGENTS.md documents
+    window.__game = game;
+    handOff(game);
 
     return () => {
       game.destroy(true);
-      gameRef.current = null;
+      // oxlint-disable-next-line eslint/no-underscore-dangle -- the name AGENTS.md documents
+      window.__game = undefined;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
