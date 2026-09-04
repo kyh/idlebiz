@@ -55,4 +55,4 @@ Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 anything it reports is something your change introduced, not a backlog to skim past.
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
 Unit tests: `pnpm --filter @repo/desktop test` (vitest; the pure parts — seating, poses,
-layout schema, walk grid, command policy)
+layout schema, walk grid, activity schema, command policy)
