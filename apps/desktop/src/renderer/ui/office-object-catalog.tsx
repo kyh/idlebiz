@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectAsset,
@@ -7,7 +8,7 @@ import {
 
 export function OfficeObjectCatalog() {
   const [query, setQuery] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedId, flashCopied] = useTransientNote(900);
 
   const normalizedQuery = query.trim().toLowerCase();
   const visibleAssets = useMemo(
@@ -16,11 +17,8 @@ export function OfficeObjectCatalog() {
   );
 
   const copyId = (id: string) => {
-    setCopiedId(id);
+    flashCopied(id);
     void navigator.clipboard.writeText(id).catch(() => undefined);
-    window.setTimeout(() => {
-      setCopiedId((current) => (current === id ? null : current));
-    }, 900);
   };
 
   return (

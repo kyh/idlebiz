@@ -21,7 +21,10 @@ const inFeed = (a: ActivityEvent): boolean => FEED_KINDS.has(a.kind);
  * room, and @first-name wakes that employee with the message.
  */
 export function TeamChannel() {
-  const { employees, activity, company, modalOpen } = useStore();
+  const employees = useStore((s) => s.employees);
+  const activity = useStore((s) => s.activity);
+  const company = useStore((s) => s.company);
+  const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
