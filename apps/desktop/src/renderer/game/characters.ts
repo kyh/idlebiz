@@ -1,6 +1,7 @@
 // Getting a character into (and out of) a scene: composed in main, loaded as a
 // walk sheet, its anims registered. The sheet's geometry is character-sheet.ts.
 import Phaser from "phaser";
+import { bridge } from "@/renderer/bridge";
 import { characterAnims, DIR_START, SIT_START } from "@/renderer/game/character-sheet";
 import { DIRS, FRAME_H, FRAME_W, SIT_SIDES } from "@/shared/character-frame";
 
@@ -45,9 +46,7 @@ function ensureWalkAnims(scene: Phaser.Scene, key: string): void {
  */
 export async function loadCharacter(scene: Phaser.Scene, key: string, seed: string): Promise<void> {
   if (!scene.textures.exists(key)) {
-    const bridge = window.appBridge;
-    if (!bridge) throw new Error("appBridge unavailable");
-    const assets = await bridge.composeCharacter({ seed });
+    const assets = await bridge().composeCharacter({ seed });
     await loadSpritesheetDataUrl(scene, key, assets.walkSheetDataUrl);
   }
   ensureWalkAnims(scene, key);

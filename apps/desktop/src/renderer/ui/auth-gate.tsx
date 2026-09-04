@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { bridge, setAuthed } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
+import { setAuthed } from "@/renderer/state/store";
 import { useModal } from "@/renderer/ui/modal";
 import type { AuthFlowEvent } from "@/shared/ipc-registry";
 

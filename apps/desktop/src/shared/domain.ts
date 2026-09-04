@@ -66,8 +66,6 @@ export function parseBlockedAsk(s: string): BlockedAsk {
   return { type: "integration", integration, reason: (m?.[2] ?? "").trim() };
 }
 
-export { classifyCommand, normalizeCommand, type CommandVerdict } from "./command-policy";
-
 // ---- team-room mentions --------------------------------------------------------
 
 /**

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
-import { bridge, useStore } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
+import { useStore } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";

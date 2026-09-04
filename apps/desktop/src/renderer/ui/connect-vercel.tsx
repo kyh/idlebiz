@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { bridge, useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
+import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
 import type { VercelProject } from "@/shared/ipc-registry";

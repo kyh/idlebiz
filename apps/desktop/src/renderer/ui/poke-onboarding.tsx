@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
-import { bridge, refresh } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
+import { refresh } from "@/renderer/state/store";
 import { useModal } from "@/renderer/ui/modal";
 import { Portrait } from "@/renderer/ui/portrait";
 import { BUSINESS_TYPES, businessTypeById } from "@/shared/domain";

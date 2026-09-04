@@ -4,7 +4,8 @@ import { AnswerForm } from "@/renderer/ui/answer-form";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { INTEGRATION_LABELS, classifyCommand } from "@/shared/domain";
+import { classifyCommand } from "@/shared/command-policy";
+import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { IntegrationKind, Task } from "@/shared/domain";
 
 /** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one

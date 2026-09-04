@@ -5,7 +5,7 @@ import {
   type PixelPoint,
 } from "@/renderer/game/office-layout";
 import { useHistory } from "@/renderer/hooks/use-history";
-import { bridge } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
 import { Inspector } from "@/renderer/ui/office-builder/inspector";
 import {
   ALL_OBJECT_IDS,

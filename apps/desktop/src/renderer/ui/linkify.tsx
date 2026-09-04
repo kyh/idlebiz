@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { bridge } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
 
 // Renders agent text with clickable assets: URLs open in the browser, and
 // anything that looks like a workspace file path opens with the OS default app

@@ -3,13 +3,13 @@ import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Budget, Company, Employee, Task, Team, TeamMessage } from "@/shared/domain";
 import type {
-  AppBridge,
   ProductStatus,
   RestingRunners,
   StripeStatus,
   VercelStatus,
 } from "@/shared/ipc-registry";
 import { applyOfficeLayout } from "@/renderer/game/office-layout";
+import { bridge } from "@/renderer/bridge";
 
 interface State {
   /** The first refresh finished: company, roster and tasks are known (or known absent). */
@@ -76,12 +76,6 @@ export function useStore<T>(selector?: (s: State) => T): T | State {
   return useSyncExternalStore(subscribe, select, select);
 }
 
-/** The preload bridge. Absent only outside Electron, where nothing below can work. */
-export const bridge = (): AppBridge => {
-  const b = window.appBridge;
-  if (!b) throw new Error("appBridge unavailable");
-  return b;
-};
 
 // ---- portrait cache --------------------------------------------------------
 const portraitCache = new Map<string, string>();

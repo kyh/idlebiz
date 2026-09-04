@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { bridge } from "@/renderer/bridge";
 import {
   characterAnims,
   characterDepth,
@@ -157,14 +158,13 @@ export class OfficeScene extends Phaser.Scene {
     const npcs = new NpcManager(this, seats, OFFICE.grid, this.idlePois(), OFFICE.door);
     this.npcs = npcs;
 
-    const bridge = window.appBridge;
-    const company = bridge ? await bridge.getCompany() : null;
+    const company = await bridge().getCompany();
     // the founder and the roster are independent fetches; the colleagues wait on both,
     // because Phaser's loader is single-batch and the founder's sheet must land first
     const [player, employees, blocked] = await Promise.all([
       this.spawnPlayer(company?.founderSpriteSeed ?? DEFAULT_FOUNDER_SEED),
-      bridge && company ? bridge.listEmployees({ companyId: company.id }) : [],
-      bridge && company ? bridge.listTasks({ companyId: company.id, status: ["blocked"] }) : [],
+      company ? bridge().listEmployees({ companyId: company.id }) : [],
+      company ? bridge().listTasks({ companyId: company.id, status: ["blocked"] }) : [],
     ]);
     this.clickWalk = new ClickWalk(this, OFFICE.grid, this.walkerOf(player), npcs, (id) =>
       this.talkTo(id),
@@ -259,9 +259,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private subscribeActivity(): void {
-    const bridge = window.appBridge;
-    if (!bridge) return;
-    this.activityUnsub = bridge.onActivity((e: ActivityEvent) => {
+    this.activityUnsub = bridge().onActivity((e: ActivityEvent) => {
       const employeeId = e.employeeId;
       if (!employeeId) return;
       switch (e.kind) {
