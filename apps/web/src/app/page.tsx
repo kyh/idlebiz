@@ -1,11 +1,24 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { z } from "zod";
 
 import { siteConfig } from "@/lib/site-config";
 import { OfficeLife } from "@/app/office-life";
 import { WindowCard } from "@/app/window-card";
 
 const GITHUB_REPO = siteConfig.githubRepo;
-const FALLBACK_URL = `https://github.com/${GITHUB_REPO}/releases`;
+
+type Download = { url: string; version: string | null };
+
+// fallback for every failure mode: API down or rate-limited, no .dmg on the release
+const RELEASES_PAGE: Download = {
+  url: `https://github.com/${GITHUB_REPO}/releases`,
+  version: null,
+};
+
+const releaseSchema = z.object({
+  tag_name: z.string().optional(),
+  assets: z.array(z.object({ name: z.string(), browser_download_url: z.string() })),
+});
 
 function MacLogoIcon({ className }: { className?: string }) {
   return (
@@ -15,7 +28,7 @@ function MacLogoIcon({ className }: { className?: string }) {
   );
 }
 
-async function getLatestRelease(): Promise<{ url: string; version: string | null }> {
+async function getLatestRelease(): Promise<Download> {
   "use cache";
   cacheLife("hours");
   cacheTag("download-url");
@@ -24,17 +37,19 @@ async function getLatestRelease(): Promise<{ url: string; version: string | null
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
     });
-    if (!res.ok) return { url: FALLBACK_URL, version: null };
+    if (!res.ok) return RELEASES_PAGE;
 
-    const release: {
-      tag_name?: string;
-      assets: Array<{ name: string; browser_download_url: string }>;
-    } = await res.json();
+    const data: unknown = await res.json();
+    const release = releaseSchema.safeParse(data);
+    if (!release.success) return RELEASES_PAGE;
 
-    const dmg = release.assets.find((a) => a.name.endsWith(".dmg"));
-    return { url: dmg?.browser_download_url ?? FALLBACK_URL, version: release.tag_name ?? null };
+    const dmg = release.data.assets.find((a) => a.name.endsWith(".dmg"));
+    return {
+      url: dmg?.browser_download_url ?? RELEASES_PAGE.url,
+      version: release.data.tag_name ?? null,
+    };
   } catch {
-    return { url: FALLBACK_URL, version: null };
+    return RELEASES_PAGE;
   }
 }
 
