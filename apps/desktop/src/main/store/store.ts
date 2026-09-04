@@ -1,13 +1,6 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-  appendFileSync,
-} from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { join } from "node:path";
+import { appendJsonl, atomicWrite, readJsonFile, readJsonlTail } from "@/main/lib/fs";
 import {
   ROOT_DIR,
   ensureAppDirs,
@@ -38,13 +31,13 @@ import {
   optStr,
   reqNum,
   optNum,
+  nullableNum,
   optBool,
   strArray,
   type FrontmatterDoc,
 } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { isRunnerId } from "@repo/agent-driver/runner";
-import type { JsonValue } from "@/shared/json";
 import {
   BUSINESS_TYPES,
   DEFAULT_MAX_AGENTS,
@@ -116,7 +109,7 @@ function docToRoutine(doc: FrontmatterDoc, companyId: string): Routine {
     instruction: doc.body.trim(),
     intervalHours: optNum(doc.metadata, "intervalHours", 24),
     role: optStr(doc.metadata, "role"),
-    lastRunAt: doc.metadata.lastRunAt === undefined ? null : optNum(doc.metadata, "lastRunAt", 0),
+    lastRunAt: nullableNum(doc.metadata, "lastRunAt"),
   };
 }
 
@@ -158,19 +151,37 @@ function c(): Cache {
   return cache;
 }
 
-// Reset gate: once suspended, no disk write may land — an in-flight run settling
-// after ~/.idlebiz is deleted would otherwise resurrect files mid-teardown.
-let writesSuspended = false;
-export function suspendWrites(): void {
-  writesSuspended = true;
+// ---- the cache's per-company lists, looked up by id ------------------------
+interface Owned {
+  id: string;
+  companyId: string;
 }
 
-function atomicWrite(path: string, content: string): void {
-  if (writesSuspended) return;
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, path);
+function findIn<T extends Owned>(lists: Map<string, T[]>, id: string): T | null {
+  for (const list of lists.values()) {
+    const found = list.find((row) => row.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Replace a row in place with its patch applied (identity fields kept) and persist it. */
+function patchIn<T extends Owned>(
+  lists: Map<string, T[]>,
+  id: string,
+  patch: Partial<T>,
+  save: (row: T) => void,
+): T | null {
+  for (const list of lists.values()) {
+    const idx = list.findIndex((row) => row.id === id);
+    const cur = list[idx];
+    if (idx < 0 || !cur) continue;
+    const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
+    list[idx] = next;
+    save(next);
+    return next;
+  }
+  return null;
 }
 
 // ---- serialization ----------------------------------------------------------
@@ -231,8 +242,8 @@ function docToCompany(doc: FrontmatterDoc): Company {
     autopilot: optBool(m, "autopilot", true),
     maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
     ships: optNum(m, "ships", 0),
-    revenueUsd: m.revenueUsd === undefined ? null : optNum(m, "revenueUsd", 0),
-    users: m.users === undefined ? null : optNum(m, "users", 0),
+    revenueUsd: nullableNum(m, "revenueUsd"),
+    users: nullableNum(m, "users"),
     budget: parseBudget(m),
     spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
     onboarded: optBool(m, "onboarded", false),
@@ -240,7 +251,7 @@ function docToCompany(doc: FrontmatterDoc): Company {
   };
 }
 
-/** Legacy saves carry "provider/model" strings from the pi era — not a valid override. */
+/** A "provider/model" string is a whole-provider pin from an older save, not a model override. */
 function parseModelOverride(v: string | null): string | null {
   if (!v || v.includes("/")) return null;
   return v;
@@ -417,11 +428,11 @@ function docToTask(doc: FrontmatterDoc, companyId: string): Task {
     blocked: parseBlocked(optStr(m, "blockedQuestion")),
     artifacts: strArray(m, "artifacts"),
     attempts: optNum(m, "attempts", 0),
-    nextAttemptAt: m.nextAttemptAt === undefined ? null : optNum(m, "nextAttemptAt", 0),
+    nextAttemptAt: nullableNum(m, "nextAttemptAt"),
     lastError: optStr(m, "lastError"),
     createdAt: optNum(m, "createdAt", Date.now()),
-    startedAt: m.startedAt === undefined ? null : optNum(m, "startedAt", 0),
-    completedAt: m.completedAt === undefined ? null : optNum(m, "completedAt", 0),
+    startedAt: nullableNum(m, "startedAt"),
+    completedAt: nullableNum(m, "completedAt"),
   };
 }
 
@@ -441,6 +452,33 @@ function saveTask(t: Task): void {
 const ACTIVITY_RING = 600;
 
 // ---- boot -------------------------------------------------------------------
+/** Oldest first; ties (same millisecond) by id, so boot order is stable. */
+const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
+  a.createdAt - b.createdAt || a.id.localeCompare(b.id);
+
+/**
+ * Every package under `dir` that `decode` accepts. A package that fails to
+ * decode is skipped, not fatal: one hand-edited file must not take the company
+ * down with it.
+ */
+function loadPackages<T>(
+  dir: string,
+  fileFor: (slug: string) => string,
+  decode: (doc: FrontmatterDoc) => T,
+): T[] {
+  const rows: T[] = [];
+  for (const slug of safeReaddir(dir)) {
+    const file = fileFor(slug);
+    if (!existsSync(file)) continue;
+    try {
+      rows.push(decode(parseDoc(readFileSync(file, "utf8"))));
+    } catch {
+      /* skip the corrupt package */
+    }
+  }
+  return rows;
+}
+
 export function initStore(): void {
   ensureAppDirs();
   const loaded: Cache = {
@@ -463,30 +501,18 @@ export function initStore(): void {
       const co = docToCompany(parseDoc(readFileSync(file, "utf8")));
       loaded.companies.set(co.id, co);
 
-      const employees: Employee[] = [];
-      for (const slug of safeReaddir(agentsDir(co.id))) {
-        const ef = employeeFile(co.id, slug);
-        if (!existsSync(ef)) continue;
-        try {
-          employees.push(docToEmployee(parseDoc(readFileSync(ef, "utf8")), co.id));
-        } catch {
-          /* skip corrupt agent file */
-        }
-      }
-      employees.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+      const employees = loadPackages(
+        agentsDir(co.id),
+        (slug) => employeeFile(co.id, slug),
+        (doc) => docToEmployee(doc, co.id),
+      ).toSorted(byAge);
       loaded.employees.set(co.id, employees);
 
-      const tasks: Task[] = [];
-      for (const slug of safeReaddir(tasksDir(co.id))) {
-        const tf = taskFile(co.id, slug);
-        if (!existsSync(tf)) continue;
-        try {
-          tasks.push(docToTask(parseDoc(readFileSync(tf, "utf8")), co.id));
-        } catch {
-          /* skip corrupt task file */
-        }
-      }
-      tasks.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+      const tasks = loadPackages(
+        tasksDir(co.id),
+        (slug) => taskFile(co.id, slug),
+        (doc) => docToTask(doc, co.id),
+      ).toSorted(byAge);
       // recover runs that died with the previous process. A run that was
       // mid-flight counts as a failed attempt: requeue it (or dead-letter once
       // exhausted) so it resumes instead of being silently orphaned.
@@ -515,29 +541,20 @@ export function initStore(): void {
       }
       loaded.tasks.set(co.id, tasks);
 
-      const routines: Routine[] = [];
-      for (const slug of safeReaddir(routinesDir(co.id))) {
-        const rf = routineFile(co.id, slug);
-        if (!existsSync(rf)) continue;
-        try {
-          routines.push(docToRoutine(parseDoc(readFileSync(rf, "utf8")), co.id));
-        } catch {
-          /* skip corrupt routine */
-        }
-      }
-      loaded.routines.set(co.id, routines);
+      loaded.routines.set(
+        co.id,
+        loadPackages(
+          routinesDir(co.id),
+          (slug) => routineFile(co.id, slug),
+          (doc) => docToRoutine(doc, co.id),
+        ),
+      );
 
-      const teams: Team[] = [];
-      for (const slug of safeReaddir(teamsDir(co.id))) {
-        const tf = teamFile(co.id, slug);
-        if (!existsSync(tf)) continue;
-        try {
-          teams.push(docToTeam(parseDoc(readFileSync(tf, "utf8")), co.id));
-        } catch {
-          /* skip corrupt team */
-        }
-      }
-      teams.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+      const teams = loadPackages(
+        teamsDir(co.id),
+        (slug) => teamFile(co.id, slug),
+        (doc) => docToTeam(doc, co.id),
+      ).toSorted(byAge);
       loaded.teams.set(co.id, teams);
       for (const t of teams) loadRecentTeamChat(loaded, co.id, t.id);
 
@@ -614,24 +631,10 @@ function safeReaddir(dir: string): string[] {
 }
 
 function loadRecentActivity(loaded: Cache, companyId: string): void {
-  try {
-    const text = readFileSync(activityFile(companyId), "utf8");
-    const lines = text.split("\n").filter((l) => l.trim() !== "");
-    for (const line of lines.slice(-ACTIVITY_RING)) {
-      try {
-        const parsed = PersistedActivitySchema.safeParse(JSON.parse(line));
-        if (parsed.success) {
-          loaded.activity.push({ ...parsed.data, id: loaded.nextActivityId++ });
-        }
-      } catch {
-        /* skip bad line */
-      }
-    }
-    if (loaded.activity.length > ACTIVITY_RING)
-      loaded.activity = loaded.activity.slice(-ACTIVITY_RING);
-  } catch {
-    /* no log yet */
-  }
+  const rows = readJsonlTail(activityFile(companyId), PersistedActivitySchema, ACTIVITY_RING);
+  for (const row of rows) loaded.activity.push({ ...row, id: loaded.nextActivityId++ });
+  if (loaded.activity.length > ACTIVITY_RING)
+    loaded.activity = loaded.activity.slice(-ACTIVITY_RING);
 }
 
 const TEAM_CHAT_RING = 200;
@@ -644,35 +647,43 @@ const PersistedTeamMessageSchema = z.object({
 });
 
 function loadRecentTeamChat(loaded: Cache, companyId: string, teamId: string): void {
+  const rows = readJsonlTail(
+    teamChatFile(companyId, teamId),
+    PersistedTeamMessageSchema,
+    TEAM_CHAT_RING,
+  );
   const msgs: TeamMessage[] = [];
-  try {
-    const text = readFileSync(teamChatFile(companyId, teamId), "utf8");
-    for (const line of text.split("\n").slice(-TEAM_CHAT_RING)) {
-      if (line.trim() === "") continue;
-      try {
-        const parsed = PersistedTeamMessageSchema.safeParse(JSON.parse(line));
-        if (parsed.success) {
-          msgs.push({ ...parsed.data, id: loaded.nextTeamMessageId++, teamId });
-        }
-      } catch {
-        /* skip bad line */
-      }
-    }
-  } catch {
-    /* no chat yet */
-  }
+  for (const row of rows) msgs.push({ ...row, id: loaded.nextTeamMessageId++, teamId });
   loaded.teamChat.set(teamId, msgs);
 }
 
 // ---- slug allocation ---------------------------------------------------------
-function uniqueSlug(base: string, taken: (slug: string) => boolean): string {
+/**
+ * The slug for a new package: the name's slug, suffixed past the highest one
+ * already used. One pass over what exists — autopilot titles repeat for the
+ * life of a company, so probing candidates one by one grew with every run.
+ * `onDisk` catches a folder the cache does not know about (a package it
+ * refused to load).
+ */
+function uniqueSlug(
+  base: string,
+  existing: Iterable<string>,
+  onDisk: (slug: string) => boolean = () => false,
+): string {
   const root = slugify(base);
-  if (!taken(root)) return root;
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${root}-${i}`;
-    if (!taken(candidate)) return candidate;
+  let rootTaken = false;
+  let highest = 1;
+  for (const id of existing) {
+    if (id === root) rootTaken = true;
+    else if (id.startsWith(`${root}-`)) {
+      const n = Number(id.slice(root.length + 1));
+      if (Number.isInteger(n) && n > highest) highest = n;
+    }
   }
-  return `${root}-${Date.now().toString(36)}`;
+  if (!rootTaken && !onDisk(root)) return root;
+  let candidate = `${root}-${highest + 1}`;
+  while (onDisk(candidate)) candidate = `${candidate}-${Date.now().toString(36)}`;
+  return candidate;
 }
 
 // ---- companies -------------------------------------------------------------
@@ -684,7 +695,7 @@ export function createCompany(input: {
   founderSpriteSeed: string;
   budget: Budget;
 }): Company {
-  const id = uniqueSlug(input.name, (s) => c().companies.has(s) || existsSync(companyDir(s)));
+  const id = uniqueSlug(input.name, c().companies.keys(), (s) => existsSync(companyDir(s)));
   const co: Company = {
     id,
     name: input.name,
@@ -755,7 +766,10 @@ function createRoutine(input: {
 }): Routine {
   const list = c().routines.get(input.companyId);
   if (!list) throw new Error(`company ${input.companyId} not found`);
-  const id = uniqueSlug(input.name, (s) => list.some((r) => r.id === s));
+  const id = uniqueSlug(
+    input.name,
+    list.map((r) => r.id),
+  );
   const routine: Routine = {
     id,
     companyId: input.companyId,
@@ -792,7 +806,10 @@ function createTeam(input: {
 }): Team {
   const list = c().teams.get(input.companyId);
   if (!list) throw new Error(`company ${input.companyId} not found`);
-  const id = uniqueSlug(input.name, (s) => list.some((t) => t.id === s));
+  const id = uniqueSlug(
+    input.name,
+    list.map((t) => t.id),
+  );
   const team: Team = {
     id,
     companyId: input.companyId,
@@ -814,28 +831,9 @@ export function listTeams(companyId: string): Team[] {
   return [...(c().teams.get(companyId) ?? [])];
 }
 
-function getTeam(teamId: string): Team | null {
-  for (const list of c().teams.values()) {
-    const found = list.find((t) => t.id === teamId);
-    if (found) return found;
-  }
-  return null;
-}
-
-function patchTeam(teamId: string, patch: Partial<Team>): Team | null {
-  for (const list of c().teams.values()) {
-    const idx = list.findIndex((t) => t.id === teamId);
-    if (idx >= 0) {
-      const cur = list[idx];
-      if (!cur) return null;
-      const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
-      list[idx] = next;
-      saveTeam(next);
-      return next;
-    }
-  }
-  return null;
-}
+const getTeam = (teamId: string): Team | null => findIn(c().teams, teamId);
+const patchTeam = (teamId: string, patch: Partial<Team>): Team | null =>
+  patchIn(c().teams, teamId, patch, saveTeam);
 
 export function addTeamMember(teamId: string, employeeId: string): Team | null {
   const t = getTeam(teamId);
@@ -907,14 +905,7 @@ export function postTeamMessage(
   if (ring.length > TEAM_CHAT_RING) ring.splice(0, ring.length - TEAM_CHAT_RING);
   c().teamChat.set(teamId, ring);
   const team = getTeam(teamId);
-  if (team && !writesSuspended) {
-    const { id: _drop, ...persisted } = stored;
-    try {
-      appendFileSync(teamChatFile(team.companyId, teamId), JSON.stringify(persisted) + "\n");
-    } catch {
-      /* chat loss is acceptable */
-    }
-  }
+  if (team) appendJsonl(teamChatFile(team.companyId, teamId), msg);
   return stored;
 }
 
@@ -961,7 +952,6 @@ export function recordShip(id: string): void {
   if (!co) return;
   patchCompany(id, { ships: co.ships + 1 });
 }
-/** Accumulate real AI spend (USD) from a finished run. */
 // ---- founder approvals -------------------------------------------------------
 // A command the founder signed off but the agent has not run yet. Persisted
 // because the gap between clicking Approve and the agent's retry can span a
@@ -971,15 +961,9 @@ export function recordShip(id: string): void {
 // one command, once. A second deploy is a second real-world act and gets asked
 // again rather than riding on the first yes.
 
-function readApprovals(companyId: string): string[] {
-  try {
-    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
-    const parsed: JsonValue = JSON.parse(readFileSync(approvalsFile(companyId), "utf8"));
-    return z.array(z.string()).catch([]).parse(parsed);
-  } catch {
-    return []; // no file yet, or unreadable — nothing is approved
-  }
-}
+// no file yet, or unreadable — nothing is approved
+const readApprovals = (companyId: string): string[] =>
+  readJsonFile(approvalsFile(companyId), z.array(z.string())) ?? [];
 
 export function grantApproval(companyId: string, key: string): void {
   const keys = readApprovals(companyId);
@@ -1002,6 +986,7 @@ export function consumeApproval(companyId: string, key: string): boolean {
   return true;
 }
 
+/** Accumulate real AI spend (USD) from a finished run. */
 export function recordSpend(id: string, costUsd: number): Company | null {
   const co = c().companies.get(id);
   if (!co) return null;
@@ -1051,7 +1036,8 @@ export function createEmployee(input: {
   }
   const id = uniqueSlug(
     input.name,
-    (s) => list.some((e) => e.id === s) || existsSync(employeeAgentDir(input.companyId, s)),
+    list.map((e) => e.id),
+    (s) => existsSync(employeeAgentDir(input.companyId, s)),
   );
   const e: Employee = {
     id,
@@ -1076,13 +1062,7 @@ export function createEmployee(input: {
   return e;
 }
 
-export function getEmployee(id: string): Employee | null {
-  for (const list of c().employees.values()) {
-    const found = list.find((e) => e.id === id);
-    if (found) return found;
-  }
-  return null;
-}
+export const getEmployee = (id: string): Employee | null => findIn(c().employees, id);
 
 /** The rendered AGENTS.md body — what a run injects as the agent's instructions. */
 export function employeeInstructions(employeeId: string): string {
@@ -1098,17 +1078,7 @@ export function listEmployees(companyId: string): Employee[] {
 }
 
 function patchEmployee(id: string, patch: Partial<Employee>): void {
-  for (const list of c().employees.values()) {
-    const idx = list.findIndex((e) => e.id === id);
-    if (idx >= 0) {
-      const cur = list[idx];
-      if (!cur) return;
-      const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
-      list[idx] = next;
-      saveEmployee(next);
-      return;
-    }
-  }
+  patchIn(c().employees, id, patch, saveEmployee);
 }
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
@@ -1132,7 +1102,8 @@ export function createTask(t: {
   if (!list) throw new Error(`company ${t.companyId} not found`);
   const id = uniqueSlug(
     t.title,
-    (s) => list.some((x) => x.id === s) || existsSync(join(tasksDir(t.companyId), s)),
+    list.map((x) => x.id),
+    (s) => existsSync(join(tasksDir(t.companyId), s)),
   );
   const task: Task = {
     id,
@@ -1158,13 +1129,7 @@ export function createTask(t: {
   return task;
 }
 
-export function getTask(id: string): Task | null {
-  for (const list of c().tasks.values()) {
-    const found = list.find((t) => t.id === id);
-    if (found) return found;
-  }
-  return null;
-}
+export const getTask = (id: string): Task | null => findIn(c().tasks, id);
 
 export function listTasks(companyId: string): Task[] {
   return (c().tasks.get(companyId) ?? []).toSorted((a, b) => b.createdAt - a.createdAt);
@@ -1194,20 +1159,8 @@ export function listQueuedTasks(): Task[] {
   );
 }
 
-function patchTask(id: string, patch: Partial<Task>): Task | null {
-  for (const list of c().tasks.values()) {
-    const idx = list.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      const cur = list[idx];
-      if (!cur) return null;
-      const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
-      list[idx] = next;
-      saveTask(next);
-      return next;
-    }
-  }
-  return null;
-}
+const patchTask = (id: string, patch: Partial<Task>): Task | null =>
+  patchIn(c().tasks, id, patch, saveTask);
 
 /**
  * Atomic assign: only todo/blocked/failed/dead are claimable. A manual claim of
@@ -1321,13 +1274,7 @@ export function logActivity(row: PersistedActivity, persist: boolean): ActivityE
   const companyId = row.employeeId
     ? getEmployee(row.employeeId)?.companyId
     : getDefaultCompany()?.id;
-  if (companyId && !writesSuspended) {
-    try {
-      appendFileSync(activityFile(companyId), JSON.stringify(row) + "\n");
-    } catch {
-      /* log loss is acceptable */
-    }
-  }
+  if (companyId) appendJsonl(activityFile(companyId), row);
   return entry;
 }
 

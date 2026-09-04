@@ -1,9 +1,10 @@
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
+import { atomicWrite, readJsonFile, suspendWrites } from "@/main/lib/fs";
 import * as store from "@/main/store/store";
 import { activityEvents, publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
@@ -27,7 +28,7 @@ import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout
 import { layoutIssues } from "@/shared/office-grid";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Task } from "@/shared/domain";
-import type { JsonValue } from "@/shared/json";
+import { jsonValueSchema, parseJson } from "@/shared/json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -62,7 +63,7 @@ function runMetricsPulse(): void {
 async function resetGame(): Promise<{ ok: boolean }> {
   scheduler.stop();
   if (metricsTimer) clearInterval(metricsTimer);
-  store.suspendWrites();
+  suspendWrites();
   agentDriver.disposeAll();
   rmSync(ROOT_DIR, { recursive: true, force: true });
   setImmediate(() => {
@@ -201,28 +202,22 @@ function registerIpcHandlers(): void {
   // the bundled office at next boot: a layout that fits the schema but seats
   // someone in a sealed room is as broken as one that does not parse.
   handle("saveOfficeDesign", ({ json }) => {
-    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
-    const raw: JsonValue = JSON.parse(json);
-    const layout = parseOfficeLayout(raw);
+    const layout = parseOfficeLayout(parseJson(json));
     const issues = layoutIssues(layout);
     if (issues.length > 0) throw new Error(`office layout rejected:\n${issues.join("\n")}`);
     const body = `${JSON.stringify(canonicalOfficeLayout(layout), null, 2)}\n`;
-    mkdirSync(ROOT_DIR, { recursive: true });
-    writeFileSync(OFFICE_DESIGN_PATH, body);
+    atomicWrite(OFFICE_DESIGN_PATH, body);
     // dev: mirror into the repo source so edited maps ship as the bundled
     // default (main runs from .output/app/main — three levels up = app root)
     if (!app.isPackaged) {
       const repoDesign = path.resolve(moduleDir, "../../../src/renderer/game/office-design.json");
-      if (existsSync(path.dirname(repoDesign))) writeFileSync(repoDesign, body);
+      if (existsSync(path.dirname(repoDesign))) atomicWrite(repoDesign, body);
     }
     return { ok: true };
   });
-  handle("loadOfficeDesign", () => {
-    if (!existsSync(OFFICE_DESIGN_PATH)) return { layout: null };
-    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
-    const layout: JsonValue = JSON.parse(readFileSync(OFFICE_DESIGN_PATH, "utf8"));
-    return { layout };
-  });
+  handle("loadOfficeDesign", () => ({
+    layout: readJsonFile(OFFICE_DESIGN_PATH, jsonValueSchema),
+  }));
 
   handle("stripeStatus", () => {
     const company = store.getDefaultCompany();

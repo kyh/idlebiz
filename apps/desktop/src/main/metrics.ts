@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWrite, readJsonFile } from "@/main/lib/fs";
 import { getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
 import { jsonRecordSchema, jsonValueSchema, type JsonValue } from "@/shared/json";
@@ -55,38 +55,19 @@ function metricsPath(companyId: string): string {
 }
 
 export function readMetricsConfig(companyId: string): MetricsConfig | null {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(metricsPath(companyId), "utf8"));
-    const cfg = MetricsConfigSchema.safeParse(parsed);
-    if (!cfg.success) return null;
-    if (!cfg.data.stripe && !cfg.data.vercel && !cfg.data.plausible && !cfg.data.custom)
-      return null;
-    return cfg.data;
-  } catch {
-    return null;
-  }
+  const cfg = readJsonFile(metricsPath(companyId), MetricsConfigSchema);
+  if (!cfg || (!cfg.stripe && !cfg.vercel && !cfg.plausible && !cfg.custom)) return null;
+  return cfg;
 }
 
-/** Merge a patch into metrics.json (atomic tmp+rename). */
+/** Merge a patch into metrics.json. */
 export function writeMetricsConfig(companyId: string, patch: Partial<MetricsConfig>): void {
-  let existing: z.infer<typeof jsonRecordSchema> = {};
-  try {
-    const parsed = jsonRecordSchema.safeParse(
-      JSON.parse(readFileSync(metricsPath(companyId), "utf8")),
-    );
-    if (parsed.success) existing = parsed.data;
-  } catch {
-    /* fresh file */
-  }
+  const existing = readJsonFile(metricsPath(companyId), jsonRecordSchema) ?? {};
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) delete existing[k];
     else existing[k] = v;
   }
-  const path = metricsPath(companyId);
-  mkdirSync(companyDir(companyId), { recursive: true });
-  const tmp = `${path}.tmp`;
-  writeFileSync(tmp, JSON.stringify(existing, null, 2));
-  renameSync(tmp, path);
+  atomicWrite(metricsPath(companyId), JSON.stringify(existing, null, 2));
 }
 
 const num = (v: JsonValue | undefined): number | null => {

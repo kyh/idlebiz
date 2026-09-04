@@ -100,6 +100,11 @@ export function optNum(rec: Record<string, Scalar>, key: string, fallback: numbe
   const v = z.number().safeParse(rec[key]);
   return v.success ? v.data : fallback;
 }
+/** A number that means "not yet" when absent: a timestamp that has not happened. */
+export function nullableNum(rec: Record<string, Scalar>, key: string): number | null {
+  const v = z.number().safeParse(rec[key]);
+  return v.success ? v.data : null;
+}
 export function optBool(rec: Record<string, Scalar>, key: string, fallback: boolean): boolean {
   const v = z.boolean().safeParse(rec[key]);
   return v.success ? v.data : fallback;

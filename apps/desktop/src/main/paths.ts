@@ -7,9 +7,9 @@ import { mkdirSync } from "node:fs";
 //   ~/.idlebiz/<company-slug>/
 //     COMPANY.md            company metadata + mission (canonical save file)
 //     agents/<slug>/        one folder per employee
-//       AGENTS.md           the agent's canonical definition — pi reads this file
+//       AGENTS.md           the agent's canonical definition, injected into every run
 //       memory/             the agent's own scratch memory
-//       sessions/           pi session continuity
+//       sessions/           the agent's own session continuity
 //     tasks/<slug>/TASK.md  work items
 //     workspace/            shared cwd where agents do real work
 //     activity.jsonl        append-only event log (non-canonical)
@@ -32,7 +32,7 @@ export const activityFile = (companySlug: string): string =>
 export const agentsDir = (companySlug: string): string => join(companyDir(companySlug), "agents");
 /** Released employees are archived here (package preserved, never deleted). */
 export const alumniDir = (companySlug: string): string => join(companyDir(companySlug), "alumni");
-/** Per-employee package dir; doubles as the pi agentDir (AGENTS.md lives here). */
+/** Per-employee package dir (AGENTS.md lives here); granted to the agent as a writable root. */
 export const employeeAgentDir = (companySlug: string, employeeSlug: string): string =>
   join(agentsDir(companySlug), employeeSlug);
 export const employeeFile = (companySlug: string, employeeSlug: string): string =>
