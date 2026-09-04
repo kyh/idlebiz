@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
-import { setModalOpen, refresh, getPortrait } from "@/renderer/state/store";
+import { bridge, refresh } from "@/renderer/state/store";
+import { useModal } from "@/renderer/ui/modal";
+import { Portrait } from "@/renderer/ui/portrait";
 import { BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
+import { errorMessage } from "@/shared/errors";
 import type { AuthFlowEvent, FounderChoice, HireProposal } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
@@ -41,15 +44,32 @@ function backStep(step: Step): Step | null {
   }
 }
 
+/** The coding CLI the workforce runs on, as far as the probe and the login flow know. */
+type Auth =
+  | { phase: "checking" }
+  | { phase: "signed-out" }
+  | { phase: "logging-in"; lines: readonly string[] }
+  | { phase: "login-failed"; lines: readonly string[] }
+  | { phase: "signed-in"; lines: readonly string[] };
+const linesOf = (a: Auth): readonly string[] => ("lines" in a ? a.lines : []);
+/** The last few lines the login flow said, plus this one — the box shows four. */
+const withLine = (a: Auth, line: string): readonly string[] => [...linesOf(a).slice(-3), line];
+
+/** The founding team, from the pitch to the offer letters. */
+type Team =
+  | { kind: "uncast" }
+  | { kind: "casting" }
+  | { kind: "failed"; message: string }
+  | { kind: "cast"; hires: HireProposal[] };
+
+/** What a previous finalize attempt already committed to disk, so a retry
+ *  skips it: the office exists the moment createCompany returns, and hiring
+ *  twice would double the payroll. */
+type Landed = { step: "none" } | { step: "company"; id: string } | { step: "hired"; id: string };
+
 /** null is the explicit "no ceiling" choice, not an absent one. */
 const CAP_OPTIONS: readonly (number | null)[] = [5, 20, 50, null];
 const DEFAULT_CAP = 20;
-
-const bridge = () => {
-  const b = window.appBridge;
-  if (!b) throw new Error("appBridge unavailable");
-  return b;
-};
 
 function Narrator({ text }: { text: string }) {
   const { shown, done, skip } = useTypewriter(text);
@@ -65,65 +85,162 @@ function Narrator({ text }: { text: string }) {
   );
 }
 
+function Title() {
+  return (
+    <div className="mt-10 text-center">
+      <div className="text-6xl text-[#f5f3ea]" style={{ textShadow: "4px 4px 0 #1d2136" }}>
+        IDLEBIZ
+      </div>
+      <div className="mt-2 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
+    </div>
+  );
+}
+
+function LookPicker({
+  choices,
+  look,
+  onPick,
+}: {
+  choices: FounderChoice[];
+  look: number;
+  onPick: (i: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-6 gap-3">
+      {choices.map((ch, i) => (
+        <button
+          type="button"
+          key={ch.seed}
+          onClick={() => onPick(i)}
+          className="p-1"
+          style={{
+            border: look === i ? "3px solid var(--accent)" : "3px solid var(--ink)",
+            background: look === i ? "#2a3550" : "#1a1e2e",
+            boxShadow: look === i ? "0 0 0 2px var(--accent-hi)" : "none",
+          }}
+        >
+          <img
+            src={ch.portraitDataUrl}
+            alt={`look ${i + 1}`}
+            className="h-14 w-14 [image-rendering:pixelated]"
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function HiresGrid({ hires }: { hires: HireProposal[] }) {
+  return (
+    <div className="px-window grid max-h-[46vh] w-full grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
+      {hires.map((h) => (
+        <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
+          <Portrait seed={h.spriteSeed} size="sm" />
+          <span>
+            <span className="block text-sm text-[var(--text)]">
+              {h.name} · <span className="text-[var(--accent-lo)]">{h.title}</span>
+            </span>
+            <span className="block text-xs text-[var(--text-dim)]">{h.blurb}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AuthStep({ auth, onLogin }: { auth: Auth; onLogin: () => void }) {
+  const lines = linesOf(auth);
+  return (
+    <div className="flex w-full flex-col gap-2">
+      {lines.length > 0 ? (
+        <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-[var(--text-dim)]">
+          {lines.join("\n")}
+        </div>
+      ) : null}
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => void bridge().resetGame()}
+          className="px-link px-link-danger"
+          title="Wipe everything in ~/.idlebiz and restart"
+        >
+          ↺ start over
+        </button>
+        <button
+          type="button"
+          onClick={onLogin}
+          disabled={auth.phase === "logging-in"}
+          className="px-btn-accent px-btn ml-auto"
+        >
+          {auth.phase === "logging-in"
+            ? "Setting up…"
+            : auth.phase === "login-failed"
+              ? "Try again"
+              : "Set up workforce"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PokeOnboarding() {
   const [step, setStep] = useState<Step>("intro");
-  const [authed, setAuthed] = useState<boolean | null>(null);
-  const [authLines, setAuthLines] = useState<string[]>([]);
-  const [authTried, setAuthTried] = useState(false);
-  const [authBusy, setAuthBusy] = useState(false);
+  const [auth, setAuth] = useState<Auth>({ phase: "checking" });
   const [founderName, setFounderName] = useState("");
   const [choices, setChoices] = useState<FounderChoice[]>([]);
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
   const [pitch, setPitch] = useState("");
-  const [hires, setHires] = useState<HireProposal[] | null>(null);
+  const [team, setTeam] = useState<Team>({ kind: "uncast" });
   const [capUsd, setCapUsd] = useState<number | null>(DEFAULT_CAP);
   const [error, setError] = useState<string | null>(null);
-  const [finalizing, setFinalizing] = useState(false);
-  // what a previous finalize attempt already committed to disk
-  const [companyId, setCompanyId] = useState<string | null>(null);
-  const [hired, setHired] = useState(false);
+  const [landed, setLanded] = useState<Landed>({ step: "none" });
 
+  const hires = team.kind === "cast" ? team.hires : null;
   const budget: Budget = capUsd === null ? { mode: "infinite" } : { mode: "capped", capUsd };
   // the office exists from the first createCompany, so its budget is settled
-  const budgetLocked = companyId !== null;
+  const budgetLocked = landed.step !== "none";
+
+  useModal();
 
   useEffect(() => {
-    setModalOpen(true);
     void bridge()
       .hasAuth()
-      .then((r) => setAuthed(r.ok));
+      .then((r) => setAuth(r.ok ? { phase: "signed-in", lines: [] } : { phase: "signed-out" }));
     void bridge()
       .getFounderChoices()
       .then(setChoices)
       .catch(() => setChoices([]));
-    return () => setModalOpen(false);
   }, []);
 
   // stream auth flow events into the dialog
   useEffect(() => {
     const off = bridge().onAuthEvent((e: AuthFlowEvent) => {
       if (e.type === "url") {
-        setAuthLines((l) => [...l, "Your browser opened — authorize there, then come back."]);
-      } else if (e.type === "progress") setAuthLines((l) => [...l.slice(-3), e.message]);
-      else if (e.type === "done") {
-        setAuthBusy(false);
-        setAuthed(true);
-        setAuthLines((l) => [...l, "Connected ✓"]);
+        const said = "Your browser opened — authorize there, then come back.";
+        setAuth((a) => ({ phase: "logging-in", lines: withLine(a, said) }));
+      } else if (e.type === "progress") {
+        setAuth((a) => ({ phase: "logging-in", lines: withLine(a, e.message) }));
+      } else if (e.type === "done") {
+        setAuth((a) => ({ phase: "signed-in", lines: withLine(a, "Connected ✓") }));
         window.setTimeout(() => setStep("founder"), 700);
       } else if (e.type === "error") {
-        setAuthBusy(false);
-        setAuthLines((l) => [...l, `Hmm — ${e.message}`]);
+        setAuth((a) => ({ phase: "login-failed", lines: withLine(a, `Hmm — ${e.message}`) }));
       }
     });
     return off;
   }, []);
 
+  const login = () => {
+    setAuth({ phase: "logging-in", lines: [] });
+    void bridge().startLogin();
+  };
+
   /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
   const castTeam = useCallback(() => {
     setError(null);
-    setHires(null);
+    setTeam({ kind: "casting" });
     setStep("team");
     void bridge()
       .generateHires({
@@ -132,25 +249,25 @@ export function PokeOnboarding() {
         businessType: biz ?? "custom",
       })
       .then((h) => {
-        setHires(h);
+        setTeam({ kind: "cast", hires: h });
         return null;
       })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause) => setTeam({ kind: "failed", message: errorMessage(cause) }));
   }, [companyName, pitch, biz]);
 
   const next = useCallback(() => {
     setError(null);
-    // authed is null until the CLI probe lands — routing on it would send a
+    // the CLI probe has to land first — routing before it would send a
     // signed-in founder to the login screen
     if (step === "intro") {
-      if (authed !== null) setStep(authed ? "founder" : "auth");
+      if (auth.phase !== "checking") setStep(auth.phase === "signed-in" ? "founder" : "auth");
     } else if (step === "founder" && founderName.trim()) setStep("look");
     else if (step === "look") setStep("company");
     else if (step === "company" && companyName.trim()) setStep("biztype");
     else if (step === "biztype" && biz !== null) setStep("pitch");
     else if (step === "pitch" && pitch.trim()) castTeam();
     else if (step === "team" && hires !== null && hires.length > 0) setStep("budget");
-  }, [step, authed, founderName, companyName, biz, pitch, hires, castTeam]);
+  }, [step, auth.phase, founderName, companyName, biz, pitch, hires, castTeam]);
 
   const back = useCallback(() => {
     const prev = backStep(step);
@@ -161,16 +278,12 @@ export function PokeOnboarding() {
   }, [step]);
 
   const finalize = async () => {
-    if (!hires || hires.length === 0 || finalizing) return;
-    setFinalizing(true);
+    if (!hires || hires.length === 0 || step === "finalize") return;
     setError(null);
     setStep("finalize");
     try {
-      // each leg is skipped if a previous attempt already landed it: the office
-      // is on disk the moment createCompany returns, and hiring twice would
-      // double the payroll
-      let id = companyId;
-      if (id === null) {
+      let progress = landed;
+      if (progress.step === "none") {
         const co = await bridge().createCompany({
           name: companyName.trim(),
           mission: pitch.trim(),
@@ -179,19 +292,19 @@ export function PokeOnboarding() {
           founderSpriteSeed: choices[look]?.seed ?? "founder-player-001",
           budget,
         });
-        id = co.id;
-        setCompanyId(id);
+        progress = { step: "company", id: co.id };
+        setLanded(progress);
       }
-      if (!hired) {
-        await bridge().batchHire({ companyId: id, hires });
-        setHired(true);
+      if (progress.step === "company") {
+        await bridge().batchHire({ companyId: progress.id, hires });
+        progress = { step: "hired", id: progress.id };
+        setLanded(progress);
       }
-      await bridge().completeOnboarding({ companyId: id });
+      await bridge().completeOnboarding({ companyId: progress.id });
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-      setFinalizing(false);
+    } catch (e) {
+      setError(errorMessage(e));
       setStep("budget");
     }
   };
@@ -221,77 +334,34 @@ export function PokeOnboarding() {
     biztype: `What kind of company is ${companyName.trim() || "this"} going to be?`,
     pitch: `What is ${companyName.trim() || "your company"} building? Be specific — your team will literally start working on this.`,
     team:
-      hires === null
-        ? error === null
-          ? "Putting out the job posting… reviewing resumes…"
-          : "The hiring agency didn't come back. Want me to run the search again?"
-        : "Your founding team, cast for this exact pitch. From here the team lead grows or shrinks the roster on their own — you steer with the budget.",
+      team.kind === "cast"
+        ? "Your founding team, cast for this exact pitch. From here the team lead grows or shrinks the roster on their own — you steer with the budget."
+        : team.kind === "failed"
+          ? "The hiring agency didn't come back. Want me to run the search again?"
+          : "Putting out the job posting… reviewing resumes…",
     budget:
       "Last thing, and it's the important one. Your employees think with real AI, and that bills to your account for real. Set the ceiling — they down tools when they hit it, and you can move it any time.",
     finalize: "Signing the lease… assembling desks… your office is ready!",
   } satisfies Record<Step, string>;
+  const problem = error ?? (team.kind === "failed" ? team.message : null);
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-between bg-[#10121b] p-6">
-      {/* title */}
-      <div className="mt-10 text-center">
-        <div className="text-6xl text-[#f5f3ea]" style={{ textShadow: "4px 4px 0 #1d2136" }}>
-          IDLEBIZ
-        </div>
-        <div className="mt-2 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
-      </div>
+      <Title />
 
-      {/* step content above the battle box */}
       <div className="flex w-full max-w-2xl flex-1 items-center justify-center py-4">
         {step === "look" && choices.length > 0 ? (
-          <div className="grid grid-cols-6 gap-3">
-            {choices.map((ch, i) => (
-              <button
-                type="button"
-                key={ch.seed}
-                onClick={() => setLook(i)}
-                className="p-1"
-                style={{
-                  border: look === i ? "3px solid var(--accent)" : "3px solid var(--ink)",
-                  background: look === i ? "#2a3550" : "#1a1e2e",
-                  boxShadow: look === i ? "0 0 0 2px var(--accent-hi)" : "none",
-                }}
-              >
-                <img
-                  src={ch.portraitDataUrl}
-                  alt={`look ${i + 1}`}
-                  className="h-14 w-14 [image-rendering:pixelated]"
-                />
-              </button>
-            ))}
-          </div>
+          <LookPicker choices={choices} look={look} onPick={setLook} />
         ) : null}
-
-        {(step === "team" || step === "budget") && hires ? (
-          <div className="px-window grid max-h-[46vh] w-full grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
-            {hires.map((h) => (
-              <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
-                <Portrait seed={h.spriteSeed} />
-                <span>
-                  <span className="block text-sm text-[var(--text)]">
-                    {h.name} · <span className="text-[var(--accent-lo)]">{h.title}</span>
-                  </span>
-                  <span className="block text-xs text-[var(--text-dim)]">{h.blurb}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {step === "team" && hires === null && !error ? (
+        {(step === "team" || step === "budget") && hires ? <HiresGrid hires={hires} /> : null}
+        {step === "team" && team.kind === "casting" ? (
           <div className="px-live-dot text-4xl">📋</div>
         ) : null}
       </div>
 
-      {/* the battle box */}
       <div className="px-battle w-full max-w-2xl p-4">
         <Narrator text={narration[step]} />
-        {error ? <div className="mt-1 text-xs text-[var(--danger)]">{error}</div> : null}
+        {problem ? <div className="mt-1 text-xs text-[var(--danger)]">{problem}</div> : null}
 
         {backStep(step) !== null ? (
           <button type="button" onClick={back} className="px-link mt-2" title="Esc">
@@ -304,45 +374,14 @@ export function PokeOnboarding() {
             <button
               type="button"
               onClick={next}
-              disabled={authed === null}
+              disabled={auth.phase === "checking"}
               className="px-btn-accent px-btn ml-auto"
             >
-              {authed === null ? "Checking your CLI…" : "▶ Let's go"}
+              {auth.phase === "checking" ? "Checking your CLI…" : "▶ Let's go"}
             </button>
           ) : null}
 
-          {step === "auth" ? (
-            <div className="flex w-full flex-col gap-2">
-              {authLines.length > 0 ? (
-                <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-[var(--text-dim)]">
-                  {authLines.join("\n")}
-                </div>
-              ) : null}
-              <div className="flex items-center">
-                <button
-                  type="button"
-                  onClick={() => void bridge().resetGame()}
-                  className="px-link px-link-danger"
-                  title="Wipe everything in ~/.idlebiz and restart"
-                >
-                  ↺ start over
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthBusy(true);
-                    setAuthTried(true);
-                    setAuthLines([]);
-                    void bridge().startLogin();
-                  }}
-                  disabled={authBusy}
-                  className="px-btn-accent px-btn ml-auto"
-                >
-                  {authBusy ? "Setting up…" : authTried ? "Try again" : "Set up workforce"}
-                </button>
-              </div>
-            </div>
-          ) : null}
+          {step === "auth" ? <AuthStep auth={auth} onLogin={login} /> : null}
 
           {step === "founder" ? (
             <>
@@ -437,13 +476,13 @@ export function PokeOnboarding() {
             </div>
           ) : null}
 
-          {step === "team" && hires ? (
+          {step === "team" && team.kind === "cast" ? (
             <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
               Sign them →
             </button>
           ) : null}
 
-          {step === "team" && hires === null && error !== null ? (
+          {step === "team" && team.kind === "failed" ? (
             <>
               <button type="button" onClick={back} className="px-link">
                 ← rewrite the pitch
@@ -482,7 +521,6 @@ export function PokeOnboarding() {
                 <button
                   type="button"
                   onClick={() => void finalize()}
-                  disabled={finalizing}
                   className="px-btn-accent px-btn ml-auto"
                 >
                   Open the office →
@@ -493,32 +531,5 @@ export function PokeOnboarding() {
         </div>
       </div>
     </div>
-  );
-}
-
-function Portrait({ seed }: { seed: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const u = await getPortrait(seed);
-      if (alive) setUrl(u);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [seed]);
-  return url ? (
-    <img
-      src={url}
-      alt=""
-      className="h-12 w-12 shrink-0 [image-rendering:pixelated]"
-      style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
-    />
-  ) : (
-    <span
-      className="h-12 w-12 shrink-0"
-      style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
-    />
   );
 }
