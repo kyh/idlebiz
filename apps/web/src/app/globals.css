@@ -166,16 +166,15 @@ img {
 }
 
 /* the landing card is one employee's office: real game sprites roam it */
-.px-prop {
-  image-rendering: pixelated;
-}
 .px-npc {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 48px;
   height: 96px;
   isolation: isolate;
-  transition-property: left, top;
-  transition-timing-function: linear, linear;
+  transition-property: transform;
+  transition-timing-function: linear;
 }
 .px-npc-body {
   position: relative;
@@ -283,6 +282,7 @@ button,
   position: absolute;
   width: 48px;
   height: 48px;
+  transform: translate(-50%, -50%);
   background-image: url(/office/selector.png);
   background-repeat: no-repeat;
   image-rendering: pixelated;
