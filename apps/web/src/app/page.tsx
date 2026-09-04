@@ -96,7 +96,7 @@ export default async function Page() {
               Download for Mac
             </a>
             <span className="text-[11px] text-text-dim">
-              {version ? `${version} · ` : ""}macOS · bring your own OpenAI Account
+              {version ? `${version} · ` : ""}macOS · runs on your own Claude Code or Codex
             </span>
           </div>
         </div>
