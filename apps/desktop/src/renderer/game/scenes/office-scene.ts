@@ -141,7 +141,7 @@ export class OfficeScene extends Phaser.Scene {
       this.clickWalk = undefined;
       this.npcs = undefined;
       this.player = undefined;
-        delete window.__officeDebug;
+      delete window.__officeDebug;
     });
   }
 
