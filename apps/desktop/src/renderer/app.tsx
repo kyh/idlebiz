@@ -56,10 +56,6 @@ export function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {/* Not before the layout is settled: refresh() applies the saved office to the
-          live bindings, and the scene's preload reads them the moment the game exists —
-          mounting first would build the bundled office instead. Only the layout step
-          gates it, so a bridge failure later in refresh() still leaves an office open. */}
       {layoutReady ? <PhaserGame key="office-game" onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">

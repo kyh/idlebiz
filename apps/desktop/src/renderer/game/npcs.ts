@@ -247,6 +247,7 @@ export class NpcManager {
     npc.sprite.setPosition(this.door.x, this.door.y);
     npc.sprite.setInteractive(HOVERABLE);
     this.scene.tweens.add({ targets: npc.sprite, alpha: 1, duration: FADE_MS });
+    this.applyLook(npc); // whatever they were asked or told while queued shows now
     this.routeIn(npc);
   }
 
@@ -357,6 +358,11 @@ export class NpcManager {
    * Walking is animated by the movement code; this is everything else.
    */
   private applyLook(npc: Npc): void {
+    // still outside: an emote here would hang over the door with nobody under it
+    if (npc.phase === "queued") {
+      this.clearEmote(npc);
+      return;
+    }
     if (npc.state === "blocked" || npc.asking) this.showEmote(npc, EMOTE_FRAME.alert);
     else if (npc.state === "working" && npc.pose === "thinking")
       this.showEmote(npc, EMOTE_FRAME.think);

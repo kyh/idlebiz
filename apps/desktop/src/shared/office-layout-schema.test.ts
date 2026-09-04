@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import bundled from "@/renderer/game/office-design.json";
 import type { JsonValue } from "./json";
@@ -11,7 +13,7 @@ import {
   type OfficeLayoutData,
 } from "./office-layout-schema";
 
-/** A pre-semantic (v1) office as the builder used to write it. */
+/** A v1 office: the world and its workstations, nothing else. */
 const legacy: JsonValue = {
   tile: 32,
   width: 64,
@@ -134,5 +136,15 @@ describe("canonicalOfficeLayout", () => {
       flipX: true,
     });
     expect(JSON.stringify(out)).not.toContain("flipY");
+  });
+
+  it("re-saves the bundled office byte for byte", () => {
+    // main writes exactly this; a dev save mirrors it into the repo, so any drift
+    // in key order would land as a diff over every row of the bundled file
+    const file = resolve(import.meta.dirname, "../renderer/game/office-design.json");
+    const text = readFileSync(file, "utf8");
+    const raw: JsonValue = JSON.parse(text);
+    const saved = `${JSON.stringify(canonicalOfficeLayout(parseOfficeLayout(raw)), null, 2)}\n`;
+    expect(saved).toBe(text);
   });
 });

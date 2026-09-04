@@ -11,12 +11,11 @@ import type { JsonValue } from "./json.ts";
 // nothing from either process — only zod and the band constants — and names
 // its relative imports with extensions so node can load it as-is.
 //
-// Version history:
-//   v1 (no `version` key): spawn + workSeats. Idle-life spots were hardcoded
-//      in the scene, so a custom office inherited the bundled map's water
-//      cooler. Read and upgraded, never written.
-//   v2: `version: 2`, seats with roles, points of interest, and a door — the
-//      semantic layer the scene used to keep to itself.
+// Versions:
+//   v1 (no `version` key): world + workSeats. Read and upgraded, never written.
+//   v2 (`version: 2`): seats with roles, points of interest, and a door. The
+//      scene trusts these as data — it has no fallback spots of its own — so a
+//      layout with none has an idle life of wandering only.
 // ---------------------------------------------------------------------------
 
 export const OFFICE_LAYOUT_VERSION = 2;
@@ -199,30 +198,20 @@ export function canonicalOfficeLayout(layout: OfficeLayoutData): OfficeLayoutDat
   };
 }
 
-/** The keys every placed object may carry, whichever band it is in. */
-interface PlacedFields {
-  id: string;
-  x: number;
-  y: number;
-  path?: string;
-  flipX?: boolean;
-  flipY?: boolean;
-  bounds?: z.infer<typeof rectSchema>;
-}
-
-/** One object row: optional keys omitted, not nulled, and only the set keys present. */
+/**
+ * One object row: optional keys omitted, not nulled, and keys in the order the
+ * bundled file and scripts/lib/office-layout-file.cjs already write — so saving
+ * an untouched office is a no-op diff, not a reshuffle of every row.
+ */
 function canonicalObject(obj: OfficeObjectDef): OfficeObjectDef {
-  const placed: PlacedFields = { id: obj.id, x: obj.x, y: obj.y };
-  if (obj.path !== undefined) placed.path = obj.path;
-  if (obj.flipX) placed.flipX = true;
-  if (obj.flipY) placed.flipY = true;
-  if (obj.bounds !== undefined) placed.bounds = obj.bounds;
-  switch (obj.layer) {
-    case "floor":
-      return { layer: "floor", ...placed };
-    case "overhead":
-      return { layer: "overhead", ...placed };
-    case "object":
-      return { layer: "object", anchorY: obj.anchorY, ...placed };
-  }
+  const placed = { id: obj.id, x: obj.x, y: obj.y };
+  const row: OfficeObjectDef =
+    obj.layer === "object"
+      ? { ...placed, layer: "object", anchorY: obj.anchorY }
+      : { ...placed, layer: obj.layer };
+  if (obj.path !== undefined) row.path = obj.path;
+  if (obj.flipX) row.flipX = true;
+  if (obj.flipY) row.flipY = true;
+  if (obj.bounds !== undefined) row.bounds = obj.bounds;
+  return row;
 }

@@ -18,7 +18,10 @@ interface State {
   booted: boolean;
   /**
    * The office layout is settled — saved office applied, or the bundled default kept.
-   * Set before the bridge calls that can fail, so the room still opens when they do.
+   * The scene mounts on this and nothing earlier: its preload reads the live layout
+   * bindings the moment the game exists, so mounting first would build the bundled
+   * office. Set before the bridge calls that can fail, so the room opens even when
+   * they do.
    */
   layoutReady: boolean;
   authed: boolean;

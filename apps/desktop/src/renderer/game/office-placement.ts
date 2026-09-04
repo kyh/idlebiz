@@ -1,10 +1,9 @@
 // Who sits where, as a pure function.
 //
-// The scene used to pick a seat at spawn time and never revisit it, so the
-// twelfth hire in an eleven-desk office simply never appeared. Planning the
-// whole roster at once, against the previous plan, gives stable seats (nobody
-// is shuffled to make room) and a definite answer for overflow (null: they
-// stand). The scene's director turns the plan's diffs into walking.
+// Planning the whole roster at once, against the previous plan, gives stable
+// seats (nobody is shuffled to make room) and a definite answer for overflow
+// (null: they stand, rather than never appearing). The scene's director turns
+// the plan's diffs into walking.
 
 /** An employee as the planner sees them: identity plus the desk they were hired into. */
 export interface SeatedEmployee {
