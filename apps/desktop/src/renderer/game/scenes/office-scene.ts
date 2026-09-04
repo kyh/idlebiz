@@ -110,7 +110,6 @@ export class OfficeScene extends Phaser.Scene {
 
     void this.boot();
     // the handle names are the CDP contract in AGENTS.md, dangling underscores and all
-    // eslint-disable-next-line no-underscore-dangle
     window.__officeDebug = this.debugApi();
 
     // live hires and releases come and go through the door
@@ -128,7 +127,6 @@ export class OfficeScene extends Phaser.Scene {
     this.game.events.on("company-ready", onCompanyReady);
     this.subscribeActivity();
 
-    // eslint-disable-next-line no-underscore-dangle
     window.__game = this.game;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.activityUnsub?.();
@@ -143,8 +141,7 @@ export class OfficeScene extends Phaser.Scene {
       this.clickWalk = undefined;
       this.npcs = undefined;
       this.player = undefined;
-      // eslint-disable-next-line no-underscore-dangle
-      delete window.__officeDebug;
+        delete window.__officeDebug;
     });
   }
 
