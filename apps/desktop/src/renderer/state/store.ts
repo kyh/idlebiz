@@ -76,7 +76,6 @@ export function useStore<T>(selector?: (s: State) => T): T | State {
   return useSyncExternalStore(subscribe, select, select);
 }
 
-
 // ---- portrait cache --------------------------------------------------------
 const portraitCache = new Map<string, string>();
 export async function getPortrait(seed: string): Promise<string> {
