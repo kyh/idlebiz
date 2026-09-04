@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { listenLoopback } from "@/main/lib/http";
 import { INTEGRATION_KINDS, type BlockedAsk } from "@/shared/domain";
-import type { JsonValue } from "@/shared/json";
+import { errorMessage } from "@/shared/errors";
+import { parseJson, type JsonValue } from "@/shared/json";
 
 // ---------------------------------------------------------------------------
 // The game's control plane: a loopback HTTP API that running CLI agents call
@@ -95,15 +97,7 @@ class ControlPlane {
       void this.handle(req, res);
     });
     this.server = server;
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        // address() is AddressInfo | string | null; only the object form has a port
-        const addr = z.object({ port: z.number() }).safeParse(server.address());
-        if (addr.success) this.port = addr.data.port;
-        resolve();
-      });
-    });
+    this.port = await listenLoopback(server);
   }
 
   stop(): void {
@@ -141,20 +135,15 @@ class ControlPlane {
       const path = (req.url ?? "").split("?")[0];
       const route = `${req.method ?? "GET"} ${path}`;
       switch (route) {
-        case "GET /v1/team-chat": {
+        case "GET /v1/team-chat":
           respond(res, 200, {
             ok: true,
             messages: run.hooks.readTeam() || "(the team room is empty so far)",
           });
           return;
-        }
         case "POST /v1/ask-boss": {
-          const body = AskBossBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
-          raise(run, { type: "question", question: body.data.question.trim() });
+          const body = await parseBody(req, AskBossBody);
+          raise(run, { type: "question", question: body.question.trim() });
           respond(res, 200, {
             ok: true,
             message:
@@ -163,72 +152,44 @@ class ControlPlane {
           return;
         }
         case "POST /v1/message-team": {
-          const body = MessageTeamBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
-          run.hooks.messageTeam(body.data.text.trim());
+          const body = await parseBody(req, MessageTeamBody);
+          run.hooks.messageTeam(body.text.trim());
           respond(res, 200, { ok: true, message: "Posted to the team room." });
           return;
         }
         case "POST /v1/delegate": {
-          const body = DelegateBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
-          const { role, title, description } = body.data;
+          const { role, title, description } = await parseBody(req, DelegateBody);
           respond(res, 200, { ok: true, message: run.hooks.delegate(role, title, description) });
           return;
         }
         case "POST /v1/hire": {
-          const body = HireBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
-          respond(res, 200, { ok: true, message: run.hooks.hire(body.data) });
+          const body = await parseBody(req, HireBody);
+          respond(res, 200, { ok: true, message: run.hooks.hire(body) });
           return;
         }
         case "POST /v1/release": {
-          const body = ReleaseBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
-          respond(res, 200, {
-            ok: true,
-            message: run.hooks.release(body.data.slug, body.data.reason),
-          });
+          const body = await parseBody(req, ReleaseBody);
+          respond(res, 200, { ok: true, message: run.hooks.release(body.slug, body.reason) });
           return;
         }
         case "POST /v1/request-integration": {
-          const body = RequestIntegrationBody.safeParse(await readJsonBody(req));
-          if (!body.success) {
-            respond(res, 400, { ok: false, error: body.error.message });
-            return;
-          }
+          const body = await parseBody(req, RequestIntegrationBody);
           // A typed ask: the notification renders a [Connect] button and this
           // task auto-resumes when the founder connects.
-          raise(run, {
-            type: "integration",
-            integration: body.data.kind,
-            reason: body.data.reason.trim(),
-          });
+          raise(run, { type: "integration", integration: body.kind, reason: body.reason.trim() });
           respond(res, 200, {
             ok: true,
-            message: `The founder has a ${body.data.kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
+            message: `The founder has a ${body.kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
           });
           return;
         }
-        default: {
+        default:
           respond(res, 404, { ok: false, error: `no such tool: ${route}` });
           return;
-        }
       }
     } catch (err) {
-      respond(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+      if (err instanceof BadRequest) respond(res, 400, { ok: false, error: err.message });
+      else respond(res, 500, { ok: false, error: errorMessage(err) });
     }
   }
 
@@ -253,6 +214,16 @@ function respond(res: ServerResponse, status: number, payload: ToolResponse): vo
   res.end(body);
 }
 
+/** The agent sent a body the tool cannot read; it gets the schema's complaint back. */
+class BadRequest extends Error {}
+
+/** The body as the route's schema sees it, or a BadRequest naming what was wrong. */
+async function parseBody<T>(req: IncomingMessage, schema: z.ZodType<T>): Promise<T> {
+  const body = schema.safeParse(await readJsonBody(req));
+  if (!body.success) throw new BadRequest(z.prettifyError(body.error));
+  return body.data;
+}
+
 /** Collect and parse the body; zod narrows the shape per route. */
 async function readJsonBody(req: IncomingMessage): Promise<JsonValue> {
   const chunks: Buffer[] = [];
@@ -264,9 +235,7 @@ async function readJsonBody(req: IncomingMessage): Promise<JsonValue> {
     chunks.push(buf);
   }
   if (chunks.length === 0) return {};
-  // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
-  const parsed: JsonValue = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  return parsed;
+  return parseJson(Buffer.concat(chunks).toString("utf8"));
 }
 
 export const controlPlane = new ControlPlane();

@@ -9,12 +9,20 @@ import * as store from "@/main/store/store";
 import { activityEvents, publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
+import { approvalAnswer } from "@/main/prompts/briefs";
 import { scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
-import { readMetricsConfig, writeMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
-import { validateToken, listProjects, latestDeployment } from "@/main/vercel";
-import { exportSecretsToEnv, getSecret, setSecret, deleteSecret } from "@/main/secrets";
+import { readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { latestDeployment } from "@/main/vercel";
+import {
+  connectVercel,
+  disconnectVercel,
+  getVercelStatus,
+  initVercelConnect,
+  listVercelProjects,
+} from "@/main/vercel-connect";
+import { exportSecretsToEnv } from "@/main/secrets";
 import {
   initStripeConnect,
   beginConnect,
@@ -95,9 +103,7 @@ function readProductEntry(workspaceDir: string): string | null {
 }
 
 async function openWorkspacePath(companyId: string, rel: string): Promise<void> {
-  const company = store.getCompany(companyId);
-  if (!company) throw new Error("company not found");
-  const root = path.resolve(company.workspaceDir);
+  const root = path.resolve(store.requireCompany(companyId).workspaceDir);
   const target = path.resolve(root, rel === "" ? "." : rel);
   if (target !== root && !target.startsWith(root + path.sep))
     throw new Error("path escapes the workspace");
@@ -162,12 +168,7 @@ function registerIpcHandlers(): void {
     return store.listEmployees(companyId);
   });
 
-  handle("completeOnboarding", ({ companyId }) => {
-    store.setCompanyOnboarded(companyId, true);
-    const company = store.getCompany(companyId);
-    if (!company) throw new Error("company not found");
-    return company;
-  });
+  handle("completeOnboarding", ({ companyId }) => store.setCompanyOnboarded(companyId, true));
 
   handle("getCompany", () => store.getDefaultCompany());
 
@@ -177,18 +178,13 @@ function registerIpcHandlers(): void {
       store.createCompany({ name, mission, businessType, founderName, founderSpriteSeed, budget }),
   );
 
-  handle("setAutopilot", ({ companyId, running }) => {
-    store.setAutopilot(companyId, running);
-    const company = store.getCompany(companyId);
-    if (!company) throw new Error("company not found");
-    return company;
-  });
+  handle("setAutopilot", ({ companyId, running }) => store.setAutopilot(companyId, running));
 
   handle("setBudget", ({ companyId, budget }) => {
     const company = store.setBudget(companyId, budget);
     // setting a cap below what's already spent pauses the office immediately
     if (isOutOfBudget(company)) scheduler.haltForBudget(company);
-    return store.getCompany(companyId) ?? company;
+    return store.requireCompany(companyId);
   });
 
   handle("resetSpend", ({ companyId }) => store.resetSpend(companyId));
@@ -228,37 +224,20 @@ function registerIpcHandlers(): void {
 
   handle("vercelStatus", () => {
     const company = store.getDefaultCompany();
-    const cfg = company ? readMetricsConfig(company.id) : null;
-    if (!cfg?.vercel || !getSecret("VERCEL_TOKEN")) return { state: "disconnected" };
-    return { state: "connected", projectName: cfg.vercel.projectName ?? cfg.vercel.projectId };
+    return company ? getVercelStatus(company.id) : { state: "disconnected" };
   });
-
-  handle("vercelListProjects", async ({ token }) => {
-    const check = await validateToken(token.trim());
-    if (!check.ok) return { ok: false, projects: [] };
-    const projects = await listProjects(token.trim());
-    return { ok: true, account: check.account, projects };
-  });
-
-  handle("vercelConnect", ({ companyId, token, projectId, projectName, teamId }) => {
-    setSecret("VERCEL_TOKEN", token.trim()); // metrics pulse + agents' `vercel` CLI
-    writeMetricsConfig(companyId, {
-      vercel: teamId ? { projectId, projectName, teamId } : { projectId, projectName },
-    });
-    runMetricsPulse(); // users flip without waiting 30s
-    scheduler.resumeIntegrationAsks("vercel"); // agents waiting on hosting get back to work
+  handle("vercelListProjects", ({ token }) => listVercelProjects(token));
+  handle("vercelConnect", (input) => {
+    connectVercel(input);
     return { ok: true };
   });
-
   handle("vercelDisconnect", ({ companyId }) => {
-    writeMetricsConfig(companyId, { vercel: undefined });
-    deleteSecret("VERCEL_TOKEN");
+    disconnectVercel(companyId);
     return { ok: true };
   });
 
   handle("productStatus", async ({ companyId }) => {
-    const company = store.getCompany(companyId);
-    if (!company) throw new Error("company not found");
+    const company = store.requireCompany(companyId);
     const cfg = readMetricsConfig(companyId);
     const deploy = cfg?.vercel
       ? await latestDeployment(cfg.vercel.projectId, cfg.vercel.teamId)
@@ -303,13 +282,7 @@ function registerIpcHandlers(): void {
     // Record before resuming: the agent's retry hits the hook again, and it
     // must find the sign-off already there.
     if (approved) store.grantApproval(task.companyId, task.blocked.command);
-    return resumeBlocked(
-      taskId,
-      approved
-        ? "Approved — run it once. The sign-off covers this one command this one time, so running it again, or anything else outward-facing, needs a fresh approval."
-        : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.",
-      "could not resume the task",
-    );
+    return resumeBlocked(taskId, approvalAnswer(approved), "could not resume the task");
   });
 
   // open a workspace-relative path with the OS default app ("" = the folder itself)
@@ -320,9 +293,7 @@ function registerIpcHandlers(): void {
 
   // open the product via the workspace PRODUCT.md convention ("entry: <path|url>")
   handle("openProduct", async ({ companyId }) => {
-    const company = store.getCompany(companyId);
-    if (!company) throw new Error("company not found");
-    const entry = readProductEntry(company.workspaceDir) ?? "index.html";
+    const entry = readProductEntry(store.requireCompany(companyId).workspaceDir) ?? "index.html";
     if (/^https?:\/\//.test(entry)) {
       await shell.openExternal(entry);
       return { ok: true, opened: entry };
@@ -404,11 +375,19 @@ void (async () => {
   // (Stripe revenue + customers, Vercel) refresh the company's numbers
   metricsTimer = setInterval(runMetricsPulse, PULSE_MS);
 
+  // an integration just connected: the numbers flip without waiting for the
+  // pulse, and every task blocked on that integration resumes
   initStripeConnect({
     notify: (status) => broadcast("onStripeStatus", status),
     onConnected: () => {
-      runMetricsPulse(); // ⚡ flips without waiting 30s
-      scheduler.resumeIntegrationAsks("stripe"); // agents waiting on payments resume
+      runMetricsPulse();
+      scheduler.resumeIntegrationAsks("stripe");
+    },
+  });
+  initVercelConnect({
+    onConnected: () => {
+      runMetricsPulse();
+      scheduler.resumeIntegrationAsks("vercel");
     },
   });
 

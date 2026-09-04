@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { shell } from "electron";
-import { z } from "zod";
+import { listenLoopback } from "@/main/lib/http";
 import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import type { StripeStatus } from "@/shared/ipc-registry";
@@ -51,11 +51,15 @@ export function getStripeStatus(companyId: string): StripeStatus {
   return { state: "disconnected" };
 }
 
-/** The metrics pulse saw a 401 — surface it without deleting the token. */
-export function markAuthError(message: string): void {
-  if (lastError === message) return;
+/** The flow stopped: remember why (the status query reports it) and tell the window. */
+function fail(message: string): void {
   lastError = message;
   notify({ state: "error", message });
+}
+
+/** The metrics pulse saw a 401 — surface it without deleting the token. */
+export function markAuthError(message: string): void {
+  if (lastError !== message) fail(message);
 }
 
 function closePending(): void {
@@ -91,53 +95,37 @@ export async function beginConnect(companyId: string): Promise<{ started: boolea
     closePending();
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  // address() is AddressInfo | string | null; only the object form has a port
-  const address = z.object({ port: z.number() }).safeParse(server.address());
-  if (!address.success) {
-    server.close();
-    throw new Error("loopback server failed to bind");
-  }
+  const port = await listenLoopback(server);
 
   pending = {
     server,
     nonce,
     timeout: setTimeout(() => {
       closePending();
-      lastError = "Stripe connection timed out — try again.";
-      notify({ state: "error", message: lastError });
+      fail("Stripe connection timed out — try again.");
     }, FLOW_TIMEOUT_MS),
   };
   notify({ state: "connecting" });
 
-  const state = Buffer.from(JSON.stringify({ port: address.data.port, nonce })).toString(
-    "base64url",
-  );
+  const state = Buffer.from(JSON.stringify({ port, nonce })).toString("base64url");
   await shell.openExternal(`${WEB_BASE}/api/stripe/authorize?state=${state}`);
   return { started: true };
 }
 
 function handleCallback(companyId: string, params: URLSearchParams): boolean {
   if (!pending || params.get("nonce") !== pending.nonce) {
-    lastError = "Stripe callback rejected (bad nonce).";
-    notify({ state: "error", message: lastError });
+    fail("Stripe callback rejected (bad nonce).");
     return false;
   }
   const flowError = params.get("error");
   if (flowError) {
-    lastError =
-      flowError === "access_denied" ? "Stripe connection cancelled." : `Stripe: ${flowError}`;
-    notify({ state: "error", message: lastError });
+    fail(flowError === "access_denied" ? "Stripe connection cancelled." : `Stripe: ${flowError}`);
     return false;
   }
   const accessToken = params.get("access_token");
   const accountId = params.get("stripe_user_id");
   if (!accessToken || !accountId) {
-    lastError = "Stripe callback missing token.";
-    notify({ state: "error", message: lastError });
+    fail("Stripe callback missing token.");
     return false;
   }
   const livemode = params.get("livemode") === "true";

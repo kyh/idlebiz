@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { join } from "node:path";
 import { atomicWrite, readJsonFile } from "@/main/lib/fs";
-import { getJson } from "@/main/lib/http";
+import { HttpError, getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
 import { jsonRecordSchema, jsonValueSchema, type JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
@@ -79,15 +79,14 @@ const num = (v: JsonValue | undefined): number | null => {
 class StripeAuthError extends Error {}
 
 async function stripeGet(path: string, key: string): Promise<JsonValue> {
-  const res = await fetch(`https://api.stripe.com${path}`, {
-    headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (res.status === 401 || res.status === 403) throw new StripeAuthError(`stripe ${res.status}`);
-  if (!res.ok) throw new Error(`stripe ${path} -> ${res.status}`);
-  // Response.json() is typed `any`; its actual return domain is exactly JsonValue.
-  const data: JsonValue = await res.json();
-  return data;
+  try {
+    return await getJson(`https://api.stripe.com${path}`, { Authorization: `Bearer ${key}` });
+  } catch (err) {
+    if (err instanceof HttpError && (err.status === 401 || err.status === 403)) {
+      throw new StripeAuthError(`stripe ${err.status}`);
+    }
+    throw err;
+  }
 }
 
 // Stripe list envelopes, parsed at the boundary (unknown fields ignored)

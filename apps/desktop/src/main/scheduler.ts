@@ -4,16 +4,23 @@ import { publishActivity } from "@/main/activity";
 import { agentDriver, priceRun, type RunResult } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { errorMessage } from "@/shared/errors";
-import { formatUsd } from "@/shared/format";
 import {
-  INTEGRATION_LABELS,
-  MAX_TASK_ATTEMPTS,
-  businessTypeById,
-  isOutOfBudget,
-  resolveMentions,
-  retryDelayMs,
+  autonomousBrief,
+  founderPing,
+  integrationConnectedAnswer,
+  roomTranscript,
+  routineBrief,
+  type TaskBrief,
+} from "@/main/prompts/briefs";
+import { MAX_TASK_ATTEMPTS, isOutOfBudget, resolveMentions, retryDelayMs } from "@/shared/domain";
+import type {
+  Company,
+  Employee,
+  IntegrationKind,
+  Task,
+  TaskPriority,
+  TaskStatus,
 } from "@/shared/domain";
-import type { Company, Employee, IntegrationKind, Task, TaskStatus } from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -35,12 +42,8 @@ const GLOBAL_CONCURRENCY_CAP = 3;
  * an idle game that is invisible; being ignored for six minutes is not.
  */
 const FOUNDER_RESERVED_SLOTS = 1;
-
-/** What a self-directed heartbeat asks an employee to do next. */
-interface TaskBrief {
-  title: string;
-  description: string;
-}
+/** How many slots the office's own work may fill; the rest is the founder's. */
+const BACKGROUND_CAPACITY = GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
 
 const AUTOPILOT_TICK_MS = 10_000;
 
@@ -120,27 +123,34 @@ class Scheduler {
   private fireDueRoutines(company: Company, employees: Employee[]): void {
     const now = Date.now();
     for (const r of store.listRoutines(company.id)) {
-      if (this.active.size >= this.backgroundCapacity()) break;
+      if (this.active.size >= BACKGROUND_CAPACITY) break;
       if (r.lastRunAt !== null && now - r.lastRunAt < r.intervalHours * 3_600_000) continue;
       const idle = employees.filter((e) => e.status === "idle");
       const assignee =
-        (r.role && idle.find((e) => `${e.role} ${e.title}`.toLowerCase().includes(r.role ?? ""))) ||
+        (r.role !== null &&
+          idle.find((e) => `${e.role} ${e.title}`.toLowerCase().includes(r.role ?? ""))) ||
         idle[0];
       if (!assignee) continue;
       store.markRoutineRun(company.id, r.id);
-      const task = store.createTask({
-        companyId: company.id,
-        title: r.name,
-        description: `${r.instruction}\n\n(Recurring company routine — runs every ${r.intervalHours}h.)`,
-        priority: "medium",
-        assigneeId: assignee.id,
-      });
-      try {
-        this.assign(task.id, assignee.id);
-      } catch {
-        /* picked up next tick */
-      }
+      this.brief(company, assignee, routineBrief(r));
     }
+  }
+
+  /** Give an employee work now: create the task and try to start it. */
+  private brief(
+    company: Company,
+    emp: Employee,
+    brief: TaskBrief,
+    priority: TaskPriority = "medium",
+  ): Task {
+    const task = store.createTask({
+      companyId: company.id,
+      ...brief,
+      priority,
+      assigneeId: emp.id,
+    });
+    this.tryAssign(task.id, emp.id);
+    return task;
   }
 
   /** Top up idle employees with self-directed work (respecting the concurrency cap). */
@@ -150,7 +160,7 @@ class Scheduler {
     const employees = store.listEmployees(company.id);
     this.fireDueRoutines(company, employees);
     for (const emp of employees) {
-      if (this.active.size >= this.backgroundCapacity()) break;
+      if (this.active.size >= BACKGROUND_CAPACITY) break;
       if (emp.status !== "idle") continue;
       // don't brief employees whose CLI is resting on a usage limit
       if (agentDriver.restingRunner(emp.runner) !== null) continue;
@@ -158,91 +168,26 @@ class Scheduler {
         .listTasksForEmployee(emp.id)
         .some((t) => t.status === "queued" || t.status === "running");
       if (open) continue;
-      const brief = this.autonomousBrief(company, emp, employees);
-      const task = store.createTask({
-        companyId: company.id,
-        title: brief.title,
-        description: brief.description,
-        priority: "medium",
-        assigneeId: emp.id,
-      });
-      try {
-        this.assign(task.id, emp.id);
-      } catch {
-        /* claim race — picked up next tick */
-      }
+      this.brief(company, emp, this.autonomousBrief(company, emp, employees));
     }
   }
 
-  /**
-   * The per-employee heartbeat: prompt for their next autonomous move, grounded
-   * in the team room, recent ships, and recent failures. The team leader is asked
-   * to coordinate (chain / fan out) while members execute and report back.
-   */
+  /** Gather what the heartbeat brief is grounded in; the prompt module phrases it. */
   private autonomousBrief(company: Company, emp: Employee, employees: Employee[]): TaskBrief {
     const team = store.teamForEmployee(emp.id);
-    const isLeader = team?.leaderId === emp.id;
-    const teammates = team ? employees.filter((e) => e.teamId === team.id) : employees;
-    const roster =
-      teammates
-        .map((e) => `${e.name} (${e.title})${team?.leaderId === e.id ? " — lead" : ""}`)
-        .join(", ") || "(just you)";
-
-    const room =
-      (team
-        ? store
-            .recentTeamMessages(team.id, 12)
-            .map(
-              (m) =>
-                `- ${m.fromEmployeeId ? this.empName(m.fromEmployeeId) : "founder"}: ${m.text}`,
-            )
-            .join("\n")
-        : "") || "(no messages yet)";
-    const ships =
-      store
-        .recentActivity(company.id, "ship", 6)
-        .map((s) => `- ${s.message}`)
-        .join("\n") || "(nothing shipped yet)";
-    const problems =
-      store
+    return autonomousBrief({
+      company,
+      employee: emp,
+      employees,
+      team,
+      room: team ? store.recentTeamMessages(team.id, 12) : [],
+      ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
+      problems: store
         .listTasks(company.id)
         .filter((t) => t.status === "dead")
-        .slice(0, 5)
-        .map((t) => `- ${t.title}${t.lastError ? ` (last error: ${t.lastError})` : ""}`)
-        .join("\n") || "(none)";
-
-    const budgetLine =
-      company.budget.mode === "capped"
-        ? `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent${company.spentUsd >= company.budget.capUsd * 0.8 ? " — over 80%: critical work only, keep runs short" : ""}.`
-        : `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
-
-    const coordinate = isLeader
-      ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.
-You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length} filled): hire when the backlog demands a role you don't have (hire tool — give role, title, name, persona), release teammates whose role stopped pulling weight (release tool — their work is archived, not lost). Size the team to the budget: more people burn money faster. ${budgetLine}`
-      : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${this.empName(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with the delegate tool. ${budgetLine}`;
-
-    const description = [
-      `You are operating autonomously to grow ${company.name}.`,
-      `Mission: ${company.mission}`,
-      `Business type: ${businessTypeById(company.businessType).label}.`,
-      `Your role: ${emp.title}.`,
-      `Your team: ${roster}.`,
-      ``,
-      `Recent team room:`,
-      room,
-      ``,
-      `Recently shipped:`,
-      ships,
-      ``,
-      `Recent failures to consider fixing or unblocking:`,
-      problems,
-      ``,
-      coordinate,
-      `Make it real: products should end up runnable, and when ready, published (ask the founder via ask_boss before anything outward-facing like deploying or posting).`,
-      `When you finish, post a one-line update to the team room with message_team(text).`,
-      `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
-    ].join("\n");
-    return { title: `Advance ${company.name}`, description };
+        .slice(0, 5),
+      nameOf: (id) => this.empName(id),
+    });
   }
 
   /** Resolve an employee id to a display name for briefs/feeds. */
@@ -267,15 +212,8 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
 
     return {
       messageTeam: (text: string): void => post(text.slice(0, 400)),
-      readTeam: (): string => {
-        if (!team) return "";
-        return store
-          .recentTeamMessages(team.id, 15)
-          .map(
-            (m) => `- ${m.fromEmployeeId ? this.empName(m.fromEmployeeId) : "founder"}: ${m.text}`,
-          )
-          .join("\n");
-      },
+      readTeam: (): string =>
+        team ? roomTranscript(store.recentTeamMessages(team.id, 15), (id) => this.empName(id)) : "",
       delegate: (role: string, title: string, description: string): string => {
         const want = role.toLowerCase();
         const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
@@ -366,16 +304,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     store.postTeamMessage(teamId, null, text);
     publishActivity({ kind: "chat", message: text.slice(0, 400), payload: { to: null } });
     for (const employeeId of resolveMentions(text, store.listEmployees(companyId))) {
-      this.wakeEmployee(
-        employeeId,
-        `Founder: ${text.slice(0, 48)}`,
-        [
-          "The founder pinged you in the team room:",
-          `"${text}"`,
-          "",
-          "Read the room with read_team_chat for context, do what they're asking (or answer their question), and reply with message_team.",
-        ].join("\n"),
-      );
+      this.wakeEmployee(employeeId, founderPing(text));
     }
   }
 
@@ -391,7 +320,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
       if (task.blocked.integration !== kind) continue;
       const continuation = store.resolveBlockedWithAnswer(
         task.id,
-        `${INTEGRATION_LABELS[kind]} is now connected — the credentials are in your environment. Continue where you left off.`,
+        integrationConnectedAnswer(kind),
       );
       if (continuation?.assigneeId) this.tryAssign(continuation.id, continuation.assigneeId);
     }
@@ -402,24 +331,15 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
    * right now instead of waiting for the autopilot tick. Coalesces — an
    * identical queued wake for the same employee is not duplicated.
    */
-  wakeEmployee(employeeId: string, title: string, description: string): Task | null {
+  wakeEmployee(employeeId: string, brief: TaskBrief): Task | null {
     const emp = store.getEmployee(employeeId);
     if (!emp) return null;
     const company = store.getCompany(emp.companyId);
     if (!company || !this.admit(company)) return null;
     const open = store
       .listTasksForEmployee(employeeId)
-      .find((t) => t.title === title && (t.status === "queued" || t.status === "todo"));
-    if (open) return open;
-    const task = store.createTask({
-      companyId: company.id,
-      title,
-      description,
-      priority: "high",
-      assigneeId: employeeId,
-    });
-    this.tryAssign(task.id, employeeId);
-    return task;
+      .find((t) => t.title === brief.title && (t.status === "queued" || t.status === "todo"));
+    return open ?? this.brief(company, emp, brief, "high");
   }
 
   /** Assign, tolerating a busy assignee — the queue picks it up next tick. */
@@ -445,17 +365,12 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     return store.getTask(taskId) ?? claimed;
   }
 
-  /** How many slots the office's own work may fill; the rest is yours. */
-  private backgroundCapacity(): number {
-    return GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
-  }
-
   /** Pull queued tasks into runs while we have capacity. */
   tick(): void {
     while (this.active.size < GLOBAL_CONCURRENCY_CAP) {
       // Past the background capacity only founder-initiated work starts —
       // talking to an employee, or resuming what you just answered.
-      const backgroundOk = this.active.size < this.backgroundCapacity();
+      const backgroundOk = this.active.size < BACKGROUND_CAPACITY;
       const next = store.listQueuedTasks().find((t) => {
         if (!backgroundOk && t.priority !== "high") return false;
         if (t.assigneeId === null || isWorking(t.assigneeId)) return false;
