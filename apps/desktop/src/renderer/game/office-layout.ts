@@ -1,5 +1,6 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
+import { comparePaintOrder } from "@/shared/office-depth";
 import type { JsonValue } from "@/shared/json";
 import {
   officeLayoutSchema,
@@ -18,7 +19,7 @@ import {
 } from "@/renderer/game/office-object-catalog.generated";
 
 export type { OfficeLayer, OfficeLayoutData, OfficePoi, OfficeSeat, PixelPoint };
-export { parseOfficeLayout };
+export { comparePaintOrder, parseOfficeLayout };
 
 export interface OfficeObjectPlacement {
   readonly id: string;
@@ -101,29 +102,6 @@ function depthFor(obj: OfficeObjectDef, index: number): number {
     case "object":
       return DEPTH.entityBase + obj.anchorY + 0.5;
   }
-}
-
-/** All paint order needs of a placed object: its band, and its floor line if it has one. */
-export type PaintOrdered =
-  | { readonly layer: "floor" }
-  | { readonly layer: "overhead" }
-  | { readonly layer: "object"; readonly anchorY: number };
-
-const BAND = { floor: 0, object: 1, overhead: 2 } satisfies Record<OfficeLayer, number>;
-
-/**
- * Orders two placed objects back to front — the one comparator the game, the builder and
- * the render oracles all sort by, so what you author is what you see.
- *
- * Bands stack; inside the entity band, objects y-sort on their floor line. The flat bands
- * have no sort key and return 0 here, so they keep their list order — meaning every sort
- * through this MUST be stable (Array#sort and #toSorted are).
- */
-export function comparePaintOrder(a: PaintOrdered, b: PaintOrdered): number {
-  return (
-    BAND[a.layer] - BAND[b.layer] ||
-    (a.layer === "object" && b.layer === "object" ? a.anchorY - b.anchorY : 0)
-  );
 }
 
 function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] {

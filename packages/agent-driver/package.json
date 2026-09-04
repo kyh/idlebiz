@@ -12,11 +12,11 @@
     "clean": "rm -rf .cache .turbo"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^1.4.0",
-    "zod": "^4.5.2"
+    "@agentclientprotocol/sdk": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
+    "@types/node": "catalog:",
     "typescript": "catalog:"
   }
 }

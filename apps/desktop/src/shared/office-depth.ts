@@ -19,3 +19,28 @@ export const DEPTH = {
  * layouts are parsed; widening the world means widening the band here first.
  */
 export const ENTITY_BAND_HEIGHT = DEPTH.overhead - DEPTH.entityBase;
+
+export type OfficeLayer = "floor" | "object" | "overhead";
+
+/** All paint order needs of a placed object: its band, and its floor line if it has one. */
+export type PaintOrdered =
+  | { readonly layer: "floor" }
+  | { readonly layer: "overhead" }
+  | { readonly layer: "object"; readonly anchorY: number };
+
+const BAND = { floor: 0, object: 1, overhead: 2 } satisfies Record<OfficeLayer, number>;
+
+/**
+ * Orders two placed objects back to front — the one comparator the game, the builder and
+ * check:office all sort by, so what you author is what you see.
+ *
+ * Bands stack; inside the entity band, objects y-sort on their floor line. The flat bands
+ * have no sort key and return 0 here, so they keep their list order — meaning every sort
+ * through this MUST be stable (Array#sort and #toSorted are).
+ */
+export function comparePaintOrder(a: PaintOrdered, b: PaintOrdered): number {
+  return (
+    BAND[a.layer] - BAND[b.layer] ||
+    (a.layer === "object" && b.layer === "object" ? a.anchorY - b.anchorY : 0)
+  );
+}

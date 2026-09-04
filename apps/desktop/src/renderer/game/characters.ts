@@ -1,25 +1,27 @@
 import Phaser from "phaser";
 import { DEPTH } from "@/renderer/game/config";
 import type { CharacterAssets } from "@/shared/ipc-registry";
+import {
+  CHAR_ORIGIN_X,
+  CHAR_ORIGIN_Y,
+  DIRS,
+  FRAME_H,
+  FRAME_W,
+  SIT_SIDES,
+  type Dir,
+  type SitSide,
+} from "@/shared/character-frame";
 
-// Composited character sheets are 32x64 frames, 6 per row:
+export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide };
+
+// Composited character sheets are 6 frames per row:
 // walk down/left/right/up (rows 0-3), then sit-left (row 4) and sit-right (row 5).
-const FRAME_W = 32;
-const FRAME_H = 64;
-const DIRS = ["down", "left", "right", "up"] as const;
-export type Dir = (typeof DIRS)[number];
-const SIT_SIDES = ["left", "right"] as const;
-export type SitSide = (typeof SIT_SIDES)[number];
 const DIR_START = { down: 0, left: 6, right: 12, up: 18 } satisfies Record<Dir, number>;
 const SIT_START = { left: 24, right: 30 } satisfies Record<SitSide, number>;
 
 /** Content rows within a frame: the art starts at the hair and ends at the soles. */
 const HEAD_ROW = 18;
 const SOLE_ROW = 62;
-
-/** One origin for every character, so the player and NPCs sort on the same footing. */
-export const CHAR_ORIGIN_X = 0.5;
-export const CHAR_ORIGIN_Y = 0.86;
 
 /**
  * Gap between a character's depth anchor (its origin) and its soles. Office objects

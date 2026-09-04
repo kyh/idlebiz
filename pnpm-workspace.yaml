@@ -2,11 +2,18 @@ packages:
   - apps/*
   - packages/*
 
-# One declaration per shared toolchain dep. Three packages each naming their
-# own typescript is how apps/web silently sat on 6.x while everything else
-# moved to 7.x — a catalog makes that drift unrepresentable.
+# One declaration per dep that more than one workspace uses, so versions
+# cannot drift between them.
 catalog:
+  "@agentclientprotocol/sdk": ^1.4.0
+  "@types/node": ^26.4.0
+  "@types/react": ^19.2.18
+  "@types/react-dom": ^19.2.5
+  react: ^19.2.8
+  react-dom: ^19.2.8
+  tailwindcss: ^4.3.3
   typescript: ^7.0.2
+  zod: ^4.5.2
 
 allowBuilds:
   electron-winstaller: true

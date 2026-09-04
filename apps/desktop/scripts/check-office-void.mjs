@@ -21,48 +21,43 @@
 //     of their sprite land on a pixel the room paints nothing at?
 //
 // The office builder can author both back at any time, so run it after editing a
-// layout. The schema and the grid are imported from src/shared as-is (node strips
-// the types), so this cannot drift from what the game and the save handler check.
+// layout. The schema, the grid, the paint order and the character frame are
+// imported from src/shared as-is (node strips the types), so this cannot drift
+// from what the game and the save handler check.
 //
-// Usage: node --experimental-strip-types scripts/check-office-void.mjs [--layout path.json] [--sheet path.png]
+// Usage: node scripts/check-office-void.mjs [--layout path.json] [--sheet path.png]
 //        exit 0 = clean, 1 = something is unreachable or the player's art can show void
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { parseOfficeLayout } from "../src/shared/office-layout-schema.ts";
 import { layoutIssues, reachableNodes, walkGridOf } from "../src/shared/office-grid.ts";
+import { comparePaintOrder } from "../src/shared/office-depth.ts";
+import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
 
 const require = createRequire(import.meta.url);
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { objectFile } = require("./lib/office-assets.cjs");
-const { paintOrder } = require("./lib/depth.cjs");
+const { objectFile, sprite } = require("./lib/office-assets.cjs");
 const { loadRaw } = require("./lib/pixels.cjs");
 
-const args = process.argv.slice(2);
-const flag = (name, fallback) => {
-  const i = args.indexOf(name);
-  return i >= 0 && args[i + 1] ? path.resolve(args[i + 1]) : fallback;
-};
-const layoutPath = flag("--layout", path.join(appRoot, "src/renderer/game/office-design.json"));
-// any composited sheet: they share one silhouette, which is what we test
-const sheetPath = flag(
-  "--sheet",
-  path.join(appRoot, "resources/employee-sheets/employee-sheet-01.png"),
-);
-
-// MUST match the renderer: characters.ts FRAME_W/FRAME_H, CHAR_ORIGIN_X/Y.
-const FRAME_W = 32;
-const FRAME_H = 64;
-const CHAR_ORIGIN_X = 0.5;
-const CHAR_ORIGIN_Y = 0.86;
+const { values: flags } = parseArgs({
+  options: {
+    layout: { type: "string", default: "src/renderer/game/office-design.json" },
+    // any composited sheet: they share one silhouette, which is what we test
+    sheet: { type: "string", default: "resources/employee-sheets/employee-sheet-01.png" },
+  },
+});
+const layoutPath = path.resolve(appRoot, flags.layout);
+const sheetPath = path.resolve(appRoot, flags.sheet);
 
 /** Alpha of the room as the scene paints it: 1 where any object has an opaque pixel. */
 async function paintedMask(layout) {
   const { width: W, height: H } = layout;
   const painted = new Uint8Array(W * H);
-  for (const { obj } of paintOrder(layout.objects)) {
-    const img = await loadRaw(objectFile(appRoot, obj));
+  for (const obj of layout.objects.toSorted(comparePaintOrder)) {
+    const img = await sprite(objectFile(appRoot, obj));
     for (let sy = 0; sy < img.h; sy++) {
       for (let sx = 0; sx < img.w; sx++) {
         // flips mirror inside the sprite's own canvas, exactly like setFlip does

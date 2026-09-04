@@ -181,7 +181,11 @@ function paint(
   const r0 = Math.max(0, Math.floor(r.y / cell));
   const c1 = Math.min(cols, Math.ceil((r.x + r.w) / cell));
   const r1 = Math.min(rows, Math.ceil((r.y + r.h) / cell));
-  for (let rr = r0; rr < r1; rr++) for (let cc = c0; cc < c1; cc++) grid[rr][cc] = v;
+  for (let rr = r0; rr < r1; rr++) {
+    const row = grid[rr];
+    if (!row) continue;
+    for (let cc = c0; cc < c1; cc++) row[cc] = v;
+  }
 }
 
 // --- load -------------------------------------------------------------------
@@ -266,9 +270,9 @@ export function deriveCollision(L: EditableLayout): string[] {
     if (fp) paint(grid, L.cell, L.cols, L.rows, fp, 1);
   }
   for (const s of [...L.seats, ...L.pois, L.door]) {
+    const row = grid[Math.floor(s.y / L.cell)];
     const c = Math.floor(s.x / L.cell);
-    const r = Math.floor(s.y / L.cell);
-    if (r >= 0 && c >= 0 && r < L.rows && c < L.cols) grid[r][c] = 0;
+    if (row && c >= 0 && c < L.cols) row[c] = 0;
   }
   return grid.map((row) => row.join(""));
 }

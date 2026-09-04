@@ -107,9 +107,33 @@ settings:
 
 catalogs:
   default:
+    '@agentclientprotocol/sdk':
+      specifier: ^1.4.0
+      version: 1.4.0
+    '@types/node':
+      specifier: ^26.4.0
+      version: 26.4.0
+    '@types/react':
+      specifier: ^19.2.18
+      version: 19.2.18
+    '@types/react-dom':
+      specifier: ^19.2.5
+      version: 19.2.5
+    react:
+      specifier: ^19.2.8
+      version: 19.2.8
+    react-dom:
+      specifier: ^19.2.8
+      version: 19.2.8
+    tailwindcss:
+      specifier: ^4.3.3
+      version: 4.3.3
     typescript:
       specifier: ^7.0.2
       version: 7.0.2
+    zod:
+      specifier: ^4.5.2
+      version: 4.5.2
 
 importers:
 
@@ -143,7 +167,7 @@ importers:
         specifier: ^1.7.0
         version: 1.7.0
       '@agentclientprotocol/sdk':
-        specifier: ^1.4.0
+        specifier: 'catalog:'
         version: 1.4.0(zod@4.5.2)
       '@repo/agent-driver':
         specifier: workspace:*
@@ -152,29 +176,29 @@ importers:
         specifier: ^4.2.1
         version: 4.2.1
       react:
-        specifier: ^19.2.8
+        specifier: 'catalog:'
         version: 19.2.8
       react-dom:
-        specifier: ^19.2.8
+        specifier: 'catalog:'
         version: 19.2.8(react@19.2.8)
       sharp:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@26.4.0)
       zod:
-        specifier: ^4.5.2
+        specifier: 'catalog:'
         version: 4.5.2
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(yaml@2.9.0))
       '@types/node':
-        specifier: ^26.4.0
+        specifier: 'catalog:'
         version: 26.4.0
       '@types/react':
-        specifier: ^19.2.18
+        specifier: 'catalog:'
         version: 19.2.18
       '@types/react-dom':
-        specifier: ^19.2.5
+        specifier: 'catalog:'
         version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: ^6.1.1
@@ -192,7 +216,7 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(yaml@2.9.0))
       tailwindcss:
-        specifier: ^4.3.3
+        specifier: 'catalog:'
         version: 4.3.3
       typescript:
         specifier: 'catalog:'
@@ -210,29 +234,29 @@ importers:
         specifier: ^16.3.3
         version: 16.3.3(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
-        specifier: ^19.2.8
+        specifier: 'catalog:'
         version: 19.2.8
       react-dom:
-        specifier: ^19.2.8
+        specifier: 'catalog:'
         version: 19.2.8(react@19.2.8)
       zod:
-        specifier: ^4.5.2
+        specifier: 'catalog:'
         version: 4.5.2
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
       '@types/node':
-        specifier: ^26.4.0
+        specifier: 'catalog:'
         version: 26.4.0
       '@types/react':
-        specifier: ^19.2.18
+        specifier: 'catalog:'
         version: 19.2.18
       '@types/react-dom':
-        specifier: ^19.2.5
+        specifier: 'catalog:'
         version: 19.2.5(@types/react@19.2.18)
       tailwindcss:
-        specifier: ^4.3.3
+        specifier: 'catalog:'
         version: 4.3.3
       typescript:
         specifier: 'catalog:'
@@ -241,14 +265,14 @@ importers:
   packages/agent-driver:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^1.4.0
+        specifier: 'catalog:'
         version: 1.4.0(zod@4.5.2)
       zod:
-        specifier: ^4.5.2
+        specifier: 'catalog:'
         version: 4.5.2
     devDependencies:
       '@types/node':
-        specifier: ^26.4.0
+        specifier: 'catalog:'
         version: 26.4.0
       typescript:
         specifier: 'catalog:'
