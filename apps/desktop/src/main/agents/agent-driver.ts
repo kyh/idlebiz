@@ -20,8 +20,8 @@ import { createRequire } from "node:module";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
-import { approvalKey, classifyCommand, normalizeCommand } from "@/shared/domain";
-import type { AgentRunner, BlockedAsk, Company, Employee } from "@/shared/domain";
+import { classifyCommand, normalizeCommand } from "@/shared/domain";
+import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
 /**
  * Where to find a runner's ACP agent, and how to make it ask.
@@ -35,10 +35,15 @@ const resolveFromApp = createRequire(import.meta.url);
 
 export function acpAgentFor(runner: AgentRunner): AcpAgent {
   const adapter: RunnerAdapter = RUNNERS[runner];
+  // In a packaged app `process.execPath` is the Electron binary, which would
+  // otherwise treat the agent's entry file as a new Electron app instead of
+  // running it as node.
+  const env: AcpAgent["env"] = { ELECTRON_RUN_AS_NODE: "1" };
+  if (adapter.binEnvVar) env[adapter.binEnvVar] = runnerBin(runner);
   return {
     command: [process.execPath, unpacked(resolveFromApp.resolve(adapter.acpEntry))],
     sessionModeId: adapter.sessionModeId,
-    env: adapter.binEnvVar ? { [adapter.binEnvVar]: runnerBin(runner) } : undefined,
+    env,
   };
 }
 
@@ -82,7 +87,7 @@ async function decidePermission(
   const command = normalizeCommand(request.command);
   if (!command) return { allow: true };
   if (classifyCommand(command).decision === "allow") return { allow: true };
-  if (store.consumeApproval(companyId, approvalKey(command))) return { allow: true };
+  if (store.consumeApproval(companyId, command)) return { allow: true };
   block({ type: "approval", command });
   return { allow: false };
 }
@@ -124,12 +129,13 @@ const TOOL_CACHE_ENV = {
 // control-plane API reachable through run-scoped env.
 // ---------------------------------------------------------------------------
 
-export interface RunResult extends AcpTurnResult {
-  blocked?: BlockedAsk;
-  /** The stored session id failed to resume — the caller should clear it. */
-  staleSession?: boolean;
-  /** The CLI hit its usage/session limit; park work until this epoch instead of retrying. */
-  rateLimitedUntil?: number;
+export interface RunResult {
+  outcome: RunOutcome;
+  /** The agent's final message. */
+  summary: string;
+  /** The session to remember for this employee after the run; null forgets it. */
+  session: string | null;
+  usage: AgentUsage;
 }
 
 class AgentDriver {
@@ -192,7 +198,7 @@ class AgentDriver {
   async runTask(
     emp: Employee,
     company: Company,
-    task: { id?: string; title: string; description: string | null },
+    task: { title: string; description: string | null },
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
   ): Promise<RunResult> {
@@ -202,48 +208,45 @@ class AgentDriver {
     try {
       const prompt = `${task.title}\n\n${task.description ?? ""}`.trim();
       const resumeId = emp.sessionId ?? undefined;
-      const first = await this.invoke(emp, company, task, prompt, onEvent, hooks, resumeId, abort);
-      const parked = this.parkIfRateLimited(emp.runner, first.result);
-      if (parked) return parked;
-      // A resume that dies without producing any output is almost always a
-      // stale/unknown session — retry once with a fresh one before failing.
-      if (first.result.ok || first.sawOutput || !resumeId) return first.result;
-      const retry = await this.invoke(emp, company, task, prompt, onEvent, hooks, undefined, abort);
-      return (
-        this.parkIfRateLimited(emp.runner, retry.result) ?? {
-          ...retry.result,
-          staleSession: retry.result.sessionId === undefined,
-        }
-      );
+      const first = await this.invoke(emp, company, prompt, onEvent, hooks, resumeId, abort);
+      // A resumed session that dies without producing any output is almost
+      // always stale on the agent's side — retry once fresh before failing.
+      const retryFresh =
+        first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
+      if (!retryFresh) {
+        return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
+      }
+      const retry = await this.invoke(emp, company, prompt, onEvent, hooks, undefined, abort);
+      return { ...retry.result, session: retry.turn.sessionId ?? null };
     } finally {
       this.active.delete(emp.id);
     }
   }
 
-  /** A usage/session limit is a wall, not a flake: park the runner, never retry into it. */
-  private parkIfRateLimited(runner: AgentRunner, result: RunResult): RunResult | null {
-    const limit = result.ok ? null : parseRateLimit(result.error);
-    if (!limit) return null;
+  /**
+   * How the turn ended, as the scheduler settles it. A pending ask wins over
+   * everything (the agent stopped to wait for the founder); a usage limit is a
+   * wall, not a flake — the runner is parked so nothing retries into it.
+   */
+  private outcomeOf(runner: AgentRunner, turn: AcpTurnResult, ask: BlockedAsk | null): RunOutcome {
+    if (ask) return { kind: "blocked", ask };
+    if (turn.end.kind === "completed") return { kind: "done" };
+    const limit = parseRateLimit(turn.end.error);
+    if (!limit) return { kind: "failed", error: turn.end.error };
     this.restingUntil.set(runner, limit.resetsAt);
-    return { ...result, rateLimitedUntil: limit.resetsAt };
+    return { kind: "resting", until: limit.resetsAt, error: turn.end.error };
   }
 
   private async invoke(
     emp: Employee,
     company: Company,
-    task: { id?: string },
     prompt: string,
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
     resumeSessionId: string | undefined,
     abort: AbortController,
-  ): Promise<{ result: RunResult; sawOutput: boolean }> {
-    const handle = controlPlane.registerRun({
-      employeeId: emp.id,
-      companyId: company.id,
-      taskId: task.id,
-      hooks,
-    });
+  ): Promise<{ result: Omit<RunResult, "session">; turn: AcpTurnResult; sawOutput: boolean }> {
+    const handle = controlPlane.registerRun({ hooks });
     let sawOutput = false;
     try {
       const res = await runAcpTurn({
@@ -268,8 +271,8 @@ class AgentDriver {
         },
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
-      const { blocked } = handle.outcome();
-      return { result: { ...res, usage, blocked: blocked ?? undefined }, sawOutput };
+      const outcome = this.outcomeOf(emp.runner, res, handle.outcome().blocked);
+      return { result: { outcome, summary: res.summary, usage }, turn: res, sawOutput };
     } finally {
       handle.release();
     }

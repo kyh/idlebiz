@@ -1,15 +1,16 @@
 import { z } from "zod";
 import type { IpcMethod, IpcKind } from "@/shared/ipc-channels";
 import type { JsonValue } from "@/shared/json";
-import type {
-  ActivityEvent,
-  Budget,
-  BusinessTypeId,
-  Company,
-  Employee,
-  Task,
-  Team,
-  TeamMessage,
+import type { ActivityEvent } from "@/shared/activity";
+import {
+  BUSINESS_TYPE_IDS,
+  BudgetSchema,
+  TASK_STATUSES,
+  type Company,
+  type Employee,
+  type Task,
+  type Team,
+  type TeamMessage,
 } from "@/shared/domain";
 
 export type { IpcMethod };
@@ -21,16 +22,6 @@ export type AuthFlowEvent =
   | { type: "progress"; message: string }
   | { type: "done" }
   | { type: "error"; message: string };
-
-/** An LLM-proposed hire (pre-employment; spriteSeed assigned by main). */
-export type HireProposal = {
-  name: string;
-  role: string;
-  title: string;
-  persona: string;
-  blurb: string;
-  spriteSeed: string;
-};
 
 /** A founder appearance option for onboarding. */
 export type FounderChoice = { seed: string; portraitDataUrl: string };
@@ -46,78 +37,68 @@ export type StripeStatus =
 export type VercelStatus = { state: "disconnected" } | { state: "connected"; projectName: string };
 
 /** A Vercel project the founder can bind the company to. */
-export type VercelProjectChoice = { id: string; name: string; teamId?: string };
+export type VercelProject = { id: string; name: string; teamId?: string };
+
+/** The latest production deployment of the bound Vercel project. */
+export type VercelDeployment = { url: string; state: string; createdAt: number };
 
 /** The product panel's real-world state. */
 export type ProductStatus = {
   /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
   entry: string | null;
   /** Latest production deployment when Vercel is connected. */
-  deploy: { url: string; state: string; createdAt: number } | null;
+  deploy: VercelDeployment | null;
 };
 
 /** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
 export type CharacterAssets = {
-  seed: string;
-  walkSheetDataUrl: string; // 192x256 PNG, 32x64 frames (down 0-5, left 6-11, right 12-17, up 18-23)
+  walkSheetDataUrl: string; // 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right
   portraitDataUrl: string; // 64x64 PNG
-  parts: {
-    sheetIndex: number; // 1..N — which bundled employee sheet this character uses
-  };
 };
 
 // ---- zod payload schemas (validation in main; keyed by method) --------------
-const BusinessTypeSchema = z.enum(["software", "game-studio", "vc", "ecommerce", "custom"]);
-// compile-time guarantee: the zod enum and the domain union stay in sync
-type _AssertBizSchemaCoversDomain =
-  BusinessTypeId extends z.infer<typeof BusinessTypeSchema> ? true : never;
-type _AssertBizDomainCoversSchema =
-  z.infer<typeof BusinessTypeSchema> extends BusinessTypeId ? true : never;
-const bizSchemaInSync: _AssertBizSchemaCoversDomain & _AssertBizDomainCoversSchema = true;
-void bizSchemaInSync;
+const BusinessTypeSchema = z.enum(BUSINESS_TYPE_IDS);
 
-const BudgetSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("infinite") }),
-  z.object({ mode: z.literal("capped"), capUsd: z.number().nonnegative() }),
-]);
-type _AssertBudgetSchema =
-  Budget extends z.infer<typeof BudgetSchema>
-    ? z.infer<typeof BudgetSchema> extends Budget
-      ? true
-      : never
-    : never;
-const budgetSchemaInSync: _AssertBudgetSchema = true;
-void budgetSchemaInSync;
-
-const CreateCompanySchema = z.object({
-  name: z.string(),
-  mission: z.string(),
-  businessType: BusinessTypeSchema,
-  founderName: z.string(),
-  founderSpriteSeed: z.string(),
-  // the company is born with its cap: agents run on real paid CLI calls, and a
-  // company that exists uncapped for even one scheduler tick can spend
-  budget: BudgetSchema,
+/** An LLM-proposed hire, as cast: the shape the roster generator must produce. */
+export const HireCandidateSchema = z.object({
+  name: z.string().min(1).max(40),
+  role: z
+    .string()
+    .min(2)
+    .max(32)
+    .transform((s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-")),
+  title: z.string().min(2).max(60),
+  persona: z.string().min(10).max(600),
+  blurb: z.string().min(2).max(120),
 });
-const HireProposalSchema = z.object({
-  name: z.string(),
-  role: z.string(),
-  title: z.string(),
-  persona: z.string(),
-  blurb: z.string(),
-  spriteSeed: z.string(),
-});
+export type HireCandidate = z.infer<typeof HireCandidateSchema>;
+/** A candidate the founder can hire: main has given them a look. */
+const HireProposalSchema = HireCandidateSchema.extend({ spriteSeed: z.string() });
+export type HireProposal = z.infer<typeof HireProposalSchema>;
 
 export const SCHEMAS = {
   composeCharacter: z.object({ seed: z.string() }),
-  createCompany: CreateCompanySchema,
+  createCompany: z.object({
+    name: z.string(),
+    mission: z.string(),
+    businessType: BusinessTypeSchema,
+    founderName: z.string(),
+    founderSpriteSeed: z.string(),
+    // the company is born with its cap: agents run on real paid CLI calls, and a
+    // company that exists uncapped for even one scheduler tick can spend
+    budget: BudgetSchema,
+  }),
   setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
   listEmployees: z.object({ companyId: z.string() }),
   listTeams: z.object({ companyId: z.string() }),
   teamMessages: z.object({ teamId: z.string(), limit: z.number().int().optional() }),
   postTeamChat: z.object({ teamId: z.string(), text: z.string().min(1).max(2000) }),
   setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
-  listTasks: z.object({ companyId: z.string() }),
+  listTasks: z.object({
+    companyId: z.string(),
+    assigneeId: z.string().optional(),
+    status: z.array(z.enum(TASK_STATUSES)).optional(),
+  }),
   assignTask: z.object({ taskId: z.string(), employeeId: z.string() }),
   answerQuestion: z.object({ taskId: z.string(), answer: z.string() }),
   resolveApproval: z.object({ taskId: z.string(), approved: z.boolean() }),
@@ -147,77 +128,68 @@ export const SCHEMAS = {
   saveOfficeDesign: z.object({ json: z.string() }),
 } satisfies Partial<Record<IpcMethod, z.ZodTypeAny>>;
 
-// ---- per-method contract: payload + result/event types ---------------------
-// Every method appears here exactly once. payload is `void` for invoke-void.
-export interface Contract {
-  hasAuth: { payload: void; result: { ok: boolean } };
-  startLogin: { payload: void; result: { started: boolean } };
-  onAuthEvent: { payload: void; result: AuthFlowEvent };
-  composeCharacter: { payload: { seed: string }; result: CharacterAssets };
-  getFounderChoices: { payload: void; result: FounderChoice[] };
-  generateHires: {
-    payload: { companyName: string; mission: string; businessType: BusinessTypeId };
-    result: HireProposal[];
-  };
-  batchHire: { payload: { companyId: string; hires: HireProposal[] }; result: Employee[] };
-  completeOnboarding: { payload: { companyId: string }; result: Company };
+// ---- per-method contract -----------------------------------------------------
+// A method's payload IS its schema's output; only results are declared here,
+// once per method (events list what they carry as their result).
+interface Results {
+  hasAuth: { ok: boolean };
+  startLogin: { started: boolean };
+  onAuthEvent: AuthFlowEvent;
+  composeCharacter: CharacterAssets;
+  getFounderChoices: FounderChoice[];
+  generateHires: HireProposal[];
+  batchHire: Employee[];
+  completeOnboarding: Company;
 
-  getCompany: { payload: void; result: Company | null };
-  createCompany: { payload: z.infer<typeof CreateCompanySchema>; result: Company };
-  setAutopilot: { payload: { companyId: string; running: boolean }; result: Company };
-  setBudget: { payload: { companyId: string; budget: Budget }; result: Company };
-  resetSpend: { payload: { companyId: string }; result: Company };
+  getCompany: Company | null;
+  createCompany: Company;
+  setAutopilot: Company;
+  setBudget: Company;
+  resetSpend: Company;
 
-  resetGame: { payload: void; result: { ok: boolean } };
+  resetGame: { ok: boolean };
 
-  stripeStatus: { payload: void; result: StripeStatus };
-  stripeConnect: { payload: { companyId: string }; result: { started: boolean } };
-  stripeDisconnect: { payload: { companyId: string }; result: { ok: boolean } };
-  onStripeStatus: { payload: void; result: StripeStatus };
+  stripeStatus: StripeStatus;
+  stripeConnect: { started: boolean };
+  stripeDisconnect: { ok: boolean };
+  onStripeStatus: StripeStatus;
 
-  vercelStatus: { payload: void; result: VercelStatus };
-  vercelListProjects: {
-    payload: { token: string };
-    result: { ok: boolean; account?: string; projects: VercelProjectChoice[] };
-  };
-  vercelConnect: {
-    payload: {
-      companyId: string;
-      token: string;
-      projectId: string;
-      projectName: string;
-      teamId?: string;
-    };
-    result: { ok: boolean };
-  };
-  vercelDisconnect: { payload: { companyId: string }; result: { ok: boolean } };
-  productStatus: { payload: { companyId: string }; result: ProductStatus };
+  vercelStatus: VercelStatus;
+  vercelListProjects: { ok: boolean; account?: string; projects: VercelProject[] };
+  vercelConnect: { ok: boolean };
+  vercelDisconnect: { ok: boolean };
+  productStatus: ProductStatus;
 
-  listEmployees: { payload: { companyId: string }; result: Employee[] };
+  listEmployees: Employee[];
 
-  listTeams: { payload: { companyId: string }; result: Team[] };
-  teamMessages: { payload: { teamId: string; limit?: number }; result: TeamMessage[] };
-  postTeamChat: { payload: { teamId: string; text: string }; result: { ok: boolean } };
-  setMaxAgents: { payload: { companyId: string; maxAgents: number }; result: Company };
+  listTeams: Team[];
+  teamMessages: TeamMessage[];
+  postTeamChat: { ok: boolean };
+  setMaxAgents: Company;
 
-  listTasks: { payload: { companyId: string }; result: Task[] };
-  assignTask: { payload: { taskId: string; employeeId: string }; result: Task };
-  answerQuestion: { payload: { taskId: string; answer: string }; result: Task };
-  resolveApproval: { payload: { taskId: string; approved: boolean }; result: Task };
-  openCompanyPath: { payload: { companyId: string; rel: string }; result: { ok: boolean } };
-  openProduct: { payload: { companyId: string }; result: { ok: boolean; opened: string } };
+  listTasks: Task[];
+  assignTask: Task;
+  answerQuestion: Task;
+  resolveApproval: Task;
+  openCompanyPath: { ok: boolean };
+  openProduct: { ok: boolean; opened: string };
 
-  onActivity: { payload: void; result: ActivityEvent };
+  onActivity: ActivityEvent;
 
-  saveOfficeDesign: { payload: { json: string }; result: { ok: boolean } };
-  loadOfficeDesign: { payload: void; result: { layout: JsonValue | null } };
+  saveOfficeDesign: { ok: boolean };
+  loadOfficeDesign: { layout: JsonValue | null };
 }
 
-// compile-time guarantee: Contract keys == channel keys
-type _AssertContractCoversChannels = IpcMethod extends keyof Contract ? true : never;
-type _AssertChannelsCoverContract = keyof Contract extends IpcMethod ? true : never;
-const contractInSync: _AssertContractCoversChannels & _AssertChannelsCoverContract = true;
-void contractInSync;
+type Payload<M extends IpcMethod> = M extends keyof typeof SCHEMAS
+  ? z.infer<(typeof SCHEMAS)[M]>
+  : void;
+
+export type Contract = { [M in IpcMethod]: { payload: Payload<M>; result: Results[M] } };
+
+// compile-time guarantee: every result names a channel (the reverse is checked by Contract itself)
+type _AssertResultsAreChannels = Exclude<keyof Results, IpcMethod> extends never ? true : never;
+const resultsInSync: _AssertResultsAreChannels = true;
+void resultsInSync;
 
 // ---- derived: renderer-facing bridge shape ---------------------------------
 export type AppBridge = {
@@ -225,11 +197,9 @@ export type AppBridge = {
     ? () => Promise<Contract[M]["result"]>
     : IpcKind<M> extends "invoke"
       ? (payload: Contract[M]["payload"]) => Promise<Contract[M]["result"]>
-      : IpcKind<M> extends "send"
-        ? (payload: Contract[M]["payload"]) => void
-        : IpcKind<M> extends "event"
-          ? (listener: (e: Contract[M]["result"]) => void) => () => void
-          : never;
+      : IpcKind<M> extends "event"
+        ? (listener: (e: Contract[M]["result"]) => void) => () => void
+        : never;
 };
 
 // ---- derived: handler signature main must implement ------------------------
@@ -238,6 +208,4 @@ export type IpcHandler<M extends IpcMethod> =
     ? () => Contract[M]["result"] | Promise<Contract[M]["result"]>
     : IpcKind<M> extends "invoke"
       ? (payload: Contract[M]["payload"]) => Contract[M]["result"] | Promise<Contract[M]["result"]>
-      : IpcKind<M> extends "send"
-        ? (payload: Contract[M]["payload"]) => void
-        : never;
+      : never;

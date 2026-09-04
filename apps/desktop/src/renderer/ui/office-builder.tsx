@@ -522,18 +522,19 @@ export function OfficeBuilder() {
 
     if (selectedUids.length === 0) return;
     const step = e.shiftKey ? (snap > 1 ? snap : 10) : 1;
-    const d = {
-      ArrowLeft: [-step, 0],
-      ArrowRight: [step, 0],
-      ArrowUp: [0, -step],
-      ArrowDown: [0, step],
-    }[e.key];
+    const nudge = new Map<string, PixelPoint>([
+      ["ArrowLeft", { x: -step, y: 0 }],
+      ["ArrowRight", { x: step, y: 0 }],
+      ["ArrowUp", { x: 0, y: -step }],
+      ["ArrowDown", { x: 0, y: step }],
+    ]);
+    const d = nudge.get(e.key);
     const sel = new Set(selectedUids);
     if (d) {
       e.preventDefault();
       commit((L) => ({
         ...L,
-        objects: L.objects.map((o) => (sel.has(o.uid) ? moveObject(o, o.x + d[0], o.y + d[1]) : o)),
+        objects: L.objects.map((o) => (sel.has(o.uid) ? moveObject(o, o.x + d.x, o.y + d.y) : o)),
       }));
     } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();

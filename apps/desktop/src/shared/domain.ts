@@ -1,5 +1,5 @@
 // Domain shapes shared across main (control plane) and renderer (game UI).
-// Pure types — safe to import anywhere.
+// Types and the zod schemas they are inferred from — safe to import anywhere.
 //
 // Identity: ids ARE agentcompanies/v1 slugs (URL-safe, human-readable). A
 // company's id is its folder name under ~/.idlebiz; an employee's id is its
@@ -13,6 +13,8 @@
  */
 export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
 
+import { z } from "zod";
+
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
 
@@ -21,17 +23,24 @@ export const DEFAULT_MAX_AGENTS = 12;
 // question gets an answer box; an integration request renders a [Connect]
 // button and the task auto-resumes once the founder connects.
 
-export type IntegrationKind = "vercel" | "stripe";
+export const INTEGRATION_KINDS = ["vercel", "stripe"] as const;
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
   vercel: "Vercel",
   stripe: "Stripe",
 } satisfies Record<IntegrationKind, string>;
 
-export type BlockedAsk =
-  | { type: "question"; question: string }
-  | { type: "integration"; integration: IntegrationKind; reason: string }
-  | { type: "approval"; command: string };
+export const BlockedAskSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("question"), question: z.string() }),
+  z.object({
+    type: z.literal("integration"),
+    integration: z.enum(INTEGRATION_KINDS),
+    reason: z.string(),
+  }),
+  z.object({ type: z.literal("approval"), command: z.string() }),
+]);
+export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
 // TASK.md keeps a single human-editable scalar; the marker syntax exists ONLY
 // at this persistence boundary — everything in memory is the typed union.
@@ -44,13 +53,10 @@ export function serializeBlockedAsk(a: BlockedAsk): string {
 export function parseBlockedAsk(s: string): BlockedAsk {
   const approval = /^\[approve\]\s*([\s\S]*)$/.exec(s);
   if (approval) return { type: "approval", command: (approval[1] ?? "").trim() };
-  const m = /^\[connect:(vercel|stripe)\]\s*([\s\S]*)$/.exec(s);
-  if (!m) return { type: "question", question: s };
-  return {
-    type: "integration",
-    integration: m[1] === "vercel" ? "vercel" : "stripe",
-    reason: (m[2] ?? "").trim(),
-  };
+  const m = /^\[connect:([a-z]+)\]\s*([\s\S]*)$/.exec(s);
+  const integration = INTEGRATION_KINDS.find((k) => k === m?.[1]);
+  if (!integration) return { type: "question", question: s };
+  return { type: "integration", integration, reason: (m?.[2] ?? "").trim() };
 }
 
 // ---- command policy (founder sign-off) --------------------------------------
@@ -231,9 +237,10 @@ export function classifyCommand(command: string): CommandVerdict {
  * (`… 2>&1; echo "exit=$?"`) and collapse whitespace.
  *
  * Applied once where a command enters the game, so everything downstream —
- * the policy, the stored ask, the approval card, the approval key — sees the
- * same canonical string. Without it a retry of the same action reads as a new
- * one and re-asks, and the founder is shown shell plumbing they did not write.
+ * the policy, the stored ask, the approval card — sees the same canonical
+ * string, which is also the key for "the founder already approved this exact
+ * action". Without it a retry of the same action reads as a new one and
+ * re-asks, and the founder is shown shell plumbing they did not write.
  */
 export function normalizeCommand(command: string): string {
   return command
@@ -241,14 +248,6 @@ export function normalizeCommand(command: string): string {
     .replace(/\s*;\s*echo\s+["']?exit=\$\?["']?\s*$/, "")
     .trim()
     .replace(/\s+/g, " ");
-}
-
-/**
- * Key for "the founder already approved this exact action". Exact match on the
- * normalized form: a genuinely different command is a different decision.
- */
-export function approvalKey(command: string): string {
-  return normalizeCommand(command);
 }
 
 // ---- team-room mentions --------------------------------------------------------
@@ -274,17 +273,23 @@ export function resolveMentions(
   return [...ids];
 }
 
-export type TaskStatus =
-  | "todo"
-  | "queued"
-  | "running"
-  | "blocked"
-  | "done"
-  | "failed"
-  | "dead" // dead-letter: failed maxAttempts times, no longer auto-retried
-  | "cancelled";
-export type TaskPriority = "low" | "medium" | "high";
+/** dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried. */
+export const TASK_STATUSES = ["todo", "queued", "running", "blocked", "done", "dead"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+/** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 type EmployeeStatus = "idle" | "working";
+
+/** How a run ended, as the scheduler settles the task and the office hears about it. */
+export const RunOutcomeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("done") }),
+  z.object({ kind: z.literal("blocked"), ask: BlockedAskSchema }),
+  // the CLI hit its usage limit: park until `until` without burning an attempt
+  z.object({ kind: z.literal("resting"), until: z.number(), error: z.string() }),
+  z.object({ kind: z.literal("failed"), error: z.string() }),
+]);
+export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
 // ---- queue reliability (TinyAGI-style retry/dead-letter) --------------------
 
@@ -308,8 +313,11 @@ interface BusinessTypeRoutine {
   instruction: string;
 }
 
+export const BUSINESS_TYPE_IDS = ["software", "game-studio", "vc", "ecommerce", "custom"] as const;
+export type BusinessTypeId = (typeof BUSINESS_TYPE_IDS)[number];
+
 export interface BusinessType {
-  id: "software" | "game-studio" | "vc" | "ecommerce" | "custom";
+  id: BusinessTypeId;
   label: string;
   emoji: string;
   pitchPlaceholder: string;
@@ -379,8 +387,6 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   },
 ];
 
-export type BusinessTypeId = BusinessType["id"];
-
 export function businessTypeById(id: BusinessTypeId): BusinessType {
   const found = BUSINESS_TYPES.find((b) => b.id === id);
   if (!found) throw new Error(`unknown business type ${id}`);
@@ -390,7 +396,11 @@ export function businessTypeById(id: BusinessTypeId): BusinessType {
 // ---- budget (real token spend) ----------------------------------------------
 
 /** Founder's AI spending budget. Infinite IS the off state — no third mode. */
-export type Budget = { mode: "infinite" } | { mode: "capped"; capUsd: number };
+export const BudgetSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("infinite") }),
+  z.object({ mode: z.literal("capped"), capUsd: z.number().nonnegative() }),
+]);
+export type Budget = z.infer<typeof BudgetSchema>;
 
 export function isOutOfBudget(co: Company): boolean {
   return co.budget.mode === "capped" && co.spentUsd >= co.budget.capUsd;
@@ -485,25 +495,4 @@ export interface Routine {
   intervalHours: number;
   role: string | null; // preferred assignee role (substring match), else anyone idle
   lastRunAt: number | null;
-}
-
-export type ActivityKind =
-  | "log"
-  | "tool_call"
-  | "status"
-  | "lifecycle"
-  | "thinking"
-  | "message"
-  | "chat"
-  | "ship";
-
-export interface ActivityEvent {
-  id?: number;
-  runId?: string | null;
-  taskId?: string | null;
-  employeeId?: string | null;
-  kind: ActivityKind;
-  message?: string | null;
-  payload?: unknown;
-  createdAt: number;
 }

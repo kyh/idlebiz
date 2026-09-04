@@ -416,9 +416,9 @@ export class NpcManager {
     return true;
   }
 
-  /** Real team-chat staging: walk to the named teammate (or just speak in place),
+  /** Real team-chat staging: walk to the teammate it was for (or just speak in place),
    *  deliver the message as a speech bubble, then head home. */
-  onChat(employeeId: string, message: string, targetName: string | null): void {
+  onChat(employeeId: string, message: string, to: string | null): void {
     const npc = this.npcs.get(employeeId);
     if (!npc || npc.phase === "queued") return;
 
@@ -430,9 +430,7 @@ export class NpcManager {
     const present = [...this.npcs.values()].filter(
       (n) => n.id !== employeeId && n.phase === "settled",
     );
-    const target =
-      (targetName && present.find((n) => n.name.toLowerCase() === targetName.toLowerCase())) ||
-      present[0];
+    const target = (to !== null && present.find((n) => n.id === to)) || present[0];
 
     // already busy walking (or nobody to visit) → just speak in place
     if (!target || npc.plan) {

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import type { BlockedAsk } from "@/shared/domain";
+import { INTEGRATION_KINDS, type BlockedAsk } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 
 // ---------------------------------------------------------------------------
@@ -34,7 +34,6 @@ export interface RunToolHooks {
 interface RunRecord {
   hooks: RunToolHooks;
   blocked: BlockedAsk | null;
-  companyId: string;
 }
 
 /**
@@ -48,14 +47,11 @@ function raise(record: RunRecord, ask: BlockedAsk): void {
 }
 
 interface RunRegistration {
-  employeeId: string;
-  companyId: string;
-  taskId?: string;
   hooks: RunToolHooks;
 }
 
 interface RunHandle {
-  /** Run-scoped env for the agent process (API URL + bearer token + ids). */
+  /** Run-scoped env for the agent process: the API URL and its bearer token. */
   env: Record<string, string>;
   /** What the agent reported back through the API during the run. */
   outcome(): { blocked: BlockedAsk | null };
@@ -83,7 +79,7 @@ const HireBody = z.object({
 });
 const ReleaseBody = z.object({ slug: z.string().min(1), reason: z.string().default("") });
 const RequestIntegrationBody = z.object({
-  kind: z.enum(["vercel", "stripe"]),
+  kind: z.enum(INTEGRATION_KINDS),
   reason: z.string().min(1),
 });
 
@@ -123,16 +119,10 @@ class ControlPlane {
 
   registerRun(reg: RunRegistration): RunHandle {
     const token = randomBytes(24).toString("base64url");
-    const record: RunRecord = { hooks: reg.hooks, blocked: null, companyId: reg.companyId };
+    const record: RunRecord = { hooks: reg.hooks, blocked: null };
     this.runs.set(token, record);
-    const base = {
-      IDLEBIZ_API_URL: this.baseUrl(),
-      IDLEBIZ_RUN_TOKEN: token,
-      IDLEBIZ_AGENT_ID: reg.employeeId,
-      IDLEBIZ_COMPANY_ID: reg.companyId,
-    };
     return {
-      env: reg.taskId ? { ...base, IDLEBIZ_TASK_ID: reg.taskId } : base,
+      env: { IDLEBIZ_API_URL: this.baseUrl(), IDLEBIZ_RUN_TOKEN: token },
       outcome: () => ({ blocked: record.blocked }),
       block: (ask: BlockedAsk) => raise(record, ask),
       release: () => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ENTITY_BAND_HEIGHT } from "./office-depth.ts";
+import { FRAME_H } from "./character-frame.ts";
+import { ENTITY_BAND_HEIGHT, type OfficeLayer } from "./office-depth.ts";
 import type { JsonValue } from "./json.ts";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ export interface PixelPoint {
   readonly y: number;
 }
 
-export type OfficeLayer = "floor" | "object" | "overhead";
+export type { OfficeLayer };
 
 // `objects` is stored in PAINT ORDER (back to front) — the ground and overhead
 // bands have no depth of their own, they simply stack in the order they appear.
@@ -39,8 +40,7 @@ export type OfficeLayer = "floor" | "object" | "overhead";
  * Characters sort a few px below their origin (characters.ts SOLE_OFFSET), so reserve a
  * sprite height at the top of the band for the ones standing at the world's bottom edge.
  */
-const CHAR_FRAME_H = 64;
-export const MAX_FLOOR_LINE = ENTITY_BAND_HEIGHT - CHAR_FRAME_H;
+export const MAX_FLOOR_LINE = ENTITY_BAND_HEIGHT - FRAME_H;
 
 /** A floor line the entity band can hold. Custom layouts are user input — bound it here. */
 const floorLineSchema = z.number().min(0).max(MAX_FLOOR_LINE);

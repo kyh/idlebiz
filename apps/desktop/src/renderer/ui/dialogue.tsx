@@ -8,7 +8,8 @@ import {
 } from "@/renderer/state/store";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { RichText } from "@/renderer/ui/linkify";
-import type { ActivityEvent, Employee, Task } from "@/shared/domain";
+import type { ActivityEvent, ActivityKind } from "@/shared/activity";
+import type { Employee, Task } from "@/shared/domain";
 
 const COLS = 1;
 
@@ -231,15 +232,13 @@ export function Dialogue() {
   if (!emp || !company) return null;
   const mine = activity.filter((a) => a.employeeId === emp.id);
   // what they SAY: the latest real utterance (chat/message/ship), Pokémon-style
-  const spoken = mine.filter(
-    (a) => (a.kind === "chat" || a.kind === "message" || a.kind === "ship") && a.message,
-  );
+  const spoken = mine.filter(isSpoken).filter((a) => a.message);
   const latest = spoken[spoken.length - 1];
   // what they're DOING: everything else stays a compact activity trail
   const trail: ActivityEvent[] = mine.filter((a) => a !== latest).slice(-3);
   const working = emp.status === "working";
   const running = tasks.find((t) => t.status === "running" || t.status === "queued");
-  const speech = latest?.message
+  const speech = latest
     ? latest.kind === "ship"
       ? `Shipped it! ${latest.message}`
       : latest.message
@@ -441,33 +440,33 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
   );
 }
 
+interface LineStyle {
+  color: string;
+  prefix: string;
+}
+/** How each kind of line reads in the trail; anything else is a quiet dot. */
+const LINE_STYLES = new Map<ActivityKind, LineStyle>([
+  ["tool_call", { color: "#2f6fb0", prefix: "⚙ " }],
+  ["message", { color: "#2b2f46", prefix: "💬 " }],
+  ["ship", { color: "#2e8a4e", prefix: "📦 " }],
+  ["chat", { color: "#5a4fae", prefix: "🗨 " }],
+  ["status", { color: "#6d7187", prefix: "› " }],
+]);
+const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
+
+/** What they SAY, as opposed to what they do: chat, a message, a ship. */
+const isSpoken = (
+  a: ActivityEvent,
+): a is Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }> =>
+  a.kind === "chat" || a.kind === "message" || a.kind === "ship";
+
 function FeedLine({ e, companyId }: { e: ActivityEvent; companyId: string }) {
-  const color =
-    e.kind === "tool_call"
-      ? "#2f6fb0"
-      : e.kind === "message"
-        ? "#2b2f46"
-        : e.kind === "ship"
-          ? "#2e8a4e"
-          : e.kind === "chat"
-            ? "#5a4fae"
-            : "#6d7187";
-  const prefix =
-    e.kind === "tool_call"
-      ? "⚙ "
-      : e.kind === "message"
-        ? "💬 "
-        : e.kind === "ship"
-          ? "📦 "
-          : e.kind === "chat"
-            ? "🗨 "
-            : e.kind === "status"
-              ? "› "
-              : "· ";
+  const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
+  const text = "message" in e ? e.message : e.kind;
   return (
     <div className="break-words" style={{ color }}>
       {prefix}
-      <RichText text={(e.message ?? e.kind).slice(0, 300)} companyId={companyId} />
+      <RichText text={text.slice(0, 300)} companyId={companyId} />
     </div>
   );
 }

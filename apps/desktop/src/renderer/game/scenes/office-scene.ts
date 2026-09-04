@@ -1,5 +1,4 @@
 import Phaser from "phaser";
-import { z } from "zod";
 import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import {
   loadCharacter,
@@ -42,7 +41,8 @@ import {
   tileOf,
   walkableNode,
 } from "@/shared/office-grid";
-import type { ActivityEvent, Employee } from "@/shared/domain";
+import type { ActivityEvent } from "@/shared/activity";
+import type { Employee } from "@/shared/domain";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },
@@ -52,9 +52,6 @@ const FACING_OFFSET = {
 } satisfies Record<Dir, { x: number; y: number }>;
 
 const WORKSPACE_KIT_PATH = "workspace-kit";
-
-/** tool_call payloads carry ACP's `kind` beside the raw args; only the kind matters here. */
-const ToolCallPayload = z.object({ kind: z.string().optional() });
 
 /** How far above their workstation a seated employee is lifted (see seatDepth). */
 const SEAT_LIFT = 0.25;
@@ -83,7 +80,7 @@ interface ClickWalk {
 export class OfficeScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Sprite;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys?: Record<string, Phaser.Input.Keyboard.Key>;
+  private keys?: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
   private founderSeed = "founder-player-001";
   private playerKey = "player";
@@ -306,7 +303,7 @@ export class OfficeScene extends Phaser.Scene {
     ctx.drawImage(source, 0, 0);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
     const opaque = new Uint8Array(canvas.width * canvas.height);
-    for (let i = 0; i < opaque.length; i++) opaque[i] = pixels[i * 4 + 3] > 0 ? 1 : 0;
+    for (let i = 0; i < opaque.length; i++) opaque[i] = (pixels[i * 4 + 3] ?? 0) > 0 ? 1 : 0;
     const mask: OpaqueMask = { opaque, w: canvas.width, h: canvas.height };
     this.masks.set(key, mask);
     return mask;
@@ -391,32 +388,29 @@ export class OfficeScene extends Phaser.Scene {
     const bridge = window.appBridge;
     if (!bridge) return;
     this.activityUnsub = bridge.onActivity((e: ActivityEvent) => {
-      if (!e.employeeId) return;
-      if (e.kind === "chat" && e.message != null) {
-        const m = /^→ ([^(]+) \(/.exec(e.message);
-        this.npcs?.onChat(e.employeeId, e.message, m?.[1]?.trim() ?? null);
-        return;
-      }
-      if (e.kind === "tool_call") {
+      const employeeId = e.employeeId;
+      if (!employeeId) return;
+      switch (e.kind) {
+        case "chat":
+          this.npcs?.onChat(employeeId, e.message, e.payload.to);
+          return;
         // what they are doing right now, as the sprite can show it
-        const payload = ToolCallPayload.safeParse(e.payload);
-        const kind = payload.success ? payload.data.kind : undefined;
-        this.npcs?.onTool(e.employeeId, poseForToolKind(kind));
-        return;
-      }
-      if (e.kind === "lifecycle") {
+        case "tool_call":
+          this.npcs?.onTool(employeeId, poseForToolKind(e.payload.kind));
+          return;
         // an ask raised mid-run: the "!" goes up now, not when the run settles
-        if (e.message === "run.ask") this.npcs?.onAsk(e.employeeId);
-        return;
+        case "run.ask":
+          this.npcs?.onAsk(employeeId);
+          return;
+        case "status": {
+          const next: NpcState =
+            e.message === "running" ? "working" : e.message === "blocked" ? "blocked" : "idle";
+          this.npcs?.setState(employeeId, next);
+          return;
+        }
+        default:
+          return;
       }
-      if (e.kind !== "status") return;
-      const status = z
-        .enum(["running", "done", "failed", "cancelled", "blocked"])
-        .safeParse(e.message);
-      if (!status.success) return;
-      const next: NpcState =
-        status.data === "running" ? "working" : status.data === "blocked" ? "blocked" : "idle";
-      this.npcs?.setState(e.employeeId, next);
     });
   }
 

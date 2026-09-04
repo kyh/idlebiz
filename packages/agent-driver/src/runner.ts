@@ -6,9 +6,8 @@
  * imports beyond env reads is what lets `RunnerId` be type-re-exported into
  * renderer-safe shared code.
  */
-export type RunnerId = "claude" | "codex";
-
-export const RUNNER_IDS: readonly RunnerId[] = ["claude", "codex"];
+export const RUNNER_IDS = ["claude", "codex"] as const;
+export type RunnerId = (typeof RUNNER_IDS)[number];
 
 export const isRunnerId = (v: string): v is RunnerId => RUNNER_IDS.some((id) => id === v);
 

@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
-import { initStore } from "@/main/store/store";
 import * as store from "@/main/store/store";
+import { activityEvents, publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { scheduler } from "@/main/scheduler";
@@ -13,8 +13,6 @@ import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
 import { readMetricsConfig, writeMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
 import { validateToken, listProjects, latestDeployment } from "@/main/vercel";
-import { pluginHost } from "@/main/plugins";
-import type { IdleBizPlugin } from "@/main/plugins";
 import { exportSecretsToEnv, getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import {
   initStripeConnect,
@@ -24,10 +22,11 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { approvalKey, isOutOfBudget } from "@/shared/domain";
+import { isOutOfBudget } from "@/shared/domain";
 import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
 import { layoutIssues } from "@/shared/office-grid";
-import type { ActivityEvent, Task } from "@/shared/domain";
+import type { ActivityEvent } from "@/shared/activity";
+import type { Task } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -47,12 +46,10 @@ function runMetricsPulse(): void {
     const live = snap.users !== null || snap.revenue !== null;
     if (live) store.setRealMetrics(company.id, snap);
     if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
-    broadcast("onActivity", {
-      kind: "lifecycle",
-      message: "metrics.pulse",
-      payload: { users: snap.users, revenue: snap.revenue, real: live },
-      createdAt: Date.now(),
-    });
+    publishActivity(
+      { kind: "metrics.pulse", payload: { users: snap.users, revenue: snap.revenue } },
+      { persist: false },
+    );
   })();
 }
 
@@ -75,28 +72,14 @@ async function resetGame(): Promise<{ ok: boolean }> {
   return { ok: true };
 }
 
-/**
- * Register the built-in plugins. Plugins observe the activity stream and hook
- * the run lifecycle (see main/plugins.ts); this is the seam third-party hooks
- * would extend. The shipped example celebrates shipping milestones in the room.
- */
-function registerBuiltinPlugins(): void {
-  const shipMilestones: IdleBizPlugin = {
-    name: "ship-milestones",
-    onActivity: (e) => {
-      if (e.kind !== "ship" || !e.employeeId) return;
-      const co = store.getDefaultCompany();
-      const team = store.teamForEmployee(e.employeeId);
-      if (co && team && co.ships > 0 && co.ships % 10 === 0) {
-        store.postTeamMessage(
-          team.id,
-          null,
-          `🎉 Milestone: ${co.ships} things shipped — keep going!`,
-        );
-      }
-    },
-  };
-  pluginHost.register(shipMilestones);
+/** Every tenth ship gets a cheer in the team room. */
+function celebrateShipMilestones(e: ActivityEvent): void {
+  if (e.kind !== "ship" || !e.employeeId) return;
+  const co = store.getDefaultCompany();
+  const team = store.teamForEmployee(e.employeeId);
+  if (co && team && co.ships > 0 && co.ships % 10 === 0) {
+    store.postTeamMessage(team.id, null, `🎉 Milestone: ${co.ships} things shipped — keep going!`);
+  }
 }
 
 /** The workspace PRODUCT.md `entry:` convention — how the team points at the product. */
@@ -203,17 +186,7 @@ function registerIpcHandlers(): void {
   handle("setBudget", ({ companyId, budget }) => {
     const company = store.setBudget(companyId, budget);
     // setting a cap below what's already spent pauses the office immediately
-    if (isOutOfBudget(company) && company.autopilot) {
-      store.setAutopilot(companyId, false);
-      const e: ActivityEvent = {
-        kind: "lifecycle",
-        message: "budget.exhausted",
-        payload: { spentUsd: company.spentUsd, budget: company.budget },
-        createdAt: Date.now(),
-      };
-      store.logActivity(e);
-      broadcast("onActivity", e);
-    }
+    if (isOutOfBudget(company)) scheduler.haltForBudget(company);
     return store.getCompany(companyId) ?? company;
   });
 
@@ -314,7 +287,13 @@ function registerIpcHandlers(): void {
 
   handle("setMaxAgents", ({ companyId, maxAgents }) => store.setMaxAgents(companyId, maxAgents));
 
-  handle("listTasks", ({ companyId }) => store.listTasks(companyId));
+  // filtered in main: the full history is thousands of briefs the renderer never shows
+  handle("listTasks", ({ companyId, assigneeId, status }) =>
+    store
+      .listTasks(companyId)
+      .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
+      .filter((t) => status === undefined || status.includes(t.status)),
+  );
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 
@@ -328,7 +307,7 @@ function registerIpcHandlers(): void {
       throw new Error("task is not awaiting an approval");
     // Record before resuming: the agent's retry hits the hook again, and it
     // must find the sign-off already there.
-    if (approved) store.grantApproval(task.companyId, approvalKey(task.blocked.command));
+    if (approved) store.grantApproval(task.companyId, task.blocked.command);
     return resumeBlocked(
       taskId,
       approved
@@ -415,21 +394,19 @@ function ensureWindow(): void {
 
 void (async () => {
   await app.whenReady();
-  initStore();
+  store.initStore();
   exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
   agentDriver.init(); // probe installed CLIs (claude / codex)
   await controlPlane.start(); // loopback API running agents curl back into
-  registerBuiltinPlugins();
   registerIpcHandlers();
 
-  // stream scheduler activity to all windows
-  scheduler.events.on("activity", (e: ActivityEvent) => broadcast("onActivity", e));
+  activityEvents.on("activity", (e) => broadcast("onActivity", e));
+  activityEvents.on("activity", celebrateShipMilestones);
   // start the idle-game loop: idle employees self-direct work while autopilot is on
   scheduler.start();
 
-  // periodic business pulse. With a metrics.json configured the REAL providers
-  // (Stripe revenue + customers, Plausible visitors, custom endpoint) overwrite
-  // the numbers; otherwise the light simulation ticks. (Not logged to disk.)
+  // periodic business pulse: with a metrics.json configured, the real providers
+  // (Stripe revenue + customers, Vercel) refresh the company's numbers
   metricsTimer = setInterval(runMetricsPulse, PULSE_MS);
 
   initStripeConnect({
@@ -449,14 +426,7 @@ void (async () => {
       const company = store.getDefaultCompany();
       if (!company) return;
       store.setAutopilot(company.id, on);
-      const e: ActivityEvent = {
-        kind: "lifecycle",
-        message: "autopilot.changed",
-        payload: { on },
-        createdAt: Date.now(),
-      };
-      store.logActivity(e);
-      broadcast("onActivity", e);
+      publishActivity({ kind: "autopilot.changed", payload: { on } });
     },
   });
 

@@ -143,15 +143,24 @@ export interface AcpTurnOptions {
   onEvent: (e: AgentEvent) => void;
 }
 
+/** How a turn ended: the agent finished its turn, or something stopped it. */
+export type AcpTurnEnd =
+  | { readonly kind: "completed" }
+  | { readonly kind: "failed"; readonly error: string };
+
 export interface AcpTurnResult {
-  ok: boolean;
+  end: AcpTurnEnd;
   /** The agent's final message (the run summary). */
   summary: string;
   /** Session id — persist it to continue this employee's context later. */
   sessionId?: string;
+  /** The stored session was resumed rather than started fresh. */
+  resumed: boolean;
   usage: AgentUsage;
-  error?: string;
 }
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
+const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
   return new Promise((resolvePromise) => {
@@ -161,6 +170,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionId: string | undefined;
+    let resumed = false;
     let lastMessage = "";
     let pending = "";
     let billed = 0;
@@ -200,55 +210,45 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     };
 
     /** A turn that died mid-flight still spent what it spent. */
-    const result = (ok: boolean, error?: string): AcpTurnResult => ({
-      ok,
+    const result = (end: AcpTurnEnd): AcpTurnResult => ({
+      end,
       summary: lastMessage,
       sessionId,
+      resumed,
       usage: total,
-      error,
     });
+    const failed = (error: string): AcpTurnResult => result({ kind: "failed", error });
 
     const pokeIdle = (): void => {
       if (opts.idleTimeoutMs <= 0 || settled) return;
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
-        settle(
-          result(false, `no output for ${fmtMs(opts.idleTimeoutMs)} — treating the agent as hung`),
-        );
+        settle(failed(`no output for ${fmtMs(opts.idleTimeoutMs)} — treating the agent as hung`));
       }, opts.idleTimeoutMs);
       idleTimer.unref?.();
     };
 
     const [bin, ...args] = opts.agent.command;
     if (bin === undefined) {
-      settle(result(false, "no ACP agent command configured"));
+      settle(failed("no ACP agent command configured"));
       return;
     }
 
     try {
       child = spawn(bin, args, {
         cwd: opts.cwd,
-        // ELECTRON_RUN_AS_NODE: in a packaged app `process.execPath` is the
-        // Electron binary, which would otherwise treat the agent's entry file
-        // as a new Electron app instead of running it as node. Harmless when
-        // the parent is a plain node process.
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...opts.agent.env, ...opts.env },
+        env: { ...process.env, ...opts.agent.env, ...opts.env },
         stdio: ["pipe", "pipe", "pipe"],
         signal: opts.signal,
       });
     } catch (err) {
-      settle(
-        result(
-          false,
-          `failed to spawn ${bin}: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
+      settle(failed(`failed to spawn ${bin}: ${errorMessage(err)}`));
       return;
     }
 
     const { stdin, stdout, stderr } = child;
     if (!stdin || !stdout || !stderr) {
-      settle(result(false, `${bin}: stdio pipes unavailable`));
+      settle(failed(`${bin}: stdio pipes unavailable`));
       return;
     }
     // The agent keeps writing for a moment after we kill it; that EPIPE is
@@ -259,15 +259,15 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       pokeIdle();
       stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_MAX);
     });
-    child.on("error", (err: Error) => settle(result(false, `${bin}: ${err.message}`)));
+    child.on("error", (err: Error) => settle(failed(`${bin}: ${err.message}`)));
     child.on("close", (code) =>
-      settle(result(false, stderrTail.trim() || `${bin} exited with code ${code} mid-turn`)),
+      settle(failed(stderrTail.trim() || `${bin} exited with code ${code} mid-turn`)),
     );
 
     pokeIdle();
     if (opts.maxSessionMs > 0) {
       sessionTimer = setTimeout(() => {
-        settle(result(false, `exceeded the ${fmtMs(opts.maxSessionMs)} session limit — killed`));
+        settle(failed(`exceeded the ${fmtMs(opts.maxSessionMs)} session limit — killed`));
       }, opts.maxSessionMs);
       sessionTimer.unref?.();
     }
@@ -345,7 +345,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
          * the wake-delta prompt assumes. A refusal falls through to a new
          * session and the caller clears the dead id.
          */
-        const resumed =
+        const resumedId =
           opts.resumeSessionId !== undefined && init.agentCapabilities?.loadSession === true
             ? await agent
                 .request("session/resume", {
@@ -356,6 +356,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
                 .then(() => opts.resumeSessionId)
                 .catch(() => undefined)
             : undefined;
+        resumed = resumedId !== undefined;
 
         const startFresh = async (): Promise<string> => {
           const builder = agent.buildSession(opts.cwd);
@@ -364,7 +365,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           }
           return (await builder.start()).sessionId;
         };
-        sessionId = resumed ?? (await startFresh());
+        sessionId = resumedId ?? (await startFresh());
 
         // Every turn, not just fresh ones: a resumed session comes back in the
         // agent's default mode, and codex's default runs commands without ever
@@ -384,7 +385,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         // A resumed session already carries the instructions; sending them
         // again would re-pay for the whole system prompt every wake.
         const text =
-          resumed === undefined && opts.systemPrompt
+          !resumed && opts.systemPrompt
             ? `${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`
             : opts.prompt;
         const res = await agent.request("session/prompt", {
@@ -406,12 +407,14 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         return res.stopReason;
       })
       .then((stopReason) => {
-        const ok = stopReason === "end_turn" || stopReason === "max_tokens";
-        settle(result(ok, ok ? undefined : stderrTail.trim() || `agent stopped: ${stopReason}`));
+        const completed = stopReason === "end_turn" || stopReason === "max_tokens";
+        settle(
+          completed
+            ? result({ kind: "completed" })
+            : failed(stderrTail.trim() || `agent stopped: ${stopReason}`),
+        );
         return null;
       })
-      .catch((cause: unknown) =>
-        settle(result(false, cause instanceof Error ? cause.message : String(cause))),
-      );
+      .catch((cause: unknown) => settle(failed(errorMessage(cause))));
   });
 }

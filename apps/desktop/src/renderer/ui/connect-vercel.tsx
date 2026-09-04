@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore, connectVercel, disconnectVercel, setModalOpen } from "@/renderer/state/store";
-import type { VercelProjectChoice } from "@/shared/ipc-registry";
+import type { VercelProject } from "@/shared/ipc-registry";
 
 /**
  * Connect Vercel with a personal access token: paste → validate + list
@@ -13,7 +13,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [account, setAccount] = useState<string | undefined>(undefined);
-  const [projects, setProjects] = useState<VercelProjectChoice[] | null>(null);
+  const [projects, setProjects] = useState<VercelProject[] | null>(null);
 
   useEffect(() => {
     setModalOpen(true);
@@ -41,7 +41,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const pick = async (p: VercelProjectChoice) => {
+  const pick = async (p: VercelProject) => {
     setBusy(true);
     setError(null);
     try {

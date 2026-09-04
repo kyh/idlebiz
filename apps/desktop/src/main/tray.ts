@@ -1,7 +1,7 @@
 import { Menu, Notification, Tray, app, nativeImage } from "electron";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
+import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
-import { scheduler } from "@/main/scheduler";
 import * as store from "@/main/store/store";
 import { formatTime } from "@/shared/format";
 
@@ -97,7 +97,7 @@ class AppTray {
     // status decays on its own (resting countdowns, run ends while closed)
     setInterval(() => this.rebuild(), 60_000).unref?.();
     // and reacts to the office: debounce the activity stream into rebuilds
-    scheduler.events.on("activity", () => this.scheduleRebuild());
+    activityEvents.on("activity", () => this.scheduleRebuild());
   }
 
   /**

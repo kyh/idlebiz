@@ -1,8 +1,9 @@
-import sharp, { type OverlayOptions } from "sharp";
+import sharp from "sharp";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { app } from "electron";
 import type { CharacterAssets } from "@/shared/ipc-registry";
+import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 
 // ---------------------------------------------------------------------------
 // Build a unique employee sprite from bundled artist-assembled character
@@ -25,24 +26,22 @@ import type { CharacterAssets } from "@/shared/ipc-registry";
 // resources/ (electron-builder files config) for this to keep resolving.
 const EMPLOYEE_SHEET_DIR = join(app.getAppPath(), "resources", "employee-sheets");
 
-// 32px-tier sheet layout. Frames are 32w x 64h. Animation bands stack at
-// 64px; the walk band sits at y=128. Within a band the 24 frames are grouped by
-// direction (6 each). Verified against the real pixels: cols 0-5 face RIGHT,
-// 6-11 UP, 12-17 LEFT, 18-23 DOWN. (Earlier we had left/right swapped, which made
-// the player moonwalk — walking left played the right-facing strip.)
-const FRAME_W = 32;
-const FRAME_H = 64;
+// 32px-tier sheet layout. Animation bands stack at 64px; the walk band sits at
+// y=128. Within a band the 24 frames are grouped by direction (6 each). Verified
+// against the real pixels: cols 0-5 face RIGHT, 6-11 UP, 12-17 LEFT, 18-23 DOWN —
+// swapping left and right makes the player moonwalk.
 const WALK_TOP = 128;
 const SIT_TOP = 256; // sitting band: 6 frames per facing, two facings
 const WALK_FRAMES = 6;
-// output row order -> [source band top, source column where the 6 frames begin]
-const OUT_ROWS: ReadonlyArray<readonly [string, number, number]> = [
-  ["down", WALK_TOP, 18],
-  ["left", WALK_TOP, 12],
-  ["right", WALK_TOP, 0],
-  ["up", WALK_TOP, 6],
-  ["sit-left", SIT_TOP, 0],
-  ["sit-right", SIT_TOP, 6],
+// Output rows in order — walk down, left, right, up, then sit-left, sit-right
+// (the order characters.ts reads them in) — as [source band top, first column].
+const OUT_ROWS: ReadonlyArray<readonly [top: number, startCol: number]> = [
+  [WALK_TOP, 18],
+  [WALK_TOP, 12],
+  [WALK_TOP, 0],
+  [WALK_TOP, 6],
+  [SIT_TOP, 0],
+  [SIT_TOP, 6],
 ];
 
 let employeeSheetPaths: string[] | null = null;
@@ -79,30 +78,29 @@ function makeRng(seed: string): () => number {
 
 const toDataUrl = (buf: Buffer): string => `data:image/png;base64,${buf.toString("base64")}`;
 
-/** Re-pack a source sheet's walk + sit bands into the 192x384 6-row layout. */
+/** The composited sheet: 6 frames wide, one row per OUT_ROWS entry. */
+const OUT_W = FRAME_W * WALK_FRAMES;
+const OUT_H = FRAME_H * OUT_ROWS.length;
+
+/**
+ * Re-pack a source sheet's walk + sit bands into the 192x384 6-row layout.
+ * One decode of the source, then plain row copies: the pipeline-per-frame
+ * version re-decoded the 1792px sheet 36 times per character.
+ */
 async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
-  const sheet = sharp(sheetPath);
-  const tiles: OverlayOptions[] = [];
-  for (const [row, def] of OUT_ROWS.entries()) {
-    const [, bandTop, startCol] = def;
-    for (let f = 0; f < WALK_FRAMES; f++) {
-      const col = startCol + f;
-      const cell = await sheet
-        .clone()
-        .extract({ left: col * FRAME_W, top: bandTop, width: FRAME_W, height: FRAME_H })
-        .toBuffer();
-      tiles.push({ input: cell, left: f * FRAME_W, top: row * FRAME_H });
+  const { data, info } = await sharp(sheetPath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const out = Buffer.alloc(OUT_W * OUT_H * 4);
+  for (const [row, [bandTop, startCol]] of OUT_ROWS.entries()) {
+    for (let y = 0; y < FRAME_H; y++) {
+      const src = ((bandTop + y) * info.width + startCol * FRAME_W) * 4;
+      const dst = (row * FRAME_H + y) * OUT_W * 4;
+      data.copy(out, dst, src, src + OUT_W * 4);
     }
   }
-  return sharp({
-    create: {
-      width: FRAME_W * WALK_FRAMES,
-      height: FRAME_H * OUT_ROWS.length,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite(tiles)
+  return sharp(out, { raw: { width: OUT_W, height: OUT_H, channels: 4 } })
     .png()
     .toBuffer();
 }
@@ -143,18 +141,28 @@ export async function listFounderChoices(n: number): Promise<string[]> {
   return seeds;
 }
 
+// A character is a function of its sheet, and there are twenty sheets: build
+// each once per process, not once per employee per scene boot.
+const composed = new Map<string, Promise<CharacterAssets>>();
+
+function composeSheet(sheetPath: string): Promise<CharacterAssets> {
+  let pending = composed.get(sheetPath);
+  if (!pending) {
+    pending = Promise.all([buildWalkSheet(sheetPath), buildPortrait(sheetPath)]).then(
+      ([walk, portrait]) => ({
+        walkSheetDataUrl: toDataUrl(walk),
+        portraitDataUrl: toDataUrl(portrait),
+      }),
+    );
+    composed.set(sheetPath, pending);
+  }
+  return pending;
+}
+
 export async function composeCharacter(seed: string): Promise<CharacterAssets> {
   const sheets = (employeeSheetPaths ??= await listEmployeeSheets());
   const idx = indexForSeed(seed, sheets.length);
   const sheetPath = sheets[idx];
   if (!sheetPath) throw new Error(`no employee sheet at index ${idx}`);
-
-  const [walk, portrait] = await Promise.all([buildWalkSheet(sheetPath), buildPortrait(sheetPath)]);
-
-  return {
-    seed,
-    walkSheetDataUrl: toDataUrl(walk),
-    portraitDataUrl: toDataUrl(portrait),
-    parts: { sheetIndex: idx + 1 },
-  };
+  return composeSheet(sheetPath);
 }

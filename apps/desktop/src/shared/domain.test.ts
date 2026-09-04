@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  approvalKey,
   classifyCommand,
   normalizeCommand,
   parseBlockedAsk,
@@ -156,15 +155,17 @@ describe("classifyCommand", () => {
   });
 });
 
-describe("approvalKey", () => {
+describe("normalizeCommand", () => {
   it("strips the plumbing the CLIs wrap around a command, so a retry reuses the sign-off", () => {
-    expect(approvalKey('git push origin main 2>&1; echo "exit=$?"')).toBe(
-      approvalKey("git push  origin   main"),
+    expect(normalizeCommand('git push origin main 2>&1; echo "exit=$?"')).toBe(
+      normalizeCommand("git push  origin   main"),
     );
   });
 
   it("keeps genuinely different commands apart", () => {
-    expect(approvalKey("git push origin main")).not.toBe(approvalKey("git push origin production"));
+    expect(normalizeCommand("git push origin main")).not.toBe(
+      normalizeCommand("git push origin production"),
+    );
   });
 
   it("normalizes to one canonical string", () => {

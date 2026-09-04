@@ -44,19 +44,24 @@ import {
 } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { isRunnerId } from "@repo/agent-driver/runner";
-import { jsonValueSchema } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
 import {
   BUSINESS_TYPES,
   DEFAULT_MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   businessTypeById,
   parseBlockedAsk,
   serializeBlockedAsk,
 } from "@/shared/domain";
+import {
+  PersistedActivitySchema,
+  type ActivityEvent,
+  type ActivityKind,
+  type PersistedActivity,
+} from "@/shared/activity";
 import type {
-  ActivityEvent,
-  ActivityKind,
   AgentRunner,
   BlockedAsk,
   Budget,
@@ -314,7 +319,6 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
     runner: e.runner,
     spriteSeed: e.spriteSeed,
     deskIndex: e.deskIndex,
-    status: e.status,
     createdAt: e.createdAt,
   };
   if (e.model !== null) metadata.model = e.model;
@@ -349,7 +353,7 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     deskIndex: optNum(m, "deskIndex", 0),
     teamId: optStr(m, "teamId"),
-    status: optStr(m, "status") === "working" ? "working" : "idle",
+    status: "idle",
     createdAt: optNum(m, "createdAt", Date.now()),
   };
 }
@@ -385,24 +389,20 @@ function taskToDoc(t: Task): FrontmatterDoc {
   };
 }
 
-const TASK_STATUSES: ReadonlyArray<TaskStatus> = [
-  "todo",
-  "queued",
-  "running",
-  "blocked",
-  "done",
-  "failed",
-  "dead",
-  "cancelled",
-];
+/** Statuses older saves wrote that the queue no longer produces: both are terminal. */
+const LEGACY_TERMINAL_STATUSES = new Set(["failed", "cancelled"]);
+
+function parseTaskStatus(raw: string | null): TaskStatus {
+  if (raw !== null && LEGACY_TERMINAL_STATUSES.has(raw)) return "dead";
+  return TASK_STATUSES.find((s) => s === raw) ?? "todo";
+}
 
 function docToTask(doc: FrontmatterDoc, companyId: string): Task {
   const f = doc.fields;
   const m = doc.metadata;
-  const statusRaw = optStr(m, "status") ?? "todo";
-  const status = TASK_STATUSES.find((s) => s === statusRaw) ?? "todo";
+  const status = parseTaskStatus(optStr(m, "status"));
   const prioRaw = optStr(m, "priority");
-  const priority: TaskPriority = prioRaw === "low" || prioRaw === "high" ? prioRaw : "medium";
+  const priority = TASK_PRIORITIES.find((p) => p === prioRaw) ?? "medium";
   const body = doc.body.trim();
   return {
     id: reqStr(f, "slug"),
@@ -474,8 +474,6 @@ export function initStore(): void {
         }
       }
       employees.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-      // a fresh boot has no live runs — anything marked working is stale
-      for (const e of employees) e.status = "idle";
       loaded.employees.set(co.id, employees);
 
       const tasks: Task[] = [];
@@ -614,28 +612,6 @@ function safeReaddir(dir: string): string[] {
     return [];
   }
 }
-
-// One activity.jsonl line, as logActivity persists it (id is re-assigned on load).
-const PersistedActivitySchema = z.object({
-  runId: z.string().nullish(),
-  taskId: z.string().nullish(),
-  employeeId: z.string().nullish(),
-  kind: z.enum(["log", "tool_call", "status", "lifecycle", "thinking", "message", "chat", "ship"]),
-  message: z.string().nullish(),
-  payload: jsonValueSchema.nullish(),
-  createdAt: z.number(),
-});
-// compile-time guarantee: the zod enum and the domain union stay in sync
-type _AssertActivityKindCovered = ActivityKind extends z.infer<
-  typeof PersistedActivitySchema
->["kind"]
-  ? true
-  : never;
-type _AssertActivityKindSound = z.infer<typeof PersistedActivitySchema>["kind"] extends ActivityKind
-  ? true
-  : never;
-const activityKindInSync: _AssertActivityKindCovered & _AssertActivityKindSound = true;
-void activityKindInSync;
 
 function loadRecentActivity(loaded: Cache, companyId: string): void {
   try {
@@ -1135,8 +1111,10 @@ function patchEmployee(id: string, patch: Partial<Employee>): void {
   }
 }
 
+/** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
 export function setEmployeeStatus(id: string, status: Employee["status"]): void {
-  patchEmployee(id, { status });
+  const emp = getEmployee(id);
+  if (emp) emp.status = status;
 }
 export function setEmployeeSession(id: string, sessionId: string | null): void {
   patchEmployee(id, { sessionId });
@@ -1239,10 +1217,9 @@ function patchTask(id: string, patch: Partial<Task>): Task | null {
 export function claimTask(taskId: string, employeeId: string): Task | null {
   const t = getTask(taskId);
   if (!t) return null;
-  const claimable =
-    t.status === "todo" || t.status === "blocked" || t.status === "failed" || t.status === "dead";
+  const claimable = t.status === "todo" || t.status === "blocked" || t.status === "dead";
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) return null;
-  const revived = t.status === "failed" || t.status === "dead";
+  const revived = t.status === "dead";
   const patch: Partial<Task> = { assigneeId: employeeId, status: "queued" };
   if (revived) {
     patch.attempts = 0;
@@ -1333,31 +1310,41 @@ export function resolveBlockedWithAnswer(taskId: string, answer: string): Task |
 }
 
 // ---- activity log ----------------------------------------------------------
-export function logActivity(e: ActivityEvent): number {
-  const id = c().nextActivityId++;
-  const entry: ActivityEvent = { ...e, id };
+/** Stamp an id, keep it in the ring, and append it to the owning company's activity.jsonl. */
+export function logActivity(row: PersistedActivity, persist: boolean): ActivityEvent {
+  const entry: ActivityEvent = { ...row, id: c().nextActivityId++ };
+  if (!persist) return entry;
   c().activity.push(entry);
   if (c().activity.length > ACTIVITY_RING) c().activity = c().activity.slice(-ACTIVITY_RING);
 
-  // append to the owning company's activity.jsonl (employee → company, else default)
-  const companyId = entry.employeeId
-    ? getEmployee(entry.employeeId)?.companyId
+  // employee → their company, else the default company
+  const companyId = row.employeeId
+    ? getEmployee(row.employeeId)?.companyId
     : getDefaultCompany()?.id;
   if (companyId && !writesSuspended) {
-    const { id: _drop, ...persisted } = entry;
     try {
-      appendFileSync(activityFile(companyId), JSON.stringify(persisted) + "\n");
+      appendFileSync(activityFile(companyId), JSON.stringify(row) + "\n");
     } catch {
       /* log loss is acceptable */
     }
   }
-  return id;
+  return entry;
 }
 
+const ofKind =
+  <K extends ActivityKind>(kind: K) =>
+  (e: ActivityEvent): e is Extract<ActivityEvent, { kind: K }> =>
+    e.kind === kind;
+
 /** Recent activity rows of a kind for a company. */
-export function recentActivity(companyId: string, kind: string, limit = 12): ActivityEvent[] {
+export function recentActivity<K extends ActivityKind>(
+  companyId: string,
+  kind: K,
+  limit = 12,
+): Extract<ActivityEvent, { kind: K }>[] {
   const ids = new Set(listEmployees(companyId).map((e) => e.id));
   return c()
-    .activity.filter((e) => e.kind === kind && e.employeeId != null && ids.has(e.employeeId))
+    .activity.filter(ofKind(kind))
+    .filter((e) => e.employeeId != null && ids.has(e.employeeId))
     .slice(-limit);
 }

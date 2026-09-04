@@ -8,18 +8,13 @@ import { acpAgentFor, agentDriver } from "@/main/agents/agent-driver";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { businessTypeById } from "@/shared/domain";
 import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
+import { HireCandidateSchema, type AuthFlowEvent, type HireCandidate } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
 // First-run onboarding backend. The workforce runs on the player's own coding
 // CLIs (claude / codex): detect them, install one if none exist, walk their
 // login flows, and cast the founding team with a one-shot CLI call.
 // ---------------------------------------------------------------------------
-
-export type AuthFlowEvent =
-  | { type: "url"; url: string }
-  | { type: "progress"; message: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
 
 let setupRunning = false;
 
@@ -119,26 +114,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
 
 // ---- LLM-generated founding team -------------------------------------------
 
-interface HireCandidate {
-  name: string;
-  role: string;
-  title: string;
-  persona: string;
-  blurb: string;
-}
-
-const CandidateSchema = z.object({
-  name: z.string().min(1).max(40),
-  role: z
-    .string()
-    .min(2)
-    .max(32)
-    .transform((s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-")),
-  title: z.string().min(2).max(60),
-  persona: z.string().min(10).max(600),
-  blurb: z.string().min(2).max(120),
-});
-const CandidatesSchema = z.array(CandidateSchema).min(3).max(8);
+const CandidatesSchema = z.array(HireCandidateSchema).min(3).max(8);
 
 /** One-shot completion on whichever CLI is available (no tools, no session). */
 async function completeOneShot(prompt: string): Promise<string> {
@@ -155,7 +131,7 @@ async function completeOneShot(prompt: string): Promise<string> {
     onPermission: () => Promise.resolve({ allow: false }),
     onEvent: () => {},
   });
-  if (!res.ok) throw new Error(res.error ?? "generation failed");
+  if (res.end.kind === "failed") throw new Error(res.end.error);
   return res.summary;
 }
 
