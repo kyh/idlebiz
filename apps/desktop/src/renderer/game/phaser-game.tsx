@@ -23,13 +23,11 @@ export function PhaserGame({ onGame }: { onGame?: (game: Phaser.Game) => void })
     });
     // The CDP handle, set here rather than waiting for the scene: under headless
     // automation the boot stalls before create() and the probe has to kick it.
-    // oxlint-disable-next-line eslint/no-underscore-dangle -- the name AGENTS.md documents
     window.__game = game;
     handOff(game);
 
     return () => {
       game.destroy(true);
-      // oxlint-disable-next-line eslint/no-underscore-dangle -- the name AGENTS.md documents
       window.__game = undefined;
     };
   }, []);
