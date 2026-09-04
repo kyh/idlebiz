@@ -63,7 +63,7 @@ export default async function Page() {
           <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[12px] uppercase tracking-wider">
             <span>IdleBiz.exe</span>
             <span className="flex items-center gap-1.5 text-[10px]" aria-hidden>
-              <span className="px-live-dot inline-block h-[10px] w-[10px] border-2 border-[var(--ink)] bg-[var(--ok)]" />
+              <span className="px-live-dot inline-block size-2.5 border-2 border-ink bg-ok" />
               agents working
             </span>
           </div>
@@ -73,7 +73,7 @@ export default async function Page() {
           <OfficeLife
             title={
               <h1
-                className="text-[40px] leading-none text-[var(--text)] sm:text-[52px]"
+                className="text-[40px] leading-none text-text sm:text-[52px]"
                 style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
               >
                 IdleBiz
@@ -81,12 +81,11 @@ export default async function Page() {
             }
           />
 
-          <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-[var(--text)] sm:text-[14px]">
+          <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-text sm:text-[14px]">
             An idle game business simulator where your employees are{" "}
-            <span className="text-[var(--accent-lo)]">real AI agents</span>. They write real code,
-            ship real products, and{" "}
-            <span className="text-[var(--text-dim)] line-through">make</span> burn real money.
-            <span className="px-blink ml-2 inline-block text-[var(--accent-lo)]" aria-hidden>
+            <span className="text-accent-lo">real AI agents</span>. They write real code, ship real
+            products, and <span className="text-text-dim line-through">make</span> burn real money.
+            <span className="px-blink ml-2 inline-block text-accent-lo" aria-hidden>
               ▼
             </span>
           </div>
@@ -96,18 +95,15 @@ export default async function Page() {
               <MacLogoIcon className="size-5 shrink-0" />
               Download for Mac
             </a>
-            <span className="text-[11px] text-[var(--text-dim)]">
+            <span className="text-[11px] text-text-dim">
               {version ? `${version} · ` : ""}macOS · bring your own OpenAI Account
             </span>
           </div>
         </div>
       </WindowCard>
 
-      <footer className="mt-8 flex items-center gap-4 text-[11px] text-[var(--chrome-hi)]">
-        <a
-          href={`https://github.com/${GITHUB_REPO}`}
-          className="no-underline hover:text-[var(--light)]"
-        >
+      <footer className="mt-8 flex items-center gap-4 text-[11px] text-chrome-hi">
+        <a href={`https://github.com/${GITHUB_REPO}`} className="no-underline hover:text-light">
           GitHub
         </a>
         <span aria-hidden>·</span>

@@ -33,6 +33,27 @@
   letter-spacing: 0.02em;
 }
 
+/* the palette as Tailwind colour utilities (text-ink, bg-ok, border-ink …) */
+@theme inline {
+  --color-ink: var(--ink);
+  --color-edge: var(--edge);
+  --color-chrome: var(--chrome);
+  --color-chrome-hi: var(--chrome-hi);
+  --color-chrome-lo: var(--chrome-lo);
+  --color-face: var(--face);
+  --color-face-hi: var(--face-hi);
+  --color-face-lo: var(--face-lo);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-light: var(--light);
+  --color-accent: var(--accent);
+  --color-accent-hi: var(--accent-hi);
+  --color-accent-lo: var(--accent-lo);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+}
+
 html,
 body {
   margin: 0;
@@ -99,7 +120,6 @@ img {
     inset -2px -2px 0 0 var(--accent-lo),
     0 3px 0 0 rgba(0, 0, 0, 0.3);
   padding: 8px 14px;
-  cursor: pointer;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
   transition: none;
 }
@@ -207,7 +227,7 @@ img {
   transform: translateX(-50%);
   white-space: nowrap;
   background: #ffffff;
-  color: #2b2f46;
+  color: var(--text);
   border: 2px solid var(--ink);
   padding: 2px 6px;
   font-size: 10px;
@@ -242,21 +262,17 @@ img {
   }
 }
 .px-drag {
-  cursor: grab;
   touch-action: none;
   user-select: none;
 }
-.px-drag:active {
-  cursor: grabbing;
-}
 
-/* pixel arrow cursor from the Modern Interiors UI pack (everywhere) */
+/* pixel arrow cursor from the Modern Interiors UI pack, everywhere: `cursor`
+   inherits from body, so only elements the UA gives their own cursor are listed.
+   No kit class sets `cursor` — a class would beat these element selectors. */
 body,
 a,
 button,
-[role="button"],
-.px-drag,
-.px-drag:active {
+[role="button"] {
   cursor:
     url(/office/cursor.png) 2 2,
     default;
