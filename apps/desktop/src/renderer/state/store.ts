@@ -1,14 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
-import type {
-  Budget,
-  Company,
-  Employee,
-  Task,
-  Team,
-  TeamMessage,
-} from "@/shared/domain";
+import type { Budget, Company, Employee, Task, Team, TeamMessage } from "@/shared/domain";
 import type {
   AppBridge,
   ProductStatus,
@@ -154,10 +147,7 @@ async function settleLayout(): Promise<void> {
 
 export async function refresh(): Promise<void> {
   await settleLayout();
-  const [company, resting] = await Promise.all([
-    bridge().getCompany(),
-    bridge().restingRunners(),
-  ]);
+  const [company, resting] = await Promise.all([bridge().getCompany(), bridge().restingRunners()]);
   const [employees, teams, tasks] = company
     ? await Promise.all([
         bridge().listEmployees({ companyId: company.id }),

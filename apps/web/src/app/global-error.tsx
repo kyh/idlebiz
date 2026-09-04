@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import "@/app/globals.css";
 import { StatusPage } from "@/app/status-page";
 
 type GlobalErrorProps = {
@@ -10,8 +11,8 @@ type GlobalErrorProps = {
 };
 
 // Catches errors thrown by the root layout itself, so it replaces the layout
-// entirely and must render its own <html>/<body>. Kept dependency-free — the
-// providers and fonts the app usually supplies may be exactly what failed.
+// entirely and must render its own <html>/<body> — and import the stylesheet the
+// layout would have, or the kit classes below paint nothing.
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     console.error(error);
