@@ -1,12 +1,10 @@
 import { env } from "@/lib/env";
-import { parseState } from "@/lib/stripe-oauth";
+import { encodeState, parseState } from "@/lib/stripe-oauth";
 
 export function GET(req: Request): Response {
   const url = new URL(req.url);
-  const rawState = url.searchParams.get("state");
-  if (!parseState(rawState) || rawState === null) {
-    return new Response("invalid state", { status: 400 });
-  }
+  const state = parseState(url.searchParams.get("state"));
+  if (!state) return new Response("invalid state", { status: 400 });
   const clientId = env.STRIPE_CLIENT_ID;
   if (!clientId) return new Response("stripe not configured", { status: 500 });
 
@@ -15,6 +13,6 @@ export function GET(req: Request): Response {
   authorize.searchParams.set("client_id", clientId);
   authorize.searchParams.set("scope", "read_only");
   authorize.searchParams.set("redirect_uri", `${url.origin}/api/stripe/callback`);
-  authorize.searchParams.set("state", rawState);
+  authorize.searchParams.set("state", encodeState(state));
   return Response.redirect(authorize.toString(), 302);
 }

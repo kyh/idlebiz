@@ -30,6 +30,11 @@ export function parseState(raw: string | null): OAuthState | null {
   }
 }
 
+/** Inverse of parseState: what Stripe carries through the flow is only the validated fields. */
+export function encodeState(state: OAuthState): string {
+  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
+}
+
 export function loopbackUrl(state: OAuthState, params: Record<string, string>): string {
   const qs = new URLSearchParams({ nonce: state.nonce, ...params });
   return `http://127.0.0.1:${state.port}/stripe/callback?${qs.toString()}`;
