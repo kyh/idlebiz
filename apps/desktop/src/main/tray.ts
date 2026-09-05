@@ -39,8 +39,9 @@ interface OfficeStatus {
 
 function officeStatus(): OfficeStatus {
   const company = store.getDefaultCompany();
-  const working =
-    company ? store.listEmployees(company.id).filter((e) => e.status === "working").length : 0;
+  const working = company
+    ? store.listEmployees(company.id).filter((e) => e.status === "working").length
+    : 0;
   const naps = RUNNER_IDS.map((r) => agentDriver.restingRunner(r)).filter(
     (t): t is number => t !== null,
   );

@@ -242,7 +242,9 @@ export interface Company {
   founderName: string;
   founderSpriteSeed: string;
   autopilot: boolean; // when true, idle employees self-direct work (idle-game loop)
-  maxAgents: number; // seat cap — the team lead hires/releases freely below it
+  maxAgents: number; // seat cap — the lead hires/releases freely below it
+  /** The employee who coordinates: hires, releases, delegates. Null until someone is hired. */
+  leaderId: string | null;
   ships: number; // units of work the team has shipped
   revenueUsd: number | null; // REAL revenue (Stripe); null until a source is connected
   users: number | null; // REAL users (analytics); null until a source is connected
@@ -262,7 +264,6 @@ export interface Employee {
   sessionId: string | null;
   spriteSeed: string; // deterministic sprite + portrait
   deskIndex: number; // which desk slot in the office
-  teamId: string | null; // which team this employee belongs to (TinyAGI-style)
   status: EmployeeStatus;
   createdAt: number;
 }
@@ -272,20 +273,10 @@ export interface Employee {
  * The leader receives direction and fans work out to / chains it through members;
  * everyone shares a persistent chat room they read and post to during runs.
  */
-export interface Team {
-  id: string; // slug (folder name under teams/)
-  companyId: string;
-  name: string;
-  purpose: string; // what this team owns
-  leaderId: string | null; // employee id of the team lead
-  memberIds: string[]; // employee ids on this team (includes the leader)
-  createdAt: number;
-}
-
-/** One message in a team's chat room. */
+/** One message in the company's chat room. */
 export interface TeamMessage {
   id?: number;
-  teamId: string;
+  companyId: string;
   fromEmployeeId: string | null; // null = system/founder
   text: string;
   createdAt: number;

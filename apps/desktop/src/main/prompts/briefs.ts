@@ -6,7 +6,6 @@ import type {
   IntegrationKind,
   Routine,
   Task,
-  Team,
   TeamMessage,
 } from "@/shared/domain";
 import { serializeBlockedAsk } from "@/shared/domain";
@@ -43,9 +42,8 @@ function budgetLine(company: Company): string {
 export interface AutonomousBriefInput {
   company: Company;
   employee: Employee;
-  /** Everyone at the company; the roster shown is the employee's team when they have one. */
+  /** Everyone at the company. */
   employees: readonly Employee[];
-  team: Team | null;
   room: readonly TeamMessage[];
   /** Summaries of recent ships, newest last. */
   ships: readonly string[];
@@ -60,12 +58,11 @@ export interface AutonomousBriefInput {
  * to coordinate (chain / fan out) while members execute and report back.
  */
 export function autonomousBrief(input: AutonomousBriefInput): TaskBrief {
-  const { company, employee, employees, team, room, ships, problems, nameOf } = input;
-  const isLeader = team?.leaderId === employee.id;
-  const teammates = team ? employees.filter((e) => e.teamId === team.id) : employees;
+  const { company, employee, employees, room, ships, problems, nameOf } = input;
+  const isLeader = company.leaderId === employee.id;
   const roster =
-    teammates
-      .map((e) => `${e.name} (${e.title})${team?.leaderId === e.id ? " — lead" : ""}`)
+    employees
+      .map((e) => `${e.name} (${e.title})${company.leaderId === e.id ? " — lead" : ""}`)
       .join(", ") || "(just you)";
   const shipped = ships.map((s) => `- ${s}`).join("\n") || "(nothing shipped yet)";
   const failures =
@@ -78,9 +75,9 @@ export function autonomousBrief(input: AutonomousBriefInput): TaskBrief {
   const budget = budgetLine(company);
 
   const coordinate = isLeader
-    ? `You LEAD ${team?.name ?? "this team"}. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.
+    ? `You LEAD the team. Your job is to coordinate: decide the most valuable next outcome, then either do one focused chunk yourself or break it up and hand pieces to teammates — use the delegate tool once for a single handoff, or several times to fan work out in parallel. Keep everyone moving and unblocked.
 You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length} filled): hire when the backlog demands a role you don't have (hire tool — give role, title, name, persona), release teammates whose role stopped pulling weight (release tool — their work is archived, not lost). Size the team to the budget: more people burn money faster. ${budget}`
-    : `You're on ${team?.name ?? "the team"}${team?.leaderId ? `, led by ${nameOf(team.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with the delegate tool. ${budget}`;
+    : `You're on the team${company.leaderId ? `, led by ${nameOf(company.leaderId)}` : ""}. Check the team room first with read_team_chat, pick up what your role should own, and execute it. If something is better owned by another role, hand it off with the delegate tool. ${budget}`;
 
   const description = [
     `You are operating autonomously to grow ${company.name}.`,

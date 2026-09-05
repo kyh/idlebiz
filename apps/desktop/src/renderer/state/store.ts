@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
 import { taskIn } from "@/shared/domain";
-import type { Budget, Company, Employee, Task, TaskIn, Team, TeamMessage } from "@/shared/domain";
+import type { Budget, Company, Employee, Task, TaskIn, TeamMessage } from "@/shared/domain";
 import type {
   LoadSkip,
   ProductStatus,
@@ -33,7 +33,6 @@ interface State {
   saveIssues: LoadSkip[];
   company: Company | null;
   employees: Employee[];
-  teams: Team[];
   activity: ActivityEvent[];
   pendingAsks: TaskIn<"blocked">[]; // awaiting the founder's answer
   stuckTasks: TaskIn<"dead">[]; // dead-lettered, needing a retry
@@ -52,7 +51,6 @@ let state: State = {
   saveIssues: [],
   company: null,
   employees: [],
-  teams: [],
   activity: [],
   pendingAsks: [],
   stuckTasks: [],
@@ -150,13 +148,12 @@ export async function refresh(): Promise<void> {
     bridge().restingRunners(),
     bridge().loadReport(),
   ]);
-  const [employees, teams, tasks] = company
+  const [employees, tasks] = company
     ? await Promise.all([
         bridge().listEmployees({ companyId: company.id }),
-        bridge().listTeams({ companyId: company.id }),
         bridge().listTasks({ companyId: company.id, status: ["blocked", "dead"] }),
       ])
-    : [[], [], []];
+    : [[], []];
   const pendingAsks = tasks.filter(taskIn("blocked"));
   const stuckTasks = tasks.filter(taskIn("dead"));
   set({
@@ -165,7 +162,6 @@ export async function refresh(): Promise<void> {
     resting,
     saveIssues: load.skipped,
     employees,
-    teams,
     pendingAsks,
     stuckTasks,
   });
@@ -179,8 +175,9 @@ export async function refresh(): Promise<void> {
 }
 
 /** Fetch a team's chat-room messages on demand (for the Teams panel). */
-export async function teamMessages(teamId: string, limit = 30): Promise<TeamMessage[]> {
-  return bridge().teamMessages({ teamId, limit });
+export async function teamMessages(limit = 30): Promise<TeamMessage[]> {
+  const c = state.company;
+  return c ? bridge().teamMessages({ companyId: c.id, limit }) : [];
 }
 
 function onActivity(e: ActivityEvent): void {
@@ -302,9 +299,9 @@ export async function directEmployee(employeeId: string, instruction: string): P
 
 /** Founder posts in the team channel; @first-name wakes that employee. */
 export async function sendFounderChat(text: string): Promise<void> {
-  const team = state.teams[0];
-  if (!team || !text.trim()) return;
-  await bridge().postTeamChat({ teamId: team.id, text: text.trim() });
+  const c = state.company;
+  if (!c || !text.trim()) return;
+  await bridge().postTeamChat({ companyId: c.id, text: text.trim() });
 }
 
 /** Founder decides on a held outward-facing command; the task resumes either way. */

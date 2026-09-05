@@ -19,9 +19,8 @@ import {
   taskFile,
   routinesDir,
   routineFile,
-  teamsDir,
-  teamFile,
-  teamChatFile,
+  chatFile,
+  legacyTeamsDir,
 } from "@/main/paths";
 import {
   parseDoc,
@@ -33,7 +32,6 @@ import {
   optNum,
   nullableNum,
   optBool,
-  strArray,
   type FrontmatterDoc,
 } from "@/main/store/frontmatter";
 import { z } from "zod";
@@ -66,7 +64,6 @@ import type {
   Routine,
   Task,
   TaskPriority,
-  Team,
   TeamMessage,
 } from "@/shared/domain";
 
@@ -82,8 +79,7 @@ interface Cache {
   employees: Map<string, Employee[]>; // companyId -> employees
   tasks: Map<string, Task[]>; // companyId -> tasks
   routines: Map<string, Routine[]>; // companyId -> routines
-  teams: Map<string, Team[]>; // companyId -> teams
-  teamChat: Map<string, TeamMessage[]>; // teamId -> recent room messages (ring)
+  chat: Map<string, TeamMessage[]>; // companyId -> recent room messages (ring)
   activity: ActivityEvent[]; // ring buffer across companies (UI stream)
   nextActivityId: number;
   nextTeamMessageId: number;
@@ -116,35 +112,6 @@ function docToRoutine(doc: FrontmatterDoc, companyId: string): Routine {
 
 function saveRoutine(r: Routine): void {
   atomicWrite(routineFile(r.companyId, r.id), serializeDoc(routineToDoc(r)));
-}
-
-function teamToDoc(t: Team): FrontmatterDoc {
-  const metadata: FrontmatterDoc["metadata"] = {
-    memberIds: JSON.stringify(t.memberIds),
-    createdAt: t.createdAt,
-  };
-  if (t.leaderId !== null) metadata.leaderId = t.leaderId;
-  return {
-    fields: { schema: "agentcompanies/v1", kind: "team", slug: t.id, name: t.name },
-    metadata,
-    body: `${t.purpose}\n`,
-  };
-}
-
-function docToTeam(doc: FrontmatterDoc, companyId: string): Team {
-  return {
-    id: reqStr(doc.fields, "slug"),
-    companyId,
-    name: reqStr(doc.fields, "name"),
-    purpose: doc.body.trim(),
-    leaderId: optStr(doc.metadata, "leaderId"),
-    memberIds: strArray(doc.metadata, "memberIds"),
-    createdAt: optNum(doc.metadata, "createdAt", Date.now()),
-  };
-}
-
-function saveTeam(t: Team): void {
-  atomicWrite(teamFile(t.companyId, t.id), serializeDoc(teamToDoc(t)));
 }
 
 function c(): Cache {
@@ -195,6 +162,7 @@ function companyToDoc(co: Company): FrontmatterDoc {
     maxAgents: co.maxAgents,
     ships: co.ships,
   };
+  if (co.leaderId !== null) metadata.leaderId = co.leaderId;
   // real metrics: absent keys mean "no source has ever reported"
   if (co.revenueUsd !== null) metadata.revenueUsd = co.revenueUsd;
   if (co.users !== null) metadata.users = co.users;
@@ -241,6 +209,7 @@ function docToCompany(doc: FrontmatterDoc): Company {
     founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? DEFAULT_FOUNDER_SEED,
     autopilot: optBool(m, "autopilot", true),
     maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
+    leaderId: optStr(m, "leaderId"),
     ships: optNum(m, "ships", 0),
     revenueUsd: nullableNum(m, "revenueUsd"),
     users: nullableNum(m, "users"),
@@ -259,7 +228,7 @@ function employeeBody(e: Employee, co: Company): string {
   return standingInstructions({
     employee: e,
     company: co,
-    lead: teamForEmployee(e.id)?.leaderId === e.id,
+    lead: co.leaderId === e.id,
     memoryDir: employeeMemoryDir(co.id, e.id),
   });
 }
@@ -275,7 +244,6 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
     createdAt: e.createdAt,
   };
   if (e.sessionId !== null) metadata.sessionId = e.sessionId;
-  if (e.teamId !== null) metadata.teamId = e.teamId;
   return {
     fields: {
       schema: "agentcompanies/v1",
@@ -303,7 +271,6 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
     sessionId: optStr(m, "sessionId"),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     deskIndex: optNum(m, "deskIndex", 0),
-    teamId: optStr(m, "teamId"),
     status: "idle",
     createdAt: optNum(m, "createdAt", Date.now()),
   };
@@ -372,8 +339,7 @@ export function initStore(): LoadReport {
     employees: new Map(),
     tasks: new Map(),
     routines: new Map(),
-    teams: new Map(),
-    teamChat: new Map(),
+    chat: new Map(),
     activity: [],
     nextActivityId: 1,
     nextTeamMessageId: 1,
@@ -438,15 +404,8 @@ export function initStore(): LoadReport {
         ),
       );
 
-      const teams = loadPackages(
-        "team",
-        teamsDir(co.id),
-        (slug) => teamFile(co.id, slug),
-        (doc) => docToTeam(doc, co.id),
-      ).toSorted(byAge);
-      loaded.teams.set(co.id, teams);
-      for (const t of teams) loadRecentTeamChat(loaded, co.id, t.id);
-
+      adoptLegacyTeam(co);
+      loadRecentChat(loaded, co.id);
       loadRecentActivity(loaded, co.id);
     } catch (cause) {
       skip("company", file, cause);
@@ -479,18 +438,60 @@ export function initStore(): LoadReport {
     }
   }
 
-  // companies created before teams existed get a founding team (all hires, led)
+  // a company with people and no lead elects one, so the hire/release tools have an owner
   for (const co of loaded.companies.values()) {
     const emps = loaded.employees.get(co.id) ?? [];
-    if (emps.length > 0 && (loaded.teams.get(co.id) ?? []).length === 0) {
-      try {
-        foundingTeamFor(co);
-      } catch {
-        /* non-fatal */
-      }
+    if (emps.length > 0 && !emps.some((e) => e.id === co.leaderId)) {
+      const led = { ...co, leaderId: pickLeaderId(emps) };
+      loaded.companies.set(co.id, led);
+      saveCompany(led);
     }
   }
   return lastLoad;
+}
+
+/**
+ * Saves from when the room belonged to a Team folder: lift the lead into
+ * COMPANY.md and the room's history into chat.jsonl, once. The old folder is
+ * the founder's file to remove; nothing reads it after this.
+ */
+function adoptLegacyTeam(co: Company): void {
+  const dir = legacyTeamsDir(co.id);
+  const slugs = safeReaddir(dir);
+  if (slugs.length === 0) return;
+  if (!existsSync(chatFile(co.id))) {
+    const rows: z.infer<typeof PersistedTeamMessageSchema>[] = [];
+    for (const slug of slugs) {
+      rows.push(
+        ...readJsonlTail(join(dir, slug, "chat.jsonl"), PersistedTeamMessageSchema, 10_000),
+      );
+    }
+    if (rows.length > 0) {
+      atomicWrite(
+        chatFile(co.id),
+        rows
+          .toSorted((a, b) => a.createdAt - b.createdAt)
+          .map((row) => JSON.stringify(row))
+          .join("\n") + "\n",
+      );
+    }
+  }
+  if (co.leaderId === null) {
+    for (const slug of slugs) {
+      const file = join(dir, slug, "TEAM.md");
+      if (!existsSync(file)) continue;
+      try {
+        const lead = optStr(parseDoc(readFileSync(file, "utf8")).metadata, "leaderId");
+        if (lead !== null) {
+          co.leaderId = lead;
+          saveCompany(co);
+          return;
+        }
+      } catch {
+        /* an unreadable TEAM.md has nothing to adopt */
+      }
+    }
+  }
 }
 
 const LEADER_RX = /(ceo|founder|chief|head|lead|manager|principal|director|\bpm\b|product)/i;
@@ -501,17 +502,8 @@ function pickLeaderId(emps: Employee[]): string | null {
   return (byRole ?? emps[0])?.id ?? null;
 }
 
-/** Create the single founding team containing every current employee. */
-function foundingTeamFor(co: Company): Team {
-  const emps = listEmployees(co.id);
-  return createTeam({
-    companyId: co.id,
-    name: `${co.name} core team`,
-    purpose: "The founding team building, shipping, and growing the company together.",
-    leaderId: pickLeaderId(emps),
-    memberIds: emps.map((e) => e.id),
-  });
-}
+/** The lead the roster elects: a managerial role or title, else the first hire. */
+const electLead = (companyId: string): string | null => pickLeaderId(listEmployees(companyId));
 
 function safeReaddir(dir: string): string[] {
   try {
@@ -530,22 +522,18 @@ function loadRecentActivity(loaded: Cache, companyId: string): void {
 
 const TEAM_CHAT_RING = 200;
 
-// One team-chat jsonl line, as postTeamMessage persists it (id/teamId re-assigned on load).
+// One chat.jsonl line, as postTeamMessage persists it (id and companyId re-assigned on load).
 const PersistedTeamMessageSchema = z.object({
   fromEmployeeId: z.string().nullable(),
   text: z.string(),
   createdAt: z.number(),
 });
 
-function loadRecentTeamChat(loaded: Cache, companyId: string, teamId: string): void {
-  const rows = readJsonlTail(
-    teamChatFile(companyId, teamId),
-    PersistedTeamMessageSchema,
-    TEAM_CHAT_RING,
-  );
+function loadRecentChat(loaded: Cache, companyId: string): void {
+  const rows = readJsonlTail(chatFile(companyId), PersistedTeamMessageSchema, TEAM_CHAT_RING);
   const msgs: TeamMessage[] = [];
-  for (const row of rows) msgs.push({ ...row, id: loaded.nextTeamMessageId++, teamId });
-  loaded.teamChat.set(teamId, msgs);
+  for (const row of rows) msgs.push({ ...row, id: loaded.nextTeamMessageId++, companyId });
+  loaded.chat.set(companyId, msgs);
 }
 
 // ---- slug allocation ---------------------------------------------------------
@@ -613,6 +601,7 @@ export function foundCompany(input: {
     founderSpriteSeed: input.founderSpriteSeed,
     autopilot: true,
     maxAgents: DEFAULT_MAX_AGENTS,
+    leaderId: null,
     ships: 0,
     revenueUsd: null,
     users: null,
@@ -624,17 +613,17 @@ export function foundCompany(input: {
   c().employees.set(id, []);
   c().tasks.set(id, []);
   c().routines.set(id, []);
-  c().teams.set(id, []);
+  c().chat.set(id, []);
   try {
     mkdirSync(companyWorkspace(id), { recursive: true });
     mkdirSync(tasksDir(id), { recursive: true });
     mkdirSync(agentsDir(id), { recursive: true });
     input.hires.forEach((hire, deskIndex) => createEmployee({ companyId: id, deskIndex, ...hire }));
-    foundingTeamFor(co);
+    co.leaderId = electLead(id);
     seedDefaultRoutines(id, input.businessType);
     saveCompany(co);
   } catch (cause) {
-    for (const map of [c().companies, c().employees, c().tasks, c().routines, c().teams])
+    for (const map of [c().companies, c().employees, c().tasks, c().routines, c().chat])
       map.delete(id);
     rmSync(companyDir(id), { recursive: true, force: true });
     throw cause;
@@ -712,52 +701,6 @@ export function markRoutineRun(companyId: string, routineId: string): void {
 }
 
 // ---- teams -----------------------------------------------------------------
-function createTeam(input: {
-  companyId: string;
-  name: string;
-  purpose: string;
-  leaderId: string | null;
-  memberIds: string[];
-}): Team {
-  const list = c().teams.get(input.companyId);
-  if (!list) throw new Error(`company ${input.companyId} not found`);
-  const id = uniqueSlug(
-    input.name,
-    list.map((t) => t.id),
-  );
-  const team: Team = {
-    id,
-    companyId: input.companyId,
-    name: input.name,
-    purpose: input.purpose,
-    leaderId: input.leaderId,
-    memberIds: [...new Set(input.memberIds)],
-    createdAt: Date.now(),
-  };
-  saveTeam(team);
-  list.push(team);
-  c().teamChat.set(id, []);
-  // stamp each member's teamId so the office + scheduler can group them
-  for (const mid of team.memberIds) patchEmployee(mid, { teamId: id });
-  return team;
-}
-
-export function listTeams(companyId: string): Team[] {
-  return [...(c().teams.get(companyId) ?? [])];
-}
-
-const getTeam = (teamId: string): Team | null => findIn(c().teams, teamId);
-const patchTeam = (teamId: string, patch: Partial<Team>): Team | null =>
-  patchIn(c().teams, teamId, patch, saveTeam);
-
-export function addTeamMember(teamId: string, employeeId: string): Team | null {
-  const t = getTeam(teamId);
-  if (!t) return null;
-  const memberIds = t.memberIds.includes(employeeId) ? t.memberIds : [...t.memberIds, employeeId];
-  patchEmployee(employeeId, { teamId });
-  return patchTeam(teamId, { memberIds });
-}
-
 /**
  * Release an employee: archive their package to alumni/ (memory + history
  * preserved, never deleted), prune them from their team, and orphan their
@@ -766,14 +709,6 @@ export function addTeamMember(teamId: string, employeeId: string): Team | null {
 export function archiveEmployee(employeeId: string): Employee | null {
   const emp = getEmployee(employeeId);
   if (!emp) return null;
-  const team = teamForEmployee(employeeId);
-  if (team) {
-    const teamPatch: Partial<Team> = {
-      memberIds: team.memberIds.filter((id) => id !== employeeId),
-    };
-    if (team.leaderId === employeeId) teamPatch.leaderId = null;
-    patchTeam(team.id, teamPatch);
-  }
   const companyTasks = c().tasks.get(emp.companyId) ?? [];
   for (const t of companyTasks) {
     if (t.assigneeId === employeeId && (t.state.kind === "todo" || t.state.kind === "queued")) {
@@ -796,37 +731,34 @@ export function archiveEmployee(employeeId: string): Employee | null {
   } catch {
     /* archive is best-effort — the roster removal is what matters */
   }
+  // the lead left: whoever remains elects one, so the tools keep an owner
+  const company = getCompany(emp.companyId);
+  if (company?.leaderId === employeeId) {
+    patchCompany(company.id, { leaderId: electLead(company.id) });
+  }
   return emp;
 }
 
-/** The team an employee belongs to, if any. */
-export function teamForEmployee(employeeId: string): Team | null {
-  const emp = getEmployee(employeeId);
-  if (!emp || !emp.teamId) return null;
-  return getTeam(emp.teamId);
-}
-
-// ---- team chat room --------------------------------------------------------
-/** Post a message to a team's persistent chat room (read by teammates mid-run). */
+// ---- the company room ------------------------------------------------------
+/** Post a message to the company's persistent room (read by teammates mid-run). */
 export function postTeamMessage(
-  teamId: string,
+  companyId: string,
   fromEmployeeId: string | null,
   text: string,
 ): TeamMessage {
-  const msg: TeamMessage = { teamId, fromEmployeeId, text, createdAt: Date.now() };
-  const ring = c().teamChat.get(teamId) ?? [];
+  const msg: TeamMessage = { companyId, fromEmployeeId, text, createdAt: Date.now() };
+  const ring = c().chat.get(companyId) ?? [];
   const stored: TeamMessage = { ...msg, id: c().nextTeamMessageId++ };
   ring.push(stored);
   if (ring.length > TEAM_CHAT_RING) ring.splice(0, ring.length - TEAM_CHAT_RING);
-  c().teamChat.set(teamId, ring);
-  const team = getTeam(teamId);
-  if (team) appendJsonl(teamChatFile(team.companyId, teamId), msg);
+  c().chat.set(companyId, ring);
+  appendJsonl(chatFile(companyId), msg);
   return stored;
 }
 
 /** Recent room messages, optionally only those after a given timestamp. */
-export function recentTeamMessages(teamId: string, limit = 20, since = 0): TeamMessage[] {
-  const ring = c().teamChat.get(teamId) ?? [];
+export function recentTeamMessages(companyId: string, limit = 20, since = 0): TeamMessage[] {
+  const ring = c().chat.get(companyId) ?? [];
   const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
   return filtered.slice(-limit);
 }
@@ -968,7 +900,6 @@ export function createEmployee(input: {
     sessionId: null,
     spriteSeed: input.spriteSeed,
     deskIndex: input.deskIndex,
-    teamId: null,
     status: "idle",
     createdAt: Date.now(),
   };

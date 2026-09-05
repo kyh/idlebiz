@@ -176,13 +176,11 @@ class Scheduler {
 
   /** Gather what the heartbeat brief is grounded in; the prompt module phrases it. */
   private autonomousBrief(company: Company, emp: Employee, employees: Employee[]): TaskBrief {
-    const team = store.teamForEmployee(emp.id);
     return autonomousBrief({
       company,
       employee: emp,
       employees,
-      team,
-      room: team ? store.recentTeamMessages(team.id, 12) : [],
+      room: store.recentTeamMessages(company.id, 12),
       ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
       problems: store
         .listTasks(company.id)
@@ -203,27 +201,24 @@ class Scheduler {
     company: Company,
     run: { runId: string; taskId: string },
   ): RunToolHooks {
-    const team = store.teamForEmployee(emp.id);
-    const isLeader = team?.leaderId === emp.id;
+    const isLeader = company.leaderId === emp.id;
 
-    /** Mirror a line into the team room (if any) and the company activity feed. */
+    /** Mirror a line into the company room and the activity feed. */
     const post = (text: string, to: string | null = null): void => {
-      if (team) store.postTeamMessage(team.id, emp.id, text);
+      store.postTeamMessage(company.id, emp.id, text);
       publishActivity({ employeeId: emp.id, kind: "chat", message: text, payload: { to } });
     };
 
     return {
       messageTeam: (text: string): void => post(text.slice(0, 400)),
       readTeam: (): string =>
-        team ? roomTranscript(store.recentTeamMessages(team.id, 15), (id) => this.empName(id)) : "",
+        roomTranscript(store.recentTeamMessages(company.id, 15), (id) => this.empName(id)),
       delegate: (role: string, title: string, description: string): string => {
         const want = role.toLowerCase();
         const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
         const matches = (e: Employee): boolean =>
           e.role.toLowerCase() === want || e.title.toLowerCase().includes(want);
-        // prefer a teammate on the same team, then anyone in the company
-        const sameTeam = team ? pool.filter((e) => e.teamId === team.id) : [];
-        const mate = sameTeam.find(matches) ?? pool.find(matches);
+        const mate = pool.find(matches);
         if (!mate) {
           post(`(no "${role}" to delegate "${title}" to)`);
           return `No teammate matches the role "${role}" — do it yourself or pick another role.`;
@@ -259,7 +254,6 @@ class Scheduler {
         } catch (err) {
           return `Couldn't hire: ${errorMessage(err)}. Release someone first or work with the team you have.`;
         }
-        if (team) store.addTeamMember(team.id, hired.id);
         post(`🤝 hired ${hired.name} (${title})`);
         publishActivity({
           employeeId: hired.id,
@@ -302,8 +296,8 @@ class Scheduler {
    * resolveMentions) wake those employees immediately with the message as
    * context (paperclip's mention-wake convention).
    */
-  founderMessage(companyId: string, teamId: string, text: string): void {
-    store.postTeamMessage(teamId, null, text);
+  founderMessage(companyId: string, text: string): void {
+    store.postTeamMessage(companyId, null, text);
     publishActivity({ kind: "chat", message: text.slice(0, 400), payload: { to: null } });
     for (const employeeId of resolveMentions(text, store.listEmployees(companyId))) {
       this.wakeEmployee(employeeId, founderPing(text));
@@ -318,9 +312,8 @@ class Scheduler {
   directEmployee(employeeId: string, instruction: string): void {
     const emp = store.getEmployee(employeeId);
     if (!emp) throw new Error(`no employee ${employeeId}`);
-    const team = store.teamForEmployee(employeeId);
     const line = `@${emp.id} ${instruction}`;
-    if (team) store.postTeamMessage(team.id, null, line);
+    store.postTeamMessage(emp.companyId, null, line);
     publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to: emp.id } });
     this.wakeEmployee(employeeId, founderPing(instruction));
   }

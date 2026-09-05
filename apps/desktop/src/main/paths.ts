@@ -12,6 +12,7 @@ import { mkdirSync } from "node:fs";
 //       sessions/           the agent's own session continuity
 //     tasks/<slug>/TASK.md  work items
 //     workspace/            shared cwd where agents do real work
+//     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical)
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
@@ -55,12 +56,12 @@ export const routinesDir = (companySlug: string): string =>
 export const routineFile = (companySlug: string, routineSlug: string): string =>
   join(routinesDir(companySlug), routineSlug, "ROUTINE.md");
 
-export const teamsDir = (companySlug: string): string => join(companyDir(companySlug), "teams");
-export const teamFile = (companySlug: string, teamSlug: string): string =>
-  join(teamsDir(companySlug), teamSlug, "TEAM.md");
-/** Append-only per-team chat room (the room agents read + post to during runs). */
-export const teamChatFile = (companySlug: string, teamSlug: string): string =>
-  join(teamsDir(companySlug), teamSlug, "chat.jsonl");
+/** Append-only company chat room (the room agents read + post to during runs). */
+export const chatFile = (companySlug: string): string =>
+  join(companyDir(companySlug), "chat.jsonl");
+/** Where saves from before the room was the company's kept it: one folder per team. */
+export const legacyTeamsDir = (companySlug: string): string =>
+  join(companyDir(companySlug), "teams");
 
 export function ensureAppDirs(): void {
   mkdirSync(ROOT_DIR, { recursive: true });

@@ -84,10 +84,14 @@ async function resetGame(): Promise<{ ok: boolean }> {
 /** Every tenth ship gets a cheer in the team room. */
 function celebrateShipMilestones(e: ActivityEvent): void {
   if (e.kind !== "ship" || !e.employeeId) return;
-  const co = store.getDefaultCompany();
-  const team = store.teamForEmployee(e.employeeId);
-  if (co && team && co.ships > 0 && co.ships % 10 === 0) {
-    store.postTeamMessage(team.id, null, `🎉 Milestone: ${co.ships} things shipped — keep going!`);
+  const co = store.getEmployee(e.employeeId)?.companyId;
+  const company = co ? store.getCompany(co) : null;
+  if (company && company.ships > 0 && company.ships % 10 === 0) {
+    store.postTeamMessage(
+      company.id,
+      null,
+      `🎉 Milestone: ${company.ships} things shipped — keep going!`,
+    );
   }
 }
 
@@ -236,15 +240,13 @@ function registerIpcHandlers(): void {
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
   handle("restingRunners", () => agentDriver.restingRunners());
 
-  handle("listTeams", ({ companyId }) => store.listTeams(companyId));
+  handle("teamMessages", ({ companyId, limit }) =>
+    store.recentTeamMessages(companyId, limit ?? 30),
+  );
 
-  handle("teamMessages", ({ teamId, limit }) => store.recentTeamMessages(teamId, limit ?? 30));
-
-  // the founder types in the team channel; @first-name wakes that employee
-  handle("postTeamChat", ({ teamId, text }) => {
-    const company = store.getDefaultCompany();
-    if (!company) throw new Error("no company");
-    scheduler.founderMessage(company.id, teamId, text.trim());
+  // the founder types in the room; @first-name wakes that employee
+  handle("postTeamChat", ({ companyId, text }) => {
+    scheduler.founderMessage(companyId, text.trim());
     return { ok: true };
   });
 

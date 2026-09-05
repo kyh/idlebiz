@@ -10,7 +10,6 @@ import {
   type Company,
   type Employee,
   type Task,
-  type Team,
   type TeamMessage,
 } from "@/shared/domain";
 
@@ -104,9 +103,8 @@ export const SCHEMAS = {
   }),
   setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
   listEmployees: z.object({ companyId: z.string() }),
-  listTeams: z.object({ companyId: z.string() }),
-  teamMessages: z.object({ teamId: z.string(), limit: z.number().int().optional() }),
-  postTeamChat: z.object({ teamId: z.string(), text: z.string().min(1).max(2000) }),
+  teamMessages: z.object({ companyId: z.string(), limit: z.number().int().optional() }),
+  postTeamChat: z.object({ companyId: z.string(), text: z.string().min(1).max(2000) }),
   directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
   setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
   listTasks: z.object({
@@ -176,7 +174,6 @@ interface Results {
   listEmployees: Employee[];
   restingRunners: RestingRunners;
 
-  listTeams: Team[];
   teamMessages: TeamMessage[];
   postTeamChat: { ok: boolean };
   directEmployee: { ok: boolean };

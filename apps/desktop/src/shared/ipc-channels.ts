@@ -35,7 +35,6 @@ export const CHANNELS = {
   listEmployees: { channel: "employee:list", kind: "invoke" },
   restingRunners: { channel: "runner:resting", kind: "invoke-void" },
 
-  listTeams: { channel: "team:list", kind: "invoke" },
   teamMessages: { channel: "team:messages", kind: "invoke" },
   postTeamChat: { channel: "team:post", kind: "invoke" },
   directEmployee: { channel: "employee:direct", kind: "invoke" },
