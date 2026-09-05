@@ -131,7 +131,14 @@ class Scheduler {
         idle[0];
       if (!assignee) continue;
       store.markRoutineRun(company.id, r.id);
-      this.brief(company, assignee, routineBrief(r), null);
+      // a routine is about the company, but its work lands on a product:
+      // the one waited on longest, like autopilot's own turn
+      this.brief(
+        company,
+        assignee,
+        routineBrief(r),
+        store.attentionProduct(company.id)?.id ?? null,
+      );
     }
   }
 
@@ -226,7 +233,8 @@ class Scheduler {
       readTeam: (): string =>
         roomTranscript(store.recentTeamMessages(company.id, 15), (id) => this.empName(id)),
       delegate: (role: string, title: string, description: string, product: string | null) => {
-        const productId = product ?? run.productId;
+        const productId =
+          product ?? run.productId ?? store.attentionProduct(company.id)?.id ?? null;
         if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
           return `No product "${productId}" here — the products are ${store
             .listProducts(company.id)
@@ -317,7 +325,13 @@ class Scheduler {
       // The task only turns `blocked` when the run settles, but the ask exists
       // now — so the office raises the "!" over the employee's head at once.
       raiseAsk: (ask): void => {
-        publishActivity({ ...run, employeeId: emp.id, kind: "run.ask", payload: { ask } });
+        publishActivity({
+          runId: run.runId,
+          taskId: run.taskId,
+          employeeId: emp.id,
+          kind: "run.ask",
+          payload: { ask },
+        });
       },
     };
   }
