@@ -256,10 +256,7 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
     deskIndex: e.deskIndex,
     createdAt: e.createdAt,
   };
-  if (e.sessionId !== null) {
-    metadata.sessionId = e.sessionId;
-    if (e.sessionCostUsd > 0) metadata.sessionCostUsd = e.sessionCostUsd;
-  }
+  if (e.sessionId !== null) metadata.sessionId = e.sessionId;
   return {
     fields: {
       schema: "agentcompanies/v1",
@@ -285,7 +282,6 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
     persona: optStr(m, "persona") ?? "",
     runner: parseRunner(optStr(m, "runner")),
     sessionId: optStr(m, "sessionId"),
-    sessionCostUsd: optNum(m, "sessionCostUsd", 0),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     deskIndex: optNum(m, "deskIndex", 0),
     status: "idle",
@@ -1063,7 +1059,6 @@ export function createEmployee(input: {
     persona: input.persona,
     runner: input.runner,
     sessionId: null,
-    sessionCostUsd: 0,
     spriteSeed: input.spriteSeed,
     deskIndex: input.deskIndex,
     status: "idle",
@@ -1100,13 +1095,8 @@ export function setEmployeeStatus(id: string, status: Employee["status"]): void 
   const emp = getEmployee(id);
   if (emp) emp.status = status;
 }
-/** The session to continue next run, and what it has cost so far; a forgotten session costs nothing yet. */
-export function setEmployeeSession(
-  id: string,
-  sessionId: string | null,
-  sessionCostUsd: number,
-): void {
-  patchEmployee(id, { sessionId, sessionCostUsd: sessionId === null ? 0 : sessionCostUsd });
+export function setEmployeeSession(id: string, sessionId: string | null): void {
+  patchEmployee(id, { sessionId });
 }
 
 // ---- tasks -----------------------------------------------------------------

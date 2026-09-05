@@ -518,7 +518,6 @@ class Scheduler {
           outcome: { kind: "failed", error: errorMessage(cause) },
           summary: "",
           session: employee.sessionId,
-          sessionCostUsd: employee.sessionCostUsd,
           usage: zeroUsage(),
         });
       })
@@ -625,7 +624,7 @@ class Scheduler {
     }
 
     store.setEmployeeStatus(emp.id, "idle");
-    store.setEmployeeSession(emp.id, r.session, r.sessionCostUsd);
+    store.setEmployeeSession(emp.id, r.session);
 
     // real AI spend drains the founder's budget; the cap is judged when a bill lands
     if (r.usage.costUsd > 0) {
