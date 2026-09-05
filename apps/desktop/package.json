@@ -16,7 +16,7 @@
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
     "release:publish": "bash scripts/publish-release.sh",
     "with-env": "dotenv -e .env --",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "clean": "rm -rf .cache .output"
   },

@@ -13,7 +13,6 @@ interface Crashed {
 export class CrashScreen extends Component<{ children: ReactNode }, Crashed> {
   override state: Crashed = { error: null };
 
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- React hands over whatever was thrown
   static getDerivedStateFromError(cause: unknown): Crashed {
     return { error: errorMessage(cause) };
   }

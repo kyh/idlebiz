@@ -1,10 +1,20 @@
 import { spawn } from "node:child_process";
 import { RUNNERS } from "./registry";
-import { runnerBin, RUNNER_IDS, type RunnerId } from "./runner";
+import { RUNNER_IDS, type RunnerId } from "./runner";
 
 // Preflight probes: which coding-agent CLIs exist on this machine and whether
 // they're signed in. Fully async — probes must never block the main process
 // (boot runs them before the window shows; onboarding re-runs them mid-flow).
+
+/**
+ * The underlying CLI binary, with the same override hooks the CLIs use.
+ *
+ * We spawn ACP adapters rather than these directly, but the adapters run on
+ * the CLI's own login — so this is still what gets probed to answer "can this
+ * runner work at all".
+ */
+export const runnerBin = (id: RunnerId): string =>
+  id === "claude" ? (process.env.CLAUDE_BIN ?? "claude") : (process.env.CODEX_BIN ?? "codex");
 
 /** What the machine has: nothing at `bin`, or a CLI that is or is not signed in. */
 export type RunnerProbe = { id: RunnerId; bin: string } & (

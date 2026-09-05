@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import { z } from "zod";
-import type { JsonValue } from "@/shared/json";
+import { jsonValueSchema, type JsonValue } from "@/shared/json";
 
 /** A non-2xx answer, with the status so a caller can tell "revoked" from "down". */
 export class HttpError extends Error {
@@ -20,9 +20,7 @@ export async function getJson(
 ): Promise<JsonValue> {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new HttpError(res.status, url);
-  // Response.json() is typed `any`; its actual return domain is exactly JsonValue.
-  const data: JsonValue = await res.json();
-  return data;
+  return jsonValueSchema.parse(await res.json());
 }
 
 /** Bind a server to an ephemeral loopback port and return the port. */

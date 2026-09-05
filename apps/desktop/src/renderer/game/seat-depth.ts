@@ -8,9 +8,8 @@
 import type Phaser from "phaser";
 import { BUST, characterDepth } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
-import type { OpaqueMask } from "@/renderer/game/texture-masks";
 import type { PixelPoint } from "@/shared/office-layout-schema";
-import { opaqueAt } from "@/shared/office-sight";
+import { opaqueAt, type OpaqueMask } from "@/shared/office-sight";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;

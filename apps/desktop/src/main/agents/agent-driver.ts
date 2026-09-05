@@ -1,4 +1,4 @@
-import { isReady, probeRunners, type RunnerProbe } from "@repo/agent-driver/detect";
+import { isReady, probeRunners, runnerBin, type RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { parseRateLimit } from "@repo/agent-driver/rate-limit";
 import { RUNNERS, type RunnerAdapter } from "@repo/agent-driver/registry";
@@ -6,7 +6,6 @@ import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_MS,
   RUNNER_IDS,
-  runnerBin,
 } from "@repo/agent-driver/runner";
 import {
   runAcpTurn,
