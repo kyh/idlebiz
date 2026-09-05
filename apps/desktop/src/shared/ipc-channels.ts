@@ -36,6 +36,7 @@ export const CHANNELS = {
   restingRunners: { channel: "runner:resting", kind: "invoke-void" },
 
   teamMessages: { channel: "team:messages", kind: "invoke" },
+  employeeOptions: { channel: "employee:options", kind: "invoke" },
   postTeamChat: { channel: "team:post", kind: "invoke" },
   directEmployee: { channel: "employee:direct", kind: "invoke" },
   setMaxAgents: { channel: "company:max-agents", kind: "invoke" },

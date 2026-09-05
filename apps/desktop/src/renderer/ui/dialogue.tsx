@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { bridge } from "@/renderer/bridge";
 import { useStore, directEmployee, listTasksFor } from "@/renderer/state/store";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
@@ -9,91 +10,10 @@ import { useModal } from "@/renderer/ui/modal";
 import { Portrait } from "@/renderer/ui/portrait";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { taskIn } from "@/shared/domain";
-import type { Employee, Task } from "@/shared/domain";
+import type { Employee } from "@/shared/domain";
+import type { ChatOption } from "@/shared/ipc-registry";
 
 const NOTE_MS = 1800;
-
-interface ChatOption {
-  label: string;
-  instr: string;
-}
-
-const short = (s: string, n = 26): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
-/** A role-flavored action so every employee's menu feels like THEIR menu. */
-function roleOption(emp: Employee): ChatOption {
-  const r = `${emp.role} ${emp.title}`.toLowerCase();
-  if (/(engineer|dev|program|code)/.test(r))
-    return {
-      label: "Fix something",
-      instr: "Find the most broken or fragile thing in the product right now and fix it properly.",
-    };
-  if (/(design|art|pixel|ux|ui)/.test(r))
-    return {
-      label: "Polish the look",
-      instr:
-        "Do a visual polish pass on the product: pick the roughest-looking part and make it feel great.",
-    };
-  if (/(market|growth|community|social|brand)/.test(r))
-    return {
-      label: "Draft launch post",
-      instr:
-        "Draft a launch/update post for the product as it exists today. Punchy, honest, ready to publish.",
-    };
-  if (/(pm|product manager|producer|lead|ops)/.test(r))
-    return {
-      label: "Reprioritize",
-      instr:
-        "Review the current state of the business and team output; write a short prioritized plan for what the team should do next, then delegate the top item.",
-    };
-  if (/(audio|sound|music)/.test(r))
-    return {
-      label: "Improve audio",
-      instr: "Improve the product's sound: pick the most impactful audio gap and address it.",
-    };
-  if (/(write|edit|research|content|doc)/.test(r))
-    return {
-      label: "Write next piece",
-      instr: "Write the next most valuable piece of content for the business, ready to publish.",
-    };
-  return {
-    label: "Improve product",
-    instr: "Pick the most valuable improvement to the product you can finish now and do it.",
-  };
-}
-
-/** Options shaped by what this employee is actually doing right now. */
-function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
-  const out: ChatOption[] = [];
-  const running = tasks.find((t) => t.state.kind === "running" || t.state.kind === "queued");
-  const lastDone = tasks.filter(taskIn("done")).find((t) => t.state.summary);
-  if (running) {
-    out.push({
-      label: `Check in: ${short(running.title, 18)}`,
-      instr: `Give a quick status update on "${running.title}": what's done, what's left, anything at risk. Keep it brief, then continue.`,
-    });
-  }
-  if (lastDone) {
-    out.push({
-      label: `Build on: ${short(lastDone.title, 18)}`,
-      instr: `Take the next step on what you last shipped ("${lastDone.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${(lastDone.state.summary ?? "").slice(0, 500)}`,
-    });
-  }
-  out.push(roleOption(emp));
-  if (out.length < 4)
-    out.push({
-      label: "Daily standup",
-      instr:
-        "Give a brief standup: what you did recently, what you're doing next, and any blockers.",
-    });
-  if (out.length < 4)
-    out.push({
-      label: "Set direction",
-      instr:
-        "Step back and decide the most valuable thing to build next for the company, then start it.",
-    });
-  return out.slice(0, 4);
-}
 
 /** Walk up to someone and press E: the battle-box conversation with that employee. */
 export function Dialogue() {
@@ -137,7 +57,11 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   // feed is a 300-event ring, and a length-keyed refetch stops once it fills.
   const lastStatusId = mine.findLast((a) => a.kind === "status")?.id ?? null;
   const fetched = useAsync(
-    async () => ({ asOf: lastStatusId, list: await listTasksFor(emp.id) }),
+    async () => ({
+      asOf: lastStatusId,
+      list: await listTasksFor(emp.id),
+      options: await bridge().employeeOptions({ employeeId: emp.id }),
+    }),
     [emp.id, lastStatusId],
   );
   const tasks = fetched?.list ?? [];
@@ -151,8 +75,11 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
       ? tasks.filter(taskIn("blocked")).find((t) => t.state.ask.type === "question")
       : undefined;
   const question = asked && asked.state.ask.type === "question" ? asked.state.ask.question : null;
-  const options = buildOptions(emp, tasks);
-  const talkIndex = options.length; // trailing "Talk…" command
+  // the menu: main's options for this employee, then Talk… for free text
+  const rows: Row[] = [
+    ...(fetched?.options ?? []).map((option): Row => ({ kind: "ask", option })),
+    { kind: "talk" },
+  ];
 
   // everything the founder says goes through the team channel; the @slug
   // mention wakes exactly this employee with the message as their brief
@@ -162,13 +89,14 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   };
 
   const choose = (i: number) => {
-    if (i === talkIndex) {
+    const row = rows[i];
+    if (!row) return;
+    if (row.kind === "talk") {
       setMode("talk");
       window.setTimeout(() => inputRef.current?.focus(), 30);
       return;
     }
-    const q = options[i];
-    if (q) send(q.instr);
+    send(row.option.instruction);
   };
 
   const submitTalk = () => {
@@ -190,8 +118,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
     }
     const tag = document.activeElement?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return; // typing an answer
-    const last = options.length; // the Talk… row
-    if (e.key === "ArrowDown") setSel((s) => Math.min(last, s + 1));
+    if (e.key === "ArrowDown") setSel((s) => Math.min(rows.length - 1, s + 1));
     else if (e.key === "ArrowUp") setSel((s) => Math.max(0, s - 1));
     else if (e.key === "Enter" || e.key === " ") choose(sel);
     else if (e.key === "Escape") onClose();
@@ -255,7 +182,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
         <div className="flex w-[42%] flex-col">
           <div className="px-inset flex flex-1 flex-col p-2">
             {mode === "menu" ? (
-              <CommandMenu options={options} sel={sel} onHover={setSel} onChoose={choose} />
+              <CommandMenu rows={rows} sel={sel} onHover={setSel} onChoose={choose} />
             ) : (
               <div className="flex h-full flex-col gap-2">
                 <div className="text-xs text-fg-dim">Tell {emp.name} what to do:</div>
@@ -327,43 +254,37 @@ function Identity({ emp, working }: { emp: Employee; working: boolean }) {
   );
 }
 
-/** The battle-style command list: the role options, then Talk… for free text. */
+/** One line of the command menu: something to ask, or the way to say it yourself. */
+type Row = { kind: "ask"; option: ChatOption } | { kind: "talk" };
+const labelOf = (row: Row): string => (row.kind === "ask" ? row.option.label : "Talk…");
+
+/** The battle-style command list, one row per line. */
 function CommandMenu({
-  options,
+  rows,
   sel,
   onHover,
   onChoose,
 }: {
-  options: ChatOption[];
+  rows: readonly Row[];
   sel: number;
   onHover: (i: number) => void;
   onChoose: (i: number) => void;
 }) {
-  const talkIndex = options.length;
   return (
     <>
       <div className="mb-1 flex flex-1 flex-col content-start gap-y-0.5">
-        {options.map((q, i) => (
+        {rows.map((row, i) => (
           <button
             type="button"
-            key={q.label}
+            key={labelOf(row)}
             data-sel={sel === i}
             onMouseEnter={() => onHover(i)}
             onClick={() => onChoose(i)}
             className="px-cmd truncate"
           >
-            {q.label}
+            {labelOf(row)}
           </button>
         ))}
-        <button
-          type="button"
-          data-sel={sel === talkIndex}
-          onMouseEnter={() => onHover(talkIndex)}
-          onClick={() => onChoose(talkIndex)}
-          className="px-cmd"
-        >
-          Talk…
-        </button>
       </div>
       <div className="text-right text-xs text-fg-dim">↑↓ move · ⏎ select · esc close</div>
     </>

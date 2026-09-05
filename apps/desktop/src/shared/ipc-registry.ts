@@ -62,6 +62,9 @@ export type ProductStatus = {
   deploy: VercelDeployment | null;
 };
 
+/** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
+export type ChatOption = { label: string; instruction: string };
+
 /** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
 export type CharacterAssets = {
   walkSheetDataUrl: string; // 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right
@@ -104,6 +107,7 @@ export const SCHEMAS = {
   setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
   listEmployees: z.object({ companyId: z.string() }),
   teamMessages: z.object({ companyId: z.string(), limit: z.number().int().optional() }),
+  employeeOptions: z.object({ employeeId: z.string() }),
   postTeamChat: z.object({ companyId: z.string(), text: z.string().min(1).max(2000) }),
   directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
   setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
@@ -175,6 +179,7 @@ interface Results {
   restingRunners: RestingRunners;
 
   teamMessages: TeamMessage[];
+  employeeOptions: ChatOption[];
   postTeamChat: { ok: boolean };
   directEmployee: { ok: boolean };
   setMaxAgents: Company;

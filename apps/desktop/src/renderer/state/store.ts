@@ -318,10 +318,15 @@ export async function retryTask(task: Task): Promise<void> {
   await refresh();
 }
 
+/** An employee's live work: what they are on and what they are stuck on. */
 export async function listTasksFor(employeeId: string): Promise<Task[]> {
   const company = state.company;
   if (!company) return [];
-  return bridge().listTasks({ companyId: company.id, assigneeId: employeeId });
+  return bridge().listTasks({
+    companyId: company.id,
+    assigneeId: employeeId,
+    status: ["queued", "running", "blocked"],
+  });
 }
 
 /** Answer the question a blocked task is waiting on; the task resumes. */

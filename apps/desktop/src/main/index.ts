@@ -10,6 +10,7 @@ import { activityEvents, publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { openProduct, openWorkspacePath, productEntry } from "@/main/product";
+import { chatOptions } from "@/main/prompts/chat-options";
 import { scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
@@ -31,7 +32,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
+import { isOutOfBudget, spriteSeedFor, type Task } from "@/shared/domain";
 import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
 import { layoutIssues } from "@/shared/office-grid";
 import { jsonValueSchema, parseJson } from "@/shared/json";
@@ -194,6 +195,17 @@ function registerIpcHandlers(): void {
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
   handle("restingRunners", () => agentDriver.restingRunners());
+
+  handle("employeeOptions", ({ employeeId }) => {
+    const emp = store.getEmployee(employeeId);
+    if (!emp) throw new Error(`no employee ${employeeId}`);
+    const mine = (t: Task) => t.assigneeId === employeeId;
+    return chatOptions(
+      emp,
+      store.openTasksFor(employeeId),
+      store.listShippedTasks(emp.companyId).filter(mine),
+    );
+  });
 
   handle("teamMessages", ({ companyId, limit }) =>
     store.recentTeamMessages(companyId, limit ?? 30),
