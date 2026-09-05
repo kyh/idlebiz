@@ -16,12 +16,12 @@ type Lookup =
 type Pick = { state: "idle" } | { state: "connecting" } | { state: "error"; message: string };
 
 /**
- * Connect Vercel with a personal access token: paste → validate + list
- * projects → pick one. The token powers the users metric (Web Analytics),
- * the product panel's deploy state, and the team's real `vercel` deploys.
+ * Bind a product to a Vercel project with a personal access token: paste →
+ * validate + list projects → pick one. The token powers the users metric (Web
+ * Analytics), the product's deploy state, and the team's real `vercel` deploys.
  */
-export function ConnectVercel({ onClose }: { onClose: () => void }) {
-  const vercelStatus = useStore((s) => s.vercelStatus);
+export function ConnectVercel({ productId, onClose }: { productId: string; onClose: () => void }) {
+  const product = useStore((s) => s.products).find((p) => p.id === productId);
   const [token, setToken] = useState("");
   const [lookup, setLookup] = useState<Lookup>({ state: "idle" });
   const [pick, setPick] = useState<Pick>({ state: "idle" });
@@ -50,8 +50,14 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
     try {
       await connectVercel(
         p.teamId
-          ? { token: token.trim(), projectId: p.id, projectName: p.name, teamId: p.teamId }
-          : { token: token.trim(), projectId: p.id, projectName: p.name },
+          ? {
+              productId,
+              token: token.trim(),
+              projectId: p.id,
+              projectName: p.name,
+              teamId: p.teamId,
+            }
+          : { productId, token: token.trim(), projectId: p.id, projectName: p.name },
       );
       onClose();
     } catch (e) {
@@ -68,16 +74,21 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
           ? "No projects on this account yet."
           : null;
 
+  if (!product) return null;
   return (
-    <Modal title="Connect Vercel" width="lg" onClose={onClose}>
+    <Modal title="Connect Vercel" subtitle={product.name} width="lg" onClose={onClose}>
       <div className="space-y-3">
-        {vercelStatus.state === "connected" ? (
+        {product.vercel ? (
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm text-fg">
-              ✓ Connected to <b>{vercelStatus.projectName}</b> — users come from its Web Analytics,
-              and your team deploys to it for real.
+              ✓ <b>{product.name}</b> deploys to <b>{product.vercel.projectName}</b> — its users
+              come from that project's Web Analytics, and your team deploys to it for real.
             </div>
-            <button type="button" onClick={() => void disconnectVercel()} className="px-btn">
+            <button
+              type="button"
+              onClick={() => void disconnectVercel(productId)}
+              className="px-btn"
+            >
               Disconnect
             </button>
           </div>

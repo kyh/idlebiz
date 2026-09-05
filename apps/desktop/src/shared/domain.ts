@@ -274,6 +274,33 @@ export interface Employee {
   createdAt: number;
 }
 
+/** The Vercel project a product deploys to; the token is the founder's, one per company. */
+export interface VercelBinding {
+  projectId: string;
+  projectName: string;
+  teamId: string | null;
+}
+
+/**
+ * Something the company builds and ships: its own workspace, its own deploy,
+ * its own count of shipped work. A company's first product shares the company
+ * workspace (that is where it was born); every later one gets its own under
+ * products/<slug>/.
+ */
+export interface Product {
+  id: string; // slug (folder name under products/)
+  companyId: string;
+  name: string;
+  description: string;
+  workspaceDir: string;
+  ships: number;
+  /** When work for it last shipped; autopilot turns to the product waited on longest. */
+  lastShipAt: number | null;
+  users: number | null; // REAL visitors of its deploy (Vercel Web Analytics); null until bound
+  vercel: VercelBinding | null;
+  createdAt: number;
+}
+
 /** What a task's status says about its assignee: working while a run is in flight, idle otherwise. */
 export const employeeStatusOf = (status: TaskStatus): EmployeeStatus =>
   status === "running" ? "working" : "idle";
@@ -329,6 +356,8 @@ export const taskIn =
 export interface Task {
   id: string; // slug (folder name under tasks/)
   companyId: string;
+  /** The product this work is for; null is company-level work (a review, a routine). */
+  productId: string | null;
   title: string;
   description: string | null;
   state: TaskState;

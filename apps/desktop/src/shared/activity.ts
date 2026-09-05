@@ -60,6 +60,7 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   event("org.released", {
     payload: z.object({ by: z.string(), name: z.string(), reason: z.string() }),
   }),
+  event("product.created", { message: z.string(), payload: z.object({ productId: z.string() }) }),
   event("budget.exhausted", { payload: z.object({ spentUsd: z.number(), budget: BudgetSchema }) }),
   event("metrics.pulse", {
     payload: z.object({ users: z.number().nullable(), revenue: z.number().nullable() }),

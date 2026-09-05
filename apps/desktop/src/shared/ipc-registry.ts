@@ -9,6 +9,7 @@ import {
   type AgentRunner,
   type Company,
   type Employee,
+  type Product,
   type Task,
   type TeamMessage,
 } from "@/shared/domain";
@@ -28,7 +29,7 @@ export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
 /** A package on disk the store could not read at boot, and why. */
 export type LoadSkip = {
-  kind: "company" | "employee" | "task" | "routine" | "team";
+  kind: "company" | "employee" | "task" | "routine" | "product" | "team";
   path: string;
   error: string;
 };
@@ -44,9 +45,6 @@ export type StripeStatus =
   | { state: "connecting" }
   | { state: "connected"; accountId: string; livemode: boolean }
   | { state: "error"; message: string };
-
-/** Vercel link state (token-based; no OAuth). */
-export type VercelStatus = { state: "disconnected" } | { state: "connected"; projectName: string };
 
 /** A Vercel project the founder can bind the company to. */
 export type VercelProject = { id: string; name: string; teamId?: string };
@@ -120,7 +118,7 @@ export const SCHEMAS = {
   answerQuestion: z.object({ taskId: z.string(), answer: z.string() }),
   resolveApproval: z.object({ taskId: z.string(), approved: z.boolean() }),
   openCompanyPath: z.object({ companyId: z.string(), rel: z.string() }),
-  openProduct: z.object({ companyId: z.string() }),
+  openProduct: z.object({ productId: z.string() }),
   generateHires: z.object({
     companyName: z.string(),
     mission: z.string(),
@@ -132,14 +130,20 @@ export const SCHEMAS = {
   stripeDisconnect: z.object({ companyId: z.string() }),
   vercelListProjects: z.object({ token: z.string() }),
   vercelConnect: z.object({
-    companyId: z.string(),
+    productId: z.string(),
     token: z.string(),
     projectId: z.string(),
     projectName: z.string(),
     teamId: z.string().optional(),
   }),
-  vercelDisconnect: z.object({ companyId: z.string() }),
-  productStatus: z.object({ companyId: z.string() }),
+  vercelDisconnect: z.object({ productId: z.string() }),
+  listProducts: z.object({ companyId: z.string() }),
+  createProduct: z.object({
+    companyId: z.string(),
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().min(1).max(600),
+  }),
+  productStatus: z.object({ productId: z.string() }),
   saveOfficeDesign: z.object({ json: z.string() }),
 } satisfies Partial<Record<IpcMethod, z.ZodTypeAny>>;
 
@@ -169,10 +173,11 @@ interface Results {
   stripeDisconnect: { ok: boolean };
   onStripeStatus: StripeStatus;
 
-  vercelStatus: VercelStatus;
   vercelListProjects: { ok: boolean; account?: string; projects: VercelProject[] };
   vercelConnect: { ok: boolean };
   vercelDisconnect: { ok: boolean };
+  listProducts: Product[];
+  createProduct: Product;
   productStatus: ProductStatus;
 
   listEmployees: Employee[];

@@ -2,14 +2,16 @@ import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
 import { employeeStatusOf, taskIn } from "@/shared/domain";
-import type { Budget, Company, Employee, Task, TaskIn, TeamMessage } from "@/shared/domain";
 import type {
-  LoadSkip,
-  ProductStatus,
-  RestingRunners,
-  StripeStatus,
-  VercelStatus,
-} from "@/shared/ipc-registry";
+  Budget,
+  Company,
+  Employee,
+  Product,
+  Task,
+  TaskIn,
+  TeamMessage,
+} from "@/shared/domain";
+import type { LoadSkip, ProductStatus, RestingRunners, StripeStatus } from "@/shared/ipc-registry";
 import {
   BUNDLED_LAYOUT,
   parseOfficeLayout,
@@ -29,8 +31,9 @@ interface State {
   layout: OfficeLayoutData | null;
   authed: boolean;
   stripeStatus: StripeStatus;
-  vercelStatus: VercelStatus;
-  product: ProductStatus | null; // PRODUCT.md entry + latest deploy
+  /** Everything the company builds, oldest first, and where each one really is. */
+  products: Product[];
+  productStatus: ReadonlyMap<string, ProductStatus>;
   resting: RestingRunners;
   /** Packages boot could not read. A skipped company blocks the office (see App). */
   saveIssues: LoadSkip[];
@@ -50,8 +53,8 @@ let state: State = {
   layout: null,
   authed: true,
   stripeStatus: { state: "disconnected" },
-  vercelStatus: { state: "disconnected" },
-  product: null,
+  products: [],
+  productStatus: new Map(),
   resting: {},
   saveIssues: [],
   company: null,
@@ -127,9 +130,6 @@ export function initStore(): void {
   void bridge()
     .stripeStatus()
     .then((s) => set({ stripeStatus: s }));
-  void bridge()
-    .vercelStatus()
-    .then((s) => set({ vercelStatus: s }));
   bridge().onActivity((e: ActivityEvent) => onActivity(e));
   bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
 }
@@ -180,12 +180,13 @@ export async function refresh(): Promise<void> {
     bridge().restingRunners(),
     bridge().loadReport(),
   ]);
-  const [employees, tasks] = company
+  const [employees, tasks, products] = company
     ? await Promise.all([
         bridge().listEmployees({ companyId: company.id }),
         bridge().listTasks({ companyId: company.id, status: ["blocked", "dead"] }),
+        bridge().listProducts({ companyId: company.id }),
       ])
-    : [[], []];
+    : [[], [], []];
   const pendingAsks = tasks.filter(taskIn("blocked"));
   const stuckTasks = tasks.filter(taskIn("dead"));
   set({
@@ -194,17 +195,42 @@ export async function refresh(): Promise<void> {
     resting,
     saveIssues: load.skipped,
     employees,
+    products,
     pendingAsks,
     stuckTasks,
   });
-  // product state rides along (deploy lookup is a no-op until Vercel is connected)
-  if (company) {
-    void bridge()
-      .productStatus({ companyId: company.id })
-      .then((product) => set({ product }))
-      .catch(() => undefined);
-  }
+  void refreshProductStatus(products);
 }
+
+/** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
+async function refreshProductStatus(products: readonly Product[]): Promise<void> {
+  const entries = await Promise.all(
+    products.map(async (p) => {
+      try {
+        return [p.id, await bridge().productStatus({ productId: p.id })] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
+}
+
+/** The products as main now has them, after a change to them. */
+async function reloadProducts(): Promise<void> {
+  const company = state.company;
+  if (!company) return;
+  const products = await bridge().listProducts({ companyId: company.id });
+  set({ products });
+  await refreshProductStatus(products);
+}
+
+/** The founder starts a second product; the roster learns of it on their next run. */
+export const createProduct = (name: string, description: string): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().createProduct({ companyId, name, description });
+    await reloadProducts();
+  });
 
 /** Fetch a team's chat-room messages on demand (for the Teams panel). */
 export async function teamMessages(limit = 30): Promise<TeamMessage[]> {
@@ -245,6 +271,11 @@ function onActivity(e: ActivityEvent): void {
         .catch(() => undefined);
       return;
     // the team self-sizes: reflect hires/releases in the office immediately
+    // the lead started a product: the roster's next runs know it; the panels do now
+    case "product.created":
+      set({ activity });
+      void reloadProducts();
+      return;
     case "org.hired":
     case "org.released": {
       set({ activity });
@@ -303,22 +334,21 @@ export const disconnectStripe = (): Promise<void> =>
     await bridge().stripeDisconnect({ companyId });
   });
 
-export const connectVercel = (input: {
+export async function connectVercel(input: {
+  productId: string;
   token: string;
   projectId: string;
   projectName: string;
   teamId?: string;
-}): Promise<void> =>
-  withCompany(async (companyId) => {
-    await bridge().vercelConnect({ companyId, ...input });
-    set({ vercelStatus: await bridge().vercelStatus() });
-  });
+}): Promise<void> {
+  await bridge().vercelConnect(input);
+  await reloadProducts();
+}
 
-export const disconnectVercel = (): Promise<void> =>
-  withCompany(async (companyId) => {
-    await bridge().vercelDisconnect({ companyId });
-    set({ vercelStatus: { state: "disconnected" } });
-  });
+export async function disconnectVercel(productId: string): Promise<void> {
+  await bridge().vercelDisconnect({ productId });
+  await reloadProducts();
+}
 
 export async function resetGame(): Promise<void> {
   await bridge().resetGame();

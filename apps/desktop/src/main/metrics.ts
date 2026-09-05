@@ -4,6 +4,7 @@ import { atomicWrite, readJsonFile } from "@/main/lib/fs";
 import { HttpError, getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
 import { getSecret } from "@/main/secrets";
+import type { Product } from "@/shared/domain";
 import { jsonValueSchema, type JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
@@ -31,6 +32,8 @@ const MetricsConfigSchema = z.object({
   stripeAccount: z
     .object({ accountId: z.string(), livemode: z.boolean(), connectedAt: z.number() })
     .optional(),
+  // a Vercel binding belongs to a product; saves from before products kept it
+  // here, and boot moves it to the first product
   vercel: z
     .object({
       projectId: z.string(),
@@ -47,6 +50,8 @@ export type MetricsConfig = z.infer<typeof MetricsConfigSchema>;
 export interface RealSnapshot {
   users: number | null;
   revenue: number | null;
+  /** Visitors per product, for the products bound to a Vercel project. */
+  productUsers: ReadonlyMap<string, number | null>;
   /** A provider's credentials were rejected (e.g. Stripe token revoked). */
   authError?: boolean;
 }
@@ -56,9 +61,7 @@ function metricsPath(companyId: string): string {
 }
 
 export function readMetricsConfig(companyId: string): MetricsConfig | null {
-  const cfg = readJsonFile(metricsPath(companyId), MetricsConfigSchema);
-  if (!cfg || (!cfg.stripe && !cfg.vercel && !cfg.plausible && !cfg.custom)) return null;
-  return cfg;
+  return readJsonFile(metricsPath(companyId), MetricsConfigSchema);
 }
 
 /** Merge a patch into metrics.json; an `undefined` field drops that provider. The file is a MetricsConfig both ways. */
@@ -176,7 +179,9 @@ async function plausibleVisitors(domain: string): Promise<number | null> {
   }
 }
 
-async function customSnapshot(url: string): Promise<RealSnapshot> {
+async function customSnapshot(
+  url: string,
+): Promise<{ users: number | null; revenue: number | null }> {
   try {
     const parsed = CustomSnapshotSchema.safeParse(await getJson(url, {}));
     if (parsed.success) return { users: num(parsed.data.users), revenue: num(parsed.data.revenue) };
@@ -186,21 +191,38 @@ async function customSnapshot(url: string): Promise<RealSnapshot> {
   return { users: null, revenue: null };
 }
 
+/** Visitors of every product's deploy, and their sum when any product reports. */
+async function productVisitors(
+  products: readonly Product[],
+): Promise<{ each: Map<string, number | null>; total: number | null }> {
+  const bound = products.filter((p) => p.vercel !== null);
+  const counts = await Promise.all(
+    bound.map((p) =>
+      p.vercel ? webAnalyticsVisitors(p.vercel.projectId, p.vercel.teamId ?? undefined) : null,
+    ),
+  );
+  const each = new Map(bound.map((p, i) => [p.id, counts[i] ?? null]));
+  const known = counts.filter((n): n is number => n !== null);
+  return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
+}
+
 /** Fetch the real numbers for every configured source (nulls where unavailable). */
-export async function fetchRealMetrics(cfg: MetricsConfig): Promise<RealSnapshot> {
+export async function fetchRealMetrics(
+  cfg: MetricsConfig | null,
+  products: readonly Product[],
+): Promise<RealSnapshot> {
   const none: StripeSnapshot = { revenue: null, customers: null, authError: false };
-  const [stripe, vercelUsers, visitors, custom] = await Promise.all([
-    cfg.stripe ? stripeSnapshot() : Promise.resolve(none),
-    cfg.vercel
-      ? webAnalyticsVisitors(cfg.vercel.projectId, cfg.vercel.teamId)
-      : Promise.resolve(null),
-    cfg.plausible ? plausibleVisitors(cfg.plausible.domain) : Promise.resolve(null),
-    cfg.custom ? customSnapshot(cfg.custom.url) : Promise.resolve({ users: null, revenue: null }),
+  const [stripe, vercel, visitors, custom] = await Promise.all([
+    cfg?.stripe ? stripeSnapshot() : Promise.resolve(none),
+    productVisitors(products),
+    cfg?.plausible ? plausibleVisitors(cfg.plausible.domain) : Promise.resolve(null),
+    cfg?.custom ? customSnapshot(cfg.custom.url) : Promise.resolve({ users: null, revenue: null }),
   ]);
   return {
     // real traffic first; paying customers as the fallback "users" signal
-    users: vercelUsers ?? stripe.customers ?? visitors ?? custom.users,
+    users: vercel.total ?? stripe.customers ?? visitors ?? custom.users,
     revenue: stripe.revenue ?? custom.revenue,
+    productUsers: vercel.each,
     authError: stripe.authError,
   };
 }

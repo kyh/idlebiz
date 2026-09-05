@@ -12,6 +12,8 @@ import { mkdirSync } from "node:fs";
 //       sessions/           the agent's own session continuity
 //     tasks/<slug>/TASK.md  open work
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log)
+//     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
+//     products/<slug>/workspace/  its code (the first product uses workspace/)
 //     workspace/            shared cwd where agents do real work
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical)
@@ -54,6 +56,14 @@ export const taskFile = (companySlug: string, taskSlug: string): string =>
 export const shippedDir = (companySlug: string): string => join(companyDir(companySlug), "shipped");
 export const shippedTaskFile = (companySlug: string, taskSlug: string): string =>
   join(shippedDir(companySlug), taskSlug, "TASK.md");
+
+export const productsDir = (companySlug: string): string =>
+  join(companyDir(companySlug), "products");
+export const productFile = (companySlug: string, productSlug: string): string =>
+  join(productsDir(companySlug), productSlug, "PRODUCT.md");
+/** A later product's own workspace; the first product lives in the company workspace. */
+export const productWorkspace = (companySlug: string, productSlug: string): string =>
+  join(productsDir(companySlug), productSlug, "workspace");
 
 /** Commands the founder has signed off but the agent has not run yet. */
 export const approvalsFile = (companySlug: string): string =>

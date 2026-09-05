@@ -19,7 +19,6 @@ import { latestDeployment } from "@/main/vercel";
 import {
   connectVercel,
   disconnectVercel,
-  getVercelStatus,
   initVercelConnect,
   listVercelProjects,
 } from "@/main/vercel-connect";
@@ -47,11 +46,11 @@ let metricsTimer: ReturnType<typeof setInterval> | null = null;
 function runMetricsPulse(): void {
   const company = store.getDefaultCompany();
   if (!company) return;
-  const cfg = readMetricsConfig(company.id);
-  if (!cfg) return;
+  const products = store.listProducts(company.id);
   void (async () => {
-    const snap = await fetchRealMetrics(cfg);
+    const snap = await fetchRealMetrics(readMetricsConfig(company.id), products);
     store.setRealMetrics(company.id, snap);
+    for (const [productId, users] of snap.productUsers) store.setProductUsers(productId, users);
     if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
     publishActivity(
       { kind: "metrics.pulse", payload: { users: snap.users, revenue: snap.revenue } },
@@ -171,26 +170,32 @@ function registerIpcHandlers(): void {
   handle("stripeConnect", ({ companyId }) => beginConnect(companyId));
   handle("stripeDisconnect", ({ companyId }) => disconnectStripe(companyId));
 
-  handle("vercelStatus", () => {
-    const company = store.getDefaultCompany();
-    return company ? getVercelStatus(company.id) : { state: "disconnected" };
-  });
   handle("vercelListProjects", ({ token }) => listVercelProjects(token));
   handle("vercelConnect", (input) => {
     connectVercel(input);
     return { ok: true };
   });
-  handle("vercelDisconnect", ({ companyId }) => {
-    disconnectVercel(companyId);
+  handle("vercelDisconnect", ({ productId }) => {
+    disconnectVercel(productId);
     return { ok: true };
   });
 
-  handle("productStatus", async ({ companyId }) => {
-    const cfg = readMetricsConfig(companyId);
-    const deploy = cfg?.vercel
-      ? await latestDeployment(cfg.vercel.projectId, cfg.vercel.teamId)
+  handle("listProducts", ({ companyId }) => store.listProducts(companyId));
+  handle("createProduct", ({ companyId, name, description }) => {
+    const product = store.createProduct({ companyId, name, description });
+    publishActivity({
+      kind: "product.created",
+      message: product.name,
+      payload: { productId: product.id },
+    });
+    return product;
+  });
+  handle("productStatus", async ({ productId }) => {
+    const { vercel } = store.requireProduct(productId);
+    const deploy = vercel
+      ? await latestDeployment(vercel.projectId, vercel.teamId ?? undefined)
       : null;
-    return { entry: productEntry(companyId), deploy };
+    return { entry: productEntry(productId), deploy };
   });
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
@@ -245,9 +250,9 @@ function registerIpcHandlers(): void {
     await openWorkspacePath(companyId, rel);
     return { ok: true };
   });
-  handle("openProduct", async ({ companyId }) => ({
+  handle("openProduct", async ({ productId }) => ({
     ok: true,
-    opened: await openProduct(companyId),
+    opened: await openProduct(productId),
   }));
 }
 

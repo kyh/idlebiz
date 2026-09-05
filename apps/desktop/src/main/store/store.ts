@@ -19,6 +19,9 @@ import {
   taskFile,
   shippedDir,
   shippedTaskFile,
+  productsDir,
+  productFile,
+  productWorkspace,
   routinesDir,
   routineFile,
   chatFile,
@@ -39,7 +42,9 @@ import {
 import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
+import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
+import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import { errorMessage } from "@/shared/errors";
 import type { LoadReport, LoadSkip } from "@/shared/ipc-registry";
 import { isRunnerId } from "@repo/agent-driver/runner";
@@ -59,7 +64,9 @@ import {
 import type {
   AgentRunner,
   FailureVerdict,
+  Product,
   TaskState,
+  VercelBinding,
   Budget,
   BusinessTypeId,
   Company,
@@ -82,6 +89,7 @@ interface Cache {
   employees: Map<string, Employee[]>; // companyId -> employees
   tasks: Map<string, Task[]>; // companyId -> open tasks (done ones live in shipped/)
   shipped: Map<string, Task[]>; // companyId -> done tasks, once a panel has asked for them
+  products: Map<string, Product[]>; // companyId -> products, oldest first
   routines: Map<string, Routine[]>; // companyId -> routines
   chat: Map<string, TeamMessage[]>; // companyId -> recent room messages (ring)
   activity: ActivityEvent[]; // ring buffer across companies (UI stream)
@@ -232,6 +240,7 @@ function employeeBody(e: Employee, co: Company): string {
   return standingInstructions({
     employee: e,
     company: co,
+    products: c().products.get(co.id) ?? [],
     lead: co.leaderId === e.id,
     memoryDir: employeeMemoryDir(co.id, e.id),
   });
@@ -303,6 +312,9 @@ function readTextIfPresent(file: string): string | null {
 function saveTask(t: Task): void {
   atomicWrite(taskFile(t.companyId, t.id), serializeDoc(taskToDoc(t)));
 }
+function saveProduct(p: Product): void {
+  atomicWrite(productFile(p.companyId, p.id), serializeDoc(productToDoc(p)));
+}
 /** A done task's package leaves the open queue for the shipping log. */
 function shelve(t: Task): void {
   moveDir(join(tasksDir(t.companyId), t.id), join(shippedDir(t.companyId), t.id));
@@ -358,6 +370,7 @@ export function initStore(): LoadReport {
     employees: new Map(),
     tasks: new Map(),
     shipped: new Map(),
+    products: new Map(),
     routines: new Map(),
     chat: new Map(),
     activity: [],
@@ -413,6 +426,16 @@ export function initStore(): LoadReport {
         tasks.filter((t) => t.state.kind !== "done"),
       );
 
+      loaded.products.set(
+        co.id,
+        loadPackages(
+          "product",
+          productsDir(co.id),
+          (slug) => productFile(co.id, slug),
+          (doc) => docToProduct(doc, co.id),
+        ).toSorted(byAge),
+      );
+
       loaded.routines.set(
         co.id,
         loadPackages(
@@ -456,6 +479,25 @@ export function initStore(): LoadReport {
         /* non-fatal */
       }
     }
+  }
+
+  // a company from before products existed: everything it shipped was its one
+  // product, born in the company workspace, deployed by the binding metrics.json held
+  for (const co of loaded.companies.values()) {
+    if ((loaded.products.get(co.id) ?? []).length > 0) continue;
+    const legacy = readMetricsConfig(co.id)?.vercel;
+    const first = firstProduct(co, {
+      vercel: legacy
+        ? {
+            projectId: legacy.projectId,
+            projectName: legacy.projectName ?? legacy.projectId,
+            teamId: legacy.teamId ?? null,
+          }
+        : null,
+    });
+    loaded.products.set(co.id, [first]);
+    saveProduct(first);
+    if (legacy) writeMetricsConfig(co.id, { vercel: undefined });
   }
 
   // a company with people and no lead elects one, so the hire/release tools have an owner
@@ -631,12 +673,16 @@ export function foundCompany(input: {
   c().employees.set(id, []);
   c().tasks.set(id, []);
   c().shipped.set(id, []);
+  c().products.set(id, []);
   c().routines.set(id, []);
   c().chat.set(id, []);
   try {
     mkdirSync(companyWorkspace(id), { recursive: true });
     mkdirSync(tasksDir(id), { recursive: true });
     mkdirSync(agentsDir(id), { recursive: true });
+    const first = firstProduct(co, { vercel: null });
+    c().products.set(id, [first]);
+    saveProduct(first);
     input.hires.forEach((hire, deskIndex) => createEmployee({ companyId: id, deskIndex, ...hire }));
     co.leaderId = electLead(id);
     seedDefaultRoutines(id, input.businessType);
@@ -647,6 +693,7 @@ export function foundCompany(input: {
       c().employees,
       c().tasks,
       c().shipped,
+      c().products,
       c().routines,
       c().chat,
     ])
@@ -822,11 +869,100 @@ export function setMaxAgents(id: string, maxAgents: number): Company {
 export function setAutopilot(id: string, on: boolean): Company {
   return patchCompany(id, { autopilot: on });
 }
-/** Record one shipped unit of work (the real counter behind the version string). */
-export function recordShip(id: string): void {
-  const co = c().companies.get(id);
+/** One shipped unit of work: the company's count, and the product's when the task named one. */
+export function recordShip(companyId: string, productId: string | null): void {
+  const co = c().companies.get(companyId);
   if (!co) return;
-  patchCompany(id, { ships: co.ships + 1 });
+  patchCompany(companyId, { ships: co.ships + 1 });
+  const product = productId === null ? null : getProduct(productId);
+  if (product) patchProduct(product.id, { ships: product.ships + 1, lastShipAt: Date.now() });
+}
+
+// ---- products --------------------------------------------------------------
+/** The product a company is born with: its mission, in the company workspace, with everything shipped so far. */
+function firstProduct(co: Company, extra: { vercel: VercelBinding | null }): Product {
+  return {
+    id: uniqueSlug(co.name, [], (s) => existsSync(join(productsDir(co.id), s))),
+    companyId: co.id,
+    name: co.name,
+    description: co.mission,
+    workspaceDir: co.workspaceDir,
+    ships: co.ships,
+    lastShipAt: null,
+    users: co.users,
+    vercel: extra.vercel,
+    createdAt: co.createdAt,
+  };
+}
+
+export const getProduct = (id: string): Product | null => findIn(c().products, id);
+export function requireProduct(id: string): Product {
+  const p = getProduct(id);
+  if (!p) throw new Error(`no product ${id}`);
+  return p;
+}
+export function listProducts(companyId: string): Product[] {
+  return [...(c().products.get(companyId) ?? [])];
+}
+
+const patchProduct = (id: string, patch: Partial<Product>): Product | null =>
+  patchIn(c().products, id, patch, saveProduct);
+
+/** A second (or later) product: its own package, its own workspace; every agent learns of it. */
+export function createProduct(input: {
+  companyId: string;
+  name: string;
+  description: string;
+}): Product {
+  const list = c().products.get(input.companyId);
+  if (!list) throw new Error(`company ${input.companyId} not found`);
+  const id = uniqueSlug(
+    input.name,
+    list.map((p) => p.id),
+    (s) => existsSync(join(productsDir(input.companyId), s)),
+  );
+  const product: Product = {
+    id,
+    companyId: input.companyId,
+    name: input.name.trim(),
+    description: input.description.trim(),
+    workspaceDir: productWorkspace(input.companyId, id),
+    ships: 0,
+    lastShipAt: null,
+    users: null,
+    vercel: null,
+    createdAt: Date.now(),
+  };
+  mkdirSync(product.workspaceDir, { recursive: true });
+  saveProduct(product);
+  list.push(product);
+  // the roster's standing instructions list the products; they are re-rendered on the spot
+  for (const e of listEmployees(input.companyId)) saveEmployee(e);
+  return product;
+}
+
+export function setProductVercel(productId: string, vercel: VercelBinding | null): Product | null {
+  return patchProduct(productId, { vercel });
+}
+
+/** Real visitors per product, from the pulse; a null keeps the last-known value. */
+export function setProductUsers(productId: string, users: number | null): void {
+  if (users !== null) patchProduct(productId, { users: Math.max(0, Math.round(users)) });
+}
+
+/** Where autopilot turns next: the product that has waited longest for a ship. */
+export function attentionProduct(companyId: string): Product | null {
+  const products = c().products.get(companyId) ?? [];
+  return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
+}
+
+/** The product an employee is on: their latest task's, else the company's first. */
+export function productOfEmployee(employeeId: string): Product | null {
+  const emp = getEmployee(employeeId);
+  if (!emp) return null;
+  const latest = openTasksFor(employeeId).toSorted(newestFirst)[0];
+  const fromTask = latest?.productId ? getProduct(latest.productId) : null;
+  return fromTask ?? (c().products.get(emp.companyId) ?? [])[0] ?? null;
 }
 // ---- founder approvals -------------------------------------------------------
 // A command the founder signed off but the agent has not run yet. Persisted
@@ -966,6 +1102,7 @@ export function setEmployeeSession(id: string, sessionId: string | null): void {
 // ---- tasks -----------------------------------------------------------------
 export function createTask(t: {
   companyId: string;
+  productId?: string | null;
   title: string;
   description?: string | null;
   priority?: TaskPriority;
@@ -982,6 +1119,7 @@ export function createTask(t: {
   const task: Task = {
     id,
     companyId: t.companyId,
+    productId: t.productId ?? null,
     title: t.title,
     description: t.description ?? null,
     state: { kind: "todo" },
@@ -1154,6 +1292,7 @@ export function resolveBlockedWithAnswer(taskId: string, answer: string): Task |
   close(taskId, { kind: "done", summary: answeredSummary(answer) });
   return createTask({
     companyId: t.companyId,
+    productId: t.productId,
     ...continuationBrief(t, ask, answer),
     priority: "high",
     assigneeId: t.assigneeId,

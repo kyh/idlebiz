@@ -4,6 +4,7 @@ import type {
   Company,
   Employee,
   IntegrationKind,
+  Product,
   Routine,
   Task,
   TeamMessage,
@@ -42,6 +43,9 @@ function budgetLine(company: Company): string {
 export interface AutonomousBriefInput {
   company: Company;
   employee: Employee;
+  /** Everything the company builds, and the one this run is turned to. */
+  products: readonly Product[];
+  focus: Product | null;
   /** Everyone at the company. */
   employees: readonly Employee[];
   room: readonly TeamMessage[];
@@ -58,7 +62,10 @@ export interface AutonomousBriefInput {
  * to coordinate (chain / fan out) while members execute and report back.
  */
 export function autonomousBrief(input: AutonomousBriefInput): TaskBrief {
-  const { company, employee, employees, room, ships, problems, nameOf } = input;
+  const { company, employee, employees, products, focus, room, ships, problems, nameOf } = input;
+  const portfolio = products
+    .map((p) => `- ${p.name} (${p.id}): ${p.description}${p === focus ? " ← this run" : ""}`)
+    .join("\n");
   const isLeader = company.leaderId === employee.id;
   const roster =
     employees
@@ -86,6 +93,9 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `Your role: ${employee.title}.`,
     `Your team: ${roster}.`,
     ``,
+    `Products:`,
+    portfolio,
+    ``,
     `Recent team room:`,
     roomTranscript(room, nameOf),
     ``,
@@ -100,7 +110,22 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `When you finish, post a one-line update to the team room with message_team(text).`,
     `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
   ].join("\n");
-  return { title: `Advance ${company.name}`, description };
+  return { title: `Advance ${focus?.name ?? company.name}`, description };
+}
+
+/**
+ * What every run opens with: which product the task is for and where its code
+ * lives, so the agent's cwd is never a surprise. Company-level work says so.
+ */
+export function runPreamble(product: Product | null, company: Company): string {
+  if (!product) {
+    return `COMPANY-LEVEL WORK (not for one product). Working directory: ${company.workspaceDir}.`;
+  }
+  const shared =
+    product.workspaceDir === company.workspaceDir
+      ? ""
+      : `\nThe company workspace, shared across products, is at ${company.workspaceDir}.`;
+  return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}${shared}`;
 }
 
 /** A recurring directive, fired on its cadence. */

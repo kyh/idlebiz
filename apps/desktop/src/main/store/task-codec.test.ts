@@ -6,6 +6,7 @@ import { docToTask, taskToDoc } from "./task-codec";
 const base: Omit<Task, "state"> = {
   id: "ship-the-thing",
   companyId: "acme",
+  productId: "widget",
   title: "Ship the thing",
   description: "Build it, then ship it.",
   priority: "high",

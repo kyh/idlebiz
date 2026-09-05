@@ -1,13 +1,14 @@
-import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
-import { deleteSecret, getSecret, setSecret } from "@/main/secrets";
+import { deleteSecret, setSecret } from "@/main/secrets";
+import * as store from "@/main/store/store";
 import { listProjects, validateToken } from "@/main/vercel";
-import type { Contract, VercelStatus } from "@/shared/ipc-registry";
+import type { Contract } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
-// The Vercel link, beside its Stripe twin (stripe-connect.ts): a personal
-// token lands in secrets.json as VERCEL_TOKEN and the chosen project in
-// metrics.json. Both the metrics pulse (users = Web Analytics visitors) and the
-// agents' shells (real deploys via the vercel CLI) inherit it from there.
+// The Vercel link, beside its Stripe twin (stripe-connect.ts): one personal
+// token per founder lands in secrets.json as VERCEL_TOKEN, and each product
+// binds its own project. The metrics pulse (users = Web Analytics visitors,
+// per product) and the agents' shells (real deploys via the vercel CLI) inherit
+// the token from there.
 // ---------------------------------------------------------------------------
 
 const VERCEL_TOKEN_KEY = "VERCEL_TOKEN";
@@ -16,12 +17,6 @@ let onConnected: () => void = () => {};
 
 export function initVercelConnect(hooks: { onConnected: () => void }): void {
   onConnected = hooks.onConnected;
-}
-
-export function getVercelStatus(companyId: string): VercelStatus {
-  const cfg = readMetricsConfig(companyId);
-  if (!cfg?.vercel || !getSecret(VERCEL_TOKEN_KEY)) return { state: "disconnected" };
-  return { state: "connected", projectName: cfg.vercel.projectName ?? cfg.vercel.projectId };
 }
 
 export async function listVercelProjects(
@@ -34,15 +29,16 @@ export async function listVercelProjects(
 }
 
 export function connectVercel(input: Contract["vercelConnect"]["payload"]): void {
-  const { companyId, token, projectId, projectName, teamId } = input;
+  const { productId, token, projectId, projectName, teamId } = input;
   setSecret(VERCEL_TOKEN_KEY, token.trim());
-  writeMetricsConfig(companyId, {
-    vercel: teamId ? { projectId, projectName, teamId } : { projectId, projectName },
-  });
+  store.setProductVercel(productId, { projectId, projectName, teamId: teamId ?? null });
   onConnected();
 }
 
-export function disconnectVercel(companyId: string): void {
-  writeMetricsConfig(companyId, { vercel: undefined });
-  deleteSecret(VERCEL_TOKEN_KEY);
+/** Unbind the product; the token goes too once no product is bound to anything. */
+export function disconnectVercel(productId: string): void {
+  const product = store.setProductVercel(productId, null);
+  if (!product) return;
+  const stillBound = store.listProducts(product.companyId).some((p) => p.vercel !== null);
+  if (!stillBound) deleteSecret(VERCEL_TOKEN_KEY);
 }

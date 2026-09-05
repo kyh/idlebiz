@@ -7,7 +7,8 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
 - Game state on disk at `~/.idlebiz/<company-slug>/` â€” agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md doubles as the live agent
   instructions, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
-  routines/, workspace/, activity.jsonl).
+  products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
+  get products/<slug>/workspace/), routines/, activity.jsonl).
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.

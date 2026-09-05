@@ -41,4 +41,4 @@ the repo root — both gitignored. Bump `version` in `apps/desktop/package.json`
 before publishing; electron-builder tags the release `v<version>`.
 
 Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
-agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, workspace/).
+agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).

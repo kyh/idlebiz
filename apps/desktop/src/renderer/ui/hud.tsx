@@ -1,12 +1,18 @@
 import { useNow } from "@/renderer/hooks/use-now";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
-import type { Company, Employee } from "@/shared/domain";
+import type { Company, Employee, Product } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
 
 /** The windows the HUD opens over the office; at most one is up at a time. */
-export type Overlay = "ships" | "inbox" | "teams" | "budget" | "vercel" | "settings";
+export type Overlay =
+  | { kind: "ships" }
+  | { kind: "inbox" }
+  | { kind: "teams" }
+  | { kind: "budget" }
+  | { kind: "settings" }
+  | { kind: "vercel"; productId: string };
 
 // ❗ stays, though VG5000 has no glyph for it and it renders as a colour emoji.
 // Tried the pixel "!" — it reads as punctuation glued to the count and the plate
@@ -67,7 +73,7 @@ function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: O
         accent={out ? "var(--danger)" : "#9fe6b0"}
         sub={company.revenueUsd === null ? `${spent} · connect` : `${spent}${out ? " · OUT" : ""}`}
         title="Real Stripe revenue vs real AI spend — budget & Stripe live here"
-        onClick={() => onOpen("budget")}
+        onClick={() => onOpen({ kind: "budget" })}
       />
       <Stat
         label={company.users !== null ? "users ⚡" : "users"}
@@ -75,40 +81,46 @@ function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: O
         accent="#86c0ee"
         sub={company.users === null ? "connect" : "web analytics"}
         title="Real users from Vercel Web Analytics on your deployed product"
-        onClick={() => onOpen("vercel")}
+        onClick={() => onOpen({ kind: "ships" })}
       />
     </div>
   );
 }
 
 /**
- * What the product plate says: where the product really is. A live deploy or a
+ * What a product plate says: where the product really is. A live deploy or a
  * local entry the team wrote — never a number derived from how many tasks closed.
  */
-function productStateOf(product: ProductStatus | null): string {
-  const deploy = product?.deploy ?? null;
+export function productStateOf(status: ProductStatus | undefined): string {
+  const deploy = status?.deploy ?? null;
   if (deploy) return deploy.state === "READY" ? "LIVE" : deploy.state.toLowerCase();
-  return product?.entry ? "local build" : "unshipped";
+  return status?.entry ? "local build" : "unshipped";
 }
 
 /** Top-right: the company — product state, team, and what's waiting on the founder. */
 function CompanyPlates({
   company,
   employees,
-  product,
+  products,
+  productStatus,
   needsYou,
   nap,
   onOpen,
 }: {
   company: Company;
   employees: Employee[];
-  product: ProductStatus | null;
+  products: Product[];
+  productStatus: ReadonlyMap<string, ProductStatus>;
   needsYou: number;
   nap: string | null;
   onOpen: (overlay: Overlay) => void;
 }) {
-  const deploy = product?.deploy ?? null;
-  const productState = productStateOf(product);
+  // the plate shows the company's first product; the panel behind it shows them all
+  const lead = products[0];
+  const status = lead ? productStatus.get(lead.id) : undefined;
+  const deploy = status?.deploy ?? null;
+  const productState = productStateOf(status);
+  const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
   const working = employees.filter((e) => e.status === "working").length;
   // a company has exactly one team, so a team count is a constant wearing a
   // number's clothes — the plate says what's actually happening instead
@@ -116,12 +128,12 @@ function CompanyPlates({
   return (
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
       <Stat
-        label="product"
+        label={lead && products.length > 1 ? lead.name : "product"}
         value={productState}
         accent={productState === "LIVE" ? "var(--ok)" : undefined}
-        sub={`${company.ships} shipped`}
-        title={deploy ? `Live at ${deploy.url}` : "Shipping log"}
-        onClick={() => onOpen("ships")}
+        sub={`${company.ships} shipped${portfolio}`}
+        title={deploy ? `Live at ${deploy.url}` : "Products and the shipping log"}
+        onClick={() => onOpen({ kind: "ships" })}
       />
       <Stat
         label="team"
@@ -132,9 +144,9 @@ function CompanyPlates({
             ? "A CLI hit its usage limit — parked work resumes automatically at reset"
             : "The roster sizes itself — your lever is the budget"
         }
-        onClick={() => onOpen("teams")}
+        onClick={() => onOpen({ kind: "teams" })}
       />
-      <InboxButton needsYou={needsYou} onClick={() => onOpen("inbox")} />
+      <InboxButton needsYou={needsYou} onClick={() => onOpen({ kind: "inbox" })} />
     </div>
   );
 }
@@ -193,7 +205,7 @@ function RunControls({
       </button>
       <button
         type="button"
-        onClick={() => onOpen("settings")}
+        onClick={() => onOpen({ kind: "settings" })}
         className="px-btn px-btn-icon pointer-events-auto"
         title="Settings"
       >
@@ -209,7 +221,8 @@ export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
   const employees = useStore((s) => s.employees);
   const pendingAsks = useStore((s) => s.pendingAsks);
   const stuckTasks = useStore((s) => s.stuckTasks);
-  const product = useStore((s) => s.product);
+  const products = useStore((s) => s.products);
+  const productStatus = useStore((s) => s.productStatus);
   const resting = useStore((s) => s.resting);
   const now = useNow();
   if (!company) return null;
@@ -222,7 +235,8 @@ export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
       <CompanyPlates
         company={company}
         employees={employees}
-        product={product}
+        products={products}
+        productStatus={productStatus}
         needsYou={pendingAsks.length + stuckTasks.length}
         nap={nap}
         onOpen={onOpen}

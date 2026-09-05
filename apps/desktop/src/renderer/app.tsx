@@ -63,25 +63,19 @@ function OpenOverlay({
   onOpen: (overlay: Overlay) => void;
   onClose: () => void;
 }) {
-  switch (overlay) {
-    case null:
-      return null;
+  if (overlay === null) return null;
+  switch (overlay.kind) {
     case "ships":
-      return <Ships onClose={onClose} />;
+      return <Ships onOpen={onOpen} onClose={onClose} />;
     case "inbox":
-      // Stripe connect lives in the budget modal
-      return (
-        <Inbox
-          onClose={onClose}
-          onConnect={(kind) => onOpen(kind === "vercel" ? "vercel" : "budget")}
-        />
-      );
+      // Stripe connect lives in the budget modal; a Vercel ask binds a product
+      return <Inbox onClose={onClose} onOpen={onOpen} />;
     case "teams":
       return <Teams onClose={onClose} />;
     case "budget":
       return <BudgetModal onClose={onClose} />;
     case "vercel":
-      return <ConnectVercel onClose={onClose} />;
+      return <ConnectVercel productId={overlay.productId} onClose={onClose} />;
     case "settings":
       return <Settings onClose={onClose} />;
   }

@@ -20,7 +20,7 @@ import { createRequire } from "node:module";
 import { controlPlane, type RunToolHooks } from "@/main/control-plane";
 import type { RestingRunners } from "@/shared/ipc-registry";
 import * as store from "@/main/store/store";
-import { ROOT_DIR, companyWorkspace, employeeAgentDir } from "@/main/paths";
+import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
 import { classifyCommand, normalizeCommand } from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
@@ -214,7 +214,7 @@ class AgentDriver {
   async runTask(
     emp: Employee,
     company: Company,
-    task: { title: string; description: string | null },
+    task: { title: string; description: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
   ): Promise<RunResult> {
@@ -222,9 +222,10 @@ class AgentDriver {
     const abort = new AbortController();
     this.active.set(emp.id, abort);
     try {
-      const prompt = `${task.title}\n\n${task.description ?? ""}`.trim();
+      const prompt = `${task.title}\n\n${task.description}`.trim();
       const resumeId = emp.sessionId ?? undefined;
-      const first = await this.invoke(emp, company, prompt, onEvent, hooks, resumeId, abort);
+      const run = { prompt, workspace: task.workspace };
+      const first = await this.invoke(emp, company, run, onEvent, hooks, resumeId, abort);
       // A resumed session that dies without producing any output is almost
       // always stale on the agent's side — retry once fresh before failing.
       const retryFresh =
@@ -232,7 +233,7 @@ class AgentDriver {
       if (!retryFresh) {
         return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
       }
-      const retry = await this.invoke(emp, company, prompt, onEvent, hooks, undefined, abort);
+      const retry = await this.invoke(emp, company, run, onEvent, hooks, undefined, abort);
       return { ...retry.result, session: retry.turn.sessionId ?? null };
     } finally {
       this.active.delete(emp.id);
@@ -256,7 +257,7 @@ class AgentDriver {
   private async invoke(
     emp: Employee,
     company: Company,
-    prompt: string,
+    run: { prompt: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
     resumeSessionId: string | undefined,
@@ -265,13 +266,16 @@ class AgentDriver {
     const handle = controlPlane.registerRun(hooks);
     let sawOutput = false;
     try {
+      // the product's workspace is the cwd; the company workspace stays reachable
+      // for what is shared across products
+      const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
       const res = await runAcpTurn({
         agent: acpAgentFor(emp.runner),
-        prompt,
+        prompt: run.prompt,
         systemPrompt: store.employeeInstructions(emp.id),
-        cwd: companyWorkspace(company.id),
+        cwd: run.workspace,
         resumeSessionId,
-        addDirs: [employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
+        addDirs: [...shared, employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
         env: { ...handle.env, ...TOOL_CACHE_ENV },
         onPermission: (request) => decidePermission(company.id, request, handle.block),
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,

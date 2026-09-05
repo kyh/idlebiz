@@ -26,11 +26,12 @@ export const CHANNELS = {
   stripeDisconnect: { channel: "stripe:disconnect", kind: "invoke" },
   onStripeStatus: { channel: "stripe:event", kind: "event" },
 
-  vercelStatus: { channel: "vercel:status", kind: "invoke-void" },
   vercelListProjects: { channel: "vercel:projects", kind: "invoke" },
   vercelConnect: { channel: "vercel:connect", kind: "invoke" },
   vercelDisconnect: { channel: "vercel:disconnect", kind: "invoke" },
-  productStatus: { channel: "company:product-status", kind: "invoke" },
+  listProducts: { channel: "product:list", kind: "invoke" },
+  createProduct: { channel: "product:create", kind: "invoke" },
+  productStatus: { channel: "product:status", kind: "invoke" },
 
   listEmployees: { channel: "employee:list", kind: "invoke" },
   restingRunners: { channel: "runner:resting", kind: "invoke-void" },
@@ -46,7 +47,7 @@ export const CHANNELS = {
   answerQuestion: { channel: "task:answer", kind: "invoke" },
   resolveApproval: { channel: "task:resolve-approval", kind: "invoke" },
   openCompanyPath: { channel: "company:open-path", kind: "invoke" },
-  openProduct: { channel: "company:open-product", kind: "invoke" },
+  openProduct: { channel: "product:open", kind: "invoke" },
 
   onActivity: { channel: "activity:event", kind: "event" },
 

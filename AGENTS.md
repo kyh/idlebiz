@@ -115,13 +115,13 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 
 ## What is verifiable without a signed-in CLI
 
-| Surface                              | How to reach it                     | CLI needed? |
-| ------------------------------------ | ----------------------------------- | ----------- |
-| `apps/web` landing + `/api/stripe/*` | `pnpm dev:web`                      | no          |
-| Office builder (`#/ui`)              | `location.hash = "#/ui"`            | no          |
-| Object catalog (`#/office-assets`)   | `location.hash = "#/office-assets"` | no          |
-| Onboarding modal (first screen)      | boot with an empty `~/.idlebiz`     | no          |
-| Office, HUD, dialogue, teams, ships  | finish onboarding                   | **yes**     |
+| Surface                                | How to reach it                     | CLI needed? |
+| -------------------------------------- | ----------------------------------- | ----------- |
+| `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                      | no          |
+| Office builder (`#/ui`)                | `location.hash = "#/ui"`            | no          |
+| Object catalog (`#/office-assets`)     | `location.hash = "#/office-assets"` | no          |
+| Onboarding modal (first screen)        | boot with an empty `~/.idlebiz`     | no          |
+| Office, HUD, dialogue, teams, products | finish onboarding                   | **yes**     |
 
 The last row is a hard gate, not a convenience: `renderer/ui/poke-onboarding.tsx` calls
 `generateHires`, which dispatches a real agent run (`main/agents/onboarding.ts`), and

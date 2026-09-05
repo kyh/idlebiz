@@ -6,25 +6,36 @@ import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { describeRule, type RuleId } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
+import type { Overlay } from "@/renderer/ui/hud";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
 
 /** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
  *  place (walking up to the "!" in the office still works — this is the fast path). */
 export function Inbox({
   onClose,
-  onConnect,
+  onOpen,
 }: {
   onClose: () => void;
-  /** Launch the connect flow for a typed integration ask. */
-  onConnect: (kind: IntegrationKind) => void;
+  /** The connect flow for a typed integration ask lives in another window. */
+  onOpen: (overlay: Overlay) => void;
 }) {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
+  const products = useStore((s) => s.products);
   const pendingAsks = useStore((s) => s.pendingAsks);
   const stuckTasks = useStore((s) => s.stuckTasks);
 
   if (!company) return null;
   const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
+  // Stripe is the company's; Vercel binds the product the ask came from
+  const connect = (kind: IntegrationKind, t: Task): void => {
+    if (kind === "stripe") {
+      onOpen({ kind: "budget" });
+      return;
+    }
+    const productId = t.productId ?? products[0]?.id;
+    if (productId !== undefined) onOpen({ kind: "vercel", productId });
+  };
 
   return (
     <Modal
@@ -48,7 +59,7 @@ export function Inbox({
                   by={nameOf(t.assigneeId)}
                   integration={ask.integration}
                   reason={ask.reason}
-                  onConnect={onConnect}
+                  onConnect={(kind) => connect(kind, t)}
                 />
               );
             case "approval":

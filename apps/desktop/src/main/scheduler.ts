@@ -11,6 +11,7 @@ import {
   integrationConnectedAnswer,
   roomTranscript,
   routineBrief,
+  runPreamble,
   type TaskBrief,
 } from "@/main/prompts/briefs";
 import { MAX_TASK_ATTEMPTS, isOutOfBudget, resolveMentions, spriteSeedFor } from "@/shared/domain";
@@ -18,6 +19,7 @@ import type {
   Company,
   Employee,
   IntegrationKind,
+  Product,
   Task,
   TaskPriority,
   TaskStatus,
@@ -129,7 +131,7 @@ class Scheduler {
         idle[0];
       if (!assignee) continue;
       store.markRoutineRun(company.id, r.id);
-      this.brief(company, assignee, routineBrief(r));
+      this.brief(company, assignee, routineBrief(r), null);
     }
   }
 
@@ -138,10 +140,12 @@ class Scheduler {
     company: Company,
     emp: Employee,
     brief: TaskBrief,
+    productId: string | null,
     priority: TaskPriority = "medium",
   ): Task {
     const task = store.createTask({
       companyId: company.id,
+      productId,
       ...brief,
       priority,
       assigneeId: emp.id,
@@ -165,16 +169,29 @@ class Scheduler {
         .openTasksFor(emp.id)
         .some((t) => t.state.kind === "queued" || t.state.kind === "running");
       if (open) continue;
-      this.brief(company, emp, this.autonomousBrief(company, emp, employees));
+      const focus = store.attentionProduct(company.id);
+      this.brief(
+        company,
+        emp,
+        this.autonomousBrief(company, emp, employees, focus),
+        focus?.id ?? null,
+      );
     }
   }
 
   /** Gather what the heartbeat brief is grounded in; the prompt module phrases it. */
-  private autonomousBrief(company: Company, emp: Employee, employees: Employee[]): TaskBrief {
+  private autonomousBrief(
+    company: Company,
+    emp: Employee,
+    employees: Employee[],
+    focus: Product | null,
+  ): TaskBrief {
     return autonomousBrief({
       company,
       employee: emp,
       employees,
+      products: store.listProducts(company.id),
+      focus,
       room: store.recentTeamMessages(company.id, 12),
       ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
       problems: store
@@ -194,7 +211,7 @@ class Scheduler {
   private hooksFor(
     emp: Employee,
     company: Company,
-    run: { runId: string; taskId: string },
+    run: { runId: string; taskId: string; productId: string | null },
   ): RunToolHooks {
     const isLeader = company.leaderId === emp.id;
 
@@ -208,7 +225,14 @@ class Scheduler {
       messageTeam: (text: string): void => post(text.slice(0, 400)),
       readTeam: (): string =>
         roomTranscript(store.recentTeamMessages(company.id, 15), (id) => this.empName(id)),
-      delegate: (role: string, title: string, description: string): string => {
+      delegate: (role: string, title: string, description: string, product: string | null) => {
+        const productId = product ?? run.productId;
+        if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
+          return `No product "${productId}" here — the products are ${store
+            .listProducts(company.id)
+            .map((p) => p.id)
+            .join(", ")}.`;
+        }
         const want = role.toLowerCase();
         const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
         const matches = (e: Employee): boolean =>
@@ -220,6 +244,7 @@ class Scheduler {
         }
         const t = store.createTask({
           companyId: company.id,
+          productId,
           title,
           description,
           priority: "medium",
@@ -228,6 +253,18 @@ class Scheduler {
         post(`→ ${mate.name} (${mate.title}): ${title}`, mate.id);
         this.tryAssign(t.id, mate.id);
         return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
+      },
+      createProduct: (name: string, description: string): string => {
+        if (!isLeader) return "Only the team lead can start a product — raise it in the team room.";
+        const product = store.createProduct({ companyId: company.id, name, description });
+        publishActivity({
+          employeeId: emp.id,
+          kind: "product.created",
+          message: product.name,
+          payload: { productId: product.id },
+        });
+        post(`🆕 New product: ${product.name} — ${product.description}`);
+        return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Delegate work to it with "product":"${product.id}".`;
       },
       hire: ({ role, title, name, persona }): string => {
         if (!isLeader) return "Only the team lead can hire — raise it in the team room.";
@@ -318,15 +355,19 @@ class Scheduler {
 
   /** A completed task ships work: the count behind the product plate, the feed, and every tenth one a cheer. */
   private ship(
-    companyId: string,
+    task: Task,
     at: { runId: string; taskId: string; employeeId: string },
     summary: string,
   ): void {
-    store.recordShip(companyId);
+    store.recordShip(task.companyId, task.productId);
     publishActivity({ ...at, kind: "ship", message: (summary || "shipped work").slice(0, 200) });
-    const ships = store.getCompany(companyId)?.ships ?? 0;
+    const ships = store.getCompany(task.companyId)?.ships ?? 0;
     if (ships > 0 && ships % 10 === 0) {
-      store.postTeamMessage(companyId, null, `🎉 Milestone: ${ships} things shipped — keep going!`);
+      store.postTeamMessage(
+        task.companyId,
+        null,
+        `🎉 Milestone: ${ships} things shipped — keep going!`,
+      );
     }
   }
 
@@ -389,7 +430,10 @@ class Scheduler {
           t.description === brief.description &&
           (t.state.kind === "queued" || t.state.kind === "todo"),
       );
-    return waiting ?? this.brief(company, emp, brief, "high");
+    return (
+      waiting ??
+      this.brief(company, emp, brief, store.productOfEmployee(emp.id)?.id ?? null, "high")
+    );
   }
 
   /** Assign, tolerating a busy assignee — the queue picks it up next tick. */
@@ -471,12 +515,17 @@ class Scheduler {
   }
 
   private async execute(runId: string, task: Task, emp: Employee, company: Company): Promise<void> {
+    const product = task.productId === null ? null : store.getProduct(task.productId);
     const result = await agentDriver.runTask(
       emp,
       company,
-      { title: task.title, description: task.description },
+      {
+        title: task.title,
+        description: `${runPreamble(product, company)}\n\n${task.description ?? ""}`.trim(),
+        workspace: product?.workspaceDir ?? company.workspaceDir,
+      },
       (ev: AgentEvent) => this.onAgentEvent(runId, task, emp, ev),
-      this.hooksFor(emp, company, { runId, taskId: task.id }),
+      this.hooksFor(emp, company, { runId, taskId: task.id, productId: task.productId }),
     );
     this.finish(runId, task, emp, result);
   }
@@ -545,7 +594,7 @@ class Scheduler {
       case "done":
         status = "done";
         store.settleTask(task.id, runId, { kind: "done", summary: r.summary || null });
-        this.ship(task.companyId, at, r.summary);
+        this.ship(task, at, r.summary);
         break;
       case "resting":
         status = "queued";

@@ -1,4 +1,4 @@
-import type { Company, Employee } from "@/shared/domain";
+import type { Company, Employee, Product } from "@/shared/domain";
 
 // What an employee is told about who they are and how the office works. Prose
 // only — the store persists it, the driver injects it; neither authors it.
@@ -11,12 +11,18 @@ import type { Company, Employee } from "@/shared/domain";
 export function standingInstructions(input: {
   employee: Employee;
   company: Company;
+  products: readonly Product[];
   lead: boolean;
   memoryDir: string;
 }): string {
-  const { employee: e, company: co, lead, memoryDir } = input;
+  const { employee: e, company: co, products, lead, memoryDir } = input;
+  const productList = products
+    .map((p) => `- **${p.name}** (\`${p.id}\`) — ${p.description}\n  Workspace: ${p.workspaceDir}`)
+    .join("\n");
   const leadTools = lead
     ? `
+- **create_product** — a genuinely separate product (its own code, its own deploy), not a feature of one you have. It gets its own workspace; delegate work to it by slug.
+  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/create-product" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"name":"...","description":"..."}'\`
 - **hire** — you lead the team and own headcount (hard cap ${co.maxAgents} seats): add a role the backlog demands. Give a real first name and a vivid 2-3 sentence persona.
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/hire" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"Frontend Engineer","name":"Mara","persona":"..."}'\`
 - **release** — let a teammate go when their role stopped pulling weight (their work is archived, never deleted).
@@ -30,9 +36,12 @@ ${e.persona}
 ## Company mission
 ${co.mission}
 
+## Products
+${productList}
+Every task says which product it is for; that product's workspace is your working directory for the run. Files you create, edit, and run there are REAL. The company workspace at ${co.workspaceDir} holds what is shared across products.
+
 ## How you work
-- You share a real company workspace at: ${co.workspaceDir}
-- Files you create, edit, and run here are REAL. Produce concrete artifacts.
+- Produce concrete artifacts in the product's workspace.
 - When given a task, do it concretely and completely: write real code/docs, run commands, verify your work.
 - Finish with a short summary of exactly what you did and which files/artifacts you produced.
 - You have a private memory folder at ${memoryDir} — keep notes/decisions there so future-you remembers.
@@ -45,7 +54,7 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"text":"..."}'\`
 - **read_team_chat** — catch up on the room before you act, so you build on teammates' work instead of duplicating it.
   \`curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"\`
-- **delegate** — hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel.
+- **delegate** — hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel. It lands on your current product unless you name another with \`"product":"<slug>"\`.
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"...","description":"..."}'\`
 - **request_integration** — the business needs a real-world connection: \`"vercel"\` (hosting, deploys, traffic analytics) or \`"stripe"\` (charging money). The founder gets a card with a Connect button; this task resumes automatically once they connect.
   \`curl -s -X POST "$IDLEBIZ_API_URL/v1/request-integration" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"kind":"vercel","reason":"..."}'\`${leadTools}
@@ -58,7 +67,7 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
 
 ## Make the business REAL
 - The goal is a real product with real users, not documents about one. Bias toward a runnable, shippable thing.
-- Keep \`PRODUCT.md\` at the workspace root up to date — it is how the founder finds the product. Format:
+- Keep \`PRODUCT.md\` at the product's workspace root up to date — it is how the founder finds the product. Format:
   \`entry: <relative path or URL to open the product, e.g. dist/index.html or https://...>\`
   \`status: <one line on the current state>\`
   Update \`entry\` whenever the canonical way to open the product changes (and after any deploy, set it to the public URL).

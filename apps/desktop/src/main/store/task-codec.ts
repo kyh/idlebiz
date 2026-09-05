@@ -28,6 +28,7 @@ export function taskToDoc(t: Task): FrontmatterDoc {
     createdAt: t.createdAt,
   };
   if (t.assigneeId !== null) metadata.assigneeId = t.assigneeId;
+  if (t.productId !== null) metadata.productId = t.productId;
   const st = t.state;
   switch (st.kind) {
     case "todo":
@@ -118,6 +119,7 @@ export function docToTask(doc: FrontmatterDoc, companyId: string): Task {
     state: parseTaskState(m),
     priority,
     assigneeId: optStr(m, "assigneeId"),
+    productId: optStr(m, "productId"),
     artifacts: strArray(m, "artifacts"),
     attempts: optNum(m, "attempts", 0),
     createdAt: optNum(m, "createdAt", Date.now()),

@@ -20,8 +20,10 @@ export interface RunToolHooks {
   messageTeam(text: string): void;
   /** Latest team-room messages, rendered as a text block. */
   readTeam(): string;
-  /** Returns a human-readable confirmation (or explains why nothing happened). */
-  delegate(role: string, title: string, description: string): string;
+  /** Returns a human-readable confirmation (or explains why nothing happened). Lands on the named product, else the run's own. */
+  delegate(role: string, title: string, description: string, product: string | null): string;
+  /** Team-lead only: a second product with its own workspace. */
+  createProduct(name: string, description: string): string;
   /** Team-lead only: grow the roster (gated by the company's seat cap). */
   hire(input: { role: string; title: string; name?: string; persona?: string }): string;
   /** Team-lead only: release a teammate (their package is archived, not deleted). */
@@ -68,6 +70,7 @@ const DelegateBody = z.object({
   role: z.string().min(1),
   title: z.string().min(1),
   description: z.string().min(1),
+  product: z.string().min(1).optional(),
 });
 const HireBody = z.object({
   role: z.string().min(1),
@@ -76,6 +79,10 @@ const HireBody = z.object({
   persona: z.string().min(1).optional(),
 });
 const ReleaseBody = z.object({ slug: z.string().min(1), reason: z.string().default("") });
+const CreateProductBody = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().min(1).max(600),
+});
 const RequestIntegrationBody = z.object({
   kind: z.enum(INTEGRATION_KINDS),
   reason: z.string().min(1),
@@ -154,8 +161,16 @@ class ControlPlane {
           return;
         }
         case "POST /v1/delegate": {
-          const { role, title, description } = await parseBody(req, DelegateBody);
-          respond(res, 200, { ok: true, message: run.hooks.delegate(role, title, description) });
+          const { role, title, description, product } = await parseBody(req, DelegateBody);
+          respond(res, 200, {
+            ok: true,
+            message: run.hooks.delegate(role, title, description, product ?? null),
+          });
+          return;
+        }
+        case "POST /v1/create-product": {
+          const { name, description } = await parseBody(req, CreateProductBody);
+          respond(res, 200, { ok: true, message: run.hooks.createProduct(name, description) });
           return;
         }
         case "POST /v1/hire": {
