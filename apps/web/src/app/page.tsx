@@ -73,7 +73,7 @@ export default async function Page() {
           <OfficeLife
             title={
               <h1
-                className="text-[40px] leading-none text-text sm:text-[52px]"
+                className="text-[40px] leading-none text-fg sm:text-[52px]"
                 style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
               >
                 IdleBiz
@@ -81,21 +81,24 @@ export default async function Page() {
             }
           />
 
-          <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-text sm:text-[14px]">
+          <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-fg sm:text-[14px]">
             An idle game business simulator where your employees are{" "}
             <span className="text-accent-lo">real AI agents</span>. They write real code, ship real
-            products, and <span className="text-text-dim line-through">make</span> burn real money.
+            products, and <span className="text-fg-dim line-through">make</span> burn real money.
             <span className="px-blink ml-2 inline-block text-accent-lo" aria-hidden>
               ▼
             </span>
           </div>
 
           <div className="flex flex-col items-center gap-2.5">
-            <a href={downloadUrl} className="px-btn-accent">
+            <a
+              href={downloadUrl}
+              className="px-btn px-btn-accent inline-flex items-center gap-2.5 uppercase tracking-wide no-underline"
+            >
               <MacLogoIcon className="size-5 shrink-0" />
               Download for Mac
             </a>
-            <span className="text-[11px] text-text-dim">
+            <span className="text-[11px] text-fg-dim">
               {version ? `${version} · ` : ""}macOS · runs on your own Claude Code or Codex
             </span>
           </div>

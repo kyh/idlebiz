@@ -27,11 +27,11 @@ function ShipRow({ t, by, companyId }: { t: TaskIn<"done">; by: string; companyI
         onClick={() => setOpen(!open)}
         className="flex w-full items-baseline gap-2 text-left"
       >
-        <span className="text-xs text-text-dim">{open ? "▼" : "▶"}</span>
+        <span className="text-xs text-fg-dim">{open ? "▼" : "▶"}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-text">📦 {firstLine || t.title}</span>
+          <span className="block truncate text-sm text-fg">📦 {firstLine || t.title}</span>
         </span>
-        <span className="shrink-0 text-xs text-text-dim">
+        <span className="shrink-0 text-xs text-fg-dim">
           {by} · {formatDate(t.completedAt ?? t.createdAt)}
         </span>
       </button>
@@ -104,9 +104,9 @@ export function Ships({ onClose }: { onClose: () => void }) {
       <div className="space-y-2">
         {note ? <div className="text-xs text-danger">{note}</div> : null}
         {ships === null ? (
-          <div className="text-sm text-text-dim">Loading…</div>
+          <div className="text-sm text-fg-dim">Loading…</div>
         ) : ships.length === 0 ? (
-          <div className="text-sm text-text-dim">
+          <div className="text-sm text-fg-dim">
             Nothing shipped yet — the team is just getting started.
           </div>
         ) : (

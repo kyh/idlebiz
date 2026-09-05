@@ -40,17 +40,17 @@ export function Teams({ onClose }: { onClose: () => void }) {
             </span>
           ))}
         </div>
-        <div className="mt-3 text-xs uppercase tracking-wide text-text-dim">Team room</div>
+        <div className="mt-3 text-xs uppercase tracking-wide text-fg-dim">Team room</div>
         <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
           {room.length === 0 ? (
-            <div className="text-xs text-text-dim">Quiet so far.</div>
+            <div className="text-xs text-fg-dim">Quiet so far.</div>
           ) : (
             room.map((m) => (
               <div key={m.id} className="text-xs leading-snug">
                 <span className="text-[#3a76b8]">
                   {employeeName(employees, m.fromEmployeeId, "founder")}
                 </span>
-                <span className="text-text">: {m.text}</span>
+                <span className="text-fg">: {m.text}</span>
               </div>
             ))
           )}

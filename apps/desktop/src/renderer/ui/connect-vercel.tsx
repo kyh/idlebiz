@@ -73,7 +73,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
       <div className="space-y-3">
         {vercelStatus.state === "connected" ? (
           <div className="px-inset space-y-2 p-3">
-            <div className="text-sm text-text">
+            <div className="text-sm text-fg">
               ✓ Connected to <b>{vercelStatus.projectName}</b> — users come from its Web Analytics,
               and your team deploys to it for real.
             </div>
@@ -83,7 +83,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <>
-            <div className="text-sm leading-snug text-text">
+            <div className="text-sm leading-snug text-fg">
               Users are REAL — they come from Vercel Web Analytics on your deployed product. Paste a
               Vercel access token (vercel.com/account/tokens); your team also uses it to ship
               deploys.
@@ -107,11 +107,11 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
               </button>
             </div>
             {lookup.state === "loaded" && lookup.account ? (
-              <div className="text-xs text-text-dim">Signed in as {lookup.account}</div>
+              <div className="text-xs text-fg-dim">Signed in as {lookup.account}</div>
             ) : null}
             {lookup.state === "loaded" && lookup.projects.length > 0 ? (
               <div className="px-inset max-h-64 overflow-y-auto p-2">
-                <div className="mb-1 text-xs uppercase tracking-wide text-text-dim">
+                <div className="mb-1 text-xs uppercase tracking-wide text-fg-dim">
                   Pick the product's project
                 </div>
                 {lookup.projects.map((p) => (
@@ -123,7 +123,7 @@ export function ConnectVercel({ onClose }: { onClose: () => void }) {
                     className="px-opt block w-full text-left"
                   >
                     {p.name}
-                    {p.teamId ? <span className="ml-2 text-xs text-text-dim">team</span> : null}
+                    {p.teamId ? <span className="ml-2 text-xs text-fg-dim">team</span> : null}
                   </button>
                 ))}
               </div>

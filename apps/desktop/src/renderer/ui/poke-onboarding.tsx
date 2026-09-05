@@ -72,7 +72,7 @@ function Narrator({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-text"
+      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-fg"
       onClick={skip}
     >
       {shown}
@@ -133,10 +133,10 @@ function HiresGrid({ hires }: { hires: HireProposal[] }) {
         <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
           <Portrait seed={h.spriteSeed} size="sm" />
           <span>
-            <span className="block text-sm text-text">
+            <span className="block text-sm text-fg">
               {h.name} · <span className="text-accent-lo">{h.title}</span>
             </span>
-            <span className="block text-xs text-text-dim">{h.blurb}</span>
+            <span className="block text-xs text-fg-dim">{h.blurb}</span>
           </span>
         </div>
       ))}
@@ -149,7 +149,7 @@ function AuthStep({ auth, onLogin }: { auth: Auth; onLogin: () => void }) {
   return (
     <div className="flex w-full flex-col gap-2">
       {lines.length > 0 ? (
-        <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-text-dim">
+        <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-fg-dim">
           {lines.join("\n")}
         </div>
       ) : null}
@@ -495,7 +495,7 @@ export function PokeOnboarding() {
                 ))}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-text-dim">
+                <span className="text-xs text-fg-dim">
                   {capUsd === null
                     ? "⚠ Uncapped. The office will keep spending while it works."
                     : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}

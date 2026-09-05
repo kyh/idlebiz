@@ -19,7 +19,11 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
       title="Something went wrong"
       description="An unexpected error occurred. Try again — if it keeps happening, the details are in the console."
       action={
-        <button type="button" onClick={reset} className="px-btn-accent">
+        <button
+          type="button"
+          onClick={reset}
+          className="px-btn px-btn-accent inline-flex items-center gap-2.5 uppercase tracking-wide no-underline"
+        >
           Try again
         </button>
       }

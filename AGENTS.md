@@ -160,9 +160,9 @@ rather than crashing boot.
 
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
-- **The px-kit beats Tailwind.** `.px-*` classes in `renderer/styles.css` are unlayered, so
-  they win over any Tailwind utility that sets the same property. Size and colour belong in
-  `styles.css` as a kit class, never per-component. Full explanation in `CLAUDE.md`.
+- **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
+  unlayered, so they win over any Tailwind utility that sets the same property. Size and
+  colour belong in the kit as a class, never per-component. Full explanation in `CLAUDE.md`.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
   Four passes: every seat, point of interest and the door reachable from spawn; no open
@@ -207,3 +207,7 @@ rather than crashing boot.
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns `claude` / `codex`, normalizes their NDJSON event streams,
   prices usage, tracks rate limits. Source-only, no build step.
+- `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
+  and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
+- `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,
+  VG5000, every `.px-*` class), imported by both apps after Tailwind.

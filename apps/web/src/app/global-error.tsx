@@ -25,7 +25,11 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
           title="Something went wrong"
           description="The application failed to load."
           action={
-            <button type="button" onClick={reset} className="px-btn-accent">
+            <button
+              type="button"
+              onClick={reset}
+              className="px-btn px-btn-accent inline-flex items-center gap-2.5 uppercase tracking-wide no-underline"
+            >
               Try again
             </button>
           }

@@ -35,7 +35,7 @@ export function Inbox({
     >
       <div className="space-y-2">
         {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
-          <div className="text-sm text-text-dim">All clear — nobody's waiting on you.</div>
+          <div className="text-sm text-fg-dim">All clear — nobody's waiting on you.</div>
         ) : null}
         {pendingAsks.map((t) => {
           const { ask } = t.state;
@@ -74,7 +74,7 @@ export function Inbox({
           }
         })}
         {stuckTasks.length > 0 ? (
-          <div className="pt-1 text-xs uppercase tracking-wide text-text-dim">
+          <div className="pt-1 text-xs uppercase tracking-wide text-fg-dim">
             Stuck — needs a retry
           </div>
         ) : null}
@@ -105,13 +105,13 @@ function ConnectRow({
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">
-        🔌 {by} · <span className="text-text-dim">{t.title}</span>
+        🔌 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-text">
+      <div className="mt-1 text-sm leading-snug text-fg">
         {reason || `The team needs ${label} connected to keep going.`}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-text-dim">
+        <span className="text-xs text-fg-dim">
           Their task resumes automatically once connected.
         </span>
         <button
@@ -148,12 +148,12 @@ function ApprovalRow({
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
       <div className="text-xs text-warn">
-        🔐 {by} · <span className="text-text-dim">{t.title}</span>
+        🔐 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-text">{describeRule(rule)}</div>
+      <div className="mt-1 text-sm leading-snug text-fg">{describeRule(rule)}</div>
       <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-text-dim">Approving covers this exact command, once.</span>
+        <span className="text-xs text-fg-dim">Approving covers this exact command, once.</span>
         <span className="flex gap-2">
           <button
             type="button"
@@ -187,9 +187,9 @@ function StuckRow({ t, by }: { t: TaskIn<"dead">; by: string }) {
   return (
     <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
       <div className="text-xs text-danger">
-        💀 {by} · <span className="text-text-dim">{t.title}</span>
+        💀 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-xs leading-snug text-text-dim">{t.state.lastError}</div>
+      <div className="mt-1 text-xs leading-snug text-fg-dim">{t.state.lastError}</div>
       <div className="mt-2 flex justify-end">
         <button
           type="button"
@@ -219,9 +219,9 @@ function AskRow({
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
       <div className="text-xs text-danger">
-        ❗ {by} · <span className="text-text-dim">{t.title}</span>
+        ❗ {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-text">
+      <div className="mt-1 text-sm leading-snug text-fg">
         <RichText text={question} companyId={companyId} />
       </div>
       <AnswerForm task={t} onSent={() => setSent(true)} />

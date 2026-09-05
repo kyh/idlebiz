@@ -24,33 +24,33 @@ export function Settings({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Settings" onClose={onClose}>
       <div className="space-y-4">
-        <div className="px-inset p-3 text-sm text-text">
-          <div className="text-xs uppercase tracking-wide text-text-dim">Company</div>
+        <div className="px-inset p-3 text-sm text-fg">
+          <div className="text-xs uppercase tracking-wide text-fg-dim">Company</div>
           <div className="mt-1">{company.name}</div>
-          <div className="text-xs text-text-dim">{company.mission}</div>
-          <div className="mt-1 truncate text-xs text-text-dim">{company.workspaceDir}</div>
+          <div className="text-xs text-fg-dim">{company.mission}</div>
+          <div className="mt-1 truncate text-xs text-fg-dim">{company.workspaceDir}</div>
         </div>
 
         {saveIssues.length > 0 ? (
-          <div className="px-inset p-3 text-sm text-text">
+          <div className="px-inset p-3 text-sm text-fg">
             <div className="text-xs uppercase tracking-wide text-danger">Skipped at boot</div>
-            <div className="mt-1 text-xs text-text-dim">
+            <div className="mt-1 text-xs text-fg-dim">
               These files under ~/.idlebiz did not parse and were left out. Fix them and relaunch.
             </div>
             <ul className="mt-2 space-y-1 text-xs">
               {saveIssues.map((issue) => (
                 <li key={issue.path}>
                   <div className="truncate">{issue.path}</div>
-                  <div className="text-text-dim">{issue.error}</div>
+                  <div className="text-fg-dim">{issue.error}</div>
                 </li>
               ))}
             </ul>
           </div>
         ) : null}
 
-        <div className="px-inset p-3 text-sm text-text">
-          <div className="text-xs uppercase tracking-wide text-text-dim">Team size cap</div>
-          <div className="mt-1 text-xs text-text-dim">
+        <div className="px-inset p-3 text-sm text-fg">
+          <div className="text-xs uppercase tracking-wide text-fg-dim">Team size cap</div>
+          <div className="mt-1 text-xs text-fg-dim">
             The team lead hires and releases on their own — this is the hard ceiling.
           </div>
           <div className="mt-2 flex gap-2">
@@ -72,19 +72,19 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="px-inset p-3 text-sm text-text">
-          <div className="text-xs uppercase tracking-wide text-text-dim">Controls</div>
-          <div className="mt-1 text-xs text-text-dim">
+        <div className="px-inset p-3 text-sm text-fg">
+          <div className="text-xs uppercase tracking-wide text-fg-dim">Controls</div>
+          <div className="mt-1 text-xs text-fg-dim">
             WASD / arrows to move · walk up to someone and press E
           </div>
-          <div className="mt-1 text-xs text-text-dim">
+          <div className="mt-1 text-xs text-fg-dim">
             Closing this window keeps the office running — the 💼 in the menu bar shows status and
             is where you quit.
           </div>
         </div>
 
-        <div className="px-inset p-3 text-sm text-text">
-          <div className="text-xs uppercase tracking-wide text-text-dim">Tools</div>
+        <div className="px-inset p-3 text-sm text-fg">
+          <div className="text-xs uppercase tracking-wide text-fg-dim">Tools</div>
           <div className="mt-2 flex gap-2">
             <a href="#/ui" className="px-btn inline-block">
               Open office builder
@@ -99,7 +99,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div className="text-xs uppercase tracking-wide" style={{ color: "var(--danger)" }}>
             Danger zone
           </div>
-          <div className="mt-1 text-sm leading-snug text-text">
+          <div className="mt-1 text-sm leading-snug text-fg">
             Reset demolishes the office: every employee, task, and workspace file your team created,
             plus stored secrets and connections. The game restarts from scratch. There is no undo.
           </div>

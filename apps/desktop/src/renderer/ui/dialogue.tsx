@@ -235,7 +235,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
           {asked && question !== null ? (
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
               <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
-              <div className="mt-1 text-sm leading-snug text-text">
+              <div className="mt-1 text-sm leading-snug text-fg">
                 <RichText text={question} companyId={company.id} />
               </div>
               <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
@@ -264,7 +264,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
               <CommandMenu options={options} sel={sel} onHover={setSel} onChoose={choose} />
             ) : (
               <div className="flex h-full flex-col gap-2">
-                <div className="text-xs text-text-dim">Tell {emp.name} what to do:</div>
+                <div className="text-xs text-fg-dim">Tell {emp.name} what to do:</div>
                 <input
                   ref={inputRef}
                   value={input}
@@ -301,7 +301,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
           type="button"
           onClick={onClose}
           title="Close (esc)"
-          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-text-dim hover:text-text"
+          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-fg-dim hover:text-fg"
         >
           ✕
         </button>
@@ -323,7 +323,7 @@ function Identity({ emp, working }: { emp: Employee; working: boolean }) {
           style={
             working
               ? { background: "var(--warn)", color: "#3a2c0a" }
-              : { background: "#d8d4c4", color: "var(--text)" }
+              : { background: "#d8d4c4", color: "var(--fg)" }
           }
         >
           {working ? <span className="px-live-dot">● working</span> : "idle"}
@@ -371,7 +371,7 @@ function CommandMenu({
           Talk…
         </button>
       </div>
-      <div className="text-right text-xs text-text-dim">↑↓ move · ⏎ select · esc close</div>
+      <div className="text-right text-xs text-fg-dim">↑↓ move · ⏎ select · esc close</div>
     </>
   );
 }
@@ -393,7 +393,7 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
       }
       role={done ? undefined : "button"}
       tabIndex={done ? undefined : 0}
-      className="text-sm leading-relaxed break-words text-text"
+      className="text-sm leading-relaxed break-words text-fg"
       style={{ cursor: done ? "default" : "pointer" }}
     >
       {done ? <RichText text={text} companyId={companyId} /> : shown}

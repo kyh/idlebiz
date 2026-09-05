@@ -21,7 +21,7 @@ export function OfficeObjectCatalog() {
   };
 
   return (
-    <main className="h-full w-full bg-[#bfc2c4] text-text">
+    <main className="h-full w-full bg-[#bfc2c4] text-fg">
       <div className="flex h-full flex-col">
         <header className="px-window m-3 shrink-0 overflow-hidden">
           <div className="px-titlebar flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -109,7 +109,7 @@ function ObjectCard({
             className="max-w-none shrink-0 [image-rendering:pixelated]"
           />
         </div>
-        <div className="text-right text-xs text-text-dim">
+        <div className="text-right text-xs text-fg-dim">
           {asset.w}x{asset.h}
         </div>
       </div>

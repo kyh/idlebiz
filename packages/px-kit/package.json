@@ -1,0 +1,9 @@
+{
+  "name": "@repo/px-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The pixel-UI design system both apps draw with: palette, font, and the unlayered .px-* kit",
+  "exports": {
+    "./px-kit.css": "./px-kit.css"
+  }
+}

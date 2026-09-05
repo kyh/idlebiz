@@ -63,7 +63,7 @@ export function TeamChannel() {
         className="px-inset px-scroll max-h-48 min-h-16 space-y-1 overflow-y-auto p-2 text-xs leading-snug"
       >
         {feed.length === 0 ? (
-          <div className="text-text-dim">
+          <div className="text-fg-dim">
             {company.autopilot ? "The team is getting to work…" : "Autopilot paused."}
           </div>
         ) : (
@@ -98,19 +98,19 @@ function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
     case "ship":
       return (
         <div style={{ color: "var(--accent-lo)" }}>
-          📦 <span className="text-text">{name}</span> shipped: {e.message}
+          📦 <span className="text-fg">{name}</span> shipped: {e.message}
         </div>
       );
     case "runner.resting":
       return (
-        <div className="text-text-dim">
+        <div className="text-fg-dim">
           ☕ {e.payload.runner} crew hit their limit — back at {formatTime(e.payload.until)}
         </div>
       );
     case "org.hired":
-      return <div className="text-text-dim">🤝 {e.payload.name} joined the team</div>;
+      return <div className="text-fg-dim">🤝 {e.payload.name} joined the team</div>;
     case "org.released":
-      return <div className="text-text-dim">👋 {e.payload.name} left the team</div>;
+      return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
     case "chat": {
       const founder = e.employeeId == null;
       return (
