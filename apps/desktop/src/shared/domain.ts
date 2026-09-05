@@ -249,7 +249,6 @@ export interface Employee {
   title: string;
   persona: string; // system-prompt flavor for the agent
   runner: AgentRunner; // which CLI executes this employee
-  model: string | null; // model override; null = the CLI's own default
   sessionId: string | null;
   spriteSeed: string; // deterministic sprite + portrait
   deskIndex: number; // which desk slot in the office

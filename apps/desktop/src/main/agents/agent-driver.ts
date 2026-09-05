@@ -104,8 +104,8 @@ async function decidePermission(
 export function priceRun(emp: Employee, usage: AgentUsage): number {
   if (usage.costUsd > 0) return usage.costUsd;
   if (usage.inputTokens + usage.outputTokens === 0) return 0;
-  // Priced by the runner's anchor, not emp.model: ACP gives no way to pick a
-  // model per session yet, so billing a model that never ran would be fiction.
+  // Priced by the runner's anchor: ACP gives no way to pick a model per
+  // session, so the CLI's own default is what ran.
   return priceUsage(RUNNERS[emp.runner].fallbackPricingModel, usage);
 }
 

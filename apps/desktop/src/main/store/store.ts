@@ -252,11 +252,6 @@ function docToCompany(doc: FrontmatterDoc): Company {
   };
 }
 
-/** A "provider/model" string is a whole-provider pin from an older save, not a model override. */
-function parseModelOverride(v: string | null): string | null {
-  if (!v || v.includes("/")) return null;
-  return v;
-}
 
 function parseRunner(v: string | null): AgentRunner {
   return v && isRunnerId(v) ? v : "codex";
@@ -282,7 +277,6 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
     deskIndex: e.deskIndex,
     createdAt: e.createdAt,
   };
-  if (e.model !== null) metadata.model = e.model;
   if (e.sessionId !== null) metadata.sessionId = e.sessionId;
   if (e.teamId !== null) metadata.teamId = e.teamId;
   return {
@@ -309,7 +303,6 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
     title: optStr(m, "title") ?? optStr(f, "description") ?? "",
     persona: optStr(m, "persona") ?? "",
     runner: parseRunner(optStr(m, "runner")),
-    model: parseModelOverride(optStr(m, "model")),
     sessionId: optStr(m, "sessionId"),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     deskIndex: optNum(m, "deskIndex", 0),
@@ -931,7 +924,6 @@ export function createEmployee(input: {
   title: string;
   persona: string;
   runner: AgentRunner;
-  model?: string | null;
   spriteSeed: string;
   deskIndex: number;
 }): Employee {
@@ -955,7 +947,6 @@ export function createEmployee(input: {
     title: input.title,
     persona: input.persona,
     runner: input.runner,
-    model: input.model ?? null,
     sessionId: null,
     spriteSeed: input.spriteSeed,
     deskIndex: input.deskIndex,
