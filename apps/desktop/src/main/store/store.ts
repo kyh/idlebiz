@@ -284,10 +284,21 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
 function saveCompany(co: Company): void {
   atomicWrite(companyFile(co.id), serializeDoc(companyToDoc(co)));
 }
-function saveEmployee(e: Employee): void {
+function saveEmployee(e: Employee, opts: { onlyIfChanged?: boolean } = {}): void {
   const co = c().companies.get(e.companyId);
   if (!co) throw new Error(`company ${e.companyId} not found`);
-  atomicWrite(employeeFile(e.companyId, e.id), serializeDoc(employeeToDoc(e, co)));
+  const file = employeeFile(e.companyId, e.id);
+  const text = serializeDoc(employeeToDoc(e, co));
+  if (opts.onlyIfChanged && readTextIfPresent(file) === text) return;
+  atomicWrite(file, text);
+}
+
+function readTextIfPresent(file: string): string | null {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
 }
 function saveTask(t: Task): void {
   atomicWrite(taskFile(t.companyId, t.id), serializeDoc(taskToDoc(t)));
@@ -423,12 +434,13 @@ export function initStore(): LoadReport {
   cache = loaded;
   lastLoad.companies = loaded.companies.size;
 
-  // re-render every agent's AGENTS.md body so instruction-template updates
-  // reach existing employees (frontmatter/persona are preserved from the file)
+  // re-render every agent's AGENTS.md so instruction-template updates reach
+  // existing employees (frontmatter/persona are preserved from the file);
+  // written only when the rendering differs, so a boot is not a save
   for (const employees of loaded.employees.values()) {
     for (const e of employees) {
       try {
-        saveEmployee(e);
+        saveEmployee(e, { onlyIfChanged: true });
       } catch {
         /* non-fatal */
       }
@@ -450,7 +462,7 @@ export function initStore(): LoadReport {
   for (const co of loaded.companies.values()) {
     const emps = loaded.employees.get(co.id) ?? [];
     if (emps.length > 0 && !emps.some((e) => e.id === co.leaderId)) {
-      const led = { ...co, leaderId: pickLeaderId(emps) };
+      const led = { ...co, leaderId: leadOf(emps) };
       loaded.companies.set(co.id, led);
       saveCompany(led);
     }
@@ -504,14 +516,12 @@ function adoptLegacyTeam(co: Company): void {
 
 const LEADER_RX = /(ceo|founder|chief|head|lead|manager|principal|director|\bpm\b|product)/i;
 
-/** Heuristic leader pick: a managerial role/title, else the first hire. */
-function pickLeaderId(emps: Employee[]): string | null {
+/** The lead a roster elects: a managerial role or title, else the first hire. */
+function leadOf(emps: readonly Employee[]): string | null {
   const byRole = emps.find((e) => LEADER_RX.test(`${e.role} ${e.title}`));
   return (byRole ?? emps[0])?.id ?? null;
 }
-
-/** The lead the roster elects: a managerial role or title, else the first hire. */
-const electLead = (companyId: string): string | null => pickLeaderId(listEmployees(companyId));
+const electLead = (companyId: string): string | null => leadOf(listEmployees(companyId));
 
 function safeReaddir(dir: string): string[] {
   try {
@@ -1007,18 +1017,18 @@ export function listShippedTasks(companyId: string): Task[] {
       shippedDir(companyId),
       (slug) => shippedTaskFile(companyId, slug),
       (doc) => docToTask(doc, companyId),
-    ).toSorted(byAge);
+    );
     c().shipped.set(companyId, list);
   }
   return list.toSorted(newestFirst);
 }
 
-/** An employee's open tasks, newest first. */
+/** An employee's open tasks, in creation order. */
 export function openTasksFor(employeeId: string): Task[] {
   const out: Task[] = [];
   for (const list of c().tasks.values())
     for (const t of list) if (t.assigneeId === employeeId) out.push(t);
-  return out.toSorted(newestFirst);
+  return out;
 }
 
 const TASK_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } satisfies Record<TaskPriority, number>;
@@ -1177,9 +1187,13 @@ export function recentActivity<K extends ActivityKind>(
   kind: K,
   limit = 12,
 ): Extract<ActivityEvent, { kind: K }>[] {
-  const ids = new Set(listEmployees(companyId).map((e) => e.id));
-  return c()
-    .activity.filter(ofKind(kind))
-    .filter((e) => e.employeeId != null && ids.has(e.employeeId))
-    .slice(-limit);
+  const ids = new Set((c().employees.get(companyId) ?? []).map((e) => e.id));
+  const isKind = ofKind(kind);
+  const out: Extract<ActivityEvent, { kind: K }>[] = [];
+  const ring = c().activity;
+  for (let i = ring.length - 1; i >= 0 && out.length < limit; i--) {
+    const e = ring[i];
+    if (e && isKind(e) && e.employeeId != null && ids.has(e.employeeId)) out.push(e);
+  }
+  return out.toReversed();
 }

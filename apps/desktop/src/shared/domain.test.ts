@@ -18,11 +18,11 @@ describe("BlockedAsk round-trip through TASK.md", () => {
     expect(parseBlockedAsk(serializeBlockedAsk(ask))).toEqual(ask);
   });
 
-  it("reads an approval persisted before rules had ids by classifying the command today", () => {
+  it("reads an approval without a rule id as held by the broadest rule", () => {
     expect(parseBlockedAsk("[approve] git push origin main")).toEqual({
       type: "approval",
       command: "git push origin main",
-      rule: "git-push",
+      rule: "write-outside",
     });
   });
 });

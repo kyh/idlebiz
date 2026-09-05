@@ -50,8 +50,7 @@ function runMetricsPulse(): void {
   if (!cfg) return;
   void (async () => {
     const snap = await fetchRealMetrics(cfg);
-    const live = snap.users !== null || snap.revenue !== null;
-    if (live) store.setRealMetrics(company.id, snap);
+    store.setRealMetrics(company.id, snap);
     if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
     publishActivity(
       { kind: "metrics.pulse", payload: { users: snap.users, revenue: snap.revenue } },

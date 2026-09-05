@@ -14,7 +14,7 @@
 export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
 
 import { z } from "zod";
-import { RULE_IDS, classifyCommand, type RuleId } from "./command-policy";
+import { RULE_IDS } from "./command-policy";
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
@@ -58,17 +58,11 @@ export function serializeBlockedAsk(a: BlockedAsk): string {
   return `[connect:${a.integration}] ${a.reason}`;
 }
 
-/** The rule that would hold a command today — for an ask persisted before rules had ids. */
-function ruleFor(command: string): RuleId {
-  const verdict = classifyCommand(command);
-  return verdict.decision === "ask" ? verdict.rule.id : "write-outside";
-}
-
 export function parseBlockedAsk(s: string): BlockedAsk {
   const approval = /^\[approve(?::([a-z-]+))?\]\s*([\s\S]*)$/.exec(s);
   if (approval) {
     const command = (approval[2] ?? "").trim();
-    const rule = RULE_IDS.find((id) => id === approval[1]) ?? ruleFor(command);
+    const rule = RULE_IDS.find((id) => id === approval[1]) ?? "write-outside";
     return { type: "approval", command, rule };
   }
   const m = /^\[connect:([a-z]+)\]\s*([\s\S]*)$/.exec(s);

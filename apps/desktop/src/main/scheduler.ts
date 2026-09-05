@@ -292,11 +292,16 @@ class Scheduler {
    * context (paperclip's mention-wake convention).
    */
   founderMessage(companyId: string, text: string): void {
-    store.postTeamMessage(companyId, null, text);
-    publishActivity({ kind: "chat", message: text.slice(0, 400), payload: { to: null } });
+    this.say(companyId, text, null);
     for (const employeeId of resolveMentions(text, store.listEmployees(companyId))) {
       this.wakeEmployee(employeeId, founderPing(text));
     }
+  }
+
+  /** The founder's line lands in the room and the feed, addressed or to everyone. */
+  private say(companyId: string, line: string, to: string | null): void {
+    store.postTeamMessage(companyId, null, line);
+    publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to } });
   }
 
   /**
@@ -307,9 +312,7 @@ class Scheduler {
   directEmployee(employeeId: string, instruction: string): void {
     const emp = store.getEmployee(employeeId);
     if (!emp) throw new Error(`no employee ${employeeId}`);
-    const line = `@${emp.id} ${instruction}`;
-    store.postTeamMessage(emp.companyId, null, line);
-    publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to: emp.id } });
+    this.say(emp.companyId, `@${emp.id} ${instruction}`, emp.id);
     this.wakeEmployee(employeeId, founderPing(instruction));
   }
 
