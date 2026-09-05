@@ -81,6 +81,10 @@ function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: O
   );
 }
 
+/**
+ * What the product plate says: where the product really is. A live deploy or a
+ * local entry the team wrote — never a number derived from how many tasks closed.
+ */
 function productStateOf(product: ProductStatus | null): string {
   const deploy = product?.deploy ?? null;
   if (deploy) return deploy.state === "READY" ? "LIVE" : deploy.state.toLowerCase();
@@ -105,7 +109,6 @@ function CompanyPlates({
 }) {
   const deploy = product?.deploy ?? null;
   const productState = productStateOf(product);
-  const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
   const working = employees.filter((e) => e.status === "working").length;
   // a company has exactly one team, so a team count is a constant wearing a
   // number's clothes — the plate says what's actually happening instead
@@ -114,9 +117,9 @@ function CompanyPlates({
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
       <Stat
         label="product"
-        value={version}
+        value={productState}
         accent={productState === "LIVE" ? "var(--ok)" : undefined}
-        sub={`${productState} · ${company.ships} shipped`}
+        sub={`${company.ships} shipped`}
         title={deploy ? `Live at ${deploy.url}` : "Shipping log"}
         onClick={() => onOpen("ships")}
       />
