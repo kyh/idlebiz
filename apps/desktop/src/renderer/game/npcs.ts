@@ -78,9 +78,9 @@ interface Npc {
   anims: CharacterAnims;
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
-  emote?: Phaser.GameObjects.Sprite;
+  /** The "!" / "…" above their head, with the bob that lifts it; kept paused while hidden. */
+  emote?: { sprite: Phaser.GameObjects.Sprite; bob: { dy: number }; tween: Phaser.Tweens.Tween };
   /** The emote's bob, tweened on its own so the emote can also follow a walker. */
-  emoteBob?: { dy: number };
   bubble?: Bubble;
   /** Their workstation, or null when the office has run out of desks. */
   seat: Seat | null;
@@ -206,7 +206,7 @@ export class NpcManager {
       sprite.setAlpha(0);
       this.arrivals.push(emp.id);
     }
-    this.setState(emp.id, emp.status === "working" ? "working" : "idle");
+    this.setState(emp.id, emp.status);
     this.applyDepth(npc);
   }
 
@@ -428,10 +428,8 @@ export class NpcManager {
       return;
     }
 
-    const present = [...this.npcs.values()].filter(
-      (n) => n.id !== employeeId && n.phase === "settled",
-    );
-    const target = (to !== null && present.find((n) => n.id === to)) || present[0];
+    const settled = this.settled().filter((n) => n.id !== employeeId);
+    const target = (to !== null && settled.find((n) => n.id === to)) || settled[0];
 
     // already busy walking (or nobody to visit) → just speak in place
     if (!target || npc.plan) {
@@ -449,14 +447,18 @@ export class NpcManager {
   }
 
   /** Employees you can walk up to: everyone who has actually come through the door. */
-  private present(): Npc[] {
+  private inRoom(): Npc[] {
     return [...this.npcs.values()].filter((n) => n.phase !== "queued");
+  }
+  /** Employees at their day: in the room and past the door walk, so a visit can find them. */
+  private settled(): Npc[] {
+    return [...this.npcs.values()].filter((n) => n.phase === "settled");
   }
 
   /** Returns the employee id whose NPC is nearest the faced point (within range). */
   interactAt(px: number, py: number): string | null {
     let best: { id: string; d: number } | null = null;
-    for (const npc of this.present()) {
+    for (const npc of this.inRoom()) {
       const d = Math.hypot(npc.sprite.x - px, npc.sprite.y - py);
       if (d <= INTERACT_RADIUS && (!best || d < best.d)) best = { id: npc.id, d };
     }
@@ -478,13 +480,13 @@ export class NpcManager {
   // ---- visuals ---------------------------------------------------------------
   private showEmote(npc: Npc, frame: number): void {
     if (!npc.emote) {
-      npc.emote = this.scene.add
+      const sprite = this.scene.add
         .sprite(npc.sprite.x, npc.sprite.y + EMOTE_DY, "emotes", frame)
         .setDepth(DEPTH.emote);
       // the bob is an offset, not the emote's y: the "!" can go up mid-walk
       // (an ask while heading back to the desk) and has to keep up
       const bob = { dy: 0 };
-      this.scene.tweens.add({
+      const tween = this.scene.tweens.add({
         targets: bob,
         dy: -4,
         duration: 480,
@@ -492,12 +494,16 @@ export class NpcManager {
         repeat: -1,
         ease: "Sine.InOut",
       });
-      npc.emoteBob = bob;
+      npc.emote = { sprite, bob, tween };
     }
-    npc.emote.setFrame(frame).setVisible(true);
+    npc.emote.sprite.setFrame(frame).setVisible(true);
+    npc.emote.tween.resume();
   }
+  /** Hidden and still: a paused tween costs nothing, a hidden sprite is not moved. */
   private clearEmote(npc: Npc): void {
-    npc.emote?.setVisible(false);
+    if (!npc.emote) return;
+    npc.emote.sprite.setVisible(false);
+    npc.emote.tween.pause();
   }
 
   private showBubble(npc: Npc, message: string): void {
@@ -545,7 +551,9 @@ export class NpcManager {
   /** The label, emote and bubble ride along with the sprite; a bubble also expires. */
   private followAttachments(npc: Npc, now: number): void {
     npc.label.setPosition(npc.sprite.x, npc.sprite.y + LABEL_DY);
-    npc.emote?.setPosition(npc.sprite.x, npc.sprite.y + EMOTE_DY + (npc.emoteBob?.dy ?? 0));
+    const emote = npc.emote;
+    if (emote?.sprite.visible)
+      emote.sprite.setPosition(npc.sprite.x, npc.sprite.y + EMOTE_DY + emote.bob.dy);
     const bubble = npc.bubble;
     if (!bubble) return;
     bubble.root.setPosition(npc.sprite.x, npc.sprite.y + BUBBLE_DY);
@@ -679,9 +687,9 @@ export class NpcManager {
     npc.pendingTimer?.remove();
     // a fade or bob still running would keep driving a destroyed object
     this.scene.tweens.killTweensOf(npc.sprite);
-    if (npc.emoteBob) this.scene.tweens.killTweensOf(npc.emoteBob);
+    npc.emote?.tween.destroy();
     npc.bubble?.root.destroy();
-    npc.emote?.destroy();
+    npc.emote?.sprite.destroy();
     npc.label.destroy();
     npc.sprite.destroy();
     unloadCharacter(this.scene, npc.key);

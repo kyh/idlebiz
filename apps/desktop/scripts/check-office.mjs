@@ -54,10 +54,11 @@ import {
 import { comparePaintOrder } from "../src/shared/office-depth.ts";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
 import { hiddenNodes, opaqueAt } from "../src/shared/office-sight.ts";
+import { objectSpritePath } from "../src/renderer/game/office-object-sprite.ts";
 
 const require = createRequire(import.meta.url);
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { objectFile, sprite } = require("./lib/office-assets.cjs");
+const { sprite } = require("./lib/office-assets.cjs");
 const { loadRaw } = require("./lib/pixels.cjs");
 
 const { values: flags } = parseArgs({
@@ -83,7 +84,10 @@ function maskOf(img) {
 async function paintedSprites(layout) {
   const out = [];
   for (const obj of layout.objects.toSorted(comparePaintOrder)) {
-    out.push({ obj, mask: maskOf(await sprite(objectFile(appRoot, obj))) });
+    out.push({
+      obj,
+      mask: maskOf(await sprite(path.join(appRoot, "public", objectSpritePath(obj)))),
+    });
   }
   return out;
 }

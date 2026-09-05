@@ -13,7 +13,7 @@ import {
   type PixelPoint,
 } from "@/shared/office-layout-schema";
 import { walkGridOf, type WalkGrid } from "@/shared/office-grid";
-import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
+import { objectSpritePath } from "@/renderer/game/office-object-sprite";
 
 export type { OfficeLayer, OfficeLayoutData, OfficePoi, OfficeSeat, PixelPoint };
 export { comparePaintOrder, parseOfficeLayout };
@@ -54,12 +54,6 @@ const BUNDLED = officeLayoutSchema.parse(rawLayout);
 function objectTextureKey(id: string): string {
   return `office-object-sprite-${id}`;
 }
-function resolvePath(obj: OfficeObjectDef): string {
-  if (obj.path) return obj.path;
-  const asset = OFFICE_OBJECT_ASSETS.find((candidate) => candidate.id === obj.id);
-  if (!asset) throw new Error(`Missing office object asset: ${obj.id}`);
-  return asset.path;
-}
 
 /**
  * Spacing between two neighbours in a flat stack. Small enough that a band of
@@ -92,7 +86,7 @@ function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObje
     def: obj,
     id: obj.id,
     key: objectTextureKey(obj.id),
-    path: resolvePath(obj),
+    path: objectSpritePath(obj),
     x: obj.x,
     y: obj.y,
     depth: depthFor(obj, index),
