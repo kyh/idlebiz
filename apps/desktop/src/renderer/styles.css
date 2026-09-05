@@ -27,3 +27,291 @@ a {
 button:disabled {
   cursor: default;
 }
+
+/* ---- the founding: a night street, and an office that lights up floor by floor ---- */
+.ob-scene {
+  background: linear-gradient(#10121b 0%, #10121b 40%, #1d2136 100%);
+}
+.ob-sky {
+  position: absolute;
+  inset: 0;
+  background: url("/onboarding/skyline.png") center bottom / cover no-repeat;
+  image-rendering: pixelated;
+}
+.ob-star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: var(--light);
+  animation: ob-twinkle 2.4s steps(2, start) infinite;
+}
+@keyframes ob-twinkle {
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.ob-title {
+  font-size: 64px;
+  line-height: 1;
+  color: var(--light);
+  text-shadow:
+    -3px 0 0 var(--ink),
+    3px 0 0 var(--ink),
+    0 -3px 0 var(--ink),
+    0 3px 0 var(--ink),
+    0 6px 0 var(--chrome),
+    0 9px 0 var(--ink);
+  animation: ob-drop 0.5s steps(5) both;
+}
+@keyframes ob-drop {
+  from {
+    transform: translateY(-32px);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(6px);
+    opacity: 1;
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* the stage: what the step shows on the left, the office on the right, one street under both */
+.ob-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: end;
+  width: 100%;
+  max-width: 56rem;
+  min-height: 220px;
+  padding-bottom: 14px;
+}
+.ob-stage-left {
+  align-self: center;
+  padding: 0 24px 24px 0;
+}
+.ob-street {
+  position: absolute;
+  left: -100vw;
+  right: -100vw;
+  bottom: 0;
+  height: 14px;
+  background: var(--chrome);
+  border-top: 3px solid var(--ink);
+  box-shadow: inset 0 3px 0 0 var(--chrome-hi);
+}
+/* the ground under the street, so the skyline is a horizon and not a window */
+.ob-ground {
+  position: absolute;
+  left: -100vw;
+  right: -100vw;
+  top: 100%;
+  height: 100vh;
+  background: #151827;
+  border-top: 3px solid #10121b;
+}
+
+.ob-building {
+  position: relative;
+  width: 232px;
+  margin: 0 auto;
+  padding: 10px 12px 0;
+  background: #313a5e;
+  border: 3px solid var(--ink);
+  border-bottom: 0;
+  box-shadow:
+    inset 3px 0 0 0 #3d4a72,
+    inset -3px 0 0 0 #262d4a;
+}
+.ob-roof {
+  height: 10px;
+  margin: -13px -15px 8px;
+  background: var(--chrome);
+  border: 3px solid var(--ink);
+  box-shadow: inset 0 3px 0 0 var(--chrome-hi);
+}
+.ob-floor {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  padding: 5px 0 9px;
+  border-bottom: 2px solid #262d4a;
+}
+.ob-window {
+  height: 14px;
+  background: #1d2136;
+  border: 2px solid #10121b;
+  box-shadow: inset 0 -3px 0 0 #151827;
+}
+.ob-window[data-lit="true"] {
+  background: var(--warn);
+  box-shadow:
+    inset 0 -3px 0 0 #c98f2a,
+    0 0 8px 1px rgba(232, 176, 75, 0.35);
+  animation: ob-light-on 0.5s steps(3) both;
+}
+@keyframes ob-light-on {
+  0% {
+    background: #1d2136;
+    box-shadow: none;
+  }
+  40% {
+    background: var(--face);
+  }
+  70% {
+    background: #1d2136;
+    box-shadow: none;
+  }
+}
+.ob-door {
+  width: 34px;
+  height: 36px;
+  margin: 8px auto -3px;
+  background: var(--accent-lo);
+  border: 3px solid var(--ink);
+  border-bottom: 0;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.ob-door[data-open="true"] {
+  background: var(--warn);
+  box-shadow: inset 0 0 0 2px var(--face);
+}
+
+/* the founder, on the street, walking to work: a 2x walk sheet stepped through its down row */
+.ob-sprite {
+  position: absolute;
+  /* the frame keeps 9 empty rows under the soles (CHAR_ORIGIN_Y); at 2x that is 18px below the street's top */
+  bottom: -4px;
+  width: 64px;
+  height: 128px;
+  transform: translateX(-50%);
+  background-repeat: no-repeat;
+  background-size: 384px 768px;
+  image-rendering: pixelated;
+  transition: left 0.7s steps(7);
+}
+.ob-sprite-walk {
+  animation: ob-gait 0.6s steps(6) infinite;
+}
+@keyframes ob-gait {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -384px;
+  }
+}
+
+/* the office's own emotes, at 2x: "!" when someone arrives, "…" while the agency thinks */
+.ob-emote {
+  width: 64px;
+  height: 64px;
+  background: url("/workspace-kit/emotes.png") 0 0 / 512px 64px no-repeat;
+  image-rendering: pixelated;
+  animation: ob-bob 0.5s steps(2, start) infinite alternate;
+}
+.ob-emote[data-frame="1"] {
+  background-position-x: -64px;
+}
+.ob-emote-door {
+  position: absolute;
+  right: 118px;
+  bottom: 44px;
+}
+@keyframes ob-bob {
+  to {
+    transform: translateY(-4px);
+  }
+}
+
+/* the founding team arrives one at a time */
+.ob-parade > * {
+  animation: ob-arrive 0.35s steps(4) both;
+}
+@keyframes ob-arrive {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* the budget as a bar: how long the leash is, in the colours a health bar uses */
+.ob-meter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.ob-meter-bar {
+  height: 16px;
+  overflow: hidden;
+  background: #1d2136;
+  border: 3px solid var(--ink);
+  box-shadow: inset 0 3px 0 0 rgba(0, 0, 0, 0.35);
+}
+.ob-meter-fill {
+  height: 100%;
+  transition: width 0.4s steps(8);
+}
+.ob-meter-fill[data-tone="tight"] {
+  background: var(--danger);
+}
+.ob-meter-fill[data-tone="mid"] {
+  background: var(--warn);
+}
+.ob-meter-fill[data-tone="open"] {
+  background: var(--ok);
+}
+.ob-meter-fill[data-tone="infinite"] {
+  background: repeating-linear-gradient(90deg, var(--accent) 0 8px, var(--accent-hi) 8px 16px);
+}
+
+/* the battle-start flash: two pops of white, then the office */
+.ob-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--light);
+  pointer-events: none;
+  animation: ob-flash 0.7s steps(1, end) both;
+}
+@keyframes ob-flash {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-star,
+  .ob-title,
+  .ob-window[data-lit="true"],
+  .ob-sprite-walk,
+  .ob-emote,
+  .ob-parade > *,
+  .ob-flash {
+    animation: none;
+  }
+  .ob-sprite,
+  .ob-meter-fill {
+    transition: none;
+  }
+  .ob-flash {
+    opacity: 1;
+  }
+}

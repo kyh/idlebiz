@@ -350,6 +350,18 @@
   color: var(--danger);
 }
 
+/* the "press to continue" cue at the end of a line of dialogue: a ▼ that bobs
+   in two frames, the way the battle box has always asked for the A button */
+.px-more {
+  display: inline-block;
+  animation: px-more 0.6s steps(2, start) infinite;
+}
+@keyframes px-more {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
 /* a soft blink for "working" indicators */
 .px-live-dot {
   animation: px-pulse 1s ease-in-out infinite;

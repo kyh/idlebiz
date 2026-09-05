@@ -5,7 +5,15 @@ import { bridge } from "@/renderer/bridge";
 import { refresh } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { useModal } from "@/renderer/ui/modal";
-import { Portrait } from "@/renderer/ui/portrait";
+import {
+  Building,
+  BudgetMeter,
+  Emote,
+  FLOORS,
+  FounderSprite,
+  NightSky,
+  TeamParade,
+} from "@/renderer/ui/onboarding-stage";
 import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
@@ -14,20 +22,51 @@ import type { FounderChoice, HireProposal } from "@/shared/ipc-registry";
 // ---------------------------------------------------------------------------
 // Pokémon-style first-run onboarding: one battle box, a narrator, and a step
 // machine — auth → founder → look → company → biztype → pitch → team → budget
-// → office.
+// → office. Staged on the street outside the office: every answered step
+// lights a floor, the founder walks toward the door, and the office opens on
+// a battle-start flash.
 // ---------------------------------------------------------------------------
 
-type Step =
-  | "intro"
-  | "auth"
-  | "founder"
-  | "look"
-  | "company"
-  | "biztype"
-  | "pitch"
-  | "team"
-  | "budget"
-  | "finalize";
+const STEP_ORDER = [
+  "intro",
+  "auth",
+  "founder",
+  "look",
+  "company",
+  "biztype",
+  "pitch",
+  "team",
+  "budget",
+  "finalize",
+] as const;
+type Step = (typeof STEP_ORDER)[number];
+
+const stepIndex = (step: Step): number => STEP_ORDER.indexOf(step);
+
+/** The steps that each light a floor once answered — one per floor of the building. */
+const FLOOR_STEPS: readonly Step[] = [
+  "founder",
+  "look",
+  "company",
+  "biztype",
+  "pitch",
+  "team",
+  "budget",
+];
+const litFloors = (step: Step): number =>
+  step === "finalize" ? FLOORS : FLOOR_STEPS.filter((s) => stepIndex(s) < stepIndex(step)).length;
+
+/** Where the founder stands on the street, per step: from the left edge to the door. Absent before they have a look. */
+const FOUNDER_AT = new Map<Step, number>([
+  ["look", 18],
+  ["company", 30],
+  ["biztype", 42],
+  ["pitch", 54],
+  ["team", 62],
+  ["budget", 70],
+  ["finalize", 83],
+]);
+const founderAt = (step: Step): number | null => FOUNDER_AT.get(step) ?? null;
 
 /** Where "← back" goes, or null where it doesn't go anywhere. Only the cheap,
  *  reversible steps rewind: casting the team spends a real CLI call, and past
@@ -58,6 +97,10 @@ type Team =
 const CAP_OPTIONS: readonly (number | null)[] = [5, 20, 50, null];
 const DEFAULT_CAP = 20;
 
+/** How long the battle-start flash plays before the office is allowed to show. */
+const FLASH_MS = 700;
+const flashOver = (): Promise<void> => new Promise((done) => window.setTimeout(done, FLASH_MS));
+
 function Narrator({ text }: { text: string }) {
   const { shown, done, skip } = useTypewriter(text);
   return (
@@ -67,18 +110,24 @@ function Narrator({ text }: { text: string }) {
       onClick={skip}
     >
       {shown}
-      {!done ? <span className="px-live-dot">▌</span> : null}
+      {done ? (
+        <span className="px-more ml-1 text-accent-lo">▼</span>
+      ) : (
+        <span className="px-live-dot">▌</span>
+      )}
     </button>
   );
 }
 
-function Title() {
+/** The title card. At the very start it also says how to begin, the way a title screen does. */
+function Title({ pressStart }: { pressStart: boolean }) {
   return (
-    <div className="mt-10 text-center">
-      <div className="text-6xl text-[#f5f3ea]" style={{ textShadow: "4px 4px 0 #1d2136" }}>
-        IDLEBIZ
+    <div className="mt-8 text-center">
+      <div className="ob-title">IDLEBIZ</div>
+      <div className="mt-4 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
+      <div className={pressStart ? "px-blink mt-3 text-xs text-light" : "mt-3 text-xs opacity-0"}>
+        ▶ press Enter
       </div>
-      <div className="mt-2 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
     </div>
   );
 }
@@ -112,24 +161,6 @@ function LookPicker({
             className="h-14 w-14 [image-rendering:pixelated]"
           />
         </button>
-      ))}
-    </div>
-  );
-}
-
-function HiresGrid({ hires }: { hires: HireProposal[] }) {
-  return (
-    <div className="px-window grid max-h-[46vh] w-full grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
-      {hires.map((h) => (
-        <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
-          <Portrait seed={h.spriteSeed} size="sm" />
-          <span>
-            <span className="block text-sm text-fg">
-              {h.name} · <span className="text-accent-lo">{h.title}</span>
-            </span>
-            <span className="block text-xs text-fg-dim">{h.blurb}</span>
-          </span>
-        </div>
       ))}
     </div>
   );
@@ -210,15 +241,19 @@ export function PokeOnboarding() {
     setError(null);
     setStep("finalize");
     try {
-      await bridge().foundCompany({
-        name: companyName.trim(),
-        mission: pitch.trim(),
-        businessType: biz ?? "custom",
-        founderName: founderName.trim(),
-        founderSpriteSeed: choices[look]?.seed ?? DEFAULT_FOUNDER_SEED,
-        budget,
-        hires,
-      });
+      // the flash plays over the night; only then does the office get to show
+      await Promise.all([
+        bridge().foundCompany({
+          name: companyName.trim(),
+          mission: pitch.trim(),
+          businessType: biz ?? "custom",
+          founderName: founderName.trim(),
+          founderSpriteSeed: choices[look]?.seed ?? DEFAULT_FOUNDER_SEED,
+          budget,
+          hires,
+        }),
+        flashOver(),
+      ]);
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
     } catch (e) {
@@ -227,12 +262,17 @@ export function PokeOnboarding() {
     }
   };
 
-  // Enter advances input steps; Escape rewinds the reversible ones
+  // Enter advances input steps; Escape rewinds the reversible ones; the arrow
+  // keys walk the looks, the way a starter is picked
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     const tag = document.activeElement?.tagName;
     if (e.key === "Escape") {
       back();
       return;
+    }
+    if (step === "look" && choices.length > 0) {
+      if (e.key === "ArrowRight") setLook((i) => (i + 1) % choices.length);
+      else if (e.key === "ArrowLeft") setLook((i) => (i + choices.length - 1) % choices.length);
     }
     if (e.key !== "Enter" || tag === "TEXTAREA") return;
     next();
@@ -247,7 +287,7 @@ export function PokeOnboarding() {
       "Welcome to IDLEBIZ! You're about to found a startup staffed by real AI employees — they write real code and real docs in a real folder on your computer.",
     auth: "First things first: your employees run on your own coding CLI — Claude Code or Codex. No CLI, no workforce. I'll check what's installed and set it up.",
     founder: "Let's get you on payroll. What's your name, founder?",
-    look: "Pick your look. This is how you'll appear around the office.",
+    look: "Pick your look. That's you out on the street — you'll look the same around the office.",
     company: "Now the fun part. What's your company called?",
     biztype: `What kind of company is ${companyName.trim() || "this"} going to be?`,
     pitch: `What is ${companyName.trim() || "your company"} building? Be specific — your team will literally start working on this.`,
@@ -263,53 +303,69 @@ export function PokeOnboarding() {
   } satisfies Record<Step, string>;
   const problem = error ?? (team.kind === "failed" ? team.message : null);
 
+  const seed = choices[look]?.seed ?? DEFAULT_FOUNDER_SEED;
+  const at = founderAt(step);
+
   return (
-    <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-between bg-[#10121b] p-6">
-      <Title />
+    <div className="ob-scene pointer-events-auto absolute inset-0 z-40 overflow-hidden">
+      <NightSky />
+      <div className="relative z-10 flex h-full flex-col items-center justify-between p-6">
+        <Title pressStart={step === "intro"} />
 
-      <div className="flex w-full max-w-2xl flex-1 items-center justify-center py-4">
-        {step === "look" && choices.length > 0 ? (
-          <LookPicker choices={choices} look={look} onPick={setLook} />
-        ) : null}
-        {(step === "team" || step === "budget") && hires ? <HiresGrid hires={hires} /> : null}
-        {step === "team" && team.kind === "casting" ? (
-          <div className="px-live-dot text-4xl">📋</div>
-        ) : null}
-      </div>
+        <div className="ob-stage">
+          <div className="ob-stage-left flex justify-center">
+            {step === "look" && choices.length > 0 ? (
+              <LookPicker choices={choices} look={look} onPick={setLook} />
+            ) : null}
+            {step === "team" && hires ? <TeamParade hires={hires} /> : null}
+            {step === "budget" ? <BudgetMeter capUsd={capUsd} /> : null}
+          </div>
+          <div className="relative">
+            <Building lit={litFloors(step)} open={step === "finalize"} />
+          </div>
+          {step === "team" && team.kind === "casting" ? (
+            <Emote frame={1} className="ob-emote-door" />
+          ) : null}
+          <div className="ob-street" />
+          <div className="ob-ground" />
+          {at !== null ? <FounderSprite seed={seed} at={at} /> : null}
+        </div>
 
-      <div className="px-battle w-full max-w-2xl p-4">
-        <Narrator text={narration[step]} />
-        {problem ? <div className="mt-1 text-xs text-danger">{problem}</div> : null}
+        <div className="px-battle w-full max-w-2xl p-4">
+          <Narrator text={narration[step]} />
+          {problem ? <div className="mt-1 text-xs text-danger">{problem}</div> : null}
 
-        {backStep(step) !== null ? (
-          <button type="button" onClick={back} className="px-link mt-2" title="Esc">
-            ← back
-          </button>
-        ) : null}
+          {backStep(step) !== null ? (
+            <button type="button" onClick={back} className="px-link mt-2" title="Esc">
+              ← back
+            </button>
+          ) : null}
 
-        <div className="mt-3 flex items-center gap-2">
-          <ActionRow
-            step={step}
-            auth={auth}
-            login={login}
-            next={next}
-            back={back}
-            castTeam={castTeam}
-            finalize={() => void finalize()}
-            founderName={founderName}
-            setFounderName={setFounderName}
-            companyName={companyName}
-            setCompanyName={setCompanyName}
-            biz={biz}
-            setBiz={setBiz}
-            pitch={pitch}
-            setPitch={setPitch}
-            team={team}
-            capUsd={capUsd}
-            setCapUsd={setCapUsd}
-          />
+          <div className="mt-3 flex items-center gap-2">
+            <ActionRow
+              step={step}
+              auth={auth}
+              login={login}
+              next={next}
+              back={back}
+              castTeam={castTeam}
+              finalize={() => void finalize()}
+              founderName={founderName}
+              setFounderName={setFounderName}
+              companyName={companyName}
+              setCompanyName={setCompanyName}
+              biz={biz}
+              setBiz={setBiz}
+              pitch={pitch}
+              setPitch={setPitch}
+              team={team}
+              capUsd={capUsd}
+              setCapUsd={setCapUsd}
+            />
+          </div>
         </div>
       </div>
+      {step === "finalize" ? <div className="ob-flash" /> : null}
     </div>
   );
 }
@@ -456,7 +512,7 @@ function ActionRow({
                 data-sel={biz === b.id}
                 className="px-opt text-left"
               >
-                {b.emoji} {b.label}
+                {b.label}
               </button>
             ))}
           </div>

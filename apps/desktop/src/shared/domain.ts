@@ -152,7 +152,6 @@ export type BusinessTypeId = (typeof BUSINESS_TYPE_IDS)[number];
 export interface BusinessType {
   id: BusinessTypeId;
   label: string;
-  emoji: string;
   pitchPlaceholder: string;
   hireHint: string;
   routine: BusinessTypeRoutine | null;
@@ -162,7 +161,6 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   {
     id: "software",
     label: "Software company",
-    emoji: "💻",
     pitchPlaceholder: "A delightful to-do app that makes planning feel effortless.",
     hireHint: "Lean product team: engineers, a designer, and someone on growth/marketing.",
     routine: null,
@@ -170,7 +168,6 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   {
     id: "game-studio",
     label: "Game studio",
-    emoji: "🎮",
     pitchPlaceholder: "A cozy pixel-art farming roguelike playable in the browser.",
     hireHint: "A game needs gameplay engineering, pixel art, sound, and game design.",
     routine: {
@@ -184,7 +181,6 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   {
     id: "vc",
     label: "Venture capital firm",
-    emoji: "💼",
     pitchPlaceholder:
       "A micro-VC that sources and writes investment memos on early-stage AI startups.",
     hireHint: "An investment firm needs sourcing, analysis/research, and investor-facing writing.",
@@ -199,7 +195,6 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   {
     id: "ecommerce",
     label: "E-commerce business",
-    emoji: "🛒",
     pitchPlaceholder: "An online store selling artist-designed enamel pins.",
     hireHint: "A shop needs product/merchandising, storefront engineering, ops, and marketing.",
     routine: {
@@ -213,7 +208,6 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   {
     id: "custom",
     label: "Something else…",
-    emoji: "✨",
     pitchPlaceholder: "A daily AI-curated newsletter for indie hackers.",
     hireHint: "",
     routine: null,
