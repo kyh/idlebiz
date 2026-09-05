@@ -139,6 +139,8 @@ export class NpcManager {
   private nextArrivalAt = 0;
   // Phaser's loader is single-batch; serialize spawns so concurrent hires don't race it.
   private chain: Promise<void> = Promise.resolve();
+  /** Released while their spawn was still queued in the chain: never let them in. */
+  private released = new Set<string>();
 
   constructor(
     private scene: Phaser.Scene,
@@ -157,6 +159,7 @@ export class NpcManager {
     if (this.npcs.has(emp.id)) return;
     const key = `emp-${emp.id}`;
     await loadCharacter(this.scene, key, emp.spriteSeed);
+    if (this.released.delete(emp.id)) return;
 
     this.roster.set(emp.id, emp);
     const seat = this.seatFor(this.replan().get(emp.id));
@@ -660,7 +663,10 @@ export class NpcManager {
    */
   despawn(employeeId: string, passage: Passage): void {
     const npc = this.npcs.get(employeeId);
-    if (!npc) return;
+    if (!npc) {
+      this.released.add(employeeId);
+      return;
+    }
     this.roster.delete(employeeId);
     this.replan();
     if (passage === "door" && npc.phase === "settled") this.leave(npc);
@@ -685,6 +691,7 @@ export class NpcManager {
     // deleting the current entry mid-iteration is defined for Map
     for (const npc of this.npcs.values()) this.destroyNpc(npc);
     this.roster.clear();
+    this.released.clear();
     this.seatPlan = new Map();
   }
 }
