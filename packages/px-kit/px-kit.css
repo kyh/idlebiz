@@ -350,6 +350,22 @@
   color: var(--danger);
 }
 
+/* a window arriving: two frames from small to full, the way a menu box opens */
+.px-pop {
+  animation: px-pop 0.16s steps(2, end) both;
+}
+@keyframes px-pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .px-pop {
+    animation: none;
+  }
+}
+
 /* the "press to continue" cue at the end of a line of dialogue: a ▼ that bobs
    in two frames, the way the battle box has always asked for the A button */
 .px-more {

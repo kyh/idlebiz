@@ -150,7 +150,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
 
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center p-4">
-      <div className="px-battle flex w-full max-w-3xl gap-3 p-3">
+      <div className="px-battle px-pop flex w-full max-w-3xl gap-3 p-3">
         <div className="flex w-[58%] flex-col gap-2">
           <Identity emp={emp} working={working} />
           {asked && question !== null ? (
@@ -312,7 +312,11 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
       style={{ cursor: done ? "default" : "pointer" }}
     >
       {done ? <RichText text={text} companyId={companyId} /> : shown}
-      {done ? null : <span className="px-live-dot">▌</span>}
+      {done ? (
+        <span className="px-more ml-1 text-accent-lo">▼</span>
+      ) : (
+        <span className="px-live-dot">▌</span>
+      )}
     </div>
   );
 }
