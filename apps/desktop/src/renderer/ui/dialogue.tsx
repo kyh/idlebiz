@@ -7,6 +7,7 @@ import { RichText } from "@/renderer/ui/linkify";
 import { useModal } from "@/renderer/ui/modal";
 import { Portrait } from "@/renderer/ui/portrait";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
+import { taskIn } from "@/shared/domain";
 import type { Employee, Task } from "@/shared/domain";
 
 const NOTE_MS = 1800;
@@ -63,8 +64,8 @@ function roleOption(emp: Employee): ChatOption {
 /** Options shaped by what this employee is actually doing right now. */
 function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
   const out: ChatOption[] = [];
-  const running = tasks.find((t) => t.status === "running" || t.status === "queued");
-  const lastDone = tasks.find((t) => t.status === "done" && t.summary);
+  const running = tasks.find((t) => t.state.kind === "running" || t.state.kind === "queued");
+  const lastDone = tasks.filter(taskIn("done")).find((t) => t.state.summary);
   if (running) {
     out.push({
       label: `Check in: ${short(running.title, 18)}`,
@@ -74,7 +75,7 @@ function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
   if (lastDone) {
     out.push({
       label: `Build on: ${short(lastDone.title, 18)}`,
-      instr: `Take the next step on what you last shipped ("${lastDone.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${(lastDone.summary ?? "").slice(0, 500)}`,
+      instr: `Take the next step on what you last shipped ("${lastDone.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${(lastDone.state.summary ?? "").slice(0, 500)}`,
     });
   }
   out.push(roleOption(emp));
@@ -151,10 +152,11 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   // live in the inbox where the [Connect] button is. Shown only for a current
   // list: the moment an answer lands, the status event makes this one stale,
   // and a form for a question already answered would send twice.
-  const blocked =
+  const asked =
     fetched?.asOf === lastStatusId
-      ? tasks.find((t) => t.status === "blocked" && t.blocked?.type === "question")
+      ? tasks.filter(taskIn("blocked")).find((t) => t.state.ask.type === "question")
       : undefined;
+  const question = asked && asked.state.ask.type === "question" ? asked.state.ask.question : null;
   const options = buildOptions(emp, tasks);
   const talkIndex = options.length; // trailing "Talk…" command
 
@@ -214,7 +216,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   // what they're DOING: everything else stays a compact activity trail
   const trail: ActivityEvent[] = mine.filter((a) => a !== latest).slice(-3);
   const working = emp.status === "working";
-  const running = tasks.find((t) => t.status === "running" || t.status === "queued");
+  const running = tasks.find((t) => t.state.kind === "running" || t.state.kind === "queued");
   const speech = latest
     ? latest.kind === "ship"
       ? `Shipped it! ${latest.message}`
@@ -230,16 +232,13 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
       <div className="px-battle flex w-full max-w-3xl gap-3 p-3">
         <div className="flex w-[58%] flex-col gap-2">
           <Identity emp={emp} working={working} />
-          {blocked ? (
+          {asked && question !== null ? (
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
               <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
               <div className="mt-1 text-sm leading-snug text-text">
-                <RichText
-                  text={blocked.blocked?.type === "question" ? blocked.blocked.question : ""}
-                  companyId={company.id}
-                />
+                <RichText text={question} companyId={company.id} />
               </div>
-              <AnswerForm task={blocked} autoFocus onSent={() => showNote("Answer sent ✓")} />
+              <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
             </div>
           ) : (
             <div className="px-inset px-scroll flex min-h-[72px] flex-1 flex-col overflow-y-auto p-2.5">

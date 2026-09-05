@@ -6,7 +6,7 @@ import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { classifyCommand } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
-import type { IntegrationKind, Task } from "@/shared/domain";
+import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
 
 /** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
  *  place (walking up to the "!" in the office still works — this is the fast path). */
@@ -38,22 +38,34 @@ export function Inbox({
           <div className="text-sm text-text-dim">All clear — nobody's waiting on you.</div>
         ) : null}
         {pendingAsks.map((t) => {
-          if (t.blocked?.type === "integration")
-            return (
-              <ConnectRow
-                key={t.id}
-                t={t}
-                by={nameOf(t.assigneeId)}
-                integration={t.blocked.integration}
-                reason={t.blocked.reason}
-                onConnect={onConnect}
-              />
-            );
-          if (t.blocked?.type === "approval")
-            return (
-              <ApprovalRow key={t.id} t={t} by={nameOf(t.assigneeId)} command={t.blocked.command} />
-            );
-          return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />;
+          const { ask } = t.state;
+          switch (ask.type) {
+            case "integration":
+              return (
+                <ConnectRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  integration={ask.integration}
+                  reason={ask.reason}
+                  onConnect={onConnect}
+                />
+              );
+            case "approval":
+              return (
+                <ApprovalRow key={t.id} t={t} by={nameOf(t.assigneeId)} command={ask.command} />
+              );
+            case "question":
+              return (
+                <AskRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  question={ask.question}
+                  companyId={company.id}
+                />
+              );
+          }
         })}
         {stuckTasks.length > 0 ? (
           <div className="pt-1 text-xs uppercase tracking-wide text-text-dim">
@@ -152,7 +164,7 @@ function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string 
   );
 }
 
-function StuckRow({ t, by }: { t: Task; by: string }) {
+function StuckRow({ t, by }: { t: TaskIn<"dead">; by: string }) {
   const [retried, setRetried] = useState(false);
   const retry = async () => {
     if (retried || !t.assigneeId) return;
@@ -162,11 +174,9 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
   return (
     <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
       <div className="text-xs text-danger">
-        {t.status === "dead" ? "💀" : "⚠"} {by} · <span className="text-text-dim">{t.title}</span>
+        💀 {by} · <span className="text-text-dim">{t.title}</span>
       </div>
-      {t.lastError ? (
-        <div className="mt-1 text-xs leading-snug text-text-dim">{t.lastError}</div>
-      ) : null}
+      <div className="mt-1 text-xs leading-snug text-text-dim">{t.state.lastError}</div>
       <div className="mt-2 flex justify-end">
         <button
           type="button"
@@ -181,7 +191,17 @@ function StuckRow({ t, by }: { t: Task; by: string }) {
   );
 }
 
-function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }) {
+function AskRow({
+  t,
+  by,
+  question,
+  companyId,
+}: {
+  t: Task;
+  by: string;
+  question: string;
+  companyId: string;
+}) {
   const [sent, setSent] = useState(false);
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
@@ -189,10 +209,7 @@ function AskRow({ t, by, companyId }: { t: Task; by: string; companyId: string }
         ❗ {by} · <span className="text-text-dim">{t.title}</span>
       </div>
       <div className="mt-1 text-sm leading-snug text-text">
-        <RichText
-          text={t.blocked?.type === "question" ? t.blocked.question : ""}
-          companyId={companyId}
-        />
+        <RichText text={question} companyId={companyId} />
       </div>
       <AnswerForm task={t} onSent={() => setSent(true)} />
     </div>

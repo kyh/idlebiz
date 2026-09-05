@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
-import type { Budget, Company, Employee, Task, Team, TeamMessage } from "@/shared/domain";
+import { taskIn } from "@/shared/domain";
+import type { Budget, Company, Employee, Task, TaskIn, Team, TeamMessage } from "@/shared/domain";
 import type {
   ProductStatus,
   RestingRunners,
@@ -31,8 +32,8 @@ interface State {
   employees: Employee[];
   teams: Team[];
   activity: ActivityEvent[];
-  pendingAsks: Task[]; // blocked tasks awaiting the founder's answer
-  stuckTasks: Task[]; // dead-lettered tasks needing attention
+  pendingAsks: TaskIn<"blocked">[]; // awaiting the founder's answer
+  stuckTasks: TaskIn<"dead">[]; // dead-lettered, needing a retry
   game: Phaser.Game | null;
   modalOpen: boolean; // a dialogue/modal overlay is up (ambient HUD chrome hides)
 }
@@ -148,8 +149,8 @@ export async function refresh(): Promise<void> {
         bridge().listTasks({ companyId: company.id, status: ["blocked", "dead"] }),
       ])
     : [[], [], []];
-  const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blocked !== null);
-  const stuckTasks = tasks.filter((t) => t.status === "dead");
+  const pendingAsks = tasks.filter(taskIn("blocked"));
+  const stuckTasks = tasks.filter(taskIn("dead"));
   set({ booted: true, company, resting, employees, teams, pendingAsks, stuckTasks });
   // product state rides along (deploy lookup is a no-op until Vercel is connected)
   if (company) {

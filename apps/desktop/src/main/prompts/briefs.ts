@@ -1,5 +1,6 @@
 import { INTEGRATION_LABELS, businessTypeById } from "@/shared/domain";
 import type {
+  BlockedAsk,
   Company,
   Employee,
   IntegrationKind,
@@ -69,7 +70,10 @@ export function autonomousBrief(input: AutonomousBriefInput): TaskBrief {
   const shipped = ships.map((s) => `- ${s}`).join("\n") || "(nothing shipped yet)";
   const failures =
     problems
-      .map((t) => `- ${t.title}${t.lastError ? ` (last error: ${t.lastError})` : ""}`)
+      .map(
+        (t) =>
+          `- ${t.title}${t.state.kind === "dead" ? ` (last error: ${t.state.lastError})` : ""}`,
+      )
       .join("\n") || "(none)";
   const budget = budgetLine(company);
 
@@ -120,9 +124,9 @@ export const founderPing = (text: string): TaskBrief => ({
 });
 
 /** The task they were blocked on can continue: here is what the founder said. */
-export const continuationBrief = (task: Task, answer: string): TaskBrief => ({
+export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
   title: `Continue: ${task.title.slice(0, 60)}`,
-  description: `You previously asked the founder:\n> ${task.blocked ? serializeBlockedAsk(task.blocked) : "(question lost)"}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${task.title}`,
+  description: `You previously asked the founder:\n> ${serializeBlockedAsk(ask)}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${task.title}`,
 });
 
 /** What the founder "said" when they connected the integration a task was waiting on. */

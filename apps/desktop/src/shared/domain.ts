@@ -282,23 +282,55 @@ export interface TeamMessage {
   createdAt: number;
 }
 
+/**
+ * Where a task is, with only what that place needs: a queued task knows its
+ * backoff, a running one its run, a blocked one the ask, a finished one what
+ * it left behind. Nothing else can be read in a state it does not belong to.
+ */
+export type TaskState =
+  | { kind: "todo" }
+  | {
+      kind: "queued";
+      /** Earliest time a backoff retry may start; null runs at the next tick. */
+      nextAttemptAt: number | null;
+      /** Why the previous run failed, when this is a retry. */
+      lastError: string | null;
+    }
+  | { kind: "running"; runId: string }
+  | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
+  | { kind: "done"; summary: string | null }
+  | { kind: "dead"; lastError: string };
+
+// the state kinds and the status vocabulary (TASK.md, the IPC filter, status events) are one set
+type _AssertStatesAreStatuses = TaskState["kind"] extends TaskStatus ? true : never;
+type _AssertStatusesAreStates = TaskStatus extends TaskState["kind"] ? true : never;
+const taskStatesInSync: _AssertStatesAreStatuses & _AssertStatusesAreStates = true;
+void taskStatesInSync;
+
+/** A task known to be in one state, so its fields need no second check. */
+export type TaskIn<K extends TaskStatus> = Task & { state: Extract<TaskState, { kind: K }> };
+
+/** Narrow a task to one state: `tasks.filter(taskIn("blocked"))` gives every ask, typed. */
+export const taskIn =
+  <K extends TaskStatus>(kind: K) =>
+  (t: Task): t is TaskIn<K> =>
+    t.state.kind === kind;
+
 export interface Task {
   id: string; // slug (folder name under tasks/)
   companyId: string;
   title: string;
   description: string | null;
-  status: TaskStatus;
+  state: TaskState;
   priority: TaskPriority;
   assigneeId: string | null;
-  runId: string | null;
-  summary: string | null;
-  blocked: BlockedAsk | null; // why this task awaits the founder (status "blocked")
   artifacts: string[]; // file paths the agent reported
-  attempts: number; // failed runs so far (drives retry/dead-letter)
-  nextAttemptAt: number | null; // earliest time a backoff retry may start
-  lastError: string | null; // most recent failure message
+  /** Failed runs so far — drives retry backoff and the dead letter, across states. */
+  attempts: number;
   createdAt: number;
+  /** When its latest run began. */
   startedAt: number | null;
+  /** When it last reached done, blocked or dead. */
   completedAt: number | null;
 }
 

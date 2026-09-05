@@ -267,7 +267,7 @@ function registerIpcHandlers(): void {
     store
       .listTasks(companyId)
       .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
-      .filter((t) => status === undefined || status.includes(t.status)),
+      .filter((t) => status === undefined || status.includes(t.state.kind)),
   );
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
@@ -278,11 +278,11 @@ function registerIpcHandlers(): void {
 
   handle("resolveApproval", ({ taskId, approved }) => {
     const task = store.getTask(taskId);
-    if (!task || task.blocked?.type !== "approval")
+    if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval")
       throw new Error("task is not awaiting an approval");
     // Record before resuming: the agent's retry hits the hook again, and it
     // must find the sign-off already there.
-    if (approved) store.grantApproval(task.companyId, task.blocked.command);
+    if (approved) store.grantApproval(task.companyId, task.state.ask.command);
     return resumeBlocked(taskId, approvalAnswer(approved), "could not resume the task");
   });
 

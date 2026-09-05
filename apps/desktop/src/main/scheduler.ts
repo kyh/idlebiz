@@ -172,7 +172,7 @@ class Scheduler {
       if (agentDriver.restingRunner(emp.runner) !== null) continue;
       const open = store
         .listTasksForEmployee(emp.id)
-        .some((t) => t.status === "queued" || t.status === "running");
+        .some((t) => t.state.kind === "queued" || t.state.kind === "running");
       if (open) continue;
       this.brief(company, emp, this.autonomousBrief(company, emp, employees));
     }
@@ -190,7 +190,7 @@ class Scheduler {
       ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
       problems: store
         .listTasks(company.id)
-        .filter((t) => t.status === "dead")
+        .filter((t) => t.state.kind === "dead")
         .slice(0, 5),
       nameOf: (id) => this.empName(id),
     });
@@ -322,8 +322,9 @@ class Scheduler {
     const company = store.getDefaultCompany();
     if (!company) return;
     for (const task of store.listTasks(company.id)) {
-      if (task.status !== "blocked" || task.blocked?.type !== "integration") continue;
-      if (task.blocked.integration !== kind) continue;
+      const st = task.state;
+      if (st.kind !== "blocked" || st.ask.type !== "integration") continue;
+      if (st.ask.integration !== kind) continue;
       const continuation = store.resolveBlockedWithAnswer(
         task.id,
         integrationConnectedAnswer(kind),
@@ -344,7 +345,9 @@ class Scheduler {
     if (!company || !this.admit(company)) return null;
     const open = store
       .listTasksForEmployee(employeeId)
-      .find((t) => t.title === brief.title && (t.status === "queued" || t.status === "todo"));
+      .find(
+        (t) => t.title === brief.title && (t.state.kind === "queued" || t.state.kind === "todo"),
+      );
     return open ?? this.brief(company, emp, brief, "high");
   }
 
@@ -492,11 +495,15 @@ class Scheduler {
     switch (o.kind) {
       case "blocked":
         status = "blocked";
-        store.releaseTask(task.id, runId, "blocked", r.summary || null, o.ask);
+        store.settleTask(task.id, runId, {
+          kind: "blocked",
+          ask: o.ask,
+          summary: r.summary || null,
+        });
         break;
       case "done":
         status = "done";
-        store.releaseTask(task.id, runId, "done", r.summary || null, null);
+        store.settleTask(task.id, runId, { kind: "done", summary: r.summary || null });
         // a completed task ships work — the real counter behind the product version
         store.recordShip(task.companyId);
         publishActivity({

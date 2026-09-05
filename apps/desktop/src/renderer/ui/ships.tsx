@@ -5,7 +5,7 @@ import { useStore } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import type { Task } from "@/shared/domain";
+import { taskIn, type TaskIn } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import { formatDate } from "@/shared/format";
 
@@ -16,9 +16,9 @@ import { formatDate } from "@/shared/format";
 
 /** One ship: a single line that expands to the full "what & where" summary,
  *  with every URL and workspace path clickable. */
-function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string }) {
+function ShipRow({ t, by, companyId }: { t: TaskIn<"done">; by: string; companyId: string }) {
   const [open, setOpen] = useState(false);
-  const summary = t.summary ?? "";
+  const summary = t.state.summary ?? "";
   const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
   return (
     <div className="px-inset p-2.5">
@@ -47,15 +47,15 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
 export function Ships({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
-  const [ships, setShips] = useState<Task[] | null>(null);
+  const [ships, setShips] = useState<TaskIn<"done">[] | null>(null);
   const [note, showNote] = useTransientNote(2500);
 
   useEffect(() => {
     if (!company) return;
     let alive = true;
     void (async () => {
-      const tasks = await bridge().listTasks({ companyId: company.id });
-      if (alive) setShips(tasks.filter((t) => t.status === "done" && t.summary));
+      const tasks = await bridge().listTasks({ companyId: company.id, status: ["done"] });
+      if (alive) setShips(tasks.filter(taskIn("done")).filter((t) => t.state.summary));
     })();
     return () => {
       alive = false;

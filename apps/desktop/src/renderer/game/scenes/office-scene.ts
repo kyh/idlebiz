@@ -173,7 +173,7 @@ export class OfficeScene extends Phaser.Scene {
     // the office is already staffed when it opens: nobody parades in on boot
     for (const emp of employees) await npcs.spawn(emp, "settled");
     for (const task of blocked) {
-      if (task.assigneeId && task.blocked) npcs.setState(task.assigneeId, "blocked");
+      if (task.assigneeId) npcs.setState(task.assigneeId, "blocked");
     }
 
     this.game.events.emit("office-ready");

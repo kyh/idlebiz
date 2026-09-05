@@ -39,17 +39,14 @@ import {
 import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
+import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
   DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
-  TASK_PRIORITIES,
-  TASK_STATUSES,
   businessTypeById,
-  parseBlockedAsk,
-  serializeBlockedAsk,
 } from "@/shared/domain";
 import {
   PersistedActivitySchema,
@@ -59,7 +56,7 @@ import {
 } from "@/shared/activity";
 import type {
   AgentRunner,
-  BlockedAsk,
+  TaskState,
   Budget,
   BusinessTypeId,
   Company,
@@ -67,7 +64,6 @@ import type {
   Routine,
   Task,
   TaskPriority,
-  TaskStatus,
   Team,
   TeamMessage,
 } from "@/shared/domain";
@@ -321,73 +317,6 @@ function docToEmployee(doc: FrontmatterDoc, companyId: string): Employee {
   };
 }
 
-const parseBlocked = (s: string | null): BlockedAsk | null =>
-  s === null ? null : parseBlockedAsk(s);
-
-function taskToDoc(t: Task): FrontmatterDoc {
-  const metadata: FrontmatterDoc["metadata"] = {
-    status: t.status,
-    priority: t.priority,
-    createdAt: t.createdAt,
-  };
-  if (t.assigneeId !== null) metadata.assigneeId = t.assigneeId;
-  if (t.runId !== null) metadata.runId = t.runId;
-  if (t.summary !== null) metadata.summary = t.summary;
-  if (t.blocked !== null) metadata.blockedQuestion = serializeBlockedAsk(t.blocked);
-  if (t.artifacts.length > 0) metadata.artifacts = JSON.stringify(t.artifacts);
-  if (t.attempts > 0) metadata.attempts = t.attempts;
-  if (t.nextAttemptAt !== null) metadata.nextAttemptAt = t.nextAttemptAt;
-  if (t.lastError !== null) metadata.lastError = t.lastError;
-  if (t.startedAt !== null) metadata.startedAt = t.startedAt;
-  if (t.completedAt !== null) metadata.completedAt = t.completedAt;
-  return {
-    fields: {
-      schema: "agentcompanies/v1",
-      kind: "task",
-      slug: t.id,
-      name: t.title,
-    },
-    metadata,
-    body: t.description ? `${t.description}\n` : "",
-  };
-}
-
-/** Statuses older saves wrote that the queue no longer produces: both are terminal. */
-const LEGACY_TERMINAL_STATUSES = new Set(["failed", "cancelled"]);
-
-function parseTaskStatus(raw: string | null): TaskStatus {
-  if (raw !== null && LEGACY_TERMINAL_STATUSES.has(raw)) return "dead";
-  return TASK_STATUSES.find((s) => s === raw) ?? "todo";
-}
-
-function docToTask(doc: FrontmatterDoc, companyId: string): Task {
-  const f = doc.fields;
-  const m = doc.metadata;
-  const status = parseTaskStatus(optStr(m, "status"));
-  const prioRaw = optStr(m, "priority");
-  const priority = TASK_PRIORITIES.find((p) => p === prioRaw) ?? "medium";
-  const body = doc.body.trim();
-  return {
-    id: reqStr(f, "slug"),
-    companyId,
-    title: reqStr(f, "name"),
-    description: body === "" ? null : body,
-    status,
-    priority,
-    assigneeId: optStr(m, "assigneeId"),
-    runId: optStr(m, "runId"),
-    summary: optStr(m, "summary"),
-    blocked: parseBlocked(optStr(m, "blockedQuestion")),
-    artifacts: strArray(m, "artifacts"),
-    attempts: optNum(m, "attempts", 0),
-    nextAttemptAt: nullableNum(m, "nextAttemptAt"),
-    lastError: optStr(m, "lastError"),
-    createdAt: optNum(m, "createdAt", Date.now()),
-    startedAt: nullableNum(m, "startedAt"),
-    completedAt: nullableNum(m, "completedAt"),
-  };
-}
-
 // ---- persistence ------------------------------------------------------------
 function saveCompany(co: Company): void {
   atomicWrite(companyFile(co.id), serializeDoc(companyToDoc(co)));
@@ -469,27 +398,26 @@ export function initStore(): void {
       // mid-flight counts as a failed attempt: requeue it (or dead-letter once
       // exhausted) so it resumes instead of being silently orphaned.
       for (const t of tasks) {
-        if (t.status === "running") {
-          const attempts = t.attempts + 1;
-          t.runId = null;
-          if (!t.assigneeId) {
-            t.status = "todo";
-          } else if (attempts >= MAX_TASK_ATTEMPTS) {
-            t.status = "dead";
-            t.attempts = attempts;
-            t.lastError = "Interrupted by app restart (max attempts reached)";
-            t.completedAt = Date.now();
-          } else {
-            t.status = "queued";
-            t.attempts = attempts;
-            t.nextAttemptAt = null;
-            t.lastError = "Interrupted by app restart";
-          }
-          saveTask(t);
-        } else if (t.status === "queued" && t.runId !== null) {
-          t.runId = null; // drop a stale lock on a task that never actually started
-          saveTask(t);
+        if (t.state.kind !== "running") continue;
+        const attempts = t.attempts + 1;
+        if (!t.assigneeId) {
+          t.state = { kind: "todo" };
+        } else if (attempts >= MAX_TASK_ATTEMPTS) {
+          t.state = {
+            kind: "dead",
+            lastError: "Interrupted by app restart (max attempts reached)",
+          };
+          t.attempts = attempts;
+          t.completedAt = Date.now();
+        } else {
+          t.state = {
+            kind: "queued",
+            nextAttemptAt: null,
+            lastError: "Interrupted by app restart",
+          };
+          t.attempts = attempts;
         }
+        saveTask(t);
       }
       loaded.tasks.set(co.id, tasks);
 
@@ -813,7 +741,7 @@ export function archiveEmployee(employeeId: string): Employee | null {
   }
   const companyTasks = c().tasks.get(emp.companyId) ?? [];
   for (const t of companyTasks) {
-    if (t.assigneeId === employeeId && (t.status === "todo" || t.status === "queued")) {
+    if (t.assigneeId === employeeId && (t.state.kind === "todo" || t.state.kind === "queued")) {
       const next: Task = { ...t, assigneeId: null };
       companyTasks[companyTasks.indexOf(t)] = next;
       saveTask(next);
@@ -1069,16 +997,11 @@ export function createTask(t: {
     companyId: t.companyId,
     title: t.title,
     description: t.description ?? null,
-    status: "todo",
+    state: { kind: "todo" },
     priority: t.priority ?? "medium",
     assigneeId: t.assigneeId ?? null,
-    runId: null,
-    summary: null,
-    blocked: null,
     artifacts: [],
     attempts: 0,
-    nextAttemptAt: null,
-    lastError: null,
     createdAt: Date.now(),
     startedAt: null,
     completedAt: null,
@@ -1108,9 +1031,11 @@ export function listQueuedTasks(): Task[] {
   const now = Date.now();
   const out: Task[] = [];
   for (const list of c().tasks.values())
-    for (const t of list)
-      if (t.status === "queued" && (t.nextAttemptAt === null || t.nextAttemptAt <= now))
+    for (const t of list) {
+      const st = t.state;
+      if (st.kind === "queued" && (st.nextAttemptAt === null || st.nextAttemptAt <= now))
         out.push(t);
+    }
   return out.toSorted(
     (a, b) =>
       TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority] ||
@@ -1121,45 +1046,45 @@ export function listQueuedTasks(): Task[] {
 const patchTask = (id: string, patch: Partial<Task>): Task | null =>
   patchIn(c().tasks, id, patch, saveTask);
 
+/** The task's run, when the given run is the one holding its lock. */
+const heldBy = (t: Task | null, runId: string): Task | null =>
+  t && t.state.kind === "running" && t.state.runId === runId ? t : null;
+
 /**
- * Atomic assign: only todo/blocked/failed/dead are claimable. A manual claim of
- * a failed/dead task is the founder reviving it, so the retry counter resets.
+ * Atomic assign: only todo/blocked/dead are claimable. A manual claim of a
+ * dead task is the founder reviving it, so the retry counter resets.
  * Returns task or null on conflict.
  */
 export function claimTask(taskId: string, employeeId: string): Task | null {
   const t = getTask(taskId);
   if (!t) return null;
-  const claimable = t.status === "todo" || t.status === "blocked" || t.status === "dead";
+  const kind = t.state.kind;
+  const claimable = kind === "todo" || kind === "blocked" || kind === "dead";
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) return null;
-  const revived = t.status === "dead";
-  const patch: Partial<Task> = { assigneeId: employeeId, status: "queued" };
-  if (revived) {
-    patch.attempts = 0;
-    patch.nextAttemptAt = null;
-    patch.lastError = null;
-  }
+  const patch: Partial<Task> = {
+    assigneeId: employeeId,
+    state: { kind: "queued", nextAttemptAt: null, lastError: null },
+  };
+  if (kind === "dead") patch.attempts = 0;
   return patchTask(taskId, patch);
 }
 
 /** Acquire execution lock: queued -> running, stamp runId. Null if lost race or backing off. */
 export function lockTaskForRun(taskId: string, runId: string): Task | null {
   const t = getTask(taskId);
-  if (!t || t.status !== "queued" || t.runId !== null) return null;
-  if (t.nextAttemptAt !== null && t.nextAttemptAt > Date.now()) return null;
-  return patchTask(taskId, { status: "running", runId, startedAt: Date.now() });
+  if (!t || t.state.kind !== "queued") return null;
+  if (t.state.nextAttemptAt !== null && t.state.nextAttemptAt > Date.now()) return null;
+  return patchTask(taskId, { state: { kind: "running", runId }, startedAt: Date.now() });
 }
 
-/** Release lock at run end — only the owning run may release. */
-export function releaseTask(
+/** The run settled: the task is done, or waits on the founder. Only the owning run may. */
+export function settleTask(
   taskId: string,
   runId: string,
-  status: TaskStatus,
-  summary: string | null,
-  blocked: BlockedAsk | null,
+  state: Extract<TaskState, { kind: "done" | "blocked" }>,
 ): void {
-  const t = getTask(taskId);
-  if (!t || t.runId !== runId) return;
-  patchTask(taskId, { status, summary, blocked, runId: null, completedAt: Date.now() });
+  if (!heldBy(getTask(taskId), runId)) return;
+  patchTask(taskId, { state, completedAt: Date.now() });
 }
 
 /**
@@ -1171,11 +1096,10 @@ export function requeueForRetry(
   runId: string,
   attempts: number,
   nextAttemptAt: number,
-  lastError: string | null,
+  lastError: string,
 ): void {
-  const t = getTask(taskId);
-  if (!t || t.runId !== runId) return;
-  patchTask(taskId, { status: "queued", runId: null, attempts, nextAttemptAt, lastError });
+  if (!heldBy(getTask(taskId), runId)) return;
+  patchTask(taskId, { state: { kind: "queued", nextAttemptAt, lastError }, attempts });
 }
 
 /** A failed run that exhausted its attempts: dead-letter it. Only the owning run may. */
@@ -1183,18 +1107,10 @@ export function deadLetterTask(
   taskId: string,
   runId: string,
   attempts: number,
-  lastError: string | null,
+  lastError: string,
 ): void {
-  const t = getTask(taskId);
-  if (!t || t.runId !== runId) return;
-  patchTask(taskId, {
-    status: "dead",
-    runId: null,
-    attempts,
-    lastError,
-    summary: lastError,
-    completedAt: Date.now(),
-  });
+  if (!heldBy(getTask(taskId), runId)) return;
+  patchTask(taskId, { state: { kind: "dead", lastError }, attempts, completedAt: Date.now() });
 }
 
 /**
@@ -1204,16 +1120,15 @@ export function deadLetterTask(
  */
 export function resolveBlockedWithAnswer(taskId: string, answer: string): Task | null {
   const t = getTask(taskId);
-  if (!t || t.status !== "blocked" || !t.assigneeId) return null;
+  if (!t || t.state.kind !== "blocked" || !t.assigneeId) return null;
+  const { ask } = t.state;
   patchTask(taskId, {
-    status: "done",
-    summary: answeredSummary(answer),
-    blocked: null,
+    state: { kind: "done", summary: answeredSummary(answer) },
     completedAt: Date.now(),
   });
   return createTask({
     companyId: t.companyId,
-    ...continuationBrief(t, answer),
+    ...continuationBrief(t, ask, answer),
     priority: "high",
     assigneeId: t.assigneeId,
   });
