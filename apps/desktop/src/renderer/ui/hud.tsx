@@ -3,7 +3,7 @@ import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
-import { formatCompact, formatUsd, napLabel } from "@/shared/format";
+import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
 
 /** The windows the HUD opens over the office; at most one is up at a time. */
 export type Overlay = "ships" | "inbox" | "teams" | "budget" | "vercel" | "settings";
@@ -56,7 +56,7 @@ function Stat({
 /** Top-left: the money + adoption scoreboard — real numbers, or a nudge to connect. */
 function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: Overlay) => void }) {
   const out = isOutOfBudget(company);
-  const spent = `spent ${formatUsd(company.spentUsd)}`;
+  const spent = spentLabel(company.spentUsd);
   return (
     <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
       <Stat
@@ -214,9 +214,7 @@ export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
   const now = useNow();
   if (!company) return null;
   // a CLI on cooldown: the office naps until the earliest reset
-  const until = Object.values(resting)
-    .filter((t) => t > now)
-    .toSorted((a, b) => a - b)[0];
+  const until = earliestReset(resting, now);
   const nap = until === undefined ? null : napLabel(until);
   return (
     <>

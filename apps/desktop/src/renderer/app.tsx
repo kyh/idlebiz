@@ -4,6 +4,7 @@ import { initStore, setGame, useStore, type Boot } from "@/renderer/state/store"
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
+import { CrashScreen } from "@/renderer/ui/crash-screen";
 import { Hud, type Overlay } from "@/renderer/ui/hud";
 import { Dialogue } from "@/renderer/ui/dialogue";
 import { Ships } from "@/renderer/ui/ships";
@@ -118,7 +119,9 @@ export function App() {
       {layout ? <PhaserGame key="office-game" layout={layout} onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
-        <Screen boot={boot} overlay={overlay} onOverlay={setOverlay} />
+        <CrashScreen>
+          <Screen boot={boot} overlay={overlay} onOverlay={setOverlay} />
+        </CrashScreen>
       </div>
     </div>
   );

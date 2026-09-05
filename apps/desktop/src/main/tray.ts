@@ -1,9 +1,8 @@
 import { Menu, Notification, Tray, app, nativeImage } from "electron";
-import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import * as store from "@/main/store/store";
-import { formatUsd, napLabel } from "@/shared/format";
+import { earliestReset, napLabel, spentLabel } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
 // The menu-bar presence: IdleBiz is a background mac app. Closing the window
@@ -42,13 +41,10 @@ function officeStatus(): OfficeStatus {
   const working = company
     ? store.listEmployees(company.id).filter((e) => e.status === "working").length
     : 0;
-  const naps = RUNNER_IDS.map((r) => agentDriver.restingRunner(r)).filter(
-    (t): t is number => t !== null,
-  );
   return {
     company,
     working,
-    napUntil: naps.toSorted((a, b) => a - b)[0],
+    napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
     active: working > 0 || company?.autopilot === true,
   };
 }
@@ -56,7 +52,7 @@ function officeStatus(): OfficeStatus {
 /** One line of truth for the menu: what is the office doing right now? */
 function statusLine(s: OfficeStatus): string {
   if (!s.company) return "No company yet";
-  const spent = `spent ${formatUsd(s.company.spentUsd)}`;
+  const spent = spentLabel(s.company.spentUsd);
   if (s.working > 0) return `${s.working} working · ${spent}`;
   if (s.napUntil !== undefined) return napLabel(s.napUntil);
   return `${s.company.autopilot ? "idle" : "paused"} · ${spent}`;

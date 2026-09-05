@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { parseOfficeLayout, type PixelPoint } from "@/renderer/game/office-layout";
 import { useHistory } from "@/renderer/hooks/use-history";
 import { bridge } from "@/renderer/bridge";
@@ -57,7 +57,8 @@ interface PaletteItem {
   src: string | null;
 }
 
-function Palette({
+/** The catalog column. Memoised: a drag redraws the stage every frame and must not re-reconcile ~700 thumbnails. */
+const Palette = memo(function Palette({
   mode,
   onMode,
   query,
@@ -118,7 +119,7 @@ function Palette({
       </div>
     </aside>
   );
-}
+});
 
 function Toolbar({
   tool,
@@ -248,6 +249,10 @@ export function OfficeBuilder() {
   const { layout, selection } = history.present;
   const [tool, setTool] = useState<Tool>("select");
   const [paletteId, setPaletteId] = useState<string | null>(null);
+  const pickFromPalette = useCallback((id: string) => {
+    setPaletteId(id);
+    setTool("place");
+  }, []);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("objects");
   const [snap, setSnap] = useState<number>(16);
   const [zoom, setZoom] = useState<number>(2);
@@ -469,10 +474,7 @@ export function OfficeBuilder() {
         onQuery={setQuery}
         items={paletteItems}
         picked={paletteId}
-        onPick={(id) => {
-          setPaletteId(id);
-          setTool("place");
-        }}
+        onPick={pickFromPalette}
       />
 
       <section className="flex min-w-0 flex-1 flex-col">

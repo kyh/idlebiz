@@ -28,3 +28,16 @@ export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
 
 /** The office naps until a CLI's usage limit lifts. */
 export const napLabel = (until: number): string => `☕ resting til ${formatTime(until)}`;
+
+/** When the office wakes: the earliest of the runners' usage-limit resets still ahead. */
+export function earliestReset(
+  resting: Readonly<Partial<Record<string, number>>>,
+  now: number,
+): number | undefined {
+  return Object.values(resting)
+    .filter((t): t is number => t !== undefined && t > now)
+    .toSorted((a, b) => a - b)[0];
+}
+
+/** "spent $12.34" — what the founder has paid for so far. */
+export const spentLabel = (spentUsd: number): string => `spent ${formatUsd(spentUsd)}`;
