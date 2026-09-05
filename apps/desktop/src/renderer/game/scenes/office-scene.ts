@@ -21,7 +21,7 @@ import { frameMask, textureMasks, type OpaqueMask } from "@/renderer/game/textur
 import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 import { hiddenNodes, type PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
-import type { Employee } from "@/shared/domain";
+import { DEFAULT_FOUNDER_SEED, type Employee } from "@/shared/domain";
 import { bodyBlockedAt, solidAt, withoutNodes, type WalkGrid } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
@@ -32,7 +32,6 @@ const FACING_OFFSET = {
 } satisfies Record<Dir, { x: number; y: number }>;
 
 const WORKSPACE_KIT_PATH = "workspace-kit";
-const DEFAULT_FOUNDER_SEED = "founder-player-001";
 
 /** The founder on screen: their sprite and the anims cut from its sheet. */
 interface Player {
@@ -63,6 +62,10 @@ declare global {
 }
 
 /** Tiled office assembled from Modern Office object sprites. */
+const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
+  obj.vertexRoundMode = "fullAuto";
+};
+
 export class OfficeScene extends Phaser.Scene {
   private player?: Player;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -74,6 +77,8 @@ export class OfficeScene extends Phaser.Scene {
   /** The layout's grid with the spots nobody should stand in closed; set once the room is judged. */
   private grid: WalkGrid = OFFICE.grid;
   private modalOpen = false;
+  /** Bumped by every create(): an await in boot() that outlives its scene must not touch the next one. */
+  private generation = 0;
   private activityUnsub?: () => void;
 
   constructor() {
@@ -95,6 +100,11 @@ export class OfficeScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor(COLORS.bg);
+    // roundPixels alone rounds nothing here: the default vertexRoundMode trusts
+    // only an unzoomed camera, and this one is zoomed ZOOMx. An integer zoom keeps
+    // every corner on the same fraction, so rounding whole quads is safe and is
+    // what keeps a walking sprite off the half pixel.
+    this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, roundQuad);
     const kb = this.input.keyboard;
     if (!kb) throw new Error("keyboard input unavailable");
     this.cursors = kb.createCursorKeys();
@@ -124,18 +134,28 @@ export class OfficeScene extends Phaser.Scene {
     const onModal = (open: boolean) => {
       this.modalOpen = open;
       if (open) this.clickWalk?.cancel();
-      if (this.input.keyboard) this.input.keyboard.enabled = !open;
+      this.claimKeyboard();
     };
     const onCompanyReady = () => this.scene.restart();
     this.game.events.on("spawn-employee", onSpawn);
     this.game.events.on("despawn-employee", onDespawn);
     this.game.events.on("ui-modal", onModal);
     this.game.events.on("company-ready", onCompanyReady);
+    // Phaser captures its keys on window and cancels their default whoever has
+    // focus — a space typed into the team room would never land. The keyboard
+    // is the game's only while no text field is being typed into.
+    const onFocusChange = () => this.claimKeyboard();
+    document.addEventListener("focusin", onFocusChange);
+    document.addEventListener("focusout", onFocusChange);
+    this.claimKeyboard();
     this.subscribeActivity();
 
     window.__game = this.game;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, roundQuad);
       this.activityUnsub?.();
+      document.removeEventListener("focusin", onFocusChange);
+      document.removeEventListener("focusout", onFocusChange);
       this.game.events.off("spawn-employee", onSpawn);
       this.game.events.off("despawn-employee", onDespawn);
       this.game.events.off("ui-modal", onModal);
@@ -151,7 +171,23 @@ export class OfficeScene extends Phaser.Scene {
     });
   }
 
+  /** The game owns the keys when nothing else is typing and no panel is up. */
+  private claimKeyboard(): void {
+    const kb = this.input.keyboard;
+    if (!kb) return;
+    const el = document.activeElement;
+    const typing =
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      (el instanceof HTMLElement && el.isContentEditable);
+    const ours = !this.modalOpen && !typing;
+    kb.enabled = ours;
+    if (ours) kb.enableGlobalCapture();
+    else kb.disableGlobalCapture();
+  }
+
   private async boot(): Promise<void> {
+    const generation = ++this.generation;
     const masks = textureMasks(this.textures);
     const seats = this.buildRoom(masks);
 
@@ -162,13 +198,15 @@ export class OfficeScene extends Phaser.Scene {
     this.centerCameraOn(OFFICE.spawn);
 
     const company = await bridge().getCompany();
+    if (generation !== this.generation) return;
     // the founder and the roster are independent fetches; the colleagues wait on both,
     // because Phaser's loader is single-batch and the founder's sheet must land first
     const [player, employees, blocked] = await Promise.all([
-      this.spawnPlayer(company?.founderSpriteSeed ?? DEFAULT_FOUNDER_SEED),
+      this.spawnPlayer(company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED),
       company ? bridge().listEmployees({ companyId: company.id }) : [],
       company ? bridge().listTasks({ companyId: company.id, status: ["blocked"] }) : [],
     ]);
+    if (generation !== this.generation) return;
     const grid = this.sightSealed(masks, player);
     this.grid = grid;
     const npcs = new NpcManager(this, seats, grid, this.idlePois(), OFFICE.door);
@@ -179,6 +217,7 @@ export class OfficeScene extends Phaser.Scene {
 
     // the office is already staffed when it opens: nobody parades in on boot
     for (const emp of employees) await npcs.spawn(emp, "settled");
+    if (generation !== this.generation) return;
     for (const task of blocked) {
       if (task.assigneeId) npcs.setState(task.assigneeId, "blocked");
     }

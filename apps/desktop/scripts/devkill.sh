@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kill everything `pnpm dev:desktop` starts, and free the CDP port (9222). Idempotent.
+# Stop everything `pnpm dev:desktop` starts, and free the CDP port (9222). Idempotent.
 #
 # Order matters: the supervisors (turbo watch, electron-vite) go FIRST. Kill the app on
 # its own and electron-vite just restarts it.
@@ -20,17 +20,43 @@ PATTERNS=(
   "$ROOT/node_modules/.pnpm/@esbuild"   # esbuild service
 )
 
-killed=0
+# TERM first so Electron can finish the write it is in the middle of (the save is
+# markdown packages and an append-only log); KILL whatever is still there after.
+targets=()
 for pattern in "${PATTERNS[@]}"; do
   for pid in $(pgrep -f -- "$pattern" 2>/dev/null || true); do
     [ "$pid" = "$SELF" ] && continue
-    kill -9 "$pid" 2>/dev/null && killed=$((killed + 1))
+    targets+=("$pid")
   done
 done
-
-# whatever still holds the debug port, whoever it belongs to
+# the debug port's holder too, but only if it is this checkout's: a Chrome you are
+# driving over 9222 is not ours to kill
 for pid in $(lsof -ti tcp:9222 2>/dev/null || true); do
-  kill -9 "$pid" 2>/dev/null && killed=$((killed + 1))
+  if ps -o args= -p "$pid" 2>/dev/null | grep -qF -- "$ROOT"; then
+    targets+=("$pid")
+  else
+    echo "devkill: port 9222 is held by pid $pid, not from this checkout — leaving it" >&2
+  fi
+done
+
+any_alive() {
+  for pid in "${targets[@]:-}"; do
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+  done
+  return 1
+}
+
+killed=0
+for pid in "${targets[@]:-}"; do
+  [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null && killed=$((killed + 1))
+done
+n=0
+while any_alive && [ $n -lt 15 ]; do
+  sleep 0.2
+  n=$((n + 1))
+done
+for pid in "${targets[@]:-}"; do
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
 done
 
 n=0

@@ -1103,7 +1103,7 @@ export function settleTask(taskId: string, runId: string, state: Settled): void 
 }
 
 /** The task after a failed attempt: retried with backoff, or dead once its attempts are spent. */
-function failed(t: Task, lastError: string): { task: Task; verdict: FailureVerdict } {
+function failed(t: Task, lastError: string) {
   const now = Date.now();
   const verdict = afterFailure(t.attempts, now);
   const task: Task =

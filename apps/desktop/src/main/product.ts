@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { extname, join, resolve, sep } from "node:path";
 import { shell } from "electron";
 import * as store from "@/main/store/store";
 
@@ -19,12 +19,51 @@ export function productEntry(companyId: string): string | null {
   }
 }
 
+/**
+ * What the OS may open outright from an agent-written workspace: folders and
+ * things you read. Anything else — a .command, a binary, an installer — is
+ * revealed in Finder instead, so a one-click execute can never be authored
+ * into the team room.
+ */
+const READABLE = new Set([
+  ".md",
+  ".txt",
+  ".log",
+  ".csv",
+  ".json",
+  ".yml",
+  ".yaml",
+  ".html",
+  ".htm",
+  ".css",
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+]);
+
 /** Open a workspace-relative path with the OS default app ("" is the workspace itself). */
 export async function openWorkspacePath(companyId: string, rel: string): Promise<void> {
   const root = resolve(store.requireCompany(companyId).workspaceDir);
   const target = resolve(root, rel === "" ? "." : rel);
   if (target !== root && !target.startsWith(root + sep))
     throw new Error("path escapes the workspace");
+  const opens =
+    statSync(target, { throwIfNoEntry: false })?.isDirectory() ||
+    READABLE.has(extname(target).toLowerCase());
+  if (!opens) {
+    shell.showItemInFolder(target);
+    return;
+  }
   const err = await shell.openPath(target);
   if (err) throw new Error(err);
 }

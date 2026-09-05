@@ -29,6 +29,16 @@ mac:
 dmg:
   artifactName: IdleBiz-${version}-${arch}.${ext}
 npmRebuild: false
+# A notarized app should not be relaunchable as a debugger's host: no --inspect,
+# no NODE_OPTIONS, nothing loaded from outside the asar. runAsNode stays on — the
+# ACP agents are spawned through ELECTRON_RUN_AS_NODE.
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 publish:
   provider: github
   owner: kyh

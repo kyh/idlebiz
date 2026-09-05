@@ -1,7 +1,7 @@
 import path from "node:path";
 import { existsSync, rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, shell } from "electron";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { app, BrowserWindow, session, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
 import { atomicWrite, readJsonFile, suspendWrites } from "@/main/lib/fs";
@@ -240,6 +240,22 @@ function registerIpcHandlers(): void {
   }));
 }
 
+/** Where the renderer lives: the dev server under electron-vite, the built file otherwise. */
+function appUrl(): string {
+  const dev = isDev ? process.env["ELECTRON_RENDERER_URL"] : undefined;
+  return dev ?? pathToFileURL(path.join(moduleDir, "../renderer/index.html")).toString();
+}
+
+/** A link the OS browser may open: http(s) and nothing else, judged by a parsed URL. */
+function isWebUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
@@ -257,18 +273,19 @@ function createWindow(): BrowserWindow {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http")) void shell.openExternal(url);
+    if (isWebUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  // the window shows this app and nothing else: a dropped file, a link, an
+  // agent-written page would otherwise navigate the renderer — bridge intact
+  win.webContents.on("will-navigate", (event, url) => {
+    if (url !== appUrl()) event.preventDefault();
   });
 
   win.once("ready-to-show", () => win.show());
 
-  if (isDev && process.env["ELECTRON_RENDERER_URL"]) {
-    void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-    win.webContents.openDevTools({ mode: "detach" });
-  } else {
-    void win.loadFile(path.join(moduleDir, "../renderer/index.html"));
-  }
+  void win.loadURL(appUrl());
+  if (isDev) win.webContents.openDevTools({ mode: "detach" });
 
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
@@ -295,8 +312,17 @@ function ensureWindow(): void {
   mainWindow = createWindow();
 }
 
+// one office per machine: a second instance would run a second scheduler
+// against the same save, spending twice and racing every write
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on("second-instance", ensureWindow);
+
 void (async () => {
   await app.whenReady();
+  // the renderer asks for nothing a game needs: no camera, mic, location, notifications
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
   store.initStore();
   exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
   agentDriver.init(); // probe installed CLIs (claude / codex)

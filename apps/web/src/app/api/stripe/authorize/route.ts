@@ -1,5 +1,6 @@
 import { CALLBACK_PATH, encodeState, parseState } from "@repo/stripe-connect-protocol/protocol";
 import { env } from "@/lib/env";
+import { siteConfig } from "@/lib/site-config";
 
 export function GET(req: Request): Response {
   const url = new URL(req.url);
@@ -12,7 +13,8 @@ export function GET(req: Request): Response {
   authorize.searchParams.set("response_type", "code");
   authorize.searchParams.set("client_id", clientId);
   authorize.searchParams.set("scope", "read_only");
-  authorize.searchParams.set("redirect_uri", `${url.origin}${CALLBACK_PATH}`);
+  // the site's own origin, never the request's Host header
+  authorize.searchParams.set("redirect_uri", new URL(CALLBACK_PATH, siteConfig.url).toString());
   authorize.searchParams.set("state", encodeState(state));
   return Response.redirect(authorize.toString(), 302);
 }

@@ -1,5 +1,6 @@
 import {
   appendFileSync,
+  chmodSync,
   closeSync,
   fstatSync,
   mkdirSync,
@@ -28,6 +29,8 @@ export function atomicWrite(path: string, content: string, options: { mode?: num
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, content, options);
+  // a tmp file left by a crash keeps its old mode through writeFileSync
+  if (options.mode !== undefined) chmodSync(tmp, options.mode);
   renameSync(tmp, path);
 }
 
