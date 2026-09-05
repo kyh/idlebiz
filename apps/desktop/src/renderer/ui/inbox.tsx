@@ -4,7 +4,7 @@ import { AnswerForm } from "@/renderer/ui/answer-form";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { classifyCommand } from "@/shared/command-policy";
+import { describeRule, type RuleId } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
 
@@ -53,7 +53,13 @@ export function Inbox({
               );
             case "approval":
               return (
-                <ApprovalRow key={t.id} t={t} by={nameOf(t.assigneeId)} command={ask.command} />
+                <ApprovalRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  command={ask.command}
+                  rule={ask.rule}
+                />
               );
             case "question":
               return (
@@ -122,9 +128,18 @@ function ConnectRow({
 
 /** An outward-facing command held at the tool boundary. The founder sees the
  *  exact command, because that is what will run if they say yes. */
-function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string }) {
+function ApprovalRow({
+  t,
+  by,
+  command,
+  rule,
+}: {
+  t: Task;
+  by: string;
+  command: string;
+  rule: RuleId;
+}) {
   const [sent, setSent] = useState(false);
-  const verdict = classifyCommand(command);
   const decide = async (approved: boolean) => {
     if (sent) return;
     setSent(true);
@@ -135,9 +150,7 @@ function ApprovalRow({ t, by, command }: { t: Task; by: string; command: string 
       <div className="text-xs text-warn">
         🔐 {by} · <span className="text-text-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-text">
-        {verdict.decision === "ask" ? verdict.rule.describe : "Wants to run this."}
-      </div>
+      <div className="mt-1 text-sm leading-snug text-text">{describeRule(rule)}</div>
       <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-text-dim">Approving covers this exact command, once.</span>

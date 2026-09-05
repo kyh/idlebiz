@@ -24,8 +24,24 @@
  * paths inside their workspace, so an absolute or `~` path in a destructive
  * command is the signal that something is reaching out of it.
  */
+/** Every reason a command can be held, named — the ask persists the id, the card looks it up. */
+export const RULE_IDS = [
+  "deploy",
+  "publish-package",
+  "git-push",
+  "github-create",
+  "payments",
+  "http-write",
+  "remote-copy",
+  "pipe-to-shell",
+  "read-credentials",
+  "destructive-outside",
+  "write-outside",
+] as const;
+export type RuleId = (typeof RULE_IDS)[number];
+
 interface CommandRule {
-  id: string;
+  id: RuleId;
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
 }
@@ -166,6 +182,11 @@ function onlyLoopbackTargets(command: string): boolean {
 }
 
 export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: CommandRule };
+
+/** What the approval card says about a held command, by the rule that held it. */
+export function describeRule(id: RuleId): string {
+  return RULES.find((rule) => rule.id === id)?.describe ?? "Wants to run this.";
+}
 
 export function classifyCommand(command: string): CommandVerdict {
   for (const rule of RULES) {

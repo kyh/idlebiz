@@ -88,9 +88,10 @@ async function decidePermission(
 ): Promise<PermissionDecision> {
   const command = normalizeCommand(request.command);
   if (!command) return { allow: true };
-  if (classifyCommand(command).decision === "allow") return { allow: true };
+  const verdict = classifyCommand(command);
+  if (verdict.decision === "allow") return { allow: true };
   if (store.consumeApproval(companyId, command)) return { allow: true };
-  block({ type: "approval", command });
+  block({ type: "approval", command, rule: verdict.rule.id });
   return { allow: false };
 }
 

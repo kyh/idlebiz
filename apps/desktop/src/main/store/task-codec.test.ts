@@ -27,7 +27,11 @@ describe("task codec", () => {
     { kind: "queued", nextAttemptAt: 1_700_000_003_000, lastError: "boom" },
     { kind: "running", runId: "run-1" },
     { kind: "blocked", ask: { type: "question", question: "ship it?" }, summary: "halfway" },
-    { kind: "blocked", ask: { type: "approval", command: "npx vercel deploy" }, summary: null },
+    {
+      kind: "blocked",
+      ask: { type: "approval", command: "npx vercel deploy", rule: "deploy" },
+      summary: null,
+    },
     { kind: "done", summary: "shipped to https://x.y" },
     { kind: "done", summary: null },
     { kind: "dead", lastError: "five strikes" },

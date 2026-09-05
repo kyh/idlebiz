@@ -12,9 +12,17 @@ describe("BlockedAsk round-trip through TASK.md", () => {
     { type: "question", question: "ship it?" },
     { type: "question", question: "why did [approve] show up here?" },
     { type: "integration", integration: "vercel", reason: "need hosting" },
-    { type: "approval", command: "npx vercel deploy --prod" },
+    { type: "approval", command: "npx vercel deploy --prod", rule: "deploy" },
   ])("%j", (ask) => {
     expect(parseBlockedAsk(serializeBlockedAsk(ask))).toEqual(ask);
+  });
+
+  it("reads an approval persisted before rules had ids by classifying the command today", () => {
+    expect(parseBlockedAsk("[approve] git push origin main")).toEqual({
+      type: "approval",
+      command: "git push origin main",
+      rule: "git-push",
+    });
   });
 });
 

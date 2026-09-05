@@ -14,6 +14,7 @@
 export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
 
 import { z } from "zod";
+import { RULE_IDS, classifyCommand, type RuleId } from "./command-policy";
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
@@ -45,7 +46,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
     integration: z.enum(INTEGRATION_KINDS),
     reason: z.string(),
   }),
-  z.object({ type: z.literal("approval"), command: z.string() }),
+  z.object({ type: z.literal("approval"), command: z.string(), rule: z.enum(RULE_IDS) }),
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
@@ -53,13 +54,23 @@ export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 // at this persistence boundary — everything in memory is the typed union.
 export function serializeBlockedAsk(a: BlockedAsk): string {
   if (a.type === "question") return a.question;
-  if (a.type === "approval") return `[approve] ${a.command}`;
+  if (a.type === "approval") return `[approve:${a.rule}] ${a.command}`;
   return `[connect:${a.integration}] ${a.reason}`;
 }
 
+/** The rule that would hold a command today — for an ask persisted before rules had ids. */
+function ruleFor(command: string): RuleId {
+  const verdict = classifyCommand(command);
+  return verdict.decision === "ask" ? verdict.rule.id : "write-outside";
+}
+
 export function parseBlockedAsk(s: string): BlockedAsk {
-  const approval = /^\[approve\]\s*([\s\S]*)$/.exec(s);
-  if (approval) return { type: "approval", command: (approval[1] ?? "").trim() };
+  const approval = /^\[approve(?::([a-z-]+))?\]\s*([\s\S]*)$/.exec(s);
+  if (approval) {
+    const command = (approval[2] ?? "").trim();
+    const rule = RULE_IDS.find((id) => id === approval[1]) ?? ruleFor(command);
+    return { type: "approval", command, rule };
+  }
   const m = /^\[connect:([a-z]+)\]\s*([\s\S]*)$/.exec(s);
   const integration = INTEGRATION_KINDS.find((k) => k === m?.[1]);
   if (!integration) return { type: "question", question: s };
