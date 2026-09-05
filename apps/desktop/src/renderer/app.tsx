@@ -79,8 +79,8 @@ export function App() {
   }, [game]);
 
   const unreadable = saveIssues.filter((issue) => issue.kind === "company");
-  const needsOnboarding = booted && unreadable.length === 0 && (!company || !company.onboarded);
-  const inOffice = booted && company !== null && company.onboarded;
+  const needsOnboarding = booted && unreadable.length === 0 && company === null;
+  const inOffice = booted && company !== null;
 
   if (route === "#/office-assets") {
     return <OfficeObjectCatalog />;

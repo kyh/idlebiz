@@ -47,7 +47,7 @@ let metricsTimer: ReturnType<typeof setInterval> | null = null;
  * Real sources only — with nothing connected there are no numbers to move. */
 function runMetricsPulse(): void {
   const company = store.getDefaultCompany();
-  if (!company || !company.onboarded) return;
+  if (!company) return;
   const cfg = readMetricsConfig(company.id);
   if (!cfg) return;
   void (async () => {
@@ -149,26 +149,14 @@ function registerIpcHandlers(): void {
     );
   });
 
-  handle("batchHire", ({ companyId, hires }) => {
-    hires.forEach((h, i) =>
-      store.createEmployee({
-        companyId,
-        name: h.name,
-        role: h.role,
-        title: h.title,
-        persona: h.persona,
-        runner: agentDriver.pickRunner(i), // mixed roster across installed CLIs
-        spriteSeed: h.spriteSeed,
-        deskIndex: i,
-      }),
-    );
-    // form the founding team (leader + all hires) once the roster exists
-    const company = store.getCompany(companyId);
-    if (company && store.listTeams(companyId).length === 0) store.foundingTeamFor(company);
-    return store.listEmployees(companyId);
-  });
-
-  handle("completeOnboarding", ({ companyId }) => store.setCompanyOnboarded(companyId, true));
+  // one call, whole or not at all: the roster's CLIs are chosen first, so a
+  // machine with nothing signed in fails before a folder exists
+  handle("foundCompany", ({ hires, ...company }) =>
+    store.foundCompany({
+      ...company,
+      hires: hires.map((h, i) => Object.assign({ runner: agentDriver.pickRunner(i) }, h)),
+    }),
+  );
 
   handle("getCompany", () => store.getDefaultCompany());
   handle("loadReport", () => store.loadReport());
@@ -177,12 +165,6 @@ function registerIpcHandlers(): void {
     if (err) throw new Error(err);
     return { ok: true };
   });
-
-  handle(
-    "createCompany",
-    ({ name, mission, businessType, founderName, founderSpriteSeed, budget }) =>
-      store.createCompany({ name, mission, businessType, founderName, founderSpriteSeed, budget }),
-  );
 
   handle("setAutopilot", ({ companyId, running }) => store.setAutopilot(companyId, running));
 

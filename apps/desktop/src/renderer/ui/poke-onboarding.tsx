@@ -4,7 +4,7 @@ import { bridge } from "@/renderer/bridge";
 import { refresh } from "@/renderer/state/store";
 import { useModal } from "@/renderer/ui/modal";
 import { Portrait } from "@/renderer/ui/portrait";
-import { BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
+import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import type { AuthFlowEvent, FounderChoice, HireProposal } from "@/shared/ipc-registry";
@@ -62,11 +62,6 @@ type Team =
   | { kind: "casting" }
   | { kind: "failed"; message: string }
   | { kind: "cast"; hires: HireProposal[] };
-
-/** What a previous finalize attempt already committed to disk, so a retry
- *  skips it: the office exists the moment createCompany returns, and hiring
- *  twice would double the payroll. */
-type Landed = { step: "none" } | { step: "company"; id: string } | { step: "hired"; id: string };
 
 /** null is the explicit "no ceiling" choice, not an absent one. */
 const CAP_OPTIONS: readonly (number | null)[] = [5, 20, 50, null];
@@ -196,12 +191,9 @@ export function PokeOnboarding() {
   const [team, setTeam] = useState<Team>({ kind: "uncast" });
   const [capUsd, setCapUsd] = useState<number | null>(DEFAULT_CAP);
   const [error, setError] = useState<string | null>(null);
-  const [landed, setLanded] = useState<Landed>({ step: "none" });
 
   const hires = team.kind === "cast" ? team.hires : null;
   const budget: Budget = capUsd === null ? { mode: "infinite" } : { mode: "capped", capUsd };
-  // the office exists from the first createCompany, so its budget is settled
-  const budgetLocked = landed.step !== "none";
 
   useModal();
 
@@ -283,25 +275,15 @@ export function PokeOnboarding() {
     setError(null);
     setStep("finalize");
     try {
-      let progress = landed;
-      if (progress.step === "none") {
-        const co = await bridge().createCompany({
-          name: companyName.trim(),
-          mission: pitch.trim(),
-          businessType: biz ?? "custom",
-          founderName: founderName.trim(),
-          founderSpriteSeed: choices[look]?.seed ?? "founder-player-001",
-          budget,
-        });
-        progress = { step: "company", id: co.id };
-        setLanded(progress);
-      }
-      if (progress.step === "company") {
-        await bridge().batchHire({ companyId: progress.id, hires });
-        progress = { step: "hired", id: progress.id };
-        setLanded(progress);
-      }
-      await bridge().completeOnboarding({ companyId: progress.id });
+      await bridge().foundCompany({
+        name: companyName.trim(),
+        mission: pitch.trim(),
+        businessType: biz ?? "custom",
+        founderName: founderName.trim(),
+        founderSpriteSeed: choices[look]?.seed ?? DEFAULT_FOUNDER_SEED,
+        budget,
+        hires,
+      });
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
     } catch (e) {
@@ -502,7 +484,6 @@ export function PokeOnboarding() {
                     type="button"
                     key={usd ?? "uncapped"}
                     onClick={() => setCapUsd(usd)}
-                    disabled={budgetLocked}
                     data-sel={capUsd === usd}
                     className="px-opt"
                     title={

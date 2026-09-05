@@ -40,9 +40,7 @@ interface OfficeStatus {
 function officeStatus(): OfficeStatus {
   const company = store.getDefaultCompany();
   const working =
-    company && company.onboarded
-      ? store.listEmployees(company.id).filter((e) => e.status === "working").length
-      : 0;
+    company ? store.listEmployees(company.id).filter((e) => e.status === "working").length : 0;
   const naps = RUNNER_IDS.map((r) => agentDriver.restingRunner(r)).filter(
     (t): t is number => t !== null,
   );
@@ -50,13 +48,13 @@ function officeStatus(): OfficeStatus {
     company,
     working,
     napUntil: naps.toSorted((a, b) => a - b)[0],
-    active: working > 0 || (company?.onboarded === true && company.autopilot),
+    active: working > 0 || company?.autopilot === true,
   };
 }
 
 /** One line of truth for the menu: what is the office doing right now? */
 function statusLine(s: OfficeStatus): string {
-  if (!s.company || !s.company.onboarded) return "No company yet";
+  if (!s.company) return "No company yet";
   const spent = `spent ${formatUsd(s.company.spentUsd)}`;
   if (s.working > 0) return `${s.working} working · ${spent}`;
   if (s.napUntil !== undefined) return napLabel(s.napUntil);
@@ -139,7 +137,7 @@ class AppTray {
       { label: `Open ${s.company?.name ?? "IdleBiz"}`, click: () => host.openWindow() },
       { type: "separator" },
       { label: statusLine(s), enabled: false },
-      ...(s.company && s.company.onboarded
+      ...(s.company
         ? [
             {
               label: autopilot ? "Pause the office" : "Start the office",

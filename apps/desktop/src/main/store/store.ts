@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { appendJsonl, atomicWrite, readJsonFile, readJsonlTail } from "@/main/lib/fs";
 import {
@@ -201,7 +201,6 @@ function companyToDoc(co: Company): FrontmatterDoc {
   metadata.budgetMode = co.budget.mode;
   if (co.budget.mode === "capped") metadata.budgetCapUsd = co.budget.capUsd;
   metadata.spentUsd = co.spentUsd;
-  metadata.onboarded = co.onboarded;
   metadata.createdAt = co.createdAt;
   return {
     fields: {
@@ -247,7 +246,6 @@ function docToCompany(doc: FrontmatterDoc): Company {
     users: nullableNum(m, "users"),
     budget: parseBudget(m),
     spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
-    onboarded: optBool(m, "onboarded", false),
     createdAt: reqNum(m, "createdAt"),
   };
 }
@@ -504,7 +502,7 @@ function pickLeaderId(emps: Employee[]): string | null {
 }
 
 /** Create the single founding team containing every current employee. */
-export function foundingTeamFor(co: Company): Team {
+function foundingTeamFor(co: Company): Team {
   const emps = listEmployees(co.id);
   return createTeam({
     companyId: co.id,
@@ -580,13 +578,29 @@ function uniqueSlug(
 }
 
 // ---- companies -------------------------------------------------------------
-export function createCompany(input: {
+export interface FoundingHire {
+  name: string;
+  role: string;
+  title: string;
+  persona: string;
+  runner: AgentRunner;
+  spriteSeed: string;
+}
+
+/**
+ * Found a company: the folder, its founding hires, their team and routines —
+ * all of it, or none. COMPANY.md is written last, so a folder that exists is a
+ * company that is whole: boot ignores a folder without one, and a founding
+ * that dies midway leaves nothing the office would ever show as a company.
+ */
+export function foundCompany(input: {
   name: string;
   mission: string;
   businessType: BusinessTypeId;
   founderName: string;
   founderSpriteSeed: string;
   budget: Budget;
+  hires: readonly FoundingHire[];
 }): Company {
   const id = uniqueSlug(input.name, c().companies.keys(), (s) => existsSync(companyDir(s)));
   const co: Company = {
@@ -604,19 +618,27 @@ export function createCompany(input: {
     users: null,
     budget: input.budget,
     spentUsd: 0,
-    onboarded: false,
     createdAt: Date.now(),
   };
-  mkdirSync(companyWorkspace(id), { recursive: true });
-  mkdirSync(tasksDir(id), { recursive: true });
-  mkdirSync(agentsDir(id), { recursive: true });
-  saveCompany(co);
   c().companies.set(id, co);
   c().employees.set(id, []);
   c().tasks.set(id, []);
   c().routines.set(id, []);
   c().teams.set(id, []);
-  seedDefaultRoutines(id, input.businessType);
+  try {
+    mkdirSync(companyWorkspace(id), { recursive: true });
+    mkdirSync(tasksDir(id), { recursive: true });
+    mkdirSync(agentsDir(id), { recursive: true });
+    input.hires.forEach((hire, deskIndex) => createEmployee({ companyId: id, deskIndex, ...hire }));
+    foundingTeamFor(co);
+    seedDefaultRoutines(id, input.businessType);
+    saveCompany(co);
+  } catch (cause) {
+    for (const map of [c().companies, c().employees, c().tasks, c().routines, c().teams])
+      map.delete(id);
+    rmSync(companyDir(id), { recursive: true, force: true });
+    throw cause;
+  }
   return co;
 }
 
@@ -837,9 +859,6 @@ function patchCompany(id: string, patch: Partial<Company>): Company {
   return next;
 }
 
-export function setCompanyOnboarded(id: string, onboarded: boolean): Company {
-  return patchCompany(id, { onboarded });
-}
 export function setMaxAgents(id: string, maxAgents: number): Company {
   return patchCompany(id, { maxAgents: Math.max(1, Math.round(maxAgents)) });
 }

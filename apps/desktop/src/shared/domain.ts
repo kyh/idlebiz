@@ -248,7 +248,6 @@ export interface Company {
   users: number | null; // REAL users (analytics); null until a source is connected
   budget: Budget; // founder-set cap on real AI spend
   spentUsd: number; // lifetime real token spend (USD)
-  onboarded: boolean;
   createdAt: number;
 }
 

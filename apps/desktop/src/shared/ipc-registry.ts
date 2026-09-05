@@ -91,7 +91,7 @@ export type HireProposal = z.infer<typeof HireProposalSchema>;
 
 export const SCHEMAS = {
   composeCharacter: z.object({ seed: z.string() }),
-  createCompany: z.object({
+  foundCompany: z.object({
     name: z.string(),
     mission: z.string(),
     businessType: BusinessTypeSchema,
@@ -100,6 +100,7 @@ export const SCHEMAS = {
     // the company is born with its cap: agents run on real paid CLI calls, and a
     // company that exists uncapped for even one scheduler tick can spend
     budget: BudgetSchema,
+    hires: z.array(HireProposalSchema).min(1),
   }),
   setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
   listEmployees: z.object({ companyId: z.string() }),
@@ -123,8 +124,6 @@ export const SCHEMAS = {
     mission: z.string(),
     businessType: BusinessTypeSchema,
   }),
-  batchHire: z.object({ companyId: z.string(), hires: z.array(HireProposalSchema) }),
-  completeOnboarding: z.object({ companyId: z.string() }),
   setBudget: z.object({ companyId: z.string(), budget: BudgetSchema }),
   resetSpend: z.object({ companyId: z.string() }),
   stripeConnect: z.object({ companyId: z.string() }),
@@ -152,13 +151,11 @@ interface Results {
   composeCharacter: CharacterAssets;
   getFounderChoices: FounderChoice[];
   generateHires: HireProposal[];
-  batchHire: Employee[];
-  completeOnboarding: Company;
+  foundCompany: Company;
 
   getCompany: Company | null;
   loadReport: LoadReport;
   openSaveFolder: { ok: boolean };
-  createCompany: Company;
   setAutopilot: Company;
   setBudget: Company;
   resetSpend: Company;

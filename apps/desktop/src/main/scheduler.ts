@@ -102,10 +102,6 @@ class Scheduler {
    * CLI is actually spawned. Finding the budget gone halts the office.
    */
   private admit(company: Company): boolean {
-    // an un-onboarded company is mid-hire or abandoned: it has employees on
-    // disk but its founder never saw the budget step, so briefing them here
-    // spends money nobody agreed to
-    if (!company.onboarded) return false;
     if (!isOutOfBudget(company)) return true;
     this.haltForBudget(company);
     return false;
