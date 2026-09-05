@@ -1,7 +1,6 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
 import { comparePaintOrder } from "@/shared/office-depth";
-import type { JsonValue } from "@/shared/json";
 import {
   officeLayoutSchema,
   parseOfficeLayout,
@@ -49,7 +48,7 @@ export interface Office {
 // in shared/office-layout-schema.ts, because main validates the same file
 // before it writes it. The bundled default is always the current version (the
 // migrating parser is for files from disk), so it parses strictly, at module load.
-const BUNDLED = officeLayoutSchema.parse(rawLayout);
+export const BUNDLED_LAYOUT: OfficeLayoutData = officeLayoutSchema.parse(rawLayout);
 
 function objectTextureKey(id: string): string {
   return `office-object-sprite-${id}`;
@@ -95,7 +94,8 @@ function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObje
   }));
 }
 
-function officeOf(layout: OfficeLayoutData): Office {
+/** The layout as the scene reads it: the walk grid and the paint-ordered placements. */
+export function officeOf(layout: OfficeLayoutData): Office {
   return {
     spawn: layout.spawn,
     door: layout.door,
@@ -104,26 +104,4 @@ function officeOf(layout: OfficeLayoutData): Office {
     grid: walkGridOf(layout),
     placements: placementsOf(layout.objects),
   };
-}
-
-// Both are `let` because the player's saved office overrides the bundled default
-// (applyOfficeLayout, called from store.refresh before the scene boots). ES live
-// bindings mean importers see the replacement.
-
-/** The full parsed layout in force — what the in-app office builder loads to edit. */
-export let OFFICE_LAYOUT_RAW: OfficeLayoutData = BUNDLED;
-
-/** The layout in force, as the scene reads it. */
-export let OFFICE: Office = officeOf(BUNDLED);
-
-/**
- * Replace the live office layout (the player's saved office from disk overrides the
- * bundled default). Call BEFORE the Phaser scene boots — store.refresh awaits the
- * disk layout, so preload/buildRoom see the replaced binding. An older schema on
- * disk is upgraded on the way in; a file that fits no schema throws.
- */
-export function applyOfficeLayout(raw: JsonValue): void {
-  const layout = parseOfficeLayout(raw);
-  OFFICE_LAYOUT_RAW = layout;
-  OFFICE = officeOf(layout);
 }

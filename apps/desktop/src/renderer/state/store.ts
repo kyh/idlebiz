@@ -10,20 +10,23 @@ import type {
   StripeStatus,
   VercelStatus,
 } from "@/shared/ipc-registry";
-import { applyOfficeLayout } from "@/renderer/game/office-layout";
+import {
+  BUNDLED_LAYOUT,
+  parseOfficeLayout,
+  type OfficeLayoutData,
+} from "@/renderer/game/office-layout";
 import { bridge } from "@/renderer/bridge";
 
 interface State {
   /** The first refresh finished: company, roster and tasks are known (or known absent). */
   booted: boolean;
   /**
-   * The office layout is settled — saved office applied, or the bundled default kept.
-   * The scene mounts on this and nothing earlier: its preload reads the live layout
-   * bindings the moment the game exists, so mounting first would build the bundled
-   * office. Set before the bridge calls that can fail, so the room opens even when
+   * The office layout in force: the saved office from disk, else the bundled
+   * default; null until that is known, and the scene mounts on nothing earlier.
+   * Settled before the bridge calls that can fail, so the room opens even when
    * they do.
    */
-  layoutReady: boolean;
+  layout: OfficeLayoutData | null;
   authed: boolean;
   stripeStatus: StripeStatus;
   vercelStatus: VercelStatus;
@@ -38,11 +41,13 @@ interface State {
   stuckTasks: TaskIn<"dead">[]; // dead-lettered, needing a retry
   game: Phaser.Game | null;
   modalOpen: boolean; // a dialogue/modal overlay is up (ambient HUD chrome hides)
+  /** Derived on every set(): what the window shows, one of four. */
+  boot: Boot;
 }
 
 let state: State = {
   booted: false,
-  layoutReady: false,
+  layout: null,
   authed: true,
   stripeStatus: { state: "disconnected" },
   vercelStatus: { state: "disconnected" },
@@ -56,11 +61,32 @@ let state: State = {
   stuckTasks: [],
   game: null,
   modalOpen: false,
+  boot: { kind: "loading" },
 };
 const listeners = new Set<() => void>();
 
-function set(patch: Partial<State>): void {
-  state = { ...state, ...patch };
+/**
+ * What the window shows: exactly one of these. A company boot could not read
+ * stops everything (a fresh start here would stack a second company on it);
+ * no company means onboarding; a company means the office, gated on a CLI.
+ */
+export type Boot =
+  | { kind: "loading" }
+  | { kind: "unreadable"; issues: LoadSkip[] }
+  | { kind: "onboarding" }
+  | { kind: "office"; company: Company; authed: boolean };
+
+function bootOf(s: Omit<State, "boot">): Boot {
+  const issues = s.saveIssues.filter((issue) => issue.kind === "company");
+  if (issues.length > 0) return { kind: "unreadable", issues };
+  if (!s.booted) return { kind: "loading" };
+  if (!s.company) return { kind: "onboarding" };
+  return { kind: "office", company: s.company, authed: s.authed };
+}
+
+function set(patch: Partial<Omit<State, "boot">>): void {
+  const next = { ...state, ...patch };
+  state = { ...next, boot: bootOf(next) };
   for (const l of listeners) l();
 }
 const subscribe = (l: () => void): (() => void) => {
@@ -128,17 +154,23 @@ export function setModalOpen(open: boolean): void {
  * the room by the time anything refreshes again.
  */
 async function settleLayout(): Promise<void> {
-  if (state.layoutReady) return;
+  if (state.layout) return;
+  let layout = BUNDLED_LAYOUT;
   try {
     const office = await bridge().loadOfficeDesign();
-    if (office.layout) applyOfficeLayout(office.layout);
+    if (office.layout) layout = parseOfficeLayout(office.layout);
   } catch {
     // keep the bundled default layout
   }
   // The scene may mount now. Not `booted`: that also opens the HUD and the
   // onboarding modal, and a founder shown onboarding because the bridge is down
   // would create a second company on top of the one they have.
-  set({ layoutReady: true });
+  set({ layout });
+}
+
+/** The builder saved an office: the scene rebuilds from it when it next mounts. */
+export function setLayout(layout: OfficeLayoutData): void {
+  set({ layout });
 }
 
 export async function refresh(): Promise<void> {

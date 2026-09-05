@@ -3,7 +3,7 @@
 // exact schema the game reads — re-deriving the collision grid from the placed
 // furniture so the result stays playable. No React in here.
 import {
-  OFFICE_LAYOUT_RAW,
+  BUNDLED_LAYOUT,
   comparePaintOrder,
   type OfficeLayer,
   type OfficeLayoutData,
@@ -212,7 +212,7 @@ function paint(
 
 // --- load -------------------------------------------------------------------
 /** Build an editable layout from a parsed layout (the saved office, or the bundled default). */
-export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableLayout {
+export function loadLayout(raw: OfficeLayoutData = BUNDLED_LAYOUT): EditableLayout {
   const grid = raw.collision.map((row) => Array.from(row, (ch) => (ch === "1" ? 1 : 0)));
   const objects: EditableObject[] = raw.objects.map((o) => {
     const base = {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useStore } from "@/renderer/state/store";
+import { initStore, setGame, useStore, type Boot } from "@/renderer/state/store";
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
@@ -22,6 +22,36 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 };
 
 const getHash = (): string => window.location.hash;
+
+/** The one thing the window shows over the office, by where boot got to. */
+function Screen({
+  boot,
+  overlay,
+  onOverlay,
+}: {
+  boot: Boot;
+  overlay: Overlay | null;
+  onOverlay: (overlay: Overlay | null) => void;
+}) {
+  switch (boot.kind) {
+    case "loading":
+      return null;
+    case "unreadable":
+      return <SaveUnreadable issues={boot.issues} />;
+    case "onboarding":
+      return <PokeOnboarding />;
+    case "office":
+      return (
+        <>
+          {boot.authed ? null : <AuthGate />}
+          <Hud onOpen={onOverlay} />
+          <TeamChannel />
+          <Dialogue />
+          <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
+        </>
+      );
+  }
+}
 
 function OpenOverlay({
   overlay,
@@ -57,12 +87,9 @@ function OpenOverlay({
 }
 
 export function App() {
-  const booted = useStore((s) => s.booted);
-  const layoutReady = useStore((s) => s.layoutReady);
-  const authed = useStore((s) => s.authed);
-  const company = useStore((s) => s.company);
+  const boot = useStore((s) => s.boot);
+  const layout = useStore((s) => s.layout);
   const game = useStore((s) => s.game);
-  const saveIssues = useStore((s) => s.saveIssues);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
 
@@ -78,10 +105,6 @@ export function App() {
     return () => window.removeEventListener("idlebiz:onboarded", onDone);
   }, [game]);
 
-  const unreadable = saveIssues.filter((issue) => issue.kind === "company");
-  const needsOnboarding = booted && unreadable.length === 0 && company === null;
-  const inOffice = booted && company !== null;
-
   if (route === "#/office-assets") {
     return <OfficeObjectCatalog />;
   }
@@ -92,20 +115,10 @@ export function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {layoutReady ? <PhaserGame key="office-game" onGame={setGame} /> : null}
+      {layout ? <PhaserGame key="office-game" layout={layout} onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
-        {unreadable.length > 0 ? <SaveUnreadable issues={unreadable} /> : null}
-        {needsOnboarding ? <PokeOnboarding /> : null}
-        {inOffice && !authed ? <AuthGate /> : null}
-        {inOffice ? (
-          <>
-            <Hud onOpen={setOverlay} />
-            <TeamChannel />
-            <Dialogue />
-            <OpenOverlay overlay={overlay} onOpen={setOverlay} onClose={() => setOverlay(null)} />
-          </>
-        ) : null}
+        <Screen boot={boot} overlay={overlay} onOverlay={setOverlay} />
       </div>
     </div>
   );

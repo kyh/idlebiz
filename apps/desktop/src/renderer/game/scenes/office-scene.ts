@@ -14,7 +14,13 @@ import { ClickWalk, type Walker } from "@/renderer/game/click-walk";
 import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import { facingToward } from "@/renderer/game/movement";
 import { NpcManager, type NpcState, type Seat, type Poi } from "@/renderer/game/npcs";
-import { OFFICE, type PixelPoint } from "@/renderer/game/office-layout";
+import {
+  BUNDLED_LAYOUT,
+  officeOf,
+  type Office,
+  type OfficeLayoutData,
+  type PixelPoint,
+} from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import { seatDepthOracle } from "@/renderer/game/seat-depth";
 import { frameMask, textureMasks, type OpaqueMask } from "@/renderer/game/texture-masks";
@@ -66,6 +72,12 @@ const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };
 
+/** What the scene is started with: the layout it builds the room from. */
+export interface OfficeSceneData {
+  layout: OfficeLayoutData;
+}
+export const officeSceneData = (layout: OfficeLayoutData): OfficeSceneData => ({ layout });
+
 export class OfficeScene extends Phaser.Scene {
   private player?: Player;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -75,7 +87,13 @@ export class OfficeScene extends Phaser.Scene {
   private npcs?: NpcManager;
   private clickWalk?: ClickWalk;
   /** The layout's grid with the spots nobody should stand in closed; set once the room is judged. */
-  private grid: WalkGrid = OFFICE.grid;
+  /**
+   * The layout in force, from the scene data every start and restart carries.
+   * Phaser constructs the scene before any data exists, so the bundled office
+   * stands in until init() runs — which is before preload reads anything.
+   */
+  private office: Office = officeOf(BUNDLED_LAYOUT);
+  private grid: WalkGrid = this.office.grid;
   private modalOpen = false;
   /** Bumped by every create(): an await in boot() that outlives its scene must not touch the next one. */
   private generation = 0;
@@ -85,9 +103,14 @@ export class OfficeScene extends Phaser.Scene {
     super("office");
   }
 
+  init(data: OfficeSceneData) {
+    this.office = officeOf(data.layout);
+    this.grid = this.office.grid;
+  }
+
   preload() {
     const loaded = new Set<string>();
-    for (const placement of OFFICE.placements) {
+    for (const placement of this.office.placements) {
       if (loaded.has(placement.key)) continue;
       loaded.add(placement.key);
       this.load.image(placement.key, placement.path);
@@ -195,7 +218,7 @@ export class OfficeScene extends Phaser.Scene {
     cam.removeBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);
-    this.centerCameraOn(OFFICE.spawn);
+    this.centerCameraOn(this.office.spawn);
 
     const company = await bridge().getCompany();
     if (generation !== this.generation) return;
@@ -209,7 +232,7 @@ export class OfficeScene extends Phaser.Scene {
     if (generation !== this.generation) return;
     const grid = this.sightSealed(masks, player);
     this.grid = grid;
-    const npcs = new NpcManager(this, seats, grid, this.idlePois(), OFFICE.door);
+    const npcs = new NpcManager(this, seats, grid, this.idlePois(), this.office.door);
     this.npcs = npcs;
     this.clickWalk = new ClickWalk(this, grid, this.walkerOf(player), npcs, (id) =>
       this.talkTo(id),
@@ -230,7 +253,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private buildRoom(masks: (key: string) => OpaqueMask | null): Seat[] {
-    const room = OFFICE.placements.map((placement) =>
+    const room = this.office.placements.map((placement) =>
       this.add
         .image(placement.x, placement.y, placement.key)
         .setOrigin(0, 0)
@@ -238,7 +261,7 @@ export class OfficeScene extends Phaser.Scene {
         .setFlip(placement.flipX, placement.flipY),
     );
     const seatDepth = seatDepthOracle(masks);
-    return OFFICE.seats
+    return this.office.seats
       .filter((seat) => seat.role === "work")
       .map((seat) => ({ x: seat.x, y: seat.y, depth: seatDepth(seat, room) }));
   }
@@ -250,27 +273,27 @@ export class OfficeScene extends Phaser.Scene {
    */
   private sightSealed(masks: (key: string) => OpaqueMask | null, player: Player): WalkGrid {
     const sheet = masks(player.sprite.texture.key);
-    if (!sheet) return OFFICE.grid;
+    if (!sheet) return this.office.grid;
     const silhouette = frameMask(sheet, { x: 0, y: 0, w: FRAME_W, h: FRAME_H });
     // reading a texture is a canvas round trip: only what can draw above a character
     const sprites: PaintedSprite[] = [];
-    for (const placement of OFFICE.placements) {
+    for (const placement of this.office.placements) {
       if (placement.def.layer === "floor") continue;
       const mask = masks(placement.key);
       if (mask) sprites.push({ obj: placement.def, mask });
     }
-    const hidden = hiddenNodes(OFFICE.grid, OFFICE.spawn, sprites, silhouette);
+    const hidden = hiddenNodes(this.office.grid, this.office.spawn, sprites, silhouette);
     return withoutNodes(
-      OFFICE.grid,
-      OFFICE.spawn,
+      this.office.grid,
+      this.office.spawn,
       hidden.map((h) => h.node),
     );
   }
 
   /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
   private idlePois(): Poi[] {
-    const spots: Poi[] = OFFICE.pois.map((p) => ({ x: p.x, y: p.y, face: p.face }));
-    for (const seat of OFFICE.seats) {
+    const spots: Poi[] = this.office.pois.map((p) => ({ x: p.x, y: p.y, face: p.face }));
+    for (const seat of this.office.seats) {
       if (seat.role === "rest") spots.push({ x: seat.x, y: seat.y, face: "down", sit: seat.sit });
     }
     return spots;
@@ -304,16 +327,16 @@ export class OfficeScene extends Phaser.Scene {
           y: this.cameras.main.scrollY,
           zoom: this.cameras.main.zoom,
         },
-        objects: OFFICE.placements.length,
+        objects: this.office.placements.length,
         player: {
           x: this.player?.sprite.x ?? null,
           y: this.player?.sprite.y ?? null,
         },
-        door: OFFICE.door,
-        seats: OFFICE.seats.filter((seat) => seat.role === "work").length,
+        door: this.office.door,
+        seats: this.office.seats.filter((seat) => seat.role === "work").length,
         world: {
-          h: OFFICE.grid.height,
-          w: OFFICE.grid.width,
+          h: this.office.grid.height,
+          w: this.office.grid.width,
         },
       }),
       probeMove: (start, delta) => this.probeMove(start, delta),
@@ -388,7 +411,7 @@ export class OfficeScene extends Phaser.Scene {
     const key = `player-${seed}`;
     await loadCharacter(this, key, seed);
     const sprite = this.add
-      .sprite(OFFICE.spawn.x, OFFICE.spawn.y, key, idleFrame("down"))
+      .sprite(this.office.spawn.x, this.office.spawn.y, key, idleFrame("down"))
       .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
     sprite.setDepth(characterDepth(sprite.y));
     const player = { sprite, anims: characterAnims(key) };

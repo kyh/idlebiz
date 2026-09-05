@@ -1,11 +1,8 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import {
-  applyOfficeLayout,
-  parseOfficeLayout,
-  type PixelPoint,
-} from "@/renderer/game/office-layout";
+import { parseOfficeLayout, type PixelPoint } from "@/renderer/game/office-layout";
 import { useHistory } from "@/renderer/hooks/use-history";
 import { bridge } from "@/renderer/bridge";
+import { setLayout } from "@/renderer/state/store";
 import { Inspector } from "@/renderer/ui/office-builder/inspector";
 import {
   ALL_OBJECT_IDS,
@@ -347,9 +344,8 @@ export function OfficeBuilder() {
     }
     try {
       await bridge().saveOfficeDesign({ json: JSON.stringify(data) });
-      // apply to the live layout bindings: the game scene rebuilds from them
-      // when you switch back, so the save is visible immediately
-      applyOfficeLayout(data);
+      // the layout in force: the scene rebuilds from it when you switch back
+      setLayout(data);
       setStatus("Saved ✓ — switch to Game to see it.");
     } catch (err) {
       setStatus(`Save failed: ${errorMessage(err)}`);
