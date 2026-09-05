@@ -460,13 +460,13 @@ class Scheduler {
     }
   }
 
-  /** Player assigns a task to an employee, then we try to run it. */
+  /**
+   * Player assigns a task to an employee, then we try to run it. Out of budget
+   * the claim still lands — the queue holds it, and it starts when the cap is
+   * raised; refusing here would strand an answered ask's continuation as a
+   * todo that nothing ever picks up.
+   */
   assign(taskId: string, employeeId: string): Task {
-    const task = store.getTask(taskId);
-    const company = task ? store.getCompany(task.companyId) : null;
-    if (company && !this.admit(company)) {
-      throw new Error("Out of budget — raise the budget in the HUD to assign work.");
-    }
     const claimed = store.claimTask(taskId, employeeId);
     if (!claimed) throw new Error("task is not assignable");
     publishActivity({ taskId, employeeId, kind: "status", message: "queued" });

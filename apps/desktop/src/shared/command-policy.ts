@@ -74,18 +74,22 @@ const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)
  * position. Real parsing is the fix if false positives ever bite; the gate
  * fails open and the CLIs' own protections sit underneath, so this is a floor.
  */
-// A bare `(` is deliberately NOT a command position. Subshells are vanishingly
-// rare in agent commands, while prose inside a quoted payload is not: an
-// employee's own delegate call carrying "(`npm ci`)" and "do NOT npm publish"
-// in its JSON body was held as if it were publishing a package. Command
-// substitution still opens one, via `$(` and backticks below.
-const AT_COMMAND =
-  String.raw`(?:^|[\n;&|]|\$\(|` +
-  "`" +
-  String.raw`)\s*(?:(?:sudo|command|env|time|nohup|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|npm\s+exec)\s+)*(?:--?[\w-]+\s+)*(?:[\w_]+=\S+\s+)*`;
+// A bare `(` and a backtick are deliberately NOT command positions. Subshells
+// and backtick substitution are vanishingly rare in agent commands, while prose
+// inside a quoted payload is not: an employee's own delegate call carrying
+// "(`npm ci`)" and "do NOT npm publish" in its JSON body was held as if it were
+// publishing a package, and a memory note mentioning `vercel.json` in a heredoc
+// was held as a deploy. Command substitution still opens one, via `$(`.
+const AT_COMMAND = String.raw`(?:^|[\n;&|]|\$\()\s*(?:(?:sudo|command|env|time|nohup|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|npm\s+exec)\s+)*(?:--?[\w-]+\s+)*(?:[\w_]+=\S+\s+)*`;
 
 /** Anchor a program pattern to a real invocation site. */
 const invocation = (program: string): RegExp => new RegExp(AT_COMMAND + program);
+
+/**
+ * One of `names` as a whole program token: `vercel` the CLI, not `vercel.json`
+ * the file or `vercel-cli` the package. A word boundary alone accepts both.
+ */
+const program = (names: string): string => String.raw`(?:${names})(?![\w.\-/])`;
 
 const RULES: readonly Rule[] = [
   {
@@ -95,13 +99,14 @@ const RULES: readonly Rule[] = [
     // verb list missed `vercel --prod --yes`, the most natural way to ship.
     describe: "Deploy the product to a live, public URL.",
     match: invocation(
-      String.raw`(?:vercel|netlify|wrangler|fly|railway|surge)\b(?!\s+${DEPLOY_TOOL_READS}\b)`,
+      `${program("vercel|netlify|wrangler|fly|railway|surge")}` +
+        String.raw`(?!\s+${DEPLOY_TOOL_READS}\b)`,
     ),
   },
   {
     id: "publish-package",
     describe: "Publish a package to a public registry.",
-    match: invocation(String.raw`(?:npm|pnpm|yarn|bun)\b[^|;&]*\bpublish\b`),
+    match: invocation(`${program("npm|pnpm|yarn|bun")}` + String.raw`[^|;&]*\bpublish\b`),
   },
   {
     id: "git-push",
@@ -125,7 +130,8 @@ const RULES: readonly Rule[] = [
     id: "payments",
     describe: "Move real money through Stripe.",
     match: invocation(
-      String.raw`stripe\b[^|;&]*\b(?:create|charge|payouts?|refunds?|transfers?)\b`,
+      `${program("stripe")}` +
+        String.raw`[^|;&]*\b(?:create|charge|payouts?|refunds?|transfers?)\b`,
     ),
   },
   {

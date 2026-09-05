@@ -123,6 +123,11 @@ const MUST_ALLOW = [
   // command position, or the office asks the founder to approve its own API.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"role":"engineer","description":"Prove it installs (packaging + CI). Run (npm ci) then npm test. Do NOT npm publish and do not git push origin main; founder sign-off required."}'`,
   `git commit -m "prepare for git push once approved"`,
+  // Found live: a memory note in a heredoc, code-spanned as markdown. A
+  // backtick is not a command position, and vercel.json is not the vercel CLI.
+  "cat >> memory/2026-09-05-mvp-build.md <<'EOF' ## Deploy prep - `.vercelignore` excludes qa/ - `vercel.json`: cleanUrls + CSP EOF",
+  `grep -n "vercel" PRODUCT.md | head -2`,
+  "npm install vercel-cli-helper",
 ];
 
 describe("classifyCommand", () => {
