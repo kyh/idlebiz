@@ -22,6 +22,7 @@ import {
   initVercelConnect,
   listVercelProjects,
 } from "@/main/vercel-connect";
+import { adoptShellPath } from "@/main/lib/shell-path";
 import { exportSecretsToEnv } from "@/main/secrets";
 import {
   initStripeConnect,
@@ -349,6 +350,7 @@ void (async () => {
   );
   store.initStore();
   exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
+  await adoptShellPath(); // a Finder-launched app has no idea where the CLIs are
   agentDriver.init(); // probe installed CLIs (claude / codex)
   await controlPlane.start(); // loopback API running agents curl back into
   registerIpcHandlers();
