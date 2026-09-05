@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore, resetGame, setMaxAgents } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
+import { SaveIssues } from "@/renderer/ui/save-issues";
 
 /** Game settings. Mostly the danger zone: demolish the office and start over. */
 export function Settings({ onClose }: { onClose: () => void }) {
@@ -37,14 +38,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
             <div className="mt-1 text-xs text-fg-dim">
               These files under ~/.idlebiz did not parse and were left out. Fix them and relaunch.
             </div>
-            <ul className="mt-2 space-y-1 text-xs">
-              {saveIssues.map((issue) => (
-                <li key={issue.path}>
-                  <div className="truncate">{issue.path}</div>
-                  <div className="text-fg-dim">{issue.error}</div>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-2">
+              <SaveIssues issues={saveIssues} />
+            </div>
           </div>
         ) : null}
 

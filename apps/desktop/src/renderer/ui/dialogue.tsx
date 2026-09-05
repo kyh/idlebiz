@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useStore, directEmployee, listTasksFor } from "@/renderer/state/store";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { AnswerForm } from "@/renderer/ui/answer-form";
@@ -128,7 +129,6 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   const [sel, setSel] = useState(0);
   const [input, setInput] = useState("");
   const [note, showNote] = useTransientNote(NOTE_MS);
-  const [fetched, setFetched] = useState<{ asOf: number | null; list: Task[] } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const mine = useMemo(() => activity.filter((a) => a.employeeId === emp.id), [activity, emp.id]);
@@ -136,16 +136,10 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   // "as of" — and what makes a refetch worth making. Not the feed length: the
   // feed is a 300-event ring, and a length-keyed refetch stops once it fills.
   const lastStatusId = mine.findLast((a) => a.kind === "status")?.id ?? null;
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const list = await listTasksFor(emp.id);
-      if (alive) setFetched({ asOf: lastStatusId, list });
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [emp.id, lastStatusId]);
+  const fetched = useAsync(
+    async () => ({ asOf: lastStatusId, list: await listTasksFor(emp.id) }),
+    [emp.id, lastStatusId],
+  );
   const tasks = fetched?.list ?? [];
 
   // only free-text questions get the inline answer form; integration asks

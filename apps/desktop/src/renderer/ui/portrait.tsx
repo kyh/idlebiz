@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { getPortrait } from "@/renderer/state/store";
 
 type PortraitSize = "sm" | "md";
@@ -14,17 +14,7 @@ export function Portrait({
   size: PortraitSize;
   alt?: string;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const u = await getPortrait(seed);
-      if (alive) setUrl(u);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [seed]);
+  const url = useAsync(() => getPortrait(seed), [seed]);
   const className = `px-portrait shrink-0 ${SIZE_CLASS[size]}`;
   return url ? <img src={url} alt={alt} className={className} /> : <span className={className} />;
 }

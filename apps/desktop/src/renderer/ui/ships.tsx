@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { memo, useState } from "react";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { bridge } from "@/renderer/bridge";
 import { useStore } from "@/renderer/state/store";
@@ -16,7 +17,15 @@ import { formatDate } from "@/shared/format";
 
 /** One ship: a single line that expands to the full "what & where" summary,
  *  with every URL and workspace path clickable. */
-function ShipRow({ t, by, companyId }: { t: TaskIn<"done">; by: string; companyId: string }) {
+const ShipRow = memo(function ShipRow({
+  t,
+  by,
+  companyId,
+}: {
+  t: TaskIn<"done">;
+  by: string;
+  companyId: string;
+}) {
   const [open, setOpen] = useState(false);
   const summary = t.state.summary ?? "";
   const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
@@ -42,25 +51,21 @@ function ShipRow({ t, by, companyId }: { t: TaskIn<"done">; by: string; companyI
       ) : null}
     </div>
   );
-}
+});
 
 export function Ships({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
-  const [ships, setShips] = useState<TaskIn<"done">[] | null>(null);
   const [note, showNote] = useTransientNote(2500);
-
-  useEffect(() => {
-    if (!company) return;
-    let alive = true;
-    void (async () => {
-      const tasks = await bridge().listTasks({ companyId: company.id, status: ["done"] });
-      if (alive) setShips(tasks.filter(taskIn("done")).filter((t) => t.state.summary));
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [company]);
+  const ships = useAsync(
+    async () =>
+      company
+        ? (await bridge().listTasks({ companyId: company.id, status: ["done"] }))
+            .filter(taskIn("done"))
+            .filter((t) => t.state.summary)
+        : [],
+    [company],
+  );
 
   if (!company) return null;
   const companyId = company.id;

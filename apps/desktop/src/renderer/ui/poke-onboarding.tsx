@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
+import { useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { bridge } from "@/renderer/bridge";
 import { refresh } from "@/renderer/state/store";
+import { AuthStep } from "@/renderer/ui/auth-step";
 import { useModal } from "@/renderer/ui/modal";
 import { Portrait } from "@/renderer/ui/portrait";
 import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
-import type { AuthFlowEvent, FounderChoice, HireProposal } from "@/shared/ipc-registry";
+import type { FounderChoice, HireProposal } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
 // Pokémon-style first-run onboarding: one battle box, a narrator, and a step
@@ -44,17 +46,6 @@ function backStep(step: Step): Step | null {
       return null;
   }
 }
-
-/** The coding CLI the workforce runs on, as far as the probe and the login flow know. */
-type Auth =
-  | { phase: "checking" }
-  | { phase: "signed-out" }
-  | { phase: "logging-in"; lines: readonly string[] }
-  | { phase: "login-failed"; lines: readonly string[] }
-  | { phase: "signed-in"; lines: readonly string[] };
-const linesOf = (a: Auth): readonly string[] => ("lines" in a ? a.lines : []);
-/** The last few lines the login flow said, plus this one — the box shows four. */
-const withLine = (a: Auth, line: string): readonly string[] => [...linesOf(a).slice(-3), line];
 
 /** The founding team, from the pitch to the offer letters. */
 type Team =
@@ -144,44 +135,8 @@ function HiresGrid({ hires }: { hires: HireProposal[] }) {
   );
 }
 
-function AuthStep({ auth, onLogin }: { auth: Auth; onLogin: () => void }) {
-  const lines = linesOf(auth);
-  return (
-    <div className="flex w-full flex-col gap-2">
-      {lines.length > 0 ? (
-        <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-fg-dim">
-          {lines.join("\n")}
-        </div>
-      ) : null}
-      <div className="flex items-center">
-        <button
-          type="button"
-          onClick={() => void bridge().resetGame()}
-          className="px-link px-link-danger"
-          title="Wipe everything in ~/.idlebiz and restart"
-        >
-          ↺ start over
-        </button>
-        <button
-          type="button"
-          onClick={onLogin}
-          disabled={auth.phase === "logging-in"}
-          className="px-btn-accent px-btn ml-auto"
-        >
-          {auth.phase === "logging-in"
-            ? "Setting up…"
-            : auth.phase === "login-failed"
-              ? "Try again"
-              : "Set up workforce"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function PokeOnboarding() {
   const [step, setStep] = useState<Step>("intro");
-  const [auth, setAuth] = useState<Auth>({ phase: "checking" });
   const [founderName, setFounderName] = useState("");
   const [choices, setChoices] = useState<FounderChoice[]>([]);
   const [look, setLook] = useState(0);
@@ -199,36 +154,16 @@ export function PokeOnboarding() {
 
   useEffect(() => {
     void bridge()
-      .hasAuth()
-      .then((r) => setAuth(r.ok ? { phase: "signed-in", lines: [] } : { phase: "signed-out" }));
-    void bridge()
       .getFounderChoices()
       .then(setChoices)
       .catch(() => setChoices([]));
   }, []);
 
-  // stream auth flow events into the dialog
-  useEffect(() => {
-    const off = bridge().onAuthEvent((e: AuthFlowEvent) => {
-      if (e.type === "url") {
-        const said = "Your browser opened — authorize there, then come back.";
-        setAuth((a) => ({ phase: "logging-in", lines: withLine(a, said) }));
-      } else if (e.type === "progress") {
-        setAuth((a) => ({ phase: "logging-in", lines: withLine(a, e.message) }));
-      } else if (e.type === "done") {
-        setAuth((a) => ({ phase: "signed-in", lines: withLine(a, "Connected ✓") }));
-        window.setTimeout(() => setStep("founder"), 700);
-      } else if (e.type === "error") {
-        setAuth((a) => ({ phase: "login-failed", lines: withLine(a, `Hmm — ${e.message}`) }));
-      }
-    });
-    return off;
-  }, []);
-
-  const login = () => {
-    setAuth({ phase: "logging-in", lines: [] });
-    void bridge().startLogin();
-  };
+  const { auth, login } = useAuthFlow({
+    probe: true,
+    // a beat on "Connected ✓" before the founder's own step
+    onSignedIn: () => window.setTimeout(() => setStep("founder"), 700),
+  });
 
   /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
   const castTeam = useCallback(() => {
@@ -364,7 +299,22 @@ export function PokeOnboarding() {
             </button>
           ) : null}
 
-          {step === "auth" ? <AuthStep auth={auth} onLogin={login} /> : null}
+          {step === "auth" ? (
+            <AuthStep
+              auth={auth}
+              onLogin={login}
+              aside={
+                <button
+                  type="button"
+                  onClick={() => void bridge().resetGame()}
+                  className="px-link px-link-danger"
+                  title="Wipe everything in ~/.idlebiz and restart"
+                >
+                  ↺ start over
+                </button>
+              }
+            />
+          ) : null}
 
           {step === "founder" ? (
             <>

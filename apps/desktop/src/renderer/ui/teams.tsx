@@ -1,25 +1,13 @@
-import { useEffect, useState } from "react";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { useStore, teamMessages } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Modal } from "@/renderer/ui/modal";
-import type { TeamMessage } from "@/shared/domain";
 
 /** The Team panel: who is on it, who leads, and the room they talk in. */
 export function Teams({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
-  const [room, setRoom] = useState<readonly TeamMessage[]>([]);
-
-  useEffect(() => {
-    let live = true;
-    void teamMessages(30).then((messages) => {
-      if (live) setRoom(messages);
-      return null;
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
+  const room = useAsync(() => teamMessages(30), []) ?? [];
 
   if (!company) return null;
   const headcount = `${employees.length} ${employees.length === 1 ? "person" : "people"}`;
