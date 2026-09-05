@@ -274,6 +274,10 @@ export interface Employee {
   createdAt: number;
 }
 
+/** What a task's status says about its assignee: working while a run is in flight, idle otherwise. */
+export const employeeStatusOf = (status: TaskStatus): EmployeeStatus =>
+  status === "running" ? "working" : "idle";
+
 /**
  * A named group of employees with a designated leader (TinyAGI-style team).
  * The leader receives direction and fans work out to / chains it through members;

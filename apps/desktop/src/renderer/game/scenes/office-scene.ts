@@ -21,7 +21,7 @@ import { frameMask, textureMasks, type OpaqueMask } from "@/renderer/game/textur
 import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 import { hiddenNodes, type PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
-import { DEFAULT_FOUNDER_SEED, type Employee } from "@/shared/domain";
+import { DEFAULT_FOUNDER_SEED, employeeStatusOf, type Employee } from "@/shared/domain";
 import { bodyBlockedAt, solidAt, withoutNodes, type WalkGrid } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
@@ -349,8 +349,7 @@ export class OfficeScene extends Phaser.Scene {
           this.npcs?.onAsk(employeeId);
           return;
         case "status": {
-          const next: NpcState =
-            e.message === "running" ? "working" : e.message === "blocked" ? "blocked" : "idle";
+          const next: NpcState = e.message === "blocked" ? "blocked" : employeeStatusOf(e.message);
           this.npcs?.setState(employeeId, next);
           return;
         }

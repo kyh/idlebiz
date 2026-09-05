@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
-import { taskIn } from "@/shared/domain";
+import { employeeStatusOf, taskIn } from "@/shared/domain";
 import type { Budget, Company, Employee, Task, TaskIn, TeamMessage } from "@/shared/domain";
 import type {
   LoadSkip,
@@ -180,29 +180,33 @@ export async function teamMessages(limit = 30): Promise<TeamMessage[]> {
   return c ? bridge().teamMessages({ companyId: c.id, limit }) : [];
 }
 
+const ACTIVITY_RING = 300;
+
 function onActivity(e: ActivityEvent): void {
-  const activity = [...state.activity, e].slice(-300);
-  set({ activity });
+  const ring = state.activity;
+  const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
   switch (e.kind) {
     // live-patch employee status from run status events (keeps HUD + dialogue badge live)
     case "status": {
-      if (!e.employeeId) return;
-      const status = e.message === "running" ? "working" : "idle";
+      const employeeId = e.employeeId;
+      const status = employeeStatusOf(e.message);
       set({
-        employees: state.employees.map((emp) =>
-          emp.id === e.employeeId ? { ...emp, status } : emp,
-        ),
+        activity,
+        employees: employeeId
+          ? state.employees.map((emp) => (emp.id === employeeId ? { ...emp, status } : emp))
+          : state.employees,
       });
       return;
     }
     // a CLI hit its usage limit — remember until when, so the HUD can say why
     case "runner.resting":
-      set({ resting: { ...state.resting, [e.payload.runner]: e.payload.until } });
+      set({ activity, resting: { ...state.resting, [e.payload.runner]: e.payload.until } });
       return;
     // both only move company fields — refetch just the company, not the world
     case "metrics.pulse":
     case "autopilot.changed":
     case "budget.exhausted":
+      set({ activity });
       void bridge()
         .getCompany()
         .then((company) => set({ company }))
@@ -211,6 +215,7 @@ function onActivity(e: ActivityEvent): void {
     // the team self-sizes: reflect hires/releases in the office immediately
     case "org.hired":
     case "org.released": {
+      set({ activity });
       const hired = e.kind === "org.hired";
       const employeeId = e.employeeId;
       void refresh().then(() => {
@@ -225,66 +230,63 @@ function onActivity(e: ActivityEvent): void {
       return;
     }
     case "run.end":
+      set({ activity });
       void refresh();
       return;
     default:
+      set({ activity });
       return;
   }
 }
 
 // ---- actions ---------------------------------------------------------------
 
-export async function setAutopilot(running: boolean): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  const updated = await bridge().setAutopilot({ companyId: c.id, running });
-  set({ company: updated });
+/** Every action on the company: nothing to do without one. */
+async function withCompany(act: (companyId: string) => Promise<void>): Promise<void> {
+  if (state.company) await act(state.company.id);
 }
+/** An action whose reply is the company as main now has it. */
+const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
+  withCompany(async (companyId) => set({ company: await call(companyId) }));
 
-export async function setBudget(budget: Budget): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  const updated = await bridge().setBudget({ companyId: c.id, budget });
-  set({ company: updated });
-}
+export const setAutopilot = (running: boolean): Promise<void> =>
+  updateCompany((companyId) => bridge().setAutopilot({ companyId, running }));
 
-export async function resetSpend(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  const updated = await bridge().resetSpend({ companyId: c.id });
-  set({ company: updated });
-}
+export const setBudget = (budget: Budget): Promise<void> =>
+  updateCompany((companyId) => bridge().setBudget({ companyId, budget }));
 
-export async function connectStripe(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().stripeConnect({ companyId: c.id });
-}
+export const resetSpend = (): Promise<void> =>
+  updateCompany((companyId) => bridge().resetSpend({ companyId }));
 
-export async function disconnectStripe(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().stripeDisconnect({ companyId: c.id });
-}
+export const setMaxAgents = (maxAgents: number): Promise<void> =>
+  updateCompany((companyId) => bridge().setMaxAgents({ companyId, maxAgents }));
 
-export async function connectVercel(input: {
+export const connectStripe = (): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().stripeConnect({ companyId });
+  });
+
+export const disconnectStripe = (): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().stripeDisconnect({ companyId });
+  });
+
+export const connectVercel = (input: {
   token: string;
   projectId: string;
   projectName: string;
   teamId?: string;
-}): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().vercelConnect({ companyId: c.id, ...input });
-  set({ vercelStatus: await bridge().vercelStatus() });
-}
+}): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().vercelConnect({ companyId, ...input });
+    set({ vercelStatus: await bridge().vercelStatus() });
+  });
 
-export async function disconnectVercel(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().vercelDisconnect({ companyId: c.id });
-  set({ vercelStatus: { state: "disconnected" } });
-}
+export const disconnectVercel = (): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().vercelDisconnect({ companyId });
+    set({ vercelStatus: { state: "disconnected" } });
+  });
 
 export async function resetGame(): Promise<void> {
   await bridge().resetGame();
@@ -298,11 +300,10 @@ export async function directEmployee(employeeId: string, instruction: string): P
 }
 
 /** Founder posts in the team channel; @first-name wakes that employee. */
-export async function sendFounderChat(text: string): Promise<void> {
-  const c = state.company;
-  if (!c || !text.trim()) return;
-  await bridge().postTeamChat({ companyId: c.id, text: text.trim() });
-}
+export const sendFounderChat = (text: string): Promise<void> =>
+  withCompany(async (companyId) => {
+    if (text.trim()) await bridge().postTeamChat({ companyId, text: text.trim() });
+  });
 
 /** Founder decides on a held outward-facing command; the task resumes either way. */
 export async function resolveApproval(taskId: string, approved: boolean): Promise<void> {
@@ -327,12 +328,6 @@ export async function listTasksFor(employeeId: string): Promise<Task[]> {
 export async function answerQuestion(taskId: string, answer: string): Promise<void> {
   await bridge().answerQuestion({ taskId, answer });
   await refresh();
-}
-
-export async function setMaxAgents(maxAgents: number): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  set({ company: await bridge().setMaxAgents({ companyId: c.id, maxAgents }) });
 }
 
 export async function openSaveFolder(): Promise<void> {
