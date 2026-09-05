@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { useStore, sendFounderChat, listTasksFor } from "@/renderer/state/store";
+import { useStore, directEmployee, listTasksFor } from "@/renderer/state/store";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { AnswerForm } from "@/renderer/ui/answer-form";
@@ -164,7 +164,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   // mention wakes exactly this employee with the message as their brief
   const send = (instruction: string) => {
     showNote(`Sent to ${emp.name} ✓`);
-    void sendFounderChat(`@${emp.id} ${instruction}`);
+    void directEmployee(emp.id, instruction);
   };
 
   const choose = (i: number) => {

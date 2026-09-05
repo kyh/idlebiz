@@ -252,7 +252,6 @@ function docToCompany(doc: FrontmatterDoc): Company {
   };
 }
 
-
 function parseRunner(v: string | null): AgentRunner {
   return v && isRunnerId(v) ? v : "codex";
 }

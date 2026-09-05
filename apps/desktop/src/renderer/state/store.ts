@@ -293,6 +293,13 @@ export async function resetGame(): Promise<void> {
   await bridge().resetGame();
 }
 
+/** Founder tells one employee what to do; the room records it, they wake on it. */
+export async function directEmployee(employeeId: string, instruction: string): Promise<void> {
+  const text = instruction.trim();
+  if (!text) return;
+  await bridge().directEmployee({ employeeId, instruction: text });
+}
+
 /** Founder posts in the team channel; @first-name wakes that employee. */
 export async function sendFounderChat(text: string): Promise<void> {
   const team = state.teams[0];

@@ -266,6 +266,11 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
+  handle("directEmployee", ({ employeeId, instruction }) => {
+    scheduler.directEmployee(employeeId, instruction.trim());
+    return { ok: true };
+  });
+
   handle("setMaxAgents", ({ companyId, maxAgents }) => store.setMaxAgents(companyId, maxAgents));
 
   // filtered in main: the full history is thousands of briefs the renderer never shows

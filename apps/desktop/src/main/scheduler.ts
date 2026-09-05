@@ -315,6 +315,21 @@ class Scheduler {
   }
 
   /**
+   * The founder speaks to one employee. The room still records it (addressed,
+   * so teammates see who was asked) and the employee wakes on the instruction
+   * itself — not on whether the room's mention grammar recognised them.
+   */
+  directEmployee(employeeId: string, instruction: string): void {
+    const emp = store.getEmployee(employeeId);
+    if (!emp) throw new Error(`no employee ${employeeId}`);
+    const team = store.teamForEmployee(employeeId);
+    const line = `@${emp.id} ${instruction}`;
+    if (team) store.postTeamMessage(team.id, null, line);
+    publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to: emp.id } });
+    this.wakeEmployee(employeeId, founderPing(instruction));
+  }
+
+  /**
    * The founder connected an integration: every task blocked on a typed ask
    * for it resumes automatically (paperclip's wake-assignee convention).
    */
@@ -335,20 +350,22 @@ class Scheduler {
 
   /**
    * Event wake (paperclip convention): create + assign a task for an employee
-   * right now instead of waiting for the autopilot tick. Coalesces — an
-   * identical queued wake for the same employee is not duplicated.
+   * right now instead of waiting for the autopilot tick. Coalesces — the same
+   * wake, still waiting for the same employee, is not duplicated.
    */
   wakeEmployee(employeeId: string, brief: TaskBrief): Task | null {
     const emp = store.getEmployee(employeeId);
     if (!emp) return null;
     const company = store.getCompany(emp.companyId);
     if (!company || !this.admit(company)) return null;
-    const open = store
+    const waiting = store
       .listTasksForEmployee(employeeId)
       .find(
-        (t) => t.title === brief.title && (t.state.kind === "queued" || t.state.kind === "todo"),
+        (t) =>
+          t.description === brief.description &&
+          (t.state.kind === "queued" || t.state.kind === "todo"),
       );
-    return open ?? this.brief(company, emp, brief, "high");
+    return waiting ?? this.brief(company, emp, brief, "high");
   }
 
   /** Assign, tolerating a busy assignee — the queue picks it up next tick. */

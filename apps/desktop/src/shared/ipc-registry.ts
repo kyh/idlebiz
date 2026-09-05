@@ -106,6 +106,7 @@ export const SCHEMAS = {
   listTeams: z.object({ companyId: z.string() }),
   teamMessages: z.object({ teamId: z.string(), limit: z.number().int().optional() }),
   postTeamChat: z.object({ teamId: z.string(), text: z.string().min(1).max(2000) }),
+  directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
   setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
   listTasks: z.object({
     companyId: z.string(),
@@ -181,6 +182,7 @@ interface Results {
   listTeams: Team[];
   teamMessages: TeamMessage[];
   postTeamChat: { ok: boolean };
+  directEmployee: { ok: boolean };
   setMaxAgents: Company;
 
   listTasks: Task[];

@@ -40,6 +40,7 @@ export const CHANNELS = {
   listTeams: { channel: "team:list", kind: "invoke" },
   teamMessages: { channel: "team:messages", kind: "invoke" },
   postTeamChat: { channel: "team:post", kind: "invoke" },
+  directEmployee: { channel: "employee:direct", kind: "invoke" },
   setMaxAgents: { channel: "company:max-agents", kind: "invoke" },
 
   listTasks: { channel: "task:list", kind: "invoke" },
