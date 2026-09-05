@@ -25,6 +25,7 @@
     "@agentclientprotocol/codex-acp": "^1.7.0",
     "@agentclientprotocol/sdk": "catalog:",
     "@repo/agent-driver": "workspace:*",
+    "@repo/stripe-connect-protocol": "workspace:*",
     "phaser": "^4.2.1",
     "react": "catalog:",
     "react-dom": "catalog:",

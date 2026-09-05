@@ -1,44 +1,11 @@
-// Stripe Connect OAuth plumbing for the desktop app. The desktop opens
-// /api/stripe/authorize with state = base64url({port, nonce}); after the
-// founder approves on Stripe, /api/stripe/callback exchanges the code here
-// (the platform secret never leaves the server) and forwards the read-only
-// connected-account token to the desktop's loopback server on 127.0.0.1:port.
+// Stripe Connect OAuth, site side. The desktop opens /api/stripe/authorize
+// with a state naming its loopback port; after the founder approves on Stripe,
+// /api/stripe/callback exchanges the code here (the platform secret never
+// leaves the server) and forwards the read-only connected-account token to the
+// desktop. The handshake's shapes live in @repo/stripe-connect-protocol.
 
 import { z } from "zod";
 import { env } from "@/lib/env";
-
-const oauthStateSchema = z.object({
-  port: z.number().int().min(1024).max(65535),
-  nonce: z
-    .string()
-    .min(16)
-    .max(128)
-    .regex(/^[A-Za-z0-9_-]+$/),
-});
-
-export type OAuthState = z.infer<typeof oauthStateSchema>;
-
-export function parseState(raw: string | null): OAuthState | null {
-  if (!raw || raw.length > 256) return null;
-  try {
-    const decoded = oauthStateSchema.safeParse(
-      JSON.parse(Buffer.from(raw, "base64url").toString("utf8")),
-    );
-    return decoded.success ? decoded.data : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Inverse of parseState: what Stripe carries through the flow is only the validated fields. */
-export function encodeState(state: OAuthState): string {
-  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
-}
-
-export function loopbackUrl(state: OAuthState, params: Record<string, string>): string {
-  const qs = new URLSearchParams({ nonce: state.nonce, ...params });
-  return `http://127.0.0.1:${state.port}/stripe/callback?${qs.toString()}`;
-}
 
 const tokenResponseSchema = z.object({
   access_token: z.string(),

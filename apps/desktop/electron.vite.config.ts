@@ -14,8 +14,8 @@ export default defineConfig(() => ({
     },
     build: {
       outDir: ".output/app/main",
-      // bundle the workspace agent-driver source (raw .ts — must be inlined)
-      externalizeDeps: { exclude: ["@repo/agent-driver"] },
+      // bundle the workspace packages' source (raw .ts — must be inlined)
+      externalizeDeps: { exclude: ["@repo/agent-driver", "@repo/stripe-connect-protocol"] },
       rollupOptions: {
         // sharp is native: keep it external so it loads from node_modules at runtime
         external: ["electron", "sharp"],

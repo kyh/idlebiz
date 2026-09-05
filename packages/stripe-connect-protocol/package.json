@@ -1,0 +1,21 @@
+{
+  "name": "@repo/stripe-connect-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Stripe Connect handshake between idlebiz.com and the desktop app: state, callback and deauthorize, typed once",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .cache .turbo"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

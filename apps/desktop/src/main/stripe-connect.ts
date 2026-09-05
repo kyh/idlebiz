@@ -1,18 +1,26 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { shell } from "electron";
+import {
+  DEAUTHORIZE_PATH,
+  LOOPBACK_CALLBACK_PATH,
+  authorizeUrl,
+  parseCallback,
+  type CallbackOutcome,
+  type DeauthorizeBody,
+} from "@repo/stripe-connect-protocol/protocol";
 import { listenLoopback } from "@/main/lib/http";
 import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import type { StripeStatus } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
-// Stripe Connect OAuth, desktop side. We open the browser at
-// idlebiz.com/api/stripe/authorize with a state of {port, nonce}; the web
+// Stripe Connect OAuth, desktop side. We open the browser at the site's
+// authorize route with a state naming our ephemeral loopback port; the site's
 // callback exchanges the code (platform secret never leaves Vercel) and
-// redirects the read-only connected-account token to our ephemeral loopback
-// server. The token then lives in ~/.idlebiz/secrets.json and the metrics
-// pulse reads real revenue + customer counts with it.
+// redirects the read-only connected-account token to us. The token then lives
+// in ~/.idlebiz/secrets.json and the metrics pulse reads real revenue +
+// customer counts with it. The handshake's shapes: @repo/stripe-connect-protocol.
 // ---------------------------------------------------------------------------
 
 const WEB_BASE = process.env["IDLEBIZ_WEB_URL"] ?? "https://idlebiz.com";
@@ -85,7 +93,7 @@ export async function beginConnect(companyId: string): Promise<{ started: boolea
   const nonce = randomBytes(16).toString("base64url");
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    if (url.pathname !== "/stripe/callback") {
+    if (url.pathname !== LOOPBACK_CALLBACK_PATH) {
       res.writeHead(404).end();
       return;
     }
@@ -107,29 +115,29 @@ export async function beginConnect(companyId: string): Promise<{ started: boolea
   };
   notify({ state: "connecting" });
 
-  const state = Buffer.from(JSON.stringify({ port, nonce })).toString("base64url");
-  await shell.openExternal(`${WEB_BASE}/api/stripe/authorize?state=${state}`);
+  await shell.openExternal(authorizeUrl(WEB_BASE, { port, nonce }));
   return { started: true };
 }
 
 function handleCallback(companyId: string, params: URLSearchParams): boolean {
-  if (!pending || params.get("nonce") !== pending.nonce) {
+  const callback = parseCallback(params);
+  if (!pending || !callback || callback.nonce !== pending.nonce) {
     fail("Stripe callback rejected (bad nonce).");
     return false;
   }
-  const flowError = params.get("error");
-  if (flowError) {
-    fail(flowError === "access_denied" ? "Stripe connection cancelled." : `Stripe: ${flowError}`);
-    return false;
-  }
-  const accessToken = params.get("access_token");
-  const accountId = params.get("stripe_user_id");
-  if (!accessToken || !accountId) {
-    fail("Stripe callback missing token.");
-    return false;
-  }
-  const livemode = params.get("livemode") === "true";
+  return connect(companyId, callback.outcome);
+}
 
+function connect(companyId: string, outcome: CallbackOutcome): boolean {
+  if (outcome.kind === "failed") {
+    fail(
+      outcome.error === "access_denied"
+        ? "Stripe connection cancelled."
+        : `Stripe: ${outcome.error}`,
+    );
+    return false;
+  }
+  const { accessToken, stripeUserId: accountId, livemode } = outcome;
   setSecret(STRIPE_TOKEN_KEY, accessToken);
   writeMetricsConfig(companyId, {
     stripe: true,
@@ -147,11 +155,12 @@ export async function disconnectStripe(companyId: string): Promise<{ ok: boolean
   const token = getSecret(STRIPE_TOKEN_KEY);
   const account = readMetricsConfig(companyId)?.stripeAccount;
   if (token && account) {
+    const body: DeauthorizeBody = { accessToken: token, stripeUserId: account.accountId };
     try {
-      await fetch(`${WEB_BASE}/api/stripe/deauthorize`, {
+      await fetch(`${WEB_BASE}${DEAUTHORIZE_PATH}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: token, stripeUserId: account.accountId }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(8000),
       });
     } catch {
