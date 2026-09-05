@@ -39,7 +39,14 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   // ---- the task lifecycle ----
   event("status", { message: z.enum(TASK_STATUSES) }),
   event("run.start", {}),
-  event("run.end", { payload: z.object({ summary: z.string(), outcome: RunOutcomeSchema }) }),
+  event("run.end", {
+    payload: z.object({
+      summary: z.string(),
+      outcome: RunOutcomeSchema,
+      /** What the run cost, as its CLI billed it: the number the budget moved by. Rows from before it was recorded have none. */
+      costUsd: z.number().optional(),
+    }),
+  }),
   /** Raised the moment the employee asks, not when the run settles. */
   event("run.ask", { payload: z.object({ ask: BlockedAskSchema }) }),
   event("task.retry", {

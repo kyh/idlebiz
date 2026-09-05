@@ -637,7 +637,11 @@ class Scheduler {
     }
 
     publishActivity({ ...at, kind: "status", message: status });
-    publishActivity({ ...at, kind: "run.end", payload: { summary: r.summary, outcome: o } });
+    publishActivity({
+      ...at,
+      kind: "run.end",
+      payload: { summary: r.summary, outcome: o, costUsd: r.usage.costUsd },
+    });
   }
 }
 
