@@ -332,10 +332,9 @@ function ensureWindow(): void {
   mainWindow = createWindow();
 }
 
-// Every electron-vite dev app on the machine is named by its package,
-// "@repo/desktop" here as elsewhere; a dev userData of that name would be
-// shared with them — and with it the single-instance lock below.
-if (isDev) app.setPath("userData", path.join(app.getPath("appData"), "IdleBiz (dev)"));
+// Electron names the app, and so its userData, after package.json's productName;
+// dev gets its own so a dev run never shares a lock or a cache with the app.
+if (isDev) app.setPath("userData", path.join(app.getPath("appData"), `${app.name} (dev)`));
 
 // one office per machine: a second instance would run a second scheduler
 // against the same save, spending twice and racing every write

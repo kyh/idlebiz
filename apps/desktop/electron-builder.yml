@@ -1,13 +1,16 @@
 appId: com.idlebiz.desktop
-productName: IdleBiz
 directories:
   buildResources: resources
   output: .output/bin
 files:
   - .output/app/**/*
   - package.json
+# Runtime assets native code reads (sharp cannot see inside the asar): beside
+# the asar in Contents/Resources, found through process.resourcesPath.
+extraResources:
+  - from: resources/employee-sheets
+    to: employee-sheets
 asarUnpack:
-  - resources/**
   # All of node_modules, not a hand-picked list. The ACP agents are spawned as
   # child processes, and nothing inside an asar archive can be executed — but
   # unpacking only the agent packages breaks them differently, because their

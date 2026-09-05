@@ -21,10 +21,13 @@ import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 //                       sprite exactly.
 // ---------------------------------------------------------------------------
 
-// The 20 employee sheets ship with the app as curated runtime assets.
-// app.getAppPath() = apps/desktop in dev; a packaged build must include
-// resources/ (electron-builder files config) for this to keep resolving.
-const EMPLOYEE_SHEET_DIR = join(app.getAppPath(), "resources", "employee-sheets");
+// The 20 employee sheets ship with the app as curated runtime assets. sharp
+// reads them natively, so they cannot live inside the asar: a packaged build
+// carries them as extraResources beside it (electron-builder.yml), and dev
+// reads the checkout's resources/ directly.
+const EMPLOYEE_SHEET_DIR = app.isPackaged
+  ? join(process.resourcesPath, "employee-sheets")
+  : join(app.getAppPath(), "resources", "employee-sheets");
 
 // 32px-tier sheet layout. Animation bands stack at 64px; the walk band sits at
 // y=128. Within a band the 24 frames are grouped by direction (6 each). Verified

@@ -47,5 +47,6 @@
     "typescript": "catalog:",
     "vite": "^8.2.2",
     "vitest": "catalog:"
-  }
+  },
+  "productName": "IdleBiz"
 }
