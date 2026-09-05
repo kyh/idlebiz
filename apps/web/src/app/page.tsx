@@ -4,6 +4,7 @@ import { z } from "zod";
 import { siteConfig } from "@/lib/site-config";
 import { OfficeLife } from "@/app/office-life";
 import { WindowCard } from "@/app/window-card";
+import { Cta } from "@/app/cta";
 
 const GITHUB_REPO = siteConfig.githubRepo;
 
@@ -91,13 +92,10 @@ export default async function Page() {
           </div>
 
           <div className="flex flex-col items-center gap-2.5">
-            <a
-              href={downloadUrl}
-              className="px-btn px-btn-accent inline-flex items-center gap-2.5 uppercase tracking-wide no-underline"
-            >
+            <Cta href={downloadUrl}>
               <MacLogoIcon className="size-5 shrink-0" />
               Download for Mac
-            </a>
+            </Cta>
             <span className="text-[11px] text-fg-dim">
               {version ? `${version} · ` : ""}macOS · runs on your own Claude Code or Codex
             </span>
