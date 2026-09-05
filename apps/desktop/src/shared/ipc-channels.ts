@@ -14,6 +14,8 @@ export const CHANNELS = {
   completeOnboarding: { channel: "onboard:complete", kind: "invoke" },
 
   getCompany: { channel: "company:get", kind: "invoke-void" },
+  loadReport: { channel: "save:load-report", kind: "invoke-void" },
+  openSaveFolder: { channel: "save:open-folder", kind: "invoke-void" },
   createCompany: { channel: "company:create", kind: "invoke" },
   setAutopilot: { channel: "company:autopilot", kind: "invoke" },
   setBudget: { channel: "company:budget", kind: "invoke" },

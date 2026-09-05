@@ -171,6 +171,12 @@ function registerIpcHandlers(): void {
   handle("completeOnboarding", ({ companyId }) => store.setCompanyOnboarded(companyId, true));
 
   handle("getCompany", () => store.getDefaultCompany());
+  handle("loadReport", () => store.loadReport());
+  handle("openSaveFolder", async () => {
+    const err = await shell.openPath(ROOT_DIR);
+    if (err) throw new Error(err);
+    return { ok: true };
+  });
 
   handle(
     "createCompany",

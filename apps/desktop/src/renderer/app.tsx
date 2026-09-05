@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { initStore, setGame, useStore } from "@/renderer/state/store";
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
+import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
 import { Hud, type Overlay } from "@/renderer/ui/hud";
 import { Dialogue } from "@/renderer/ui/dialogue";
@@ -61,6 +62,7 @@ export function App() {
   const authed = useStore((s) => s.authed);
   const company = useStore((s) => s.company);
   const game = useStore((s) => s.game);
+  const saveIssues = useStore((s) => s.saveIssues);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
 
@@ -76,7 +78,8 @@ export function App() {
     return () => window.removeEventListener("idlebiz:onboarded", onDone);
   }, [game]);
 
-  const needsOnboarding = booted && (!company || !company.onboarded);
+  const unreadable = saveIssues.filter((issue) => issue.kind === "company");
+  const needsOnboarding = booted && unreadable.length === 0 && (!company || !company.onboarded);
   const inOffice = booted && company !== null && company.onboarded;
 
   if (route === "#/office-assets") {
@@ -92,6 +95,7 @@ export function App() {
       {layoutReady ? <PhaserGame key="office-game" onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
+        {unreadable.length > 0 ? <SaveUnreadable issues={unreadable} /> : null}
         {needsOnboarding ? <PokeOnboarding /> : null}
         {inOffice && !authed ? <AuthGate /> : null}
         {inOffice ? (

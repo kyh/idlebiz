@@ -27,6 +27,15 @@ export type AuthFlowEvent =
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
 export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
+/** A package on disk the store could not read at boot, and why. */
+export type LoadSkip = {
+  kind: "company" | "employee" | "task" | "routine" | "team";
+  path: string;
+  error: string;
+};
+/** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
+export type LoadReport = { companies: number; skipped: LoadSkip[] };
+
 /** A founder appearance option for onboarding. */
 export type FounderChoice = { seed: string; portraitDataUrl: string };
 
@@ -146,6 +155,8 @@ interface Results {
   completeOnboarding: Company;
 
   getCompany: Company | null;
+  loadReport: LoadReport;
+  openSaveFolder: { ok: boolean };
   createCompany: Company;
   setAutopilot: Company;
   setBudget: Company;

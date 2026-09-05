@@ -4,6 +4,7 @@ import type { ActivityEvent } from "@/shared/activity";
 import { taskIn } from "@/shared/domain";
 import type { Budget, Company, Employee, Task, TaskIn, Team, TeamMessage } from "@/shared/domain";
 import type {
+  LoadSkip,
   ProductStatus,
   RestingRunners,
   StripeStatus,
@@ -28,6 +29,8 @@ interface State {
   vercelStatus: VercelStatus;
   product: ProductStatus | null; // PRODUCT.md entry + latest deploy
   resting: RestingRunners;
+  /** Packages boot could not read. A skipped company blocks the office (see App). */
+  saveIssues: LoadSkip[];
   company: Company | null;
   employees: Employee[];
   teams: Team[];
@@ -46,6 +49,7 @@ let state: State = {
   vercelStatus: { state: "disconnected" },
   product: null,
   resting: {},
+  saveIssues: [],
   company: null,
   employees: [],
   teams: [],
@@ -141,7 +145,11 @@ async function settleLayout(): Promise<void> {
 
 export async function refresh(): Promise<void> {
   await settleLayout();
-  const [company, resting] = await Promise.all([bridge().getCompany(), bridge().restingRunners()]);
+  const [company, resting, load] = await Promise.all([
+    bridge().getCompany(),
+    bridge().restingRunners(),
+    bridge().loadReport(),
+  ]);
   const [employees, teams, tasks] = company
     ? await Promise.all([
         bridge().listEmployees({ companyId: company.id }),
@@ -151,7 +159,16 @@ export async function refresh(): Promise<void> {
     : [[], [], []];
   const pendingAsks = tasks.filter(taskIn("blocked"));
   const stuckTasks = tasks.filter(taskIn("dead"));
-  set({ booted: true, company, resting, employees, teams, pendingAsks, stuckTasks });
+  set({
+    booted: true,
+    company,
+    resting,
+    saveIssues: load.skipped,
+    employees,
+    teams,
+    pendingAsks,
+    stuckTasks,
+  });
   // product state rides along (deploy lookup is a no-op until Vercel is connected)
   if (company) {
     void bridge()
@@ -312,4 +329,8 @@ export async function setMaxAgents(maxAgents: number): Promise<void> {
   const c = state.company;
   if (!c) return;
   set({ company: await bridge().setMaxAgents({ companyId: c.id, maxAgents }) });
+}
+
+export async function openSaveFolder(): Promise<void> {
+  await bridge().openSaveFolder();
 }

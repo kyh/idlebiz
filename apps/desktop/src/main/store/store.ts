@@ -40,6 +40,8 @@ import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
+import { errorMessage } from "@/shared/errors";
+import type { LoadReport, LoadSkip } from "@/shared/ipc-registry";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
@@ -337,12 +339,24 @@ const ACTIVITY_RING = 600;
 const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
   a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 
+// What boot could not read. A skipped task or agent is non-fatal and listed; a
+// skipped company means the founder is looking at an empty office over a save
+// that exists — the renderer must show them that, never onboarding.
+let lastLoad: LoadReport = { companies: 0, skipped: [] };
+export const loadReport = (): LoadReport => lastLoad;
+
+/** A package at `path` did not decode; remember it for the founder. */
+function skip(kind: LoadSkip["kind"], path: string, cause: unknown): void {
+  lastLoad.skipped.push({ kind, path, error: errorMessage(cause) });
+}
+
 /**
  * Every package under `dir` that `decode` accepts. A package that fails to
- * decode is skipped, not fatal: one hand-edited file must not take the company
- * down with it.
+ * decode is skipped and reported, not fatal: one hand-edited file must not
+ * take the company down with it.
  */
 function loadPackages<T>(
+  kind: LoadSkip["kind"],
   dir: string,
   fileFor: (slug: string) => string,
   decode: (doc: FrontmatterDoc) => T,
@@ -353,15 +367,16 @@ function loadPackages<T>(
     if (!existsSync(file)) continue;
     try {
       rows.push(decode(parseDoc(readFileSync(file, "utf8"))));
-    } catch {
-      /* skip the corrupt package */
+    } catch (cause) {
+      skip(kind, file, cause);
     }
   }
   return rows;
 }
 
-export function initStore(): void {
+export function initStore(): LoadReport {
   ensureAppDirs();
+  lastLoad = { companies: 0, skipped: [] };
   const loaded: Cache = {
     companies: new Map(),
     employees: new Map(),
@@ -383,6 +398,7 @@ export function initStore(): void {
       loaded.companies.set(co.id, co);
 
       const employees = loadPackages(
+        "employee",
         agentsDir(co.id),
         (slug) => employeeFile(co.id, slug),
         (doc) => docToEmployee(doc, co.id),
@@ -390,6 +406,7 @@ export function initStore(): void {
       loaded.employees.set(co.id, employees);
 
       const tasks = loadPackages(
+        "task",
         tasksDir(co.id),
         (slug) => taskFile(co.id, slug),
         (doc) => docToTask(doc, co.id),
@@ -424,6 +441,7 @@ export function initStore(): void {
       loaded.routines.set(
         co.id,
         loadPackages(
+          "routine",
           routinesDir(co.id),
           (slug) => routineFile(co.id, slug),
           (doc) => docToRoutine(doc, co.id),
@@ -431,6 +449,7 @@ export function initStore(): void {
       );
 
       const teams = loadPackages(
+        "team",
         teamsDir(co.id),
         (slug) => teamFile(co.id, slug),
         (doc) => docToTeam(doc, co.id),
@@ -439,12 +458,13 @@ export function initStore(): void {
       for (const t of teams) loadRecentTeamChat(loaded, co.id, t.id);
 
       loadRecentActivity(loaded, co.id);
-    } catch {
-      /* skip corrupt company */
+    } catch (cause) {
+      skip("company", file, cause);
     }
   }
 
   cache = loaded;
+  lastLoad.companies = loaded.companies.size;
 
   // re-render every agent's AGENTS.md body so instruction-template updates
   // reach existing employees (frontmatter/persona are preserved from the file)
@@ -480,6 +500,7 @@ export function initStore(): void {
       }
     }
   }
+  return lastLoad;
 }
 
 const LEADER_RX = /(ceo|founder|chief|head|lead|manager|principal|director|\bpm\b|product)/i;

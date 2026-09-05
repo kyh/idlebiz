@@ -5,6 +5,7 @@ import { Modal } from "@/renderer/ui/modal";
 /** Game settings. Mostly the danger zone: demolish the office and start over. */
 export function Settings({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
+  const saveIssues = useStore((s) => s.saveIssues);
   const [confirm, setConfirm] = useState("");
   const [resetting, setResetting] = useState(false);
   const [cap, setCap] = useState<string | null>(null);
@@ -29,6 +30,23 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div className="text-xs text-text-dim">{company.mission}</div>
           <div className="mt-1 truncate text-xs text-text-dim">{company.workspaceDir}</div>
         </div>
+
+        {saveIssues.length > 0 ? (
+          <div className="px-inset p-3 text-sm text-text">
+            <div className="text-xs uppercase tracking-wide text-danger">Skipped at boot</div>
+            <div className="mt-1 text-xs text-text-dim">
+              These files under ~/.idlebiz did not parse and were left out. Fix them and relaunch.
+            </div>
+            <ul className="mt-2 space-y-1 text-xs">
+              {saveIssues.map((issue) => (
+                <li key={issue.path}>
+                  <div className="truncate">{issue.path}</div>
+                  <div className="text-text-dim">{issue.error}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <div className="px-inset p-3 text-sm text-text">
           <div className="text-xs uppercase tracking-wide text-text-dim">Team size cap</div>
