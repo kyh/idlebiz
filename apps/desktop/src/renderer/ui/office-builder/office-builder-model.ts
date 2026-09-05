@@ -17,7 +17,7 @@ import {
 } from "@/shared/office-layout-schema";
 import {
   OFFICE_OBJECT_ASSETS,
-  type OfficeObjectVariant,
+  type OfficeObjectAsset,
 } from "@/renderer/game/office-object-catalog.generated";
 import {
   ROOM_BUILDER_TILES,
@@ -90,17 +90,12 @@ export interface EditableLayout {
 
 const FOOT = 24; // collision footprint band (matches the layout generator)
 
-// --- catalog (scale-32 variant) lookups -------------------------------------
-const V32 = new Map<string, OfficeObjectVariant>();
-for (const asset of OFFICE_OBJECT_ASSETS) {
-  const v = asset.variants.find((variant) => variant.scale === 32);
-  if (v) V32.set(asset.id, v);
-}
+const CATALOG = new Map<string, OfficeObjectAsset>(OFFICE_OBJECT_ASSETS.map((a) => [a.id, a]));
 export const ALL_OBJECT_IDS: readonly string[] = OFFICE_OBJECT_ASSETS.map((a) => a.id);
 export const ROOM_TILES: readonly RoomBuilderTile[] = ROOM_BUILDER_TILES;
 
 function rawBounds(id: string): { canvasW: number; canvasH: number; b: Rect } {
-  const v = V32.get(id);
+  const v = CATALOG.get(id);
   return v
     ? { canvasW: v.w, canvasH: v.h, b: v.bounds }
     : { canvasW: 32, canvasH: 32, b: { x: 0, y: 0, w: 32, h: 32 } }; // room-builder tiles: full cell
@@ -122,7 +117,7 @@ function anchorFor(o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number)
   return y + b.y + b.h;
 }
 export function assetSrc(id: string): string | null {
-  const v = V32.get(id);
+  const v = CATALOG.get(id);
   return v ? `/${v.path}` : null;
 }
 /** Image src for a placed object — its explicit path (tiles) or its catalog sprite. */
@@ -245,7 +240,7 @@ function inferSolid(
   grid: number[][],
   cell: number,
 ): boolean {
-  if (o.layer !== "object" || !V32.has(o.id)) return false;
+  if (o.layer !== "object" || !CATALOG.has(o.id)) return false;
   const b = contentBounds({ id: o.id, flipX: o.flipX ?? false, flipY: o.flipY ?? false });
   const fh = Math.min(FOOT, b.h);
   const fp: Rect = { x: o.x + b.x, y: o.y + b.y + b.h - fh, w: b.w, h: fh };
@@ -276,7 +271,7 @@ export function deriveCollision(L: EditableLayout): string[] {
   const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 1));
   for (const o of L.objects) {
     if (o.layer !== "floor") continue;
-    const v = V32.get(o.id);
+    const v = CATALOG.get(o.id);
     const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 };
     paint(grid, L.cell, L.cols, L.rows, { x: o.x + b.x, y: o.y + b.y, w: b.w, h: b.h }, 0);
   }

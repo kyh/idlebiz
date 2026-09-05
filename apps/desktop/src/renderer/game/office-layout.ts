@@ -13,10 +13,7 @@ import {
   type PixelPoint,
 } from "@/shared/office-layout-schema";
 import { walkGridOf, type WalkGrid } from "@/shared/office-grid";
-import {
-  OFFICE_OBJECT_ASSETS,
-  type OfficeObjectVariant as CatalogVariant,
-} from "@/renderer/game/office-object-catalog.generated";
+import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
 
 export type { OfficeLayer, OfficeLayoutData, OfficePoi, OfficeSeat, PixelPoint };
 export { comparePaintOrder, parseOfficeLayout };
@@ -46,8 +43,6 @@ export interface Office {
   readonly placements: readonly OfficeObjectPlacement[];
 }
 
-const OFFICE_OBJECT_SCALE = 32;
-
 // office-design.json is authored in the in-app office builder (#/ui): every
 // structure tile and furnishing is a placed object over an authored collision
 // grid with real walkable lanes. The schema (and what each field means) lives
@@ -56,20 +51,14 @@ const OFFICE_OBJECT_SCALE = 32;
 // migrating parser is for files from disk), so it parses strictly, at module load.
 const BUNDLED = officeLayoutSchema.parse(rawLayout);
 
-function catalogVariant(id: string): CatalogVariant | null {
-  const asset = OFFICE_OBJECT_ASSETS.find((candidate) => candidate.id === id);
-  if (!asset) return null;
-  return asset.variants.find((variant) => variant.scale === OFFICE_OBJECT_SCALE) ?? null;
-}
-
 function objectTextureKey(id: string): string {
   return `office-object-sprite-${id}`;
 }
 function resolvePath(obj: OfficeObjectDef): string {
   if (obj.path) return obj.path;
-  const variant = catalogVariant(obj.id);
-  if (!variant) throw new Error(`Missing office object asset: ${obj.id}`);
-  return variant.path;
+  const asset = OFFICE_OBJECT_ASSETS.find((candidate) => candidate.id === obj.id);
+  if (!asset) throw new Error(`Missing office object asset: ${obj.id}`);
+  return asset.path;
 }
 
 /**
