@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { env } from "@/lib/env";
+import type { ConnectedAccount } from "@repo/stripe-connect-protocol/protocol";
 
 const tokenResponseSchema = z.object({
   access_token: z.string(),
@@ -15,14 +16,8 @@ const tokenResponseSchema = z.object({
 
 const tokenErrorSchema = z.object({ error_description: z.string() });
 
-export interface ExchangeResult {
-  accessToken: string;
-  stripeUserId: string;
-  livemode: boolean;
-}
-
 /** POST connect.stripe.com/oauth/token with the platform secret. */
-export async function exchangeCode(code: string): Promise<ExchangeResult> {
+export async function exchangeCode(code: string): Promise<ConnectedAccount> {
   const secret = env.STRIPE_SECRET_KEY;
   if (!secret) throw new Error("STRIPE_SECRET_KEY not configured");
   const res = await fetch("https://connect.stripe.com/oauth/token", {

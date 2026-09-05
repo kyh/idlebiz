@@ -1,12 +1,14 @@
 import { z } from "zod";
+import { PublicKeySchema } from "./seal";
 
 // ---------------------------------------------------------------------------
 // The handshake between idlebiz.com and the desktop app.
 //
 // The desktop opens the site's authorize route with a state naming its
-// ephemeral loopback port and a nonce; after the founder approves on Stripe,
-// the site's callback exchanges the code (the platform secret never leaves
-// the server) and redirects the outcome to the desktop's loopback server. The
+// ephemeral loopback port, a nonce and a one-flow public key; after the
+// founder approves on Stripe, the site's callback exchanges the code (the
+// platform secret never leaves the server), seals the account to that key
+// (seal.ts) and redirects the envelope to the desktop's loopback server. The
 // desktop later asks the site to deauthorize. Every field either side reads
 // is declared here, once, so a rename is a type error and not a silent
 // failure across the seam.
@@ -25,6 +27,8 @@ export const OAuthStateSchema = z.object({
     .min(16)
     .max(128)
     .regex(/^[A-Za-z0-9_-]+$/),
+  /** The desktop's public key for this flow; the account comes back sealed to it. */
+  key: PublicKeySchema,
 });
 export type OAuthState = z.infer<typeof OAuthStateSchema>;
 
@@ -34,7 +38,7 @@ export function encodeState(state: OAuthState): string {
 }
 
 export function parseState(raw: string | null): OAuthState | null {
-  if (!raw || raw.length > 256) return null;
+  if (!raw || raw.length > 512) return null;
   try {
     const decoded = OAuthStateSchema.safeParse(
       JSON.parse(Buffer.from(raw, "base64url").toString("utf8")),
@@ -45,28 +49,30 @@ export function parseState(raw: string | null): OAuthState | null {
   }
 }
 
-/** What the site tells the desktop: a connected account, or why there is none. */
+/** The account the site connected: what the sealed envelope holds. */
+export const ConnectedAccountSchema = z.object({
+  accessToken: z.string().min(1),
+  stripeUserId: z.string().min(1),
+  livemode: z.boolean(),
+});
+export type ConnectedAccount = z.infer<typeof ConnectedAccountSchema>;
+
+/** What the site tells the desktop: an envelope to open, or why there is none. */
 export type CallbackOutcome =
-  | { kind: "connected"; accessToken: string; stripeUserId: string; livemode: boolean }
+  | { kind: "sealed"; sealed: string }
   | { kind: "failed"; error: string };
 
 const callbackQuerySchema = z.object({
   nonce: z.string(),
   error: z.string().optional(),
-  access_token: z.string().optional(),
-  stripe_user_id: z.string().optional(),
-  livemode: z.enum(["true", "false"]).optional(),
+  sealed: z.string().optional(),
 });
 
 /** The desktop's loopback URL carrying the outcome for `state`. */
 export function loopbackUrl(state: OAuthState, outcome: CallbackOutcome): string {
   const query = new URLSearchParams({ nonce: state.nonce });
   if (outcome.kind === "failed") query.set("error", outcome.error);
-  else {
-    query.set("access_token", outcome.accessToken);
-    query.set("stripe_user_id", outcome.stripeUserId);
-    query.set("livemode", String(outcome.livemode));
-  }
+  else query.set("sealed", outcome.sealed);
   return `http://127.0.0.1:${state.port}${LOOPBACK_CALLBACK_PATH}?${query.toString()}`;
 }
 
@@ -76,20 +82,11 @@ export function parseCallback(
 ): { nonce: string; outcome: CallbackOutcome } | null {
   const query = callbackQuerySchema.safeParse(Object.fromEntries(params));
   if (!query.success) return null;
-  const { nonce, error, access_token, stripe_user_id, livemode } = query.data;
+  const { nonce, error, sealed } = query.data;
   if (error !== undefined) return { nonce, outcome: { kind: "failed", error } };
-  if (access_token === undefined || stripe_user_id === undefined) {
-    return { nonce, outcome: { kind: "failed", error: "missing_token" } };
-  }
-  return {
-    nonce,
-    outcome: {
-      kind: "connected",
-      accessToken: access_token,
-      stripeUserId: stripe_user_id,
-      livemode: livemode === "true",
-    },
-  };
+  if (sealed === undefined)
+    return { nonce, outcome: { kind: "failed", error: "missing_envelope" } };
+  return { nonce, outcome: { kind: "sealed", sealed } };
 }
 
 export function authorizeUrl(webBase: string, state: OAuthState): string {

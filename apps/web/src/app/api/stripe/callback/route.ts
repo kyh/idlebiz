@@ -1,4 +1,5 @@
 import { loopbackUrl, parseState } from "@repo/stripe-connect-protocol/protocol";
+import { seal } from "@repo/stripe-connect-protocol/seal";
 import { exchangeCode } from "@/lib/stripe-oauth";
 
 export async function GET(req: Request): Promise<Response> {
@@ -16,8 +17,9 @@ export async function GET(req: Request): Promise<Response> {
   if (!code) return back({ kind: "failed", error: "missing_code" });
 
   try {
-    const result = await exchangeCode(code);
-    return back({ kind: "connected", ...result });
+    // sealed to the key the desktop put in the state: the token never rides a URL in the clear
+    const sealed = await seal(state.key, await exchangeCode(code));
+    return back({ kind: "sealed", sealed });
   } catch (err) {
     return back({ kind: "failed", error: err instanceof Error ? err.message : "exchange_failed" });
   }
