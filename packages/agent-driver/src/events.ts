@@ -29,9 +29,7 @@ export type AgentEvent =
       /** ACP's own discriminant for what the call does. The stable key to react on. */
       kind?: ToolKind;
       args: unknown;
-    }
-  /** Tokens spent since the last usage event — a delta, never a running total. */
-  | { type: "usage"; usage: AgentUsage };
+    };
 
 export const zeroUsage = (): AgentUsage => ({
   inputTokens: 0,

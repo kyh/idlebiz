@@ -16,8 +16,9 @@ import { zeroUsage, type AgentEvent, type AgentUsage } from "./events";
 //    has no timeout of its own.
 //  - resolve-exactly-once with the child torn down. A killed child's orphaned
 //    grandchild can hold stdout open long after we have our answer.
-//  - usage that survives a kill, so a run aborted for budget still reports what
-//    it actually spent.
+//  - the bill. The agent reports its cost with the turn's result, as the
+//    session's running total; the caller keeps that total per employee across
+//    runs, so a resumed session bills only what this run added.
 // ---------------------------------------------------------------------------
 
 /** Keep only the tail of stderr — used solely for final error reporting. */
@@ -28,15 +29,13 @@ const fmtMs = (ms: number): string =>
   ms >= 60_000 ? `${Math.round(ms / 60_000)}m` : `${Math.round(ms / 1000)}s`;
 
 /**
- * What an agent reports while a turn is still running.
- *
- * ACP has no usage channel of its own, so this is an agent extension and is
- * read by shape. Claude sends a running dollar total here; codex sends nothing
- * until the turn completes. It is the only thing standing between a spend cap
- * and a run that blows through it, so a wrong field name costs the ceiling
- * silently — nothing fails, the cap just stops being enforced.
+ * The agent's account of what the session has cost so far, sent with each
+ * turn's result. ACP has no usage channel of its own, so this is an agent
+ * extension and is read by shape: claude sends the session's running dollar
+ * total, codex nothing. A wrong field name costs the budget silently — nothing
+ * fails, the cap just stops being enforced.
  */
-const LiveSpend = z.object({ cost: z.object({ amount: z.number() }).loose() }).loose();
+const SessionCost = z.object({ cost: z.object({ amount: z.number() }).loose() }).loose();
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
 const ToolCallInput = z
@@ -121,6 +120,8 @@ export interface AcpTurnOptions {
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
   resumeSessionId?: string;
+  /** What the resumed session had cost before this run, so only this run's share is billed. */
+  sessionCostUsd?: number;
   /** Extra dirs the agent may read/write (e.g. its own agent package dir). */
   addDirs?: string[];
   /** Run-scoped env additions (control-plane URL + token, secrets). */
@@ -157,6 +158,8 @@ export interface AcpTurnResult {
   /** The stored session was resumed rather than started fresh. */
   resumed: boolean;
   usage: AgentUsage;
+  /** What the session has cost in all, as the agent last reported it; the baseline for its next run. */
+  sessionCostUsd: number;
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
@@ -184,7 +187,8 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     let resumed = false;
     let lastMessage = "";
     let pending = "";
-    let billed = 0;
+    // the session's running total as the agent last reported it, and this run's share of it
+    let sessionCost = opts.resumeSessionId === undefined ? 0 : (opts.sessionCostUsd ?? 0);
     let total = zeroUsage();
 
     /**
@@ -227,6 +231,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       sessionId,
       resumed,
       usage: total,
+      sessionCostUsd: sessionCost,
     });
     const failed = (error: string): AcpTurnResult => result({ kind: "failed", error });
 
@@ -325,16 +330,13 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           });
           return;
         }
-        // Live spend, so the budget can stop a run in flight rather than at
-        // the next boundary.
-        const live = LiveSpend.safeParse(update);
-        if (!live.success) return;
-        const spent = live.data.cost.amount;
-        if (spent > billed) {
-          opts.onEvent({ type: "usage", usage: { ...zeroUsage(), costUsd: spent - billed } });
-          billed = spent;
-          // carried on the result as it grows, so a run killed mid-flight still reports it
-          total = { ...total, costUsd: billed };
+        // the session's running total: this run is billed the part it added
+        const cost = SessionCost.safeParse(update);
+        if (!cost.success) return;
+        const spent = cost.data.cost.amount;
+        if (spent > sessionCost) {
+          total = { ...total, costUsd: total.costUsd + (spent - sessionCost) };
+          sessionCost = spent;
         }
       });
 
@@ -406,15 +408,14 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           prompt: [{ type: "text", text }],
         });
         flushMessage();
-        // The turn's own totals are authoritative; the live cost above only
-        // exists to stop a run mid-flight.
+        // the turn's own token totals are authoritative; the cost is the session's delta above
         const u = res.usage;
         if (u) {
           total = {
             inputTokens: (u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0),
             outputTokens: u.outputTokens ?? 0,
             cachedTokens: u.cachedReadTokens ?? 0,
-            costUsd: billed,
+            costUsd: total.costUsd,
           };
         }
         return res.stopReason;

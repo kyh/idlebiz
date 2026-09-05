@@ -1,7 +1,7 @@
-import { zeroUsage, type AgentEvent, type AgentUsage } from "@repo/agent-driver/events";
+import { zeroUsage, type AgentEvent } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
-import { agentDriver, priceRun, type RunResult } from "@/main/agents/agent-driver";
+import { agentDriver, type RunResult } from "@/main/agents/agent-driver";
 import type { RunToolHooks } from "@/main/control-plane";
 import { errorMessage } from "@/shared/errors";
 import {
@@ -67,7 +67,6 @@ class Scheduler {
    * and is what gets written to spentUsd. This exists only so the cap can be
    * enforced while runs are still going.
    */
-  private liveSpend = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   /** Begin the idle-game loop: idle employees self-direct work while autopilot is on. */
@@ -105,9 +104,11 @@ class Scheduler {
   }
 
   /**
-   * The budget is spent: pause autopilot and tell the founder why. Idempotent,
-   * so every path that discovers the cap can call it — a run's final bill, a
-   * live estimate crossing the line, the founder lowering the cap.
+   * The budget is spent: pause autopilot and tell the founder why. Nothing in
+   * flight is killed — a CLI reports its cost with the turn's result, so a kill
+   * would only discard finished work, and the founder was told "whatever is
+   * already running still finishes". Idempotent, so every path that discovers
+   * the cap can call it: a run's bill landing, the founder lowering the cap.
    */
   haltForBudget(company: Company, spentUsd = company.spentUsd): void {
     if (!company.autopilot) return;
@@ -517,13 +518,12 @@ class Scheduler {
           outcome: { kind: "failed", error: errorMessage(cause) },
           summary: "",
           session: employee.sessionId,
+          sessionCostUsd: employee.sessionCostUsd,
           usage: zeroUsage(),
         });
       })
       .finally(() => {
         this.active.delete(runId);
-        // drop the estimate: finish() has recorded what this run really cost
-        this.liveSpend.delete(runId);
         this.tick();
       });
   }
@@ -558,32 +558,9 @@ class Scheduler {
       case "message_end":
         if (ev.text) publishActivity({ ...at, kind: "message", message: ev.text.slice(0, 2000) });
         break;
-      case "usage":
-        this.trackLiveSpend(runId, emp, ev.usage);
-        break;
       default:
         break;
     }
-  }
-
-  /**
-   * Stop the office the moment the cap is actually reached, rather than at the
-   * next run boundary. A single run can cost several dollars, so "check before
-   * starting" let a $5 cap spend $12.
-   *
-   * Claude reports usage per assistant turn, so its runs are cut off mid-flight.
-   * Codex only reports when a turn completes, so its own run always finishes —
-   * but crossing the line still stops everything else in the office.
-   */
-  private trackLiveSpend(runId: string, emp: Employee, usage: AgentUsage): void {
-    const company = store.getCompany(emp.companyId);
-    if (!company || company.budget.mode !== "capped") return;
-    this.liveSpend.set(runId, (this.liveSpend.get(runId) ?? 0) + priceRun(emp, usage));
-    const inFlight = [...this.liveSpend.values()].reduce((a, b) => a + b, 0);
-    if (company.spentUsd + inFlight < company.budget.capUsd) return;
-
-    this.haltForBudget(company, company.spentUsd + inFlight);
-    for (const employeeId of this.active.values()) agentDriver.disposeEmployee(employeeId);
   }
 
   /**
@@ -648,10 +625,9 @@ class Scheduler {
     }
 
     store.setEmployeeStatus(emp.id, "idle");
-    store.setEmployeeSession(emp.id, r.session);
+    store.setEmployeeSession(emp.id, r.session, r.sessionCostUsd);
 
-    // real AI spend drains the founder's budget (the driver reports what a run
-    // cost even when it was killed, so this is truthful either way)
+    // real AI spend drains the founder's budget; the cap is judged when a bill lands
     if (r.usage.costUsd > 0) {
       const before = store.getCompany(task.companyId);
       const after = store.recordSpend(task.companyId, r.usage.costUsd);

@@ -101,7 +101,7 @@ async function decidePermission(
  * rather than the generic fallback, so the live cap estimate and the recorded
  * spend can never disagree about the rate.
  */
-export function priceRun(emp: Employee, usage: AgentUsage): number {
+function priceRun(emp: Employee, usage: AgentUsage): number {
   if (usage.costUsd > 0) return usage.costUsd;
   if (usage.inputTokens + usage.outputTokens === 0) return 0;
   // Priced by the runner's anchor: ACP gives no way to pick a model per
@@ -137,6 +137,8 @@ export interface RunResult {
   summary: string;
   /** The session to remember for this employee after the run; null forgets it. */
   session: string | null;
+  /** What that session has cost in all, the baseline for its next run. */
+  sessionCostUsd: number;
   usage: AgentUsage;
 }
 
@@ -231,10 +233,18 @@ class AgentDriver {
       const retryFresh =
         first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
       if (!retryFresh) {
-        return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
+        return {
+          ...first.result,
+          session: first.turn.sessionId ?? emp.sessionId,
+          sessionCostUsd: first.turn.sessionCostUsd,
+        };
       }
       const retry = await this.invoke(emp, company, run, onEvent, hooks, undefined, abort);
-      return { ...retry.result, session: retry.turn.sessionId ?? null };
+      return {
+        ...retry.result,
+        session: retry.turn.sessionId ?? null,
+        sessionCostUsd: retry.turn.sessionCostUsd,
+      };
     } finally {
       this.active.delete(emp.id);
     }
@@ -262,7 +272,11 @@ class AgentDriver {
     hooks: RunToolHooks,
     resumeSessionId: string | undefined,
     abort: AbortController,
-  ): Promise<{ result: Omit<RunResult, "session">; turn: AcpTurnResult; sawOutput: boolean }> {
+  ): Promise<{
+    result: Omit<RunResult, "session" | "sessionCostUsd">;
+    turn: AcpTurnResult;
+    sawOutput: boolean;
+  }> {
     const handle = controlPlane.registerRun(hooks);
     let sawOutput = false;
     try {
@@ -275,6 +289,7 @@ class AgentDriver {
         systemPrompt: store.employeeInstructions(emp.id),
         cwd: run.workspace,
         resumeSessionId,
+        sessionCostUsd: emp.sessionCostUsd,
         addDirs: [...shared, employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
         env: { ...handle.env, ...TOOL_CACHE_ENV },
         onPermission: (request) => decidePermission(company.id, request, handle.block),

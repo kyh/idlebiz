@@ -268,6 +268,8 @@ export interface Employee {
   persona: string; // system-prompt flavor for the agent
   runner: AgentRunner; // which CLI executes this employee
   sessionId: string | null;
+  /** What that session has cost in all, as the CLI last reported it: the next run bills only its share. */
+  sessionCostUsd: number;
   spriteSeed: string; // deterministic sprite + portrait
   deskIndex: number; // which desk slot in the office
   status: EmployeeStatus;
