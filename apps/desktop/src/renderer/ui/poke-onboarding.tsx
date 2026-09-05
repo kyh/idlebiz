@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { useAuthFlow } from "@/renderer/hooks/use-auth-flow";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
+import { useAuthFlow, type Auth } from "@/renderer/hooks/use-auth-flow";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { bridge } from "@/renderer/bridge";
 import { refresh } from "@/renderer/state/store";
@@ -228,19 +228,19 @@ export function PokeOnboarding() {
   };
 
   // Enter advances input steps; Escape rewinds the reversible ones
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    const tag = document.activeElement?.tagName;
+    if (e.key === "Escape") {
+      back();
+      return;
+    }
+    if (e.key !== "Enter" || tag === "TEXTAREA") return;
+    next();
+  });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = document.activeElement?.tagName;
-      if (e.key === "Escape") {
-        back();
-        return;
-      }
-      if (e.key !== "Enter" || tag === "TEXTAREA") return;
-      next();
-    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [next, back]);
+  }, []);
 
   const narration = {
     intro:
@@ -288,134 +288,219 @@ export function PokeOnboarding() {
         ) : null}
 
         <div className="mt-3 flex items-center gap-2">
-          {step === "intro" ? (
+          <ActionRow
+            step={step}
+            auth={auth}
+            login={login}
+            next={next}
+            back={back}
+            castTeam={castTeam}
+            finalize={() => void finalize()}
+            founderName={founderName}
+            setFounderName={setFounderName}
+            companyName={companyName}
+            setCompanyName={setCompanyName}
+            biz={biz}
+            setBiz={setBiz}
+            pitch={pitch}
+            setPitch={setPitch}
+            team={team}
+            capUsd={capUsd}
+            setCapUsd={setCapUsd}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A step that asks for one line of text and a button to accept it. */
+function TextStep({
+  value,
+  onChange,
+  placeholder,
+  cta,
+  onNext,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  cta: string;
+  onNext: () => void;
+}) {
+  return (
+    <>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="px-field flex-1"
+        autoFocus
+      />
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={!value.trim()}
+        className="px-btn-accent px-btn"
+      >
+        {cta}
+      </button>
+    </>
+  );
+}
+
+/** The action row under the narration: exactly one per step, so a new step cannot render nothing. */
+function ActionRow({
+  step,
+  auth,
+  login,
+  next,
+  back,
+  castTeam,
+  finalize,
+  founderName,
+  setFounderName,
+  companyName,
+  setCompanyName,
+  biz,
+  setBiz,
+  pitch,
+  setPitch,
+  team,
+  capUsd,
+  setCapUsd,
+}: {
+  step: Step;
+  auth: Auth;
+  login: () => void;
+  next: () => void;
+  back: () => void;
+  castTeam: () => void;
+  finalize: () => void;
+  founderName: string;
+  setFounderName: (v: string) => void;
+  companyName: string;
+  setCompanyName: (v: string) => void;
+  biz: BusinessTypeId | null;
+  setBiz: (v: BusinessTypeId) => void;
+  pitch: string;
+  setPitch: (v: string) => void;
+  team: Team;
+  capUsd: number | null;
+  setCapUsd: (v: number | null) => void;
+}) {
+  switch (step) {
+    case "intro":
+      return (
+        <button
+          type="button"
+          onClick={next}
+          disabled={auth.phase === "checking"}
+          className="px-btn-accent px-btn ml-auto"
+        >
+          {auth.phase === "checking" ? "Checking your CLI…" : "▶ Let's go"}
+        </button>
+      );
+    case "auth":
+      return (
+        <AuthStep
+          auth={auth}
+          onLogin={login}
+          aside={
             <button
               type="button"
-              onClick={next}
-              disabled={auth.phase === "checking"}
-              className="px-btn-accent px-btn ml-auto"
+              onClick={() => void bridge().resetGame()}
+              className="px-link px-link-danger"
+              title="Wipe everything in ~/.idlebiz and restart"
             >
-              {auth.phase === "checking" ? "Checking your CLI…" : "▶ Let's go"}
+              ↺ start over
             </button>
-          ) : null}
-
-          {step === "auth" ? (
-            <AuthStep
-              auth={auth}
-              onLogin={login}
-              aside={
-                <button
-                  type="button"
-                  onClick={() => void bridge().resetGame()}
-                  className="px-link px-link-danger"
-                  title="Wipe everything in ~/.idlebiz and restart"
-                >
-                  ↺ start over
-                </button>
-              }
-            />
-          ) : null}
-
-          {step === "founder" ? (
-            <>
-              <input
-                value={founderName}
-                onChange={(e) => setFounderName(e.target.value)}
-                placeholder="Ada"
-                className="px-field flex-1"
-                autoFocus
-              />
+          }
+        />
+      );
+    case "founder":
+      return (
+        <TextStep
+          value={founderName}
+          onChange={setFounderName}
+          placeholder="Ada"
+          cta="That's me"
+          onNext={next}
+        />
+      );
+    case "look":
+      return (
+        <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
+          Looking sharp →
+        </button>
+      );
+    case "company":
+      return (
+        <TextStep
+          value={companyName}
+          onChange={setCompanyName}
+          placeholder="Acme AI"
+          cta="Register it"
+          onNext={next}
+        />
+      );
+    case "biztype":
+      return (
+        <div className="flex w-full flex-col gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {BUSINESS_TYPES.map((b) => (
               <button
                 type="button"
-                onClick={next}
-                disabled={!founderName.trim()}
-                className="px-btn-accent px-btn"
+                key={b.id}
+                onClick={() => setBiz(b.id)}
+                data-sel={biz === b.id}
+                className="px-opt text-left"
               >
-                That's me
+                {b.emoji} {b.label}
               </button>
-            </>
-          ) : null}
-
-          {step === "look" ? (
-            <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
-              Looking sharp →
-            </button>
-          ) : null}
-
-          {step === "company" ? (
-            <>
-              <input
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Acme AI"
-                className="px-field flex-1"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={next}
-                disabled={!companyName.trim()}
-                className="px-btn-accent px-btn"
-              >
-                Register it
-              </button>
-            </>
-          ) : null}
-
-          {step === "biztype" ? (
-            <div className="flex w-full flex-col gap-2">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {BUSINESS_TYPES.map((b) => (
-                  <button
-                    type="button"
-                    key={b.id}
-                    onClick={() => setBiz(b.id)}
-                    data-sel={biz === b.id}
-                    className="px-opt text-left"
-                  >
-                    {b.emoji} {b.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={next}
-                disabled={biz === null}
-                className="px-btn-accent px-btn ml-auto"
-              >
-                That's the plan →
-              </button>
-            </div>
-          ) : null}
-
-          {step === "pitch" ? (
-            <div className="flex w-full flex-col gap-2">
-              <textarea
-                value={pitch}
-                onChange={(e) => setPitch(e.target.value)}
-                rows={3}
-                placeholder={businessTypeById(biz ?? "custom").pitchPlaceholder}
-                className="px-field w-full resize-none"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={next}
-                disabled={!pitch.trim()}
-                className="px-btn-accent px-btn ml-auto"
-              >
-                That's the vision
-              </button>
-            </div>
-          ) : null}
-
-          {step === "team" && team.kind === "cast" ? (
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={next}
+            disabled={biz === null}
+            className="px-btn-accent px-btn ml-auto"
+          >
+            That's the plan →
+          </button>
+        </div>
+      );
+    case "pitch":
+      return (
+        <div className="flex w-full flex-col gap-2">
+          <textarea
+            value={pitch}
+            onChange={(e) => setPitch(e.target.value)}
+            rows={3}
+            placeholder={businessTypeById(biz ?? "custom").pitchPlaceholder}
+            className="px-field w-full resize-none"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={next}
+            disabled={!pitch.trim()}
+            className="px-btn-accent px-btn ml-auto"
+          >
+            That's the vision
+          </button>
+        </div>
+      );
+    case "team":
+      switch (team.kind) {
+        case "cast":
+          return (
             <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
               Sign them →
             </button>
-          ) : null}
-
-          {step === "team" && team.kind === "failed" ? (
+          );
+        case "failed":
+          return (
             <>
               <button type="button" onClick={back} className="px-link">
                 ← rewrite the pitch
@@ -424,44 +509,44 @@ export function PokeOnboarding() {
                 Search again
               </button>
             </>
-          ) : null}
-
-          {step === "budget" ? (
-            <div className="flex w-full flex-col gap-2">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {CAP_OPTIONS.map((usd) => (
-                  <button
-                    type="button"
-                    key={usd ?? "uncapped"}
-                    onClick={() => setCapUsd(usd)}
-                    data-sel={capUsd === usd}
-                    className="px-opt"
-                    title={
-                      usd === null ? "No ceiling — the office spends whatever it needs" : undefined
-                    }
-                  >
-                    {usd === null ? "No cap" : `$${usd}`}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-fg-dim">
-                  {capUsd === null
-                    ? "⚠ Uncapped. The office will keep spending while it works."
-                    : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void finalize()}
-                  className="px-btn-accent px-btn ml-auto"
-                >
-                  Open the office →
-                </button>
-              </div>
-            </div>
-          ) : null}
+          );
+        case "uncast":
+        case "casting":
+          return null;
+      }
+      break;
+    case "budget":
+      return (
+        <div className="flex w-full flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {CAP_OPTIONS.map((usd) => (
+              <button
+                type="button"
+                key={usd ?? "uncapped"}
+                onClick={() => setCapUsd(usd)}
+                data-sel={capUsd === usd}
+                className="px-opt"
+                title={
+                  usd === null ? "No ceiling — the office spends whatever it needs" : undefined
+                }
+              >
+                {usd === null ? "No cap" : `$${usd}`}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-fg-dim">
+              {capUsd === null
+                ? "⚠ Uncapped. The office will keep spending while it works."
+                : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}
+            </span>
+            <button type="button" onClick={finalize} className="px-btn-accent px-btn ml-auto">
+              Open the office →
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
-  );
+      );
+    case "finalize":
+      return null;
+  }
 }
