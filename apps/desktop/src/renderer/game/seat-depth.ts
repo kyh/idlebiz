@@ -10,6 +10,7 @@ import { BUST, characterDepth } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
 import type { OpaqueMask } from "@/renderer/game/texture-masks";
 import type { PixelPoint } from "@/shared/office-layout-schema";
+import { opaqueAt } from "@/shared/office-sight";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;
@@ -67,13 +68,8 @@ export function bustOverlaps(
   if (!mask) return true;
   for (let y = rect.y0; y < rect.y1; y++) {
     const dy = Math.floor(y - image.y);
-    const ly = image.flipY ? mask.h - 1 - dy : dy;
-    if (ly < 0 || ly >= mask.h) continue;
     for (let x = rect.x0; x < rect.x1; x++) {
-      const dx = Math.floor(x - image.x);
-      const lx = image.flipX ? mask.w - 1 - dx : dx;
-      if (lx < 0 || lx >= mask.w) continue;
-      if (mask.opaque[ly * mask.w + lx]) return true;
+      if (opaqueAt(mask, image, Math.floor(x - image.x), dy)) return true;
     }
   }
   return false;

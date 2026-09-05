@@ -43,16 +43,29 @@ const FACE_HIDDEN_AT = 0.5;
 const drawsAbove = (obj: OfficeObjectDef, soles: number): boolean =>
   obj.layer === "overhead" || (obj.layer === "object" && obj.anchorY + 0.5 > soles);
 
-/** Is the sprite's pixel at world (wx, wy) opaque? Flips mirror in place, like setFlip. */
-function paintsAt(sprite: PaintedSprite, wx: number, wy: number): boolean {
-  const { obj, mask } = sprite;
-  const dx = wx - Math.round(obj.x);
-  const dy = wy - Math.round(obj.y);
+/**
+ * Is the sprite's own pixel (dx, dy) opaque? Flips mirror inside the canvas,
+ * exactly like setFlip; anything off the canvas is not painted. The one probe
+ * the scene, the sight judgement and check:office all read pixels through.
+ */
+export function opaqueAt(
+  mask: OpaqueMask,
+  flip: { readonly flipX?: boolean; readonly flipY?: boolean },
+  dx: number,
+  dy: number,
+): boolean {
   if (dx < 0 || dy < 0 || dx >= mask.w || dy >= mask.h) return false;
-  const lx = obj.flipX ? mask.w - 1 - dx : dx;
-  const ly = obj.flipY ? mask.h - 1 - dy : dy;
+  const lx = flip.flipX ? mask.w - 1 - dx : dx;
+  const ly = flip.flipY ? mask.h - 1 - dy : dy;
   return mask.opaque[ly * mask.w + lx] === 1;
 }
+
+/** Is the sprite's pixel at world (wx, wy) opaque? */
+const paintsAt = ({ obj, mask }: PaintedSprite, wx: number, wy: number): boolean =>
+  opaqueAt(mask, obj, wx - Math.round(obj.x), wy - Math.round(obj.y));
+
+/** Floor sprites are never drawn above a character, whatever the node. */
+const canCover = ({ obj }: PaintedSprite): boolean => obj.layer !== "floor";
 
 /**
  * Fraction of the character's face painted over when their origin is at `node`.
@@ -99,8 +112,9 @@ export function hiddenNodes(
   silhouette: OpaqueMask,
 ): { node: PixelPoint; covered: number }[] {
   const hidden: { node: PixelPoint; covered: number }[] = [];
+  const candidates = sprites.filter(canCover);
   for (const node of reachableNodes(grid, spawn)) {
-    const covered = faceCovered(node, sprites, silhouette);
+    const covered = faceCovered(node, candidates, silhouette);
     if (covered >= FACE_HIDDEN_AT) hidden.push({ node, covered });
   }
   return hidden.toSorted((a, b) => b.covered - a.covered);

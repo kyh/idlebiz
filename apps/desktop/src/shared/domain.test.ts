@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   parseBlockedAsk,
   resolveMentions,
-  retryDelayMs,
+  afterFailure,
+  MAX_TASK_ATTEMPTS,
   serializeBlockedAsk,
   type BlockedAsk,
 } from "./domain";
@@ -41,10 +42,13 @@ describe("resolveMentions", () => {
   });
 });
 
-describe("retryDelayMs", () => {
-  it("backs off exponentially and caps", () => {
-    expect(retryDelayMs(1)).toBe(15_000);
-    expect(retryDelayMs(2)).toBe(30_000);
-    expect(retryDelayMs(10)).toBe(10 * 60_000);
+describe("afterFailure", () => {
+  it("backs off exponentially, capped, until the attempts are spent", () => {
+    expect(afterFailure(0, 1000)).toEqual({ kind: "retry", attempts: 1, retryAt: 16_000 });
+    expect(afterFailure(1, 1000)).toEqual({ kind: "retry", attempts: 2, retryAt: 31_000 });
+    expect(afterFailure(MAX_TASK_ATTEMPTS - 1, 0)).toEqual({
+      kind: "dead",
+      attempts: MAX_TASK_ATTEMPTS,
+    });
   });
 });

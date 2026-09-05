@@ -8,6 +8,7 @@ import { acpAgentFor, agentDriver } from "@/main/agents/agent-driver";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { businessTypeById } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
+import { parseJson } from "@/shared/json";
 import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
 import { HireCandidateSchema, type AuthFlowEvent, type HireCandidate } from "@/shared/ipc-registry";
 
@@ -161,6 +162,5 @@ Reply with ONLY a JSON array of 5 objects with keys name, role, title, persona, 
 
   const raw = await completeOneShot(prompt);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
-  const parsed: unknown = JSON.parse(jsonText);
-  return CandidatesSchema.parse(parsed);
+  return CandidatesSchema.parse(parseJson(jsonText));
 }

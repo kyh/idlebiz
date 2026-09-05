@@ -1,5 +1,5 @@
 import path from "node:path";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
@@ -9,7 +9,7 @@ import * as store from "@/main/store/store";
 import { activityEvents, publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
-import { approvalAnswer } from "@/main/prompts/briefs";
+import { openProduct, openWorkspacePath, productEntry } from "@/main/product";
 import { scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
@@ -34,8 +34,6 @@ import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
 import { layoutIssues } from "@/shared/office-grid";
-import type { ActivityEvent } from "@/shared/activity";
-import type { Task } from "@/shared/domain";
 import { jsonValueSchema, parseJson } from "@/shared/json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -79,47 +77,6 @@ async function resetGame(): Promise<{ ok: boolean }> {
     app.exit(0);
   });
   return { ok: true };
-}
-
-/** Every tenth ship gets a cheer in the team room. */
-function celebrateShipMilestones(e: ActivityEvent): void {
-  if (e.kind !== "ship" || !e.employeeId) return;
-  const co = store.getEmployee(e.employeeId)?.companyId;
-  const company = co ? store.getCompany(co) : null;
-  if (company && company.ships > 0 && company.ships % 10 === 0) {
-    store.postTeamMessage(
-      company.id,
-      null,
-      `🎉 Milestone: ${company.ships} things shipped — keep going!`,
-    );
-  }
-}
-
-/** The workspace PRODUCT.md `entry:` convention — how the team points at the product. */
-function readProductEntry(workspaceDir: string): string | null {
-  try {
-    const text = readFileSync(path.join(workspaceDir, "PRODUCT.md"), "utf8");
-    const m = /^\s*`?entry`?\s*:\s*`?([^`\n]+?)`?\s*$/m.exec(text);
-    return m?.[1]?.trim() ?? null;
-  } catch {
-    return null; // no PRODUCT.md yet
-  }
-}
-
-async function openWorkspacePath(companyId: string, rel: string): Promise<void> {
-  const root = path.resolve(store.requireCompany(companyId).workspaceDir);
-  const target = path.resolve(root, rel === "" ? "." : rel);
-  if (target !== root && !target.startsWith(root + path.sep))
-    throw new Error("path escapes the workspace");
-  const err = await shell.openPath(target);
-  if (err) throw new Error(err);
-}
-
-/** Every blocked-ask type resumes the same way: answer it, then run the continuation. */
-function resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
-  const continuation = store.resolveBlockedWithAnswer(taskId, answer);
-  if (!continuation || !continuation.assigneeId) throw new Error(whenNotBlocked);
-  return scheduler.assign(continuation.id, continuation.assigneeId);
 }
 
 function registerIpcHandlers(): void {
@@ -229,12 +186,11 @@ function registerIpcHandlers(): void {
   });
 
   handle("productStatus", async ({ companyId }) => {
-    const company = store.requireCompany(companyId);
     const cfg = readMetricsConfig(companyId);
     const deploy = cfg?.vercel
       ? await latestDeployment(cfg.vercel.projectId, cfg.vercel.teamId)
       : null;
-    return { entry: readProductEntry(company.workspaceDir), deploy };
+    return { entry: productEntry(companyId), deploy };
   });
 
   handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
@@ -271,36 +227,17 @@ function registerIpcHandlers(): void {
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 
-  handle("answerQuestion", ({ taskId, answer }) =>
-    resumeBlocked(taskId, answer, "task is not awaiting an answer"),
-  );
+  handle("answerQuestion", ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer));
+  handle("resolveApproval", ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved));
 
-  handle("resolveApproval", ({ taskId, approved }) => {
-    const task = store.getTask(taskId);
-    if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval")
-      throw new Error("task is not awaiting an approval");
-    // Record before resuming: the agent's retry hits the hook again, and it
-    // must find the sign-off already there.
-    if (approved) store.grantApproval(task.companyId, task.state.ask.command);
-    return resumeBlocked(taskId, approvalAnswer(approved), "could not resume the task");
-  });
-
-  // open a workspace-relative path with the OS default app ("" = the folder itself)
   handle("openCompanyPath", async ({ companyId, rel }) => {
     await openWorkspacePath(companyId, rel);
     return { ok: true };
   });
-
-  // open the product via the workspace PRODUCT.md convention ("entry: <path|url>")
-  handle("openProduct", async ({ companyId }) => {
-    const entry = readProductEntry(store.requireCompany(companyId).workspaceDir) ?? "index.html";
-    if (/^https?:\/\//.test(entry)) {
-      await shell.openExternal(entry);
-      return { ok: true, opened: entry };
-    }
-    await openWorkspacePath(companyId, entry);
-    return { ok: true, opened: entry };
-  });
+  handle("openProduct", async ({ companyId }) => ({
+    ok: true,
+    opened: await openProduct(companyId),
+  }));
 }
 
 function createWindow(): BrowserWindow {
@@ -367,7 +304,6 @@ void (async () => {
   registerIpcHandlers();
 
   activityEvents.on("activity", (e) => broadcast("onActivity", e));
-  activityEvents.on("activity", celebrateShipMilestones);
   // start the idle-game loop: idle employees self-direct work while autopilot is on
   scheduler.start();
 

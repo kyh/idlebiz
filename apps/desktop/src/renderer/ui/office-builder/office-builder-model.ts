@@ -13,6 +13,8 @@ import {
 import {
   OFFICE_LAYOUT_VERSION,
   canonicalOfficeLayout,
+  cloneSeat,
+  clonePoi,
   type OfficeObjectDef,
 } from "@/shared/office-layout-schema";
 import {
@@ -102,7 +104,7 @@ function rawBounds(id: string): { canvasW: number; canvasH: number; b: Rect } {
 }
 /** Canvas-local content bbox, adjusted for flips (flipping mirrors the content
  * inside its canvas box, so the bbox moves to the mirrored corner). */
-export function contentBounds(o: Pick<EditableObject, "id" | "flipX" | "flipY">): Rect {
+function contentBounds(o: Pick<EditableObject, "id" | "flipX" | "flipY">): Rect {
   const { canvasW, canvasH, b } = rawBounds(o.id);
   return {
     x: o.flipX ? canvasW - (b.x + b.w) : b.x,
@@ -110,6 +112,13 @@ export function contentBounds(o: Pick<EditableObject, "id" | "flipX" | "flipY">)
     w: b.w,
     h: b.h,
   };
+}
+type Placed = Pick<EditableObject, "id" | "x" | "y" | "flipX" | "flipY">;
+
+/** Where the object's content sits in the world: what you see, hit and select. */
+export function worldRect(o: Placed): Rect {
+  const b = contentBounds(o);
+  return { x: o.x + b.x, y: o.y + b.y, w: b.w, h: b.h };
 }
 /** y-sort anchor for an object placed at world y = bottom of its (flipped) content. */
 function anchorFor(o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number): number {
@@ -160,13 +169,19 @@ export function setLayer(o: EditableObject, layer: OfficeLayer): EditableObject 
   const base = { uid, id, x, y, solid, flipX, flipY, path };
   return layer === "object" ? { ...base, layer, anchorY: anchorFor(o, y) } : { ...base, layer };
 }
-function footprintRect(o: EditableObject): Rect {
-  const b = contentBounds(o);
-  // full content footprint (a solid desk blocks its whole base, matching the
-  // generator); FOOT trims very tall sprites so a wall-mounted item that's
-  // mis-flagged solid doesn't paint a huge column.
-  const fh = Math.min(Math.max(FOOT, Math.round(b.h * 0.85)), b.h);
-  return { x: o.x + b.x, y: o.y + b.y + b.h - fh, w: b.w, h: fh };
+/** The bottom `h` pixels of the object's content: the band it stands on. */
+function baseBand(o: Placed, h: number): Rect {
+  const r = worldRect(o);
+  const fh = Math.min(h, r.h);
+  return { x: r.x, y: r.y + r.h - fh, w: r.w, h: fh };
+}
+/**
+ * What a solid object blocks: nearly its whole content (a desk blocks its whole
+ * base), with very tall sprites trimmed so a wall-mounted item mis-flagged solid
+ * doesn't paint a huge column.
+ */
+function footprintRect(o: Placed): Rect {
+  return baseBand(o, Math.max(FOOT, Math.round(worldRect(o).h * 0.85)));
 }
 
 // Random uids: a module counter would reset on HMR while React state keeps
@@ -223,27 +238,21 @@ export function loadLayout(raw: OfficeLayoutData = OFFICE_LAYOUT_RAW): EditableL
     rows: raw.rows,
     spawn: { x: raw.spawn.x, y: raw.spawn.y },
     door: { x: raw.door.x, y: raw.door.y },
-    seats: raw.seats.map((s) =>
-      s.role === "work"
-        ? { role: "work", x: s.x, y: s.y }
-        : { role: "rest", x: s.x, y: s.y, sit: s.sit },
-    ),
-    pois: raw.pois.map((p) => ({ x: p.x, y: p.y, face: p.face })),
+    seats: raw.seats.map(cloneSeat),
+    pois: raw.pois.map(clonePoi),
     objects,
     collision: [...raw.collision],
   };
 }
 
-/** An object loaded from disk is "solid" if its footprint cells are mostly solid. */
-function inferSolid(
-  o: { id: string; x: number; y: number; layer: OfficeLayer; flipX?: boolean; flipY?: boolean },
-  grid: number[][],
-  cell: number,
-): boolean {
+/**
+ * An object loaded from disk is "solid" if the cells under its base are mostly
+ * solid. Judged on the base alone, not the painted footprint: a hand-authored
+ * grid blocks only where a tall object meets the floor.
+ */
+function inferSolid(o: OfficeObjectDef, grid: number[][], cell: number): boolean {
   if (o.layer !== "object" || !CATALOG.has(o.id)) return false;
-  const b = contentBounds({ id: o.id, flipX: o.flipX ?? false, flipY: o.flipY ?? false });
-  const fh = Math.min(FOOT, b.h);
-  const fp: Rect = { x: o.x + b.x, y: o.y + b.y + b.h - fh, w: b.w, h: fh };
+  const fp = baseBand({ ...o, flipX: o.flipX ?? false, flipY: o.flipY ?? false }, FOOT);
   let solidCells = 0;
   let total = 0;
   const c0 = Math.floor(fp.x / cell);
@@ -270,10 +279,7 @@ function inferSolid(
 export function deriveCollision(L: EditableLayout): string[] {
   const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 1));
   for (const o of L.objects) {
-    if (o.layer !== "floor") continue;
-    const v = CATALOG.get(o.id);
-    const b = v ? v.bounds : { x: 0, y: 0, w: 32, h: 32 };
-    paint(grid, L.cell, L.cols, L.rows, { x: o.x + b.x, y: o.y + b.y, w: b.w, h: b.h }, 0);
+    if (o.layer === "floor") paint(grid, L.cell, L.cols, L.rows, worldRect(o), 0);
   }
   for (const o of L.objects) {
     if (o.solid) paint(grid, L.cell, L.cols, L.rows, footprintRect(o), 1);
@@ -286,30 +292,12 @@ export function deriveCollision(L: EditableLayout): string[] {
   return sealedCollision({ ...L, collision: grid.map((row) => row.join("")) });
 }
 
-/** The keys every placed object may carry, whichever band it is in. */
-interface PlacedFields {
-  id: string;
-  x: number;
-  y: number;
-  path?: string;
-  flipX?: boolean;
-  flipY?: boolean;
-}
-
-/** One object row as the game reads it: builder-only fields dropped, unset keys absent. */
+/** One object row as the game reads it, builder-only fields dropped; the canonicaliser tidies the keys. */
 function toObjectDef(o: EditableObject): OfficeObjectDef {
-  const placed: PlacedFields = { id: o.id, x: o.x, y: o.y };
-  if (o.path !== undefined) placed.path = o.path;
-  if (o.flipX) placed.flipX = true;
-  if (o.flipY) placed.flipY = true;
-  switch (o.layer) {
-    case "floor":
-      return { layer: "floor", ...placed };
-    case "overhead":
-      return { layer: "overhead", ...placed };
-    case "object":
-      return { layer: "object", anchorY: o.anchorY, ...placed };
-  }
+  const placed = { id: o.id, x: o.x, y: o.y, path: o.path, flipX: o.flipX, flipY: o.flipY };
+  return o.layer === "object"
+    ? { ...placed, layer: "object", anchorY: o.anchorY }
+    : { ...placed, layer: o.layer };
 }
 
 /** The layout as the game reads it. Runs the same canonicaliser main writes with. */

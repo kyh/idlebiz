@@ -187,16 +187,19 @@ export function canonicalOfficeLayout(layout: OfficeLayoutData): OfficeLayoutDat
     rows: layout.rows,
     spawn: { x: layout.spawn.x, y: layout.spawn.y },
     door: { x: layout.door.x, y: layout.door.y },
-    seats: layout.seats.map((s) =>
-      s.role === "work"
-        ? { role: "work", x: s.x, y: s.y }
-        : { role: "rest", x: s.x, y: s.y, sit: s.sit },
-    ),
-    pois: layout.pois.map((p) => ({ x: p.x, y: p.y, face: p.face })),
+    seats: layout.seats.map(cloneSeat),
+    pois: layout.pois.map(clonePoi),
     objects: layout.objects.map(canonicalObject),
     collision: [...layout.collision],
   };
 }
+
+/** A seat's own keys and nothing else: each role's variant, spelled once. */
+export const cloneSeat = (s: OfficeSeat): OfficeSeat =>
+  s.role === "work"
+    ? { role: "work", x: s.x, y: s.y }
+    : { role: "rest", x: s.x, y: s.y, sit: s.sit };
+export const clonePoi = (p: OfficePoi): OfficePoi => ({ x: p.x, y: p.y, face: p.face });
 
 /**
  * One object row: optional keys omitted, not nulled, and keys in the order the

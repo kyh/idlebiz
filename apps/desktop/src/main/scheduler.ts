@@ -5,6 +5,7 @@ import { agentDriver, priceRun, type RunResult } from "@/main/agents/agent-drive
 import type { RunToolHooks } from "@/main/control-plane";
 import { errorMessage } from "@/shared/errors";
 import {
+  approvalAnswer,
   autonomousBrief,
   founderPing,
   integrationConnectedAnswer,
@@ -12,13 +13,7 @@ import {
   routineBrief,
   type TaskBrief,
 } from "@/main/prompts/briefs";
-import {
-  MAX_TASK_ATTEMPTS,
-  isOutOfBudget,
-  resolveMentions,
-  retryDelayMs,
-  spriteSeedFor,
-} from "@/shared/domain";
+import { MAX_TASK_ATTEMPTS, isOutOfBudget, resolveMentions, spriteSeedFor } from "@/shared/domain";
 import type {
   Company,
   Employee,
@@ -318,6 +313,43 @@ class Scheduler {
     this.wakeEmployee(employeeId, founderPing(instruction));
   }
 
+  /** A completed task ships work: the count behind the product plate, the feed, and every tenth one a cheer. */
+  private ship(
+    companyId: string,
+    at: { runId: string; taskId: string; employeeId: string },
+    summary: string,
+  ): void {
+    store.recordShip(companyId);
+    publishActivity({ ...at, kind: "ship", message: (summary || "shipped work").slice(0, 200) });
+    const ships = store.getCompany(companyId)?.ships ?? 0;
+    if (ships > 0 && ships % 10 === 0) {
+      store.postTeamMessage(companyId, null, `🎉 Milestone: ${ships} things shipped — keep going!`);
+    }
+  }
+
+  /** Every blocked-ask type resumes the same way: answer it, then run the continuation. */
+  private resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
+    const continuation = store.resolveBlockedWithAnswer(taskId, answer);
+    if (!continuation || !continuation.assigneeId) throw new Error(whenNotBlocked);
+    return this.assign(continuation.id, continuation.assigneeId);
+  }
+
+  /** The founder answers a question the agent stopped on. */
+  answerQuestion(taskId: string, answer: string): Task {
+    return this.resumeBlocked(taskId, answer, "task is not awaiting an answer");
+  }
+
+  /** The founder signs off (or refuses) a command the policy held. */
+  resolveApproval(taskId: string, approved: boolean): Task {
+    const task = store.getTask(taskId);
+    if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval")
+      throw new Error("task is not awaiting an approval");
+    // Record before resuming: the agent's retry hits the hook again, and it
+    // must find the sign-off already there.
+    if (approved) store.grantApproval(task.companyId, task.state.ask.command);
+    return this.resumeBlocked(taskId, approvalAnswer(approved), "could not resume the task");
+  }
+
   /**
    * The founder connected an integration: every task blocked on a typed ask
    * for it resumes automatically (paperclip's wake-assignee convention).
@@ -510,17 +542,11 @@ class Scheduler {
       case "done":
         status = "done";
         store.settleTask(task.id, runId, { kind: "done", summary: r.summary || null });
-        // a completed task ships work — the real counter behind the product version
-        store.recordShip(task.companyId);
-        publishActivity({
-          ...at,
-          kind: "ship",
-          message: (r.summary || "shipped work").slice(0, 200),
-        });
+        this.ship(task.companyId, at, r.summary);
         break;
       case "resting":
         status = "queued";
-        store.requeueForRetry(task.id, runId, task.attempts, o.until, o.error);
+        store.parkTask(task.id, runId, o.until, o.error);
         publishActivity({
           ...at,
           kind: "runner.resting",
@@ -528,20 +554,28 @@ class Scheduler {
         });
         break;
       case "failed": {
-        const attempts = task.attempts + 1;
-        if (attempts >= MAX_TASK_ATTEMPTS) {
+        const verdict = store.failTask(task.id, runId, o.error);
+        if (verdict?.kind === "dead") {
           status = "dead";
-          store.deadLetterTask(task.id, runId, attempts, o.error);
-          publishActivity({ ...at, kind: "task.dead", payload: { attempts, error: o.error } });
-        } else {
-          status = "queued";
-          const retryAt = Date.now() + retryDelayMs(attempts);
-          store.requeueForRetry(task.id, runId, attempts, retryAt, o.error);
           publishActivity({
             ...at,
-            kind: "task.retry",
-            payload: { attempts, maxAttempts: MAX_TASK_ATTEMPTS, retryAt, error: o.error },
+            kind: "task.dead",
+            payload: { attempts: verdict.attempts, error: o.error },
           });
+        } else {
+          status = "queued";
+          if (verdict) {
+            publishActivity({
+              ...at,
+              kind: "task.retry",
+              payload: {
+                attempts: verdict.attempts,
+                maxAttempts: MAX_TASK_ATTEMPTS,
+                retryAt: verdict.retryAt,
+                error: o.error,
+              },
+            });
+          }
         }
         break;
       }

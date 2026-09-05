@@ -47,7 +47,7 @@ import {
   BUSINESS_TYPES,
   DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
-  MAX_TASK_ATTEMPTS,
+  afterFailure,
   businessTypeById,
 } from "@/shared/domain";
 import {
@@ -58,6 +58,7 @@ import {
 } from "@/shared/activity";
 import type {
   AgentRunner,
+  FailureVerdict,
   TaskState,
   Budget,
   BusinessTypeId,
@@ -376,29 +377,15 @@ export function initStore(): LoadReport {
         (doc) => docToTask(doc, co.id),
       ).toSorted(byAge);
       // recover runs that died with the previous process. A run that was
-      // mid-flight counts as a failed attempt: requeue it (or dead-letter once
-      // exhausted) so it resumes instead of being silently orphaned.
-      for (const t of tasks) {
+      // mid-flight counts as a failed attempt, judged by the same rule a run's
+      // own failure is, so it resumes instead of being silently orphaned.
+      for (const [i, t] of tasks.entries()) {
         if (t.state.kind !== "running") continue;
-        const attempts = t.attempts + 1;
-        if (!t.assigneeId) {
-          t.state = { kind: "todo" };
-        } else if (attempts >= MAX_TASK_ATTEMPTS) {
-          t.state = {
-            kind: "dead",
-            lastError: "Interrupted by app restart (max attempts reached)",
-          };
-          t.attempts = attempts;
-          t.completedAt = Date.now();
-        } else {
-          t.state = {
-            kind: "queued",
-            nextAttemptAt: null,
-            lastError: "Interrupted by app restart",
-          };
-          t.attempts = attempts;
-        }
-        saveTask(t);
+        const recovered: Task = t.assigneeId
+          ? failed(t, "Interrupted by app restart").task
+          : { ...t, state: { kind: "todo" } };
+        tasks[i] = recovered;
+        saveTask(recovered);
       }
       // done work still in the open queue: a save from before shipped/ existed,
       // or a crash between settling and shelving. Either way it belongs there.
@@ -1115,30 +1102,34 @@ export function settleTask(taskId: string, runId: string, state: Settled): void 
   close(taskId, state);
 }
 
-/**
- * A failed run that still has attempts left: bump the counter, schedule a
- * backoff retry, and put the task back on the queue. Only the owning run may.
- */
-export function requeueForRetry(
-  taskId: string,
-  runId: string,
-  attempts: number,
-  nextAttemptAt: number,
-  lastError: string,
-): void {
-  if (!heldBy(getTask(taskId), runId)) return;
-  patchTask(taskId, { state: { kind: "queued", nextAttemptAt, lastError }, attempts });
+/** The task after a failed attempt: retried with backoff, or dead once its attempts are spent. */
+function failed(t: Task, lastError: string): { task: Task; verdict: FailureVerdict } {
+  const now = Date.now();
+  const verdict = afterFailure(t.attempts, now);
+  const task: Task =
+    verdict.kind === "dead"
+      ? { ...t, attempts: verdict.attempts, state: { kind: "dead", lastError }, completedAt: now }
+      : {
+          ...t,
+          attempts: verdict.attempts,
+          state: { kind: "queued", nextAttemptAt: verdict.retryAt, lastError },
+        };
+  return { task, verdict };
 }
 
-/** A failed run that exhausted its attempts: dead-letter it. Only the owning run may. */
-export function deadLetterTask(
-  taskId: string,
-  runId: string,
-  attempts: number,
-  lastError: string,
-): void {
+/** A run failed: the task takes its next verdict. Only the owning run may; null when it no longer holds the lock. */
+export function failTask(taskId: string, runId: string, error: string): FailureVerdict | null {
+  const t = heldBy(getTask(taskId), runId);
+  if (!t) return null;
+  const next = failed(t, error);
+  patchTask(taskId, next.task);
+  return next.verdict;
+}
+
+/** A run parked on a usage limit: back on the queue until it lifts, no attempt burned. Only the owning run may. */
+export function parkTask(taskId: string, runId: string, until: number, lastError: string): void {
   if (!heldBy(getTask(taskId), runId)) return;
-  patchTask(taskId, { state: { kind: "dead", lastError }, attempts, completedAt: Date.now() });
+  patchTask(taskId, { state: { kind: "queued", nextAttemptAt: until, lastError } });
 }
 
 /**

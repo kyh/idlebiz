@@ -166,7 +166,18 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
   return new Promise((resolvePromise) => {
     let child: ChildProcess | undefined;
     let settled = false;
-    let stderrTail = "";
+    // stderr is read only when the run fails: kept as chunks, bounded, joined then
+    const stderrChunks: Buffer[] = [];
+    let stderrBytes = 0;
+    const keepStderr = (chunk: Buffer): void => {
+      stderrChunks.push(chunk);
+      stderrBytes += chunk.length;
+      while (stderrBytes > 2 * STDERR_TAIL_MAX && stderrChunks.length > 1) {
+        stderrBytes -= stderrChunks.shift()?.length ?? 0;
+      }
+    };
+    const stderrTail = (): string =>
+      Buffer.concat(stderrChunks).toString().slice(-STDERR_TAIL_MAX).trim();
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionId: string | undefined;
@@ -257,11 +268,11 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     stdout.on("error", () => {});
     stderr.on("data", (d: Buffer) => {
       pokeIdle();
-      stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_MAX);
+      keepStderr(d);
     });
     child.on("error", (err: Error) => settle(failed(`${bin}: ${err.message}`)));
     child.on("close", (code) =>
-      settle(failed(stderrTail.trim() || `${bin} exited with code ${code} mid-turn`)),
+      settle(failed(stderrTail() || `${bin} exited with code ${code} mid-turn`)),
     );
 
     pokeIdle();
@@ -322,6 +333,8 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         if (spent > billed) {
           opts.onEvent({ type: "usage", usage: { ...zeroUsage(), costUsd: spent - billed } });
           billed = spent;
+          // carried on the result as it grows, so a run killed mid-flight still reports it
+          total = { ...total, costUsd: billed };
         }
       });
 
@@ -411,7 +424,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         settle(
           completed
             ? result({ kind: "completed" })
-            : failed(stderrTail.trim() || `agent stopped: ${stopReason}`),
+            : failed(stderrTail() || `agent stopped: ${stopReason}`),
         );
         return null;
       })

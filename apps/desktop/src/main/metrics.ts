@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { atomicWrite, readJsonFile } from "@/main/lib/fs";
 import { HttpError, getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
-import { jsonRecordSchema, jsonValueSchema, type JsonValue } from "@/shared/json";
+import { getSecret } from "@/main/secrets";
+import { jsonValueSchema, type JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
 // ---------------------------------------------------------------------------
@@ -60,14 +61,11 @@ export function readMetricsConfig(companyId: string): MetricsConfig | null {
   return cfg;
 }
 
-/** Merge a patch into metrics.json. */
+/** Merge a patch into metrics.json; an `undefined` field drops that provider. The file is a MetricsConfig both ways. */
 export function writeMetricsConfig(companyId: string, patch: Partial<MetricsConfig>): void {
-  const existing = readJsonFile(metricsPath(companyId), jsonRecordSchema) ?? {};
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) delete existing[k];
-    else existing[k] = v;
-  }
-  atomicWrite(metricsPath(companyId), JSON.stringify(existing, null, 2));
+  const existing = readJsonFile(metricsPath(companyId), MetricsConfigSchema) ?? {};
+  const next = MetricsConfigSchema.parse({ ...existing, ...patch });
+  atomicWrite(metricsPath(companyId), JSON.stringify(next, null, 2));
 }
 
 const num = (v: JsonValue | undefined): number | null => {
@@ -152,7 +150,7 @@ interface StripeSnapshot {
 
 /** Revenue + customer count from the connected (or hand-keyed) Stripe account. */
 async function stripeSnapshot(): Promise<StripeSnapshot> {
-  const key = process.env["STRIPE_CONNECT_TOKEN"] ?? process.env["STRIPE_SECRET_KEY"];
+  const key = getSecret("STRIPE_CONNECT_TOKEN") ?? getSecret("STRIPE_SECRET_KEY");
   if (!key) return { revenue: null, customers: null, authError: false };
   try {
     const [revenue, customers] = await Promise.all([stripeRevenue(key), stripeCustomers(key)]);
@@ -164,7 +162,7 @@ async function stripeSnapshot(): Promise<StripeSnapshot> {
 }
 
 async function plausibleVisitors(domain: string): Promise<number | null> {
-  const key = process.env["PLAUSIBLE_API_KEY"];
+  const key = getSecret("PLAUSIBLE_API_KEY");
   if (!key) return null;
   try {
     const data = await getJson(

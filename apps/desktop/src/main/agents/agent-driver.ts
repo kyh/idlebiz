@@ -263,7 +263,7 @@ class AgentDriver {
     resumeSessionId: string | undefined,
     abort: AbortController,
   ): Promise<{ result: Omit<RunResult, "session">; turn: AcpTurnResult; sawOutput: boolean }> {
-    const handle = controlPlane.registerRun({ hooks });
+    const handle = controlPlane.registerRun(hooks);
     let sawOutput = false;
     try {
       const res = await runAcpTurn({

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getJson } from "@/main/lib/http";
 import type { JsonValue } from "@/shared/json";
+import { getSecret } from "@/main/secrets";
 import type { VercelDeployment, VercelProject } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
@@ -14,7 +15,7 @@ import type { VercelDeployment, VercelProject } from "@/shared/ipc-registry";
 const API = "https://api.vercel.com";
 
 function envToken(): string | null {
-  return process.env["VERCEL_TOKEN"] ?? null;
+  return getSecret("VERCEL_TOKEN");
 }
 
 function apiGet(

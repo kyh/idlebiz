@@ -126,9 +126,21 @@ const RETRY_BASE_MS = 15_000;
 const RETRY_CAP_MS = 10 * 60_000;
 
 /** Exponential backoff for the Nth failed attempt (1-based), capped. */
-export function retryDelayMs(attempt: number): number {
+function retryDelayMs(attempt: number): number {
   const d = RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1);
   return Math.min(d, RETRY_CAP_MS);
+}
+
+/** What a failed attempt costs: the next backoff retry, or the dead letter once the attempts are spent. */
+export type FailureVerdict =
+  | { kind: "retry"; attempts: number; retryAt: number }
+  | { kind: "dead"; attempts: number };
+
+export function afterFailure(attemptsSoFar: number, now: number): FailureVerdict {
+  const attempts = attemptsSoFar + 1;
+  return attempts >= MAX_TASK_ATTEMPTS
+    ? { kind: "dead", attempts }
+    : { kind: "retry", attempts, retryAt: now + retryDelayMs(attempts) };
 }
 
 // ---- business types (onboarding presets) -----------------------------------

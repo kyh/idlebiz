@@ -4,7 +4,7 @@ import type { OfficeLayer, OfficePoi, OfficeSeat, PixelPoint } from "@/renderer/
 import type { Facing } from "@/shared/office-layout-schema";
 import {
   cloneObject,
-  contentBounds,
+  worldRect,
   flipTransform,
   makeObject,
   moveObject,
@@ -135,10 +135,8 @@ export function Stage({
   const hitTest = (x: number, y: number): EditableObject | null => {
     let best: EditableObject | null = null;
     for (const o of sortedObjects) {
-      const b = contentBounds(o);
-      const bx = o.x + b.x;
-      const by = o.y + b.y;
-      if (x < bx || y < by || x >= bx + b.w || y >= by + b.h) continue;
+      const r = worldRect(o);
+      if (x < r.x || y < r.y || x >= r.x + r.w || y >= r.y + r.h) continue;
       best = o;
     }
     return best;
@@ -293,10 +291,8 @@ export function Stage({
         x1 - x0 > 3 || y1 - y0 > 3
           ? layout.objects
               .filter((o) => {
-                const b = contentBounds(o);
-                const bx = o.x + b.x;
-                const by = o.y + b.y;
-                return !(x1 < bx || x0 > bx + b.w || y1 < by || y0 > by + b.h);
+                const r = worldRect(o);
+                return !(x1 < r.x || x0 > r.x + r.w || y1 < r.y || y0 > r.y + r.h);
               })
               .map((o) => o.uid)
           : [];

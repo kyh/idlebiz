@@ -48,10 +48,6 @@ function raise(record: RunRecord, ask: BlockedAsk): void {
   record.hooks.raiseAsk(ask);
 }
 
-interface RunRegistration {
-  hooks: RunToolHooks;
-}
-
 interface RunHandle {
   /** Run-scoped env for the agent process: the API URL and its bearer token. */
   env: Record<string, string>;
@@ -111,9 +107,9 @@ class ControlPlane {
     return `http://127.0.0.1:${this.port}`;
   }
 
-  registerRun(reg: RunRegistration): RunHandle {
+  registerRun(hooks: RunToolHooks): RunHandle {
     const token = randomBytes(24).toString("base64url");
-    const record: RunRecord = { hooks: reg.hooks, blocked: null };
+    const record: RunRecord = { hooks, blocked: null };
     this.runs.set(token, record);
     return {
       env: { IDLEBIZ_API_URL: this.baseUrl(), IDLEBIZ_RUN_TOKEN: token },

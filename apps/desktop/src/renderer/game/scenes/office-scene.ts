@@ -206,14 +206,16 @@ export class OfficeScene extends Phaser.Scene {
    * for a saved office the bundled gate never saw.
    */
   private sightSealed(masks: (key: string) => OpaqueMask | null, player: Player): WalkGrid {
-    const sprites: PaintedSprite[] = [];
-    for (const placement of OFFICE.placements) {
-      const mask = masks(placement.key);
-      if (mask) sprites.push({ obj: placement.def, mask });
-    }
     const sheet = masks(player.sprite.texture.key);
     if (!sheet) return OFFICE.grid;
     const silhouette = frameMask(sheet, { x: 0, y: 0, w: FRAME_W, h: FRAME_H });
+    // reading a texture is a canvas round trip: only what can draw above a character
+    const sprites: PaintedSprite[] = [];
+    for (const placement of OFFICE.placements) {
+      if (placement.def.layer === "floor") continue;
+      const mask = masks(placement.key);
+      if (mask) sprites.push({ obj: placement.def, mask });
+    }
     const hidden = hiddenNodes(OFFICE.grid, OFFICE.spawn, sprites, silhouette);
     return withoutNodes(
       OFFICE.grid,

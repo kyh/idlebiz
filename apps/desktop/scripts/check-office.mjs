@@ -53,7 +53,7 @@ import {
 } from "../src/shared/office-grid.ts";
 import { comparePaintOrder } from "../src/shared/office-depth.ts";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
-import { hiddenNodes } from "../src/shared/office-sight.ts";
+import { hiddenNodes, opaqueAt } from "../src/shared/office-sight.ts";
 
 const require = createRequire(import.meta.url);
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -95,10 +95,7 @@ function paintedMask(layout, sprites) {
   for (const { obj, mask } of sprites) {
     for (let sy = 0; sy < mask.h; sy++) {
       for (let sx = 0; sx < mask.w; sx++) {
-        // flips mirror inside the sprite's own canvas, exactly like setFlip does
-        const lx = obj.flipX ? mask.w - 1 - sx : sx;
-        const ly = obj.flipY ? mask.h - 1 - sy : sy;
-        if (!mask.opaque[ly * mask.w + lx]) continue;
+        if (!opaqueAt(mask, obj, sx, sy)) continue;
         const wx = Math.round(obj.x) + sx;
         const wy = Math.round(obj.y) + sy;
         if (wx >= 0 && wy >= 0 && wx < W && wy < H) painted[wy * W + wx] = 1;
