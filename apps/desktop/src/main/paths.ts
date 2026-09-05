@@ -10,7 +10,8 @@ import { mkdirSync } from "node:fs";
 //       AGENTS.md           the agent's canonical definition, injected into every run
 //       memory/             the agent's own scratch memory
 //       sessions/           the agent's own session continuity
-//     tasks/<slug>/TASK.md  work items
+//     tasks/<slug>/TASK.md  open work
+//     shipped/<slug>/TASK.md  work the team finished (the shipping log)
 //     workspace/            shared cwd where agents do real work
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical)
@@ -46,6 +47,13 @@ export const employeeSessionDir = (companySlug: string, employeeSlug: string): s
 export const tasksDir = (companySlug: string): string => join(companyDir(companySlug), "tasks");
 export const taskFile = (companySlug: string, taskSlug: string): string =>
   join(tasksDir(companySlug), taskSlug, "TASK.md");
+/**
+ * Done tasks move here. The open queue is what boot reads and the scheduler
+ * scans; the shipping log grows without bound and is read when a panel asks.
+ */
+export const shippedDir = (companySlug: string): string => join(companyDir(companySlug), "shipped");
+export const shippedTaskFile = (companySlug: string, taskSlug: string): string =>
+  join(shippedDir(companySlug), taskSlug, "TASK.md");
 
 /** Commands the founder has signed off but the agent has not run yet. */
 export const approvalsFile = (companySlug: string): string =>

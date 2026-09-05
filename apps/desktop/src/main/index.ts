@@ -257,13 +257,17 @@ function registerIpcHandlers(): void {
 
   handle("setMaxAgents", ({ companyId, maxAgents }) => store.setMaxAgents(companyId, maxAgents));
 
-  // filtered in main: the full history is thousands of briefs the renderer never shows
-  handle("listTasks", ({ companyId, assigneeId, status }) =>
-    store
-      .listTasks(companyId)
+  // filtered in main: the shipping log is thousands of briefs, read only when asked for
+  handle("listTasks", ({ companyId, assigneeId, status }) => {
+    const wantsShipped = status === undefined || status.includes("done");
+    const pool = wantsShipped
+      ? [...store.listOpenTasks(companyId), ...store.listShippedTasks(companyId)]
+      : store.listOpenTasks(companyId);
+    return pool
       .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
-      .filter((t) => status === undefined || status.includes(t.state.kind)),
-  );
+      .filter((t) => status === undefined || status.includes(t.state.kind))
+      .toSorted((a, b) => b.createdAt - a.createdAt);
+  });
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 

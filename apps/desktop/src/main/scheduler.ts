@@ -167,7 +167,7 @@ class Scheduler {
       // don't brief employees whose CLI is resting on a usage limit
       if (agentDriver.restingRunner(emp.runner) !== null) continue;
       const open = store
-        .listTasksForEmployee(emp.id)
+        .openTasksFor(emp.id)
         .some((t) => t.state.kind === "queued" || t.state.kind === "running");
       if (open) continue;
       this.brief(company, emp, this.autonomousBrief(company, emp, employees));
@@ -183,7 +183,7 @@ class Scheduler {
       room: store.recentTeamMessages(company.id, 12),
       ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
       problems: store
-        .listTasks(company.id)
+        .listOpenTasks(company.id)
         .filter((t) => t.state.kind === "dead")
         .slice(0, 5),
       nameOf: (id) => this.empName(id),
@@ -325,7 +325,7 @@ class Scheduler {
   resumeIntegrationAsks(kind: IntegrationKind): void {
     const company = store.getDefaultCompany();
     if (!company) return;
-    for (const task of store.listTasks(company.id)) {
+    for (const task of store.listOpenTasks(company.id)) {
       const st = task.state;
       if (st.kind !== "blocked" || st.ask.type !== "integration") continue;
       if (st.ask.integration !== kind) continue;
@@ -348,7 +348,7 @@ class Scheduler {
     const company = store.getCompany(emp.companyId);
     if (!company || !this.admit(company)) return null;
     const waiting = store
-      .listTasksForEmployee(employeeId)
+      .openTasksFor(employeeId)
       .find(
         (t) =>
           t.description === brief.description &&

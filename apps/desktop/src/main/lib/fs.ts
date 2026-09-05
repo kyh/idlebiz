@@ -31,6 +31,13 @@ export function atomicWrite(path: string, content: string, options: { mode?: num
   renameSync(tmp, path);
 }
 
+/** Move a whole package (a directory) somewhere else under the save, behind the same gate. */
+export function moveDir(from: string, to: string): void {
+  if (writesSuspended) return;
+  mkdirSync(dirname(to), { recursive: true });
+  renameSync(from, to);
+}
+
 /** Append one JSON row. Loss is acceptable: these are logs, not the save. */
 export function appendJsonl<Row extends object>(path: string, row: Row): void {
   if (writesSuspended) return;

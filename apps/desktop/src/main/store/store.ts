@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { appendJsonl, atomicWrite, readJsonFile, readJsonlTail } from "@/main/lib/fs";
+import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "@/main/lib/fs";
 import {
   ROOT_DIR,
   ensureAppDirs,
@@ -17,6 +17,8 @@ import {
   employeeSessionDir,
   tasksDir,
   taskFile,
+  shippedDir,
+  shippedTaskFile,
   routinesDir,
   routineFile,
   chatFile,
@@ -77,7 +79,8 @@ import type {
 interface Cache {
   companies: Map<string, Company>;
   employees: Map<string, Employee[]>; // companyId -> employees
-  tasks: Map<string, Task[]>; // companyId -> tasks
+  tasks: Map<string, Task[]>; // companyId -> open tasks (done ones live in shipped/)
+  shipped: Map<string, Task[]>; // companyId -> done tasks, once a panel has asked for them
   routines: Map<string, Routine[]>; // companyId -> routines
   chat: Map<string, TeamMessage[]>; // companyId -> recent room messages (ring)
   activity: ActivityEvent[]; // ring buffer across companies (UI stream)
@@ -288,6 +291,10 @@ function saveEmployee(e: Employee): void {
 function saveTask(t: Task): void {
   atomicWrite(taskFile(t.companyId, t.id), serializeDoc(taskToDoc(t)));
 }
+/** A done task's package leaves the open queue for the shipping log. */
+function shelve(t: Task): void {
+  moveDir(join(tasksDir(t.companyId), t.id), join(shippedDir(t.companyId), t.id));
+}
 
 const ACTIVITY_RING = 600;
 
@@ -338,6 +345,7 @@ export function initStore(): LoadReport {
     companies: new Map(),
     employees: new Map(),
     tasks: new Map(),
+    shipped: new Map(),
     routines: new Map(),
     chat: new Map(),
     activity: [],
@@ -392,7 +400,20 @@ export function initStore(): LoadReport {
         }
         saveTask(t);
       }
-      loaded.tasks.set(co.id, tasks);
+      // done work still in the open queue: a save from before shipped/ existed,
+      // or a crash between settling and shelving. Either way it belongs there.
+      for (const t of tasks) {
+        if (t.state.kind !== "done") continue;
+        try {
+          shelve(t);
+        } catch (cause) {
+          skip("task", taskFile(co.id, t.id), cause);
+        }
+      }
+      loaded.tasks.set(
+        co.id,
+        tasks.filter((t) => t.state.kind !== "done"),
+      );
 
       loaded.routines.set(
         co.id,
@@ -612,6 +633,7 @@ export function foundCompany(input: {
   c().companies.set(id, co);
   c().employees.set(id, []);
   c().tasks.set(id, []);
+  c().shipped.set(id, []);
   c().routines.set(id, []);
   c().chat.set(id, []);
   try {
@@ -623,7 +645,14 @@ export function foundCompany(input: {
     seedDefaultRoutines(id, input.businessType);
     saveCompany(co);
   } catch (cause) {
-    for (const map of [c().companies, c().employees, c().tasks, c().routines, c().chat])
+    for (const map of [
+      c().companies,
+      c().employees,
+      c().tasks,
+      c().shipped,
+      c().routines,
+      c().chat,
+    ])
       map.delete(id);
     rmSync(companyDir(id), { recursive: true, force: true });
     throw cause;
@@ -723,8 +752,7 @@ export function archiveEmployee(employeeId: string): Employee | null {
     if (idx >= 0) list.splice(idx, 1);
   }
   try {
-    mkdirSync(alumniDir(emp.companyId), { recursive: true });
-    renameSync(
+    moveDir(
       employeeAgentDir(emp.companyId, employeeId),
       join(alumniDir(emp.companyId), employeeId),
     );
@@ -951,7 +979,8 @@ export function createTask(t: {
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
-    (s) => existsSync(join(tasksDir(t.companyId), s)),
+    (s) =>
+      existsSync(join(tasksDir(t.companyId), s)) || existsSync(join(shippedDir(t.companyId), s)),
   );
   const task: Task = {
     id,
@@ -972,17 +1001,37 @@ export function createTask(t: {
   return task;
 }
 
+/** An open task by id. Shipped work is history, not something to act on. */
 export const getTask = (id: string): Task | null => findIn(c().tasks, id);
 
-export function listTasks(companyId: string): Task[] {
-  return (c().tasks.get(companyId) ?? []).toSorted((a, b) => b.createdAt - a.createdAt);
+const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
+
+/** The company's open queue: everything not yet done, newest first. */
+export function listOpenTasks(companyId: string): Task[] {
+  return (c().tasks.get(companyId) ?? []).toSorted(newestFirst);
 }
 
-export function listTasksForEmployee(employeeId: string): Task[] {
+/** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
+export function listShippedTasks(companyId: string): Task[] {
+  let list = c().shipped.get(companyId);
+  if (!list) {
+    list = loadPackages(
+      "task",
+      shippedDir(companyId),
+      (slug) => shippedTaskFile(companyId, slug),
+      (doc) => docToTask(doc, companyId),
+    ).toSorted(byAge);
+    c().shipped.set(companyId, list);
+  }
+  return list.toSorted(newestFirst);
+}
+
+/** An employee's open tasks, newest first. */
+export function openTasksFor(employeeId: string): Task[] {
   const out: Task[] = [];
   for (const list of c().tasks.values())
     for (const t of list) if (t.assigneeId === employeeId) out.push(t);
-  return out.toSorted((a, b) => b.createdAt - a.createdAt);
+  return out.toSorted(newestFirst);
 }
 
 const TASK_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } satisfies Record<TaskPriority, number>;
@@ -1006,6 +1055,28 @@ export function listQueuedTasks(): Task[] {
 
 const patchTask = (id: string, patch: Partial<Task>): Task | null =>
   patchIn(c().tasks, id, patch, saveTask);
+
+/**
+ * Close a task on the state a run (or the founder) ended it with. Done work is
+ * written first and shelved second, so a crash in between leaves a done task
+ * in the open queue for boot to shelve, never a half-moved package.
+ */
+type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
+
+function close(taskId: string, state: Settled): void {
+  const t = patchTask(taskId, { state, completedAt: Date.now() });
+  if (!t || t.state.kind !== "done") return;
+  try {
+    shelve(t);
+  } catch (cause) {
+    console.error(`could not shelve ${t.id}: ${errorMessage(cause)}`);
+    return;
+  }
+  const open = c().tasks.get(t.companyId);
+  const idx = open?.findIndex((x) => x.id === t.id) ?? -1;
+  if (open && idx >= 0) open.splice(idx, 1);
+  c().shipped.get(t.companyId)?.push(t);
+}
 
 /** The task's run, when the given run is the one holding its lock. */
 const heldBy = (t: Task | null, runId: string): Task | null =>
@@ -1039,13 +1110,9 @@ export function lockTaskForRun(taskId: string, runId: string): Task | null {
 }
 
 /** The run settled: the task is done, or waits on the founder. Only the owning run may. */
-export function settleTask(
-  taskId: string,
-  runId: string,
-  state: Extract<TaskState, { kind: "done" | "blocked" }>,
-): void {
+export function settleTask(taskId: string, runId: string, state: Settled): void {
   if (!heldBy(getTask(taskId), runId)) return;
-  patchTask(taskId, { state, completedAt: Date.now() });
+  close(taskId, state);
 }
 
 /**
@@ -1083,10 +1150,7 @@ export function resolveBlockedWithAnswer(taskId: string, answer: string): Task |
   const t = getTask(taskId);
   if (!t || t.state.kind !== "blocked" || !t.assigneeId) return null;
   const { ask } = t.state;
-  patchTask(taskId, {
-    state: { kind: "done", summary: answeredSummary(answer) },
-    completedAt: Date.now(),
-  });
+  close(taskId, { kind: "done", summary: answeredSummary(answer) });
   return createTask({
     companyId: t.companyId,
     ...continuationBrief(t, ask, answer),
