@@ -6,6 +6,7 @@ import {
   findPath,
   layoutIssues,
   nearestFloor,
+  pocketCells,
   reachableTiles,
   walkGridOf,
 } from "./office-grid";
@@ -25,7 +26,7 @@ const OPEN = ["1111111111", "1000011001", "1000011001", "1000000001", "100001100
 const SEALED = ["1111111111", "1000011001", "1000011001", "1000011001", "1000011001", "1111111111"];
 
 const spawn = { x: 24, y: 24 }; // node (1,1), in the west room
-const eastSeat = { x: 120, y: 24 }; // node (7,1), in the east room
+const eastSpot = { x: 120, y: 24 }; // node (7,1), in the east room
 
 function office(
   collision: readonly string[],
@@ -41,13 +42,16 @@ function office(
     rows: 6,
     spawn,
     door: spawn,
-    seats: [{ role: "work", ...eastSeat }],
+    seats: [],
     pois: [],
     objects: [],
     collision: [...collision],
     ...extra,
   };
 }
+
+/** The east room's spot as a workstation: its chair cell becomes furniture. */
+const eastSeat = (): Partial<OfficeLayoutData> => ({ seats: [{ role: "work", ...eastSpot }] });
 
 describe("walk grid", () => {
   const grid = walkGridOf(office(OPEN));
@@ -65,9 +69,9 @@ describe("walk grid", () => {
   });
 
   it("paths through the corridor and ends exactly on a target the body fits at", () => {
-    const path = findPath(grid, spawn, eastSeat);
+    const path = findPath(grid, spawn, eastSpot);
     expect(path).not.toBeNull();
-    expect(path?.at(-1)).toEqual(eastSeat);
+    expect(path?.at(-1)).toEqual(eastSpot);
     // every waypoint is somewhere the body can actually stand
     for (const p of path ?? []) expect(bodyBlockedAt(grid, p.x, p.y), `${p.x},${p.y}`).toBe(false);
   });
@@ -77,15 +81,28 @@ describe("walk grid", () => {
     expect(path?.at(-1)).toEqual({ x: 120, y: 24 });
   });
 
-  it("returns null when a wall seals the room off", () => {
-    expect(findPath(walkGridOf(office(SEALED)), spawn, eastSeat)).toBeNull();
+  it("walks as close as the wall allows when the room beyond is sealed", () => {
+    // the sealed room is a pocket the walker never enters, so the target snaps back
+    // to this side of the wall instead of failing outright
+    const path = findPath(walkGridOf(office(SEALED)), spawn, eastSpot);
+    expect(path?.at(-1)).toEqual({ x: 56, y: 24 });
   });
 
   it("flood-fills exactly the rooms the spawn connects to", () => {
     const open = reachableTiles(grid, spawn);
-    expect(canReach(grid, open, eastSeat)).toBe(true);
+    expect(canReach(grid, open, eastSpot)).toBe(true);
     const sealed = walkGridOf(office(SEALED));
-    expect(canReach(sealed, reachableTiles(sealed, spawn), eastSeat)).toBe(false);
+    expect(reachableTiles(sealed, spawn).has("7,1")).toBe(false);
+  });
+
+  it("makes a seat's chair solid and seals floor no body can probe", () => {
+    const seated = walkGridOf(office(OPEN, eastSeat()));
+    expect(bodyBlockedAt(seated, eastSpot.x, eastSpot.y)).toBe(true);
+    // the sealed east room of SEALED is a pocket: every cell in it turns solid
+    const pocketed = walkGridOf(office(SEALED));
+    expect(pocketed.solid[1]?.[7]).toBe(true);
+    expect(pocketCells(walkGridOf(office(OPEN)), spawn)).toEqual([]);
+    expect(pocketCells(walkGridOf(office(SEALED)), spawn)).toEqual([]);
   });
 });
 
@@ -94,8 +111,12 @@ describe("layoutIssues", () => {
     expect(layoutIssues(office(OPEN, { pois: [{ x: 120, y: 56, face: "up" }] }))).toEqual([]);
   });
 
+  it("is clean with a seat whose chair is solid but whose desk side is walkable", () => {
+    expect(layoutIssues(office(OPEN, eastSeat()))).toEqual([]);
+  });
+
   it("names a seat nobody can reach", () => {
-    expect(layoutIssues(office(SEALED))).toEqual([
+    expect(layoutIssues(office(SEALED, eastSeat()))).toEqual([
       "seat 0 (work at 120,24) is unreachable from spawn",
     ]);
   });

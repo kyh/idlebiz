@@ -28,11 +28,19 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   office-design.json, nothing reconciles them. The body probe is 16x12 but the sprite is
   32x64, so art overhangs the body by ~8px and any disagreement renders the character
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
-  it fails on any reachable spot where the player's art hangs over nothing, and on any
-  seat, point of interest or door the layout names that cannot be walked to from spawn.
-  The schema (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`, `door`)
-  and the walk grid (`shared/office-grid.ts`) are shared by the scene, the save handler
-  and that script — a layout main refuses to save is exactly one the check would fail.
+  it fails on any seat, point of interest or door unreachable from spawn, any open floor
+  cell no body can ever stand on, any reachable spot where the player's art hangs over
+  nothing, and any reachable spot where something drawn above the player covers their
+  face. The schema (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`,
+  `door`), the walk grid (`shared/office-grid.ts`) and the sight judgement
+  (`shared/office-sight.ts`) are shared by the scene, the save handler and that script —
+  a layout main refuses to save is exactly one the check would fail.
+- **The walker has two rules the authored collision does not.** A seat's cell is solid
+  (sitters are placed on the chair; walkers never stand in it) and open floor no body can
+  probe is sealed — both in `walkGridOf`, so the scene, the gate and the builder's
+  Rebuild collision agree. At boot the scene additionally closes every reachable node
+  where the founder's face would be painted over, judged from the real textures, so a
+  saved layout the gate never saw still cannot hide them.
 
 ## Agent-driven development
 

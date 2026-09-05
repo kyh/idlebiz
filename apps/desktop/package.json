@@ -11,7 +11,7 @@
     "build": "electron-vite build",
     "generate:office-objects": "node scripts/generate-office-object-catalog.cjs",
     "generate:room-tiles": "node scripts/generate-room-builder-tiles.cjs",
-    "check:office": "node scripts/check-office-void.mjs",
+    "check:office": "node scripts/check-office.mjs",
     "start": "electron-vite preview",
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
     "release:publish": "bash scripts/publish-release.sh",

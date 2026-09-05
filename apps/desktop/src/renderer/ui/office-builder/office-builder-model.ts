@@ -23,6 +23,7 @@ import {
   ROOM_BUILDER_TILES,
   type RoomBuilderTile,
 } from "@/renderer/game/room-builder-tiles.generated";
+import { sealedCollision } from "@/shared/office-grid";
 
 export type Tool =
   | "select"
@@ -263,9 +264,14 @@ function inferSolid(
 }
 
 // --- serialize --------------------------------------------------------------
-/** Re-derive the collision grid from the placed pieces: floor-layer tiles carve
- * walkable space, solid furniture paints back solid, and every spot the layout
- * sends someone to (seats, points of interest, the door) is carved back open. */
+/**
+ * Re-derive the collision grid from the placed pieces: floor-layer tiles carve
+ * walkable space, solid furniture paints back solid, and the spots the layout
+ * sends someone to stand at (points of interest, the door) are carved back open.
+ * Seats stay furniture — sitters are placed on the chair, walkers never stand in
+ * it — and floor no body could ever probe is sealed, exactly as the walker
+ * would seal it at load, so what the builder shows is what the office walks.
+ */
 export function deriveCollision(L: EditableLayout): string[] {
   const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 1));
   for (const o of L.objects) {
@@ -277,12 +283,12 @@ export function deriveCollision(L: EditableLayout): string[] {
   for (const o of L.objects) {
     if (o.solid) paint(grid, L.cell, L.cols, L.rows, footprintRect(o), 1);
   }
-  for (const s of [...L.seats, ...L.pois, L.door]) {
+  for (const s of [...L.pois, L.door]) {
     const row = grid[Math.floor(s.y / L.cell)];
     const c = Math.floor(s.x / L.cell);
     if (row && c >= 0 && c < L.cols) row[c] = 0;
   }
-  return grid.map((row) => row.join(""));
+  return sealedCollision({ ...L, collision: grid.map((row) => row.join("")) });
 }
 
 /** The keys every placed object may carry, whichever band it is in. */

@@ -165,9 +165,11 @@ rather than crashing boot.
   `styles.css` as a kit class, never per-component. Full explanation in `CLAUDE.md`.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
-  It also proves every seat, point of interest and the door reachable from spawn — the
-  layout's semantic layer (schema v2 in `shared/office-layout-schema.ts`) is data the
-  scene trusts, so the gate is where it earns that trust.
+  Four passes: every seat, point of interest and the door reachable from spawn; no open
+  floor cell no body can stand on; no reachable spot with the player's art over the void;
+  no reachable spot with the player's face painted over. The walker seals the second and
+  the scene seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`),
+  so a saved layout is safe to walk even when its data would fail the gate.
 - **Unit tests cover the pure parts only.** `pnpm --filter @repo/desktop test` runs vitest
   over seating (`office-placement.ts`), poses, the layout schema and migration, the walk
   grid, the activity schema, and the command policy in `shared/command-policy.ts` (every

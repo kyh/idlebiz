@@ -17,9 +17,12 @@ import { NpcManager, type NpcState, type Seat, type Poi } from "@/renderer/game/
 import { OFFICE, type PixelPoint } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import { seatDepthOracle } from "@/renderer/game/seat-depth";
+import { frameMask, textureMasks, type OpaqueMask } from "@/renderer/game/texture-masks";
+import { FRAME_H, FRAME_W } from "@/shared/character-frame";
+import { hiddenNodes, type PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Employee } from "@/shared/domain";
-import { bodyBlockedAt, solidAt } from "@/shared/office-grid";
+import { bodyBlockedAt, solidAt, withoutNodes, type WalkGrid } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },
@@ -68,6 +71,8 @@ export class OfficeScene extends Phaser.Scene {
   private debugGfx?: Phaser.GameObjects.Graphics;
   private npcs?: NpcManager;
   private clickWalk?: ClickWalk;
+  /** The layout's grid with the spots nobody should stand in closed; set once the room is judged. */
+  private grid: WalkGrid = OFFICE.grid;
   private modalOpen = false;
   private activityUnsub?: () => void;
 
@@ -147,16 +152,14 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private async boot(): Promise<void> {
-    const seats = this.buildRoom();
+    const masks = textureMasks(this.textures);
+    const seats = this.buildRoom(masks);
 
     const cam = this.cameras.main;
     cam.removeBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE.spawn);
-
-    const npcs = new NpcManager(this, seats, OFFICE.grid, this.idlePois(), OFFICE.door);
-    this.npcs = npcs;
 
     const company = await bridge().getCompany();
     // the founder and the roster are independent fetches; the colleagues wait on both,
@@ -166,7 +169,11 @@ export class OfficeScene extends Phaser.Scene {
       company ? bridge().listEmployees({ companyId: company.id }) : [],
       company ? bridge().listTasks({ companyId: company.id, status: ["blocked"] }) : [],
     ]);
-    this.clickWalk = new ClickWalk(this, OFFICE.grid, this.walkerOf(player), npcs, (id) =>
+    const grid = this.sightSealed(masks, player);
+    this.grid = grid;
+    const npcs = new NpcManager(this, seats, grid, this.idlePois(), OFFICE.door);
+    this.npcs = npcs;
+    this.clickWalk = new ClickWalk(this, grid, this.walkerOf(player), npcs, (id) =>
       this.talkTo(id),
     );
 
@@ -179,7 +186,7 @@ export class OfficeScene extends Phaser.Scene {
     this.game.events.emit("office-ready");
   }
 
-  private buildRoom(): Seat[] {
+  private buildRoom(masks: (key: string) => OpaqueMask | null): Seat[] {
     const room = OFFICE.placements.map((placement) =>
       this.add
         .image(placement.x, placement.y, placement.key)
@@ -187,10 +194,32 @@ export class OfficeScene extends Phaser.Scene {
         .setDepth(placement.depth)
         .setFlip(placement.flipX, placement.flipY),
     );
-    const seatDepth = seatDepthOracle(this.textures);
+    const seatDepth = seatDepthOracle(masks);
     return OFFICE.seats
       .filter((seat) => seat.role === "work")
       .map((seat) => ({ x: seat.x, y: seat.y, depth: seatDepth(seat, room) }));
+  }
+
+  /**
+   * The walk grid with every spot where the founder's face would be painted over
+   * closed. Judged from the textures the room is actually drawn with, so it holds
+   * for a saved office the bundled gate never saw.
+   */
+  private sightSealed(masks: (key: string) => OpaqueMask | null, player: Player): WalkGrid {
+    const sprites: PaintedSprite[] = [];
+    for (const placement of OFFICE.placements) {
+      const mask = masks(placement.key);
+      if (mask) sprites.push({ obj: placement.def, mask });
+    }
+    const sheet = masks(player.sprite.texture.key);
+    if (!sheet) return OFFICE.grid;
+    const silhouette = frameMask(sheet, { x: 0, y: 0, w: FRAME_W, h: FRAME_H });
+    const hidden = hiddenNodes(OFFICE.grid, OFFICE.spawn, sprites, silhouette);
+    return withoutNodes(
+      OFFICE.grid,
+      OFFICE.spawn,
+      hidden.map((h) => h.node),
+    );
   }
 
   /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
@@ -209,7 +238,7 @@ export class OfficeScene extends Phaser.Scene {
       this.debugGfx = undefined;
       return;
     }
-    const { grid } = OFFICE;
+    const grid = this.grid;
     const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
     gfx.fillStyle(0xff3366, 0.35);
     for (let r = 0; r < grid.rows; r++) {
@@ -222,8 +251,8 @@ export class OfficeScene extends Phaser.Scene {
 
   private debugApi(): OfficeDebugApi {
     return {
-      bodyBlockedAt: (x, y) => bodyBlockedAt(OFFICE.grid, x, y),
-      solidAtPx: (x, y) => solidAt(OFFICE.grid, x, y),
+      bodyBlockedAt: (x, y) => bodyBlockedAt(this.grid, x, y),
+      solidAtPx: (x, y) => solidAt(this.grid, x, y),
       snapshot: () => ({
         camera: {
           x: this.cameras.main.scrollX,
@@ -373,7 +402,7 @@ export class OfficeScene extends Phaser.Scene {
   private moveResolved(mx: number, my: number): void {
     const sprite = this.player?.sprite;
     if (!sprite) return;
-    const { grid } = OFFICE;
+    const grid = this.grid;
     const nx = sprite.x + mx;
     if (!bodyBlockedAt(grid, nx, sprite.y)) sprite.x = nx;
     const ny = sprite.y + my;

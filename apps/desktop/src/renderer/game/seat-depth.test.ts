@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BUST, characterDepth } from "./character-sheet";
 import { DEPTH } from "@/shared/office-depth";
-import {
-  bustOverlapRect,
-  bustOverlaps,
-  seatDepth,
-  type OpaqueMask,
-  type RoomImage,
-} from "./seat-depth";
+import { bustOverlapRect, bustOverlaps, seatDepth, type RoomImage } from "./seat-depth";
+import type { OpaqueMask } from "@/shared/office-sight";
 
 // A seat at (100, 100): the bust spans x 90..110 and y 62..100 (height 38 above the origin).
 const seat = { x: 100, y: 100 };

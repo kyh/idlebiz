@@ -22,6 +22,8 @@ export type { OfficeLayer, OfficeLayoutData, OfficePoi, OfficeSeat, PixelPoint }
 export { comparePaintOrder, parseOfficeLayout };
 
 interface OfficeObjectPlacement {
+  /** The object as authored: its band and floor line, for anything that judges draw order. */
+  readonly def: OfficeObjectDef;
   readonly id: string;
   readonly key: string;
   readonly path: string;
@@ -98,6 +100,7 @@ function depthFor(obj: OfficeObjectDef, index: number): number {
 
 function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] {
   return objects.map((obj, index) => ({
+    def: obj,
     id: obj.id,
     key: objectTextureKey(obj.id),
     path: resolvePath(obj),

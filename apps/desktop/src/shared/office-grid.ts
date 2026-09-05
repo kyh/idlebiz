@@ -46,9 +46,13 @@ export interface WalkGrid {
   readonly pathRows: number;
 }
 
-export function walkGridOf(
-  layout: Pick<OfficeLayoutData, "cell" | "cols" | "rows" | "width" | "height" | "collision">,
-): WalkGrid {
+type GridSource = Pick<
+  OfficeLayoutData,
+  "cell" | "cols" | "rows" | "width" | "height" | "collision" | "seats" | "spawn"
+>;
+
+/** The authored collision, cell for cell, before the walker's own rules. */
+function rawGrid(layout: GridSource): WalkGrid {
   return {
     cell: layout.cell,
     cols: layout.cols,
@@ -61,6 +65,95 @@ export function walkGridOf(
   };
 }
 
+/** A collision cell, by row and column. */
+export interface GridCell {
+  readonly r: number;
+  readonly c: number;
+}
+
+const cellOf = (grid: WalkGrid, p: PixelPoint): GridCell => ({
+  r: Math.floor(p.y / grid.cell),
+  c: Math.floor(p.x / grid.cell),
+});
+
+/** A copy of the grid with the given cells solid. */
+function withSolid(grid: WalkGrid, cells: Iterable<GridCell>): WalkGrid {
+  const solid = grid.solid.map((row) => [...row]);
+  for (const { r, c } of cells) {
+    const row = solid[r];
+    if (row && c >= 0 && c < row.length) row[c] = true;
+  }
+  return { ...grid, solid };
+}
+
+/**
+ * Cells no reachable body ever probes: open floor that can only be looked at.
+ * A lane one cell wide, a corner behind a plant, the chair a seat sits in — the
+ * 16x12 body cannot fit, so nothing walkable ever touches them. Left open they
+ * read as places to go and make the nodes beside them stand half inside furniture.
+ */
+export function pocketCells(grid: WalkGrid, spawn: PixelPoint): GridCell[] {
+  const probed = new Set<string>();
+  for (const key of reachableTiles(grid, spawn)) {
+    const p = nodeCenter(parseTileKey(key));
+    for (const [dx, dy] of BODY_CORNERS) {
+      const { r, c } = cellOf(grid, { x: p.x + dx, y: p.y + dy });
+      probed.add(`${r},${c}`);
+    }
+  }
+  const pockets: GridCell[] = [];
+  grid.solid.forEach((row, r) => {
+    row.forEach((solid, c) => {
+      if (!solid && !probed.has(`${r},${c}`)) pockets.push({ r, c });
+    });
+  });
+  return pockets;
+}
+
+/**
+ * The grid the office is walked on. Two rules the authored collision does not
+ * have to know about: a seat's cell is solid (the chair is furniture; sitters
+ * are placed on it, walkers must not stand in it), and pockets are sealed.
+ * Sealing never changes what is reachable — a pocket is by definition a cell no
+ * reachable body touches — so the scene, the save gate and the builder agree.
+ */
+export function walkGridOf(layout: GridSource): WalkGrid {
+  const seated = authoredGrid(layout);
+  return withSolid(seated, pocketCells(seated, layout.spawn));
+}
+
+/** The authored collision with chairs solid and nothing sealed: what a layout promises. */
+export function authoredGrid(layout: GridSource): WalkGrid {
+  const raw = rawGrid(layout);
+  return withSolid(
+    raw,
+    layout.seats.map((seat) => cellOf(raw, seat)),
+  );
+}
+
+/**
+ * The grid with these standing spots closed and the pockets that leaves sealed.
+ * The scene uses it for the spots where the founder could not be seen: a node
+ * and a cell are one and the same on the 16px grid, so closing the node's cell
+ * is what stops anyone standing there.
+ */
+export function withoutNodes(
+  grid: WalkGrid,
+  spawn: PixelPoint,
+  nodes: readonly PixelPoint[],
+): WalkGrid {
+  const closed = withSolid(
+    grid,
+    nodes.map((node) => cellOf(grid, node)),
+  );
+  return withSolid(closed, pocketCells(closed, spawn));
+}
+
+/** The authored collision with the walker's rules written into it, for saving. */
+export function sealedCollision(layout: GridSource): string[] {
+  return walkGridOf(layout).solid.map((row) => row.map((s) => (s ? "1" : "0")).join(""));
+}
+
 /** Is the collision cell under this pixel solid? Off-grid is solid. */
 export function solidAt(grid: WalkGrid, x: number, y: number): boolean {
   const c = Math.floor(x / grid.cell);
@@ -69,14 +162,16 @@ export function solidAt(grid: WalkGrid, x: number, y: number): boolean {
   return grid.solid[r]?.[c] ?? true;
 }
 
+const BODY_CORNERS: ReadonlyArray<readonly [number, number]> = [
+  [-BODY_HALF_WIDTH, -BODY_HALF_HEIGHT],
+  [BODY_HALF_WIDTH, -BODY_HALF_HEIGHT],
+  [-BODY_HALF_WIDTH, BODY_HALF_HEIGHT],
+  [BODY_HALF_WIDTH, BODY_HALF_HEIGHT],
+];
+
 /** Can a body centred here stand without any corner inside a solid cell? */
 export function bodyBlockedAt(grid: WalkGrid, x: number, y: number): boolean {
-  return (
-    solidAt(grid, x - BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-    solidAt(grid, x + BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-    solidAt(grid, x - BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT) ||
-    solidAt(grid, x + BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT)
-  );
+  return BODY_CORNERS.some(([dx, dy]) => solidAt(grid, x + dx, y + dy));
 }
 
 /** Pixel centre of a path node. */
@@ -220,7 +315,9 @@ const at = (p: PixelPoint): string => `${p.x},${p.y}`;
  * the floor with. A seat off in a sealed room passes the schema and fails here.
  */
 export function layoutIssues(layout: OfficeLayoutData): string[] {
-  const grid = walkGridOf(layout);
+  // judged on the layout as authored: sealing a pocket must not let a seat in a
+  // sealed room pass by snapping to the nearest floor on the other side of its wall
+  const grid = authoredGrid(layout);
   const issues: string[] = [];
   const inWorld = (p: PixelPoint): boolean =>
     p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;

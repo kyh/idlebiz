@@ -8,17 +8,11 @@
 import type Phaser from "phaser";
 import { BUST, characterDepth } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
+import type { OpaqueMask } from "@/renderer/game/texture-masks";
 import type { PixelPoint } from "@/shared/office-layout-schema";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;
-
-/** Opaque-pixel coverage of a room texture, in texture space. */
-export interface OpaqueMask {
-  readonly opaque: Uint8Array;
-  readonly w: number;
-  readonly h: number;
-}
 
 /** A placed room image as the seat test sees it: its bounds, band and flips. */
 export interface RoomImage {
@@ -104,37 +98,9 @@ export function seatDepth<T extends RoomImage>(
   return depth + SEAT_LIFT;
 }
 
-function opaqueMaskOf(
-  source: ReturnType<Phaser.Textures.Texture["getSourceImage"]>,
-): OpaqueMask | null {
-  if (!(source instanceof HTMLImageElement) && !(source instanceof HTMLCanvasElement)) return null;
-  const canvas = document.createElement("canvas");
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.drawImage(source, 0, 0);
-  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  const opaque = new Uint8Array(canvas.width * canvas.height);
-  for (let i = 0; i < opaque.length; i++) opaque[i] = (pixels[i * 4 + 3] ?? 0) > 0 ? 1 : 0;
-  return { opaque, w: canvas.width, h: canvas.height };
-}
-
-/**
- * `seatDepth` over a built room's images, reading each texture back at most once — and
- * only the ones whose bounds reach a seat; the rest of the room is never decoded.
- */
+/** `seatDepth` over a built room's images, reading only the textures whose bounds reach a seat. */
 export function seatDepthOracle(
-  textures: Phaser.Textures.TextureManager,
+  maskOf: (key: string) => OpaqueMask | null,
 ): (seat: PixelPoint, room: readonly Phaser.GameObjects.Image[]) => number {
-  const masks = new Map<string, OpaqueMask | null>();
-  const maskOf = (image: Phaser.GameObjects.Image): OpaqueMask | null => {
-    const key = image.texture.key;
-    const cached = masks.get(key);
-    if (cached !== undefined) return cached;
-    const mask = opaqueMaskOf(textures.get(key).getSourceImage());
-    masks.set(key, mask);
-    return mask;
-  };
-  return (seat, room) => seatDepth(seat, room, maskOf);
+  return (seat, room) => seatDepth(seat, room, (image) => maskOf(image.texture.key));
 }

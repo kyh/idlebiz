@@ -600,8 +600,11 @@ export class NpcManager {
     const dwell = 2500 + Math.random() * 4000;
     return this.walkTo(npc, poi, () => {
       npc.nextWanderAt = this.scene.time.now + dwell + 800;
-      if (poi.sit) npc.sprite.play(npc.anims.sit[poi.sit], true);
-      else this.standFacing(npc, poi.face);
+      if (poi.sit) {
+        // the chair is furniture the walker stops beside; the sitter is placed on it
+        npc.sprite.setPosition(poi.x, poi.y);
+        npc.sprite.play(npc.anims.sit[poi.sit], true);
+      } else this.standFacing(npc, poi.face);
       npc.pendingTimer = this.scene.time.delayedCall(dwell, () => {
         if (!npc.plan && npc.activity.kind === "idle") {
           this.standFacing(npc, "down");

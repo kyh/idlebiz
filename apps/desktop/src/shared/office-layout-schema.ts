@@ -8,7 +8,7 @@ import type { JsonValue } from "./json.ts";
 //
 // One schema, three readers: the renderer (to build the room), main (to refuse
 // a bad layout at save time instead of silently falling back at next boot),
-// and scripts/check-office-void.mjs (the static gate). It therefore imports
+// and scripts/check-office.mjs (the static gate). It therefore imports
 // nothing from either process — only zod and the band constants — and names
 // its relative imports with extensions so node can load it as-is.
 //
