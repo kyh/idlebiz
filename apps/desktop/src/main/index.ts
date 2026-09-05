@@ -47,8 +47,12 @@ function runMetricsPulse(): void {
   const company = store.getDefaultCompany();
   if (!company) return;
   const products = store.listProducts(company.id);
+  const cfg = readMetricsConfig(company.id);
+  // nothing to ask anyone: no provider configured, no product bound
+  if (!cfg?.stripe && !cfg?.plausible && !cfg?.custom && products.every((p) => p.vercel === null))
+    return;
   void (async () => {
-    const snap = await fetchRealMetrics(readMetricsConfig(company.id), products);
+    const snap = await fetchRealMetrics(cfg, products);
     store.setRealMetrics(company.id, snap);
     for (const [productId, users] of snap.productUsers) store.setProductUsers(productId, users);
     if (snap.authError) markAuthError("Stripe access was revoked — reconnect in the HUD.");
