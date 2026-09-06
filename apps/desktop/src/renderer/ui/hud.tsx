@@ -4,6 +4,7 @@ import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee, Product } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
+import { cn } from "cn";
 
 /** The windows the HUD opens over the office; at most one is up at a time. */
 export type Overlay =
@@ -157,7 +158,7 @@ function InboxButton({ needsYou, onClick }: { needsYou: number; onClick: () => v
     <button
       type="button"
       onClick={onClick}
-      className={`px-btn pointer-events-auto${hasCount ? "" : " px-btn-icon"}`}
+      className={cn("px-btn pointer-events-auto", !hasCount && "px-btn-icon")}
       style={hasCount ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
       title="Questions, connect requests and stuck tasks waiting on you"
     >

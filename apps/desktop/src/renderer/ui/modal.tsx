@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { setModalOpen } from "@/renderer/state/store";
+import { cn } from "cn";
 
 /** Phaser's keyboard sleeps while the caller is mounted, so typing here never walks the player. */
 export function useModal(): void {
@@ -37,7 +38,7 @@ export function Modal({
   useModal();
   return (
     <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
-      <div className={`px-window px-pop flex max-h-[85vh] w-full flex-col ${WIDTH_CLASS[width]}`}>
+      <div className={cn("px-window px-pop flex max-h-[85vh] w-full flex-col", WIDTH_CLASS[width])}>
         <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
           <div>
             <div className="text-base">{title}</div>

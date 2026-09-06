@@ -3,6 +3,7 @@ import { bridge } from "@/renderer/bridge";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { Portrait } from "@/renderer/ui/portrait";
 import type { HireProposal } from "@/shared/ipc-registry";
+import { cn } from "cn";
 
 // The founding, staged as a night on the street outside the office. Every
 // step the founder answers lights another floor; the founder walks toward the
@@ -94,7 +95,7 @@ export function FounderSprite({ seed, at }: { seed: string; at: number }) {
 
 /** One of the office's own emotes: "!" for an arrival, "…" for waiting. */
 export function Emote({ frame, className = "" }: { frame: 0 | 1; className?: string }) {
-  return <span className={`ob-emote ${className}`} data-frame={frame} aria-hidden />;
+  return <span className={cn("ob-emote", className)} data-frame={frame} aria-hidden />;
 }
 
 /** The founding team arriving one at a time, each announced with a "!". */

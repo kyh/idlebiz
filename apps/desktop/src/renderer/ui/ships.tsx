@@ -11,6 +11,7 @@ import { taskIn, type Product, type TaskIn } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { errorMessage } from "@/shared/errors";
 import { formatDate } from "@/shared/format";
+import { cn } from "cn";
 
 // ---------------------------------------------------------------------------
 // Shipping log: everything the team has shipped, with summaries that say where
@@ -80,7 +81,7 @@ function ProductCard({
     <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5" data-sel={selected}>
       <button type="button" onClick={onSelect} className="text-left">
         <div className="flex items-baseline justify-between gap-2">
-          <span className={`truncate text-sm ${selected ? "text-accent-lo" : "text-fg"}`}>
+          <span className={cn("truncate text-sm", selected ? "text-accent-lo" : "text-fg")}>
             {selected ? "▶ " : ""}
             {product.name}
           </span>
