@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.70.0",
-    "@agentclientprotocol/codex-acp": "^1.7.0",
+    "@agentclientprotocol/codex-acp": "^1.10.0",
     "@agentclientprotocol/sdk": "catalog:",
     "@repo/agent-driver": "workspace:*",
     "@repo/px-kit": "workspace:*",
@@ -40,7 +40,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv-cli": "^11.0.0",
-    "electron": "^44.0.0",
+    "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "tailwindcss": "catalog:",
