@@ -2,7 +2,6 @@
 export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
 
 import { z } from "zod";
-import { RULE_IDS } from "./command-policy";
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
@@ -29,7 +28,12 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
     integration: z.enum(INTEGRATION_KINDS),
     reason: z.string(),
   }),
-  z.object({ type: z.literal("approval"), command: z.string(), rule: z.enum(RULE_IDS) }),
+  z.object({
+    type: z.literal("approval"),
+    command: z.string(),
+    // Saved asks retain identifiers even after the runtime policy retires a rule.
+    rule: z.string().regex(/^[a-z-]+$/),
+  }),
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
@@ -44,7 +48,7 @@ export function parseBlockedAsk(s: string): BlockedAsk {
   const approval = /^\[approve(?::([a-z-]+))?\]\s*([\s\S]*)$/.exec(s);
   if (approval) {
     const command = (approval[2] ?? "").trim();
-    const rule = RULE_IDS.find((id) => id === approval[1]) ?? "write-outside";
+    const rule = approval[1] ?? "write-outside";
     return { type: "approval", command, rule };
   }
   const m = /^\[connect:([a-z]+)\]\s*([\s\S]*)$/.exec(s);

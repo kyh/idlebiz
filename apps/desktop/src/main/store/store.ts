@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join, relative } from "node:path";
 import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "@/main/lib/fs";
 import {
   ROOT_DIR,
@@ -246,17 +246,17 @@ function parseRunner(v: string | null): AgentRunner {
   return v && isRunnerId(v) ? v : "codex";
 }
 
-function employeeBody(e: Employee, co: Company): string {
+function employeeBody(e: Employee, co: Company, products: readonly Product[]): string {
   return standingInstructions({
     employee: e,
     company: co,
-    products: requireActiveCompany(co.id).products,
+    products,
     lead: co.leaderId === e.id,
     memoryDir: employeeMemoryDir(co.id, e.id),
   });
 }
 
-function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
+function employeeToDoc(e: Employee, co: Company, products: readonly Product[]): FrontmatterDoc {
   const metadata: FrontmatterDoc["metadata"] = {
     role: e.role,
     title: e.title,
@@ -276,7 +276,7 @@ function employeeToDoc(e: Employee, co: Company): FrontmatterDoc {
       description: e.title || e.role,
     },
     metadata,
-    body: employeeBody(e, co),
+    body: employeeBody(e, co, products),
   };
 }
 
@@ -304,9 +304,9 @@ function saveCompany(co: Company): void {
   atomicWrite(companyFile(co.id), serializeDoc(companyToDoc(co)));
 }
 function saveEmployee(e: Employee, opts: { onlyIfChanged?: boolean } = {}): void {
-  const co = requireCompany(e.companyId);
+  const { company, products } = requireActiveCompany(e.companyId);
   const file = employeeFile(e.companyId, e.id);
-  const text = serializeDoc(employeeToDoc(e, co));
+  const text = serializeDoc(employeeToDoc(e, company, products));
   if (opts.onlyIfChanged && readTextIfPresent(file) === text) return;
   atomicWrite(file, text);
 }
@@ -590,7 +590,7 @@ export interface FoundingHire {
   spriteSeed: string;
 }
 
-/** Write COMPANY.md last: boot ignores incomplete founding directories. */
+/** Publish a complete company with one directory rename; boot ignores staging directories. */
 export function foundCompany(input: {
   name: string;
   mission: string;
@@ -601,7 +601,9 @@ export function foundCompany(input: {
   hires: readonly FoundingHire[];
 }): Company {
   if (c().active) throw new Error("a company is already active");
-  if (safeReaddir(ROOT_DIR).some((entry) => existsSync(companyFile(entry)))) {
+  if (
+    safeReaddir(ROOT_DIR).some((entry) => !entry.startsWith(".") && existsSync(companyFile(entry)))
+  ) {
     throw new Error("an existing company save must be loaded or repaired before founding");
   }
   const id = uniqueSlug(input.name, [], (s) => existsSync(companyDir(s)));
@@ -625,23 +627,54 @@ export function foundCompany(input: {
   };
   const active = emptyCompany(co);
   active.shipped = [];
-  c().active = active;
+  if (input.hires.length > co.maxAgents)
+    throw new Error(`the office is at its ${co.maxAgents}-seat cap`);
+  active.products.push(firstProduct(co, null));
+  for (const [deskIndex, hire] of input.hires.entries()) {
+    const employeeId = uniqueSlug(
+      hire.name,
+      active.employees.map((employee) => employee.id),
+    );
+    active.employees.push(employeeRecord({ companyId: id, deskIndex, ...hire }, employeeId));
+  }
+  co.leaderId = leadOf(active.employees);
+  for (const routine of defaultRoutines(input.businessType)) {
+    const routineId = uniqueSlug(
+      routine.name,
+      active.routines.map((existing) => existing.id),
+    );
+    active.routines.push(routineRecord({ companyId: id, ...routine }, routineId));
+  }
+
+  const destination = companyDir(id);
+  const staging = mkdtempSync(join(ROOT_DIR, ".founding-"));
+  // Only disk destinations change; persisted workspace paths refer to the final company.
+  const staged = (path: string): string => join(staging, relative(destination, path));
   try {
-    mkdirSync(companyWorkspace(id), { recursive: true });
-    mkdirSync(tasksDir(id), { recursive: true });
-    mkdirSync(agentsDir(id), { recursive: true });
-    const first = firstProduct(co, null);
-    active.products.push(first);
-    saveProduct(first);
-    input.hires.forEach((hire, deskIndex) => createEmployee({ companyId: id, deskIndex, ...hire }));
-    co.leaderId = leadOf(listEmployees(id));
-    seedDefaultRoutines(id, input.businessType);
-    saveCompany(co);
+    mkdirSync(staged(companyWorkspace(id)), { recursive: true });
+    mkdirSync(staged(tasksDir(id)), { recursive: true });
+    mkdirSync(staged(agentsDir(id)), { recursive: true });
+    for (const product of active.products) {
+      atomicWrite(staged(productFile(id, product.id)), serializeDoc(productToDoc(product)));
+    }
+    for (const employee of active.employees) {
+      mkdirSync(staged(employeeMemoryDir(id, employee.id)), { recursive: true });
+      mkdirSync(staged(employeeSessionDir(id, employee.id)), { recursive: true });
+      atomicWrite(
+        staged(employeeFile(id, employee.id)),
+        serializeDoc(employeeToDoc(employee, co, active.products)),
+      );
+    }
+    for (const routine of active.routines) {
+      atomicWrite(staged(routineFile(id, routine.id)), serializeDoc(routineToDoc(routine)));
+    }
+    atomicWrite(staged(companyFile(id)), serializeDoc(companyToDoc(co)));
+    moveDir(staging, destination);
   } catch (cause) {
-    c().active = null;
-    rmSync(companyDir(id), { recursive: true, force: true });
+    rmSync(staging, { recursive: true, force: true });
     throw cause;
   }
+  c().active = active;
   return co;
 }
 
@@ -657,7 +690,14 @@ function createRoutine(input: RoutineDefinition & { companyId: string }): Routin
     input.name,
     list.map((r) => r.id),
   );
-  const routine: Routine = {
+  const routine = routineRecord(input, id);
+  saveRoutine(routine);
+  list.push(routine);
+  return routine;
+}
+
+function routineRecord(input: RoutineDefinition & { companyId: string }, id: string): Routine {
+  return {
     id,
     companyId: input.companyId,
     name: input.name,
@@ -666,9 +706,6 @@ function createRoutine(input: RoutineDefinition & { companyId: string }): Routin
     role: input.role,
     lastRunAt: null,
   };
-  saveRoutine(routine);
-  list.push(routine);
-  return routine;
 }
 
 export function listRoutines(companyId: string): Routine[] {
@@ -912,16 +949,9 @@ export function setRealMetrics(
 }
 
 // ---- employees -------------------------------------------------------------
-export function createEmployee(input: {
-  companyId: string;
-  name: string;
-  role: string;
-  title: string;
-  persona: string;
-  runner: AgentRunner;
-  spriteSeed: string;
-  deskIndex: number;
-}): Employee {
+type EmployeeInput = FoundingHire & { companyId: string; deskIndex: number };
+
+export function createEmployee(input: EmployeeInput): Employee {
   const { company, employees: list } = requireActiveCompany(input.companyId);
   if (list.length >= company.maxAgents) {
     throw new Error(`the office is at its ${company.maxAgents}-seat cap`);
@@ -931,7 +961,16 @@ export function createEmployee(input: {
     list.map((e) => e.id),
     (s) => existsSync(employeeAgentDir(input.companyId, s)),
   );
-  const e: Employee = {
+  const employee = employeeRecord(input, id);
+  mkdirSync(employeeMemoryDir(input.companyId, id), { recursive: true });
+  mkdirSync(employeeSessionDir(input.companyId, id), { recursive: true });
+  saveEmployee(employee);
+  list.push(employee);
+  return employee;
+}
+
+function employeeRecord(input: EmployeeInput, id: string): Employee {
+  return {
     id,
     companyId: input.companyId,
     name: input.name,
@@ -945,11 +984,6 @@ export function createEmployee(input: {
     status: "idle",
     createdAt: Date.now(),
   };
-  mkdirSync(employeeMemoryDir(input.companyId, id), { recursive: true });
-  mkdirSync(employeeSessionDir(input.companyId, id), { recursive: true });
-  saveEmployee(e);
-  list.push(e);
-  return e;
 }
 
 export const getEmployee = (id: string): Employee | null =>
@@ -958,8 +992,8 @@ export const getEmployee = (id: string): Employee | null =>
 export function employeeInstructions(employeeId: string): string {
   const e = getEmployee(employeeId);
   if (!e) throw new Error(`employee ${employeeId} not found`);
-  const co = requireCompany(e.companyId);
-  return employeeBody(e, co);
+  const { company, products } = requireActiveCompany(e.companyId);
+  return employeeBody(e, company, products);
 }
 
 export function listEmployees(companyId: string): Employee[] {

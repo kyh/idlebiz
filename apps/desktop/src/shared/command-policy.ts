@@ -1,6 +1,6 @@
 // Applied to ACP permission requests from both runners. Unmatched commands run;
 // the CLIs' own safeguards still apply. Persist rule ids so approval cards can explain them.
-export const RULE_IDS = [
+const RULE_IDS = [
   "deploy",
   "publish-package",
   "git-push",
@@ -141,8 +141,11 @@ function onlyLoopbackTargets(command: string): boolean {
 export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: CommandRule };
 
 /** What the approval card says about a held command, by the rule that held it. */
-export function describeRule(id: RuleId): string {
-  return RULES.find((rule) => rule.id === id)?.describe ?? "Wants to run this.";
+export function describeRule(id: string): string {
+  return (
+    RULES.find((rule) => rule.id === id)?.describe ??
+    `Saved rule "${id}" is unavailable in this version.`
+  );
 }
 
 export function classifyCommand(command: string): CommandVerdict {

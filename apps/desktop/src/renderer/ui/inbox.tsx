@@ -4,7 +4,7 @@ import { AnswerForm } from "@/renderer/ui/answer-form";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { describeRule, type RuleId } from "@/shared/command-policy";
+import { describeRule } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
@@ -144,7 +144,7 @@ function ApprovalRow({
   t: Task;
   by: string;
   command: string;
-  rule: RuleId;
+  rule: string;
 }) {
   const [sent, setSent] = useState(false);
   const decide = async (approved: boolean) => {

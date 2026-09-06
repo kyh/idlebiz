@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, normalizeCommand, type RuleId } from "./command-policy";
+import { classifyCommand, describeRule, normalizeCommand, type RuleId } from "./command-policy";
 
 const MUST_ASK = {
   deploy: [
@@ -132,5 +132,14 @@ describe("normalizeCommand", () => {
 
   it("normalizes to one canonical string", () => {
     expect(normalizeCommand("  npm   test 2>&1 ; echo exit=$?")).toBe("npm test");
+  });
+});
+
+describe("describeRule", () => {
+  it("describes current rules and identifies unavailable saved rules", () => {
+    expect(describeRule("git-push")).toBe("Push commits to a remote repository.");
+    expect(describeRule("retired-rule")).toBe(
+      'Saved rule "retired-rule" is unavailable in this version.',
+    );
   });
 });

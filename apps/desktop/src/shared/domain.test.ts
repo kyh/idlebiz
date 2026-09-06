@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BlockedAskSchema,
   parseBlockedAsk,
   resolveMentions,
   afterFailure,
@@ -24,6 +25,17 @@ describe("BlockedAsk round-trip through TASK.md", () => {
       command: "git push origin main",
       rule: "write-outside",
     });
+  });
+
+  it("preserves a retired rule through validation and TASK.md", () => {
+    const saved = "[approve:retired-rule] git push origin main";
+    const ask = BlockedAskSchema.parse(parseBlockedAsk(saved));
+    expect(ask).toEqual({
+      type: "approval",
+      command: "git push origin main",
+      rule: "retired-rule",
+    });
+    expect(serializeBlockedAsk(ask)).toBe(saved);
   });
 });
 

@@ -159,6 +159,12 @@ rather than crashing boot.
 - **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
   unlayered, so they win over any Tailwind utility that sets the same property. Size and
   colour belong in the kit as a class, never per-component. Full explanation in `CLAUDE.md`.
+- **Some icons deliberately use OS fonts.** VG5000 lacks recognizable equivalents for
+  ⚙ settings, 💼 company, and ☕ idle; ❗ attention and ⚠ warnings retain their color cues.
+  These fallback glyphs are exceptions. Keep the vendored font unchanged.
+- **Only completed work is history.** `done` tasks move to `shipped/` and load on demand.
+  `dead` tasks stay in the active queue because the Inbox can retry them and employees
+  use them to identify unresolved problems.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
   Four passes: every seat, point of interest and the door reachable from spawn; no open

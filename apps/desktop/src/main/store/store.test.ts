@@ -240,6 +240,79 @@ describe("scheduler queue admission", () => {
   });
 });
 
+describe("founding publication", () => {
+  it("publishes the complete roster, products, and routines using final workspace paths", () => {
+    const company = store.foundCompany({
+      name: "Acme",
+      mission: "ship",
+      businessType: "game-studio",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      budget: { mode: "capped", capUsd: 0 },
+      hires: [hire("Priya"), { ...hire("Mae"), role: "lead", title: "Team lead" }],
+    });
+    const files = saveSnapshot(company.id);
+
+    expect(files.has("COMPANY.md")).toBe(true);
+    expect(files.has("products/acme/PRODUCT.md")).toBe(true);
+    expect(files.has("agents/priya/AGENTS.md")).toBe(true);
+    expect(files.has("agents/mae/AGENTS.md")).toBe(true);
+    expect(files.has("routines/business-review/ROUTINE.md")).toBe(true);
+    expect(files.has("routines/marketing-push/ROUTINE.md")).toBe(true);
+    expect(files.has("routines/playtest-session/ROUTINE.md")).toBe(true);
+    expect(files.get("agents/mae/AGENTS.md")).toContain("**hire**");
+    for (const body of files.values()) expect(body).not.toContain(".founding-");
+    const product = parseDoc(files.get("products/acme/PRODUCT.md") ?? "");
+    expect(product.metadata.workspaceDir).toBe(join(root, company.id, "workspace"));
+    expect(files.get("agents/priya/AGENTS.md")).toContain(join(root, company.id, "workspace"));
+    expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([]);
+
+    expect(store.initStore()).toEqual({ companies: 1, skipped: [] });
+    expect(store.getDefaultCompany()?.leaderId).toBe("mae");
+    expect(
+      store
+        .listEmployees(company.id)
+        .map((employee) => employee.id)
+        .toSorted(),
+    ).toEqual(["mae", "priya"]);
+    expect(store.listRoutines(company.id)).toHaveLength(3);
+  });
+
+  it.each([false, true])(
+    "ignores an interrupted stage with COMPANY.md present: %s",
+    (hasCompanyFile) => {
+      const staging = ".founding-interrupted";
+      mkdirSync(join(root, staging, "agents", "priya"), { recursive: true });
+      writeFileSync(join(root, staging, "agents", "priya", "AGENTS.md"), "partial employee");
+      if (hasCompanyFile) {
+        writeFileSync(
+          join(root, staging, "COMPANY.md"),
+          serializeDoc({
+            fields: { slug: "acme", name: "Acme" },
+            metadata: { createdAt: 1 },
+            body: "",
+          }),
+        );
+      }
+      const before = saveSnapshot(staging);
+
+      expect(store.initStore()).toEqual({ companies: 0, skipped: [] });
+      expect(store.getDefaultCompany()).toBeNull();
+      expect(existsSync(join(root, "acme"))).toBe(false);
+
+      const company = found({ mode: "capped", capUsd: 0 });
+
+      expect(company.id).toBe("acme");
+      expect(store.getDefaultCompany()?.id).toBe(company.id);
+      expect(existsSync(join(root, company.id, "COMPANY.md"))).toBe(true);
+      expect(saveSnapshot(staging)).toEqual(before);
+      expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([
+        staging,
+      ]);
+    },
+  );
+});
+
 describe("active company ownership", () => {
   it("confines duplicate employee, task, and product slugs to the newest company", () => {
     const older = found({ mode: "capped", capUsd: 0 });
