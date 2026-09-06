@@ -3,23 +3,20 @@ import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import type { RunnerProbe } from "@repo/agent-driver/detect";
+import { isReady, type RunnerProbe } from "@repo/agent-driver/detect";
 import { acpAgentFor, agentDriver } from "@/main/agents/agent-driver";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { businessTypeById } from "@/shared/domain";
+import { errorMessage } from "@/shared/errors";
+import { parseJson } from "@/shared/json";
 import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
+import { HireCandidateSchema, type AuthFlowEvent, type HireCandidate } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
 // First-run onboarding backend. The workforce runs on the player's own coding
 // CLIs (claude / codex): detect them, install one if none exist, walk their
 // login flows, and cast the founding team with a one-shot CLI call.
 // ---------------------------------------------------------------------------
-
-export type AuthFlowEvent =
-  | { type: "url"; url: string }
-  | { type: "progress"; message: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
 
 let setupRunning = false;
 
@@ -100,7 +97,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
     }
 
     probes = await agentDriver.refresh();
-    const ready = probes.filter((p) => p.installed && p.authed);
+    const ready = probes.filter(isReady);
     if (ready.length > 0) {
       emit({ type: "progress", message: `Workforce ready: ${ready.map(label).join(" + ")}.` });
       emit({ type: "done" });
@@ -111,7 +108,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
       });
     }
   } catch (err) {
-    emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+    emit({ type: "error", message: errorMessage(err) });
   } finally {
     setupRunning = false;
   }
@@ -119,26 +116,7 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
 
 // ---- LLM-generated founding team -------------------------------------------
 
-interface HireCandidate {
-  name: string;
-  role: string;
-  title: string;
-  persona: string;
-  blurb: string;
-}
-
-const CandidateSchema = z.object({
-  name: z.string().min(1).max(40),
-  role: z
-    .string()
-    .min(2)
-    .max(32)
-    .transform((s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-")),
-  title: z.string().min(2).max(60),
-  persona: z.string().min(10).max(600),
-  blurb: z.string().min(2).max(120),
-});
-const CandidatesSchema = z.array(CandidateSchema).min(3).max(8);
+const CandidatesSchema = z.array(HireCandidateSchema).min(3).max(8);
 
 /** One-shot completion on whichever CLI is available (no tools, no session). */
 async function completeOneShot(prompt: string): Promise<string> {
@@ -155,7 +133,7 @@ async function completeOneShot(prompt: string): Promise<string> {
     onPermission: () => Promise.resolve({ allow: false }),
     onEvent: () => {},
   });
-  if (!res.ok) throw new Error(res.error ?? "generation failed");
+  if (res.end.kind === "failed") throw new Error(res.end.error);
   return res.summary;
 }
 
@@ -184,6 +162,5 @@ Reply with ONLY a JSON array of 5 objects with keys name, role, title, persona, 
 
   const raw = await completeOneShot(prompt);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
-  const parsed: unknown = JSON.parse(jsonText);
-  return CandidatesSchema.parse(parsed);
+  return CandidatesSchema.parse(parseJson(jsonText));
 }

@@ -1,11 +1,25 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { z } from "zod";
 
 import { siteConfig } from "@/lib/site-config";
 import { OfficeLife } from "@/app/office-life";
 import { WindowCard } from "@/app/window-card";
+import { Cta } from "@/app/cta";
 
 const GITHUB_REPO = siteConfig.githubRepo;
-const FALLBACK_URL = `https://github.com/${GITHUB_REPO}/releases`;
+
+type Download = { url: string; version: string | null };
+
+// fallback for every failure mode: API down or rate-limited, no .dmg on the release
+const RELEASES_PAGE: Download = {
+  url: `https://github.com/${GITHUB_REPO}/releases`,
+  version: null,
+};
+
+const releaseSchema = z.object({
+  tag_name: z.string().optional(),
+  assets: z.array(z.object({ name: z.string(), browser_download_url: z.string() })),
+});
 
 function MacLogoIcon({ className }: { className?: string }) {
   return (
@@ -15,7 +29,7 @@ function MacLogoIcon({ className }: { className?: string }) {
   );
 }
 
-async function getLatestRelease(): Promise<{ url: string; version: string | null }> {
+async function getLatestRelease(): Promise<Download> {
   "use cache";
   cacheLife("hours");
   cacheTag("download-url");
@@ -24,17 +38,19 @@ async function getLatestRelease(): Promise<{ url: string; version: string | null
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
     });
-    if (!res.ok) return { url: FALLBACK_URL, version: null };
+    if (!res.ok) return RELEASES_PAGE;
 
-    const release: {
-      tag_name?: string;
-      assets: Array<{ name: string; browser_download_url: string }>;
-    } = await res.json();
+    const data: unknown = await res.json();
+    const release = releaseSchema.safeParse(data);
+    if (!release.success) return RELEASES_PAGE;
 
-    const dmg = release.assets.find((a) => a.name.endsWith(".dmg"));
-    return { url: dmg?.browser_download_url ?? FALLBACK_URL, version: release.tag_name ?? null };
+    const dmg = release.data.assets.find((a) => a.name.endsWith(".dmg"));
+    return {
+      url: dmg?.browser_download_url ?? RELEASES_PAGE.url,
+      version: release.data.tag_name ?? null,
+    };
   } catch {
-    return { url: FALLBACK_URL, version: null };
+    return RELEASES_PAGE;
   }
 }
 
@@ -48,7 +64,7 @@ export default async function Page() {
           <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[12px] uppercase tracking-wider">
             <span>IdleBiz.exe</span>
             <span className="flex items-center gap-1.5 text-[10px]" aria-hidden>
-              <span className="px-live-dot inline-block h-[10px] w-[10px] border-2 border-[var(--ink)] bg-[var(--ok)]" />
+              <span className="px-live-dot inline-block size-2.5 border-2 border-ink bg-ok" />
               agents working
             </span>
           </div>
@@ -58,7 +74,7 @@ export default async function Page() {
           <OfficeLife
             title={
               <h1
-                className="text-[40px] leading-none text-[var(--text)] sm:text-[52px]"
+                className="text-[40px] leading-none text-fg sm:text-[52px]"
                 style={{ textShadow: "3px 3px 0 var(--face-lo)" }}
               >
                 IdleBiz
@@ -66,36 +82,29 @@ export default async function Page() {
             }
           />
 
-          <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-[var(--text)] sm:text-[14px]">
+          <div className="px-battle mx-1 px-5 py-4 text-[13px] leading-relaxed text-fg sm:text-[14px]">
             An idle game business simulator where your employees are{" "}
-            <span className="text-[var(--accent-lo)]">real AI agents</span>. They write real code,
-            ship real products, and{" "}
-            <span className="text-[var(--text-dim)] line-through">make</span> burn real money.
-            <span className="px-blink ml-2 inline-block text-[var(--accent-lo)]" aria-hidden>
+            <span className="text-accent-lo">real AI agents</span>. They write real code, ship real
+            products, and <span className="text-fg-dim line-through">make</span> burn real money.
+            <span className="px-blink ml-2 inline-block text-accent-lo" aria-hidden>
               ▼
             </span>
           </div>
 
           <div className="flex flex-col items-center gap-2.5">
-            <a
-              href={downloadUrl}
-              className="px-btn-accent inline-flex items-center gap-2.5 text-[15px] uppercase tracking-wide no-underline"
-            >
+            <Cta href={downloadUrl}>
               <MacLogoIcon className="size-5 shrink-0" />
               Download for Mac
-            </a>
-            <span className="text-[11px] text-[var(--text-dim)]">
-              {version ? `${version} · ` : ""}macOS · bring your own OpenAI Account
+            </Cta>
+            <span className="text-[11px] text-fg-dim">
+              {version ? `${version} · ` : ""}macOS · runs on your own Claude Code or Codex
             </span>
           </div>
         </div>
       </WindowCard>
 
-      <footer className="mt-8 flex items-center gap-4 text-[11px] text-[var(--chrome-hi)]">
-        <a
-          href={`https://github.com/${GITHUB_REPO}`}
-          className="no-underline hover:text-[var(--light)]"
-        >
+      <footer className="mt-8 flex items-center gap-4 text-[11px] text-chrome-hi">
+        <a href={`https://github.com/${GITHUB_REPO}`} className="no-underline hover:text-light">
           GitHub
         </a>
         <span aria-hidden>·</span>

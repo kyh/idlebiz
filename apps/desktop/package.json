@@ -1,6 +1,6 @@
 {
   "name": "@repo/desktop",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "private": true,
   "description": "IdleBiz desktop app",
   "author": "kyh",
@@ -10,38 +10,43 @@
     "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
     "generate:office-objects": "node scripts/generate-office-object-catalog.cjs",
-    "check:office": "node scripts/check-office-void.cjs",
+    "generate:room-tiles": "node scripts/generate-room-builder-tiles.cjs",
+    "check:office": "node scripts/check-office.mjs",
     "start": "electron-vite preview",
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
     "release:publish": "bash scripts/publish-release.sh",
     "with-env": "dotenv -e .env --",
-    "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .cache .output",
-    "check:permissions": "node --experimental-strip-types scripts/check-permission-gate.mjs"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "clean": "rm -rf .cache .output"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.70.0",
     "@agentclientprotocol/codex-acp": "^1.7.0",
-    "@agentclientprotocol/sdk": "^1.4.0",
+    "@agentclientprotocol/sdk": "catalog:",
     "@repo/agent-driver": "workspace:*",
+    "@repo/px-kit": "workspace:*",
+    "@repo/stripe-connect-protocol": "workspace:*",
     "phaser": "^4.2.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "sharp": "^0.35.4",
-    "zod": "^4.5.4"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.4.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv-cli": "^11.0.0",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "^8.2.2"
-  }
+    "vite": "^8.2.2",
+    "vitest": "catalog:"
+  },
+  "productName": "IdleBiz"
 }

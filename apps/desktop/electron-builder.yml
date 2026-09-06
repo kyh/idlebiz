@@ -1,13 +1,16 @@
 appId: com.idlebiz.desktop
-productName: IdleBiz
 directories:
   buildResources: resources
   output: .output/bin
 files:
   - .output/app/**/*
   - package.json
+# Runtime assets native code reads (sharp cannot see inside the asar): beside
+# the asar in Contents/Resources, found through process.resourcesPath.
+extraResources:
+  - from: resources/employee-sheets
+    to: employee-sheets
 asarUnpack:
-  - resources/**
   # All of node_modules, not a hand-picked list. The ACP agents are spawned as
   # child processes, and nothing inside an asar archive can be executed — but
   # unpacking only the agent packages breaks them differently, because their
@@ -29,6 +32,16 @@ mac:
 dmg:
   artifactName: IdleBiz-${version}-${arch}.${ext}
 npmRebuild: false
+# A notarized app should not be relaunchable as a debugger's host: no --inspect,
+# no NODE_OPTIONS, nothing loaded from outside the asar. runAsNode stays on — the
+# ACP agents are spawned through ELECTRON_RUN_AS_NODE.
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 publish:
   provider: github
   owner: kyh

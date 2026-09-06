@@ -1,7 +1,15 @@
-import { useEffect, useState } from "react";
-import { useStore, setModalOpen } from "@/renderer/state/store";
+import { memo, useState } from "react";
+import { useAsync } from "@/renderer/hooks/use-async";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
+import { bridge } from "@/renderer/bridge";
+import { createProduct, useStore } from "@/renderer/state/store";
+import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
-import type { Task } from "@/shared/domain";
+import { productStateOf, type Overlay } from "@/renderer/ui/hud";
+import { Modal } from "@/renderer/ui/modal";
+import { taskIn, type Product, type TaskIn } from "@/shared/domain";
+import type { ProductStatus } from "@/shared/ipc-registry";
+import { errorMessage } from "@/shared/errors";
 import { formatDate } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
@@ -11,9 +19,17 @@ import { formatDate } from "@/shared/format";
 
 /** One ship: a single line that expands to the full "what & where" summary,
  *  with every URL and workspace path clickable. */
-function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string }) {
+const ShipRow = memo(function ShipRow({
+  t,
+  by,
+  companyId,
+}: {
+  t: TaskIn<"done">;
+  by: string;
+  companyId: string;
+}) {
   const [open, setOpen] = useState(false);
-  const summary = t.summary ?? "";
+  const summary = t.state.summary ?? "";
   const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
   return (
     <div className="px-inset p-2.5">
@@ -22,13 +38,11 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
         onClick={() => setOpen(!open)}
         className="flex w-full items-baseline gap-2 text-left"
       >
-        <span className="text-xs text-[var(--text-dim)]">{open ? "▼" : "▶"}</span>
+        <span className="text-xs text-fg-dim">{open ? "▼" : "▶"}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-[var(--text)]">
-            📦 {firstLine || t.title}
-          </span>
+          <span className="block truncate text-sm text-fg">📦 {firstLine || t.title}</span>
         </span>
-        <span className="shrink-0 text-xs text-[var(--text-dim)]">
+        <span className="shrink-0 text-xs text-fg-dim">
           {by} · {formatDate(t.completedAt ?? t.createdAt)}
         </span>
       </button>
@@ -39,103 +53,231 @@ function ShipRow({ t, by, companyId }: { t: Task; by: string; companyId: string 
       ) : null}
     </div>
   );
+});
+
+/** One product on the strip: where it is, what it has shipped, and what you can do to it. */
+function ProductCard({
+  product,
+  status,
+  selected,
+  onSelect,
+  onOpen,
+  onNote,
+}: {
+  product: Product;
+  status: ProductStatus | undefined;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: (overlay: Overlay) => void;
+  onNote: (note: string) => void;
+}) {
+  const state = productStateOf(status);
+  const open = () =>
+    bridge()
+      .openProduct({ productId: product.id })
+      .catch((cause) => onNote(errorMessage(cause)));
+  return (
+    <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5" data-sel={selected}>
+      <button type="button" onClick={onSelect} className="text-left">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className={`truncate text-sm ${selected ? "text-accent-lo" : "text-fg"}`}>
+            {selected ? "▶ " : ""}
+            {product.name}
+          </span>
+          <span
+            className="shrink-0 text-xs uppercase"
+            style={state === "LIVE" ? { color: "var(--ok)" } : undefined}
+          >
+            {state}
+          </span>
+        </div>
+        <div className="mt-0.5 truncate text-xs text-fg-dim" title={product.description}>
+          {product.description}
+        </div>
+        <div className="mt-0.5 text-xs text-fg-dim">
+          {product.ships} shipped
+          {product.users !== null ? ` · ${product.users} users` : ""}
+          {status?.deploy ? ` · ${status.deploy.url}` : ""}
+        </div>
+      </button>
+      <div className="flex gap-1.5">
+        <button type="button" onClick={() => void open()} className="px-chip">
+          ▶ Open
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpen({ kind: "vercel", productId: product.id })}
+          className="px-chip"
+          title={
+            product.vercel
+              ? `Deploys to ${product.vercel.projectName}`
+              : "Bind a Vercel project: real deploys, real users"
+          }
+        >
+          {product.vercel ? "▲ Vercel ✓" : "▲ Vercel"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
-export function Ships({ onClose }: { onClose: () => void }) {
-  const { company, employees } = useStore();
-  const [ships, setShips] = useState<Task[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-
-  useEffect(() => {
-    setModalOpen(true);
-    return () => setModalOpen(false);
-  }, []);
-
-  useEffect(() => {
-    const bridge = window.appBridge;
-    if (!company || !bridge) return;
-    let alive = true;
-    void (async () => {
-      const tasks = await bridge.listTasks({ companyId: company.id });
-      if (alive) setShips(tasks.filter((t) => t.status === "done" && t.summary));
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [company]);
-
-  if (!company) return null;
-  const nameOf = (id: string | null): string => employees.find((e) => e.id === id)?.name ?? "team";
-
-  const open = async (rel: string) => {
-    const bridge = window.appBridge;
-    if (!bridge) return;
+/** The founder starts a product: a name and what it is, nothing more. */
+function NewProduct({ onNote }: { onNote: (note: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setBusy(true);
     try {
-      await bridge.openCompanyPath({ companyId: company.id, rel });
-    } catch (e: unknown) {
-      setNote(e instanceof Error ? e.message : String(e));
-      window.setTimeout(() => setNote(null), 2500);
+      await createProduct(name, description);
+      setName("");
+      setDescription("");
+      setOpen(false);
+    } catch (cause) {
+      onNote(errorMessage(cause));
+    } finally {
+      setBusy(false);
     }
   };
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="px-inset flex min-h-20 items-center justify-center p-2.5 text-sm text-fg-dim"
+      >
+        + New product
+      </button>
+    );
+  }
+  return (
+    <div className="px-inset flex flex-col gap-1.5 p-2.5">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Name"
+        className="px-field"
+        autoFocus
+      />
+      <input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="What it is, in a line"
+        className="px-field"
+      />
+      <div className="flex justify-end gap-1.5">
+        <button type="button" onClick={() => setOpen(false)} className="px-link">
+          cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy || !name.trim() || !description.trim()}
+          className="px-btn-accent px-btn"
+        >
+          Start it
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function Ships({
+  onOpen,
+  onClose,
+}: {
+  onOpen: (overlay: Overlay) => void;
+  onClose: () => void;
+}) {
+  const company = useStore((s) => s.company);
+  const employees = useStore((s) => s.employees);
+  const products = useStore((s) => s.products);
+  const productStatus = useStore((s) => s.productStatus);
+  const [note, showNote] = useTransientNote(2500);
+  // null: the whole company's log
+  const [selected, setSelected] = useState<string | null>(null);
+  const ships = useAsync(
+    async () =>
+      company
+        ? (await bridge().listTasks({ companyId: company.id, status: ["done"] }))
+            .filter(taskIn("done"))
+            .filter((t) => t.state.summary)
+        : [],
+    [company],
+  );
+
+  if (!company) return null;
+  const companyId = company.id;
+  // work shipped before products existed names none; it was the first product's
+  const firstId = products[0]?.id;
+  const ofSelected = (t: TaskIn<"done">): boolean =>
+    selected === null || t.productId === selected || (t.productId === null && selected === firstId);
+  const shown = ships?.filter(ofSelected) ?? null;
+
+  const openWorkspace = () =>
+    bridge()
+      .openCompanyPath({ companyId, rel: "" })
+      .catch((cause) => showNote(errorMessage(cause)));
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
-      <div className="px-window flex max-h-[88vh] w-full max-w-3xl flex-col">
-        <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
-          <div>
-            <div className="text-base">Shipping log</div>
-            <div className="text-xs text-[#c4c9dd]">
-              {company.ships} shipped · everything your team built lives in the workspace
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void open("")}
-              className="px-btn"
-              title="Reveal the real folder where the team works"
-            >
-              📁 Workspace
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const bridge = window.appBridge;
-                if (!bridge) return;
-                bridge.openProduct({ companyId: company.id }).catch((cause: unknown) => {
-                  setNote(cause instanceof Error ? cause.message : String(cause));
-                  window.setTimeout(() => setNote(null), 2500);
-                });
-              }}
-              className="px-btn"
-              title="Open the product (via workspace/PRODUCT.md, falls back to index.html)"
-            >
-              ▶ Product
-            </button>
-            <button type="button" onClick={onClose} className="px-btn">
-              Done
-            </button>
-          </div>
+    <Modal
+      title="Products"
+      subtitle={`${company.ships} shipped · everything your team built lives in the workspace`}
+      width="3xl"
+      onClose={onClose}
+      actions={
+        <button
+          type="button"
+          onClick={() => void openWorkspace()}
+          className="px-btn"
+          title="Reveal the real folder where the team works"
+        >
+          📁 Workspace
+        </button>
+      }
+    >
+      <div className="space-y-3">
+        {note ? <div className="text-xs text-danger">{note}</div> : null}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {products.map((p) => (
+            <ProductCard
+              key={p.id}
+              product={p}
+              status={productStatus.get(p.id)}
+              selected={selected === p.id}
+              onSelect={() => setSelected(selected === p.id ? null : p.id)}
+              onOpen={onOpen}
+              onNote={showNote}
+            />
+          ))}
+          <NewProduct onNote={showNote} />
         </div>
-
-        {note ? <div className="px-3 pt-2 text-xs text-[var(--danger)]">{note}</div> : null}
-
-        <div className="px-scroll flex-1 space-y-2 overflow-y-auto p-4">
-          {ships === null ? (
-            <div className="text-sm text-[var(--text-dim)]">Loading…</div>
-          ) : ships.length === 0 ? (
-            <div className="text-sm text-[var(--text-dim)]">
+        <div className="text-xs uppercase tracking-wide text-fg-dim">
+          Shipping log
+          {selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`}
+        </div>
+        <div className="space-y-2">
+          {shown === null ? (
+            <div className="text-sm text-fg-dim">Loading…</div>
+          ) : shown.length === 0 ? (
+            <div className="text-sm text-fg-dim">
               Nothing shipped yet — the team is just getting started.
             </div>
           ) : (
-            ships
+            shown
               .toReversed()
               .map((t) => (
-                <ShipRow key={t.id} t={t} by={nameOf(t.assigneeId)} companyId={company.id} />
+                <ShipRow
+                  key={t.id}
+                  t={t}
+                  by={employeeName(employees, t.assigneeId, "team")}
+                  companyId={companyId}
+                />
               ))
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

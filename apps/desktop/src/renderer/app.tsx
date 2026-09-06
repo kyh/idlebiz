@@ -1,9 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useStore } from "@/renderer/state/store";
+import { initStore, setGame, useStore, type Boot } from "@/renderer/state/store";
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
+import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
-import { Hud } from "@/renderer/ui/hud";
+import { CrashScreen } from "@/renderer/ui/crash-screen";
+import { Hud, type Overlay } from "@/renderer/ui/hud";
 import { Dialogue } from "@/renderer/ui/dialogue";
 import { Ships } from "@/renderer/ui/ships";
 import { Inbox } from "@/renderer/ui/inbox";
@@ -22,14 +24,68 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 
 const getHash = (): string => window.location.hash;
 
+/** The one thing the window shows over the office, by where boot got to. */
+function Screen({
+  boot,
+  overlay,
+  onOverlay,
+}: {
+  boot: Boot;
+  overlay: Overlay | null;
+  onOverlay: (overlay: Overlay | null) => void;
+}) {
+  switch (boot.kind) {
+    case "loading":
+      return null;
+    case "unreadable":
+      return <SaveUnreadable issues={boot.issues} />;
+    case "onboarding":
+      return <PokeOnboarding />;
+    case "office":
+      return (
+        <>
+          {boot.authed ? null : <AuthGate />}
+          <Hud onOpen={onOverlay} />
+          <TeamChannel />
+          <Dialogue />
+          <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
+        </>
+      );
+  }
+}
+
+function OpenOverlay({
+  overlay,
+  onOpen,
+  onClose,
+}: {
+  overlay: Overlay | null;
+  onOpen: (overlay: Overlay) => void;
+  onClose: () => void;
+}) {
+  if (overlay === null) return null;
+  switch (overlay.kind) {
+    case "ships":
+      return <Ships onOpen={onOpen} onClose={onClose} />;
+    case "inbox":
+      // Stripe connect lives in the budget modal; a Vercel ask binds a product
+      return <Inbox onClose={onClose} onOpen={onOpen} />;
+    case "teams":
+      return <Teams onClose={onClose} />;
+    case "budget":
+      return <BudgetModal onClose={onClose} />;
+    case "vercel":
+      return <ConnectVercel productId={overlay.productId} onClose={onClose} />;
+    case "settings":
+      return <Settings onClose={onClose} />;
+  }
+}
+
 export function App() {
-  const { booted, authed, company, game } = useStore();
-  const [ships, setShips] = useState(false);
-  const [inbox, setInbox] = useState(false);
-  const [teams, setTeams] = useState(false);
-  const [budget, setBudget] = useState(false);
-  const [vercel, setVercel] = useState(false);
-  const [settings, setSettings] = useState(false);
+  const boot = useStore((s) => s.boot);
+  const layout = useStore((s) => s.layout);
+  const game = useStore((s) => s.game);
+  const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
 
   useEffect(() => {
@@ -44,8 +100,6 @@ export function App() {
     return () => window.removeEventListener("idlebiz:onboarded", onDone);
   }, [game]);
 
-  const needsOnboarding = booted && (!company || !company.onboarded);
-
   if (route === "#/office-assets") {
     return <OfficeObjectCatalog />;
   }
@@ -56,40 +110,12 @@ export function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <PhaserGame key="office-game" onGame={setGame} />
+      {layout ? <PhaserGame key="office-game" layout={layout} onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
-        {needsOnboarding ? <PokeOnboarding /> : null}
-        {booted && company && company.onboarded && !authed ? <AuthGate /> : null}
-        {booted && company && company.onboarded ? (
-          <>
-            <Hud
-              onShips={() => setShips(true)}
-              onInbox={() => setInbox(true)}
-              onBudget={() => setBudget(true)}
-              onUsers={() => setVercel(true)}
-              onSettings={() => setSettings(true)}
-              onTeams={() => setTeams(true)}
-            />
-            <TeamChannel />
-            <Dialogue />
-            {ships && <Ships onClose={() => setShips(false)} />}
-            {inbox && (
-              <Inbox
-                onClose={() => setInbox(false)}
-                onConnect={(kind) => {
-                  setInbox(false);
-                  if (kind === "vercel") setVercel(true);
-                  else setBudget(true); // Stripe connect lives in the budget modal
-                }}
-              />
-            )}
-            {teams && <Teams onClose={() => setTeams(false)} />}
-            {budget && <BudgetModal onClose={() => setBudget(false)} />}
-            {vercel && <ConnectVercel onClose={() => setVercel(false)} />}
-            {settings && <Settings onClose={() => setSettings(false)} />}
-          </>
-        ) : null}
+        <CrashScreen>
+          <Screen boot={boot} overlay={overlay} onOverlay={setOverlay} />
+        </CrashScreen>
       </div>
     </div>
   );

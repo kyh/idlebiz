@@ -1,37 +1,34 @@
 import Phaser from "phaser";
-import { z } from "zod";
-import { TILE, WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
+import { bridge } from "@/renderer/bridge";
 import {
-  loadCharacter,
-  ensureWalkAnims,
-  idleFrame,
+  characterAnims,
   characterDepth,
   CHAR_ORIGIN_X,
   CHAR_ORIGIN_Y,
-  BUST,
+  idleFrame,
+  type CharacterAnims,
   type Dir,
-} from "@/renderer/game/characters";
+} from "@/renderer/game/character-sheet";
+import { loadCharacter } from "@/renderer/game/characters";
+import { ClickWalk, type Walker } from "@/renderer/game/click-walk";
+import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
+import { facingToward } from "@/renderer/game/movement";
+import { NpcManager, type NpcState, type Seat, type Poi } from "@/renderer/game/npcs";
 import {
-  NpcManager,
-  type NpcState,
-  type Seat,
-  type PathProvider,
-  type Poi,
-} from "@/renderer/game/npcs";
-import {
-  OFFICE_CELL,
-  OFFICE_COLS,
-  OFFICE_H,
-  OFFICE_OBJECT_PLACEMENTS,
-  OFFICE_ROWS,
-  OFFICE_SOLID_GRID,
-  OFFICE_SPAWN,
-  OFFICE_W,
-  OFFICE_WORK_SEATS,
-  officeSolidAt,
+  BUNDLED_LAYOUT,
+  officeOf,
+  type Office,
+  type OfficeLayoutData,
   type PixelPoint,
 } from "@/renderer/game/office-layout";
-import type { ActivityEvent, Employee } from "@/shared/domain";
+import { poseForToolKind } from "@/renderer/game/office-poses";
+import { seatDepthOracle } from "@/renderer/game/seat-depth";
+import { frameMask, textureMasks, type OpaqueMask } from "@/renderer/game/texture-masks";
+import { FRAME_H, FRAME_W } from "@/shared/character-frame";
+import { hiddenNodes, type PaintedSprite } from "@/shared/office-sight";
+import type { ActivityEvent } from "@/shared/activity";
+import { DEFAULT_FOUNDER_SEED, employeeStatusOf, type Employee } from "@/shared/domain";
+import { bodyBlockedAt, solidAt, withoutNodes, type WalkGrid } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },
@@ -41,115 +38,79 @@ const FACING_OFFSET = {
 } satisfies Record<Dir, { x: number; y: number }>;
 
 const WORKSPACE_KIT_PATH = "workspace-kit";
-const PATH_STEP = TILE / 2;
-const BODY_HALF_WIDTH = 8;
-const BODY_HALF_HEIGHT = 6;
 
-/** How far above their workstation a seated employee is lifted (see seatDepth). */
-const SEAT_LIFT = 0.25;
-
-/** Opaque-pixel coverage of a room texture, in texture space. */
-interface OpaqueMask {
-  readonly opaque: Uint8Array;
-  readonly w: number;
-  readonly h: number;
+/** The founder on screen: their sprite and the anims cut from its sheet. */
+interface Player {
+  readonly sprite: Phaser.GameObjects.Sprite;
+  readonly anims: CharacterAnims;
 }
 
-// Idle-life points of interest on the current map: the water cooler and the
-// printer get faced, the break-room chair gets sat on.
-const OFFICE_POIS: readonly Poi[] = [
-  { x: 304, y: 408, face: "up" }, // water cooler (break-room entrance)
-  { x: 440, y: 168, face: "up" }, // printer cart (top right)
-  { x: 240, y: 400, face: "down", sit: "left" }, // break-room office chair
-  { x: 200, y: 424, face: "down" }, // the money corner
-];
-const PATH_SEARCH_RADIUS = 6;
-
-const CARDINAL_STEPS: ReadonlyArray<readonly [number, number]> = [
-  [0, 1],
-  [0, -1],
-  [1, 0],
-  [-1, 0],
-];
-
-interface PathTile {
-  readonly tx: number;
-  readonly ty: number;
-}
-
-interface PathTarget {
-  readonly tile: PathTile;
-  readonly point: PixelPoint;
-}
-
-function parseTileKey(tileKey: string): PathTile {
-  const comma = tileKey.indexOf(",");
-  return {
-    tx: Number(tileKey.slice(0, comma)),
-    ty: Number(tileKey.slice(comma + 1)),
+/** Probes into the live office for CDP-driven checks (`window.__officeDebug`). */
+export interface OfficeDebugApi {
+  bodyBlockedAt(x: number, y: number): boolean;
+  solidAtPx(x: number, y: number): boolean;
+  snapshot(): {
+    camera: { x: number; y: number; zoom: number };
+    objects: number;
+    player: { x: number | null; y: number | null };
+    door: PixelPoint;
+    seats: number;
+    world: { h: number; w: number };
   };
+  /** Where a body starting at `start` ends up after trying to move by `delta`. */
+  probeMove(start: PixelPoint, delta: PixelPoint): PixelPoint | null;
 }
 
-function samePoint(a: PixelPoint, b: PixelPoint): boolean {
-  return Math.hypot(a.x - b.x, a.y - b.y) < 1;
-}
-
-/**
- * Somewhere the player clicked, and why.
- *
- * `points` are the remaining waypoints; `index` is the one being walked to. `talkTo` is
- * set when the click landed on a colleague — we walk over and then start the conversation,
- * so clicking someone across the room means "go talk to them", not "go stand near them".
- */
-interface ClickWalk {
-  readonly points: readonly PixelPoint[];
-  index: number;
-  readonly talkTo: string | null;
+declare global {
+  interface Window {
+    __officeDebug?: OfficeDebugApi;
+  }
 }
 
 /** Tiled office assembled from Modern Office object sprites. */
+const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
+  obj.vertexRoundMode = "fullAuto";
+};
+
+/** What the scene is started with: the layout it builds the room from. */
+export interface OfficeSceneData {
+  layout: OfficeLayoutData;
+}
+export const officeSceneData = (layout: OfficeLayoutData): OfficeSceneData => ({ layout });
+
 export class OfficeScene extends Phaser.Scene {
-  private player?: Phaser.GameObjects.Sprite;
+  private player?: Player;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys?: Record<string, Phaser.Input.Keyboard.Key>;
+  private keys?: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
-  private founderSeed = "founder-player-001";
-  private playerKey = "player";
   private debugGfx?: Phaser.GameObjects.Graphics;
-  private pathCols = Math.ceil(OFFICE_W / PATH_STEP);
-  private pathRows = Math.ceil(OFFICE_H / PATH_STEP);
   private npcs?: NpcManager;
-  private paths?: PathProvider;
-  private walk: ClickWalk | null = null;
-  private walkMarker?: Phaser.GameObjects.Graphics;
+  private clickWalk?: ClickWalk;
+  /** The layout's grid with the spots nobody should stand in closed; set once the room is judged. */
+  /**
+   * The layout in force, from the scene data every start and restart carries.
+   * Phaser constructs the scene before any data exists, so the bundled office
+   * stands in until init() runs — which is before preload reads anything.
+   */
+  private office: Office = officeOf(BUNDLED_LAYOUT);
+  private grid: WalkGrid = this.office.grid;
   private modalOpen = false;
+  /** Bumped by every create(): an await in boot() that outlives its scene must not touch the next one. */
+  private generation = 0;
   private activityUnsub?: () => void;
-  private masks = new Map<string, OpaqueMask>();
 
   constructor() {
     super("office");
   }
 
-  private key(tx: number, ty: number): string {
-    return `${tx},${ty}`;
-  }
-
-  private solidAtPx(x: number, y: number): boolean {
-    return officeSolidAt(x, y);
-  }
-
-  private bodyBlockedAt(x: number, y: number): boolean {
-    return (
-      this.solidAtPx(x - BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-      this.solidAtPx(x + BODY_HALF_WIDTH, y - BODY_HALF_HEIGHT) ||
-      this.solidAtPx(x - BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT) ||
-      this.solidAtPx(x + BODY_HALF_WIDTH, y + BODY_HALF_HEIGHT)
-    );
+  init(data: OfficeSceneData) {
+    this.office = officeOf(data.layout);
+    this.grid = this.office.grid;
   }
 
   preload() {
     const loaded = new Set<string>();
-    for (const placement of OFFICE_OBJECT_PLACEMENTS) {
+    for (const placement of this.office.placements) {
       if (loaded.has(placement.key)) continue;
       loaded.add(placement.key);
       this.load.image(placement.key, placement.path);
@@ -162,6 +123,11 @@ export class OfficeScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor(COLORS.bg);
+    // roundPixels alone rounds nothing here: the default vertexRoundMode trusts
+    // only an unzoomed camera, and this one is zoomed ZOOMx. An integer zoom keeps
+    // every corner on the same fraction, so rounding whole quads is safe and is
+    // what keeps a walking sprite off the half pixel.
+    this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, roundQuad);
     const kb = this.input.keyboard;
     if (!kb) throw new Error("keyboard input unavailable");
     this.cursors = kb.createCursorKeys();
@@ -177,30 +143,42 @@ export class OfficeScene extends Phaser.Scene {
 
     // Click to go there. The HUD sits over this canvas but is pointer-events-none except
     // on its own controls, so a click on a button never reaches us.
-    this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
-      this.onPointerDown(p),
-    );
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => {
+      if (!this.modalOpen) this.clickWalk?.onPointerDown({ x: p.worldX, y: p.worldY });
+    });
 
     void this.boot();
-    this.exposeDebug();
+    // the handle names are the CDP contract in AGENTS.md, dangling underscores and all
+    window.__officeDebug = this.debugApi();
 
-    const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp);
-    const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId);
+    // live hires and releases come and go through the door
+    const onSpawn = (emp: Employee) => void this.npcs?.spawn(emp, "door");
+    const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId, "door");
     const onModal = (open: boolean) => {
       this.modalOpen = open;
-      if (open) this.cancelWalk();
-      if (this.input.keyboard) this.input.keyboard.enabled = !open;
+      if (open) this.clickWalk?.cancel();
+      this.claimKeyboard();
     };
     const onCompanyReady = () => this.scene.restart();
     this.game.events.on("spawn-employee", onSpawn);
     this.game.events.on("despawn-employee", onDespawn);
     this.game.events.on("ui-modal", onModal);
     this.game.events.on("company-ready", onCompanyReady);
+    // Phaser captures its keys on window and cancels their default whoever has
+    // focus — a space typed into the team room would never land. The keyboard
+    // is the game's only while no text field is being typed into.
+    const onFocusChange = () => this.claimKeyboard();
+    document.addEventListener("focusin", onFocusChange);
+    document.addEventListener("focusout", onFocusChange);
+    this.claimKeyboard();
     this.subscribeActivity();
 
-    void Reflect.set(window, "__game", this.game);
+    window.__game = this.game;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, roundQuad);
       this.activityUnsub?.();
+      document.removeEventListener("focusin", onFocusChange);
+      document.removeEventListener("focusout", onFocusChange);
       this.game.events.off("spawn-employee", onSpawn);
       this.game.events.off("despawn-employee", onDespawn);
       this.game.events.off("ui-modal", onModal);
@@ -208,135 +186,117 @@ export class OfficeScene extends Phaser.Scene {
       this.npcs?.destroy();
       this.debugGfx?.destroy();
       this.debugGfx = undefined;
-      this.cancelWalk();
-      this.paths = undefined;
+      this.clickWalk?.cancel();
+      this.clickWalk = undefined;
       this.npcs = undefined;
       this.player = undefined;
-      Reflect.deleteProperty(window, "__officeDebug");
+      delete window.__officeDebug;
     });
   }
 
+  /** The game owns the keys when nothing else is typing and no panel is up. */
+  private claimKeyboard(): void {
+    const kb = this.input.keyboard;
+    if (!kb) return;
+    const el = document.activeElement;
+    const typing =
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      (el instanceof HTMLElement && el.isContentEditable);
+    const ours = !this.modalOpen && !typing;
+    kb.enabled = ours;
+    if (ours) kb.enableGlobalCapture();
+    else kb.disableGlobalCapture();
+  }
+
   private async boot(): Promise<void> {
-    const seats = this.buildRoom();
+    const generation = ++this.generation;
+    const masks = textureMasks(this.textures);
+    const seats = this.buildRoom(masks);
 
     const cam = this.cameras.main;
     cam.removeBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);
-    this.centerCameraOn(OFFICE_SPAWN);
+    this.centerCameraOn(this.office.spawn);
 
-    this.paths = this.makePathProvider();
-    this.npcs = new NpcManager(this, seats, this.paths, OFFICE_POIS);
+    const company = await bridge().getCompany();
+    if (generation !== this.generation) return;
+    // the founder and the roster are independent fetches; the colleagues wait on both,
+    // because Phaser's loader is single-batch and the founder's sheet must land first
+    const [player, employees, blocked] = await Promise.all([
+      this.spawnPlayer(company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED),
+      company ? bridge().listEmployees({ companyId: company.id }) : [],
+      company ? bridge().listTasks({ companyId: company.id, status: ["blocked"] }) : [],
+    ]);
+    if (generation !== this.generation) return;
+    const grid = this.sightSealed(masks, player);
+    this.grid = grid;
+    const npcs = new NpcManager(this, seats, grid, this.idlePois(), this.office.door);
+    this.npcs = npcs;
+    this.clickWalk = new ClickWalk(this, grid, this.walkerOf(player), npcs, (id) =>
+      this.talkTo(id),
+    );
 
-    const bridge = window.appBridge;
-    const company = bridge ? await bridge.getCompany() : null;
-    const employees =
-      company && bridge ? await bridge.listEmployees({ companyId: company.id }) : [];
-    this.founderSeed = company?.founderSpriteSeed ?? "founder-player-001";
-
-    await this.spawnPlayer(OFFICE_SPAWN);
-    for (const emp of employees) await this.npcs.spawn(emp);
-
-    if (company && bridge) {
-      const tasks = await bridge.listTasks({ companyId: company.id });
-      for (const t of tasks) {
-        if (t.status === "blocked" && t.assigneeId && t.blocked)
-          this.npcs.setState(t.assigneeId, "blocked");
-      }
+    // the office is already staffed when it opens: nobody parades in on boot.
+    // Spawns serialise on Phaser's loader, but composing the sheets need not:
+    // main caches by seed, so warming them all at once makes the chain read hits.
+    await Promise.all(employees.map((emp) => bridge().composeCharacter({ seed: emp.spriteSeed })));
+    if (generation !== this.generation) return;
+    for (const emp of employees) await npcs.spawn(emp, "settled");
+    if (generation !== this.generation) return;
+    for (const task of blocked) {
+      if (task.assigneeId) npcs.setState(task.assigneeId, "blocked");
     }
 
     this.game.events.emit("office-ready");
   }
 
-  private buildRoom(): Seat[] {
-    const room = OFFICE_OBJECT_PLACEMENTS.map((placement) =>
+  private buildRoom(masks: (key: string) => OpaqueMask | null): Seat[] {
+    const room = this.office.placements.map((placement) =>
       this.add
         .image(placement.x, placement.y, placement.key)
         .setOrigin(0, 0)
         .setDepth(placement.depth)
         .setFlip(placement.flipX, placement.flipY),
     );
-    return OFFICE_WORK_SEATS.map((seat) => ({
-      x: seat.x,
-      y: seat.y,
-      depth: this.seatDepth(seat, room),
-    }));
+    const seatDepth = seatDepthOracle(masks);
+    return this.office.seats
+      .filter((seat) => seat.role === "work")
+      .map((seat) => ({ x: seat.x, y: seat.y, depth: seatDepth(seat, room) }));
   }
 
   /**
-   * Depth a seated employee renders at.
-   *
-   * The art pack paints its seated workers OVER the workstation — chair back behind the
-   * head, desk in front — and pure y-sorting cannot express that: a chair's floor contact
-   * is always SOUTH of whoever sits in it, so y-sort buries the sitter behind the chair
-   * (it hid 92-97% of every employee). Lift the occupant just above the topmost thing
-   * their bust actually overlaps and no further, so a colleague walking past the front of
-   * the desk still occludes them.
+   * The walk grid with every spot where the founder's face would be painted over
+   * closed. Judged from the textures the room is actually drawn with, so it holds
+   * for a saved office the bundled gate never saw.
    */
-  private seatDepth(seat: PixelPoint, room: readonly Phaser.GameObjects.Image[]): number {
-    let depth = characterDepth(seat.y);
-    for (const image of room) {
-      // overhead props are meant to stay above actors; never lift past them
-      if (image.depth <= depth || image.depth >= DEPTH.overhead) continue;
-      if (!this.bustOverlaps(seat, image)) continue;
-      depth = image.depth;
+  private sightSealed(masks: (key: string) => OpaqueMask | null, player: Player): WalkGrid {
+    const sheet = masks(player.sprite.texture.key);
+    if (!sheet) return this.office.grid;
+    const silhouette = frameMask(sheet, { x: 0, y: 0, w: FRAME_W, h: FRAME_H });
+    // reading a texture is a canvas round trip: only what can draw above a character
+    const sprites: PaintedSprite[] = [];
+    for (const placement of this.office.placements) {
+      if (placement.def.layer === "floor") continue;
+      const mask = masks(placement.key);
+      if (mask) sprites.push({ obj: placement.def, mask });
     }
-    return depth + SEAT_LIFT;
+    const hidden = hiddenNodes(this.office.grid, this.office.spawn, sprites, silhouette);
+    return withoutNodes(
+      this.office.grid,
+      this.office.spawn,
+      hidden.map((h) => h.node),
+    );
   }
 
-  /**
-   * Does a seated bust at `seat` touch any opaque pixel of `image`?
-   *
-   * Walks the overlap rect in whole pixels: the mask is indexed arithmetically, and a
-   * fractional or out-of-range index reads past the array as `undefined` — falsy, so a
-   * miss. TS types a Uint8Array read as `number`, so nothing would flag that; keep every
-   * index an integer inside the mask instead of trusting placements to stay aligned.
-   */
-  private bustOverlaps(seat: PixelPoint, image: Phaser.GameObjects.Image): boolean {
-    const mask = this.opaqueMask(image.texture.key);
-    if (!mask) return true; // unreadable source: assume it covers, so the seat clears it
-    const x0 = Math.floor(Math.max(seat.x - BUST.halfWidth, image.x));
-    const x1 = Math.ceil(Math.min(seat.x + BUST.halfWidth, image.x + mask.w));
-    const y0 = Math.floor(Math.max(seat.y - BUST.height, image.y));
-    const y1 = Math.ceil(Math.min(seat.y, image.y + mask.h));
-    if (x1 <= x0 || y1 <= y0) return false;
-    for (let y = y0; y < y1; y++) {
-      const dy = Math.floor(y - image.y);
-      const ly = image.flipY ? mask.h - 1 - dy : dy;
-      if (ly < 0 || ly >= mask.h) continue;
-      for (let x = x0; x < x1; x++) {
-        const dx = Math.floor(x - image.x);
-        const lx = image.flipX ? mask.w - 1 - dx : dx;
-        if (lx < 0 || lx >= mask.w) continue;
-        if (mask.opaque[ly * mask.w + lx]) return true;
-      }
+  /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
+  private idlePois(): Poi[] {
+    const spots: Poi[] = this.office.pois.map((p) => ({ x: p.x, y: p.y, face: p.face }));
+    for (const seat of this.office.seats) {
+      if (seat.role === "rest") spots.push({ x: seat.x, y: seat.y, face: "down", sit: seat.sit });
     }
-    return false;
-  }
-
-  /**
-   * Opaque coverage of a room texture, cached. Object canvases are heavily padded, so
-   * bounds-only hit-testing would lift a seat above furniture it never actually touches.
-   * Only textures whose bounds reach a seat are ever read back.
-   */
-  private opaqueMask(key: string): OpaqueMask | null {
-    const cached = this.masks.get(key);
-    if (cached) return cached;
-    const source = this.textures.get(key).getSourceImage();
-    if (!(source instanceof HTMLImageElement) && !(source instanceof HTMLCanvasElement))
-      return null;
-    const canvas = document.createElement("canvas");
-    canvas.width = source.width;
-    canvas.height = source.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(source, 0, 0);
-    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const opaque = new Uint8Array(canvas.width * canvas.height);
-    for (let i = 0; i < opaque.length; i++) opaque[i] = pixels[i * 4 + 3] > 0 ? 1 : 0;
-    const mask: OpaqueMask = { opaque, w: canvas.width, h: canvas.height };
-    this.masks.set(key, mask);
-    return mask;
+    return spots;
   }
 
   /** Toggle (G) a red overlay of the authored collision grid for debugging. */
@@ -346,319 +306,118 @@ export class OfficeScene extends Phaser.Scene {
       this.debugGfx = undefined;
       return;
     }
+    const grid = this.grid;
     const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
     gfx.fillStyle(0xff3366, 0.35);
-    for (let r = 0; r < OFFICE_ROWS; r++) {
-      for (let c = 0; c < OFFICE_COLS; c++) {
-        if (OFFICE_SOLID_GRID[r]?.[c])
-          gfx.fillRect(c * OFFICE_CELL, r * OFFICE_CELL, OFFICE_CELL, OFFICE_CELL);
+    for (let r = 0; r < grid.rows; r++) {
+      for (let c = 0; c < grid.cols; c++) {
+        if (grid.solid[r]?.[c]) gfx.fillRect(c * grid.cell, r * grid.cell, grid.cell, grid.cell);
       }
     }
     this.debugGfx = gfx;
   }
 
-  private exposeDebug(): void {
-    const api = {
-      bodyBlockedAt: (x: number, y: number) => this.bodyBlockedAt(x, y),
-      solidAtPx: (x: number, y: number) => this.solidAtPx(x, y),
+  private debugApi(): OfficeDebugApi {
+    return {
+      bodyBlockedAt: (x, y) => bodyBlockedAt(this.grid, x, y),
+      solidAtPx: (x, y) => solidAt(this.grid, x, y),
       snapshot: () => ({
         camera: {
           x: this.cameras.main.scrollX,
           y: this.cameras.main.scrollY,
           zoom: this.cameras.main.zoom,
         },
-        objects: OFFICE_OBJECT_PLACEMENTS.length,
+        objects: this.office.placements.length,
         player: {
-          x: this.player?.x ?? null,
-          y: this.player?.y ?? null,
+          x: this.player?.sprite.x ?? null,
+          y: this.player?.sprite.y ?? null,
         },
-        seats: OFFICE_WORK_SEATS.length,
+        door: this.office.door,
+        seats: this.office.seats.filter((seat) => seat.role === "work").length,
         world: {
-          h: OFFICE_H,
-          w: OFFICE_W,
+          h: this.office.grid.height,
+          w: this.office.grid.width,
         },
       }),
-      probeMove: (start: PixelPoint, delta: PixelPoint) => this.probeMove(start, delta),
+      probeMove: (start, delta) => this.probeMove(start, delta),
     };
-    void Reflect.set(window, "__officeDebug", api);
   }
 
-  private probeMove(start: PixelPoint, delta: PixelPoint) {
+  private probeMove(start: PixelPoint, delta: PixelPoint): PixelPoint | null {
     const player = this.player;
     if (!player) return null;
-    const original = { x: player.x, y: player.y };
-    player.setPosition(start.x, start.y);
+    const { sprite } = player;
+    const original = { x: sprite.x, y: sprite.y };
+    sprite.setPosition(start.x, start.y);
     this.moveResolved(delta.x, delta.y);
-    const result = { x: player.x, y: player.y };
-    player.setPosition(original.x, original.y);
+    const result = { x: sprite.x, y: sprite.y };
+    sprite.setPosition(original.x, original.y);
     return result;
   }
 
-  /** BFS over a half-tile grid; collision itself uses the authored grid. */
-  private makePathProvider(): PathProvider {
-    const nodePx = (gx: number, gy: number): PixelPoint => ({
-      x: gx * PATH_STEP + PATH_STEP / 2,
-      y: gy * PATH_STEP + PATH_STEP / 2,
-    });
-    const walkable = (gx: number, gy: number): boolean => {
-      if (gx < 0 || gy < 0 || gx >= this.pathCols || gy >= this.pathRows) return false;
-      const pt = nodePx(gx, gy);
-      return !this.bodyBlockedAt(pt.x, pt.y);
-    };
-    const nearestWalkable = (tx: number, ty: number): PathTile | null => {
-      if (walkable(tx, ty)) return { tx, ty };
-      for (let radius = 1; radius <= PATH_SEARCH_RADIUS; radius += 1) {
-        for (let oy = -radius; oy <= radius; oy += 1) {
-          for (let ox = -radius; ox <= radius; ox += 1) {
-            if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
-            const nx = tx + ox;
-            const ny = ty + oy;
-            if (walkable(nx, ny)) return { tx: nx, ty: ny };
-          }
-        }
-      }
-      return null;
-    };
-    const toTile = (px: number, py: number): PathTile | null => {
-      const tx = Math.floor(px / PATH_STEP);
-      const ty = Math.floor(py / PATH_STEP);
-      return nearestWalkable(tx, ty);
-    };
-    const toTarget = (px: number, py: number): PathTarget | null => {
-      const tile = toTile(px, py);
-      if (!tile) return null;
-      const exactPoint = { x: px, y: py };
-      return {
-        tile,
-        point: this.bodyBlockedAt(px, py) ? nodePx(tile.tx, tile.ty) : exactPoint,
-      };
-    };
-    return {
-      findPath: (fromX, fromY, toX, toY) => {
-        const start = toTile(fromX, fromY);
-        const goal = toTarget(toX, toY);
-        if (!start || !goal) return null;
-        const startKey = this.key(start.tx, start.ty);
-        const goalKey = this.key(goal.tile.tx, goal.tile.ty);
-        const parent = new Map<string, string | null>([[startKey, null]]);
-        const queue: Array<{ tx: number; ty: number }> = [start];
-        let cursor = 0;
-        let found = startKey === goalKey;
-        while (cursor < queue.length && !found) {
-          const cur = queue[cursor];
-          cursor += 1;
-          if (!cur) break;
-          for (const [dx, dy] of CARDINAL_STEPS) {
-            const nx = cur.tx + dx;
-            const ny = cur.ty + dy;
-            const nk = this.key(nx, ny);
-            if (!walkable(nx, ny) || parent.has(nk)) continue;
-            parent.set(nk, this.key(cur.tx, cur.ty));
-            if (nk === goalKey) {
-              found = true;
-              break;
-            }
-            queue.push({ tx: nx, ty: ny });
-          }
-        }
-        if (!found) return null;
-        const tiles: string[] = [];
-        let parentCursor: string | null = goalKey;
-        while (parentCursor) {
-          tiles.unshift(parentCursor);
-          parentCursor = parent.get(parentCursor) ?? null;
-        }
-        const pts = tiles.map((tileKey) => {
-          const tile = parseTileKey(tileKey);
-          return nodePx(tile.tx, tile.ty);
-        });
-        pts.shift();
-        const last = pts[pts.length - 1];
-        if (!last || !samePoint(last, goal.point)) pts.push(goal.point);
-        return pts;
-      },
-      nearestFloor: (x, y) => {
-        const tile = toTile(x, y);
-        if (!tile) return null;
-        return nodePx(tile.tx, tile.ty);
-      },
-      randomFloor: (x, y, radius) => {
-        for (let i = 0; i < 24; i++) {
-          const tx = Math.floor((x + (Math.random() * 2 - 1) * radius) / PATH_STEP);
-          const ty = Math.floor((y + (Math.random() * 2 - 1) * radius) / PATH_STEP);
-          if (walkable(tx, ty)) return nodePx(tx, ty);
-        }
-        return null;
-      },
-    };
-  }
-
   private subscribeActivity(): void {
-    const bridge = window.appBridge;
-    if (!bridge) return;
-    this.activityUnsub = bridge.onActivity((e: ActivityEvent) => {
-      if (!e.employeeId) return;
-      if (e.kind === "chat" && e.message != null) {
-        const m = /^→ ([^(]+) \(/.exec(e.message);
-        this.npcs?.onChat(e.employeeId, e.message, m?.[1]?.trim() ?? null);
-        return;
+    this.activityUnsub = bridge().onActivity((e: ActivityEvent) => {
+      const employeeId = e.employeeId;
+      if (!employeeId) return;
+      switch (e.kind) {
+        case "chat":
+          this.npcs?.onChat(employeeId, e.message, e.payload.to);
+          return;
+        // what they are doing right now, as the sprite can show it
+        case "tool_call":
+          this.npcs?.onTool(employeeId, poseForToolKind(e.payload.kind));
+          return;
+        // an ask raised mid-run: the "!" goes up now, not when the run settles
+        case "run.ask":
+          this.npcs?.onAsk(employeeId);
+          return;
+        case "status": {
+          const next: NpcState = e.message === "blocked" ? "blocked" : employeeStatusOf(e.message);
+          this.npcs?.setState(employeeId, next);
+          return;
+        }
+        default:
+          return;
       }
-      if (e.kind !== "status") return;
-      const status = z
-        .enum(["running", "done", "failed", "cancelled", "blocked"])
-        .safeParse(e.message);
-      if (!status.success) return;
-      const next: NpcState =
-        status.data === "running" ? "working" : status.data === "blocked" ? "blocked" : "idle";
-      this.npcs?.setState(e.employeeId, next);
     });
   }
 
+  private talkTo(employeeId: string): void {
+    this.game.events.emit("npc-interact", { employeeId });
+  }
+
+  /** SPACE / E: talk to whoever is right in front of the founder. */
   private tryAction(): void {
     const player = this.player;
-    if (!player || !this.npcs) return;
-    const off = FACING_OFFSET[this.facing];
-    const id = this.npcs.interactAt(player.x + off.x * 26, player.y + off.y * 26);
-    if (id) this.game.events.emit("npc-interact", { employeeId: id });
-  }
-
-  /**
-   * Click to walk there; click a colleague to go talk to them; click one you're already
-   * standing next to and you just talk.
-   *
-   * Same contract as the web app's office-life card (apps/web/src/app/office-life.tsx):
-   * a marker drops where you clicked and clears when you arrive. The difference is that
-   * this office has furniture in it, so we path around it rather than slide through.
-   */
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    const player = this.player;
     const npcs = this.npcs;
-    if (!player || !npcs || this.modalOpen) return;
-    const to = { x: pointer.worldX, y: pointer.worldY };
-
-    const clicked = npcs.interactAt(to.x, to.y);
-    if (clicked) {
-      // near enough to talk from where we stand: don't make them walk first
-      if (npcs.inReach(clicked, player)) {
-        this.cancelWalk();
-        this.faceToward(npcs.positionOf(clicked) ?? to);
-        this.game.events.emit("npc-interact", { employeeId: clicked });
-        return;
-      }
-      const at = npcs.positionOf(clicked);
-      if (at) {
-        this.startWalk(at, clicked);
-        return;
-      }
-    }
-    this.startWalk(to, null);
+    if (!player || !npcs) return;
+    const off = FACING_OFFSET[this.facing];
+    const id = npcs.interactAt(player.sprite.x + off.x * 26, player.sprite.y + off.y * 26);
+    if (id) this.talkTo(id);
   }
 
-  /**
-   * Walk to `to`, then talk to `talkTo` if set.
-   *
-   * findPath already snaps an unwalkable goal to the nearest floor, so clicking a desk
-   * walks you up to it rather than doing nothing — which is what a player means by it.
-   */
-  private startWalk(to: PixelPoint, talkTo: string | null): void {
-    const player = this.player;
-    const paths = this.paths;
-    if (!player || !paths) return;
-    const points = paths.findPath(player.x, player.y, to.x, to.y);
-    if (!points || points.length === 0) {
-      this.cancelWalk(); // nowhere to stand over there; don't leave a marker lying
-      return;
-    }
-    this.walk = { points, index: 0, talkTo };
-    const goal = points[points.length - 1];
-    if (goal) this.markWalkTarget(goal);
+  /** The founder as click-to-walk drives them: position from the sprite, moves through collision. */
+  private walkerOf(player: Player): Walker {
+    return {
+      position: player.sprite,
+      place: (at) => player.sprite.setPosition(at.x, at.y),
+      move: (dx, dy) => this.moveResolved(dx, dy),
+      face: (dir) => this.face(dir),
+      walk: (dir) => this.walk(dir),
+    };
   }
 
-  /** Advance along the clicked path. Returns false when there's no further to go. */
-  private followWalk(dt: number): boolean {
-    const player = this.player;
-    const walk = this.walk;
-    if (!player || !walk) return false;
-    const point = walk.points[walk.index];
-    if (!point) return false;
-
-    const dx = point.x - player.x;
-    const dy = point.y - player.y;
-    const dist = Math.hypot(dx, dy);
-    const step = WALK_SPEED * dt;
-    if (dist <= step) {
-      player.x = point.x;
-      player.y = point.y;
-      walk.index += 1;
-      return walk.index < walk.points.length;
-    }
-
-    this.facing =
-      Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
-    const wasX = player.x;
-    const wasY = player.y;
-    this.moveResolved((dx / dist) * step, (dy / dist) * step);
-    // the path is walkable by construction, so being stuck means the world moved under
-    // us (a layout swap, a body wedged on a corner). Give up rather than shove forever.
-    if (player.x === wasX && player.y === wasY) return false;
-    player.play(`${this.playerKey}-walk-${this.facing}`, true);
-    return true;
-  }
-
-  private arriveWalk(): void {
-    const talkTo = this.walk?.talkTo ?? null;
-    this.cancelWalk();
-    if (!talkTo || !this.npcs || !this.player) return;
-    // they may have wandered off mid-walk; only talk if they're actually still here
-    if (!this.npcs.inReach(talkTo, this.player)) return;
-    this.faceToward(this.npcs.positionOf(talkTo) ?? this.player);
-    this.game.events.emit("npc-interact", { employeeId: talkTo });
-  }
-
-  private cancelWalk(): void {
-    this.walk = null;
-    this.walkMarker?.destroy();
-    this.walkMarker = undefined;
-  }
-
-  private faceToward(point: PixelPoint): void {
-    const player = this.player;
-    if (!player) return;
-    const dx = point.x - player.x;
-    const dy = point.y - player.y;
-    this.facing =
-      Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
-    player.setFrame(idleFrame(this.facing));
-  }
-
-  /** A flat diamond where you clicked — flat so it reads as lying on the floor. */
-  private markWalkTarget(at: PixelPoint): void {
-    this.walkMarker?.destroy();
-    const g = this.add.graphics();
-    // above every floor decal, below anyone standing on it
-    g.setDepth(DEPTH.entityBase - 1);
-    g.lineStyle(2, 0x86c0ee, 1);
-    g.beginPath();
-    g.moveTo(at.x, at.y - 4);
-    g.lineTo(at.x + 7, at.y);
-    g.lineTo(at.x, at.y + 4);
-    g.lineTo(at.x - 7, at.y);
-    g.closePath();
-    g.strokePath();
-    this.walkMarker = g;
-  }
-
-  private async spawnPlayer(spawn: { x: number; y: number }): Promise<void> {
-    const key = `player-${this.founderSeed}`;
-    await loadCharacter(this, key, this.founderSeed);
-    ensureWalkAnims(this, key);
-    this.playerKey = key;
-    const player = this.add
-      .sprite(spawn.x, spawn.y, key, idleFrame("down"))
+  private async spawnPlayer(seed: string): Promise<Player> {
+    const key = `player-${seed}`;
+    await loadCharacter(this, key, seed);
+    const sprite = this.add
+      .sprite(this.office.spawn.x, this.office.spawn.y, key, idleFrame("down"))
       .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
-    player.setDepth(characterDepth(player.y));
+    sprite.setDepth(characterDepth(sprite.y));
+    const player = { sprite, anims: characterAnims(key) };
     this.player = player;
-    this.centerCameraOn(player);
+    this.centerCameraOn(sprite);
+    return player;
   }
 
   override update(_t: number, dms: number): void {
@@ -675,30 +434,46 @@ export class OfficeScene extends Phaser.Scene {
     if (keys.S.isDown || cursors.down.isDown) dy += 1;
 
     if (dx !== 0 || dy !== 0) {
-      this.cancelWalk(); // taking the keys back cancels wherever the click was sending us
-      if (dx !== 0) this.facing = dx < 0 ? "left" : "right";
-      else this.facing = dy < 0 ? "up" : "down";
-      const len = Math.hypot(dx, dy) || 1;
+      this.clickWalk?.cancel(); // taking the keys back cancels wherever the click was sending us
+      const len = Math.hypot(dx, dy);
       this.moveResolved((dx / len) * WALK_SPEED * dt, (dy / len) * WALK_SPEED * dt);
-      player.play(`${this.playerKey}-walk-${this.facing}`, true);
-    } else if (this.walk) {
-      if (!this.followWalk(dt)) this.arriveWalk();
-    } else {
-      player.anims.stop();
-      player.setFrame(idleFrame(this.facing));
+      this.walk(facingToward(dx, dy));
+    } else if (!this.clickWalk?.update(dt)) {
+      this.stand();
     }
-    player.setDepth(characterDepth(player.y));
-    this.centerCameraOn(player);
+    const depth = characterDepth(player.sprite.y);
+    if (player.sprite.depth !== depth) player.sprite.setDepth(depth);
+    this.centerCameraOn(player.sprite);
     this.npcs?.update();
   }
 
-  private moveResolved(mx: number, my: number): void {
+  private walk(dir: Dir): void {
+    this.facing = dir;
     const player = this.player;
-    if (!player) return;
-    const nx = player.x + mx;
-    if (!this.bodyBlockedAt(nx, player.y)) player.x = nx;
-    const ny = player.y + my;
-    if (!this.bodyBlockedAt(player.x, ny)) player.y = ny;
+    if (player) player.sprite.play(player.anims.walk[dir], true);
+  }
+
+  private face(dir: Dir): void {
+    this.facing = dir;
+    const sprite = this.player?.sprite;
+    if (!sprite) return;
+    sprite.anims.stop();
+    sprite.setFrame(idleFrame(dir));
+  }
+
+  /** Come to rest on the standing frame — once, when the walk cycle is still going. */
+  private stand(): void {
+    if (this.player?.sprite.anims.isPlaying) this.face(this.facing);
+  }
+
+  private moveResolved(mx: number, my: number): void {
+    const sprite = this.player?.sprite;
+    if (!sprite) return;
+    const grid = this.grid;
+    const nx = sprite.x + mx;
+    if (!bodyBlockedAt(grid, nx, sprite.y)) sprite.x = nx;
+    const ny = sprite.y + my;
+    if (!bodyBlockedAt(grid, sprite.x, ny)) sprite.y = ny;
   }
 
   /** Keep the player dead-centre always (no clamping to the room edges). */

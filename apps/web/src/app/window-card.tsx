@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { PointerEvent, ReactNode } from "react";
 
 /** The landing card behaves like an app window: grab the titlebar to drag it. */
 export function WindowCard({ titlebar, children }: { titlebar: ReactNode; children: ReactNode }) {
@@ -15,7 +15,7 @@ export function WindowCard({ titlebar, children }: { titlebar: ReactNode; childr
   } | null>(null);
 
   const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+    (e: PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
       dragRef.current = {
         pointerId: e.pointerId,
@@ -33,13 +33,13 @@ export function WindowCard({ titlebar, children }: { titlebar: ReactNode; childr
     [offset],
   );
 
-  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     setOffset({ x: d.baseX + (e.clientX - d.startX), y: d.baseY + (e.clientY - d.startY) });
   }, []);
 
-  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerUp = useCallback((e: PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
   }, []);
 

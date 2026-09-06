@@ -24,6 +24,8 @@
     "react/react-in-jsx-scope": "off",
     "eslint/no-shadow": "off",
     "eslint/no-await-in-loop": "off",
+    // the two debug handles the CDP verify recipe reaches for (see AGENTS.md)
+    "eslint/no-underscore-dangle": ["error", { "allow": ["__game", "__officeDebug"] }],
     // Render props (a component passed as a prop, not nested in render) are legit.
     "react/no-unstable-nested-components": ["error", { "allowAsProps": true }],
     "anti-slop/no-chained-type-assertions": "error",

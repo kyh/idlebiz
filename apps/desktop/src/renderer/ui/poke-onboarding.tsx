@@ -1,27 +1,72 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
+import { useAuthFlow, type Auth } from "@/renderer/hooks/use-auth-flow";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
-import { setModalOpen, refresh, getPortrait } from "@/renderer/state/store";
-import { BUSINESS_TYPES, businessTypeById } from "@/shared/domain";
+import { bridge } from "@/renderer/bridge";
+import { refresh } from "@/renderer/state/store";
+import { AuthStep } from "@/renderer/ui/auth-step";
+import { useModal } from "@/renderer/ui/modal";
+import {
+  Building,
+  BudgetMeter,
+  Emote,
+  FLOORS,
+  FounderSprite,
+  NightSky,
+  TeamParade,
+} from "@/renderer/ui/onboarding-stage";
+import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
-import type { AuthFlowEvent, FounderChoice, HireProposal } from "@/shared/ipc-registry";
+import { errorMessage } from "@/shared/errors";
+import type { FounderChoice, HireProposal } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
 // Pokémon-style first-run onboarding: one battle box, a narrator, and a step
 // machine — auth → founder → look → company → biztype → pitch → team → budget
-// → office.
+// → office. Staged on the street outside the office: every answered step
+// lights a floor, the founder walks toward the door, and the office opens on
+// a battle-start flash.
 // ---------------------------------------------------------------------------
 
-type Step =
-  | "intro"
-  | "auth"
-  | "founder"
-  | "look"
-  | "company"
-  | "biztype"
-  | "pitch"
-  | "team"
-  | "budget"
-  | "finalize";
+const STEP_ORDER = [
+  "intro",
+  "auth",
+  "founder",
+  "look",
+  "company",
+  "biztype",
+  "pitch",
+  "team",
+  "budget",
+  "finalize",
+] as const;
+type Step = (typeof STEP_ORDER)[number];
+
+const stepIndex = (step: Step): number => STEP_ORDER.indexOf(step);
+
+/** The steps that each light a floor once answered — one per floor of the building. */
+const FLOOR_STEPS: readonly Step[] = [
+  "founder",
+  "look",
+  "company",
+  "biztype",
+  "pitch",
+  "team",
+  "budget",
+];
+const litFloors = (step: Step): number =>
+  step === "finalize" ? FLOORS : FLOOR_STEPS.filter((s) => stepIndex(s) < stepIndex(step)).length;
+
+/** Where the founder stands on the street, per step: from the left edge to the door. Absent before they have a look. */
+const FOUNDER_AT = new Map<Step, number>([
+  ["look", 18],
+  ["company", 30],
+  ["biztype", 42],
+  ["pitch", 54],
+  ["team", 62],
+  ["budget", 70],
+  ["finalize", 83],
+]);
+const founderAt = (step: Step): number | null => FOUNDER_AT.get(step) ?? null;
 
 /** Where "← back" goes, or null where it doesn't go anywhere. Only the cheap,
  *  reversible steps rewind: casting the team spends a real CLI call, and past
@@ -41,89 +86,120 @@ function backStep(step: Step): Step | null {
   }
 }
 
+/** The founding team, from the pitch to the offer letters. */
+type Team =
+  | { kind: "uncast" }
+  | { kind: "casting" }
+  | { kind: "failed"; message: string }
+  | { kind: "cast"; hires: HireProposal[] };
+
 /** null is the explicit "no ceiling" choice, not an absent one. */
 const CAP_OPTIONS: readonly (number | null)[] = [5, 20, 50, null];
 const DEFAULT_CAP = 20;
 
-const bridge = () => {
-  const b = window.appBridge;
-  if (!b) throw new Error("appBridge unavailable");
-  return b;
-};
+/** How long the battle-start flash plays before the office is allowed to show. */
+const FLASH_MS = 700;
+const flashOver = (): Promise<void> => new Promise((done) => window.setTimeout(done, FLASH_MS));
 
 function Narrator({ text }: { text: string }) {
   const { shown, done, skip } = useTypewriter(text);
   return (
     <button
       type="button"
-      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-[var(--text)]"
+      className="min-h-[44px] w-full cursor-pointer border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-fg"
       onClick={skip}
     >
       {shown}
-      {!done ? <span className="px-live-dot">▌</span> : null}
+      {done ? (
+        <span className="px-more ml-1 text-accent-lo">▼</span>
+      ) : (
+        <span className="px-live-dot">▌</span>
+      )}
     </button>
+  );
+}
+
+/** The title card. At the very start it also says how to begin, the way a title screen does. */
+function Title({ pressStart }: { pressStart: boolean }) {
+  return (
+    <div className="mt-8 text-center">
+      <div className="ob-title">IDLEBIZ</div>
+      <div className="mt-4 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
+      <div className={pressStart ? "px-blink mt-3 text-xs text-light" : "mt-3 text-xs opacity-0"}>
+        ▶ press Enter
+      </div>
+    </div>
+  );
+}
+
+function LookPicker({
+  choices,
+  look,
+  onPick,
+}: {
+  choices: FounderChoice[];
+  look: number;
+  onPick: (i: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-6 gap-3">
+      {choices.map((ch, i) => (
+        <button
+          type="button"
+          key={ch.seed}
+          onClick={() => onPick(i)}
+          className="p-1"
+          style={{
+            border: look === i ? "3px solid var(--accent)" : "3px solid var(--ink)",
+            background: look === i ? "#2a3550" : "#1a1e2e",
+            boxShadow: look === i ? "0 0 0 2px var(--accent-hi)" : "none",
+          }}
+        >
+          <img
+            src={ch.portraitDataUrl}
+            alt={`look ${i + 1}`}
+            className="h-14 w-14 [image-rendering:pixelated]"
+          />
+        </button>
+      ))}
+    </div>
   );
 }
 
 export function PokeOnboarding() {
   const [step, setStep] = useState<Step>("intro");
-  const [authed, setAuthed] = useState<boolean | null>(null);
-  const [authLines, setAuthLines] = useState<string[]>([]);
-  const [authTried, setAuthTried] = useState(false);
-  const [authBusy, setAuthBusy] = useState(false);
   const [founderName, setFounderName] = useState("");
   const [choices, setChoices] = useState<FounderChoice[]>([]);
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
   const [pitch, setPitch] = useState("");
-  const [hires, setHires] = useState<HireProposal[] | null>(null);
+  const [team, setTeam] = useState<Team>({ kind: "uncast" });
   const [capUsd, setCapUsd] = useState<number | null>(DEFAULT_CAP);
   const [error, setError] = useState<string | null>(null);
-  const [finalizing, setFinalizing] = useState(false);
-  // what a previous finalize attempt already committed to disk
-  const [companyId, setCompanyId] = useState<string | null>(null);
-  const [hired, setHired] = useState(false);
 
+  const hires = team.kind === "cast" ? team.hires : null;
   const budget: Budget = capUsd === null ? { mode: "infinite" } : { mode: "capped", capUsd };
-  // the office exists from the first createCompany, so its budget is settled
-  const budgetLocked = companyId !== null;
+
+  useModal();
 
   useEffect(() => {
-    setModalOpen(true);
-    void bridge()
-      .hasAuth()
-      .then((r) => setAuthed(r.ok));
     void bridge()
       .getFounderChoices()
       .then(setChoices)
       .catch(() => setChoices([]));
-    return () => setModalOpen(false);
   }, []);
 
-  // stream auth flow events into the dialog
-  useEffect(() => {
-    const off = bridge().onAuthEvent((e: AuthFlowEvent) => {
-      if (e.type === "url") {
-        setAuthLines((l) => [...l, "Your browser opened — authorize there, then come back."]);
-      } else if (e.type === "progress") setAuthLines((l) => [...l.slice(-3), e.message]);
-      else if (e.type === "done") {
-        setAuthBusy(false);
-        setAuthed(true);
-        setAuthLines((l) => [...l, "Connected ✓"]);
-        window.setTimeout(() => setStep("founder"), 700);
-      } else if (e.type === "error") {
-        setAuthBusy(false);
-        setAuthLines((l) => [...l, `Hmm — ${e.message}`]);
-      }
-    });
-    return off;
-  }, []);
+  const { auth, login } = useAuthFlow({
+    probe: true,
+    // a beat on "Connected ✓" before the founder's own step
+    onSignedIn: () => window.setTimeout(() => setStep("founder"), 700),
+  });
 
   /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
   const castTeam = useCallback(() => {
     setError(null);
-    setHires(null);
+    setTeam({ kind: "casting" });
     setStep("team");
     void bridge()
       .generateHires({
@@ -132,25 +208,25 @@ export function PokeOnboarding() {
         businessType: biz ?? "custom",
       })
       .then((h) => {
-        setHires(h);
+        setTeam({ kind: "cast", hires: h });
         return null;
       })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause) => setTeam({ kind: "failed", message: errorMessage(cause) }));
   }, [companyName, pitch, biz]);
 
   const next = useCallback(() => {
     setError(null);
-    // authed is null until the CLI probe lands — routing on it would send a
+    // the CLI probe has to land first — routing before it would send a
     // signed-in founder to the login screen
     if (step === "intro") {
-      if (authed !== null) setStep(authed ? "founder" : "auth");
+      if (auth.phase !== "checking") setStep(auth.phase === "signed-in" ? "founder" : "auth");
     } else if (step === "founder" && founderName.trim()) setStep("look");
     else if (step === "look") setStep("company");
     else if (step === "company" && companyName.trim()) setStep("biztype");
     else if (step === "biztype" && biz !== null) setStep("pitch");
     else if (step === "pitch" && pitch.trim()) castTeam();
     else if (step === "team" && hires !== null && hires.length > 0) setStep("budget");
-  }, [step, authed, founderName, companyName, biz, pitch, hires, castTeam]);
+  }, [step, auth.phase, founderName, companyName, biz, pitch, hires, castTeam]);
 
   const back = useCallback(() => {
     const prev = backStep(step);
@@ -161,289 +237,326 @@ export function PokeOnboarding() {
   }, [step]);
 
   const finalize = async () => {
-    if (!hires || hires.length === 0 || finalizing) return;
-    setFinalizing(true);
+    if (!hires || hires.length === 0 || step === "finalize") return;
     setError(null);
     setStep("finalize");
     try {
-      // each leg is skipped if a previous attempt already landed it: the office
-      // is on disk the moment createCompany returns, and hiring twice would
-      // double the payroll
-      let id = companyId;
-      if (id === null) {
-        const co = await bridge().createCompany({
+      // the flash plays over the night; only then does the office get to show
+      await Promise.all([
+        bridge().foundCompany({
           name: companyName.trim(),
           mission: pitch.trim(),
           businessType: biz ?? "custom",
           founderName: founderName.trim(),
-          founderSpriteSeed: choices[look]?.seed ?? "founder-player-001",
+          founderSpriteSeed: choices[look]?.seed ?? DEFAULT_FOUNDER_SEED,
           budget,
-        });
-        id = co.id;
-        setCompanyId(id);
-      }
-      if (!hired) {
-        await bridge().batchHire({ companyId: id, hires });
-        setHired(true);
-      }
-      await bridge().completeOnboarding({ companyId: id });
+          hires,
+        }),
+        flashOver(),
+      ]);
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-      setFinalizing(false);
+    } catch (e) {
+      setError(errorMessage(e));
       setStep("budget");
     }
   };
 
-  // Enter advances input steps; Escape rewinds the reversible ones
+  // Enter advances input steps; Escape rewinds the reversible ones; the arrow
+  // keys walk the looks, the way a starter is picked
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    const tag = document.activeElement?.tagName;
+    if (e.key === "Escape") {
+      back();
+      return;
+    }
+    if (step === "look" && choices.length > 0) {
+      if (e.key === "ArrowRight") setLook((i) => (i + 1) % choices.length);
+      else if (e.key === "ArrowLeft") setLook((i) => (i + choices.length - 1) % choices.length);
+    }
+    if (e.key !== "Enter" || tag === "TEXTAREA") return;
+    next();
+  });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = document.activeElement?.tagName;
-      if (e.key === "Escape") {
-        back();
-        return;
-      }
-      if (e.key !== "Enter" || tag === "TEXTAREA") return;
-      next();
-    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [next, back]);
+  }, []);
 
   const narration = {
     intro:
       "Welcome to IDLEBIZ! You're about to found a startup staffed by real AI employees — they write real code and real docs in a real folder on your computer.",
     auth: "First things first: your employees run on your own coding CLI — Claude Code or Codex. No CLI, no workforce. I'll check what's installed and set it up.",
     founder: "Let's get you on payroll. What's your name, founder?",
-    look: "Pick your look. This is how you'll appear around the office.",
+    look: "Pick your look. That's you out on the street — you'll look the same around the office.",
     company: "Now the fun part. What's your company called?",
     biztype: `What kind of company is ${companyName.trim() || "this"} going to be?`,
     pitch: `What is ${companyName.trim() || "your company"} building? Be specific — your team will literally start working on this.`,
     team:
-      hires === null
-        ? error === null
-          ? "Putting out the job posting… reviewing resumes…"
-          : "The hiring agency didn't come back. Want me to run the search again?"
-        : "Your founding team, cast for this exact pitch. From here the team lead grows or shrinks the roster on their own — you steer with the budget.",
+      team.kind === "cast"
+        ? "Your founding team, cast for this exact pitch. From here the team lead grows or shrinks the roster on their own — you steer with the budget."
+        : team.kind === "failed"
+          ? "The hiring agency didn't come back. Want me to run the search again?"
+          : "Putting out the job posting… reviewing resumes…",
     budget:
       "Last thing, and it's the important one. Your employees think with real AI, and that bills to your account for real. Set the ceiling — they down tools when they hit it, and you can move it any time.",
     finalize: "Signing the lease… assembling desks… your office is ready!",
   } satisfies Record<Step, string>;
+  const problem = error ?? (team.kind === "failed" ? team.message : null);
+
+  const seed = choices[look]?.seed ?? DEFAULT_FOUNDER_SEED;
+  const at = founderAt(step);
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-between bg-[#10121b] p-6">
-      {/* title */}
-      <div className="mt-10 text-center">
-        <div className="text-6xl text-[#f5f3ea]" style={{ textShadow: "4px 4px 0 #1d2136" }}>
-          IDLEBIZ
+    <div className="ob-scene pointer-events-auto absolute inset-0 z-40 overflow-hidden">
+      <NightSky />
+      <div className="relative z-10 flex h-full flex-col items-center justify-between p-6">
+        <Title pressStart={step === "intro"} />
+
+        <div className="ob-stage">
+          <div className="ob-stage-left flex justify-center">
+            {step === "look" && choices.length > 0 ? (
+              <LookPicker choices={choices} look={look} onPick={setLook} />
+            ) : null}
+            {step === "team" && hires ? <TeamParade hires={hires} /> : null}
+            {step === "budget" ? <BudgetMeter capUsd={capUsd} /> : null}
+          </div>
+          <div className="relative">
+            <Building lit={litFloors(step)} open={step === "finalize"} />
+          </div>
+          {step === "team" && team.kind === "casting" ? (
+            <Emote frame={1} className="ob-emote-door" />
+          ) : null}
+          <div className="ob-street" />
+          <div className="ob-ground" />
+          {at !== null ? <FounderSprite seed={seed} at={at} /> : null}
         </div>
-        <div className="mt-2 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
-      </div>
 
-      {/* step content above the battle box */}
-      <div className="flex w-full max-w-2xl flex-1 items-center justify-center py-4">
-        {step === "look" && choices.length > 0 ? (
-          <div className="grid grid-cols-6 gap-3">
-            {choices.map((ch, i) => (
-              <button
-                type="button"
-                key={ch.seed}
-                onClick={() => setLook(i)}
-                className="p-1"
-                style={{
-                  border: look === i ? "3px solid var(--accent)" : "3px solid var(--ink)",
-                  background: look === i ? "#2a3550" : "#1a1e2e",
-                  boxShadow: look === i ? "0 0 0 2px var(--accent-hi)" : "none",
-                }}
-              >
-                <img
-                  src={ch.portraitDataUrl}
-                  alt={`look ${i + 1}`}
-                  className="h-14 w-14 [image-rendering:pixelated]"
-                />
-              </button>
-            ))}
+        <div className="px-battle w-full max-w-2xl p-4">
+          <Narrator text={narration[step]} />
+          {problem ? <div className="mt-1 text-xs text-danger">{problem}</div> : null}
+
+          {backStep(step) !== null ? (
+            <button type="button" onClick={back} className="px-link mt-2" title="Esc">
+              ← back
+            </button>
+          ) : null}
+
+          <div className="mt-3 flex items-center gap-2">
+            <ActionRow
+              step={step}
+              auth={auth}
+              login={login}
+              next={next}
+              back={back}
+              castTeam={castTeam}
+              finalize={() => void finalize()}
+              founderName={founderName}
+              setFounderName={setFounderName}
+              companyName={companyName}
+              setCompanyName={setCompanyName}
+              biz={biz}
+              setBiz={setBiz}
+              pitch={pitch}
+              setPitch={setPitch}
+              team={team}
+              capUsd={capUsd}
+              setCapUsd={setCapUsd}
+            />
           </div>
-        ) : null}
-
-        {(step === "team" || step === "budget") && hires ? (
-          <div className="px-window grid max-h-[46vh] w-full grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
-            {hires.map((h) => (
-              <div key={h.spriteSeed} className="px-inset flex items-start gap-2 p-2 text-left">
-                <Portrait seed={h.spriteSeed} />
-                <span>
-                  <span className="block text-sm text-[var(--text)]">
-                    {h.name} · <span className="text-[var(--accent-lo)]">{h.title}</span>
-                  </span>
-                  <span className="block text-xs text-[var(--text-dim)]">{h.blurb}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {step === "team" && hires === null && !error ? (
-          <div className="px-live-dot text-4xl">📋</div>
-        ) : null}
+        </div>
       </div>
+      {step === "finalize" ? <div className="ob-flash" /> : null}
+    </div>
+  );
+}
 
-      {/* the battle box */}
-      <div className="px-battle w-full max-w-2xl p-4">
-        <Narrator text={narration[step]} />
-        {error ? <div className="mt-1 text-xs text-[var(--danger)]">{error}</div> : null}
+/** A step that asks for one line of text and a button to accept it. */
+function TextStep({
+  value,
+  onChange,
+  placeholder,
+  cta,
+  onNext,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  cta: string;
+  onNext: () => void;
+}) {
+  return (
+    <>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="px-field flex-1"
+        autoFocus
+      />
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={!value.trim()}
+        className="px-btn-accent px-btn"
+      >
+        {cta}
+      </button>
+    </>
+  );
+}
 
-        {backStep(step) !== null ? (
-          <button type="button" onClick={back} className="px-link mt-2" title="Esc">
-            ← back
-          </button>
-        ) : null}
-
-        <div className="mt-3 flex items-center gap-2">
-          {step === "intro" ? (
+/** The action row under the narration: exactly one per step, so a new step cannot render nothing. */
+function ActionRow({
+  step,
+  auth,
+  login,
+  next,
+  back,
+  castTeam,
+  finalize,
+  founderName,
+  setFounderName,
+  companyName,
+  setCompanyName,
+  biz,
+  setBiz,
+  pitch,
+  setPitch,
+  team,
+  capUsd,
+  setCapUsd,
+}: {
+  step: Step;
+  auth: Auth;
+  login: () => void;
+  next: () => void;
+  back: () => void;
+  castTeam: () => void;
+  finalize: () => void;
+  founderName: string;
+  setFounderName: (v: string) => void;
+  companyName: string;
+  setCompanyName: (v: string) => void;
+  biz: BusinessTypeId | null;
+  setBiz: (v: BusinessTypeId) => void;
+  pitch: string;
+  setPitch: (v: string) => void;
+  team: Team;
+  capUsd: number | null;
+  setCapUsd: (v: number | null) => void;
+}) {
+  switch (step) {
+    case "intro":
+      return (
+        <button
+          type="button"
+          onClick={next}
+          disabled={auth.phase === "checking"}
+          className="px-btn-accent px-btn ml-auto"
+        >
+          {auth.phase === "checking" ? "Checking your CLI…" : "▶ Let's go"}
+        </button>
+      );
+    case "auth":
+      return (
+        <AuthStep
+          auth={auth}
+          onLogin={login}
+          aside={
             <button
               type="button"
-              onClick={next}
-              disabled={authed === null}
-              className="px-btn-accent px-btn ml-auto"
+              onClick={() => void bridge().resetGame()}
+              className="px-link px-link-danger"
+              title="Wipe everything in ~/.idlebiz and restart"
             >
-              {authed === null ? "Checking your CLI…" : "▶ Let's go"}
+              ↺ start over
             </button>
-          ) : null}
-
-          {step === "auth" ? (
-            <div className="flex w-full flex-col gap-2">
-              {authLines.length > 0 ? (
-                <div className="px-inset max-h-20 overflow-y-auto whitespace-pre-line p-2 text-xs text-[var(--text-dim)]">
-                  {authLines.join("\n")}
-                </div>
-              ) : null}
-              <div className="flex items-center">
-                <button
-                  type="button"
-                  onClick={() => void bridge().resetGame()}
-                  className="px-link px-link-danger"
-                  title="Wipe everything in ~/.idlebiz and restart"
-                >
-                  ↺ start over
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthBusy(true);
-                    setAuthTried(true);
-                    setAuthLines([]);
-                    void bridge().startLogin();
-                  }}
-                  disabled={authBusy}
-                  className="px-btn-accent px-btn ml-auto"
-                >
-                  {authBusy ? "Setting up…" : authTried ? "Try again" : "Set up workforce"}
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {step === "founder" ? (
-            <>
-              <input
-                value={founderName}
-                onChange={(e) => setFounderName(e.target.value)}
-                placeholder="Ada"
-                className="px-field flex-1"
-                autoFocus
-              />
+          }
+        />
+      );
+    case "founder":
+      return (
+        <TextStep
+          value={founderName}
+          onChange={setFounderName}
+          placeholder="Ada"
+          cta="That's me"
+          onNext={next}
+        />
+      );
+    case "look":
+      return (
+        <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
+          Looking sharp →
+        </button>
+      );
+    case "company":
+      return (
+        <TextStep
+          value={companyName}
+          onChange={setCompanyName}
+          placeholder="Acme AI"
+          cta="Register it"
+          onNext={next}
+        />
+      );
+    case "biztype":
+      return (
+        <div className="flex w-full flex-col gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {BUSINESS_TYPES.map((b) => (
               <button
                 type="button"
-                onClick={next}
-                disabled={!founderName.trim()}
-                className="px-btn-accent px-btn"
+                key={b.id}
+                onClick={() => setBiz(b.id)}
+                data-sel={biz === b.id}
+                className="px-opt text-left"
               >
-                That's me
+                {b.label}
               </button>
-            </>
-          ) : null}
-
-          {step === "look" ? (
-            <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
-              Looking sharp →
-            </button>
-          ) : null}
-
-          {step === "company" ? (
-            <>
-              <input
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Acme AI"
-                className="px-field flex-1"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={next}
-                disabled={!companyName.trim()}
-                className="px-btn-accent px-btn"
-              >
-                Register it
-              </button>
-            </>
-          ) : null}
-
-          {step === "biztype" ? (
-            <div className="flex w-full flex-col gap-2">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {BUSINESS_TYPES.map((b) => (
-                  <button
-                    type="button"
-                    key={b.id}
-                    onClick={() => setBiz(b.id)}
-                    data-sel={biz === b.id}
-                    className="px-opt text-left"
-                  >
-                    {b.emoji} {b.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={next}
-                disabled={biz === null}
-                className="px-btn-accent px-btn ml-auto"
-              >
-                That's the plan →
-              </button>
-            </div>
-          ) : null}
-
-          {step === "pitch" ? (
-            <div className="flex w-full flex-col gap-2">
-              <textarea
-                value={pitch}
-                onChange={(e) => setPitch(e.target.value)}
-                rows={3}
-                placeholder={businessTypeById(biz ?? "custom").pitchPlaceholder}
-                className="px-field w-full resize-none"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={next}
-                disabled={!pitch.trim()}
-                className="px-btn-accent px-btn ml-auto"
-              >
-                That's the vision
-              </button>
-            </div>
-          ) : null}
-
-          {step === "team" && hires ? (
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={next}
+            disabled={biz === null}
+            className="px-btn-accent px-btn ml-auto"
+          >
+            That's the plan →
+          </button>
+        </div>
+      );
+    case "pitch":
+      return (
+        <div className="flex w-full flex-col gap-2">
+          <textarea
+            value={pitch}
+            onChange={(e) => setPitch(e.target.value)}
+            rows={3}
+            placeholder={businessTypeById(biz ?? "custom").pitchPlaceholder}
+            className="px-field w-full resize-none"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={next}
+            disabled={!pitch.trim()}
+            className="px-btn-accent px-btn ml-auto"
+          >
+            That's the vision
+          </button>
+        </div>
+      );
+    case "team":
+      switch (team.kind) {
+        case "cast":
+          return (
             <button type="button" onClick={next} className="px-btn-accent px-btn ml-auto">
               Sign them →
             </button>
-          ) : null}
-
-          {step === "team" && hires === null && error !== null ? (
+          );
+        case "failed":
+          return (
             <>
               <button type="button" onClick={back} className="px-link">
                 ← rewrite the pitch
@@ -452,73 +565,44 @@ export function PokeOnboarding() {
                 Search again
               </button>
             </>
-          ) : null}
-
-          {step === "budget" ? (
-            <div className="flex w-full flex-col gap-2">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {CAP_OPTIONS.map((usd) => (
-                  <button
-                    type="button"
-                    key={usd ?? "uncapped"}
-                    onClick={() => setCapUsd(usd)}
-                    disabled={budgetLocked}
-                    data-sel={capUsd === usd}
-                    className="px-opt"
-                    title={
-                      usd === null ? "No ceiling — the office spends whatever it needs" : undefined
-                    }
-                  >
-                    {usd === null ? "No cap" : `$${usd}`}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[var(--text-dim)]">
-                  {capUsd === null
-                    ? "⚠ Uncapped. The office will keep spending while it works."
-                    : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void finalize()}
-                  disabled={finalizing}
-                  className="px-btn-accent px-btn ml-auto"
-                >
-                  Open the office →
-                </button>
-              </div>
-            </div>
-          ) : null}
+          );
+        case "uncast":
+        case "casting":
+          return null;
+      }
+      break;
+    case "budget":
+      return (
+        <div className="flex w-full flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {CAP_OPTIONS.map((usd) => (
+              <button
+                type="button"
+                key={usd ?? "uncapped"}
+                onClick={() => setCapUsd(usd)}
+                data-sel={capUsd === usd}
+                className="px-opt"
+                title={
+                  usd === null ? "No ceiling — the office spends whatever it needs" : undefined
+                }
+              >
+                {usd === null ? "No cap" : `$${usd}`}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-fg-dim">
+              {capUsd === null
+                ? "⚠ Uncapped. The office will keep spending while it works."
+                : `They stop taking on new work at $${capUsd} — whatever is already running still finishes. Change it any time from the budget panel.`}
+            </span>
+            <button type="button" onClick={finalize} className="px-btn-accent px-btn ml-auto">
+              Open the office →
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Portrait({ seed }: { seed: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const u = await getPortrait(seed);
-      if (alive) setUrl(u);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [seed]);
-  return url ? (
-    <img
-      src={url}
-      alt=""
-      className="h-12 w-12 shrink-0 [image-rendering:pixelated]"
-      style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
-    />
-  ) : (
-    <span
-      className="h-12 w-12 shrink-0"
-      style={{ border: "2px solid var(--ink)", background: "#cfd6ea" }}
-    />
-  );
+      );
+    case "finalize":
+      return null;
+  }
 }

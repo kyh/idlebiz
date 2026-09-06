@@ -1,71 +1,112 @@
 import { useSyncExternalStore } from "react";
-import { z } from "zod";
 import type Phaser from "phaser";
+import type { ActivityEvent } from "@/shared/activity";
+import { employeeStatusOf, taskIn } from "@/shared/domain";
 import type {
-  ActivityEvent,
   Budget,
   Company,
   Employee,
+  Product,
   Task,
-  Team,
+  TaskIn,
   TeamMessage,
 } from "@/shared/domain";
-import type { ProductStatus, StripeStatus, VercelStatus } from "@/shared/ipc-registry";
-import { applyOfficeLayout } from "@/renderer/game/office-layout";
+import type { LoadSkip, ProductStatus, RestingRunners, StripeStatus } from "@/shared/ipc-registry";
+import {
+  BUNDLED_LAYOUT,
+  parseOfficeLayout,
+  type OfficeLayoutData,
+} from "@/renderer/game/office-layout";
+import { bridge } from "@/renderer/bridge";
 
 interface State {
+  /** The first refresh finished: company, roster and tasks are known (or known absent). */
   booted: boolean;
+  /**
+   * The office layout in force: the saved office from disk, else the bundled
+   * default; null until that is known, and the scene mounts on nothing earlier.
+   * Settled before the bridge calls that can fail, so the room opens even when
+   * they do.
+   */
+  layout: OfficeLayoutData | null;
   authed: boolean;
   stripeStatus: StripeStatus;
-  vercelStatus: VercelStatus;
-  product: ProductStatus | null; // PRODUCT.md entry + latest deploy
-  resting: Record<string, number>; // runner -> epoch its usage limit lifts
+  /** Everything the company builds, oldest first, and where each one really is. */
+  products: Product[];
+  productStatus: ReadonlyMap<string, ProductStatus>;
+  resting: RestingRunners;
+  /** Packages boot could not read. A skipped company blocks the office (see App). */
+  saveIssues: LoadSkip[];
   company: Company | null;
   employees: Employee[];
-  teams: Team[];
   activity: ActivityEvent[];
-  pendingAsks: Task[]; // blocked tasks awaiting the founder's answer
-  stuckTasks: Task[]; // dead-lettered / failed tasks needing attention
+  pendingAsks: TaskIn<"blocked">[]; // awaiting the founder's answer
+  stuckTasks: TaskIn<"dead">[]; // dead-lettered, needing a retry
   game: Phaser.Game | null;
   modalOpen: boolean; // a dialogue/modal overlay is up (ambient HUD chrome hides)
+  /** Derived on every set(): what the window shows, one of four. */
+  boot: Boot;
 }
 
 let state: State = {
   booted: false,
+  layout: null,
   authed: true,
   stripeStatus: { state: "disconnected" },
-  vercelStatus: { state: "disconnected" },
-  product: null,
+  products: [],
+  productStatus: new Map(),
   resting: {},
+  saveIssues: [],
   company: null,
   employees: [],
-  teams: [],
   activity: [],
   pendingAsks: [],
   stuckTasks: [],
   game: null,
   modalOpen: false,
+  boot: { kind: "loading" },
 };
 const listeners = new Set<() => void>();
 
-function set(patch: Partial<State>): void {
-  state = { ...state, ...patch };
+/**
+ * What the window shows: exactly one of these. A company boot could not read
+ * stops everything (a fresh start here would stack a second company on it);
+ * no company means onboarding; a company means the office, gated on a CLI.
+ */
+export type Boot =
+  | { kind: "loading" }
+  | { kind: "unreadable"; issues: LoadSkip[] }
+  | { kind: "onboarding" }
+  | { kind: "office"; company: Company; authed: boolean };
+
+function bootOf(s: Omit<State, "boot">): Boot {
+  const issues = s.saveIssues.filter((issue) => issue.kind === "company");
+  if (issues.length > 0) return { kind: "unreadable", issues };
+  if (!s.booted) return { kind: "loading" };
+  if (!s.company) return { kind: "onboarding" };
+  return { kind: "office", company: s.company, authed: s.authed };
+}
+
+function set(patch: Partial<Omit<State, "boot">>): void {
+  const next = { ...state, ...patch };
+  state = { ...next, boot: bootOf(next) };
   for (const l of listeners) l();
 }
-const getState = (): State => state;
 const subscribe = (l: () => void): (() => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
 };
-export function useStore(): State {
-  return useSyncExternalStore(subscribe, getState, getState);
-}
 
-const bridge = (): NonNullable<typeof window.appBridge> => {
-  const b = window.appBridge;
-  if (!b) throw new Error("appBridge unavailable");
-  return b;
-};
+/**
+ * Subscribe to the store. With a selector the component re-renders only when
+ * the selected value changes — so select a field, not a fresh object.
+ */
+export function useStore(): State;
+export function useStore<T>(selector: (s: State) => T): T;
+export function useStore<T>(selector?: (s: State) => T): T | State {
+  const select = (): T | State => (selector ? selector(state) : state);
+  return useSyncExternalStore(subscribe, select, select);
+}
 
 // ---- portrait cache --------------------------------------------------------
 const portraitCache = new Map<string, string>();
@@ -89,9 +130,6 @@ export function initStore(): void {
   void bridge()
     .stripeStatus()
     .then((s) => set({ stripeStatus: s }));
-  void bridge()
-    .vercelStatus()
-    .then((s) => set({ vercelStatus: s }));
   bridge().onActivity((e: ActivityEvent) => onActivity(e));
   bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
 }
@@ -110,157 +148,224 @@ export function setModalOpen(open: boolean): void {
   state.game?.events.emit("ui-modal", open);
 }
 
-export async function refresh(): Promise<void> {
-  // Recover the player's saved office from disk before the Phaser scene boots; a
-  // malformed/old-schema file falls back to the bundled default.
+/**
+ * Recover the player's saved office from disk before the Phaser scene boots; a
+ * malformed file falls back to the bundled default. Once: the scene has built
+ * the room by the time anything refreshes again.
+ */
+async function settleLayout(): Promise<void> {
+  if (state.layout) return;
+  let layout = BUNDLED_LAYOUT;
   try {
     const office = await bridge().loadOfficeDesign();
-    if (office.layout) applyOfficeLayout(office.layout);
+    if (office.layout) layout = parseOfficeLayout(office.layout);
   } catch {
     // keep the bundled default layout
   }
-  const company = await bridge().getCompany();
-  const employees = company ? await bridge().listEmployees({ companyId: company.id }) : [];
-  const teams = company ? await bridge().listTeams({ companyId: company.id }) : [];
-  const tasks = company ? await bridge().listTasks({ companyId: company.id }) : [];
-  const pendingAsks = tasks.filter((t) => t.status === "blocked" && t.blocked !== null);
-  const stuckTasks = tasks.filter((t) => t.status === "dead" || t.status === "failed");
-  set({ booted: true, company, employees, teams, pendingAsks, stuckTasks });
-  // product state rides along (deploy lookup is a no-op until Vercel is connected)
-  if (company) {
-    void bridge()
-      .productStatus({ companyId: company.id })
-      .then((product) => set({ product }))
-      .catch(() => undefined);
-  }
+  // The scene may mount now. Not `booted`: that also opens the HUD and the
+  // onboarding modal, and a founder shown onboarding because the bridge is down
+  // would create a second company on top of the one they have.
+  set({ layout });
 }
+
+/** The builder saved an office: the scene rebuilds from it when it next mounts. */
+export function setLayout(layout: OfficeLayoutData): void {
+  set({ layout });
+}
+
+export async function refresh(): Promise<void> {
+  await settleLayout();
+  const [company, resting, load] = await Promise.all([
+    bridge().getCompany(),
+    bridge().restingRunners(),
+    bridge().loadReport(),
+  ]);
+  const [employees, tasks, products] = company
+    ? await Promise.all([
+        bridge().listEmployees({ companyId: company.id }),
+        bridge().listTasks({ companyId: company.id, status: ["blocked", "dead"] }),
+        bridge().listProducts({ companyId: company.id }),
+      ])
+    : [[], [], []];
+  const pendingAsks = tasks.filter(taskIn("blocked"));
+  const stuckTasks = tasks.filter(taskIn("dead"));
+  set({
+    booted: true,
+    company,
+    resting,
+    saveIssues: load.skipped,
+    employees,
+    products,
+    pendingAsks,
+    stuckTasks,
+  });
+  void refreshProductStatus(products);
+}
+
+/** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
+async function refreshProductStatus(products: readonly Product[]): Promise<void> {
+  const entries = await Promise.all(
+    products.map(async (p) => {
+      try {
+        return [p.id, await bridge().productStatus({ productId: p.id })] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
+}
+
+/** The products as main now has them, after a change to them. */
+async function reloadProducts(): Promise<void> {
+  const company = state.company;
+  if (!company) return;
+  const products = await bridge().listProducts({ companyId: company.id });
+  set({ products });
+  await refreshProductStatus(products);
+}
+
+/** The founder starts a second product; the roster learns of it on their next run. */
+export const createProduct = (name: string, description: string): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().createProduct({ companyId, name, description });
+    await reloadProducts();
+  });
 
 /** Fetch a team's chat-room messages on demand (for the Teams panel). */
-export async function teamMessages(teamId: string, limit = 30): Promise<TeamMessage[]> {
-  return bridge().teamMessages({ teamId, limit });
+export async function teamMessages(limit = 30): Promise<TeamMessage[]> {
+  const c = state.company;
+  return c ? bridge().teamMessages({ companyId: c.id, limit }) : [];
 }
 
-// runner.resting lifecycle payload, parsed at the event boundary
-const RestingPayloadSchema = z.object({ runner: z.string().min(1), until: z.number() });
+const ACTIVITY_RING = 300;
 
 function onActivity(e: ActivityEvent): void {
-  const activity = [...state.activity, e].slice(-300);
-  // live-patch employee status from run status events (keeps HUD + dialogue badge live)
-  let employees = state.employees;
-  if (e.kind === "status" && e.employeeId && e.message != null) {
-    const next =
-      e.message === "running"
-        ? "working"
-        : ["done", "failed", "cancelled", "blocked", "dead", "queued"].includes(e.message)
-          ? "idle"
-          : null;
-    if (next)
-      employees = employees.map((emp) =>
-        emp.id === e.employeeId ? { ...emp, status: next } : emp,
-      );
-  }
-  set({ activity, employees });
-  // a CLI hit its usage limit — remember until when, so the HUD can say why
-  if (e.kind === "lifecycle" && e.message === "runner.resting") {
-    const p = RestingPayloadSchema.safeParse(e.payload);
-    if (p.success && p.data.until) {
-      set({ resting: { ...state.resting, [p.data.runner]: p.data.until } });
+  const ring = state.activity;
+  const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
+  switch (e.kind) {
+    // live-patch employee status from run status events (keeps HUD + dialogue badge live)
+    case "status": {
+      const employeeId = e.employeeId;
+      const status = employeeStatusOf(e.message);
+      set({
+        activity,
+        employees: employeeId
+          ? state.employees.map((emp) => (emp.id === employeeId ? { ...emp, status } : emp))
+          : state.employees,
+      });
+      return;
     }
-    return;
+    // a CLI hit its usage limit — remember until when, so the HUD can say why
+    case "runner.resting":
+      set({ activity, resting: { ...state.resting, [e.payload.runner]: e.payload.until } });
+      return;
+    // both only move company fields — refetch just the company, not the world
+    case "metrics.pulse":
+    case "autopilot.changed":
+    case "budget.exhausted":
+      set({ activity });
+      void bridge()
+        .getCompany()
+        .then((company) => set({ company }))
+        .catch(() => undefined);
+      return;
+    // the team self-sizes: reflect hires/releases in the office immediately
+    // the lead started a product: the roster's next runs know it; the panels do now
+    case "product.created":
+      set({ activity });
+      void reloadProducts();
+      return;
+    case "org.hired":
+    case "org.released": {
+      set({ activity });
+      const hired = e.kind === "org.hired";
+      const employeeId = e.employeeId;
+      void refresh().then(() => {
+        if (hired && employeeId) {
+          const emp = state.employees.find((x) => x.id === employeeId);
+          if (emp) state.game?.events.emit("spawn-employee", emp);
+        } else if (employeeId) {
+          state.game?.events.emit("despawn-employee", employeeId); // surgical — no scene rebuild
+        }
+        return null;
+      });
+      return;
+    }
+    case "run.end":
+      set({ activity });
+      void refresh();
+      return;
+    default:
+      set({ activity });
+      return;
   }
-  // both only move company fields — refetch just the company, not the world
-  if (
-    e.kind === "lifecycle" &&
-    (e.message === "metrics.pulse" || e.message === "autopilot.changed")
-  ) {
-    void bridge()
-      .getCompany()
-      .then((company) => set({ company }))
-      .catch(() => undefined);
-    return;
-  }
-  // the team self-sizes: reflect hires/releases in the office immediately
-  if (e.kind === "lifecycle" && (e.message === "org.hired" || e.message === "org.released")) {
-    const hired = e.message === "org.hired";
-    const employeeId = e.employeeId;
-    void refresh().then(() => {
-      if (hired && employeeId) {
-        const emp = state.employees.find((x) => x.id === employeeId);
-        if (emp) state.game?.events.emit("spawn-employee", emp);
-      } else if (employeeId) {
-        state.game?.events.emit("despawn-employee", employeeId); // surgical — no scene rebuild
-      }
-      return null;
-    });
-    return;
-  }
-  if (e.kind === "lifecycle" && e.message === "run.end") void refresh();
 }
 
 // ---- actions ---------------------------------------------------------------
 
-export async function setAutopilot(running: boolean): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  const updated = await bridge().setAutopilot({ companyId: c.id, running });
-  set({ company: updated });
+/** Every action on the company: nothing to do without one. */
+async function withCompany(act: (companyId: string) => Promise<void>): Promise<void> {
+  if (state.company) await act(state.company.id);
 }
+/** An action whose reply is the company as main now has it. */
+const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
+  withCompany(async (companyId) => set({ company: await call(companyId) }));
 
-export async function setBudget(budget: Budget): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  const updated = await bridge().setBudget({ companyId: c.id, budget });
-  set({ company: updated });
-}
+export const setAutopilot = (running: boolean): Promise<void> =>
+  updateCompany((companyId) => bridge().setAutopilot({ companyId, running }));
 
-export async function resetSpend(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  const updated = await bridge().resetSpend({ companyId: c.id });
-  set({ company: updated });
-}
+export const setBudget = (budget: Budget): Promise<void> =>
+  updateCompany((companyId) => bridge().setBudget({ companyId, budget }));
 
-export async function connectStripe(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().stripeConnect({ companyId: c.id });
-}
+export const resetSpend = (): Promise<void> =>
+  updateCompany((companyId) => bridge().resetSpend({ companyId }));
 
-export async function disconnectStripe(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().stripeDisconnect({ companyId: c.id });
-}
+export const setMaxAgents = (maxAgents: number): Promise<void> =>
+  updateCompany((companyId) => bridge().setMaxAgents({ companyId, maxAgents }));
+
+export const connectStripe = (): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().stripeConnect({ companyId });
+  });
+
+export const disconnectStripe = (): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().stripeDisconnect({ companyId });
+  });
 
 export async function connectVercel(input: {
+  productId: string;
   token: string;
   projectId: string;
   projectName: string;
   teamId?: string;
 }): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().vercelConnect({ companyId: c.id, ...input });
-  set({ vercelStatus: await bridge().vercelStatus() });
+  await bridge().vercelConnect(input);
+  await reloadProducts();
 }
 
-export async function disconnectVercel(): Promise<void> {
-  const c = state.company;
-  if (!c) return;
-  await bridge().vercelDisconnect({ companyId: c.id });
-  set({ vercelStatus: { state: "disconnected" } });
+export async function disconnectVercel(productId: string): Promise<void> {
+  await bridge().vercelDisconnect({ productId });
+  await reloadProducts();
 }
 
 export async function resetGame(): Promise<void> {
   await bridge().resetGame();
 }
 
-/** Founder posts in the team channel; @first-name wakes that employee. */
-export async function sendFounderChat(text: string): Promise<void> {
-  const team = state.teams[0];
-  if (!team || !text.trim()) return;
-  await bridge().postTeamChat({ teamId: team.id, text: text.trim() });
+/** Founder tells one employee what to do; the room records it, they wake on it. */
+export async function directEmployee(employeeId: string, instruction: string): Promise<void> {
+  const text = instruction.trim();
+  if (!text) return;
+  await bridge().directEmployee({ employeeId, instruction: text });
 }
+
+/** Founder posts in the team channel; @first-name wakes that employee. */
+export const sendFounderChat = (text: string): Promise<void> =>
+  withCompany(async (companyId) => {
+    if (text.trim()) await bridge().postTeamChat({ companyId, text: text.trim() });
+  });
 
 /** Founder decides on a held outward-facing command; the task resumes either way. */
 export async function resolveApproval(taskId: string, approved: boolean): Promise<void> {
@@ -275,9 +380,23 @@ export async function retryTask(task: Task): Promise<void> {
   await refresh();
 }
 
+/** An employee's live work: what they are on and what they are stuck on. */
 export async function listTasksFor(employeeId: string): Promise<Task[]> {
   const company = state.company;
   if (!company) return [];
-  const tasks = await bridge().listTasks({ companyId: company.id });
-  return tasks.filter((t) => t.assigneeId === employeeId);
+  return bridge().listTasks({
+    companyId: company.id,
+    assigneeId: employeeId,
+    status: ["queued", "running", "blocked"],
+  });
+}
+
+/** Answer the question a blocked task is waiting on; the task resumes. */
+export async function answerQuestion(taskId: string, answer: string): Promise<void> {
+  await bridge().answerQuestion({ taskId, answer });
+  await refresh();
+}
+
+export async function openSaveFolder(): Promise<void> {
+  await bridge().openSaveFolder();
 }

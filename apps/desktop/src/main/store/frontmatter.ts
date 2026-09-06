@@ -8,7 +8,7 @@
 // never in frontmatter, which is what keeps this codec safe.
 
 import { z } from "zod";
-import type { JsonValue } from "@/shared/json";
+import { parseJson } from "@/shared/json";
 
 export type Scalar = string | number | boolean | null;
 export interface FrontmatterDoc {
@@ -31,7 +31,7 @@ function parseValue(raw: string): Scalar {
   if (t !== "" && !Number.isNaN(Number(t)) && !t.startsWith('"')) return Number(t);
   if (t.startsWith('"')) {
     try {
-      const parsed = z.string().safeParse(JSON.parse(t));
+      const parsed = z.string().safeParse(parseJson(t));
       if (parsed.success) return parsed.data;
     } catch {
       /* fall through to raw */
@@ -100,19 +100,21 @@ export function optNum(rec: Record<string, Scalar>, key: string, fallback: numbe
   const v = z.number().safeParse(rec[key]);
   return v.success ? v.data : fallback;
 }
+/** A number that means "not yet" when absent: a timestamp that has not happened. */
+export function nullableNum(rec: Record<string, Scalar>, key: string): number | null {
+  const v = z.number().safeParse(rec[key]);
+  return v.success ? v.data : null;
+}
 export function optBool(rec: Record<string, Scalar>, key: string, fallback: boolean): boolean {
   const v = z.boolean().safeParse(rec[key]);
   return v.success ? v.data : fallback;
 }
+/** A JSON array of strings stored as one scalar; anything else reads as empty. */
 export function strArray(rec: Record<string, Scalar>, key: string): string[] {
   const v = z.string().safeParse(rec[key]);
   if (!v.success) return [];
   try {
-    // JSON.parse is typed `any`; its actual return domain is exactly JsonValue.
-    const parsed: JsonValue = JSON.parse(v.data);
-    return Array.isArray(parsed)
-      ? parsed.filter((x): x is string => z.string().safeParse(x).success)
-      : [];
+    return z.array(z.string()).catch([]).parse(parseJson(v.data));
   } catch {
     return [];
   }

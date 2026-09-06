@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { bridge } from "@/renderer/bridge";
 
 // Renders agent text with clickable assets: URLs open in the browser, and
 // anything that looks like a workspace file path opens with the OS default app
@@ -15,13 +16,13 @@ function relFromToken(token: string): string {
 }
 
 function openAsset(companyId: string, token: string): void {
-  const bridge = window.appBridge;
-  if (!bridge) return;
   if (/^https?:\/\//.test(token)) {
     window.open(token, "_blank");
     return;
   }
-  void bridge.openCompanyPath({ companyId, rel: relFromToken(token) }).catch(() => {});
+  void bridge()
+    .openCompanyPath({ companyId, rel: relFromToken(token) })
+    .catch(() => {});
 }
 
 /** One line/paragraph of agent text with URLs + file paths made clickable. */

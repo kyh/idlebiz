@@ -1,15 +1,29 @@
 import { useNow } from "@/renderer/hooks/use-now";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
-import { formatTime } from "@/shared/format";
+import type { Company, Employee, Product } from "@/shared/domain";
+import type { ProductStatus } from "@/shared/ipc-registry";
+import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
 
-function fmt(n: number): string {
-  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
+/** The windows the HUD opens over the office; at most one is up at a time. */
+export type Overlay =
+  | { kind: "ships" }
+  | { kind: "inbox" }
+  | { kind: "teams" }
+  | { kind: "budget" }
+  | { kind: "settings" }
+  | { kind: "vercel"; productId: string };
+
+// ❗ stays, though VG5000 has no glyph for it and it renders as a colour emoji.
+// Tried the pixel "!" — it reads as punctuation glued to the count and the plate
+// loses its focal mark. The colour IS the signal here, so the fallback earns its keep.
+const ALERT_GLYPH = "❗";
+// ✉ not 📥: VG5000 has no inbox glyph, so it fell back to the system symbol
+// font — the one icon here not drawn in the pixel font.
+const INBOX_GLYPH = "✉";
+// ◉ not ●: U+25CF isn't in VG5000 either, and this one has a pixel equivalent
+// that reads as a status light.
+const LIVE_GLYPH = "◉";
 
 function Stat({
   label,
@@ -24,10 +38,15 @@ function Stat({
   sub?: string;
   accent?: string;
   title?: string;
-  onClick?: () => void;
+  onClick: () => void;
 }) {
-  const body = (
-    <>
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
+      title={title}
+    >
       <div className="text-xs uppercase tracking-wide text-[#c3c9de]">{label}</div>
       <div
         className="text-base leading-tight tabular-nums"
@@ -36,174 +55,193 @@ function Stat({
         {value}
       </div>
       {sub ? <div className="text-xs tabular-nums text-[#a7adc6]">{sub}</div> : null}
-    </>
+    </button>
   );
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
-        title={title}
-      >
-        {body}
-      </button>
-    );
-  }
-  return <div className="px-plate min-w-[64px] px-3 py-1.5 text-center">{body}</div>;
+}
+
+/** Top-left: the money + adoption scoreboard — real numbers, or a nudge to connect. */
+function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: Overlay) => void }) {
+  const out = isOutOfBudget(company);
+  const spent = spentLabel(company.spentUsd);
+  return (
+    <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
+      <Stat
+        label={company.revenueUsd !== null ? "revenue ⚡" : "revenue"}
+        value={
+          company.revenueUsd === null ? "—" : `$${formatCompact(Math.floor(company.revenueUsd))}`
+        }
+        accent={out ? "var(--danger)" : "#9fe6b0"}
+        sub={company.revenueUsd === null ? `${spent} · connect` : `${spent}${out ? " · OUT" : ""}`}
+        title="Real Stripe revenue vs real AI spend — budget & Stripe live here"
+        onClick={() => onOpen({ kind: "budget" })}
+      />
+      <Stat
+        label={company.users !== null ? "users ⚡" : "users"}
+        value={company.users === null ? "—" : formatCompact(company.users)}
+        accent="#86c0ee"
+        sub={company.users === null ? "connect" : "web analytics"}
+        title="Real users from Vercel Web Analytics on your deployed product"
+        onClick={() => onOpen({ kind: "ships" })}
+      />
+    </div>
+  );
 }
 
 /**
- * Four-corner HUD.
- *   top-left     the real scoreboard — revenue+spend (Stripe) and users (Vercel)
- *   top-right    the company — product state, team, notifications
- *   bottom-left  run controls — start/pause + settings
- *   (bottom-right is the TeamChannel component)
+ * What a product plate says: where the product really is. A live deploy or a
+ * local entry the team wrote — never a number derived from how many tasks closed.
  */
-export function Hud({
-  onShips,
-  onInbox,
-  onBudget,
-  onUsers,
-  onSettings,
-  onTeams,
+export function productStateOf(status: ProductStatus | undefined): string {
+  const deploy = status?.deploy ?? null;
+  if (deploy) return deploy.state === "READY" ? "LIVE" : deploy.state.toLowerCase();
+  return status?.entry ? "local build" : "unshipped";
+}
+
+/** Top-right: the company — product state, team, and what's waiting on the founder. */
+function CompanyPlates({
+  company,
+  employees,
+  products,
+  productStatus,
+  needsYou,
+  nap,
+  onOpen,
 }: {
-  onShips: () => void;
-  onInbox: () => void;
-  onBudget: () => void;
-  onUsers: () => void;
-  onSettings: () => void;
-  onTeams: () => void;
+  company: Company;
+  employees: Employee[];
+  products: Product[];
+  productStatus: ReadonlyMap<string, ProductStatus>;
+  needsYou: number;
+  nap: string | null;
+  onOpen: (overlay: Overlay) => void;
 }) {
-  const { company, employees, pendingAsks, stuckTasks, product, resting } = useStore();
+  // the plate shows the company's first product; the panel behind it shows them all
+  const lead = products[0];
+  const status = lead ? productStatus.get(lead.id) : undefined;
+  const deploy = status?.deploy ?? null;
+  const productState = productStateOf(status);
+  const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
+  const working = employees.filter((e) => e.status === "working").length;
+  // a company has exactly one team, so a team count is a constant wearing a
+  // number's clothes — the plate says what's actually happening instead
+  const teamSub = working > 0 ? `${working} working` : (nap ?? "idle");
+  return (
+    <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
+      <Stat
+        label={lead && products.length > 1 ? lead.name : "product"}
+        value={productState}
+        accent={productState === "LIVE" ? "var(--ok)" : undefined}
+        sub={`${company.ships} shipped${portfolio}`}
+        title={deploy ? `Live at ${deploy.url}` : "Products and the shipping log"}
+        onClick={() => onOpen({ kind: "ships" })}
+      />
+      <Stat
+        label="team"
+        value={String(employees.length)}
+        sub={teamSub}
+        title={
+          nap
+            ? "A CLI hit its usage limit — parked work resumes automatically at reset"
+            : "The roster sizes itself — your lever is the budget"
+        }
+        onClick={() => onOpen({ kind: "teams" })}
+      />
+      <InboxButton needsYou={needsYou} onClick={() => onOpen({ kind: "inbox" })} />
+    </div>
+  );
+}
+
+function InboxButton({ needsYou, onClick }: { needsYou: number; onClick: () => void }) {
+  const hasCount = needsYou > 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-btn pointer-events-auto${hasCount ? "" : " px-btn-icon"}`}
+      style={hasCount ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
+      title="Questions, connect requests and stuck tasks waiting on you"
+    >
+      {hasCount ? (
+        <span className="px-live-dot">
+          <span className="px-icon">{ALERT_GLYPH}</span> {needsYou}
+        </span>
+      ) : (
+        <span className="px-icon px-icon-solo">{INBOX_GLYPH}</span>
+      )}
+    </button>
+  );
+}
+
+/** Bottom-left: start/pause the company, and settings. */
+function RunControls({
+  company,
+  onOpen,
+}: {
+  company: Company;
+  onOpen: (overlay: Overlay) => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
+      <button
+        type="button"
+        onClick={() => void setAutopilot(!company.autopilot)}
+        className="px-btn pointer-events-auto"
+        style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
+        title={
+          company.autopilot
+            ? "Autopilot on — the company runs itself. Click to pause."
+            : "Autopilot paused. Click to resume."
+        }
+      >
+        {company.autopilot ? (
+          <>
+            <span className="px-icon">{LIVE_GLYPH}</span> LIVE
+          </>
+        ) : (
+          <>
+            <span className="px-icon">▶</span> Start
+          </>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => onOpen({ kind: "settings" })}
+        className="px-btn px-btn-icon pointer-events-auto"
+        title="Settings"
+      >
+        <span className="px-icon px-icon-solo">⚙</span>
+      </button>
+    </div>
+  );
+}
+
+/** Four-corner HUD; the bottom-right corner is the TeamChannel. */
+export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
+  const company = useStore((s) => s.company);
+  const employees = useStore((s) => s.employees);
+  const pendingAsks = useStore((s) => s.pendingAsks);
+  const stuckTasks = useStore((s) => s.stuckTasks);
+  const products = useStore((s) => s.products);
+  const productStatus = useStore((s) => s.productStatus);
+  const resting = useStore((s) => s.resting);
   const now = useNow();
   if (!company) return null;
-  const working = employees.filter((e) => e.status === "working").length;
   // a CLI on cooldown: the office naps until the earliest reset
-  const napUntil = Object.values(resting)
-    .filter((t) => t > now)
-    .toSorted((a, b) => a - b)[0];
-  const napLabel = napUntil === undefined ? null : `☕ resting til ${formatTime(napUntil)}`;
-  const version = `v${1 + Math.floor(company.ships / 10)}.${company.ships % 10}`;
-  const out = isOutOfBudget(company);
-  const needsYou = pendingAsks.length + stuckTasks.length;
-
-  const deploy = product?.deploy ?? null;
-  const productState = deploy
-    ? deploy.state === "READY"
-      ? "LIVE"
-      : deploy.state.toLowerCase()
-    : product?.entry
-      ? "local build"
-      : "unshipped";
-
+  const until = earliestReset(resting, now);
+  const nap = until === undefined ? null : napLabel(until);
   return (
     <>
-      {/* top-left: the money + adoption scoreboard (real numbers or connect) */}
-      <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
-        <Stat
-          label={company.revenueUsd !== null ? "revenue ⚡" : "revenue"}
-          value={company.revenueUsd === null ? "—" : `$${fmt(Math.floor(company.revenueUsd))}`}
-          accent={out ? "var(--danger)" : "#9fe6b0"}
-          sub={
-            company.revenueUsd === null
-              ? `spent $${company.spentUsd.toFixed(2)} · connect`
-              : `spent $${company.spentUsd.toFixed(2)}${out ? " · OUT" : ""}`
-          }
-          title="Real Stripe revenue vs real AI spend — budget & Stripe live here"
-          onClick={onBudget}
-        />
-        <Stat
-          label={company.users !== null ? "users ⚡" : "users"}
-          value={company.users === null ? "—" : fmt(company.users)}
-          accent="#86c0ee"
-          sub={company.users === null ? "connect" : "web analytics"}
-          title="Real users from Vercel Web Analytics on your deployed product"
-          onClick={onUsers}
-        />
-      </div>
-
-      {/* top-right: the company — product, team, notifications */}
-      <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
-        <Stat
-          label="product"
-          value={version}
-          accent={productState === "LIVE" ? "var(--ok)" : undefined}
-          sub={`${productState} · ${company.ships} shipped`}
-          title={deploy ? `Live at ${deploy.url}` : "Shipping log"}
-          onClick={onShips}
-        />
-        <Stat
-          label="team"
-          value={String(employees.length)}
-          // a company has exactly one team, so a team count is a constant wearing a
-          // number's clothes. Say what's actually happening instead.
-          sub={working > 0 ? `${working} working` : (napLabel ?? "idle")}
-          title={
-            napLabel
-              ? "A CLI hit its usage limit — parked work resumes automatically at reset"
-              : "The roster sizes itself — your lever is the budget"
-          }
-          onClick={onTeams}
-        />
-        <button
-          type="button"
-          onClick={onInbox}
-          // only icon-only when there's no count beside the glyph
-          className={`px-btn pointer-events-auto${needsYou > 0 ? "" : " px-btn-icon"}`}
-          style={needsYou > 0 ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
-          title="Questions, connect requests and stuck tasks waiting on you"
-        >
-          {needsYou > 0 ? (
-            <span className="px-live-dot">
-              {/* ❗ stays, though VG5000 has no glyph for it and it renders as a colour
-                  emoji. Tried the pixel "!" — it reads as punctuation glued to the
-                  count and the plate loses its focal mark. The colour IS the signal
-                  here, so the fallback earns its keep. */}
-              <span className="px-icon">❗</span> {needsYou}
-            </span>
-          ) : (
-            // ✉ not 📥: VG5000 has no inbox glyph, so it fell back to the system
-            // symbol font — the one icon here not drawn in the pixel font
-            <span className="px-icon px-icon-solo">✉</span>
-          )}
-        </button>
-      </div>
-
-      {/* bottom-left: run controls */}
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
-        <button
-          type="button"
-          onClick={() => void setAutopilot(!company.autopilot)}
-          className="px-btn pointer-events-auto"
-          style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
-          title={
-            company.autopilot
-              ? "Autopilot on — the company runs itself. Click to pause."
-              : "Autopilot paused. Click to resume."
-          }
-        >
-          {company.autopilot ? (
-            <>
-              {/* ◉ not ●: U+25CF isn't in VG5000 either, and this one has a pixel
-                  equivalent that reads as a status light. */}
-              <span className="px-icon">◉</span> LIVE
-            </>
-          ) : (
-            <>
-              <span className="px-icon">▶</span> Start
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onSettings}
-          className="px-btn px-btn-icon pointer-events-auto"
-          title="Settings"
-        >
-          <span className="px-icon px-icon-solo">⚙</span>
-        </button>
-      </div>
+      <Scoreboard company={company} onOpen={onOpen} />
+      <CompanyPlates
+        company={company}
+        employees={employees}
+        products={products}
+        productStatus={productStatus}
+        needsYou={pendingAsks.length + stuckTasks.length}
+        nap={nap}
+        onOpen={onOpen}
+      />
+      <RunControls company={company} onOpen={onOpen} />
     </>
   );
 }

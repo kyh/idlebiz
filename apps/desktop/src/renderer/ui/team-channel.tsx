@@ -1,25 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { z } from "zod";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
-import type { ActivityEvent } from "@/shared/domain";
+import { employeeName } from "@/renderer/ui/employee-name";
+import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { formatTime } from "@/shared/format";
 
-const FEED_KINDS = new Set(["chat", "ship"]);
-const ORG_EVENTS = new Set(["org.hired", "org.released", "runner.resting"]);
+/** What the room shows: what people said, shipped, and who came and went. */
+const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
+  "chat",
+  "ship",
+  "org.hired",
+  "org.released",
+  "runner.resting",
+]);
 
-// Lifecycle payloads parsed at the feed boundary; each field falls back
-// independently, and a non-object payload falls back wholesale.
-const LifecyclePayloadSchema = z
-  .object({
-    until: z.number().nullable().catch(null),
-    runner: z.string().catch("a"),
-    name: z.string().catch("someone"),
-  })
-  .catch({ until: null, runner: "a", name: "someone" });
-
-const inFeed = (a: ActivityEvent): boolean =>
-  FEED_KINDS.has(a.kind) ||
-  (a.kind === "lifecycle" && a.message != null && ORG_EVENTS.has(a.message));
+const inFeed = (a: ActivityEvent): boolean => FEED_KINDS.has(a.kind);
 
 /**
  * The team channel (bottom-right): a live room the founder is actually in.
@@ -27,7 +21,10 @@ const inFeed = (a: ActivityEvent): boolean =>
  * room, and @first-name wakes that employee with the message.
  */
 export function TeamChannel() {
-  const { employees, activity, company, modalOpen } = useStore();
+  const employees = useStore((s) => s.employees);
+  const activity = useStore((s) => s.activity);
+  const company = useStore((s) => s.company);
+  const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -46,8 +43,7 @@ export function TeamChannel() {
   // hide while a dialogue/modal is up — a half-covered window reads as broken
   if (!company || modalOpen) return null;
 
-  const nameOf = (id?: string | null): string =>
-    id ? (employees.find((e) => e.id === id)?.name ?? "team") : "you";
+  const nameOf = (id?: string | null): string => (id ? employeeName(employees, id, "team") : "you");
 
   const send = () => {
     const text = draft.trim();
@@ -67,11 +63,11 @@ export function TeamChannel() {
         className="px-inset px-scroll max-h-48 min-h-16 space-y-1 overflow-y-auto p-2 text-xs leading-snug"
       >
         {feed.length === 0 ? (
-          <div className="text-[var(--text-dim)]">
+          <div className="text-fg-dim">
             {company.autopilot ? "The team is getting to work…" : "Autopilot paused."}
           </div>
         ) : (
-          feed.map((e, i) => <FeedRow key={e.id ?? i} e={e} name={nameOf(e.employeeId)} />)
+          feed.map((e) => <FeedRow key={e.id} e={e} name={nameOf(e.employeeId)} />)
         )}
       </div>
       <div className="flex gap-1 p-1.5">
@@ -98,34 +94,33 @@ export function TeamChannel() {
 }
 
 function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
-  if (e.kind === "ship") {
-    return (
-      <div style={{ color: "var(--accent-lo)" }}>
-        📦 <span className="text-[var(--text)]">{name}</span> shipped: {e.message}
-      </div>
-    );
-  }
-  if (e.kind === "lifecycle") {
-    const p = LifecyclePayloadSchema.parse(e.payload);
-    if (e.message === "runner.resting") {
-      const at = p.until === null ? "later" : formatTime(p.until);
+  switch (e.kind) {
+    case "ship":
       return (
-        <div className="text-[var(--text-dim)]">
-          ☕ {p.runner} crew hit their limit — back at {at}
+        <div style={{ color: "var(--accent-lo)" }}>
+          📦 <span className="text-fg">{name}</span> shipped: {e.message}
+        </div>
+      );
+    case "runner.resting":
+      return (
+        <div className="text-fg-dim">
+          ☕ {e.payload.runner} crew hit their limit — back at {formatTime(e.payload.until)}
+        </div>
+      );
+    case "org.hired":
+      return <div className="text-fg-dim">🤝 {e.payload.name} joined the team</div>;
+    case "org.released":
+      return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
+    case "chat": {
+      const founder = e.employeeId == null;
+      return (
+        <div>
+          <span style={{ color: founder ? "var(--warn)" : "var(--accent-lo)" }}>{name}</span>{" "}
+          <span className="text-[#4c5064]">{e.message}</span>
         </div>
       );
     }
-    return (
-      <div className="text-[var(--text-dim)]">
-        {e.message === "org.hired" ? `🤝 ${p.name} joined the team` : `👋 ${p.name} left the team`}
-      </div>
-    );
+    default:
+      return null;
   }
-  const founder = name === "you";
-  return (
-    <div>
-      <span style={{ color: founder ? "var(--warn)" : "var(--accent-lo)" }}>{name}</span>{" "}
-      <span className="text-[#4c5064]">{e.message}</span>
-    </div>
-  );
 }

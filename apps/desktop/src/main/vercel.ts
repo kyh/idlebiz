@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { getJson } from "@/main/lib/http";
 import type { JsonValue } from "@/shared/json";
+import { getSecret } from "@/main/secrets";
+import type { VercelDeployment, VercelProject } from "@/shared/ipc-registry";
 
 // ---------------------------------------------------------------------------
 // Vercel REST API helpers. The founder connects with a personal access token
@@ -13,7 +15,7 @@ import type { JsonValue } from "@/shared/json";
 const API = "https://api.vercel.com";
 
 function envToken(): string | null {
-  return process.env["VERCEL_TOKEN"] ?? null;
+  return getSecret("VERCEL_TOKEN");
 }
 
 function apiGet(
@@ -47,12 +49,6 @@ export async function validateToken(token: string): Promise<{ ok: boolean; accou
 }
 
 // ---- projects ----------------------------------------------------------------
-
-export interface VercelProject {
-  id: string;
-  name: string;
-  teamId?: string;
-}
 
 const ProjectsSchema = z.object({
   projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
@@ -123,12 +119,6 @@ export async function webAnalyticsVisitors(
 }
 
 // ---- deployments (product state) ---------------------------------------------
-
-export interface VercelDeployment {
-  url: string;
-  state: string;
-  createdAt: number;
-}
 
 const DeploymentsSchema = z.object({
   deployments: z

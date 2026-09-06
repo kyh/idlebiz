@@ -1,245 +1,144 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useStore,
-  getPortrait,
-  sendFounderChat,
-  setModalOpen,
-  listTasksFor,
-} from "@/renderer/state/store";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { bridge } from "@/renderer/bridge";
+import { useStore, directEmployee, listTasksFor } from "@/renderer/state/store";
+import { useAsync } from "@/renderer/hooks/use-async";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
+import { AnswerForm } from "@/renderer/ui/answer-form";
 import { RichText } from "@/renderer/ui/linkify";
-import type { ActivityEvent, Employee, Task } from "@/shared/domain";
+import { useModal } from "@/renderer/ui/modal";
+import { Portrait } from "@/renderer/ui/portrait";
+import type { ActivityEvent, ActivityKind } from "@/shared/activity";
+import { taskIn } from "@/shared/domain";
+import type { Employee } from "@/shared/domain";
+import type { ChatOption } from "@/shared/ipc-registry";
 
-const COLS = 1;
+const NOTE_MS = 1800;
 
-interface ChatOption {
-  label: string;
-  instr: string;
-}
-
-const short = (s: string, n = 26): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
-/** A role-flavored action so every employee's menu feels like THEIR menu. */
-function roleOption(emp: Employee): ChatOption {
-  const r = `${emp.role} ${emp.title}`.toLowerCase();
-  if (/(engineer|dev|program|code)/.test(r))
-    return {
-      label: "Fix something",
-      instr: "Find the most broken or fragile thing in the product right now and fix it properly.",
-    };
-  if (/(design|art|pixel|ux|ui)/.test(r))
-    return {
-      label: "Polish the look",
-      instr:
-        "Do a visual polish pass on the product: pick the roughest-looking part and make it feel great.",
-    };
-  if (/(market|growth|community|social|brand)/.test(r))
-    return {
-      label: "Draft launch post",
-      instr:
-        "Draft a launch/update post for the product as it exists today. Punchy, honest, ready to publish.",
-    };
-  if (/(pm|product manager|producer|lead|ops)/.test(r))
-    return {
-      label: "Reprioritize",
-      instr:
-        "Review the current state of the business and team output; write a short prioritized plan for what the team should do next, then delegate the top item.",
-    };
-  if (/(audio|sound|music)/.test(r))
-    return {
-      label: "Improve audio",
-      instr: "Improve the product's sound: pick the most impactful audio gap and address it.",
-    };
-  if (/(write|edit|research|content|doc)/.test(r))
-    return {
-      label: "Write next piece",
-      instr: "Write the next most valuable piece of content for the business, ready to publish.",
-    };
-  return {
-    label: "Improve product",
-    instr: "Pick the most valuable improvement to the product you can finish now and do it.",
-  };
-}
-
-/** Options shaped by what this employee is actually doing right now. */
-function buildOptions(emp: Employee, tasks: Task[]): ChatOption[] {
-  const out: ChatOption[] = [];
-  const running = tasks.find((t) => t.status === "running" || t.status === "queued");
-  const lastDone = tasks.find((t) => t.status === "done" && t.summary);
-  if (running) {
-    out.push({
-      label: `Check in: ${short(running.title, 18)}`,
-      instr: `Give a quick status update on "${running.title}": what's done, what's left, anything at risk. Keep it brief, then continue.`,
-    });
-  }
-  if (lastDone) {
-    out.push({
-      label: `Build on: ${short(lastDone.title, 18)}`,
-      instr: `Take the next step on what you last shipped ("${lastDone.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${(lastDone.summary ?? "").slice(0, 500)}`,
-    });
-  }
-  out.push(roleOption(emp));
-  if (out.length < 4)
-    out.push({
-      label: "Daily standup",
-      instr:
-        "Give a brief standup: what you did recently, what you're doing next, and any blockers.",
-    });
-  if (out.length < 4)
-    out.push({
-      label: "Set direction",
-      instr:
-        "Step back and decide the most valuable thing to build next for the company, then start it.",
-    });
-  return out.slice(0, 4);
-}
-
+/** Walk up to someone and press E: the battle-box conversation with that employee. */
 export function Dialogue() {
-  const { game, employees, activity, company } = useStore();
+  const game = useStore((s) => s.game);
+  const employees = useStore((s) => s.employees);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [portrait, setPortrait] = useState<string | null>(null);
-  const [mode, setMode] = useState<"menu" | "talk">("menu");
-  const [sel, setSel] = useState(0);
-  const [input, setInput] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [answer, setAnswer] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const emp = useMemo(() => employees.find((e) => e.id === openId) ?? null, [employees, openId]);
-  // only free-text questions get the inline answer form; integration asks
-  // live in the inbox where the [Connect] button is
-  const blocked = useMemo(
-    () => tasks.find((t) => t.status === "blocked" && t.blocked?.type === "question") ?? null,
-    [tasks],
-  );
-  const options = useMemo(() => (emp ? buildOptions(emp, tasks) : []), [emp, tasks]);
-  const talkIndex = options.length; // trailing "Talk…" command
 
   useEffect(() => {
     if (!game) return;
-    const onInteract = (p: { employeeId: string }) => {
-      setOpenId(p.employeeId);
-      setMode("menu");
-      setSel(0);
-      setNote(null);
-    };
+    const onInteract = (p: { employeeId: string }) => setOpenId(p.employeeId);
     game.events.on("npc-interact", onInteract);
     return () => {
       game.events.off("npc-interact", onInteract);
     };
   }, [game]);
 
-  useEffect(() => {
-    setModalOpen(openId !== null);
-  }, [openId]);
+  const emp = employees.find((e) => e.id === openId);
+  if (!emp) return null;
+  return <DialoguePanel key={emp.id} emp={emp} onClose={() => setOpenId(null)} />;
+}
 
-  useEffect(() => {
-    setTasks([]);
-    setAnswer("");
-    if (!emp) {
-      setPortrait(null);
-      return;
-    }
-    let alive = true;
-    void (async () => {
-      const [url, t] = await Promise.all([getPortrait(emp.spriteSeed), listTasksFor(emp.id)]);
-      if (alive) {
-        setPortrait(url);
-        setTasks(t);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [emp, activity.length]);
+/** What they SAY, as opposed to what they do: chat, a message, a ship. */
+const isSpoken = (
+  a: ActivityEvent,
+): a is Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }> =>
+  a.kind === "chat" || a.kind === "message" || a.kind === "ship";
 
-  const close = () => {
-    setOpenId(null);
-    setInput("");
-    setMode("menu");
-  };
+function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void }) {
+  useModal();
+  const company = useStore((s) => s.company);
+  const activity = useStore((s) => s.activity);
+  const [mode, setMode] = useState<"menu" | "talk">("menu");
+  const [sel, setSel] = useState(0);
+  const [input, setInput] = useState("");
+  const [note, showNote] = useTransientNote(NOTE_MS);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const mine = useMemo(() => activity.filter((a) => a.employeeId === emp.id), [activity, emp.id]);
+  // Only a status event moves a task, so its id is what a task list is current
+  // "as of" — and what makes a refetch worth making. Not the feed length: the
+  // feed is a 300-event ring, and a length-keyed refetch stops once it fills.
+  const lastStatusId = mine.findLast((a) => a.kind === "status")?.id ?? null;
+  const fetched = useAsync(
+    async () => ({
+      asOf: lastStatusId,
+      list: await listTasksFor(emp.id),
+      options: await bridge().employeeOptions({ employeeId: emp.id }),
+    }),
+    [emp.id, lastStatusId],
+  );
+  const tasks = fetched?.list ?? [];
+
+  // only free-text questions get the inline answer form; integration asks
+  // live in the inbox where the [Connect] button is. Shown only for a current
+  // list: the moment an answer lands, the status event makes this one stale,
+  // and a form for a question already answered would send twice.
+  const asked =
+    fetched?.asOf === lastStatusId
+      ? tasks.filter(taskIn("blocked")).find((t) => t.state.ask.type === "question")
+      : undefined;
+  const question = asked && asked.state.ask.type === "question" ? asked.state.ask.question : null;
+  // the menu: main's options for this employee, then Talk… for free text
+  const rows: Row[] = [
+    ...(fetched?.options ?? []).map((option): Row => ({ kind: "ask", option })),
+    { kind: "talk" },
+  ];
 
   // everything the founder says goes through the team channel; the @slug
   // mention wakes exactly this employee with the message as their brief
-  const send = async (instruction: string) => {
-    if (!emp) return;
-    setNote(`Sent to ${emp.name} ✓`);
-    await sendFounderChat(`@${emp.id} ${instruction}`);
-    window.setTimeout(() => setNote(null), 1800);
-  };
-
-  const sendAnswer = async () => {
-    const text = answer.trim();
-    const bridge = window.appBridge;
-    if (!text || !blocked || !bridge) return;
-    setNote("Answer sent ✓");
-    setTasks((t) => t.filter((x) => x.id !== blocked.id));
-    setAnswer("");
-    await bridge.answerQuestion({ taskId: blocked.id, answer: text });
-    window.setTimeout(() => setNote(null), 1800);
+  const send = (instruction: string) => {
+    showNote(`Sent to ${emp.name} ✓`);
+    void directEmployee(emp.id, instruction);
   };
 
   const choose = (i: number) => {
-    if (i === talkIndex) {
+    const row = rows[i];
+    if (!row) return;
+    if (row.kind === "talk") {
       setMode("talk");
       window.setTimeout(() => inputRef.current?.focus(), 30);
       return;
     }
-    const q = options[i];
-    if (q) void send(q.instr);
+    send(row.option.instruction);
   };
 
   const submitTalk = () => {
     const text = input.trim();
     if (!text) return;
-    void send(text);
+    send(text);
     setInput("");
     setMode("menu");
   };
 
-  // keyboard: arrows navigate the menu grid; Enter selects; Esc backs out / closes
-  useEffect(() => {
-    if (!emp) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (mode === "talk") {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          setMode("menu");
-        }
-        return;
-      }
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return; // typing an answer
-      const n = options.length + 1;
-      if (e.key === "ArrowRight") setSel((s) => Math.min(n - 1, s + 1));
-      else if (e.key === "ArrowLeft") setSel((s) => Math.max(0, s - 1));
-      else if (e.key === "ArrowDown") setSel((s) => Math.min(n - 1, s + COLS));
-      else if (e.key === "ArrowUp") setSel((s) => Math.max(0, s - COLS));
-      else if (e.key === "Enter" || e.key === " ") {
+  // keyboard: arrows walk the menu; Enter selects; Esc backs out / closes
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (mode === "talk") {
+      if (e.key === "Escape") {
         e.preventDefault();
-        choose(sel);
-      } else if (e.key === "Escape") close();
-      else return;
-      e.preventDefault();
-    };
+        setMode("menu");
+      }
+      return;
+    }
+    const tag = document.activeElement?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return; // typing an answer
+    if (e.key === "ArrowDown") setSel((s) => Math.min(rows.length - 1, s + 1));
+    else if (e.key === "ArrowUp") setSel((s) => Math.max(0, s - 1));
+    else if (e.key === "Enter" || e.key === " ") choose(sel);
+    else if (e.key === "Escape") onClose();
+    else return;
+    e.preventDefault();
+  });
+  useEffect(() => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emp, mode, sel, options]);
+  }, []);
 
-  if (!emp || !company) return null;
-  const mine = activity.filter((a) => a.employeeId === emp.id);
+  if (!company) return null;
   // what they SAY: the latest real utterance (chat/message/ship), Pokémon-style
-  const spoken = mine.filter(
-    (a) => (a.kind === "chat" || a.kind === "message" || a.kind === "ship") && a.message,
-  );
+  const spoken = mine.filter(isSpoken).filter((a) => a.message);
   const latest = spoken[spoken.length - 1];
   // what they're DOING: everything else stays a compact activity trail
   const trail: ActivityEvent[] = mine.filter((a) => a !== latest).slice(-3);
   const working = emp.status === "working";
-  const running = tasks.find((t) => t.status === "running" || t.status === "queued");
-  const speech = latest?.message
+  const running = tasks.find((t) => t.state.kind === "running" || t.state.kind === "queued");
+  const speech = latest
     ? latest.kind === "ship"
       ? `Shipped it! ${latest.message}`
       : latest.message
@@ -251,83 +150,28 @@ export function Dialogue() {
 
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center p-4">
-      <div className="px-battle flex w-full max-w-3xl gap-3 p-3">
-        {/* left: portrait + identity + recent activity (their "speech") */}
+      <div className="px-battle px-pop flex w-full max-w-3xl gap-3 p-3">
         <div className="flex w-[58%] flex-col gap-2">
-          <div className="flex items-center gap-3">
-            {portrait ? (
-              <img
-                src={portrait}
-                alt={emp.name}
-                className="h-16 w-16 [image-rendering:pixelated]"
-                style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }}
-              />
-            ) : (
-              <div
-                className="h-16 w-16"
-                style={{ border: "3px solid var(--ink)", background: "#cfd6ea", borderRadius: 4 }}
-              />
-            )}
-            <div className="flex-1">
-              <div className="text-base uppercase tracking-wide">{emp.name}</div>
-              <div className="text-xs text-[var(--accent-lo)]">{emp.title || emp.role}</div>
-              <span
-                className="px-badge mt-1 inline-block"
-                style={
-                  working
-                    ? { background: "var(--warn)", color: "#3a2c0a" }
-                    : { background: "#d8d4c4", color: "var(--text)" }
-                }
-              >
-                {working ? <span className="px-live-dot">● working</span> : "idle"}
-              </span>
-            </div>
-          </div>
-
-          {blocked ? (
+          <Identity emp={emp} working={working} />
+          {asked && question !== null ? (
             <div className="px-inset flex-1 p-2.5" style={{ borderColor: "var(--warn)" }}>
-              <div className="text-xs text-[var(--danger)]">❗ {emp.name} needs your call:</div>
-              <div className="mt-1 text-sm leading-snug text-[var(--text)]">
-                <RichText
-                  text={blocked.blocked?.type === "question" ? blocked.blocked.question : ""}
-                  companyId={company.id}
-                />
+              <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
+              <div className="mt-1 text-sm leading-snug text-fg">
+                <RichText text={question} companyId={company.id} />
               </div>
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void sendAnswer();
-                    }
-                  }}
-                  placeholder="Your answer…"
-                  className="px-field min-w-0 flex-1"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => void sendAnswer()}
-                  disabled={!answer.trim()}
-                  className="px-btn-accent px-btn"
-                >
-                  Answer
-                </button>
-              </div>
+              <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
             </div>
           ) : (
             <div className="px-inset px-scroll flex min-h-[72px] flex-1 flex-col overflow-y-auto p-2.5">
               <Speech
-                key={`${emp.id}:${latest?.id ?? "flavor"}`}
+                key={latest?.id ?? "flavor"}
                 text={speech.slice(0, 280)}
                 companyId={company.id}
               />
               {trail.length > 0 ? (
                 <div className="mt-auto space-y-0.5 pt-2 text-xs leading-snug opacity-70">
-                  {trail.map((a, i) => (
-                    <FeedLine key={a.id ?? i} e={a} companyId={company.id} />
+                  {trail.map((a) => (
+                    <FeedLine key={a.id} e={a} companyId={company.id} />
                   ))}
                 </div>
               ) : null}
@@ -335,41 +179,13 @@ export function Dialogue() {
           )}
         </div>
 
-        {/* right: command menu (battle style) or free-text */}
         <div className="flex w-[42%] flex-col">
           <div className="px-inset flex flex-1 flex-col p-2">
             {mode === "menu" ? (
-              <>
-                <div className="mb-1 grid flex-1 grid-cols-1 content-start gap-y-0.5">
-                  {options.map((q, i) => (
-                    <button
-                      type="button"
-                      key={q.label}
-                      data-sel={sel === i}
-                      onMouseEnter={() => setSel(i)}
-                      onClick={() => choose(i)}
-                      className="px-cmd truncate"
-                    >
-                      {q.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    data-sel={sel === talkIndex}
-                    onMouseEnter={() => setSel(talkIndex)}
-                    onClick={() => choose(talkIndex)}
-                    className="px-cmd"
-                  >
-                    Talk…
-                  </button>
-                </div>
-                <div className="text-right text-xs text-[var(--text-dim)]">
-                  ↑↓ move · ⏎ select · esc close
-                </div>
-              </>
+              <CommandMenu rows={rows} sel={sel} onHover={setSel} onChoose={choose} />
             ) : (
               <div className="flex h-full flex-col gap-2">
-                <div className="text-xs text-[var(--text-dim)]">Tell {emp.name} what to do:</div>
+                <div className="text-xs text-fg-dim">Tell {emp.name} what to do:</div>
                 <input
                   ref={inputRef}
                   value={input}
@@ -399,19 +215,79 @@ export function Dialogue() {
               </div>
             )}
           </div>
-          {note ? <div className="mt-1 text-center text-xs text-[var(--ok)]">{note}</div> : null}
+          {note ? <div className="mt-1 text-center text-xs text-ok">{note}</div> : null}
         </div>
 
         <button
           type="button"
-          onClick={close}
+          onClick={onClose}
           title="Close (esc)"
-          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-[var(--text-dim)] hover:text-[var(--text)]"
+          className="absolute top-0 right-0 p-2.5 text-sm leading-none text-fg-dim hover:text-fg"
         >
           ✕
         </button>
       </div>
     </div>
+  );
+}
+
+/** Portrait, name, title and the working/idle badge. */
+function Identity({ emp, working }: { emp: Employee; working: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <Portrait seed={emp.spriteSeed} size="md" alt={emp.name} />
+      <div className="flex-1">
+        <div className="text-base uppercase tracking-wide">{emp.name}</div>
+        <div className="text-xs text-accent-lo">{emp.title || emp.role}</div>
+        <span
+          className="px-badge mt-1 inline-block"
+          style={
+            working
+              ? { background: "var(--warn)", color: "#3a2c0a" }
+              : { background: "#d8d4c4", color: "var(--fg)" }
+          }
+        >
+          {working ? <span className="px-live-dot">● working</span> : "idle"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** One line of the command menu: something to ask, or the way to say it yourself. */
+type Row = { kind: "ask"; option: ChatOption } | { kind: "talk" };
+const labelOf = (row: Row): string => (row.kind === "ask" ? row.option.label : "Talk…");
+
+/** The battle-style command list, one row per line. */
+function CommandMenu({
+  rows,
+  sel,
+  onHover,
+  onChoose,
+}: {
+  rows: readonly Row[];
+  sel: number;
+  onHover: (i: number) => void;
+  onChoose: (i: number) => void;
+}) {
+  return (
+    <>
+      <div className="mb-1 flex flex-1 flex-col content-start gap-y-0.5">
+        {rows.map((row, i) => (
+          <button
+            type="button"
+            key={labelOf(row)}
+            data-sel={sel === i}
+            onMouseEnter={() => onHover(i)}
+            onClick={() => onChoose(i)}
+            className="px-cmd truncate"
+          >
+            {labelOf(row)}
+          </button>
+        ))}
+      </div>
+      <div className="text-right text-xs text-fg-dim">↑↓ move · ⏎ select · esc close</div>
+    </>
   );
 }
 
@@ -432,42 +308,40 @@ function Speech({ text, companyId }: { text: string; companyId: string }) {
       }
       role={done ? undefined : "button"}
       tabIndex={done ? undefined : 0}
-      className="text-sm leading-relaxed break-words text-[var(--text)]"
+      className="text-sm leading-relaxed break-words text-fg"
       style={{ cursor: done ? "default" : "pointer" }}
     >
       {done ? <RichText text={text} companyId={companyId} /> : shown}
-      {done ? null : <span className="px-live-dot">▌</span>}
+      {done ? (
+        <span className="px-more ml-1 text-accent-lo">▼</span>
+      ) : (
+        <span className="px-live-dot">▌</span>
+      )}
     </div>
   );
 }
 
+interface LineStyle {
+  color: string;
+  prefix: string;
+}
+/** How each kind of line reads in the trail; anything else is a quiet dot. */
+const LINE_STYLES = new Map<ActivityKind, LineStyle>([
+  ["tool_call", { color: "#2f6fb0", prefix: "⚙ " }],
+  ["message", { color: "#2b2f46", prefix: "💬 " }],
+  ["ship", { color: "#2e8a4e", prefix: "📦 " }],
+  ["chat", { color: "#5a4fae", prefix: "🗨 " }],
+  ["status", { color: "#6d7187", prefix: "› " }],
+]);
+const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
+
 function FeedLine({ e, companyId }: { e: ActivityEvent; companyId: string }) {
-  const color =
-    e.kind === "tool_call"
-      ? "#2f6fb0"
-      : e.kind === "message"
-        ? "#2b2f46"
-        : e.kind === "ship"
-          ? "#2e8a4e"
-          : e.kind === "chat"
-            ? "#5a4fae"
-            : "#6d7187";
-  const prefix =
-    e.kind === "tool_call"
-      ? "⚙ "
-      : e.kind === "message"
-        ? "💬 "
-        : e.kind === "ship"
-          ? "📦 "
-          : e.kind === "chat"
-            ? "🗨 "
-            : e.kind === "status"
-              ? "› "
-              : "· ";
+  const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
+  const text = "message" in e ? e.message : e.kind;
   return (
     <div className="break-words" style={{ color }}>
       {prefix}
-      <RichText text={(e.message ?? e.kind).slice(0, 300)} companyId={companyId} />
+      <RichText text={text.slice(0, 300)} companyId={companyId} />
     </div>
   );
 }

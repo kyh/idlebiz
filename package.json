@@ -5,7 +5,6 @@
     "build": "turbo run build",
     "clean": "git clean -xdf node_modules",
     "clean:workspaces": "turbo run clean",
-    "dev": "turbo watch dev --continue",
     "dev:desktop": "pnpm dev:kill && turbo watch dev -F @repo/desktop...",
     "dev:kill": "bash apps/desktop/scripts/devkill.sh",
     "dev:web": "turbo watch dev -F @repo/web...",
@@ -15,7 +14,7 @@
     "format:fix": "oxfmt --write",
     "knip": "knip",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm -F @repo/desktop check:permissions && pnpm build"
+    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm -r test && pnpm build"
   },
   "devDependencies": {
     "@kyh/oxlint": "^0.2.0",
@@ -28,5 +27,5 @@
   "engines": {
     "node": "24.x"
   },
-  "packageManager": "pnpm@12.1.0"
+  "packageManager": "pnpm@12.3.4"
 }

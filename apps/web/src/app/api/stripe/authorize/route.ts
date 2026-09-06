@@ -1,12 +1,11 @@
+import { CALLBACK_PATH, encodeState, parseState } from "@repo/stripe-connect-protocol/protocol";
 import { env } from "@/lib/env";
-import { parseState } from "@/lib/stripe-oauth";
+import { siteConfig } from "@/lib/site-config";
 
 export function GET(req: Request): Response {
   const url = new URL(req.url);
-  const rawState = url.searchParams.get("state");
-  if (!parseState(rawState) || rawState === null) {
-    return new Response("invalid state", { status: 400 });
-  }
+  const state = parseState(url.searchParams.get("state"));
+  if (!state) return new Response("invalid state", { status: 400 });
   const clientId = env.STRIPE_CLIENT_ID;
   if (!clientId) return new Response("stripe not configured", { status: 500 });
 
@@ -14,7 +13,8 @@ export function GET(req: Request): Response {
   authorize.searchParams.set("response_type", "code");
   authorize.searchParams.set("client_id", clientId);
   authorize.searchParams.set("scope", "read_only");
-  authorize.searchParams.set("redirect_uri", `${url.origin}/api/stripe/callback`);
-  authorize.searchParams.set("state", rawState);
+  // the site's own origin, never the request's Host header
+  authorize.searchParams.set("redirect_uri", new URL(CALLBACK_PATH, siteConfig.url).toString());
+  authorize.searchParams.set("state", encodeState(state));
   return Response.redirect(authorize.toString(), 302);
 }

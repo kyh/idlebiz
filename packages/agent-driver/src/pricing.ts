@@ -13,8 +13,6 @@ interface Rates {
 
 /** Longest-prefix match wins; the bare fallback covers unknown models. */
 const RATE_TABLE: readonly (readonly [prefix: string, rates: Rates])[] = [
-  ["gpt-5.5-codex", { input: 1.25, cachedInput: 0.125, output: 10 }],
-  ["gpt-5.5", { input: 1.25, cachedInput: 0.125, output: 10 }],
   ["gpt-5", { input: 1.25, cachedInput: 0.125, output: 10 }],
   ["claude-fable", { input: 10, cachedInput: 1, output: 50 }],
   ["claude-opus", { input: 5, cachedInput: 0.5, output: 25 }],
@@ -24,17 +22,15 @@ const RATE_TABLE: readonly (readonly [prefix: string, rates: Rates])[] = [
 
 const DEFAULT_RATES: Rates = { input: 2, cachedInput: 0.2, output: 12 };
 
-function ratesFor(model: string | undefined): Rates {
-  if (model) {
-    for (const [prefix, rates] of RATE_TABLE) {
-      if (model.startsWith(prefix)) return rates;
-    }
+function ratesFor(model: string): Rates {
+  for (const [prefix, rates] of RATE_TABLE) {
+    if (model.startsWith(prefix)) return rates;
   }
   return DEFAULT_RATES;
 }
 
 /** Approximate USD for a run whose CLI didn't report a dollar cost. */
-export function priceUsage(model: string | undefined, usage: AgentUsage): number {
+export function priceUsage(model: string, usage: AgentUsage): number {
   const r = ratesFor(model);
   return (
     (usage.inputTokens * r.input +

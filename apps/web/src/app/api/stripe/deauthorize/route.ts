@@ -1,10 +1,5 @@
-import { z } from "zod";
+import { DeauthorizeBodySchema } from "@repo/stripe-connect-protocol/protocol";
 import { deauthorize, tokenAccountId } from "@/lib/stripe-oauth";
-
-const deauthorizeBodySchema = z.object({
-  accessToken: z.string(),
-  stripeUserId: z.string(),
-});
 
 export async function POST(req: Request): Promise<Response> {
   let raw: unknown;
@@ -13,7 +8,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return Response.json({ error: "invalid json" }, { status: 400 });
   }
-  const body = deauthorizeBodySchema.safeParse(raw);
+  const body = DeauthorizeBodySchema.safeParse(raw);
   if (!body.success) {
     return Response.json({ error: "invalid body" }, { status: 400 });
   }

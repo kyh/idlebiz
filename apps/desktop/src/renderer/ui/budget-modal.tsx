@@ -1,18 +1,20 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   useStore,
-  setModalOpen,
   setBudget,
   resetSpend,
   connectStripe,
   disconnectStripe,
 } from "@/renderer/state/store";
+import { Modal } from "@/renderer/ui/modal";
 import { isOutOfBudget } from "@/shared/domain";
+import { formatUsd } from "@/shared/format";
 
 /** Budget control + Stripe connection: how much real money the office may burn,
  *  and where the real revenue/user numbers come from. */
 export function BudgetModal({ onClose }: { onClose: () => void }) {
-  const { company, stripeStatus } = useStore();
+  const company = useStore((s) => s.company);
+  const stripeStatus = useStore((s) => s.stripeStatus);
   const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
   // the draft carries the saved cap it was typed against, so a cap saved
   // elsewhere replaces a stale draft without an effect resetting it
@@ -22,158 +24,131 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
   // real revenue showing at all means the connection is live
   const liveMetrics = company !== null && company.revenueUsd !== null;
 
-  useEffect(() => {
-    setModalOpen(true);
-    return () => setModalOpen(false);
-  }, []);
-
   if (!company) return null;
-  const capped = company.budget.mode === "capped";
+  const budget = company.budget;
   const out = isOutOfBudget(company);
   const parsedCap = Number.parseFloat(capInput);
   const capValid = Number.isFinite(parsedCap) && parsedCap >= 0;
+  const setCap = () => {
+    if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
+  };
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
-      <div className="px-window flex max-h-[85vh] w-full max-w-xl flex-col">
-        <div className="px-titlebar flex items-center justify-between px-4 py-2.5">
-          <div>
-            <div className="text-base">Budget</div>
-            <div className="text-xs text-[#c4c9dd]">
-              AI tokens cost real money — set how much the office may burn
-            </div>
+    <Modal
+      title="Budget"
+      subtitle="AI tokens cost real money — set how much the office may burn"
+      onClose={onClose}
+    >
+      <div className="space-y-4">
+        {out ? (
+          <div
+            className="px-inset p-3 text-sm"
+            style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+          >
+            ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite) to get the team
+            working again.
           </div>
-          <button type="button" onClick={onClose} className="px-btn">
-            Done
+        ) : null}
+
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Spending cap</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void setBudget({ mode: "infinite" })}
+              data-sel={budget.mode === "infinite"}
+              className="px-opt"
+            >
+              ∞ Infinite
+            </button>
+            <button
+              type="button"
+              onClick={setCap}
+              data-sel={budget.mode === "capped"}
+              className="px-opt"
+            >
+              $ Capped
+            </button>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-sm text-fg">$</span>
+            <input
+              value={capInput}
+              onChange={(e) => setCapInput(e.target.value)}
+              placeholder="25"
+              inputMode="decimal"
+              className="px-field w-28"
+            />
+            <button type="button" onClick={setCap} disabled={!capValid} className="px-btn">
+              Set cap
+            </button>
+          </div>
+        </div>
+
+        <div className="px-inset flex items-center justify-between p-3">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-fg-dim">Spent so far</div>
+            <div className="text-base tabular-nums text-fg">{formatUsd(company.spentUsd)}</div>
+            {budget.mode === "capped" ? (
+              <div className="text-xs tabular-nums text-fg-dim">
+                of {formatUsd(budget.capUsd)} budget
+              </div>
+            ) : null}
+          </div>
+          <button type="button" onClick={() => void resetSpend()} className="px-btn">
+            Reset meter
           </button>
         </div>
 
-        <div className="px-scroll flex-1 space-y-4 overflow-y-auto p-4">
-          {out ? (
-            <div
-              className="px-inset p-3 text-sm"
-              style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
-            >
-              ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite) to get the team
-              working again.
-            </div>
-          ) : null}
-
-          <div>
-            <div className="mb-2 text-xs uppercase tracking-wide text-[var(--text-dim)]">
-              Spending cap
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => void setBudget({ mode: "infinite" })}
-                data-sel={!capped}
-                className="px-opt"
-              >
-                ∞ Infinite
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
-                }}
-                data-sel={capped}
-                className="px-opt"
-              >
-                $ Capped
-              </button>
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-[var(--text)]">$</span>
-              <input
-                value={capInput}
-                onChange={(e) => setCapInput(e.target.value)}
-                placeholder="25"
-                inputMode="decimal"
-                className="px-field w-28"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
-                }}
-                disabled={!capValid}
-                className="px-btn"
-              >
-                Set cap
-              </button>
-            </div>
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">
+            Real numbers · Stripe
           </div>
-
-          <div className="px-inset flex items-center justify-between p-3">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-[var(--text-dim)]">
-                Spent so far
-              </div>
-              <div className="text-base tabular-nums text-[var(--text)]">
-                ${company.spentUsd.toFixed(2)}
-              </div>
-              {capped && company.budget.mode === "capped" ? (
-                <div className="text-xs tabular-nums text-[var(--text-dim)]">
-                  of ${company.budget.capUsd.toFixed(2)} budget
-                </div>
-              ) : null}
+          <div className="px-inset space-y-2 p-3">
+            <div className="text-sm leading-snug text-fg">
+              Connect your Stripe account to see your REAL revenue and customers — there are no
+              numbers without it{liveMetrics ? " — live now ⚡" : ""}.
             </div>
-            <button type="button" onClick={() => void resetSpend()} className="px-btn">
-              Reset meter
-            </button>
-          </div>
-
-          <div>
-            <div className="mb-2 text-xs uppercase tracking-wide text-[var(--text-dim)]">
-              Real numbers · Stripe
-            </div>
-            <div className="px-inset space-y-2 p-3">
-              <div className="text-sm leading-snug text-[var(--text)]">
-                Connect your Stripe account to see your REAL revenue and customers — there are no
-                numbers without it{liveMetrics ? " — live now ⚡" : ""}.
-              </div>
-              {stripeStatus.state === "connected" ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-[var(--text)]">
-                    ✓ {stripeStatus.accountId}
-                    <span
-                      className="px-badge ml-2"
-                      style={{
-                        color: stripeStatus.livemode ? "var(--ok)" : "var(--warn)",
-                      }}
-                    >
-                      {stripeStatus.livemode ? "live" : "test"}
-                    </span>
-                  </span>
-                  <button type="button" onClick={() => void disconnectStripe()} className="px-btn">
-                    Disconnect
-                  </button>
-                </div>
-              ) : stripeStatus.state === "connecting" ? (
-                <div className="px-live-dot text-sm text-[var(--text-dim)]">
-                  Waiting for Stripe in your browser…
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-2">
-                  {stripeStatus.state === "error" ? (
-                    <span className="text-xs text-[var(--danger)]">{stripeStatus.message}</span>
-                  ) : (
-                    <span className="text-xs text-[var(--text-dim)]">Not connected</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void connectStripe()}
-                    className="px-btn-accent px-btn"
+            {stripeStatus.state === "connected" ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-fg">
+                  ✓ {stripeStatus.accountId}
+                  <span
+                    className="px-badge ml-2"
+                    style={{
+                      color: stripeStatus.livemode ? "var(--ok)" : "var(--warn)",
+                    }}
                   >
-                    {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
-                  </button>
-                </div>
-              )}
-            </div>
+                    {stripeStatus.livemode ? "live" : "test"}
+                  </span>
+                </span>
+                <button type="button" onClick={() => void disconnectStripe()} className="px-btn">
+                  Disconnect
+                </button>
+              </div>
+            ) : stripeStatus.state === "connecting" ? (
+              <div className="px-live-dot text-sm text-fg-dim">
+                Waiting for Stripe in your browser…
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                {stripeStatus.state === "error" ? (
+                  <span className="text-xs text-danger">{stripeStatus.message}</span>
+                ) : (
+                  <span className="text-xs text-fg-dim">Not connected</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void connectStripe()}
+                  className="px-btn-accent px-btn"
+                >
+                  {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -15,7 +15,7 @@ tool-agnostic guide for coding agents — meant to be run, not just read. Claude
 
 ```sh
 pnpm install
-pnpm verify        # static gate: typecheck · lint · format · check:office · build
+pnpm verify        # static gate: typecheck · lint · format · check:office · test · build
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:desktop   # Electron window + CDP on :9222
 ```
@@ -115,13 +115,13 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 
 ## What is verifiable without a signed-in CLI
 
-| Surface                              | How to reach it                     | CLI needed? |
-| ------------------------------------ | ----------------------------------- | ----------- |
-| `apps/web` landing + `/api/stripe/*` | `pnpm dev:web`                      | no          |
-| Office builder (`#/ui`)              | `location.hash = "#/ui"`            | no          |
-| Object catalog (`#/office-assets`)   | `location.hash = "#/office-assets"` | no          |
-| Onboarding modal (first screen)      | boot with an empty `~/.idlebiz`     | no          |
-| Office, HUD, dialogue, teams, ships  | finish onboarding                   | **yes**     |
+| Surface                                | How to reach it                     | CLI needed? |
+| -------------------------------------- | ----------------------------------- | ----------- |
+| `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                      | no          |
+| Office builder (`#/ui`)                | `location.hash = "#/ui"`            | no          |
+| Object catalog (`#/office-assets`)     | `location.hash = "#/office-assets"` | no          |
+| Onboarding modal (first screen)        | boot with an empty `~/.idlebiz`     | no          |
+| Office, HUD, dialogue, teams, products | finish onboarding                   | **yes**     |
 
 The last row is a hard gate, not a convenience: `renderer/ui/poke-onboarding.tsx` calls
 `generateHires`, which dispatches a real agent run (`main/agents/onboarding.ts`), and
@@ -160,24 +160,54 @@ rather than crashing boot.
 
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
-- **The px-kit beats Tailwind.** `.px-*` classes in `renderer/styles.css` are unlayered, so
-  they win over any Tailwind utility that sets the same property. Size and colour belong in
-  `styles.css` as a kit class, never per-component. Full explanation in `CLAUDE.md`.
+- **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
+  unlayered, so they win over any Tailwind utility that sets the same property. Size and
+  colour belong in the kit as a class, never per-component. Full explanation in `CLAUDE.md`.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
+  Four passes: every seat, point of interest and the door reachable from spawn; no open
+  floor cell no body can stand on; no reachable spot with the player's art over the void;
+  no reachable spot with the player's face painted over. The walker seals the second and
+  the scene seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`),
+  so a saved layout is safe to walk even when its data would fail the gate.
+- **Unit tests cover the pure parts only.** `pnpm --filter @repo/desktop test` runs vitest
+  over seating (`office-placement.ts`), poses, the layout schema and migration, the walk
+  grid, the activity schema, and the command policy in `shared/command-policy.ts` (every
+  rule owes an example it must catch, and everyday commands owe an assertion they are not
+  held). Nothing that needs Electron or Phaser is unit-tested; drive it live instead.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
   for channel names and must stay dependency-free (the sandboxed preload imports it);
-  zod payload schemas live in `shared/ipc-registry.ts`.
+  zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its
+  schema's output — declare the schema, never a parallel type.
+- **Everything main says happened goes through `main/activity.ts`.** `publishActivity`
+  stamps, persists and fans out one `ActivityEvent` (`shared/activity.ts`, a discriminated
+  union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a
+  payload, and a second emit path would be a listener somebody forgot.
+- **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
+  `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
+  so there is nothing to keep in sync.
+- **Prose an employee reads lives in `main/prompts/`.** The store persists it and the
+  scheduler gathers what it is grounded in; neither authors text.
 
 ## Map
 
 - `apps/desktop/src/main` — the control plane. `store/store.ts` (markdown packages ⇄ domain
   objects), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
-  `secrets.ts`, `metrics.ts`, `tray.ts`.
+  `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
+  (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
+  (the two integrations, same shape), `secrets.ts`, `metrics.ts`, `tray.ts`.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a
   hand-rolled external store in `state/store.ts`.
-- `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`, `format.ts`.
+- `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`,
+  `activity.ts`, `command-policy.ts`, `format.ts`, `errors.ts`, `character-frame.ts` (the
+  sprite box every process slices by), `office-depth.ts` (draw bands + paint order),
+  `office-layout-schema.ts` (office-design.json, versioned and migrated) and `office-grid.ts`
+  (walking as pure math; the scene, the save handler and `check:office` all use it).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns `claude` / `codex`, normalizes their NDJSON event streams,
   prices usage, tracks rate limits. Source-only, no build step.
+- `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
+  and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
+- `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,
+  VG5000, every `.px-*` class), imported by both apps after Tailwind.

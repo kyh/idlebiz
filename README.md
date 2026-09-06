@@ -23,7 +23,7 @@ Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 pnpm install
 pnpm dev:desktop
 pnpm dev:web
-pnpm verify        # typecheck · lint · format · check:office · build
+pnpm verify        # typecheck · lint · format · check:office · test · build
 ```
 
 Employees run on your own signed-in `claude` or `codex` CLI — the app needs one on
@@ -41,4 +41,4 @@ the repo root — both gitignored. Bump `version` in `apps/desktop/package.json`
 before publishing; electron-builder tags the release `v<version>`.
 
 Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
-agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, workspace/).
+agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).

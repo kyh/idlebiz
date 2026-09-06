@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "src/**/*.test.ts",
+    "electron.vite.config.ts",
+    "vitest.config.ts"
+  ],
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["electron-vite/node", "node"]
+  }
+}

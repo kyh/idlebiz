@@ -6,7 +6,9 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md doubles as the live agent
-  instructions, tasks/<slug>/TASK.md, routines/, workspace/, activity.jsonl).
+  instructions, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
+  products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
+  get products/<slug>/workspace/), routines/, activity.jsonl).
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.
@@ -16,25 +18,39 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 
 ## Two traps that fail silently
 
-- **The px-kit beats Tailwind.** The `.px-*` classes in `renderer/styles.css` live outside
-  `@layer`; Tailwind's utilities are layered, and unlayered CSS wins regardless of
-  specificity. So a utility on the same element that sets a property its kit class also
-  sets does _nothing_ — `text-[12px]` on a `.px-btn` never applied (23 such declarations
-  had accumulated). Classes that set font-size/color: `.px-btn` `.px-opt` `.px-field`
-  `.px-chip` `.px-cmd` `.px-badge`. Size and colour belong in styles.css as a kit class,
-  never per-component. Icons are font glyphs, so "icon size" is font-size: use `.px-icon`.
+- **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
+  stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
+  layered, and unlayered CSS wins regardless of specificity. So a utility on the same
+  element that sets a property its kit class also sets does _nothing_ — `text-[12px]` on a
+  `.px-btn` never applied (23 such declarations had accumulated). Classes that set
+  font-size/color: `.px-btn` `.px-opt` `.px-field` `.px-chip` `.px-cmd` `.px-badge`. Size
+  and colour belong in the kit as a class, never per-component. Cursors are the opposite:
+  no kit class sets one, each app does by element. Icons are font glyphs, so "icon size" is
+  font-size: use `.px-icon`.
 - **The office's art and its collision don't know about each other.** `buildRoom` reads
-  `objects`, `officeSolidAt` reads `collision` — two independent sections of
+  `objects`, the walk grid reads `collision` — two independent sections of
   office-design.json, nothing reconciles them. The body probe is 16x12 but the sprite is
   32x64, so art overhangs the body by ~8px and any disagreement renders the character
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
-  it fails on any reachable spot where the player's art hangs over nothing.
+  it fails on any seat, point of interest or door unreachable from spawn, any open floor
+  cell no body can ever stand on, any reachable spot where the player's art hangs over
+  nothing, and any reachable spot where something drawn above the player covers their
+  face. The schema (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`,
+  `door`), the walk grid (`shared/office-grid.ts`) and the sight judgement
+  (`shared/office-sight.ts`) are shared by the scene, the save handler and that script —
+  a layout main refuses to save is exactly one the check would fail.
+- **The walker has two rules the authored collision does not.** A seat's cell is solid
+  (sitters are placed on the chair; walkers never stand in it) and open floor no body can
+  probe is sealed — both in `walkGridOf`, so the scene, the gate and the builder's
+  Rebuild collision agree. At boot the scene additionally closes every reachable node
+  where the founder's face would be painted over, judged from the real textures, so a
+  saved layout the gate never saw still cannot hide them.
 
 ## Agent-driven development
 
 `AGENTS.md` is the full workflow — read it before driving this repo. The essentials:
 
-- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · build). There is no
+- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · test · build). There is no
   GitHub Actions; Vercel's build of `apps/web` is the only remote gate and `verify` runs it.
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.
@@ -50,3 +66,5 @@ Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 `pnpm knip` is exploratory, not a gate (it's not in `verify`), but it exits 0 today — so
 anything it reports is something your change introduced, not a backlog to skim past.
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
+Unit tests: `pnpm --filter @repo/desktop test` (vitest; the pure parts — seating, poses,
+layout schema, walk grid, activity schema, command policy)

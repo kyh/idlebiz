@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { RunnerId } from "./runner";
 
 /**
@@ -35,8 +36,26 @@ export interface RunnerAdapter {
   displayName: string;
   /** Subcommand that starts the CLI's own interactive login. */
   loginArgs: string[];
+  /** Subcommand that reports whether the CLI is signed in, and how to read its answer. */
+  authProbe: { args: string[]; loggedIn: (output: string) => boolean };
   /** Pricing anchor when a run on the CLI's default model reports $0. */
   fallbackPricingModel: string;
+}
+
+const claudeAuthStatus = z.object({ loggedIn: z.boolean() });
+
+/** `claude auth status` prints JSON with a loggedIn flag, after whatever else it says. */
+function claudeLoggedIn(output: string): boolean {
+  const start = output.indexOf("{");
+  if (start < 0) return false;
+  try {
+    const parsed = claudeAuthStatus.safeParse(
+      JSON.parse(output.slice(start, output.lastIndexOf("}") + 1)),
+    );
+    return parsed.success && parsed.data.loggedIn;
+  } catch {
+    return false;
+  }
 }
 
 export const RUNNERS = {
@@ -45,6 +64,7 @@ export const RUNNERS = {
     binEnvVar: "CLAUDE_CODE_EXECUTABLE",
     displayName: "Claude Code",
     loginArgs: ["auth", "login"],
+    authProbe: { args: ["auth", "status"], loggedIn: claudeLoggedIn },
     fallbackPricingModel: "claude-sonnet",
   },
   codex: {
@@ -53,6 +73,8 @@ export const RUNNERS = {
     binEnvVar: "CODEX_PATH",
     displayName: "Codex",
     loginArgs: ["login"],
+    // `codex login status` exits 0 either way and says how you're logged in
+    authProbe: { args: ["login", "status"], loggedIn: (out) => !/not logged in/i.test(out) },
     fallbackPricingModel: "gpt-5.5-codex",
   },
 } satisfies Record<RunnerId, RunnerAdapter>;

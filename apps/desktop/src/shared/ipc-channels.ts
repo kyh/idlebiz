@@ -10,11 +10,11 @@ export const CHANNELS = {
   composeCharacter: { channel: "char:compose", kind: "invoke" },
   getFounderChoices: { channel: "char:founders", kind: "invoke-void" },
   generateHires: { channel: "onboard:hires", kind: "invoke" },
-  batchHire: { channel: "onboard:batchHire", kind: "invoke" },
-  completeOnboarding: { channel: "onboard:complete", kind: "invoke" },
+  foundCompany: { channel: "onboard:found", kind: "invoke" },
 
   getCompany: { channel: "company:get", kind: "invoke-void" },
-  createCompany: { channel: "company:create", kind: "invoke" },
+  loadReport: { channel: "save:load-report", kind: "invoke-void" },
+  openSaveFolder: { channel: "save:open-folder", kind: "invoke-void" },
   setAutopilot: { channel: "company:autopilot", kind: "invoke" },
   setBudget: { channel: "company:budget", kind: "invoke" },
   resetSpend: { channel: "company:reset-spend", kind: "invoke" },
@@ -26,17 +26,20 @@ export const CHANNELS = {
   stripeDisconnect: { channel: "stripe:disconnect", kind: "invoke" },
   onStripeStatus: { channel: "stripe:event", kind: "event" },
 
-  vercelStatus: { channel: "vercel:status", kind: "invoke-void" },
   vercelListProjects: { channel: "vercel:projects", kind: "invoke" },
   vercelConnect: { channel: "vercel:connect", kind: "invoke" },
   vercelDisconnect: { channel: "vercel:disconnect", kind: "invoke" },
-  productStatus: { channel: "company:product-status", kind: "invoke" },
+  listProducts: { channel: "product:list", kind: "invoke" },
+  createProduct: { channel: "product:create", kind: "invoke" },
+  productStatus: { channel: "product:status", kind: "invoke" },
 
   listEmployees: { channel: "employee:list", kind: "invoke" },
+  restingRunners: { channel: "runner:resting", kind: "invoke-void" },
 
-  listTeams: { channel: "team:list", kind: "invoke" },
   teamMessages: { channel: "team:messages", kind: "invoke" },
+  employeeOptions: { channel: "employee:options", kind: "invoke" },
   postTeamChat: { channel: "team:post", kind: "invoke" },
+  directEmployee: { channel: "employee:direct", kind: "invoke" },
   setMaxAgents: { channel: "company:max-agents", kind: "invoke" },
 
   listTasks: { channel: "task:list", kind: "invoke" },
@@ -44,7 +47,7 @@ export const CHANNELS = {
   answerQuestion: { channel: "task:answer", kind: "invoke" },
   resolveApproval: { channel: "task:resolve-approval", kind: "invoke" },
   openCompanyPath: { channel: "company:open-path", kind: "invoke" },
-  openProduct: { channel: "company:open-product", kind: "invoke" },
+  openProduct: { channel: "product:open", kind: "invoke" },
 
   onActivity: { channel: "activity:event", kind: "event" },
 

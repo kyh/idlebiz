@@ -1,9 +1,8 @@
 import { Menu, Notification, Tray, app, nativeImage } from "electron";
-import { RUNNER_IDS } from "@repo/agent-driver/runner";
+import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
-import { scheduler } from "@/main/scheduler";
 import * as store from "@/main/store/store";
-import { formatTime } from "@/shared/format";
+import { earliestReset, napLabel, spentLabel } from "@/shared/format";
 
 // ---------------------------------------------------------------------------
 // The menu-bar presence: IdleBiz is a background mac app. Closing the window
@@ -39,29 +38,24 @@ interface OfficeStatus {
 
 function officeStatus(): OfficeStatus {
   const company = store.getDefaultCompany();
-  const working =
-    company && company.onboarded
-      ? store.listEmployees(company.id).filter((e) => e.status === "working").length
-      : 0;
-  const naps = RUNNER_IDS.map((r) => agentDriver.restingRunner(r)).filter(
-    (t): t is number => t !== null,
-  );
+  const working = company
+    ? store.listEmployees(company.id).filter((e) => e.status === "working").length
+    : 0;
   return {
     company,
     working,
-    napUntil: naps.toSorted((a, b) => a - b)[0],
-    active: working > 0 || (company?.onboarded === true && company.autopilot),
+    napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
+    active: working > 0 || company?.autopilot === true,
   };
 }
 
 /** One line of truth for the menu: what is the office doing right now? */
 function statusLine(s: OfficeStatus): string {
-  if (!s.company || !s.company.onboarded) return "No company yet";
-  if (s.working > 0) return `${s.working} working · spent $${s.company.spentUsd.toFixed(2)}`;
-  if (s.napUntil !== undefined) return `☕ resting til ${formatTime(s.napUntil)}`;
-  return s.company.autopilot
-    ? `idle · spent $${s.company.spentUsd.toFixed(2)}`
-    : `paused · spent $${s.company.spentUsd.toFixed(2)}`;
+  if (!s.company) return "No company yet";
+  const spent = spentLabel(s.company.spentUsd);
+  if (s.working > 0) return `${s.working} working · ${spent}`;
+  if (s.napUntil !== undefined) return napLabel(s.napUntil);
+  return `${s.company.autopilot ? "idle" : "paused"} · ${spent}`;
 }
 
 /** Badge text beside the menu-bar icon — only while running windowless, so
@@ -97,7 +91,7 @@ class AppTray {
     // status decays on its own (resting countdowns, run ends while closed)
     setInterval(() => this.rebuild(), 60_000).unref?.();
     // and reacts to the office: debounce the activity stream into rebuilds
-    scheduler.events.on("activity", () => this.scheduleRebuild());
+    activityEvents.on("activity", () => this.scheduleRebuild());
   }
 
   /**
@@ -140,7 +134,7 @@ class AppTray {
       { label: `Open ${s.company?.name ?? "IdleBiz"}`, click: () => host.openWindow() },
       { type: "separator" },
       { label: statusLine(s), enabled: false },
-      ...(s.company && s.company.onboarded
+      ...(s.company
         ? [
             {
               label: autopilot ? "Pause the office" : "Start the office",

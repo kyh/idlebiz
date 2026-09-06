@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import {
   OFFICE_OBJECT_ASSETS,
   type OfficeObjectAsset,
-  type OfficeObjectVariant,
 } from "@/renderer/game/office-object-catalog.generated";
 
 export function OfficeObjectCatalog() {
   const [query, setQuery] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedId, flashCopied] = useTransientNote(900);
 
   const normalizedQuery = query.trim().toLowerCase();
   const visibleAssets = useMemo(
@@ -16,15 +16,12 @@ export function OfficeObjectCatalog() {
   );
 
   const copyId = (id: string) => {
-    setCopiedId(id);
+    flashCopied(id);
     void navigator.clipboard.writeText(id).catch(() => undefined);
-    window.setTimeout(() => {
-      setCopiedId((current) => (current === id ? null : current));
-    }, 900);
   };
 
   return (
-    <main className="h-full w-full bg-[#bfc2c4] text-[var(--text)]">
+    <main className="h-full w-full bg-[#bfc2c4] text-fg">
       <div className="flex h-full flex-col">
         <header className="px-window m-3 shrink-0 overflow-hidden">
           <div className="px-titlebar flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -94,42 +91,29 @@ function ObjectCard({
         </button>
       </div>
 
-      <div className="grid flex-1 grid-cols-1 gap-2 p-3">
-        {asset.variants.map((variant) => (
-          <ObjectVariant key={variant.scale} variant={variant} assetId={asset.id} />
-        ))}
+      <div className="px-inset m-3 flex min-h-36 flex-1 flex-col gap-2 p-2">
+        <div
+          className="flex min-h-28 flex-1 items-center justify-center overflow-auto"
+          style={{
+            backgroundColor: "#d8d9d4",
+            backgroundImage:
+              "linear-gradient(45deg, #c7c8c2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #c7c8c2 75%)",
+            backgroundPosition: "0 0, 8px 8px",
+            backgroundSize: "16px 16px",
+            minHeight: asset.h + 32,
+          }}
+        >
+          <img
+            src={`/${asset.path}`}
+            alt={asset.id}
+            className="max-w-none shrink-0 [image-rendering:pixelated]"
+          />
+        </div>
+        <div className="text-right text-xs text-fg-dim">
+          {asset.w}x{asset.h}
+        </div>
       </div>
     </article>
-  );
-}
-
-function ObjectVariant({ variant, assetId }: { variant: OfficeObjectVariant; assetId: string }) {
-  return (
-    <div className="px-inset flex min-h-36 flex-col gap-2 p-2">
-      <div
-        className="flex min-h-28 flex-1 items-center justify-center overflow-auto"
-        style={{
-          backgroundColor: "#d8d9d4",
-          backgroundImage:
-            "linear-gradient(45deg, #c7c8c2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #c7c8c2 75%)",
-          backgroundPosition: "0 0, 8px 8px",
-          backgroundSize: "16px 16px",
-          minHeight: variant.h + 32,
-        }}
-      >
-        <img
-          src={`/${variant.path}`}
-          alt={`${assetId} ${variant.scale}x`}
-          className="max-w-none shrink-0 [image-rendering:pixelated]"
-        />
-      </div>
-      <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-dim)]">
-        <span>{variant.scale}x</span>
-        <span>
-          {variant.w}x{variant.h}
-        </span>
-      </div>
-    </div>
   );
 }
 
@@ -138,6 +122,6 @@ function matchesQuery(asset: OfficeObjectAsset, query: string) {
   return (
     asset.id.includes(query) ||
     String(asset.sourceId).includes(query) ||
-    asset.variants.some((variant) => `${variant.w}x${variant.h}`.includes(query))
+    `${asset.w}x${asset.h}`.includes(query)
   );
 }
