@@ -6,6 +6,7 @@ import { productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
+import { cn } from "cn";
 
 // VG5000 has no alert glyph; the colored emoji is intentional.
 const ALERT_GLYPH = "❗";
@@ -129,7 +130,7 @@ function InboxButton({ needsYou, onClick }: { needsYou: number; onClick: () => v
     <button
       type="button"
       onClick={onClick}
-      className={`px-btn pointer-events-auto${hasCount ? "" : " px-btn-icon"}`}
+      className={cn("px-btn pointer-events-auto", !hasCount && "px-btn-icon")}
       style={hasCount ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
       title="Questions, connect requests and stuck tasks waiting on you"
     >

@@ -27,6 +27,7 @@
     "@repo/agent-driver": "workspace:*",
     "@repo/px-kit": "workspace:*",
     "@repo/stripe-connect-protocol": "workspace:*",
+    "cn": "catalog:",
     "phaser": "^4.2.1",
     "react": "catalog:",
     "react-dom": "catalog:",

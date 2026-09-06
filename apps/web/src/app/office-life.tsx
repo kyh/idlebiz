@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, Ref } from "react";
+import { cn } from "cn";
 
 // Game sprites render at 1.5x.
 const LINES = [
@@ -58,7 +59,7 @@ function pick<T>(arr: readonly T[]): T | null {
 
 function Desk({ ref, raised }: { ref: Ref<HTMLImageElement>; raised: boolean }) {
   return (
-    <span className={`px-prop-wrap relative ${raised ? "z-30" : ""}`} aria-hidden>
+    <span className={cn("px-prop-wrap relative", raised && "z-30")} aria-hidden>
       <span className="px-ground-shadow" style={{ width: "94%", height: 15 }} />
       <Image
         ref={ref}
@@ -105,7 +106,7 @@ function Employee({ pose }: { pose: Pose }) {
     >
       <span className="px-ground-shadow" style={{ width: 30, height: 9 }} />
       <div
-        className={`px-npc-body ${pose.moving ? "px-npc-anim" : ""}`}
+        className={cn("px-npc-body", pose.moving && "px-npc-anim")}
         style={{ backgroundPositionY: ROW_Y[pose.row] }}
       />
       {pose.bubble ? <div className="px-say">{pose.bubble}</div> : null}
