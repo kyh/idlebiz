@@ -130,7 +130,7 @@ export function initStore(): void {
   void bridge()
     .stripeStatus()
     .then((s) => set({ stripeStatus: s }));
-  bridge().onActivity((e: ActivityEvent) => onActivity(e));
+  bridge().onActivity(onActivity);
   bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
 }
 
@@ -138,14 +138,22 @@ export function setAuthed(ok: boolean): void {
   set({ authed: ok });
 }
 
-export function setGame(game: Phaser.Game): void {
+export function setGame(game: Phaser.Game | null): void {
+  state.game?.events.off("office-input-ready", syncModal);
   set({ game });
+  game?.events.on("office-input-ready", syncModal);
+  syncModal();
 }
 
 /** Toggle Phaser keyboard so typing in overlays doesn't move the player. */
 export function setModalOpen(open: boolean): void {
   set({ modalOpen: open });
-  state.game?.events.emit("ui-modal", open);
+  syncModal();
+}
+
+// Scene startup can finish after an overlay mounted; replay the current keyboard state.
+function syncModal(): void {
+  state.game?.events.emit("ui-modal", state.modalOpen);
 }
 
 /**
@@ -216,7 +224,6 @@ async function refreshProductStatus(products: readonly Product[]): Promise<void>
   set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
 }
 
-/** The products as main now has them, after a change to them. */
 async function reloadProducts(): Promise<void> {
   const company = state.company;
   if (!company) return;
@@ -225,14 +232,12 @@ async function reloadProducts(): Promise<void> {
   await refreshProductStatus(products);
 }
 
-/** The founder starts a second product; the roster learns of it on their next run. */
 export const createProduct = (name: string, description: string): Promise<void> =>
   withCompany(async (companyId) => {
     await bridge().createProduct({ companyId, name, description });
     await reloadProducts();
   });
 
-/** Fetch a team's chat-room messages on demand (for the Teams panel). */
 export async function teamMessages(limit = 30): Promise<TeamMessage[]> {
   const c = state.company;
   return c ? bridge().teamMessages({ companyId: c.id, limit }) : [];
@@ -304,11 +309,9 @@ function onActivity(e: ActivityEvent): void {
 
 // ---- actions ---------------------------------------------------------------
 
-/** Every action on the company: nothing to do without one. */
 async function withCompany(act: (companyId: string) => Promise<void>): Promise<void> {
   if (state.company) await act(state.company.id);
 }
-/** An action whose reply is the company as main now has it. */
 const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
   withCompany(async (companyId) => set({ company: await call(companyId) }));
 
@@ -350,11 +353,6 @@ export async function disconnectVercel(productId: string): Promise<void> {
   await reloadProducts();
 }
 
-export async function resetGame(): Promise<void> {
-  await bridge().resetGame();
-}
-
-/** Founder tells one employee what to do; the room records it, they wake on it. */
 export async function directEmployee(employeeId: string, instruction: string): Promise<void> {
   const text = instruction.trim();
   if (!text) return;
@@ -380,7 +378,6 @@ export async function retryTask(task: Task): Promise<void> {
   await refresh();
 }
 
-/** An employee's live work: what they are on and what they are stuck on. */
 export async function listTasksFor(employeeId: string): Promise<Task[]> {
   const company = state.company;
   if (!company) return [];
@@ -391,12 +388,7 @@ export async function listTasksFor(employeeId: string): Promise<Task[]> {
   });
 }
 
-/** Answer the question a blocked task is waiting on; the task resumes. */
 export async function answerQuestion(taskId: string, answer: string): Promise<void> {
   await bridge().answerQuestion({ taskId, answer });
-  await refresh();
-}
-
-export async function openSaveFolder(): Promise<void> {
-  await bridge().openSaveFolder();
+  void refresh().catch((cause) => console.error("Could not refresh after answering", cause));
 }

@@ -28,11 +28,10 @@ function fileId(file) {
 }
 
 async function copyImage(sourcePath, targetPath) {
-  const bounds = opaqueBounds(await loadRaw(sourcePath));
-  const metadata = await sharp(sourcePath).metadata();
-  if (!metadata.width || !metadata.height) fail(`Missing image size: ${sourcePath}`);
+  const image = await loadRaw(sourcePath);
+  const bounds = opaqueBounds(image);
   await sharp(sourcePath).png().toFile(targetPath);
-  return { w: metadata.width, h: metadata.height, bounds };
+  return { w: image.w, h: image.h, bounds };
 }
 
 function objectBlock(object) {

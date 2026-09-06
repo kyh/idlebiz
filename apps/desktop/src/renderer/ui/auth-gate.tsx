@@ -3,8 +3,6 @@ import { setAuthed } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { Curtain } from "@/renderer/ui/curtain";
 
-/** Shown when an existing company has no working coding CLI (new machine,
- *  logged-out CLI). Same flow as onboarding's auth step, minus the ceremony. */
 export function AuthGate() {
   const { auth, login } = useAuthFlow({ probe: false, onSignedIn: () => setAuthed(true) });
   return (

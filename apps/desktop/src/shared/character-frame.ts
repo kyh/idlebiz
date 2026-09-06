@@ -1,8 +1,4 @@
-// The character frame box, shared by everything that slices or places a sprite:
-// the compositor (main) cuts frames from the pack sheets to this size, the scene
-// (renderer) sets the origin from it, the layout schema reserves a frame height
-// at the top of the entity band, and check:office walks the silhouette over the
-// room. One declaration, so none of them can drift.
+// Shared by the compositor, scene, layout bounds and visibility checks.
 
 /** Frame size in px. Six frames per row on the composited walk sheet. */
 export const FRAME_W = 32;
@@ -21,10 +17,6 @@ export type SitSide = (typeof SIT_SIDES)[number];
 export const HEAD_ROW = 18;
 const SOLE_ROW = 62;
 
-/**
- * Gap between a character's depth anchor (its origin) and its soles. Office objects
- * anchor on their content bottom — their floor contact — so characters must be compared
- * on floor contact too. Without this a character renders BEHIND everything for the last
- * ~7px of approach, i.e. their feet get eaten right where they step in front of a desk.
- */
+// Furniture sorts on floor contact. Offset characters from their origin to their soles
+// so desks do not paint over their feet during the last ~7px of approach.
 export const SOLE_OFFSET = SOLE_ROW - FRAME_H * CHAR_ORIGIN_Y;

@@ -42,6 +42,7 @@ import {
 import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
+import { defaultRoutines, type RoutineDefinition } from "@/main/prompts/routines";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
@@ -53,7 +54,6 @@ import {
   DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
   afterFailure,
-  businessTypeById,
 } from "@/shared/domain";
 import {
   PersistedActivitySchema,
@@ -77,22 +77,22 @@ import type {
   TeamMessage,
 } from "@/shared/domain";
 
-// ---------------------------------------------------------------------------
-// Disk store: every company is an agentcompanies/v1 package under ~/.idlebiz.
-// All state is held in an in-memory cache (single-threaded main process makes
-// check-and-set atomic) and persisted to markdown files via atomic tmp+rename.
-// The activity log is an append-only activity.jsonl per company.
-// ---------------------------------------------------------------------------
+// Synchronous cache mutations make check-and-set atomic in the main process.
+// Markdown writes use tmp+rename; activity and chat use append-only JSONL logs.
+
+interface ActiveCompany {
+  company: Company;
+  employees: Employee[];
+  tasks: Task[];
+  shipped: Task[] | null; // Loaded only when the shipping log is opened.
+  products: Product[];
+  routines: Routine[];
+  chat: TeamMessage[];
+  activity: ActivityEvent[];
+}
 
 interface Cache {
-  companies: Map<string, Company>;
-  employees: Map<string, Employee[]>; // companyId -> employees
-  tasks: Map<string, Task[]>; // companyId -> open tasks (done ones live in shipped/)
-  shipped: Map<string, Task[]>; // companyId -> done tasks, once a panel has asked for them
-  products: Map<string, Product[]>; // companyId -> products, oldest first
-  routines: Map<string, Routine[]>; // companyId -> routines
-  chat: Map<string, TeamMessage[]>; // companyId -> recent room messages (ring)
-  activity: ActivityEvent[]; // ring buffer across companies (UI stream)
+  active: ActiveCompany | null;
   nextActivityId: number;
   nextTeamMessageId: number;
 }
@@ -131,37 +131,48 @@ function c(): Cache {
   return cache;
 }
 
-// ---- the cache's per-company lists, looked up by id ------------------------
+function activeCompany(companyId: string): ActiveCompany | null {
+  const active = c().active;
+  return active?.company.id === companyId ? active : null;
+}
+
+function requireActiveCompany(companyId: string): ActiveCompany {
+  const active = activeCompany(companyId);
+  if (!active) throw new Error(`company ${companyId} is not active`);
+  return active;
+}
+
+function emptyCompany(company: Company): ActiveCompany {
+  return {
+    company,
+    employees: [],
+    tasks: [],
+    shipped: null,
+    products: [],
+    routines: [],
+    chat: [],
+    activity: [],
+  };
+}
+
 interface Owned {
   id: string;
   companyId: string;
 }
 
-function findIn<T extends Owned>(lists: Map<string, T[]>, id: string): T | null {
-  for (const list of lists.values()) {
-    const found = list.find((row) => row.id === id);
-    if (found) return found;
-  }
-  return null;
-}
-
-/** Replace a row in place with its patch applied (identity fields kept) and persist it. */
 function patchIn<T extends Owned>(
-  lists: Map<string, T[]>,
+  list: T[],
   id: string,
   patch: Partial<T>,
   save: (row: T) => void,
 ): T | null {
-  for (const list of lists.values()) {
-    const idx = list.findIndex((row) => row.id === id);
-    const cur = list[idx];
-    if (idx < 0 || !cur) continue;
-    const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
-    list[idx] = next;
-    save(next);
-    return next;
-  }
-  return null;
+  const idx = list.findIndex((row) => row.id === id);
+  const cur = list[idx];
+  if (!cur) return null;
+  const next = { ...cur, ...patch, id: cur.id, companyId: cur.companyId };
+  list[idx] = next;
+  save(next);
+  return next;
 }
 
 // ---- serialization ----------------------------------------------------------
@@ -235,12 +246,11 @@ function parseRunner(v: string | null): AgentRunner {
   return v && isRunnerId(v) ? v : "codex";
 }
 
-/** The body of AGENTS.md doubles as the agent's actual instructions (injected into every run). */
 function employeeBody(e: Employee, co: Company): string {
   return standingInstructions({
     employee: e,
     company: co,
-    products: c().products.get(co.id) ?? [],
+    products: requireActiveCompany(co.id).products,
     lead: co.leaderId === e.id,
     memoryDir: employeeMemoryDir(co.id, e.id),
   });
@@ -294,8 +304,7 @@ function saveCompany(co: Company): void {
   atomicWrite(companyFile(co.id), serializeDoc(companyToDoc(co)));
 }
 function saveEmployee(e: Employee, opts: { onlyIfChanged?: boolean } = {}): void {
-  const co = c().companies.get(e.companyId);
-  if (!co) throw new Error(`company ${e.companyId} not found`);
+  const co = requireCompany(e.companyId);
   const file = employeeFile(e.companyId, e.id);
   const text = serializeDoc(employeeToDoc(e, co));
   if (opts.onlyIfChanged && readTextIfPresent(file) === text) return;
@@ -315,7 +324,6 @@ function saveTask(t: Task): void {
 function saveProduct(p: Product): void {
   atomicWrite(productFile(p.companyId, p.id), serializeDoc(productToDoc(p)));
 }
-/** A done task's package leaves the open queue for the shipping log. */
 function shelve(t: Task): void {
   moveDir(join(tasksDir(t.companyId), t.id), join(shippedDir(t.companyId), t.id));
 }
@@ -327,23 +335,16 @@ const ACTIVITY_RING = 600;
 const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
   a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 
-// What boot could not read. A skipped task or agent is non-fatal and listed; a
-// skipped company means the founder is looking at an empty office over a save
-// that exists — the renderer must show them that, never onboarding.
+// Failed company loads must surface in the UI instead of presenting onboarding over a save.
 let lastLoad: LoadReport = { companies: 0, skipped: [] };
 export const loadReport = (): LoadReport => lastLoad;
 
-/** A package at `path` did not decode; remember it for the founder. */
 function skip(kind: LoadSkip["kind"], path: string, cause: unknown): void {
   lastLoad.skipped.push({ kind, path, error: errorMessage(cause) });
 }
 
-/**
- * Every package under `dir` that `decode` accepts. A package that fails to
- * decode is skipped and reported, not fatal: one hand-edited file must not
- * take the company down with it.
- */
-function loadPackages<T>(
+/** Report corrupt packages individually so one hand-edited file cannot prevent loading. */
+function loadPackages<T extends { id: string }>(
   kind: LoadSkip["kind"],
   dir: string,
   fileFor: (slug: string) => string,
@@ -354,7 +355,9 @@ function loadPackages<T>(
     const file = fileFor(slug);
     if (!existsSync(file)) continue;
     try {
-      rows.push(decode(parseDoc(readFileSync(file, "utf8"))));
+      const row = decode(parseDoc(readFileSync(file, "utf8")));
+      if (row.id !== slug) throw new Error("package slug does not match its directory");
+      rows.push(row);
     } catch (cause) {
       skip(kind, file, cause);
     }
@@ -365,158 +368,117 @@ function loadPackages<T>(
 export function initStore(): LoadReport {
   ensureAppDirs();
   lastLoad = { companies: 0, skipped: [] };
-  const loaded: Cache = {
-    companies: new Map(),
-    employees: new Map(),
-    tasks: new Map(),
-    shipped: new Map(),
-    products: new Map(),
-    routines: new Map(),
-    chat: new Map(),
-    activity: [],
-    nextActivityId: 1,
-    nextTeamMessageId: 1,
-  };
+  cache = { active: null, nextActivityId: 1, nextTeamMessageId: 1 };
+  const companies: Company[] = [];
 
   for (const entry of safeReaddir(ROOT_DIR)) {
     if (entry.startsWith(".")) continue;
     const file = companyFile(entry);
     if (!existsSync(file)) continue;
     try {
-      const co = docToCompany(parseDoc(readFileSync(file, "utf8")));
-      loaded.companies.set(co.id, co);
-
-      const employees = loadPackages(
-        "employee",
-        agentsDir(co.id),
-        (slug) => employeeFile(co.id, slug),
-        (doc) => docToEmployee(doc, co.id),
-      ).toSorted(byAge);
-      loaded.employees.set(co.id, employees);
-
-      const tasks = loadPackages(
-        "task",
-        tasksDir(co.id),
-        (slug) => taskFile(co.id, slug),
-        (doc) => docToTask(doc, co.id),
-      ).toSorted(byAge);
-      // recover runs that died with the previous process. A run that was
-      // mid-flight counts as a failed attempt, judged by the same rule a run's
-      // own failure is, so it resumes instead of being silently orphaned.
-      for (const [i, t] of tasks.entries()) {
-        if (t.state.kind !== "running") continue;
-        const recovered: Task = t.assigneeId
-          ? failed(t, "Interrupted by app restart").task
-          : { ...t, state: { kind: "todo" } };
-        tasks[i] = recovered;
-        saveTask(recovered);
-      }
-      // done work still in the open queue: a save from before shipped/ existed,
-      // or a crash between settling and shelving. Either way it belongs there.
-      for (const t of tasks) {
-        if (t.state.kind !== "done") continue;
-        try {
-          shelve(t);
-        } catch (cause) {
-          skip("task", taskFile(co.id, t.id), cause);
-        }
-      }
-      loaded.tasks.set(
-        co.id,
-        tasks.filter((t) => t.state.kind !== "done"),
-      );
-
-      loaded.products.set(
-        co.id,
-        loadPackages(
-          "product",
-          productsDir(co.id),
-          (slug) => productFile(co.id, slug),
-          (doc) => docToProduct(doc, co.id),
-        ).toSorted(byAge),
-      );
-
-      loaded.routines.set(
-        co.id,
-        loadPackages(
-          "routine",
-          routinesDir(co.id),
-          (slug) => routineFile(co.id, slug),
-          (doc) => docToRoutine(doc, co.id),
-        ),
-      );
-
-      adoptLegacyTeam(co);
-      loadRecentChat(loaded, co.id);
-      loadRecentActivity(loaded, co.id);
+      const company = docToCompany(parseDoc(readFileSync(file, "utf8")));
+      if (company.id !== entry) throw new Error("company slug does not match its directory");
+      companies.push(company);
     } catch (cause) {
       skip("company", file, cause);
     }
   }
 
-  cache = loaded;
-  lastLoad.companies = loaded.companies.size;
+  // Company errors block the office UI; no hidden company may run behind it.
+  if (lastLoad.skipped.some((issue) => issue.kind === "company")) return lastLoad;
+  // Newest save wins; equal timestamps use the first slug alphabetically.
+  const company = companies.toSorted(
+    (a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id),
+  )[0];
+  if (!company) return lastLoad;
+  const active = emptyCompany(company);
 
-  // re-render every agent's AGENTS.md so instruction-template updates reach
-  // existing employees (frontmatter/persona are preserved from the file);
-  // written only when the rendering differs, so a boot is not a save
-  for (const employees of loaded.employees.values()) {
-    for (const e of employees) {
+  try {
+    active.employees = loadPackages(
+      "employee",
+      agentsDir(company.id),
+      (slug) => employeeFile(company.id, slug),
+      (doc) => docToEmployee(doc, company.id),
+    ).toSorted(byAge);
+    const tasks = loadPackages(
+      "task",
+      tasksDir(company.id),
+      (slug) => taskFile(company.id, slug),
+      (doc) => docToTask(doc, company.id),
+    ).toSorted(byAge);
+    // Recover only the active company's interrupted runs and unshelved work.
+    for (const [i, task] of tasks.entries()) {
+      if (task.state.kind !== "running") continue;
+      const recovered: Task = task.assigneeId
+        ? failed(task, "Interrupted by app restart").task
+        : { ...task, state: { kind: "todo" } };
+      tasks[i] = recovered;
+      saveTask(recovered);
+    }
+    for (const task of tasks) {
+      if (task.state.kind !== "done") continue;
       try {
-        saveEmployee(e, { onlyIfChanged: true });
-      } catch {
-        /* non-fatal */
+        shelve(task);
+      } catch (cause) {
+        skip("task", taskFile(company.id, task.id), cause);
       }
     }
-  }
+    active.tasks = tasks.filter((task) => task.state.kind !== "done");
+    active.products = loadPackages(
+      "product",
+      productsDir(company.id),
+      (slug) => productFile(company.id, slug),
+      (doc) => docToProduct(doc, company.id),
+    ).toSorted(byAge);
+    active.routines = loadPackages(
+      "routine",
+      routinesDir(company.id),
+      (slug) => routineFile(company.id, slug),
+      (doc) => docToRoutine(doc, company.id),
+    );
+    adoptLegacyTeam(company);
+    loadRecentChat(active);
+    loadRecentActivity(active);
+    cache.active = active;
 
-  // companies created before routines existed get the default cadence
-  for (const co of loaded.companies.values()) {
-    if ((loaded.routines.get(co.id) ?? []).length === 0) {
+    // Migrate legacy company-level product metrics before rendering instructions.
+    if (active.products.length === 0) {
+      const legacy = readMetricsConfig(company.id)?.vercel;
+      const first = firstProduct(
+        company,
+        legacy
+          ? {
+              projectId: legacy.projectId,
+              projectName: legacy.projectName ?? legacy.projectId,
+              teamId: legacy.teamId ?? null,
+            }
+          : null,
+      );
+      active.products.push(first);
+      saveProduct(first);
+      if (legacy) writeMetricsConfig(company.id, { vercel: undefined });
+    }
+    if (active.employees.length > 0 && !active.employees.some((e) => e.id === company.leaderId)) {
+      active.company = { ...company, leaderId: leadOf(active.employees) };
+      saveCompany(active.company);
+    }
+    if (active.routines.length === 0) seedDefaultRoutines(company.id, company.businessType);
+    for (const employee of active.employees) {
       try {
-        seedDefaultRoutines(co.id, co.businessType);
-      } catch {
-        /* non-fatal */
+        saveEmployee(employee, { onlyIfChanged: true });
+      } catch (cause) {
+        skip("employee", employeeFile(company.id, employee.id), cause);
       }
     }
-  }
-
-  // a company from before products existed: everything it shipped was its one
-  // product, born in the company workspace, deployed by the binding metrics.json held
-  for (const co of loaded.companies.values()) {
-    if ((loaded.products.get(co.id) ?? []).length > 0) continue;
-    const legacy = readMetricsConfig(co.id)?.vercel;
-    const first = firstProduct(co, {
-      vercel: legacy
-        ? {
-            projectId: legacy.projectId,
-            projectName: legacy.projectName ?? legacy.projectId,
-            teamId: legacy.teamId ?? null,
-          }
-        : null,
-    });
-    loaded.products.set(co.id, [first]);
-    saveProduct(first);
-    if (legacy) writeMetricsConfig(co.id, { vercel: undefined });
-  }
-
-  // a company with people and no lead elects one, so the hire/release tools have an owner
-  for (const co of loaded.companies.values()) {
-    const emps = loaded.employees.get(co.id) ?? [];
-    if (emps.length > 0 && !emps.some((e) => e.id === co.leaderId)) {
-      const led = { ...co, leaderId: leadOf(emps) };
-      loaded.companies.set(co.id, led);
-      saveCompany(led);
-    }
+    lastLoad.companies = 1;
+  } catch (cause) {
+    cache.active = null;
+    skip("company", companyFile(company.id), cause);
   }
   return lastLoad;
 }
 
-/**
- * Saves from when the room belonged to a Team folder: lift the lead into
- * COMPANY.md and the room's history into chat.jsonl, once. The old folder is
- * the founder's file to remove; nothing reads it after this.
- */
+/** Adopt legacy team leadership and chat without deleting the original files. */
 function adoptLegacyTeam(co: Company): void {
   const dir = legacyTeamsDir(co.id);
   const slugs = safeReaddir(dir);
@@ -558,12 +520,10 @@ function adoptLegacyTeam(co: Company): void {
 
 const LEADER_RX = /(ceo|founder|chief|head|lead|manager|principal|director|\bpm\b|product)/i;
 
-/** The lead a roster elects: a managerial role or title, else the first hire. */
 function leadOf(emps: readonly Employee[]): string | null {
   const byRole = emps.find((e) => LEADER_RX.test(`${e.role} ${e.title}`));
   return (byRole ?? emps[0])?.id ?? null;
 }
-const electLead = (companyId: string): string | null => leadOf(listEmployees(companyId));
 
 function safeReaddir(dir: string): string[] {
   try {
@@ -573,11 +533,13 @@ function safeReaddir(dir: string): string[] {
   }
 }
 
-function loadRecentActivity(loaded: Cache, companyId: string): void {
-  const rows = readJsonlTail(activityFile(companyId), PersistedActivitySchema, ACTIVITY_RING);
-  for (const row of rows) loaded.activity.push({ ...row, id: loaded.nextActivityId++ });
-  if (loaded.activity.length > ACTIVITY_RING)
-    loaded.activity = loaded.activity.slice(-ACTIVITY_RING);
+function loadRecentActivity(active: ActiveCompany): void {
+  const rows = readJsonlTail(
+    activityFile(active.company.id),
+    PersistedActivitySchema,
+    ACTIVITY_RING,
+  );
+  for (const row of rows) active.activity.push({ ...row, id: c().nextActivityId++ });
 }
 
 const TEAM_CHAT_RING = 200;
@@ -589,21 +551,14 @@ const PersistedTeamMessageSchema = z.object({
   createdAt: z.number(),
 });
 
-function loadRecentChat(loaded: Cache, companyId: string): void {
+function loadRecentChat(active: ActiveCompany): void {
+  const companyId = active.company.id;
   const rows = readJsonlTail(chatFile(companyId), PersistedTeamMessageSchema, TEAM_CHAT_RING);
-  const msgs: TeamMessage[] = [];
-  for (const row of rows) msgs.push({ ...row, id: loaded.nextTeamMessageId++, companyId });
-  loaded.chat.set(companyId, msgs);
+  for (const row of rows) active.chat.push({ ...row, id: c().nextTeamMessageId++, companyId });
 }
 
 // ---- slug allocation ---------------------------------------------------------
-/**
- * The slug for a new package: the name's slug, suffixed past the highest one
- * already used. One pass over what exists — autopilot titles repeat for the
- * life of a company, so probing candidates one by one grew with every run.
- * `onDisk` catches a folder the cache does not know about (a package it
- * refused to load).
- */
+/** Scan suffixes once; onDisk also protects packages skipped during loading. */
 function uniqueSlug(
   base: string,
   existing: Iterable<string>,
@@ -635,12 +590,7 @@ export interface FoundingHire {
   spriteSeed: string;
 }
 
-/**
- * Found a company: the folder, its founding hires, their team and routines —
- * all of it, or none. COMPANY.md is written last, so a folder that exists is a
- * company that is whole: boot ignores a folder without one, and a founding
- * that dies midway leaves nothing the office would ever show as a company.
- */
+/** Write COMPANY.md last: boot ignores incomplete founding directories. */
 export function foundCompany(input: {
   name: string;
   mission: string;
@@ -650,7 +600,11 @@ export function foundCompany(input: {
   budget: Budget;
   hires: readonly FoundingHire[];
 }): Company {
-  const id = uniqueSlug(input.name, c().companies.keys(), (s) => existsSync(companyDir(s)));
+  if (c().active) throw new Error("a company is already active");
+  if (safeReaddir(ROOT_DIR).some((entry) => existsSync(companyFile(entry)))) {
+    throw new Error("an existing company save must be loaded or repaired before founding");
+  }
+  const id = uniqueSlug(input.name, [], (s) => existsSync(companyDir(s)));
   const co: Company = {
     id,
     name: input.name,
@@ -669,80 +623,36 @@ export function foundCompany(input: {
     spentUsd: 0,
     createdAt: Date.now(),
   };
-  c().companies.set(id, co);
-  c().employees.set(id, []);
-  c().tasks.set(id, []);
-  c().shipped.set(id, []);
-  c().products.set(id, []);
-  c().routines.set(id, []);
-  c().chat.set(id, []);
+  const active = emptyCompany(co);
+  active.shipped = [];
+  c().active = active;
   try {
     mkdirSync(companyWorkspace(id), { recursive: true });
     mkdirSync(tasksDir(id), { recursive: true });
     mkdirSync(agentsDir(id), { recursive: true });
-    const first = firstProduct(co, { vercel: null });
-    c().products.set(id, [first]);
+    const first = firstProduct(co, null);
+    active.products.push(first);
     saveProduct(first);
     input.hires.forEach((hire, deskIndex) => createEmployee({ companyId: id, deskIndex, ...hire }));
-    co.leaderId = electLead(id);
+    co.leaderId = leadOf(listEmployees(id));
     seedDefaultRoutines(id, input.businessType);
     saveCompany(co);
   } catch (cause) {
-    for (const map of [
-      c().companies,
-      c().employees,
-      c().tasks,
-      c().shipped,
-      c().products,
-      c().routines,
-      c().chat,
-    ])
-      map.delete(id);
+    c().active = null;
     rmSync(companyDir(id), { recursive: true, force: true });
     throw cause;
   }
   return co;
 }
 
-/** Every new company starts with a real operating cadence (+ one per business type). */
 function seedDefaultRoutines(companyId: string, businessType: BusinessTypeId): void {
-  createRoutine({
-    companyId,
-    name: "Business review",
-    intervalHours: 24,
-    role: null,
-    instruction:
-      "Step back and review the business: recent ships, team chat, and the product's current state. Identify the single weakest area (product, marketing, or distribution) and either fix it now or delegate it to the right teammate.",
-  });
-  createRoutine({
-    companyId,
-    name: "Marketing push",
-    intervalHours: 48,
-    role: "market",
-    instruction:
-      "Produce one real piece of marketing for the product as it exists today: a launch/update post, landing copy, or outreach draft. Make it concrete and ready to publish. Ask the founder via ask_boss before posting anywhere public.",
-  });
-  const preset = businessTypeById(businessType).routine;
-  if (preset) {
-    createRoutine({
-      companyId,
-      name: preset.name,
-      intervalHours: preset.intervalHours,
-      role: preset.role,
-      instruction: preset.instruction,
-    });
+  for (const routine of defaultRoutines(businessType)) {
+    createRoutine({ companyId, ...routine });
   }
 }
 
-function createRoutine(input: {
-  companyId: string;
-  name: string;
-  instruction: string;
-  intervalHours: number;
-  role: string | null;
-}): Routine {
-  const list = c().routines.get(input.companyId);
-  if (!list) throw new Error(`company ${input.companyId} not found`);
+function createRoutine(input: RoutineDefinition & { companyId: string }): Routine {
+  const list = requireActiveCompany(input.companyId).routines;
   const id = uniqueSlug(
     input.name,
     list.map((r) => r.id),
@@ -762,11 +672,11 @@ function createRoutine(input: {
 }
 
 export function listRoutines(companyId: string): Routine[] {
-  return [...(c().routines.get(companyId) ?? [])];
+  return [...(activeCompany(companyId)?.routines ?? [])];
 }
 
 export function markRoutineRun(companyId: string, routineId: string): void {
-  const list = c().routines.get(companyId);
+  const list = activeCompany(companyId)?.routines;
   const r = list?.find((x) => x.id === routineId);
   if (!r) return;
   r.lastRunAt = Date.now();
@@ -774,15 +684,12 @@ export function markRoutineRun(companyId: string, routineId: string): void {
 }
 
 // ---- teams -----------------------------------------------------------------
-/**
- * Release an employee: archive their package to alumni/ (memory + history
- * preserved, never deleted), prune them from their team, and orphan their
- * open tasks so nothing keeps scheduling them.
- */
+/** Archive the employee package and unassign queued work. */
 export function archiveEmployee(employeeId: string): Employee | null {
   const emp = getEmployee(employeeId);
   if (!emp) return null;
-  const companyTasks = c().tasks.get(emp.companyId) ?? [];
+  const active = requireActiveCompany(emp.companyId);
+  const companyTasks = active.tasks;
   for (const t of companyTasks) {
     if (t.assigneeId === employeeId && (t.state.kind === "todo" || t.state.kind === "queued")) {
       const next: Task = { ...t, assigneeId: null };
@@ -790,11 +697,8 @@ export function archiveEmployee(employeeId: string): Employee | null {
       saveTask(next);
     }
   }
-  const list = c().employees.get(emp.companyId);
-  if (list) {
-    const idx = list.findIndex((e) => e.id === employeeId);
-    if (idx >= 0) list.splice(idx, 1);
-  }
+  const idx = active.employees.findIndex((e) => e.id === employeeId);
+  if (idx >= 0) active.employees.splice(idx, 1);
   try {
     moveDir(
       employeeAgentDir(emp.companyId, employeeId),
@@ -806,40 +710,37 @@ export function archiveEmployee(employeeId: string): Employee | null {
   // the lead left: whoever remains elects one, so the tools keep an owner
   const company = getCompany(emp.companyId);
   if (company?.leaderId === employeeId) {
-    patchCompany(company.id, { leaderId: electLead(company.id) });
+    patchCompany(company.id, { leaderId: leadOf(listEmployees(company.id)) });
   }
   return emp;
 }
 
 // ---- the company room ------------------------------------------------------
-/** Post a message to the company's persistent room (read by teammates mid-run). */
 export function postTeamMessage(
   companyId: string,
   fromEmployeeId: string | null,
   text: string,
 ): TeamMessage {
+  const active = requireActiveCompany(companyId);
   const msg: TeamMessage = { companyId, fromEmployeeId, text, createdAt: Date.now() };
-  const ring = c().chat.get(companyId) ?? [];
+  const ring = active.chat;
   const stored: TeamMessage = { ...msg, id: c().nextTeamMessageId++ };
   ring.push(stored);
   if (ring.length > TEAM_CHAT_RING) ring.splice(0, ring.length - TEAM_CHAT_RING);
-  c().chat.set(companyId, ring);
   appendJsonl(chatFile(companyId), msg);
   return stored;
 }
 
-/** Recent room messages, optionally only those after a given timestamp. */
 export function recentTeamMessages(companyId: string, limit = 20, since = 0): TeamMessage[] {
-  const ring = c().chat.get(companyId) ?? [];
+  const ring = activeCompany(companyId)?.chat ?? [];
   const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
   return filtered.slice(-limit);
 }
 
 export function getCompany(id: string): Company | null {
-  return c().companies.get(id) ?? null;
+  return activeCompany(id)?.company ?? null;
 }
 
-/** The company an IPC call names; the renderer only ever holds real ids. */
 export function requireCompany(id: string): Company {
   const company = getCompany(id);
   if (!company) throw new Error(`company ${id} not found`);
@@ -847,18 +748,14 @@ export function requireCompany(id: string): Company {
 }
 
 export function getDefaultCompany(): Company | null {
-  let latest: Company | null = null;
-  for (const co of c().companies.values()) {
-    if (!latest || co.createdAt > latest.createdAt) latest = co;
-  }
-  return latest;
+  return c().active?.company ?? null;
 }
 
 function patchCompany(id: string, patch: Partial<Company>): Company {
-  const co = c().companies.get(id);
-  if (!co) throw new Error(`company ${id} not found`);
+  const active = requireActiveCompany(id);
+  const co = active.company;
   const next = { ...co, ...patch, id: co.id };
-  c().companies.set(id, next);
+  active.company = next;
   saveCompany(next);
   return next;
 }
@@ -869,9 +766,8 @@ export function setMaxAgents(id: string, maxAgents: number): Company {
 export function setAutopilot(id: string, on: boolean): Company {
   return patchCompany(id, { autopilot: on });
 }
-/** One shipped unit of work: the company's count, and the product's when the task named one. */
 export function recordShip(companyId: string, productId: string | null): void {
-  const co = c().companies.get(companyId);
+  const co = getCompany(companyId);
   if (!co) return;
   patchCompany(companyId, { ships: co.ships + 1 });
   const product = productId === null ? null : getProduct(productId);
@@ -879,8 +775,8 @@ export function recordShip(companyId: string, productId: string | null): void {
 }
 
 // ---- products --------------------------------------------------------------
-/** The product a company is born with: its mission, in the company workspace, with everything shipped so far. */
-function firstProduct(co: Company, extra: { vercel: VercelBinding | null }): Product {
+/** The first product shares the company workspace and inherits its legacy metrics. */
+function firstProduct(co: Company, vercel: VercelBinding | null): Product {
   return {
     id: uniqueSlug(co.name, [], (s) => existsSync(join(productsDir(co.id), s))),
     companyId: co.id,
@@ -890,32 +786,31 @@ function firstProduct(co: Company, extra: { vercel: VercelBinding | null }): Pro
     ships: co.ships,
     lastShipAt: null,
     users: co.users,
-    vercel: extra.vercel,
+    vercel,
     createdAt: co.createdAt,
   };
 }
 
-export const getProduct = (id: string): Product | null => findIn(c().products, id);
+export const getProduct = (id: string): Product | null =>
+  c().active?.products.find((product) => product.id === id) ?? null;
 export function requireProduct(id: string): Product {
   const p = getProduct(id);
   if (!p) throw new Error(`no product ${id}`);
   return p;
 }
 export function listProducts(companyId: string): Product[] {
-  return [...(c().products.get(companyId) ?? [])];
+  return [...(activeCompany(companyId)?.products ?? [])];
 }
 
 const patchProduct = (id: string, patch: Partial<Product>): Product | null =>
-  patchIn(c().products, id, patch, saveProduct);
+  patchIn(c().active?.products ?? [], id, patch, saveProduct);
 
-/** A second (or later) product: its own package, its own workspace; every agent learns of it. */
 export function createProduct(input: {
   companyId: string;
   name: string;
   description: string;
 }): Product {
-  const list = c().products.get(input.companyId);
-  if (!list) throw new Error(`company ${input.companyId} not found`);
+  const list = requireActiveCompany(input.companyId).products;
   const id = uniqueSlug(
     input.name,
     list.map((p) => p.id),
@@ -936,7 +831,6 @@ export function createProduct(input: {
   mkdirSync(product.workspaceDir, { recursive: true });
   saveProduct(product);
   list.push(product);
-  // the roster's standing instructions list the products; they are re-rendered on the spot
   for (const e of listEmployees(input.companyId)) saveEmployee(e);
   return product;
 }
@@ -952,7 +846,7 @@ export function setProductUsers(productId: string, users: number | null): void {
 
 /** Where autopilot turns next: the product that has waited longest for a ship. */
 export function attentionProduct(companyId: string): Product | null {
-  const products = c().products.get(companyId) ?? [];
+  const products = activeCompany(companyId)?.products ?? [];
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 }
 
@@ -962,20 +856,14 @@ export function productOfEmployee(employeeId: string): Product | null {
   if (!emp) return null;
   const latest = openTasksFor(employeeId).toSorted(newestFirst)[0];
   const fromTask = latest?.productId ? getProduct(latest.productId) : null;
-  return fromTask ?? (c().products.get(emp.companyId) ?? [])[0] ?? null;
+  return fromTask ?? c().active?.products[0] ?? null;
 }
 // ---- founder approvals -------------------------------------------------------
-// A command the founder signed off but the agent has not run yet. Persisted
-// because the gap between clicking Approve and the agent's retry can span a
-// restart — losing it there means being asked the same question twice.
-//
-// Single-use, matching what the approval card promises: approving covers that
-// one command, once. A second deploy is a second real-world act and gets asked
-// again rather than riding on the first yes.
-
-// no file yet, or unreadable — nothing is approved
-const readApprovals = (companyId: string): string[] =>
-  readJsonFile(approvalsFile(companyId), z.array(z.string())) ?? [];
+// Exact-command approvals survive restart and are consumed once.
+function readApprovals(companyId: string): string[] {
+  requireActiveCompany(companyId);
+  return readJsonFile(approvalsFile(companyId), z.array(z.string())) ?? [];
+}
 
 export function grantApproval(companyId: string, key: string): void {
   const keys = readApprovals(companyId);
@@ -983,7 +871,6 @@ export function grantApproval(companyId: string, key: string): void {
   atomicWrite(approvalsFile(companyId), JSON.stringify([...keys, key], null, 2));
 }
 
-/** Spend the approval if it is there. True means the command may run now. */
 export function consumeApproval(companyId: string, key: string): boolean {
   const keys = readApprovals(companyId);
   if (!keys.includes(key)) return false;
@@ -998,9 +885,8 @@ export function consumeApproval(companyId: string, key: string): boolean {
   return true;
 }
 
-/** Accumulate real AI spend (USD) from a finished run. */
 export function recordSpend(id: string, costUsd: number): Company | null {
-  const co = c().companies.get(id);
+  const co = getCompany(id);
   if (!co) return null;
   const spent = Math.round((co.spentUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
   return patchCompany(id, { spentUsd: spent });
@@ -1008,17 +894,15 @@ export function recordSpend(id: string, costUsd: number): Company | null {
 export function setBudget(id: string, budget: Budget): Company {
   return patchCompany(id, { budget });
 }
-/** Founder zeroes the spend meter (budget unchanged). */
 export function resetSpend(id: string): Company {
   return patchCompany(id, { spentUsd: 0 });
 }
-/** Overwrite with REAL absolute numbers from configured metrics sources.
- * Null fields are skipped (a provider hiccup keeps the last-known value). */
+/** Null metrics keep the last reported value through provider failures. */
 export function setRealMetrics(
   id: string,
   snapshot: { users: number | null; revenue: number | null },
 ): Company | null {
-  const co = c().companies.get(id);
+  const co = getCompany(id);
   if (!co) return null;
   const patch: Partial<Company> = {};
   if (snapshot.users !== null) patch.users = Math.max(0, Math.round(snapshot.users));
@@ -1038,11 +922,8 @@ export function createEmployee(input: {
   spriteSeed: string;
   deskIndex: number;
 }): Employee {
-  const list = c().employees.get(input.companyId);
-  if (!list) throw new Error(`company ${input.companyId} not found`);
-  // the seat cap is a domain invariant — every hire path hits it here
-  const company = c().companies.get(input.companyId);
-  if (company && list.length >= company.maxAgents) {
+  const { company, employees: list } = requireActiveCompany(input.companyId);
+  if (list.length >= company.maxAgents) {
     throw new Error(`the office is at its ${company.maxAgents}-seat cap`);
   }
   const id = uniqueSlug(
@@ -1071,23 +952,18 @@ export function createEmployee(input: {
   return e;
 }
 
-export const getEmployee = (id: string): Employee | null => findIn(c().employees, id);
+export const getEmployee = (id: string): Employee | null =>
+  c().active?.employees.find((employee) => employee.id === id) ?? null;
 
-/** The rendered AGENTS.md body — what a run injects as the agent's instructions. */
 export function employeeInstructions(employeeId: string): string {
   const e = getEmployee(employeeId);
   if (!e) throw new Error(`employee ${employeeId} not found`);
-  const co = c().companies.get(e.companyId);
-  if (!co) throw new Error(`company ${e.companyId} not found`);
+  const co = requireCompany(e.companyId);
   return employeeBody(e, co);
 }
 
 export function listEmployees(companyId: string): Employee[] {
-  return [...(c().employees.get(companyId) ?? [])];
-}
-
-function patchEmployee(id: string, patch: Partial<Employee>): void {
-  patchIn(c().employees, id, patch, saveEmployee);
+  return [...(activeCompany(companyId)?.employees ?? [])];
 }
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
@@ -1096,7 +972,7 @@ export function setEmployeeStatus(id: string, status: Employee["status"]): void 
   if (emp) emp.status = status;
 }
 export function setEmployeeSession(id: string, sessionId: string | null): void {
-  patchEmployee(id, { sessionId });
+  patchIn(c().active?.employees ?? [], id, { sessionId }, saveEmployee);
 }
 
 // ---- tasks -----------------------------------------------------------------
@@ -1108,8 +984,7 @@ export function createTask(t: {
   priority?: TaskPriority;
   assigneeId?: string | null;
 }): Task {
-  const list = c().tasks.get(t.companyId);
-  if (!list) throw new Error(`company ${t.companyId} not found`);
+  const list = requireActiveCompany(t.companyId).tasks;
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
@@ -1137,36 +1012,33 @@ export function createTask(t: {
 }
 
 /** An open task by id. Shipped work is history, not something to act on. */
-export const getTask = (id: string): Task | null => findIn(c().tasks, id);
+export const getTask = (id: string): Task | null =>
+  c().active?.tasks.find((task) => task.id === id) ?? null;
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
 /** The company's open queue: everything not yet done, newest first. */
 export function listOpenTasks(companyId: string): Task[] {
-  return (c().tasks.get(companyId) ?? []).toSorted(newestFirst);
+  return (activeCompany(companyId)?.tasks ?? []).toSorted(newestFirst);
 }
 
 /** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
 export function listShippedTasks(companyId: string): Task[] {
-  let list = c().shipped.get(companyId);
-  if (!list) {
-    list = loadPackages(
+  const active = activeCompany(companyId);
+  if (!active) return [];
+  if (active.shipped === null) {
+    active.shipped = loadPackages(
       "task",
       shippedDir(companyId),
       (slug) => shippedTaskFile(companyId, slug),
       (doc) => docToTask(doc, companyId),
     );
-    c().shipped.set(companyId, list);
   }
-  return list.toSorted(newestFirst);
+  return active.shipped.toSorted(newestFirst);
 }
 
-/** An employee's open tasks, in creation order. */
 export function openTasksFor(employeeId: string): Task[] {
-  const out: Task[] = [];
-  for (const list of c().tasks.values())
-    for (const t of list) if (t.assigneeId === employeeId) out.push(t);
-  return out;
+  return c().active?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
 }
 
 const TASK_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } satisfies Record<TaskPriority, number>;
@@ -1174,13 +1046,10 @@ const TASK_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } satisfies Record<Task
 /** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
 export function listQueuedTasks(): Task[] {
   const now = Date.now();
-  const out: Task[] = [];
-  for (const list of c().tasks.values())
-    for (const t of list) {
-      const st = t.state;
-      if (st.kind === "queued" && (st.nextAttemptAt === null || st.nextAttemptAt <= now))
-        out.push(t);
-    }
+  const out = (c().active?.tasks ?? []).filter((task) => {
+    const state = task.state;
+    return state.kind === "queued" && (state.nextAttemptAt === null || state.nextAttemptAt <= now);
+  });
   return out.toSorted(
     (a, b) =>
       TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority] ||
@@ -1189,15 +1058,11 @@ export function listQueuedTasks(): Task[] {
 }
 
 const patchTask = (id: string, patch: Partial<Task>): Task | null =>
-  patchIn(c().tasks, id, patch, saveTask);
+  patchIn(c().active?.tasks ?? [], id, patch, saveTask);
 
-/**
- * Close a task on the state a run (or the founder) ended it with. Done work is
- * written first and shelved second, so a crash in between leaves a done task
- * in the open queue for boot to shelve, never a half-moved package.
- */
 type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
 
+// Persist before shelving so boot can recover a crash between the two writes.
 function close(taskId: string, state: Settled): void {
   const t = patchTask(taskId, { state, completedAt: Date.now() });
   if (!t || t.state.kind !== "done") return;
@@ -1207,21 +1072,16 @@ function close(taskId: string, state: Settled): void {
     console.error(`could not shelve ${t.id}: ${errorMessage(cause)}`);
     return;
   }
-  const open = c().tasks.get(t.companyId);
-  const idx = open?.findIndex((x) => x.id === t.id) ?? -1;
-  if (open && idx >= 0) open.splice(idx, 1);
-  c().shipped.get(t.companyId)?.push(t);
+  const active = requireActiveCompany(t.companyId);
+  const idx = active.tasks.findIndex((task) => task.id === t.id);
+  if (idx >= 0) active.tasks.splice(idx, 1);
+  active.shipped?.push(t);
 }
 
-/** The task's run, when the given run is the one holding its lock. */
 const heldBy = (t: Task | null, runId: string): Task | null =>
   t && t.state.kind === "running" && t.state.runId === runId ? t : null;
 
-/**
- * Atomic assign: only todo/blocked/dead are claimable. A manual claim of a
- * dead task is the founder reviving it, so the retry counter resets.
- * Returns task or null on conflict.
- */
+/** Return null on claim conflict; reviving a dead task resets its retry count. */
 export function claimTask(taskId: string, employeeId: string): Task | null {
   const t = getTask(taskId);
   if (!t) return null;
@@ -1250,7 +1110,6 @@ export function settleTask(taskId: string, runId: string, state: Settled): void 
   close(taskId, state);
 }
 
-/** The task after a failed attempt: retried with backoff, or dead once its attempts are spent. */
 function failed(t: Task, lastError: string) {
   const now = Date.now();
   const verdict = afterFailure(t.attempts, now);
@@ -1280,11 +1139,7 @@ export function parkTask(taskId: string, runId: string, until: number, lastError
   patchTask(taskId, { state: { kind: "queued", nextAttemptAt: until, lastError } });
 }
 
-/**
- * The founder answers a blocked task's question: the blocked task closes and a
- * continuation task (same employee, same session → full context) is created.
- * Returns the continuation, or null if the task wasn't awaiting an answer.
- */
+/** Close the blocked task and create a continuation on the same employee and session. */
 export function resolveBlockedWithAnswer(taskId: string, answer: string): Task | null {
   const t = getTask(taskId);
   if (!t || t.state.kind !== "blocked" || !t.assigneeId) return null;
@@ -1300,18 +1155,14 @@ export function resolveBlockedWithAnswer(taskId: string, answer: string): Task |
 }
 
 // ---- activity log ----------------------------------------------------------
-/** Stamp an id, keep it in the ring, and append it to the owning company's activity.jsonl. */
 export function logActivity(row: PersistedActivity, persist: boolean): ActivityEvent {
   const entry: ActivityEvent = { ...row, id: c().nextActivityId++ };
-  if (!persist) return entry;
-  c().activity.push(entry);
-  if (c().activity.length > ACTIVITY_RING) c().activity = c().activity.slice(-ACTIVITY_RING);
-
-  // employee → their company, else the default company
-  const companyId = row.employeeId
-    ? getEmployee(row.employeeId)?.companyId
-    : getDefaultCompany()?.id;
-  if (companyId) appendJsonl(activityFile(companyId), row);
+  const active = c().active;
+  if (!persist || !active) return entry;
+  active.activity.push(entry);
+  if (active.activity.length > ACTIVITY_RING)
+    active.activity = active.activity.slice(-ACTIVITY_RING);
+  appendJsonl(activityFile(active.company.id), row);
   return entry;
 }
 
@@ -1320,16 +1171,17 @@ const ofKind =
   (e: ActivityEvent): e is Extract<ActivityEvent, { kind: K }> =>
     e.kind === kind;
 
-/** Recent activity rows of a kind for a company. */
 export function recentActivity<K extends ActivityKind>(
   companyId: string,
   kind: K,
   limit = 12,
 ): Extract<ActivityEvent, { kind: K }>[] {
-  const ids = new Set((c().employees.get(companyId) ?? []).map((e) => e.id));
+  const active = activeCompany(companyId);
+  if (!active) return [];
+  const ids = new Set(active.employees.map((e) => e.id));
   const isKind = ofKind(kind);
   const out: Extract<ActivityEvent, { kind: K }>[] = [];
-  const ring = c().activity;
+  const ring = active.activity;
   for (let i = ring.length - 1; i >= 0 && out.length < limit; i--) {
     const e = ring[i];
     if (e && isKind(e) && e.employeeId != null && ids.has(e.employeeId)) out.push(e);

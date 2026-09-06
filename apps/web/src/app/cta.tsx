@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 const CTA_CLASS =
   "px-btn px-btn-accent inline-flex items-center gap-2.5 uppercase tracking-wide no-underline";
 
-/** The site's one call to action: a kit button, uppercase, as a link or a button. */
 export function Cta(props: { children: ReactNode } & ({ href: string } | { onClick: () => void })) {
   if ("href" in props) {
     return (

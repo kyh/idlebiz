@@ -3,7 +3,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 
-/** The landing card behaves like an app window: grab the titlebar to drag it. */
 export function WindowCard({ titlebar, children }: { titlebar: ReactNode; children: ReactNode }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{

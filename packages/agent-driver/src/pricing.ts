@@ -1,9 +1,6 @@
 import type { AgentUsage } from "./events.ts";
 
-// Codex reports token usage but never dollar cost, and subscription-authed
-// claude runs can report $0 — these $/MTok rates turn tokens into the spend
-// meter's USD as a best-effort approximation. Update alongside provider
-// price changes; exact billing lives with the provider, not here.
+// Estimated USD per million tokens when the CLI reports no dollar cost.
 
 interface Rates {
   input: number;
@@ -11,7 +8,7 @@ interface Rates {
   output: number;
 }
 
-/** Longest-prefix match wins; the bare fallback covers unknown models. */
+/** First matching prefix wins; put more specific models before their families. */
 const RATE_TABLE: readonly (readonly [prefix: string, rates: Rates])[] = [
   ["gpt-5", { input: 1.25, cachedInput: 0.125, output: 10 }],
   ["claude-fable", { input: 10, cachedInput: 1, output: 50 }],

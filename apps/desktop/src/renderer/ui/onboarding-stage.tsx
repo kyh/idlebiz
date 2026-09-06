@@ -4,12 +4,6 @@ import { useAsync } from "@/renderer/hooks/use-async";
 import { Portrait } from "@/renderer/ui/portrait";
 import type { HireProposal } from "@/shared/ipc-registry";
 
-// The founding, staged as a night on the street outside the office. Every
-// step the founder answers lights another floor; the founder walks toward the
-// door as they go; at the end the door opens and the screen flashes into the
-// office. Pure display: what each piece shows is a prop, nothing here decides.
-
-/** A few stars that twinkle over the painted ones — fixed, so they never re-draw on a render. */
 const STARS: readonly (readonly [number, number])[] = [
   [8, 12],
   [19, 6],
@@ -23,7 +17,6 @@ const STARS: readonly (readonly [number, number])[] = [
   [93, 22],
 ];
 
-/** The sky over the street: a gradient, a fixed constellation, the skyline behind. */
 export function NightSky() {
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden>
@@ -42,7 +35,6 @@ export function NightSky() {
 export const FLOORS = 7;
 const WINDOWS = 6;
 
-/** The office: `lit` floors glowing from the ground up, the door open once everyone is in. */
 export function Building({ lit, open }: { lit: number; open: boolean }) {
   return (
     <div className="ob-building" aria-hidden>
@@ -69,10 +61,6 @@ export function Building({ lit, open }: { lit: number; open: boolean }) {
 
 const WALK_MS = 700;
 
-/**
- * The founder on the street, at `at` percent across the stage. A change of
- * place is a walk: the sheet's down row steps for as long as the slide takes.
- */
 export function FounderSprite({ seed, at }: { seed: string; at: number }) {
   const assets = useAsync(() => bridge().composeCharacter({ seed }), [seed]);
   const [walkedTo, setWalkedTo] = useState(at);
@@ -97,7 +85,6 @@ export function Emote({ frame, className = "" }: { frame: 0 | 1; className?: str
   return <span className={`ob-emote ${className}`} data-frame={frame} aria-hidden />;
 }
 
-/** The founding team arriving one at a time, each announced with a "!". */
 export function TeamParade({ hires }: { hires: HireProposal[] }) {
   return (
     <div className="ob-parade px-window grid max-h-[46vh] w-full grid-cols-1 gap-2 overflow-y-auto p-3 sm:grid-cols-2">
@@ -127,7 +114,6 @@ type Tone = "tight" | "mid" | "open" | "infinite";
 const toneOf = (capUsd: number | null): Tone =>
   capUsd === null ? "infinite" : capUsd <= 5 ? "tight" : capUsd <= 20 ? "mid" : "open";
 
-/** The budget as a bar: how long the leash is, before it is set. */
 export function BudgetMeter({ capUsd }: { capUsd: number | null }) {
   const width = capUsd === null ? 100 : Math.min(100, (capUsd / METER_FULL_USD) * 100);
   return (

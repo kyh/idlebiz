@@ -1,7 +1,7 @@
 // Slice the Room Builder Office tileset (1_Room_Builder_Office) into individual
 // 32px tiles + a generated catalog, so the builder can paint floors/walls/structure.
 const sharp = require("sharp");
-const fs = require("fs");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const SRC =

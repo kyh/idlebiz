@@ -6,32 +6,17 @@ import { INTEGRATION_KINDS, type BlockedAsk } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import { parseJson, type JsonValue } from "@/shared/json";
 
-// ---------------------------------------------------------------------------
-// The game's control plane: a loopback HTTP API that running CLI agents call
-// back into with run-scoped bearer tokens (paperclip convention — agents curl
-// the API; the game is the control plane). Each run registers hooks that
-// bridge tool calls into game state; the token dies with the run. This file
-// is pure transport: bodies are zod-validated at the boundary and every
-// game rule lives in the hooks.
-// ---------------------------------------------------------------------------
+// Loopback transport with run-scoped bearer tokens. Hooks own the game rules.
 
-/** Side-effects a running agent can trigger to operate the business. */
 export interface RunToolHooks {
   messageTeam(text: string): void;
-  /** Latest team-room messages, rendered as a text block. */
   readTeam(): string;
   /** Returns a human-readable confirmation (or explains why nothing happened). Lands on the named product, else the run's own. */
   delegate(role: string, title: string, description: string, product: string | null): string;
-  /** Team-lead only: a second product with its own workspace. */
   createProduct(name: string, description: string): string;
-  /** Team-lead only: grow the roster (gated by the company's seat cap). */
   hire(input: { role: string; title: string; name?: string; persona?: string }): string;
-  /** Team-lead only: release a teammate (their package is archived, not deleted). */
   release(slug: string, reason: string): string;
-  /**
-   * The run just asked the founder for something. Fired the moment the ask is
-   * made, not when the run settles, so the office can show who is waiting.
-   */
+  /** Raise the ask immediately, before the run settles. */
   raiseAsk(ask: BlockedAsk): void;
 }
 
@@ -40,10 +25,7 @@ interface RunRecord {
   blocked: BlockedAsk | null;
 }
 
-/**
- * Record why this run stopped and say so. The first ask is the one the task
- * keeps and the founder answers, so it is the only one the office hears about.
- */
+/** Keep the first ask; it is the one the founder will answer. */
 function raise(record: RunRecord, ask: BlockedAsk): void {
   if (record.blocked) return;
   record.blocked = ask;
@@ -53,7 +35,6 @@ function raise(record: RunRecord, ask: BlockedAsk): void {
 interface RunHandle {
   /** Run-scoped env for the agent process: the API URL and its bearer token. */
   env: Record<string, string>;
-  /** What the agent reported back through the API during the run. */
   outcome(): { blocked: BlockedAsk | null };
   /** Record why this run stopped; the first block is the one the founder sees. */
   block(ask: BlockedAsk): void;
@@ -63,7 +44,6 @@ interface RunHandle {
 
 const MAX_BODY_BYTES = 64 * 1024;
 
-// ---- request bodies (validated at the transport boundary) -------------------
 const AskBossBody = z.object({ question: z.string().min(1) });
 const MessageTeamBody = z.object({ text: z.string().min(1) });
 const DelegateBody = z.object({
@@ -93,7 +73,6 @@ class ControlPlane {
   private port = 0;
   private runs = new Map<string, RunRecord>();
 
-  /** Bind the loopback listener (ephemeral port). Idempotent. */
   async start(): Promise<void> {
     if (this.server) return;
     const server = createServer((req, res) => {
@@ -137,6 +116,12 @@ class ControlPlane {
       }
       const path = (req.url ?? "").split("?")[0];
       const route = `${req.method ?? "GET"} ${path}`;
+      const raw = req.method === "POST" ? await readJsonBody(req) : null;
+      // A run may finish while its request body is still arriving.
+      if (this.authenticate(req) !== run) {
+        respond(res, 401, { ok: false, error: "unknown or expired run token" });
+        return;
+      }
       switch (route) {
         case "GET /v1/team-chat":
           respond(res, 200, {
@@ -145,7 +130,7 @@ class ControlPlane {
           });
           return;
         case "POST /v1/ask-boss": {
-          const body = await parseBody(req, AskBossBody);
+          const body = parseBody(raw, AskBossBody);
           raise(run, { type: "question", question: body.question.trim() });
           respond(res, 200, {
             ok: true,
@@ -155,13 +140,13 @@ class ControlPlane {
           return;
         }
         case "POST /v1/message-team": {
-          const body = await parseBody(req, MessageTeamBody);
+          const body = parseBody(raw, MessageTeamBody);
           run.hooks.messageTeam(body.text.trim());
           respond(res, 200, { ok: true, message: "Posted to the team room." });
           return;
         }
         case "POST /v1/delegate": {
-          const { role, title, description, product } = await parseBody(req, DelegateBody);
+          const { role, title, description, product } = parseBody(raw, DelegateBody);
           respond(res, 200, {
             ok: true,
             message: run.hooks.delegate(role, title, description, product ?? null),
@@ -169,24 +154,22 @@ class ControlPlane {
           return;
         }
         case "POST /v1/create-product": {
-          const { name, description } = await parseBody(req, CreateProductBody);
+          const { name, description } = parseBody(raw, CreateProductBody);
           respond(res, 200, { ok: true, message: run.hooks.createProduct(name, description) });
           return;
         }
         case "POST /v1/hire": {
-          const body = await parseBody(req, HireBody);
+          const body = parseBody(raw, HireBody);
           respond(res, 200, { ok: true, message: run.hooks.hire(body) });
           return;
         }
         case "POST /v1/release": {
-          const body = await parseBody(req, ReleaseBody);
+          const body = parseBody(raw, ReleaseBody);
           respond(res, 200, { ok: true, message: run.hooks.release(body.slug, body.reason) });
           return;
         }
         case "POST /v1/request-integration": {
-          const body = await parseBody(req, RequestIntegrationBody);
-          // A typed ask: the notification renders a [Connect] button and this
-          // task auto-resumes when the founder connects.
+          const body = parseBody(raw, RequestIntegrationBody);
           raise(run, { type: "integration", integration: body.kind, reason: body.reason.trim() });
           respond(res, 200, {
             ok: true,
@@ -211,7 +194,6 @@ class ControlPlane {
   }
 }
 
-/** Every tool route answers with this envelope. */
 interface ToolResponse {
   ok: boolean;
   error?: string;
@@ -225,17 +207,14 @@ function respond(res: ServerResponse, status: number, payload: ToolResponse): vo
   res.end(body);
 }
 
-/** The agent sent a body the tool cannot read; it gets the schema's complaint back. */
 class BadRequest extends Error {}
 
-/** The body as the route's schema sees it, or a BadRequest naming what was wrong. */
-async function parseBody<T>(req: IncomingMessage, schema: z.ZodType<T>): Promise<T> {
-  const body = schema.safeParse(await readJsonBody(req));
+function parseBody<T>(raw: JsonValue, schema: z.ZodType<T>): T {
+  const body = schema.safeParse(raw);
   if (!body.success) throw new BadRequest(z.prettifyError(body.error));
   return body.data;
 }
 
-/** Collect and parse the body; zod narrows the shape per route. */
 async function readJsonBody(req: IncomingMessage): Promise<JsonValue> {
   const chunks: Buffer[] = [];
   let size = 0;

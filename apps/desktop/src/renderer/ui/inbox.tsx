@@ -6,11 +6,9 @@ import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { describeRule, type RuleId } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
-import type { Overlay } from "@/renderer/ui/hud";
+import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
 
-/** The founder's inbox: pending asks plus dead-lettered/stuck tasks, all in one
- *  place (walking up to the "!" in the office still works — this is the fast path). */
 export function Inbox({
   onClose,
   onOpen,
@@ -97,8 +95,7 @@ export function Inbox({
   );
 }
 
-/** A typed integration ask: the agent needs a real-world connection. Connecting
- *  resumes the blocked task automatically — no text answer required. */
+// Connecting resumes integration asks automatically; no text answer is needed.
 function ConnectRow({
   t,
   by,
@@ -137,8 +134,7 @@ function ConnectRow({
   );
 }
 
-/** An outward-facing command held at the tool boundary. The founder sees the
- *  exact command, because that is what will run if they say yes. */
+// Show the exact held command; approval authorizes it once.
 function ApprovalRow({
   t,
   by,

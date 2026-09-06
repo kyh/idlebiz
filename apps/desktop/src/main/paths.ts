@@ -1,9 +1,9 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 
-// Everything IdleBiz owns lives under ~/.idlebiz. Each company is a
-// human-readable agentcompanies/v1 package:
+// Default save layout; IDLEBIZ_ROOT_DIR overrides the root.
+// Each company is a human-readable agentcompanies/v1 package:
 //   ~/.idlebiz/<company-slug>/
 //     COMPANY.md            company metadata + mission (canonical save file)
 //     agents/<slug>/        one folder per employee
@@ -20,7 +20,7 @@ import { mkdirSync } from "node:fs";
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
-export const ROOT_DIR = join(homedir(), ".idlebiz");
+export const ROOT_DIR = resolve(process.env["IDLEBIZ_ROOT_DIR"] ?? join(homedir(), ".idlebiz"));
 /** The player's saved office layout (built in #/ui). Overrides the bundled default. */
 export const OFFICE_DESIGN_PATH = join(ROOT_DIR, "office-design.json");
 

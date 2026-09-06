@@ -2,12 +2,8 @@ import type { Employee, Task } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
 import type { ChatOption } from "@/shared/ipc-registry";
 
-// What the founder can ask an employee from the battle box. Main phrases it,
-// like every other line an employee reads; the renderer only shows the labels.
-
 const short = (s: string, n = 18): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-/** A role-flavored action so every employee's menu feels like THEIR menu. */
 function roleOption(emp: Employee): ChatOption {
   const r = `${emp.role} ${emp.title}`.toLowerCase();
   if (/(engineer|dev|program|code)/.test(r))
@@ -66,7 +62,6 @@ const FILLERS: readonly ChatOption[] = [
 
 const MENU_SIZE = 4;
 
-/** Options shaped by what this employee is doing right now: their open work, their last ship, their role. */
 export function chatOptions(
   emp: Employee,
   open: readonly Task[],

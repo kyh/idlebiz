@@ -22,7 +22,7 @@ import {
   type PixelPoint,
 } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
-import { seatDepthOracle } from "@/renderer/game/seat-depth";
+import { seatDepth } from "@/renderer/game/seat-depth";
 import { frameMask, textureMasks, type OpaqueMask } from "@/renderer/game/texture-masks";
 import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 import { hiddenNodes, type PaintedSprite } from "@/shared/office-sight";
@@ -163,6 +163,7 @@ export class OfficeScene extends Phaser.Scene {
     this.game.events.on("spawn-employee", onSpawn);
     this.game.events.on("despawn-employee", onDespawn);
     this.game.events.on("ui-modal", onModal);
+    this.game.events.emit("office-input-ready");
     this.game.events.on("company-ready", onCompanyReady);
     // Phaser captures its keys on window and cancels their default whoever has
     // focus — a space typed into the team room would never land. The keyboard
@@ -248,8 +249,6 @@ export class OfficeScene extends Phaser.Scene {
     for (const task of blocked) {
       if (task.assigneeId) npcs.setState(task.assigneeId, "blocked");
     }
-
-    this.game.events.emit("office-ready");
   }
 
   private buildRoom(masks: (key: string) => OpaqueMask | null): Seat[] {
@@ -260,10 +259,13 @@ export class OfficeScene extends Phaser.Scene {
         .setDepth(placement.depth)
         .setFlip(placement.flipX, placement.flipY),
     );
-    const seatDepth = seatDepthOracle(masks);
     return this.office.seats
       .filter((seat) => seat.role === "work")
-      .map((seat) => ({ x: seat.x, y: seat.y, depth: seatDepth(seat, room) }));
+      .map((seat) => ({
+        x: seat.x,
+        y: seat.y,
+        depth: seatDepth(seat, room, (image) => masks(image.texture.key)),
+      }));
   }
 
   /**

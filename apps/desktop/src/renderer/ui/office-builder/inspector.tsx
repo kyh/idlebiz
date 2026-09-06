@@ -15,7 +15,6 @@ const LAYER_LABEL = {
 } satisfies Record<OfficeLayer, string>;
 const LAYERS: readonly OfficeLayer[] = ["floor", "object", "overhead"];
 
-/** The selected object's fields. */
 export function Inspector({
   obj,
   onChange,

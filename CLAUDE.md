@@ -9,6 +9,8 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   instructions, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
   products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
   get products/<slug>/workspace/), routines/, activity.jsonl).
+- One active company per launch: newest `createdAt`, alphabetical slug on ties.
+  Only that company's entities load or migrate; older saves remain untouched.
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.
@@ -56,15 +58,13 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   onboard, hire or run anything. There is no seeded save.
 - **CLI-free surfaces**: `apps/web`, the onboarding modal, and the two hash routes `#/ui`
   (office builder) and `#/office-assets` — all reachable with no company.
-- **`pnpm dev:desktop` kills first**: `dev:kill` SIGKILLs this checkout's dev processes _and_
-  whatever holds TCP 9222. Check `lsof -ti tcp:9222` before starting.
-- **`pnpm dev:desktop` also costs money**: boot calls `scheduler.start()`, which drains the
-  task queue immediately against the real `~/.idlebiz` save — real CLI spend, real writes.
-  `ls ~/.idlebiz` first; don't boot it on a machine with a live company.
+- **`pnpm dev:desktop` stops this checkout's dev processes first**. Unrelated processes on
+  TCP 9222 survive; startup fails while that port is occupied.
+- **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
+  the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 
 Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
-`pnpm knip` is exploratory, not a gate (it's not in `verify`), but it exits 0 today — so
-anything it reports is something your change introduced, not a backlog to skim past.
+`pnpm knip` checks unused files, exports and dependencies; it is not part of `verify`.
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
-Unit tests: `pnpm --filter @repo/desktop test` (vitest; the pure parts — seating, poses,
-layout schema, walk grid, activity schema, command policy)
+Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
+and real loopback requests; no Electron or Phaser)

@@ -43,7 +43,7 @@ describe("resolveMentions", () => {
 });
 
 describe("afterFailure", () => {
-  it("backs off exponentially, capped, until the attempts are spent", () => {
+  it("backs off exponentially until the attempts are spent", () => {
     expect(afterFailure(0, 1000)).toEqual({ kind: "retry", attempts: 1, retryAt: 16_000 });
     expect(afterFailure(1, 1000)).toEqual({ kind: "retry", attempts: 2, retryAt: 31_000 });
     expect(afterFailure(MAX_TASK_ATTEMPTS - 1, 0)).toEqual({

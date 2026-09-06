@@ -3,8 +3,6 @@ import { getPortrait } from "@/renderer/state/store";
 
 type PortraitSize = "sm" | "md";
 const SIZE_CLASS = { sm: "h-12 w-12", md: "h-16 w-16" } satisfies Record<PortraitSize, string>;
-
-/** A character's face in the pixel frame; an empty frame until the compositor answers. */
 export function Portrait({
   seed,
   size,

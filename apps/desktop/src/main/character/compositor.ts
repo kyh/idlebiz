@@ -5,34 +5,12 @@ import { app } from "electron";
 import type { CharacterAssets } from "@/shared/ipc-registry";
 import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 
-// ---------------------------------------------------------------------------
-// Build a unique employee sprite from bundled artist-assembled character
-// sheets. We deliberately use these sheets rather than compositing the modular
-// Body/Eyes/Outfit/Hair layers: the standalone Bodies sheets (1854px wide) are a
-// different export version than the Eyes/Outfits/Hairstyles (1792px), so layering
-// them misaligns into "bobbleheads". These sheets are pixel-
-// perfect, and varied — guaranteed correct.
-//
-// Output (both base64 data URLs, no disk writes):
-//   - walkSheetDataUrl: 192x384, 6 rows x 6 frames of 32x64
-//                       (rows: walk down/left/right/up, then sit-left, sit-right)
-//   - portraitDataUrl:  64x64, a crisp nearest-neighbour crop of the character's
-//                       own down-facing head — so the portrait always matches the
-//                       sprite exactly.
-// ---------------------------------------------------------------------------
-
-// The 20 employee sheets ship with the app as curated runtime assets. sharp
-// reads them natively, so they cannot live inside the asar: a packaged build
-// carries them as extraResources beside it (electron-builder.yml), and dev
-// reads the checkout's resources/ directly.
+// sharp needs real files: packaged sheets live in electron-builder's extraResources.
 const EMPLOYEE_SHEET_DIR = app.isPackaged
   ? join(process.resourcesPath, "employee-sheets")
   : join(app.getAppPath(), "resources", "employee-sheets");
 
-// 32px-tier sheet layout. Animation bands stack at 64px; the walk band sits at
-// y=128. Within a band the 24 frames are grouped by direction (6 each). Verified
-// against the real pixels: cols 0-5 face RIGHT, 6-11 UP, 12-17 LEFT, 18-23 DOWN —
-// swapping left and right makes the player moonwalk.
+// Source columns: 0-5 right, 6-11 up, 12-17 left, 18-23 down.
 const WALK_TOP = 128;
 const SIT_TOP = 256; // sitting band: 6 frames per facing, two facings
 const WALK_FRAMES = 6;
@@ -62,7 +40,6 @@ async function listEmployeeSheets(): Promise<string[]> {
   return sheets;
 }
 
-// ---- seeded RNG (deterministic per seed) -----------------------------------
 function makeRng(seed: string): () => number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < seed.length; i++) {
@@ -81,15 +58,10 @@ function makeRng(seed: string): () => number {
 
 const toDataUrl = (buf: Buffer): string => `data:image/png;base64,${buf.toString("base64")}`;
 
-/** The composited sheet: 6 frames wide, one row per OUT_ROWS entry. */
 const OUT_W = FRAME_W * WALK_FRAMES;
 const OUT_H = FRAME_H * OUT_ROWS.length;
 
-/**
- * Re-pack a source sheet's walk + sit bands into the 192x384 6-row layout.
- * One decode of the source, then plain row copies: the pipeline-per-frame
- * version re-decoded the 1792px sheet 36 times per character.
- */
+/** Decode once, then copy walk and sit bands into the renderer's 192x384 layout. */
 async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
   const { data, info } = await sharp(sheetPath)
     .ensureAlpha()
@@ -108,12 +80,7 @@ async function buildWalkSheet(sheetPath: string): Promise<Buffer> {
     .toBuffer();
 }
 
-/**
- * Crop the character's down-facing head+shoulders and upscale 2x (nearest-
- * neighbour) into a crisp 64x64 portrait — so the portrait always matches the
- * sprite exactly. Source: the down-idle frame (col 18, walk band). Within the
- * 32x64 cell the head+shoulders sit ~y18..y50, so we crop a 32x32 box there.
- */
+// The down-facing head and shoulders occupy y18..50 within the 32x64 frame.
 const PORTRAIT_HEAD_TOP = WALK_TOP + 18;
 async function buildPortrait(sheetPath: string): Promise<Buffer> {
   return sharp(sheetPath)
@@ -133,7 +100,6 @@ function indexForSeed(seed: string, count: number): number {
   return Math.floor(makeRng(seed)() * count);
 }
 
-/** Distinct, deterministic founder appearance choices for onboarding. */
 export async function listFounderChoices(n: number): Promise<string[]> {
   const sheets = (employeeSheetPaths ??= await listEmployeeSheets());
   const step = Math.max(1, Math.floor(sheets.length / n));
@@ -144,8 +110,7 @@ export async function listFounderChoices(n: number): Promise<string[]> {
   return seeds;
 }
 
-// A character is a function of its sheet, and there are twenty sheets: build
-// each once per process, not once per employee per scene boot.
+// Cache by sheet so employees sharing a sheet reuse its assets.
 const composed = new Map<string, Promise<CharacterAssets>>();
 
 function composeSheet(sheetPath: string): Promise<CharacterAssets> {

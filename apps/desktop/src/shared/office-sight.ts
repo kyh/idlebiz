@@ -9,17 +9,8 @@ import {
 import { reachableNodes, type WalkGrid } from "./office-grid.ts";
 import type { OfficeObjectDef, PixelPoint } from "./office-layout-schema.ts";
 
-// ---------------------------------------------------------------------------
-// Can the founder be seen where they can stand?
-//
-// Characters y-sort on their soles and furniture on its floor line, so standing
-// north of a desk puts your legs behind it — right. Standing where something
-// drawn above you covers your FACE is not: the lane behind a bookshelf, the
-// floor under a plant's canopy, an overhead prop over a corridor. This judges
-// that from the same masks the room is painted with; the scene runs it over
-// Phaser's textures at boot and seals what it finds, check:office runs it over
-// the PNGs so the bundled data never ships with any.
-// ---------------------------------------------------------------------------
+// The scene seals standing spots where furniture hides the founder's face.
+// check:office uses the same judgement with PNG masks instead of Phaser textures.
 
 /** Opaque-pixel coverage of a sprite, in its own pixel space. */
 export interface OpaqueMask {
@@ -43,11 +34,7 @@ const FACE_HIDDEN_AT = 0.5;
 const drawsAbove = (obj: OfficeObjectDef, soles: number): boolean =>
   obj.layer === "overhead" || (obj.layer === "object" && obj.anchorY + 0.5 > soles);
 
-/**
- * Is the sprite's own pixel (dx, dy) opaque? Flips mirror inside the canvas,
- * exactly like setFlip; anything off the canvas is not painted. The one probe
- * the scene, the sight judgement and check:office all read pixels through.
- */
+/** Probe sprite-local pixels. Flips mirror within the canvas; off-canvas is transparent. */
 export function opaqueAt(
   mask: OpaqueMask,
   flip: { readonly flipX?: boolean; readonly flipY?: boolean },
@@ -63,9 +50,6 @@ export function opaqueAt(
 /** Is the sprite's pixel at world (wx, wy) opaque? */
 const paintsAt = ({ obj, mask }: PaintedSprite, wx: number, wy: number): boolean =>
   opaqueAt(mask, obj, wx - Math.round(obj.x), wy - Math.round(obj.y));
-
-/** Floor sprites are never drawn above a character, whatever the node. */
-const canCover = ({ obj }: PaintedSprite): boolean => obj.layer !== "floor";
 
 /**
  * Fraction of the character's face painted over when their origin is at `node`.
@@ -112,7 +96,7 @@ export function hiddenNodes(
   silhouette: OpaqueMask,
 ): { node: PixelPoint; covered: number }[] {
   const hidden: { node: PixelPoint; covered: number }[] = [];
-  const candidates = sprites.filter(canCover);
+  const candidates = sprites.filter(({ obj }) => obj.layer !== "floor");
   for (const node of reachableNodes(grid, spawn)) {
     const covered = faceCovered(node, candidates, silhouette);
     if (covered >= FACE_HIDDEN_AT) hidden.push({ node, covered });

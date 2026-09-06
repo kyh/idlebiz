@@ -12,10 +12,12 @@ import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { taskIn } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
 import type { ChatOption } from "@/shared/ipc-registry";
+import { errorMessage } from "@/shared/errors";
 
 const NOTE_MS = 1800;
 
-/** Walk up to someone and press E: the battle-box conversation with that employee. */
+type Submission = { kind: "ready" } | { kind: "sending" } | { kind: "failed"; message: string };
+
 export function Dialogue() {
   const game = useStore((s) => s.game);
   const employees = useStore((s) => s.employees);
@@ -34,8 +36,6 @@ export function Dialogue() {
   if (!emp) return null;
   return <DialoguePanel key={emp.id} emp={emp} onClose={() => setOpenId(null)} />;
 }
-
-/** What they SAY, as opposed to what they do: chat, a message, a ship. */
 const isSpoken = (
   a: ActivityEvent,
 ): a is Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }> =>
@@ -48,8 +48,10 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   const [mode, setMode] = useState<"menu" | "talk">("menu");
   const [sel, setSel] = useState(0);
   const [input, setInput] = useState("");
+  const [submission, setSubmission] = useState<Submission>({ kind: "ready" });
   const [note, showNote] = useTransientNote(NOTE_MS);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mounted = useRef(false);
 
   const mine = useMemo(() => activity.filter((a) => a.employeeId === emp.id), [activity, emp.id]);
   // Only a status event moves a task, so its id is what a task list is current
@@ -83,12 +85,23 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
 
   // everything the founder says goes through the team channel; the @slug
   // mention wakes exactly this employee with the message as their brief
-  const send = (instruction: string) => {
-    showNote(`Sent to ${emp.name} ✓`);
-    void directEmployee(emp.id, instruction);
+  const send = async (instruction: string): Promise<boolean> => {
+    if (submission.kind === "sending") return false;
+    setSubmission({ kind: "sending" });
+    try {
+      await directEmployee(emp.id, instruction);
+      if (!mounted.current) return false;
+      setSubmission({ kind: "ready" });
+      showNote(`Sent to ${emp.name} ✓`);
+      return true;
+    } catch (cause) {
+      if (mounted.current) setSubmission({ kind: "failed", message: errorMessage(cause) });
+      return false;
+    }
   };
 
   const choose = (i: number) => {
+    if (submission.kind === "sending") return;
     const row = rows[i];
     if (!row) return;
     if (row.kind === "talk") {
@@ -96,15 +109,16 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
       window.setTimeout(() => inputRef.current?.focus(), 30);
       return;
     }
-    send(row.option.instruction);
+    void send(row.option.instruction);
   };
 
-  const submitTalk = () => {
+  const submitTalk = async () => {
     const text = input.trim();
     if (!text) return;
-    send(text);
-    setInput("");
-    setMode("menu");
+    if (await send(text)) {
+      setInput("");
+      setMode("menu");
+    }
   };
 
   // keyboard: arrows walk the menu; Enter selects; Esc backs out / closes
@@ -126,8 +140,12 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
     e.preventDefault();
   });
   useEffect(() => {
+    mounted.current = true;
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   if (!company) return null;
@@ -182,18 +200,25 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
         <div className="flex w-[42%] flex-col">
           <div className="px-inset flex flex-1 flex-col p-2">
             {mode === "menu" ? (
-              <CommandMenu rows={rows} sel={sel} onHover={setSel} onChoose={choose} />
+              <CommandMenu
+                rows={rows}
+                sel={sel}
+                onHover={setSel}
+                onChoose={choose}
+                disabled={submission.kind === "sending"}
+              />
             ) : (
               <div className="flex h-full flex-col gap-2">
                 <div className="text-xs text-fg-dim">Tell {emp.name} what to do:</div>
                 <input
                   ref={inputRef}
                   value={input}
+                  disabled={submission.kind === "sending"}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      submitTalk();
+                      void submitTalk();
                     }
                   }}
                   placeholder="e.g. build a settings page"
@@ -205,17 +230,23 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
                   </button>
                   <button
                     type="button"
-                    onClick={() => submitTalk()}
-                    disabled={!input.trim()}
+                    onClick={() => void submitTalk()}
+                    disabled={!input.trim() || submission.kind === "sending"}
                     className="px-btn-accent px-btn flex-1"
                   >
-                    Send
+                    {submission.kind === "sending" ? "Sending…" : "Send"}
                   </button>
                 </div>
               </div>
             )}
           </div>
-          {note ? <div className="mt-1 text-center text-xs text-ok">{note}</div> : null}
+          {submission.kind === "failed" ? (
+            <div role="alert" className="mt-1 text-center text-xs text-danger">
+              Could not send: {submission.message}
+            </div>
+          ) : submission.kind === "ready" && note ? (
+            <div className="mt-1 text-center text-xs text-ok">{note}</div>
+          ) : null}
         </div>
 
         <button
@@ -230,8 +261,6 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
     </div>
   );
 }
-
-/** Portrait, name, title and the working/idle badge. */
 function Identity({ emp, working }: { emp: Employee; working: boolean }) {
   return (
     <div className="flex items-center gap-3">
@@ -253,22 +282,20 @@ function Identity({ emp, working }: { emp: Employee; working: boolean }) {
     </div>
   );
 }
-
-/** One line of the command menu: something to ask, or the way to say it yourself. */
 type Row = { kind: "ask"; option: ChatOption } | { kind: "talk" };
 const labelOf = (row: Row): string => (row.kind === "ask" ? row.option.label : "Talk…");
-
-/** The battle-style command list, one row per line. */
 function CommandMenu({
   rows,
   sel,
   onHover,
   onChoose,
+  disabled,
 }: {
   rows: readonly Row[];
   sel: number;
   onHover: (i: number) => void;
   onChoose: (i: number) => void;
+  disabled: boolean;
 }) {
   return (
     <>
@@ -280,6 +307,7 @@ function CommandMenu({
             data-sel={sel === i}
             onMouseEnter={() => onHover(i)}
             onClick={() => onChoose(i)}
+            disabled={disabled}
             className="px-cmd truncate"
           >
             {labelOf(row)}
@@ -290,8 +318,6 @@ function CommandMenu({
     </>
   );
 }
-
-/** The employee's spoken line: a Pokémon-style typewriter reveal. Click to skip. */
 function Speech({ text, companyId }: { text: string; companyId: string }) {
   const { shown, done, skip } = useTypewriter(text);
   return (
@@ -325,7 +351,6 @@ interface LineStyle {
   color: string;
   prefix: string;
 }
-/** How each kind of line reads in the trail; anything else is a quiet dot. */
 const LINE_STYLES = new Map<ActivityKind, LineStyle>([
   ["tool_call", { color: "#2f6fb0", prefix: "⚙ " }],
   ["message", { color: "#2b2f46", prefix: "💬 " }],

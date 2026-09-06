@@ -1,13 +1,6 @@
 import type { Company, Employee, Product } from "@/shared/domain";
 
-// What an employee is told about who they are and how the office works. Prose
-// only — the store persists it, the driver injects it; neither authors it.
-
-/**
- * The body of an employee's AGENTS.md — their standing instructions, injected
- * into every run. Pure: what they get depends only on who they are, where the
- * company lives, and whether they lead.
- */
+// Rendered into AGENTS.md by the store and injected into every run by the driver.
 export function standingInstructions(input: {
   employee: Employee;
   company: Company;

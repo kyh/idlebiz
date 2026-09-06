@@ -4,12 +4,7 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import * as store from "@/main/store/store";
 import { earliestReset, napLabel, spentLabel } from "@/shared/format";
 
-// ---------------------------------------------------------------------------
-// The menu-bar presence: IdleBiz is a background mac app. Closing the window
-// leaves the office running — the tray icon is how you know, see status, and
-// get back in. Icon is a 16x16 pixel briefcase, macOS template-style
-// (black+alpha, recolored by the system for light/dark menu bars).
-// ---------------------------------------------------------------------------
+// macOS template images use black and alpha; the system recolors them for the menu bar.
 
 const ICON_1X =
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAANklEQVQ4jWNgGKzgPw5MkgHo4D+5tv4n1jX/CdlASO1/ahjwn9pe+E9KgP6nhgH/R3gsDAwAAL33R7nFdoDeAAAAAElFTkSuQmCC";
@@ -26,13 +21,10 @@ function trayIcon(): Electron.NativeImage {
   return img;
 }
 
-/** The office's pulse, shared by the menu status line and the icon badge. */
 interface OfficeStatus {
   company: ReturnType<typeof store.getDefaultCompany>;
   working: number;
-  /** Earliest usage-limit reset, if any runner is resting. */
   napUntil: number | undefined;
-  /** True when the office will do things without the founder watching. */
   active: boolean;
 }
 
@@ -49,7 +41,6 @@ function officeStatus(): OfficeStatus {
   };
 }
 
-/** One line of truth for the menu: what is the office doing right now? */
 function statusLine(s: OfficeStatus): string {
   if (!s.company) return "No company yet";
   const spent = spentLabel(s.company.spentUsd);
@@ -58,8 +49,6 @@ function statusLine(s: OfficeStatus): string {
   return `${s.company.autopilot ? "idle" : "paused"} · ${spent}`;
 }
 
-/** Badge text beside the menu-bar icon — only while running windowless, so
- * "the app is doing things you can't see" is impossible to miss. */
 function badge(s: OfficeStatus, windowless: boolean): string {
   if (!windowless) return "";
   if (s.working > 0) return ` ● ${s.working}`;
@@ -68,9 +57,7 @@ function badge(s: OfficeStatus, windowless: boolean): string {
 }
 
 interface TrayHost {
-  /** Show the existing window or create one (also restores the dock icon). */
   openWindow(): void;
-  /** Flip autopilot and let the renderer know (if a window is open). */
   setAutopilot(on: boolean): void;
 }
 
@@ -79,7 +66,6 @@ class AppTray {
   private host: TrayHost | null = null;
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private windowless = false;
-  private warnedThisBackground = false;
 
   init(host: TrayHost): void {
     if (this.tray) return;
@@ -94,18 +80,12 @@ class AppTray {
     activityEvents.on("activity", () => this.scheduleRebuild());
   }
 
-  /**
-   * The window count changed. Going windowless while the office is active
-   * warns the founder ONCE per transition — a native notification plus a
-   * badge beside the menu-bar icon — so background work is never a surprise.
-   */
+  /** Notify once when the office continues working after its last window closes. */
   setWindowless(windowless: boolean): void {
     if (this.windowless === windowless) return;
     this.windowless = windowless;
-    if (!windowless) this.warnedThisBackground = false;
     const s = officeStatus();
-    if (windowless && s.active && !this.warnedThisBackground && Notification.isSupported()) {
-      this.warnedThisBackground = true;
+    if (windowless && s.active && Notification.isSupported()) {
       new Notification({
         title: "IdleBiz is still running",
         body: `${statusLine(s)} — your team keeps working in the background. The 💼 in the menu bar has status and Quit.`,

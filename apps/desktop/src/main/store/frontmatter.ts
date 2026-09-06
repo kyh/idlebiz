@@ -1,11 +1,5 @@
-// Minimal agentcompanies/v1 frontmatter codec — no YAML dep, strict types.
-//
-// We only ever WRITE a constrained YAML subset, so parsing stays trivial:
-//   - top-level scalar fields, one `metadata:` block of indented scalars
-//   - every string/array value is serialized as JSON (JSON is a YAML subset),
-//     numbers/booleans/null are bare — so reading is JSON.parse per value.
-// Free text (mission, persona, task description) lives in the markdown BODY,
-// never in frontmatter, which is what keeps this codec safe.
+// Constrained YAML: top-level scalars plus one indented metadata block.
+// Strings use JSON quoting; free text lives in the markdown body.
 
 import { z } from "zod";
 import { parseJson } from "@/shared/json";
@@ -15,12 +9,6 @@ export interface FrontmatterDoc {
   fields: Record<string, Scalar>;
   metadata: Record<string, Scalar>;
   body: string;
-}
-
-// JSON.stringify quotes strings and renders numbers/booleans/null bare —
-// exactly this codec's serialization for every Scalar.
-function writeValue(v: Scalar): string {
-  return JSON.stringify(v);
 }
 
 function parseValue(raw: string): Scalar {
@@ -42,11 +30,11 @@ function parseValue(raw: string): Scalar {
 
 export function serializeDoc(doc: FrontmatterDoc): string {
   const lines: string[] = ["---"];
-  for (const [k, v] of Object.entries(doc.fields)) lines.push(`${k}: ${writeValue(v)}`);
+  for (const [k, v] of Object.entries(doc.fields)) lines.push(`${k}: ${JSON.stringify(v)}`);
   const meta = Object.entries(doc.metadata);
   if (meta.length > 0) {
     lines.push("metadata:");
-    for (const [k, v] of meta) lines.push(`  ${k}: ${writeValue(v)}`);
+    for (const [k, v] of meta) lines.push(`  ${k}: ${JSON.stringify(v)}`);
   }
   lines.push("---", "");
   return lines.join("\n") + doc.body;
@@ -81,7 +69,6 @@ export function parseDoc(text: string): FrontmatterDoc {
   return { fields, metadata, body };
 }
 
-// ---- typed readers (parse-boundary narrowing; throw = corrupt file) --------
 export function reqStr(rec: Record<string, Scalar>, key: string): string {
   const v = z.string().safeParse(rec[key]);
   if (!v.success) throw new Error(`expected string "${key}"`);
@@ -100,7 +87,6 @@ export function optNum(rec: Record<string, Scalar>, key: string, fallback: numbe
   const v = z.number().safeParse(rec[key]);
   return v.success ? v.data : fallback;
 }
-/** A number that means "not yet" when absent: a timestamp that has not happened. */
 export function nullableNum(rec: Record<string, Scalar>, key: string): number | null {
   const v = z.number().safeParse(rec[key]);
   return v.success ? v.data : null;

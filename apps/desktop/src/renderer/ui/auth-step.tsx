@@ -1,6 +1,4 @@
 import { linesOf, type Auth } from "@/renderer/hooks/use-auth-flow";
-
-/** The login flow's transcript and its one button, wherever the flow is shown. */
 export function AuthStep({
   auth,
   onLogin,
@@ -8,7 +6,6 @@ export function AuthStep({
 }: {
   auth: Auth;
   onLogin: () => void;
-  /** Sits at the left of the button row. */
   aside?: React.ReactNode;
 }) {
   const lines = linesOf(auth);

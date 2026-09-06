@@ -1,7 +1,3 @@
-// The office builder's layout model (#/ui): the editable form of
-// office-design.json, the catalog lookups behind it, and the way back to the
-// exact schema the game reads — re-deriving the collision grid from the placed
-// furniture so the result stays playable. No React in here.
 import {
   BUNDLED_LAYOUT,
   comparePaintOrder,
@@ -184,12 +180,6 @@ function footprintRect(o: Placed): Rect {
   return baseBand(o, Math.max(FOOT, Math.round(worldRect(o).h * 0.85)));
 }
 
-// Random uids: a module counter would reset on HMR while React state keeps
-// the old uids, colliding new placements with loaded ones.
-function newUid(): string {
-  return crypto.randomUUID();
-}
-
 // --- grid helpers -----------------------------------------------------------
 function paint(
   grid: number[][],
@@ -216,7 +206,7 @@ export function loadLayout(raw: OfficeLayoutData = BUNDLED_LAYOUT): EditableLayo
   const grid = raw.collision.map((row) => Array.from(row, (ch) => (ch === "1" ? 1 : 0)));
   const objects: EditableObject[] = raw.objects.map((o) => {
     const base = {
-      uid: newUid(),
+      uid: crypto.randomUUID(),
       id: o.id,
       x: o.x,
       y: o.y,
@@ -336,7 +326,7 @@ export function makeObject(
   const x = cx - b.x;
   const y = cy - b.y;
   const base = {
-    uid: newUid(),
+    uid: crypto.randomUUID(),
     id,
     x,
     y,
@@ -350,9 +340,8 @@ export function makeObject(
     : { ...base, layer };
 }
 
-/** Duplicate a placed object (fresh uid). */
 export function cloneObject(o: EditableObject): EditableObject {
-  return { ...o, uid: newUid() };
+  return { ...o, uid: crypto.randomUUID() };
 }
 
 /** Set one collision cell (1 = solid, 0 = walkable); returns a new collision array. */

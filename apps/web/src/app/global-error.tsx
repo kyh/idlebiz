@@ -3,9 +3,7 @@
 import "@/app/globals.css";
 import { ErrorStatus } from "@/app/error-status";
 
-// Catches errors thrown by the root layout itself, so it replaces the layout
-// entirely and must render its own <html>/<body> — and import the stylesheet the
-// layout would have, or the kit classes below paint nothing.
+// This boundary replaces the root layout, including its document shell and stylesheet.
 export default function GlobalError({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <html lang="en">

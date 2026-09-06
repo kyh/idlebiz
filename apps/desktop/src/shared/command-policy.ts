@@ -1,30 +1,5 @@
-// ---------------------------------------------------------------------------
-// The command policy: which of an employee's commands need the founder's
-// sign-off. Shared by main (the permission gate) and the renderer (the
-// approval card names the rule). Pure; every rule owes command-policy.test.ts
-// an example it catches and one it lets through.
-// ---------------------------------------------------------------------------
-
-/**
- * The single decision point for what an employee may do unattended, applied
- * identically to both runners.
- *
- * It lives here rather than leaning on either CLI's own safeguards because
- * those are not the same shape: claude has a classifier (`--permission-mode
- * auto`), codex has an OS sandbox, and neither knows what this game considers
- * the founder's business. A PreToolUse hook sends every shell command here,
- * so this is the one place with a complete view of both.
- *
- * It is a floor, not the whole story — the CLIs' own protections still sit
- * underneath. And it fails OPEN by construction: anything unmatched runs. So
- * a rule earns its place by catching something whose blast radius reaches
- * past the workspace, and command-policy.test.ts holds every rule to an example.
- *
- * Paths are the load-bearing heuristic for scope: employees work in relative
- * paths inside their workspace, so an absolute or `~` path in a destructive
- * command is the signal that something is reaching out of it.
- */
-/** Every reason a command can be held, named — the ask persists the id, the card looks it up. */
+// Applied to ACP permission requests from both runners. Unmatched commands run;
+// the CLIs' own safeguards still apply. Persist rule ids so approval cards can explain them.
 export const RULE_IDS = [
   "deploy",
   "publish-package",
@@ -58,31 +33,11 @@ const DEPLOY_TOOL_READS = String.raw`(?:--help|--version|-h|-v|help|ls|list|insp
 /** A path argument that leaves the workspace behind. */
 const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
 
-/**
- * A shell position where a program name can actually appear: the start of the
- * line, after an operator, or behind a wrapper like npx/sudo/env.
- *
- * Every rule anchors its program here, because matching the bare name anywhere
- * in the string reads quoted argument text as if it were a command. That is
- * not hypothetical: an employee whose `git push` was held then tried to post
- * "I ran git push and it was blocked" to the team room, and the words inside
- * that JSON payload tripped the git-push rule all over again — so the report
- * of a block was itself blocked, and it replaced the real ask on the card.
- *
- * It is an anchor, not a shell parser: separators are matched regardless of
- * quoting, so a separator *inside* a quoted argument still opens a command
- * position. Real parsing is the fix if false positives ever bite; the gate
- * fails open and the CLIs' own protections sit underneath, so this is a floor.
- */
-// A bare `(` and a backtick are deliberately NOT command positions. Subshells
-// and backtick substitution are vanishingly rare in agent commands, while prose
-// inside a quoted payload is not: an employee's own delegate call carrying
-// "(`npm ci`)" and "do NOT npm publish" in its JSON body was held as if it were
-// publishing a package, and a memory note mentioning `vercel.json` in a heredoc
-// was held as a deploy. Command substitution still opens one, via `$(`.
+// Anchor at invocation sites so quoted reports of a blocked command do not block again.
+// This is a heuristic: separators inside quotes still count, while bare `(` and
+// backticks do not (common in prose). Command substitution via `$(` still counts.
 const AT_COMMAND = String.raw`(?:^|[\n;&|]|\$\()\s*(?:(?:sudo|command|env|time|nohup|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|npm\s+exec)\s+)*(?:--?[\w-]+\s+)*(?:[\w_]+=\S+\s+)*`;
 
-/** Anchor a program pattern to a real invocation site. */
 const invocation = (program: string): RegExp => new RegExp(AT_COMMAND + program);
 
 /**
@@ -94,9 +49,7 @@ const program = (names: string): string => String.raw`(?:${names})(?![\w.\-/])`;
 const RULES: readonly Rule[] = [
   {
     id: "deploy",
-    // `vercel` with no subcommand deploys, so this gates the tool and carves
-    // out the read-only subcommands rather than listing deploy verbs — the
-    // verb list missed `vercel --prod --yes`, the most natural way to ship.
+    // Bare `vercel` deploys; exclude read-only subcommands rather than listing deploy verbs.
     describe: "Deploy the product to a live, public URL.",
     match: invocation(
       `${program("vercel|netlify|wrangler|fly|railway|surge")}` +
@@ -110,9 +63,7 @@ const RULES: readonly Rule[] = [
   },
   {
     id: "git-push",
-    // git accepts global options before the subcommand (`git -C dir push`).
-    // Known gap: a quoted option value containing spaces (`-c k='a b'`) breaks
-    // the scan — that needs a parser, not a wider regex.
+    // Accept global options. Quoted option values with spaces still need a shell parser.
     describe: "Push commits to a remote repository.",
     match: invocation(
       String.raw`git\b(?:\s+-[a-zA-Z-]+(?:=\S+)?(?:\s+(?!push\b)-?\S+)?)*\s+push\b`,
@@ -203,16 +154,7 @@ export function classifyCommand(command: string): CommandVerdict {
   return { decision: "allow" };
 }
 
-/**
- * Strip the plumbing the CLIs wrap around a command before running it
- * (`… 2>&1; echo "exit=$?"`) and collapse whitespace.
- *
- * Applied once where a command enters the game, so everything downstream —
- * the policy, the stored ask, the approval card — sees the same canonical
- * string, which is also the key for "the founder already approved this exact
- * action". Without it a retry of the same action reads as a new one and
- * re-asks, and the founder is shown shell plumbing they did not write.
- */
+/** Remove CLI reporting suffixes and normalize the key used to reuse founder approvals. */
 export function normalizeCommand(command: string): string {
   return command
     .replace(/\s*2>&1/g, "")

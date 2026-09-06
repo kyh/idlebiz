@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { IpcMethod, IpcKind } from "@/shared/ipc-channels";
+import type { IpcMethod, IpcKind, InvokeMethod } from "@/shared/ipc-channels";
 import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
 import {
@@ -14,9 +14,6 @@ import {
   type TeamMessage,
 } from "@/shared/domain";
 
-export type { IpcMethod };
-
-// ---- shared domain types ---------------------------------------------------
 /** Streamed steps of the workforce setup flow (CLI detect/install/login). */
 export type AuthFlowEvent =
   | { type: "url"; url: string }
@@ -36,7 +33,6 @@ export type LoadSkip = {
 /** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
 export type LoadReport = { companies: number; skipped: LoadSkip[] };
 
-/** A founder appearance option for onboarding. */
 export type FounderChoice = { seed: string; portraitDataUrl: string };
 
 /** Stripe Connect link state, streamed to the renderer. */
@@ -52,7 +48,6 @@ export type VercelProject = { id: string; name: string; teamId?: string };
 /** The latest production deployment of the bound Vercel project. */
 export type VercelDeployment = { url: string; state: string; createdAt: number };
 
-/** The product panel's real-world state. */
 export type ProductStatus = {
   /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
   entry: string | null;
@@ -69,7 +64,6 @@ export type CharacterAssets = {
   portraitDataUrl: string; // 64x64 PNG
 };
 
-// ---- zod payload schemas (validation in main; keyed by method) --------------
 const BusinessTypeSchema = z.enum(BUSINESS_TYPE_IDS);
 
 /** An LLM-proposed hire, as cast: the shape the roster generator must produce. */
@@ -90,6 +84,16 @@ const HireProposalSchema = HireCandidateSchema.extend({ spriteSeed: z.string() }
 export type HireProposal = z.infer<typeof HireProposalSchema>;
 
 export const SCHEMAS = {
+  hasAuth: z.void(),
+  startLogin: z.void(),
+  getFounderChoices: z.void(),
+  getCompany: z.void(),
+  loadReport: z.void(),
+  openSaveFolder: z.void(),
+  resetGame: z.void(),
+  stripeStatus: z.void(),
+  restingRunners: z.void(),
+  loadOfficeDesign: z.void(),
   composeCharacter: z.object({ seed: z.string() }),
   foundCompany: z.object({
     name: z.string(),
@@ -97,8 +101,7 @@ export const SCHEMAS = {
     businessType: BusinessTypeSchema,
     founderName: z.string(),
     founderSpriteSeed: z.string(),
-    // the company is born with its cap: agents run on real paid CLI calls, and a
-    // company that exists uncapped for even one scheduler tick can spend
+    // Set the cap at creation; the scheduler can spend on its first tick.
     budget: BudgetSchema,
     hires: z.array(HireProposalSchema).min(1),
   }),
@@ -145,9 +148,10 @@ export const SCHEMAS = {
   }),
   productStatus: z.object({ productId: z.string() }),
   saveOfficeDesign: z.object({ json: z.string() }),
-} satisfies Partial<Record<IpcMethod, z.ZodTypeAny>>;
+} satisfies {
+  [M in InvokeMethod]: IpcKind<M> extends "invoke-void" ? z.ZodType<void> : z.ZodType;
+};
 
-// ---- per-method contract -----------------------------------------------------
 // A method's payload IS its schema's output; only results are declared here,
 // once per method (events list what they carry as their result).
 interface Results {
@@ -213,7 +217,6 @@ type _AssertResultsAreChannels = Exclude<keyof Results, IpcMethod> extends never
 const resultsInSync: _AssertResultsAreChannels = true;
 void resultsInSync;
 
-// ---- derived: renderer-facing bridge shape ---------------------------------
 export type AppBridge = {
   [M in IpcMethod]: IpcKind<M> extends "invoke-void"
     ? () => Promise<Contract[M]["result"]>
@@ -224,10 +227,6 @@ export type AppBridge = {
         : never;
 };
 
-// ---- derived: handler signature main must implement ------------------------
-export type IpcHandler<M extends IpcMethod> =
-  IpcKind<M> extends "invoke-void"
-    ? () => Contract[M]["result"] | Promise<Contract[M]["result"]>
-    : IpcKind<M> extends "invoke"
-      ? (payload: Contract[M]["payload"]) => Contract[M]["result"] | Promise<Contract[M]["result"]>
-      : never;
+export type IpcHandler<M extends InvokeMethod> = (
+  payload: Contract[M]["payload"],
+) => Contract[M]["result"] | Promise<Contract[M]["result"]>;

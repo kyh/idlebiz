@@ -5,20 +5,14 @@ import { bridge } from "@/renderer/bridge";
 import { createProduct, useStore } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
-import { productStateOf, type Overlay } from "@/renderer/ui/hud";
+import { productStateOf } from "@/renderer/ui/product-state";
+import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
 import { taskIn, type Product, type TaskIn } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { errorMessage } from "@/shared/errors";
 import { formatDate } from "@/shared/format";
 
-// ---------------------------------------------------------------------------
-// Shipping log: everything the team has shipped, with summaries that say where
-// the output lives, plus one-click access to the real workspace + product.
-// ---------------------------------------------------------------------------
-
-/** One ship: a single line that expands to the full "what & where" summary,
- *  with every URL and workspace path clickable. */
 const ShipRow = memo(function ShipRow({
   t,
   by,
@@ -55,7 +49,6 @@ const ShipRow = memo(function ShipRow({
   );
 });
 
-/** One product on the strip: where it is, what it has shipped, and what you can do to it. */
 function ProductCard({
   product,
   status,
@@ -121,7 +114,6 @@ function ProductCard({
   );
 }
 
-/** The founder starts a product: a name and what it is, nothing more. */
 function NewProduct({ onNote }: { onNote: (note: string) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");

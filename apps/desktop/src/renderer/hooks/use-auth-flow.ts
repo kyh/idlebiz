@@ -2,7 +2,6 @@ import { useEffect, useEffectEvent, useState } from "react";
 import { bridge } from "@/renderer/bridge";
 import type { AuthFlowEvent } from "@/shared/ipc-registry";
 
-/** The coding CLI the workforce runs on, as far as the probe and the login flow know. */
 export type Auth =
   | { phase: "checking" }
   | { phase: "signed-out" }
@@ -11,14 +10,9 @@ export type Auth =
   | { phase: "signed-in"; lines: readonly string[] };
 
 export const linesOf = (a: Auth): readonly string[] => ("lines" in a ? a.lines : []);
-/** The last few lines the login flow said, plus this one — the box shows four. */
 const withLine = (a: Auth, line: string): readonly string[] => [...linesOf(a).slice(-3), line];
 
-/**
- * The one login flow: main streams AuthFlowEvents while it installs or signs
- * in a CLI, and this folds them into a phase. `probe` asks main whether a CLI
- * is already signed in; a caller shown because there is none starts signed out.
- */
+/** Probe an existing CLI login, or start signed out when the caller already checked. */
 export function useAuthFlow({ probe, onSignedIn }: { probe: boolean; onSignedIn?: () => void }) {
   const [auth, setAuth] = useState<Auth>(probe ? { phase: "checking" } : { phase: "signed-out" });
   const signedIn = useEffectEvent(() => onSignedIn?.());

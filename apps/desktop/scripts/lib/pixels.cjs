@@ -1,4 +1,3 @@
-// Shared raw-pixel helpers for the asset-pipeline scripts.
 const sharp = require("sharp");
 
 /** Decode a PNG to raw RGBA. */

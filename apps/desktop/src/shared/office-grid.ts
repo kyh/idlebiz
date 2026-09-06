@@ -1,17 +1,7 @@
 import type { OfficeLayoutData, PixelPoint } from "./office-layout-schema.ts";
 
-// ---------------------------------------------------------------------------
-// Walking, as pure math over the authored collision grid.
-//
-// The scene paths NPCs and the player over this; main and the office builder
-// validate a layout with it before saving; the static gate walks it from the
-// command line. One implementation, so "reachable" means the same thing to
-// the check that passed and the employee who then gets stuck.
-//
-// The body that collides is a 16x12 box probed at its four corners; paths are
-// found by BFS over a half-tile node grid (a node is walkable when the body
-// fits at its centre). Imports nothing but types so node can load it as-is.
-// ---------------------------------------------------------------------------
+// Shared by the scene, builder and save gate. BFS walks half-tile nodes where
+// a 16x12 body fits, probing its four corners. Type-only imports keep this Node-loadable.
 
 /** Node spacing of the path grid, in px (half a 32px tile). */
 const PATH_STEP = 16;
@@ -86,12 +76,7 @@ function withSolid(grid: WalkGrid, cells: Iterable<GridCell>): WalkGrid {
   return { ...grid, solid };
 }
 
-/**
- * Cells no reachable body ever probes: open floor that can only be looked at.
- * A lane one cell wide, a corner behind a plant, the chair a seat sits in — the
- * 16x12 body cannot fit, so nothing walkable ever touches them. Left open they
- * read as places to go and make the nodes beside them stand half inside furniture.
- */
+/** Open cells no reachable body probes, such as narrow gaps beside furniture. */
 export function pocketCells(grid: WalkGrid, spawn: PixelPoint): GridCell[] {
   const probed = new Set<string>();
   for (const key of reachableTiles(grid, spawn)) {
@@ -110,13 +95,8 @@ export function pocketCells(grid: WalkGrid, spawn: PixelPoint): GridCell[] {
   return pockets;
 }
 
-/**
- * The grid the office is walked on. Two rules the authored collision does not
- * have to know about: a seat's cell is solid (the chair is furniture; sitters
- * are placed on it, walkers must not stand in it), and pockets are sealed.
- * Sealing never changes what is reachable — a pocket is by definition a cell no
- * reachable body touches — so the scene, the save gate and the builder agree.
- */
+// Chairs block walkers; sitters are placed on them. Seal pockets without changing
+// reachability: no reachable body probes a pocket cell.
 export function walkGridOf(layout: GridSource): WalkGrid {
   const seated = authoredGrid(layout);
   return withSolid(seated, pocketCells(seated, layout.spawn));
@@ -131,12 +111,7 @@ export function authoredGrid(layout: GridSource): WalkGrid {
   );
 }
 
-/**
- * The grid with these standing spots closed and the pockets that leaves sealed.
- * The scene uses it for the spots where the founder could not be seen: a node
- * and a cell are one and the same on the 16px grid, so closing the node's cell
- * is what stops anyone standing there.
- */
+/** Close hidden standing spots and seal resulting pockets. Nodes match cells on the 16px grid. */
 export function withoutNodes(
   grid: WalkGrid,
   spawn: PixelPoint,
@@ -223,13 +198,8 @@ function samePoint(a: PixelPoint, b: PixelPoint): boolean {
   return Math.hypot(a.x - b.x, a.y - b.y) < 1;
 }
 
-/**
- * Waypoints (px) from one pixel to another, or null when unreachable.
- *
- * Either end snaps to the nearest walkable node, so walking "to a desk" walks up to
- * it. The final waypoint is the exact target when the body fits there, else the
- * node it snapped to — the walker ends where it can actually stand.
- */
+/** Pixel waypoints, or null when unreachable. Ends snap to walkable nodes; use the exact
+ * target as the final waypoint when the body fits there. */
 export function findPath(grid: WalkGrid, from: PixelPoint, to: PixelPoint): PixelPoint[] | null {
   const start = nearestWalkable(grid, tileOf(from.x, from.y));
   const goal = nearestWalkable(grid, tileOf(to.x, to.y));
@@ -307,13 +277,7 @@ export function canReach(grid: WalkGrid, reachable: ReadonlySet<string>, to: Pix
 
 const at = (p: PixelPoint): string => `${p.x},${p.y}`;
 
-/**
- * Everything wrong with a layout that the schema cannot see: places the office
- * promises people can go, that nobody can actually walk to. Empty means clean.
- *
- * Reachability is from the founder's spawn, the one point every walker shares
- * the floor with. A seat off in a sealed room passes the schema and fails here.
- */
+/** Check grid dimensions and reachability from the founder's spawn. */
 export function layoutIssues(layout: OfficeLayoutData): string[] {
   // judged on the layout as authored: sealing a pocket must not let a seat in a
   // sealed room pass by snapping to the nearest floor on the other side of its wall

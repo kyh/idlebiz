@@ -1,14 +1,7 @@
 import { z } from "zod";
 
-// ---------------------------------------------------------------------------
-// The connected account never travels in the clear. The desktop mints a key
-// pair for one flow and puts the public half in the OAuth state; after the
-// exchange the site seals the account to that key and redirects the sealed
-// envelope to the loopback. What a browser keeps in its history is ciphertext
-// only the process that started the flow can open — and it forgets the private
-// key the moment the flow ends. ECIES over P-256: an ephemeral ECDH agreement,
-// HKDF-SHA256 to an AES-256-GCM key, one message.
-// ---------------------------------------------------------------------------
+// ECIES: ephemeral P-256 ECDH, HKDF-SHA256, AES-256-GCM. The desktop holds the
+// private key for one flow; browser history receives only the sealed account.
 
 const CURVE = "P-256";
 /** An uncompressed P-256 point: 0x04 || x || y. */
@@ -80,11 +73,7 @@ export async function seal(recipientPublicKey: string, payload: Sealable): Promi
   );
 }
 
-/**
- * Open an envelope sealed to this keyring, parsed by `schema`. Null for
- * anything else: another recipient's, tampered, truncated, or not JSON the
- * schema accepts — the caller cannot tell which, and must not need to.
- */
+/** Open and validate an envelope; all decryption and payload failures return null. */
 export async function open<T>(
   ring: Keyring,
   sealed: string,

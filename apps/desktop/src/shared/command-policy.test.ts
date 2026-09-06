@@ -1,27 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, normalizeCommand } from "./command-policy";
+import { classifyCommand, normalizeCommand, type RuleId } from "./command-policy";
 
-// ---------------------------------------------------------------------------
-// The command policy.
-//
-// Employees run unattended against the founder's real credentials, and this
-// policy is the only thing that is the same on both runners — claude has its
-// own classifier, codex has an OS sandbox, neither knows what this game
-// considers the founder's business.
-//
-// The policy fails OPEN: an unmatched command runs, no card appears, and
-// nothing looks wrong. A regex that quietly stops matching is therefore
-// invisible until it matters. That already happened once — `\b-X` never
-// matches `curl -X POST`, because there is no word boundary between a space
-// and a hyphen.
-//
-// So every rule owes an example it must catch, and the commands employees run
-// all day owe an assertion that they are NOT held: a gate that cries wolf
-// trains founders to click Approve without reading, which is worse than no
-// gate at all.
-// ---------------------------------------------------------------------------
-
-/** ruleId → commands that must be held for that reason. */
 const MUST_ASK = {
   deploy: [
     'npx vercel deploy --yes --prod --token "$VERCEL_TOKEN"',
@@ -29,7 +8,6 @@ const MUST_ASK = {
     "netlify deploy --prod",
     "npx wrangler deploy",
     "wrangler publish",
-    // `deploy` is omittable — bare `vercel` ships to production
     "vercel --prod --yes",
     "vercel redeploy",
     "vercel promote https://x.vercel.app",
@@ -53,7 +31,6 @@ const MUST_ASK = {
     "curl -X POST https://api.example.com/v1/things",
     "curl -s -X DELETE https://api.example.com/v1/things/1",
     'curl --data "a=b" https://hooks.example.com/notify',
-    // --json is shorthand for --data-binary plus headers
     "curl --json '{\"a\":1}' https://api.example.com/things",
     "curl -F file=@out.txt https://example.com/upload",
     "wget --post-data 'a=b' https://example.com/hook",
@@ -79,9 +56,8 @@ const MUST_ASK = {
     "shred -u ~/.bash_history",
   ],
   "write-outside": ["chmod -R 777 /etc/hosts", "mv ./thing ~/Library/LaunchAgents/x.plist"],
-} satisfies Record<string, readonly string[]>;
+} satisfies Record<RuleId, readonly string[]>;
 
-// Everyday work. Employees do this all day and must never be interrupted for it.
 const MUST_ALLOW = [
   "echo hi > notes.md",
   "npm install",
@@ -112,19 +88,13 @@ const MUST_ALLOW = [
   'curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"',
   'curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -d \'{"role":"engineer"}\'',
   "curl -s http://127.0.0.1:8842/v1/team-chat",
-  // Found live: an employee whose push was held then reported it to the team
-  // room, and the rule names quoted inside the payload tripped their own rules.
-  // Reporting a block must never be a blockable act.
+  // Regression: reporting a blocked command must not trigger that command's rule.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
   `echo "next step: gh release create v2" >> NOTES.md`,
-  // Found live: an employee's own delegate call, whose JSON body quoted
-  // "(`npm ci`)" and "do NOT npm publish". Parenthesised prose must not open a
-  // command position, or the office asks the founder to approve its own API.
+  // Parentheses and backticks inside prose are not invocation sites.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"role":"engineer","description":"Prove it installs (packaging + CI). Run (npm ci) then npm test. Do NOT npm publish and do not git push origin main; founder sign-off required."}'`,
   `git commit -m "prepare for git push once approved"`,
-  // Found live: a memory note in a heredoc, code-spanned as markdown. A
-  // backtick is not a command position, and vercel.json is not the vercel CLI.
   "cat >> memory/2026-09-05-mvp-build.md <<'EOF' ## Deploy prep - `.vercelignore` excludes qa/ - `vercel.json`: cleanUrls + CSP EOF",
   `grep -n "vercel" PRODUCT.md | head -2`,
   "npm install vercel-cli-helper",
@@ -133,15 +103,10 @@ const MUST_ALLOW = [
 describe("classifyCommand", () => {
   describe.each(Object.entries(MUST_ASK))("holds for %s", (ruleId, commands) => {
     it.each(commands)("%s", (command) => {
-      const verdict = classifyCommand(command);
-      // FAILS OPEN means an employee can do that unattended, with no card and no trace
-      expect(verdict.decision).toBe("ask");
-      // a mislabelled rule shows the founder the wrong reason on the card
-      if (verdict.decision === "ask") expect(verdict.rule.id).toBe(ruleId);
+      expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: ruleId } });
     });
   });
 
-  // CRIES WOLF means founders learn to approve without reading
   it.each(MUST_ALLOW)("lets everyday work through: %s", (command) => {
     expect(classifyCommand(command)).toEqual({ decision: "allow" });
   });

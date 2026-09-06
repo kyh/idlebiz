@@ -2,8 +2,6 @@ import { useAsync } from "@/renderer/hooks/use-async";
 import { useStore, teamMessages } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Modal } from "@/renderer/ui/modal";
-
-/** The Team panel: who is on it, who leads, and the room they talk in. */
 export function Teams({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);

@@ -1,16 +1,4 @@
-// Domain shapes shared across main (control plane) and renderer (game UI).
-// Types and the zod schemas they are inferred from — safe to import anywhere.
-//
-// Identity: ids ARE agentcompanies/v1 slugs (URL-safe, human-readable). A
-// company's id is its folder name under ~/.idlebiz; an employee's id is its
-// folder name under agents/; a task's id is its folder name under tasks/.
-
-/**
- * Which coding-agent CLI powers an employee. Employees run on the player's
- * own installed CLIs — a mixed roster is normal. The union is owned by
- * @repo/agent-driver (type-only re-export keeps this module renderer-safe);
- * use `isRunnerId` from the package where a runtime guard is needed.
- */
+// Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
 export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
 
 import { z } from "zod";
@@ -25,11 +13,6 @@ export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 /** A new employee's look: a seed the compositor maps to a bundled sheet, unique per hire. */
 export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
-
-// ---- blocked asks ------------------------------------------------------------
-// Why a task is waiting on the founder. Structured end-to-end: a free-text
-// question gets an answer box; an integration request renders a [Connect]
-// button and the task auto-resumes once the founder connects.
 
 export const INTEGRATION_KINDS = ["vercel", "stripe"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
@@ -50,8 +33,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
-// TASK.md keeps a single human-editable scalar; the marker syntax exists ONLY
-// at this persistence boundary — everything in memory is the typed union.
+// TASK.md stores a human-editable scalar; in memory, asks use the typed union.
 export function serializeBlockedAsk(a: BlockedAsk): string {
   if (a.type === "question") return a.question;
   if (a.type === "approval") return `[approve:${a.rule}] ${a.command}`;
@@ -70,8 +52,6 @@ export function parseBlockedAsk(s: string): BlockedAsk {
   if (!integration) return { type: "question", question: s };
   return { type: "integration", integration, reason: (m?.[2] ?? "").trim() };
 }
-
-// ---- team-room mentions --------------------------------------------------------
 
 /**
  * Resolve `@token` mentions against the roster: employee slug match first,
@@ -112,8 +92,6 @@ export const RunOutcomeSchema = z.discriminatedUnion("kind", [
 ]);
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
-// ---- queue reliability (TinyAGI-style retry/dead-letter) --------------------
-
 /** How many times a task may run before it is dead-lettered. */
 export const MAX_TASK_ATTEMPTS = 5;
 const RETRY_BASE_MS = 15_000;
@@ -125,7 +103,6 @@ function retryDelayMs(attempt: number): number {
   return Math.min(d, RETRY_CAP_MS);
 }
 
-/** What a failed attempt costs: the next backoff retry, or the dead letter once the attempts are spent. */
 export type FailureVerdict =
   | { kind: "retry"; attempts: number; retryAt: number }
   | { kind: "dead"; attempts: number };
@@ -137,15 +114,6 @@ export function afterFailure(attemptsSoFar: number, now: number): FailureVerdict
     : { kind: "retry", attempts, retryAt: now + retryDelayMs(attempts) };
 }
 
-// ---- business types (onboarding presets) -----------------------------------
-
-interface BusinessTypeRoutine {
-  name: string;
-  intervalHours: number;
-  role: string | null;
-  instruction: string;
-}
-
 export const BUSINESS_TYPE_IDS = ["software", "game-studio", "vc", "ecommerce", "custom"] as const;
 export type BusinessTypeId = (typeof BUSINESS_TYPE_IDS)[number];
 
@@ -153,8 +121,6 @@ export interface BusinessType {
   id: BusinessTypeId;
   label: string;
   pitchPlaceholder: string;
-  hireHint: string;
-  routine: BusinessTypeRoutine | null;
 }
 
 export const BUSINESS_TYPES: readonly BusinessType[] = [
@@ -162,55 +128,27 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
     id: "software",
     label: "Software company",
     pitchPlaceholder: "A delightful to-do app that makes planning feel effortless.",
-    hireHint: "Lean product team: engineers, a designer, and someone on growth/marketing.",
-    routine: null,
   },
   {
     id: "game-studio",
     label: "Game studio",
     pitchPlaceholder: "A cozy pixel-art farming roguelike playable in the browser.",
-    hireHint: "A game needs gameplay engineering, pixel art, sound, and game design.",
-    routine: {
-      name: "Playtest session",
-      intervalHours: 24,
-      role: "design",
-      instruction:
-        "Play the current build end to end. Log what's broken or unfun, then fix the worst issue or delegate it to the right teammate.",
-    },
   },
   {
     id: "vc",
     label: "Venture capital firm",
     pitchPlaceholder:
       "A micro-VC that sources and writes investment memos on early-stage AI startups.",
-    hireHint: "An investment firm needs sourcing, analysis/research, and investor-facing writing.",
-    routine: {
-      name: "Deal pipeline review",
-      intervalHours: 24,
-      role: "analy",
-      instruction:
-        "Review the pipeline docs in the workspace, source 3 new candidate companies, and write or refresh one investment memo.",
-    },
   },
   {
     id: "ecommerce",
     label: "E-commerce business",
     pitchPlaceholder: "An online store selling artist-designed enamel pins.",
-    hireHint: "A shop needs product/merchandising, storefront engineering, ops, and marketing.",
-    routine: {
-      name: "Store audit",
-      intervalHours: 24,
-      role: "market",
-      instruction:
-        "Walk the storefront as a customer: product pages, copy, pricing, checkout. Improve the weakest page and draft one promotion.",
-    },
   },
   {
     id: "custom",
     label: "Something else…",
     pitchPlaceholder: "A daily AI-curated newsletter for indie hackers.",
-    hireHint: "",
-    routine: null,
   },
 ];
 
@@ -219,8 +157,6 @@ export function businessTypeById(id: BusinessTypeId): BusinessType {
   if (!found) throw new Error(`unknown business type ${id}`);
   return found;
 }
-
-// ---- budget (real token spend) ----------------------------------------------
 
 /** Founder's AI spending budget. Infinite IS the off state — no third mode. */
 export const BudgetSchema = z.discriminatedUnion("mode", [
@@ -234,7 +170,7 @@ export function isOutOfBudget(co: Company): boolean {
 }
 
 export interface Company {
-  id: string; // slug
+  id: string;
   name: string;
   mission: string;
   businessType: BusinessTypeId;
@@ -248,19 +184,19 @@ export interface Company {
   ships: number; // units of work the team has shipped
   revenueUsd: number | null; // REAL revenue (Stripe); null until a source is connected
   users: number | null; // REAL users (analytics); null until a source is connected
-  budget: Budget; // founder-set cap on real AI spend
+  budget: Budget;
   spentUsd: number; // lifetime real token spend (USD)
   createdAt: number;
 }
 
 export interface Employee {
-  id: string; // slug (folder name under agents/)
+  id: string;
   companyId: string;
   name: string;
   role: string;
   title: string;
   persona: string; // system-prompt flavor for the agent
-  runner: AgentRunner; // which CLI executes this employee
+  runner: AgentRunner;
   sessionId: string | null;
   spriteSeed: string; // deterministic sprite + portrait
   deskIndex: number; // which desk slot in the office
@@ -275,14 +211,9 @@ export interface VercelBinding {
   teamId: string | null;
 }
 
-/**
- * Something the company builds and ships: its own workspace, its own deploy,
- * its own count of shipped work. A company's first product shares the company
- * workspace (that is where it was born); every later one gets its own under
- * products/<slug>/.
- */
+/** The first product shares the company workspace; later products have their own. */
 export interface Product {
-  id: string; // slug (folder name under products/)
+  id: string;
   companyId: string;
   name: string;
   description: string;
@@ -299,12 +230,6 @@ export interface Product {
 export const employeeStatusOf = (status: TaskStatus): EmployeeStatus =>
   status === "running" ? "working" : "idle";
 
-/**
- * A named group of employees with a designated leader (TinyAGI-style team).
- * The leader receives direction and fans work out to / chains it through members;
- * everyone shares a persistent chat room they read and post to during runs.
- */
-/** One message in the company's chat room. */
 export interface TeamMessage {
   id?: number;
   companyId: string;
@@ -313,11 +238,6 @@ export interface TeamMessage {
   createdAt: number;
 }
 
-/**
- * Where a task is, with only what that place needs: a queued task knows its
- * backoff, a running one its run, a blocked one the ask, a finished one what
- * it left behind. Nothing else can be read in a state it does not belong to.
- */
 export type TaskState =
   | { kind: "todo" }
   | {
@@ -348,7 +268,7 @@ export const taskIn =
     t.state.kind === kind;
 
 export interface Task {
-  id: string; // slug (folder name under tasks/)
+  id: string;
   companyId: string;
   /** The product this work is for; null is company-level work (a review, a routine). */
   productId: string | null;
@@ -367,9 +287,9 @@ export interface Task {
   completedAt: number | null;
 }
 
-/** A recurring directive: fires as a real task on a cadence (Paperclip-style heartbeat). */
+/** A recurring instruction that creates a task at each interval. */
 export interface Routine {
-  id: string; // slug (folder name under routines/)
+  id: string;
   companyId: string;
   name: string;
   instruction: string;

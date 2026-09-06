@@ -18,7 +18,6 @@ const base: Omit<Task, "state"> = {
   completedAt: 1_700_000_002_000,
 };
 
-/** Through the markdown and back: what the file says is what the store sees. */
 const roundTrip = (t: Task): Task => docToTask(parseDoc(serializeDoc(taskToDoc(t))), t.companyId);
 
 describe("task codec", () => {

@@ -50,10 +50,6 @@ export interface Office {
 // migrating parser is for files from disk), so it parses strictly, at module load.
 export const BUNDLED_LAYOUT: OfficeLayoutData = officeLayoutSchema.parse(rawLayout);
 
-function objectTextureKey(id: string): string {
-  return `office-object-sprite-${id}`;
-}
-
 /**
  * Spacing between two neighbours in a flat stack. Small enough that a band of
  * STACK_STEP⁻¹ objects (a million) still cannot reach the band above it, so no
@@ -84,7 +80,7 @@ function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObje
   return objects.map((obj, index) => ({
     def: obj,
     id: obj.id,
-    key: objectTextureKey(obj.id),
+    key: `office-object-sprite-${obj.id}`,
     path: objectSpritePath(obj),
     x: obj.x,
     y: obj.y,

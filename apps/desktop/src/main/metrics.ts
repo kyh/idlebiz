@@ -8,22 +8,7 @@ import type { Product } from "@/shared/domain";
 import { jsonValueSchema, type JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
-// ---------------------------------------------------------------------------
-// REAL business metrics only — there is no simulated economy. Numbers exist
-// when a source is connected, otherwise the HUD shows a connect button.
-// Sources are configured per company in metrics.json:
-//
-//   ~/.idlebiz/<company>/metrics.json
-//   {
-//     "stripe": true,                          // revenue: sum of recent Stripe charges
-//                                              //   (needs STRIPE_SECRET_KEY in secrets.json)
-//     "vercel": { "projectId": "prj_..." },    // users: Web Analytics visitors
-//                                              //   (needs VERCEL_TOKEN in secrets.json)
-//     "plausible": { "domain": "mysite.com" }, // users: 30d visitors via Plausible
-//                                              //   (needs PLAUSIBLE_API_KEY in secrets.json)
-//     "custom": { "url": "https://..." }       // any endpoint returning {"users":n,"revenue":n}
-//   }
-// ---------------------------------------------------------------------------
+// Providers live in each company's metrics.json; credentials live in secrets.json.
 
 export const PULSE_MS = 30_000;
 
@@ -46,11 +31,10 @@ const MetricsConfigSchema = z.object({
 });
 export type MetricsConfig = z.infer<typeof MetricsConfigSchema>;
 
-/** Absolute real-world numbers; null fields mean "no source configured". */
+/** Null metrics preserve the last reported value when a source is absent or unavailable. */
 export interface RealSnapshot {
   users: number | null;
   revenue: number | null;
-  /** Visitors per product, for the products bound to a Vercel project. */
   productUsers: ReadonlyMap<string, number | null>;
   /** A provider's credentials were rejected (e.g. Stripe token revoked). */
   authError?: boolean;
@@ -90,7 +74,6 @@ async function stripeGet(path: string, key: string): Promise<JsonValue> {
   }
 }
 
-// Stripe list envelopes, parsed at the boundary (unknown fields ignored)
 const StripeChargesSchema = z.object({
   data: z
     .array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() }))
@@ -151,7 +134,6 @@ interface StripeSnapshot {
   authError: boolean;
 }
 
-/** Revenue + customer count from the connected (or hand-keyed) Stripe account. */
 async function stripeSnapshot(): Promise<StripeSnapshot> {
   const key = getSecret("STRIPE_CONNECT_TOKEN") ?? getSecret("STRIPE_SECRET_KEY");
   if (!key) return { revenue: null, customers: null, authError: false };
@@ -206,7 +188,6 @@ async function productVisitors(
   return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
 }
 
-/** Fetch the real numbers for every configured source (nulls where unavailable). */
 export async function fetchRealMetrics(
   cfg: MetricsConfig | null,
   products: readonly Product[],

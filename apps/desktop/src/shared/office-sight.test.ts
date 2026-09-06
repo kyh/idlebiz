@@ -51,14 +51,11 @@ describe("faceCovered", () => {
     // left half opaque; flipped, that half lands on the right
     const half: OpaqueMask = { opaque: new Uint8Array(32 * 32), w: 32, h: 32 };
     for (let y = 0; y < 32; y++) for (let x = 0; x < 16; x++) half.opaque[y * 32 + x] = 1;
-    const plain = faceCovered(node, [{ obj: overFace({ anchorY: 100 }), mask: half }], silhouette);
-    const flipped = faceCovered(
-      node,
-      [{ obj: overFace({ anchorY: 100, flipX: true }), mask: half }],
-      silhouette,
-    );
+    const obj = overFace({ anchorY: 100, x: node.x });
+    const plain = faceCovered(node, [{ obj, mask: half }], silhouette);
+    const flipped = faceCovered(node, [{ obj: { ...obj, flipX: true }, mask: half }], silhouette);
     expect(plain).toBe(0.5);
-    expect(flipped).toBe(0.5);
+    expect(flipped).toBe(0);
   });
 });
 

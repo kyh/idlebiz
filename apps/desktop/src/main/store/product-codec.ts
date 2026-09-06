@@ -8,8 +8,6 @@ import {
   type FrontmatterDoc,
 } from "@/main/store/frontmatter";
 
-// PRODUCT.md ⇄ Product. Pure, so it round-trips under test.
-
 export function productToDoc(p: Product): FrontmatterDoc {
   const metadata: FrontmatterDoc["metadata"] = {
     workspaceDir: p.workspaceDir,

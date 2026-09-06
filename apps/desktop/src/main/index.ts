@@ -42,14 +42,11 @@ const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let metricsTimer: ReturnType<typeof setInterval> | null = null;
 
-/** One pulse of the business metrics loop (also fired on demand, e.g. Stripe connect).
- * Real sources only — with nothing connected there are no numbers to move. */
 function runMetricsPulse(): void {
   const company = store.getDefaultCompany();
   if (!company) return;
   const products = store.listProducts(company.id);
   const cfg = readMetricsConfig(company.id);
-  // nothing to ask anyone: no provider configured, no product bound
   if (!cfg?.stripe && !cfg?.plausible && !cfg?.custom && products.every((p) => p.vercel === null))
     return;
   void (async () => {
@@ -64,13 +61,8 @@ function runMetricsPulse(): void {
   })();
 }
 
-/**
- * Full reset: stop every writer, abort live agent runs, then wipe ~/.idlebiz
- * (companies, workspaces, auth, secrets) and relaunch into onboarding.
- * Order matters — suspend writes BEFORE disposing so settling runs can't
- * resurrect files after the rm.
- */
-async function resetGame(): Promise<{ ok: boolean }> {
+// Suspend writes before aborting runs so their completion cannot resurrect the save.
+function resetGame() {
   scheduler.stop();
   if (metricsTimer) clearInterval(metricsTimer);
   suspendWrites();
@@ -109,8 +101,10 @@ function registerIpcHandlers(): void {
 
   handle("generateHires", async ({ companyName, mission, businessType }) => {
     const candidates = await generateCandidates({ companyName, mission, businessType });
-    return candidates.map((c, i) =>
-      Object.assign(c, { spriteSeed: spriteSeedFor(c.role, c.name, `-${i}`) }),
+    return candidates.map((candidate, i) =>
+      Object.assign(candidate, {
+        spriteSeed: spriteSeedFor(candidate.role, candidate.name, `-${i}`),
+      }),
     );
   });
 
@@ -119,12 +113,12 @@ function registerIpcHandlers(): void {
   handle("foundCompany", ({ hires, ...company }) =>
     store.foundCompany({
       ...company,
-      hires: hires.map((h, i) => Object.assign({ runner: agentDriver.pickRunner(i) }, h)),
+      hires: hires.map((hire, i) => ({ runner: agentDriver.pickRunner(i), ...hire })),
     }),
   );
 
-  handle("getCompany", () => store.getDefaultCompany());
-  handle("loadReport", () => store.loadReport());
+  handle("getCompany", store.getDefaultCompany);
+  handle("loadReport", store.loadReport);
   handle("openSaveFolder", async () => {
     const err = await shell.openPath(ROOT_DIR);
     if (err) throw new Error(err);
@@ -135,21 +129,15 @@ function registerIpcHandlers(): void {
 
   handle("setBudget", ({ companyId, budget }) => {
     const company = store.setBudget(companyId, budget);
-    // setting a cap below what's already spent pauses the office immediately
     if (isOutOfBudget(company)) scheduler.haltForBudget(company);
     return store.requireCompany(companyId);
   });
 
   handle("resetSpend", ({ companyId }) => store.resetSpend(companyId));
 
-  handle("resetGame", () => resetGame());
+  handle("resetGame", resetGame);
 
-  // The office builder (#/ui) persists the layout to ~/.idlebiz, recovered at next
-  // launch (see store.refresh → applyOfficeLayout). Survives rebuilds + packaging.
-  //
-  // Refused here, with reasons, rather than written and then silently replaced by
-  // the bundled office at next boot: a layout that fits the schema but seats
-  // someone in a sealed room is as broken as one that does not parse.
+  // Validate reachability as well as shape before replacing the saved office.
   handle("saveOfficeDesign", ({ json }) => {
     const layout = parseOfficeLayout(parseJson(json));
     const issues = layoutIssues(layout);
@@ -221,7 +209,6 @@ function registerIpcHandlers(): void {
     store.recentTeamMessages(companyId, limit ?? 30),
   );
 
-  // the founder types in the room; @first-name wakes that employee
   handle("postTeamChat", ({ companyId, text }) => {
     scheduler.founderMessage(companyId, text.trim());
     return { ok: true };
@@ -261,13 +248,11 @@ function registerIpcHandlers(): void {
   }));
 }
 
-/** Where the renderer lives: the dev server under electron-vite, the built file otherwise. */
 function appUrl(): string {
   const dev = isDev ? process.env["ELECTRON_RENDERER_URL"] : undefined;
   return dev ?? pathToFileURL(path.join(moduleDir, "../renderer/index.html")).toString();
 }
 
-/** A link the OS browser may open: http(s) and nothing else, judged by a parsed URL. */
 function isWebUrl(url: string): boolean {
   try {
     const { protocol } = new URL(url);
@@ -310,8 +295,7 @@ function createWindow(): BrowserWindow {
 
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
-    // background mac app: no windows → no dock icon, just the tray briefcase
-    // (which badges + notifies when the office is still actively working)
+    // Keep the background office accessible through the tray.
     if (BrowserWindow.getAllWindows().length === 0) {
       app.dock?.hide();
       appTray.setWindowless(true);
@@ -320,7 +304,6 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-/** Bring the office back: focus the open window or create one (dock returns too). */
 function ensureWindow(): void {
   void app.dock?.show();
   appTray.setWindowless(false);
@@ -349,23 +332,19 @@ void (async () => {
     callback(false),
   );
   store.initStore();
-  exportSecretsToEnv(); // founder keys → env, inherited by every agent's shell
-  await adoptShellPath(); // a Finder-launched app has no idea where the CLIs are
-  agentDriver.init(); // probe installed CLIs (claude / codex)
-  await controlPlane.start(); // loopback API running agents curl back into
+  exportSecretsToEnv();
+  await adoptShellPath();
+  agentDriver.init();
+  await controlPlane.start();
   registerIpcHandlers();
 
   activityEvents.on("activity", (e) => broadcast("onActivity", e));
-  // start the idle-game loop: idle employees self-direct work while autopilot is on
   scheduler.start();
 
-  // periodic business pulse: with a metrics.json configured, the real providers
-  // (Stripe revenue + customers, Vercel) refresh the company's numbers
   metricsTimer = setInterval(runMetricsPulse, PULSE_MS);
 
-  // an integration just connected: the numbers flip without waiting for the
-  // pulse, and every task blocked on that integration resumes
   initStripeConnect({
+    openExternal: shell.openExternal,
     notify: (status) => broadcast("onStripeStatus", status),
     onConnected: () => {
       runMetricsPulse();
@@ -381,7 +360,6 @@ void (async () => {
 
   mainWindow = createWindow();
 
-  // the menu-bar presence: closing the window leaves the office running here
   appTray.init({
     openWindow: ensureWindow,
     setAutopilot: (on) => {
@@ -392,7 +370,7 @@ void (async () => {
     },
   });
 
-  app.on("activate", () => ensureWindow());
+  app.on("activate", ensureWindow);
 })();
 
 app.on("window-all-closed", () => {

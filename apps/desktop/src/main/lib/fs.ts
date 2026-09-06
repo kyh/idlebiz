@@ -70,6 +70,7 @@ const TAIL_BYTES = 1024 * 1024;
  * TAIL_BYTES rather than by how long the company has been playing.
  */
 export function readJsonlTail<T>(path: string, schema: z.ZodType<T>, limit: number): T[] {
+  if (limit <= 0) return [];
   let text: string;
   try {
     const fd = openSync(path, "r");
@@ -87,7 +88,8 @@ export function readJsonlTail<T>(path: string, schema: z.ZodType<T>, limit: numb
     return [];
   }
   const rows: T[] = [];
-  for (const line of text.split("\n").slice(-limit)) {
+  const lines = (text.endsWith("\n") ? text.slice(0, -1) : text).split("\n");
+  for (const line of lines.slice(-limit)) {
     if (line.trim() === "") continue;
     try {
       const parsed = schema.safeParse(parseJson(line));

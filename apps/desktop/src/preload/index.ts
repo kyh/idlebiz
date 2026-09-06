@@ -26,8 +26,4 @@ const entries = Object.entries(CHANNELS).map(([method, def]): [string, BridgeMet
   }
 });
 
-// SAFETY: entries holds exactly one kind-matched bridge function per CHANNELS
-// method — the same record AppBridge is derived from — so the assembled object
-// has every AppBridge key; Object.fromEntries merely erases the per-key types.
-const appBridge = Object.fromEntries(entries) as AppBridge;
-contextBridge.exposeInMainWorld("appBridge", appBridge);
+contextBridge.exposeInMainWorld("appBridge", Object.fromEntries(entries));

@@ -24,10 +24,9 @@ No database, no Docker, no server to provision — `pnpm install` really is the 
 There is no bootstrap script and nothing to seed.
 
 **`pnpm dev:desktop` is not a plain dev server.** It runs `pnpm dev:kill` first
-(`apps/desktop/scripts/devkill.sh`), which SIGKILLs turbo / electron-vite / Electron /
-esbuild processes matched to _this checkout's_ absolute path — and then kills whatever holds
-TCP **9222**, no matter who owns it. Check `lsof -ti tcp:9222` before starting: an unrelated
-agent-browser session on that port will be killed.
+(`apps/desktop/scripts/devkill.sh`), which terminates this checkout's turbo / electron-vite /
+Electron / esbuild processes, then kills any that remain after three seconds. It leaves
+unrelated processes on TCP **9222** alone and refuses to start while that port is occupied.
 
 ## The one hard prerequisite
 
@@ -68,39 +67,31 @@ agent-browser screenshot /tmp/web.png
 
 Runtime, desktop — attach to the Electron renderer over CDP.
 
-> **⚠️ Booting the desktop app spends real money and mutates the founder's save.**
-> `main/index.ts` calls `scheduler.start()` unconditionally at boot, and `Scheduler.start()`
-> fires `onTick()` _synchronously_ — which drains the queued-task queue (deliberately, "so
-> backoff retries resume even with autopilot off") and then self-directs idle employees if
-> autopilot is on. Every run it starts is a real `claude` / `codex` session billed to the
-> founder's own CLI login, writing markdown into the real save. There is no test root:
-> `ROOT_DIR` is hardcoded to `~/.idlebiz` (`main/paths.ts`) and `getDefaultCompany()` returns
-> the most recently created company.
->
-> **Run `ls ~/.idlebiz` first.** If it lists a company directory, do _not_ run
-> `pnpm dev:desktop` — move the directory aside first, or stay on `pnpm dev:web` and the
-> static gate. (Making `ROOT_DIR` overridable is the open prerequisite for safe desktop
-> fixtures; until then this is a manual check.)
+> **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
+> which immediately drains queued work, even with autopilot off. Existing companies can
+> launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
+> (`main/paths.ts`); the dev task passes it through Turbo. Isolation protects the real save,
+> but onboarding and employee runs still bill the signed-in CLI.
 
 **(a) CLI-free routes** — the office builder and the object catalog render with no company,
 so no scheduler work is required to see them. They contain no Phaser; skip the block below.
 
 ```sh
-ls ~/.idlebiz                   # STOP if a company dir exists (see warning above)
-lsof -ti tcp:9222 || true       # must be free, or dev:kill will take it
-pnpm dev:desktop &
+idlebiz_test_root=$(mktemp -d /tmp/idlebiz-ui.XXXXXX)
+lsof -ti tcp:9222 || true       # must be free
+IDLEBIZ_ROOT_DIR="$idlebiz_test_root" pnpm dev:desktop &
 agent-browser connect 9222
 agent-browser eval 'location.hash = "#/ui"'   # or "#/office-assets"
 agent-browser screenshot /tmp/builder.png
 agent-browser close
 pnpm dev:kill                   # tear the session down
+rm -rf "$idlebiz_test_root"
 ```
 
 **(b) The office scene** — only on the default route (`#/`), and only with a finished
 onboarding, i.e. a signed-in CLI. Do not navigate away from `#/` first: `#/ui` and
-`#/office-assets` unmount `<PhaserGame>`, whose cleanup runs `game.destroy(true)` while
-`window.__game` keeps pointing at the destroyed instance — the evals below then throw or
-silently no-op. Under headless automation Phaser's boot also stalls (`document.hidden` never
+`#/office-assets` unmount `<PhaserGame>` and clear its debug handle. Under headless automation
+Phaser's boot also stalls (`document.hidden` never
 flips), so the canvas stays blank until you step it:
 
 ```sh
@@ -115,19 +106,18 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 
 ## What is verifiable without a signed-in CLI
 
-| Surface                                | How to reach it                     | CLI needed? |
-| -------------------------------------- | ----------------------------------- | ----------- |
-| `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                      | no          |
-| Office builder (`#/ui`)                | `location.hash = "#/ui"`            | no          |
-| Object catalog (`#/office-assets`)     | `location.hash = "#/office-assets"` | no          |
-| Onboarding modal (first screen)        | boot with an empty `~/.idlebiz`     | no          |
-| Office, HUD, dialogue, teams, products | finish onboarding                   | **yes**     |
+| Surface                                | How to reach it                       | CLI needed? |
+| -------------------------------------- | ------------------------------------- | ----------- |
+| `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                        | no          |
+| Office builder (`#/ui`)                | `location.hash = "#/ui"`              | no          |
+| Object catalog (`#/office-assets`)     | `location.hash = "#/office-assets"`   | no          |
+| Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
+| Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
 The last row is a hard gate, not a convenience: `renderer/ui/poke-onboarding.tsx` calls
 `generateHires`, which dispatches a real agent run (`main/agents/onboarding.ts`), and
-`finalize()` bails when no hires come back. There is no seeded save — and note the app
-writes to the _real_ `~/.idlebiz`, so anything you create there lands in the founder's
-actual game, and booting at all starts the scheduler against it (see the warning above).
+`finalize()` bails when no hires come back. Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
+bundled seeded save. Employee runs still use the signed-in CLI.
 
 ## Platform matrix
 
@@ -152,12 +142,18 @@ rather than crashing boot.
   `PLAUSIBLE_API_KEY`, `VERCEL_TOKEN`.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
-  (`packages/agent-driver/src/runner.ts`).
+  (`packages/agent-driver/src/registry.ts`).
+- `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
+  to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
   `pnpm --filter @repo/desktop release`.
 
 ## Rules that matter
 
+- **One active company per launch.** Boot selects the newest company by `createdAt`
+  (alphabetical slug breaks ties), then loads and migrates only that save. Older saves
+  stay untouched. Unreadable company metadata blocks loading and founding; entity IDs
+  resolve only within the active company. There is no company switching during a launch.
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
 - **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
@@ -170,11 +166,11 @@ rather than crashing boot.
   no reachable spot with the player's face painted over. The walker seals the second and
   the scene seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`),
   so a saved layout is safe to walk even when its data would fail the gate.
-- **Unit tests cover the pure parts only.** `pnpm --filter @repo/desktop test` runs vitest
-  over seating (`office-placement.ts`), poses, the layout schema and migration, the walk
-  grid, the activity schema, and the command policy in `shared/command-policy.ts` (every
-  rule owes an example it must catch, and everyday commands owe an assertion they are not
-  held). Nothing that needs Electron or Phaser is unit-tested; drive it live instead.
+- **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
+  schemas, codecs, store/integration behavior under temporary save roots, and real loopback
+  requests. Command policy
+  rules each need a matching example; everyday commands must remain allowed. Drive anything
+  requiring a window live instead.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
   for channel names and must stay dependency-free (the sandboxed preload imports it);
   zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its
@@ -205,8 +201,8 @@ rather than crashing boot.
   `office-layout-schema.ts` (office-design.json, versioned and migrated) and `office-grid.ts`
   (walking as pure math; the scene, the save handler and `check:office` all use it).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
-- `packages/agent-driver` — spawns `claude` / `codex`, normalizes their NDJSON event streams,
-  prices usage, tracks rate limits. Source-only, no build step.
+- `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
+  prices usage, and tracks rate limits. Source-only, no build step.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
   and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,

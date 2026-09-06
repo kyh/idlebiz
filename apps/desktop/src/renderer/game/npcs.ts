@@ -227,8 +227,7 @@ export class NpcManager {
    * colleague who was standing gets the desk a released teammate freed.
    */
   private replan(): SeatPlan {
-    const employees = [...this.roster.values()].map((e) => ({ id: e.id, deskIndex: e.deskIndex }));
-    const next = planSeats(this.seats.length, employees, this.seatPlan);
+    const next = planSeats(this.seats.length, [...this.roster.values()], this.seatPlan);
     this.seatPlan = next;
     for (const [id, index] of next) {
       const npc = this.npcs.get(id);

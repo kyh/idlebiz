@@ -27,89 +27,47 @@ import type {
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
-/**
- * Slots the office's own background work may never occupy.
- *
- * Autopilot refills every free slot each tick with multi-minute runs, and
- * nothing preempts a run in flight — so without a reserved lane, speaking to
- * an employee meant waiting for one of them to finish. Measured at six-plus
- * minutes between saying something and the employee starting on it, which is
- * the wrong feel for a game whose whole premise is that you are the founder
- * talking to your staff.
- *
- * Priority ordering alone did not fix this: founder-initiated work is already
- * queued `high`, but priority only orders what is *waiting*, and the slots
- * were already gone.
- *
- * The cost is a third of background throughput while the lane sits idle. For
- * an idle game that is invisible; being ignored for six minutes is not.
- */
+// Reserve capacity for founder requests; queued priority cannot preempt a live run.
 const FOUNDER_RESERVED_SLOTS = 1;
-/** How many slots the office's own work may fill; the rest is the founder's. */
 const BACKGROUND_CAPACITY = GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
 
 const AUTOPILOT_TICK_MS = 10_000;
 
-/** A run is in flight for them. The scheduler owns this fact; the store only holds it. */
 const isWorking = (employeeId: string): boolean =>
   store.getEmployee(employeeId)?.status === "working";
 
-/**
- * Async run scheduler. Respects a global concurrency cap and a per-employee
- * single-active lock (the employee's in-memory status, plus the task's runId
- * lock persisted in its TASK.md). Streams agent events to the activity log.
- */
 class Scheduler {
-  private active = new Map<string, string>(); // runId -> employeeId
-  /**
-   * runId -> USD spent by that run so far, priced from streamed token deltas.
-   * An estimate on purpose: the authoritative figure arrives with the result
-   * and is what gets written to spentUsd. This exists only so the cap can be
-   * enforced while runs are still going.
-   */
+  private active = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private stopped = false;
 
-  /** Begin the idle-game loop: idle employees self-direct work while autopilot is on. */
   start(): void {
     if (this.timer) return;
+    this.stopped = false;
     this.timer = setInterval(() => this.onTick(), AUTOPILOT_TICK_MS);
     this.onTick();
   }
 
-  /**
-   * One scheduler beat. Always drain the queue first so backoff retries resume
-   * even with autopilot off; then self-direct idle employees if autopilot is on.
-   */
+  // Retry queued work even with autopilot off.
   private onTick(): void {
     this.tick();
     this.tickAutopilot();
   }
 
-  /** Stop the loop (reset teardown). In-flight runs settle on their own. */
+  /** Stop scheduling; in-flight runs settle on their own. */
   stop(): void {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
-  /**
-   * May this company buy work right now? One predicate for the four places
-   * that ask — queueing paths use it to avoid writing task rows for work that
-   * will never run, and startRun uses it because it is the only place a paid
-   * CLI is actually spawned. Finding the budget gone halts the office.
-   */
   private admit(company: Company): boolean {
     if (!isOutOfBudget(company)) return true;
     this.haltForBudget(company);
     return false;
   }
 
-  /**
-   * The budget is spent: pause autopilot and tell the founder why. Nothing in
-   * flight is killed — a CLI reports its cost with the turn's result, so a kill
-   * would only discard finished work, and the founder was told "whatever is
-   * already running still finishes". Idempotent, so every path that discovers
-   * the cap can call it: a run's bill landing, the founder lowering the cap.
-   */
+  /** Pause autopilot at the cap; running turns finish and report their cost. */
   haltForBudget(company: Company, spentUsd = company.spentUsd): void {
     if (!company.autopilot) return;
     store.setAutopilot(company.id, false);
@@ -119,7 +77,6 @@ class Scheduler {
     });
   }
 
-  /** Fire any routine whose cadence is due, assigned to a matching idle employee. */
   private fireDueRoutines(company: Company, employees: Employee[]): void {
     const now = Date.now();
     for (const r of store.listRoutines(company.id)) {
@@ -143,7 +100,6 @@ class Scheduler {
     }
   }
 
-  /** Give an employee work now: create the task and try to start it. */
   private brief(
     company: Company,
     emp: Employee,
@@ -162,8 +118,8 @@ class Scheduler {
     return task;
   }
 
-  /** Top up idle employees with self-directed work (respecting the concurrency cap). */
   private tickAutopilot(): void {
+    if (this.stopped) return;
     const company = store.getDefaultCompany();
     if (!company || !company.autopilot || !this.admit(company)) return;
     const employees = store.listEmployees(company.id);
@@ -171,7 +127,6 @@ class Scheduler {
     for (const emp of employees) {
       if (this.active.size >= BACKGROUND_CAPACITY) break;
       if (emp.status !== "idle") continue;
-      // don't brief employees whose CLI is resting on a usage limit
       if (agentDriver.restingRunner(emp.runner) !== null) continue;
       const open = store
         .openTasksFor(emp.id)
@@ -210,12 +165,10 @@ class Scheduler {
     });
   }
 
-  /** Resolve an employee id to a display name for briefs/feeds. */
   private empName(id: string): string {
     return store.getEmployee(id)?.name ?? "someone";
   }
 
-  /** Tools the running agent can call to operate the business with teammates. */
   private hooksFor(
     emp: Employee,
     company: Company,
@@ -223,7 +176,6 @@ class Scheduler {
   ): RunToolHooks {
     const isLeader = company.leaderId === emp.id;
 
-    /** Mirror a line into the company room and the activity feed. */
     const post = (text: string, to: string | null = null): void => {
       store.postTeamMessage(company.id, emp.id, text);
       publishActivity({ employeeId: emp.id, kind: "chat", message: text, payload: { to } });
@@ -281,7 +233,6 @@ class Scheduler {
         const hireName = name ?? `${title} ${all.length + 1}`;
         let hired: Employee;
         try {
-          // the seat cap is enforced by the store — every hire path hits it
           hired = store.createEmployee({
             companyId: company.id,
             name: hireName,
@@ -337,12 +288,7 @@ class Scheduler {
     };
   }
 
-  /**
-   * Founder speaks in the team room. The message lands in the channel and the
-   * room log; `@slug` or `@first-name` mentions (whole-token, see
-   * resolveMentions) wake those employees immediately with the message as
-   * context (paperclip's mention-wake convention).
-   */
+  /** Whole-token @slug or @first-name mentions wake the addressed employees. */
   founderMessage(companyId: string, text: string): void {
     this.say(companyId, text, null);
     for (const employeeId of resolveMentions(text, store.listEmployees(companyId))) {
@@ -350,17 +296,12 @@ class Scheduler {
     }
   }
 
-  /** The founder's line lands in the room and the feed, addressed or to everyone. */
   private say(companyId: string, line: string, to: string | null): void {
     store.postTeamMessage(companyId, null, line);
     publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to } });
   }
 
-  /**
-   * The founder speaks to one employee. The room still records it (addressed,
-   * so teammates see who was asked) and the employee wakes on the instruction
-   * itself — not on whether the room's mention grammar recognised them.
-   */
+  /** Direct requests wake the employee without relying on mention parsing. */
   directEmployee(employeeId: string, instruction: string): void {
     const emp = store.getEmployee(employeeId);
     if (!emp) throw new Error(`no employee ${employeeId}`);
@@ -368,7 +309,6 @@ class Scheduler {
     this.wakeEmployee(employeeId, founderPing(instruction));
   }
 
-  /** A completed task ships work: the count behind the product plate, the feed, and every tenth one a cheer. */
   private ship(
     task: Task,
     at: { runId: string; taskId: string; employeeId: string },
@@ -386,19 +326,16 @@ class Scheduler {
     }
   }
 
-  /** Every blocked-ask type resumes the same way: answer it, then run the continuation. */
   private resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
     const continuation = store.resolveBlockedWithAnswer(taskId, answer);
     if (!continuation || !continuation.assigneeId) throw new Error(whenNotBlocked);
     return this.assign(continuation.id, continuation.assigneeId);
   }
 
-  /** The founder answers a question the agent stopped on. */
   answerQuestion(taskId: string, answer: string): Task {
     return this.resumeBlocked(taskId, answer, "task is not awaiting an answer");
   }
 
-  /** The founder signs off (or refuses) a command the policy held. */
   resolveApproval(taskId: string, approved: boolean): Task {
     const task = store.getTask(taskId);
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval")
@@ -409,10 +346,6 @@ class Scheduler {
     return this.resumeBlocked(taskId, approvalAnswer(approved), "could not resume the task");
   }
 
-  /**
-   * The founder connected an integration: every task blocked on a typed ask
-   * for it resumes automatically (paperclip's wake-assignee convention).
-   */
   resumeIntegrationAsks(kind: IntegrationKind): void {
     const company = store.getDefaultCompany();
     if (!company) return;
@@ -428,11 +361,7 @@ class Scheduler {
     }
   }
 
-  /**
-   * Event wake (paperclip convention): create + assign a task for an employee
-   * right now instead of waiting for the autopilot tick. Coalesces — the same
-   * wake, still waiting for the same employee, is not duplicated.
-   */
+  /** Coalesce identical requests still waiting for the same employee. */
   wakeEmployee(employeeId: string, brief: TaskBrief): Task | null {
     const emp = store.getEmployee(employeeId);
     if (!emp) return null;
@@ -460,12 +389,7 @@ class Scheduler {
     }
   }
 
-  /**
-   * Player assigns a task to an employee, then we try to run it. Out of budget
-   * the claim still lands — the queue holds it, and it starts when the cap is
-   * raised; refusing here would strand an answered ask's continuation as a
-   * todo that nothing ever picks up.
-   */
+  /** Claim even at the budget cap so answered continuations remain queued. */
   assign(taskId: string, employeeId: string): Task {
     const claimed = store.claimTask(taskId, employeeId);
     if (!claimed) throw new Error("task is not assignable");
@@ -474,32 +398,27 @@ class Scheduler {
     return store.getTask(taskId) ?? claimed;
   }
 
-  /** Pull queued tasks into runs while we have capacity. */
   tick(): void {
-    while (this.active.size < GLOBAL_CONCURRENCY_CAP) {
-      // Past the background capacity only founder-initiated work starts —
-      // talking to an employee, or resuming what you just answered.
-      const backgroundOk = this.active.size < BACKGROUND_CAPACITY;
-      const next = store.listQueuedTasks().find((t) => {
-        if (!backgroundOk && t.priority !== "high") return false;
-        if (t.assigneeId === null || isWorking(t.assigneeId)) return false;
-        const runner = store.getEmployee(t.assigneeId)?.runner;
-        return runner === undefined || agentDriver.restingRunner(runner) === null;
-      });
-      if (!next) break;
-      this.startRun(next);
+    if (this.stopped) return;
+    // Visit each candidate once: a rejected start must not spin on the same task.
+    for (const task of store.listQueuedTasks()) {
+      if (this.active.size >= GLOBAL_CONCURRENCY_CAP) break;
+      if (this.active.size >= BACKGROUND_CAPACITY && task.priority !== "high") continue;
+      if (task.assigneeId === null || isWorking(task.assigneeId)) continue;
+      const employee = store.getEmployee(task.assigneeId);
+      if (!employee || agentDriver.restingRunner(employee.runner) !== null) continue;
+      this.startRun(task);
     }
   }
 
   private startRun(task: Task): void {
+    if (this.stopped) return;
     const employeeId = task.assigneeId;
     if (!employeeId) return;
     const employee = store.getEmployee(employeeId);
     const company = store.getCompany(task.companyId);
     if (!employee || !company) return;
-    // The choke point: the only place a paid CLI is spawned. The queueing
-    // paths check too, but tick() drains straight through here, so work queued
-    // before the cap blew would otherwise keep spending after it.
+    // Check again at the spawn boundary: queued work may predate the budget cap.
     if (!this.admit(company)) return;
 
     const runId = crypto.randomUUID();
@@ -507,7 +426,7 @@ class Scheduler {
     if (!locked) return; // lost race
 
     store.setEmployeeStatus(employeeId, "working");
-    this.active.set(runId, employeeId);
+    this.active.add(runId);
     const at = { runId, taskId: task.id, employeeId };
     publishActivity({ ...at, kind: "run.start" });
     publishActivity({ ...at, kind: "status", message: "running" });
@@ -562,12 +481,7 @@ class Scheduler {
     }
   }
 
-  /**
-   * Settle the task the way the run ended. A failed run is retried with
-   * exponential backoff up to MAX_TASK_ATTEMPTS, then dead-lettered rather than
-   * silently abandoned; a usage limit parks it until the reset without burning
-   * an attempt, because that wall is the CLI's, not the task's.
-   */
+  /** Usage limits park the runner without consuming a task retry. */
   private finish(runId: string, task: Task, emp: Employee, r: RunResult): void {
     const at = { runId, taskId: task.id, employeeId: emp.id };
     const o = r.outcome;
@@ -626,7 +540,6 @@ class Scheduler {
     store.setEmployeeStatus(emp.id, "idle");
     store.setEmployeeSession(emp.id, r.session);
 
-    // real AI spend drains the founder's budget; the cap is judged when a bill lands
     if (r.usage.costUsd > 0) {
       const before = store.getCompany(task.companyId);
       const after = store.recordSpend(task.companyId, r.usage.costUsd);

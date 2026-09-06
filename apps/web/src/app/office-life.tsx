@@ -4,12 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, Ref } from "react";
 
-// The landing card doubles as this employee's office. The desk sits top-left
-// in the title row (grid cell — it reserves space, never covers copy), the
-// cooler is pinned to the card's bottom-right corner, and the employee roams
-// the whole card: sits at the desk, takes water breaks, mutters founder
-// things. All sprites are the game's real assets at 1.5x.
-
+// Game sprites render at 1.5x.
 const LINES = [
   "ship it",
   "standup in 5",

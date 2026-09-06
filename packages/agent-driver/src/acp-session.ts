@@ -4,22 +4,8 @@ import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk
 import { z } from "zod";
 import { zeroUsage, type AgentEvent, type AgentUsage } from "./events";
 
-// ---------------------------------------------------------------------------
-// One ACP turn, start to finish.
-//
-// Every runner is an ACP agent: spawn it, speak the protocol over its stdio,
-// send one turn, settle. Wire formats are the protocol's problem now rather
-// than ours — there is no per-CLI stdout parsing left.
-//
-// What ACP does NOT give us, and this file still owns:
-//  - watchdogs. A wedged agent must never hang the scheduler, and the protocol
-//    has no timeout of its own.
-//  - resolve-exactly-once with the child torn down. A killed child's orphaned
-//    grandchild can hold stdout open long after we have our answer.
-//  - the bill. The agent reports its cost with the turn's result, as this
-//    process's running total — a resumed session starts that total from zero
-//    (verified against claude -p --resume), so a run is billed what it reports.
-// ---------------------------------------------------------------------------
+// One ACP turn. Owns subprocess teardown, watchdogs and usage accounting;
+// adapters own the CLI wire formats.
 
 /** Keep only the tail of stderr — used solely for final error reporting. */
 const STDERR_TAIL_MAX = 16_000;
@@ -28,34 +14,20 @@ const STDERR_TAIL_MAX = 16_000;
 const fmtMs = (ms: number): string =>
   ms >= 60_000 ? `${Math.round(ms / 60_000)}m` : `${Math.round(ms / 1000)}s`;
 
-/**
- * The agent's account of what this run has cost so far, sent with each turn's
- * result. ACP has no usage channel of its own, so this is an agent extension
- * and is read by shape: claude sends its process's running dollar total, codex
- * nothing. A wrong field name costs the budget silently — nothing fails, the
- * cap just stops being enforced.
- */
-const RunCost = z.object({ cost: z.object({ amount: z.number() }).loose() }).loose();
+// Claude's cost extension reports this process's running total, including on resume.
+const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
-const ToolCallInput = z
-  .object({ command: z.string().optional(), description: z.string().optional() })
-  .loose();
+const ToolCallInput = z.object({
+  command: z.string().optional(),
+  description: z.string().optional(),
+});
 
-/**
- * Node stream → web stream.
- *
- * `Readable.toWeb` would do this in one line, and it typechecks fine inside
- * this package — but this file is compiled again as part of the desktop app,
- * whose tsconfig pulls in the DOM lib, and there `ReadableStream<any>` and the
- * DOM's `ReadableStream<Uint8Array>` are not assignable. Written out so both
- * builds agree, without an assertion papering over the difference.
- */
+// Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
 function webReadable(stream: Readable): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      // `end` and `error` can both fire, and closing twice throws — which
-      // surfaces as a teardown crash instead of the real run failure.
+      // Both events can fire; closing twice would mask the original failure.
       let closed = false;
       const close = (): void => {
         if (closed) return;
@@ -110,11 +82,7 @@ export interface AcpTurnOptions {
   agent: AcpAgent;
   /** The task, or the wake prompt when resuming. */
   prompt: string;
-  /**
-   * Durable instructions (the employee's AGENTS.md body), sent only when a
-   * fresh session is opened. A resumed session already carries them, so
-   * re-sending would re-pay for the whole prompt on every wake.
-   */
+  /** AGENTS.md instructions, sent only for fresh sessions to avoid paying for them twice. */
   systemPrompt: string;
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
@@ -124,13 +92,7 @@ export interface AcpTurnOptions {
   addDirs?: string[];
   /** Run-scoped env additions (control-plane URL + token, secrets). */
   env?: Record<string, string>;
-  /**
-   * Decides whether a tool call may proceed, in-process, for every permission
-   * request the agent raises.
-   *
-   * Omitting it allows everything, which is only right for a runner the caller
-   * has already confined some other way.
-   */
+  /** Decides tool permissions. Omission allows everything; the caller must provide confinement. */
   onPermission?: (request: PermissionRequest) => Promise<PermissionDecision>;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
   idleTimeoutMs: number;
@@ -185,14 +147,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     let pending = "";
     let total = zeroUsage();
 
-    /**
-     * Release what the agent has said so far as one feed line.
-     *
-     * ACP streams prose in chunks with no end-of-message marker, so a boundary
-     * has to be chosen: a tool call, or the end of the turn. Without this the
-     * office shows tool calls and no narration at all — every employee works
-     * in silence, which is most of what the team room is for.
-     */
+    // ACP has no message-end marker. Flush prose before a tool call or at turn end.
     const flushMessage = (): void => {
       const text = pending.trim();
       pending = "";
@@ -206,6 +161,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       settled = true;
       if (idleTimer) clearTimeout(idleTimer);
       if (sessionTimer) clearTimeout(sessionTimer);
+      // Orphaned grandchildren can keep pipes open after their parent dies.
       try {
         child?.stdin?.destroy();
         child?.stdout?.destroy();
@@ -292,10 +248,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           kind: ctx.params.toolCall.kind ?? undefined,
         };
         const decision = opts.onPermission ? await opts.onPermission(request) : { allow: true };
-        // `kind` is a required, spec'd discriminant — matching on option id
-        // prefixes would guess at agent-specific spellings and could pick
-        // something like "allowlist_edit". Prefer the once-only option: one
-        // yes buys one command, which is what the approval card promises.
+        // Match protocol kinds, not adapter-specific ids. Prefer one-command approval.
         const pick = (kind: string): string | undefined =>
           ctx.params.options.find((o) => o.kind === kind)?.optionId;
         const optionId = decision.allow
@@ -312,8 +265,6 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           return;
         }
         if (update.sessionUpdate === "tool_call") {
-          // Whatever the agent was saying is finished the moment it acts, so
-          // the feed gets the line before the tool call that followed it.
           flushMessage();
           opts.onEvent({
             type: "tool_start",
@@ -323,7 +274,6 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           });
           return;
         }
-        // this run's running total, as the agent reports it
         const cost = RunCost.safeParse(update);
         if (cost.success && cost.data.cost.amount > total.costUsd) {
           total = { ...total, costUsd: cost.data.cost.amount };
@@ -343,13 +293,7 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
 
         const additionalDirectories = opts.addDirs ?? [];
 
-        /**
-         * Resume-first: an employee's session IS their working memory, so
-         * starting fresh every run would begin each task with amnesia.
-         * `session/resume` continues without replaying history, which is what
-         * the wake-delta prompt assumes. A refusal falls through to a new
-         * session and the caller clears the dead id.
-         */
+        // Resume without replaying history; a rejected session id falls back to fresh.
         const resumedId =
           opts.resumeSessionId !== undefined && init.agentCapabilities?.loadSession === true
             ? await agent
@@ -372,14 +316,8 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         };
         sessionId = resumedId ?? (await startFresh());
 
-        // Every turn, not just fresh ones: a resumed session comes back in the
-        // agent's default mode, and codex's default runs commands without ever
-        // raising a permission request, so a mode set only at session creation
-        // would leave later turns unsupervised.
-        //
-        // It throws rather than shrugging, because for an agent that only asks
-        // in a particular mode, a swallowed failure here is indistinguishable
-        // from a working gate.
+        // Resume restores the default mode. Set it every turn and fail if it cannot be
+        // set: Codex's default can execute without raising permission requests.
         if (opts.agent.sessionModeId !== undefined) {
           await agent.request("session/set_mode", {
             sessionId,
@@ -387,8 +325,6 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           });
         }
 
-        // A resumed session already carries the instructions; sending them
-        // again would re-pay for the whole system prompt every wake.
         const text =
           !resumed && opts.systemPrompt
             ? `${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`

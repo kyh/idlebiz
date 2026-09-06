@@ -1,6 +1,4 @@
 import type { LoadSkip } from "@/shared/ipc-registry";
-
-/** The files under ~/.idlebiz boot could not read, path over reason. */
 export function SaveIssues({ issues }: { issues: readonly LoadSkip[] }) {
   return (
     <ul className="space-y-2">

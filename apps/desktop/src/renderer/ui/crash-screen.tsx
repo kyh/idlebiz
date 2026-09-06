@@ -1,11 +1,7 @@
 import { Component, type ReactNode } from "react";
 import { errorMessage } from "@/shared/errors";
 
-/**
- * Where a render error in the overlay lands. Without it React unmounts the
- * whole tree, canvas included, and the window goes black with no way back;
- * here the office keeps running underneath and the founder gets a reload.
- */
+// Catch overlay errors without unmounting the Phaser canvas.
 interface Crashed {
   error: string | null;
 }

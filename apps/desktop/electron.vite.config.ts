@@ -1,13 +1,11 @@
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
-import type { LibraryFormats } from "vite";
 
-const configDir = dirname(fileURLToPath(import.meta.url));
+const configDir = import.meta.dirname;
 
-export default defineConfig(() => ({
+export default defineConfig({
   main: {
     resolve: {
       alias: { "@": resolve(configDir, "src") },
@@ -31,7 +29,7 @@ export default defineConfig(() => ({
       outDir: ".output/app/preload",
       lib: {
         entry: resolve(configDir, "src/preload/index.ts"),
-        formats: ["cjs"] satisfies LibraryFormats[],
+        formats: ["cjs"],
       },
       rollupOptions: {
         external: ["electron"],
@@ -52,4 +50,4 @@ export default defineConfig(() => ({
       },
     },
   },
-}));
+});

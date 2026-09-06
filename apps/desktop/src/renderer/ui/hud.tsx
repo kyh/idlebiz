@@ -2,27 +2,15 @@ import { useNow } from "@/renderer/hooks/use-now";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee, Product } from "@/shared/domain";
+import { productStateOf } from "@/renderer/ui/product-state";
+import type { Overlay } from "@/renderer/ui/overlay";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
 
-/** The windows the HUD opens over the office; at most one is up at a time. */
-export type Overlay =
-  | { kind: "ships" }
-  | { kind: "inbox" }
-  | { kind: "teams" }
-  | { kind: "budget" }
-  | { kind: "settings" }
-  | { kind: "vercel"; productId: string };
-
-// ❗ stays, though VG5000 has no glyph for it and it renders as a colour emoji.
-// Tried the pixel "!" — it reads as punctuation glued to the count and the plate
-// loses its focal mark. The colour IS the signal here, so the fallback earns its keep.
+// VG5000 has no alert glyph; the colored emoji is intentional.
 const ALERT_GLYPH = "❗";
-// ✉ not 📥: VG5000 has no inbox glyph, so it fell back to the system symbol
-// font — the one icon here not drawn in the pixel font.
+// These glyphs exist in VG5000; 📥 and ● would use a fallback font.
 const INBOX_GLYPH = "✉";
-// ◉ not ●: U+25CF isn't in VG5000 either, and this one has a pixel equivalent
-// that reads as a status light.
 const LIVE_GLYPH = "◉";
 
 function Stat({
@@ -58,8 +46,6 @@ function Stat({
     </button>
   );
 }
-
-/** Top-left: the money + adoption scoreboard — real numbers, or a nudge to connect. */
 function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: Overlay) => void }) {
   const out = isOutOfBudget(company);
   const spent = spentLabel(company.spentUsd);
@@ -86,18 +72,6 @@ function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: O
     </div>
   );
 }
-
-/**
- * What a product plate says: where the product really is. A live deploy or a
- * local entry the team wrote — never a number derived from how many tasks closed.
- */
-export function productStateOf(status: ProductStatus | undefined): string {
-  const deploy = status?.deploy ?? null;
-  if (deploy) return deploy.state === "READY" ? "LIVE" : deploy.state.toLowerCase();
-  return status?.entry ? "local build" : "unshipped";
-}
-
-/** Top-right: the company — product state, team, and what's waiting on the founder. */
 function CompanyPlates({
   company,
   employees,
@@ -122,8 +96,6 @@ function CompanyPlates({
   const productState = productStateOf(status);
   const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
   const working = employees.filter((e) => e.status === "working").length;
-  // a company has exactly one team, so a team count is a constant wearing a
-  // number's clothes — the plate says what's actually happening instead
   const teamSub = working > 0 ? `${working} working` : (nap ?? "idle");
   return (
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
@@ -171,8 +143,6 @@ function InboxButton({ needsYou, onClick }: { needsYou: number; onClick: () => v
     </button>
   );
 }
-
-/** Bottom-left: start/pause the company, and settings. */
 function RunControls({
   company,
   onOpen,
@@ -214,8 +184,6 @@ function RunControls({
     </div>
   );
 }
-
-/** Four-corner HUD; the bottom-right corner is the TeamChannel. */
 export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { useStore, resetGame, setMaxAgents } from "@/renderer/state/store";
+import { bridge } from "@/renderer/bridge";
+import { useStore, setMaxAgents } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { SaveIssues } from "@/renderer/ui/save-issues";
-
-/** Game settings. Mostly the danger zone: demolish the office and start over. */
 export function Settings({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
   const saveIssues = useStore((s) => s.saveIssues);
@@ -116,7 +115,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 onClick={() => {
                   if (!armed) return;
                   setResetting(true);
-                  void resetGame();
+                  void bridge().resetGame();
                 }}
                 disabled={!armed}
                 className="px-btn"

@@ -24,21 +24,12 @@ import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
 import { classifyCommand, normalizeCommand } from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
-/**
- * Where to find a runner's ACP agent, and how to make it ask.
- *
- * Resolution lives here rather than in the driver package because the agents
- * are spawned binaries, not imports: the app is what ships them, so the app is
- * what knows where they landed. `import.meta.url` is the bundled main process,
- * which resolves against the desktop app's own node_modules.
- */
+// The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
 
 export function acpAgentFor(runner: AgentRunner): AcpAgent {
   const adapter: RunnerAdapter = RUNNERS[runner];
-  // In a packaged app `process.execPath` is the Electron binary, which would
-  // otherwise treat the agent's entry file as a new Electron app instead of
-  // running it as node.
+  // The packaged executable is Electron; child agents need its Node mode.
   const env: AcpAgent["env"] = { ELECTRON_RUN_AS_NODE: "1" };
   if (adapter.binEnvVar) env[adapter.binEnvVar] = runnerBin(runner);
   return {
@@ -48,20 +39,11 @@ export function acpAgentFor(runner: AgentRunner): AcpAgent {
   };
 }
 
-/**
- * Point at the real file, not the one inside the archive.
- *
- * Electron reads transparently through `app.asar`, so resolution succeeds and
- * everything looks fine — but a child process cannot execute a script that
- * exists only inside the archive, and the failure is silent: the agent spawns
- * and answers nothing. electron-builder puts these packages in
- * `app.asar.unpacked` (see asarUnpack); this is the matching half.
- */
+// Child processes cannot execute files inside asar; matches electron-builder's asarUnpack.
 function unpacked(path: string): string {
   return path.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
 }
 
-/** Is this runner's ACP agent actually installed? */
 function acpAgentInstalled(runner: AgentRunner): boolean {
   try {
     resolveFromApp.resolve(RUNNERS[runner].acpEntry);
@@ -71,15 +53,7 @@ function acpAgentInstalled(runner: AgentRunner): boolean {
   }
 }
 
-/**
- * The founder-approval gate, now a plain function call.
- *
- * Every runner speaks ACP, so a tool call arrives here in-process instead of
- * through a spawned hook and a loopback request. Work that stays inside the
- * workspace is the employee's own business; only what reaches past it — a
- * deploy, a push, a payment — needs the founder, and a sign-off is spent
- * rather than merely checked, because the card promises one command once.
- */
+/** An approval permits one execution of the exact command. */
 async function decidePermission(
   companyId: string,
   request: PermissionRequest,
@@ -94,30 +68,14 @@ async function decidePermission(
   return { allow: false };
 }
 
-/**
- * What a run cost in USD. Claude reports real dollars; codex reports only
- * tokens, and any run that ended without a terminal event reports whatever
- * the stream accounted for — both get priced from the runner's own rate table
- * rather than the generic fallback, so the live cap estimate and the recorded
- * spend can never disagree about the rate.
- */
+/** Prefer reported dollars; otherwise price tokens at the runner's default model. */
 function priceRun(emp: Employee, usage: AgentUsage): number {
   if (usage.costUsd > 0) return usage.costUsd;
   if (usage.inputTokens + usage.outputTokens === 0) return 0;
-  // Priced by the runner's anchor: ACP gives no way to pick a model per
-  // session, so the CLI's own default is what ran.
   return priceUsage(RUNNERS[emp.runner].fallbackPricingModel, usage);
 }
 
-/**
- * Tool caches, kept out of the agent's own working tree.
- *
- * Codex's workspace-write sandbox denies `~/.npm`, which fails every `npx` —
- * including the `npx vercel deploy` agents are told to ship with. Putting the
- * cache *inside* the workspace fixes that but buries hundreds of MB of
- * tarballs where every `grep -r` and `git add` the agent runs will walk it, so
- * it lives beside the companies instead and is granted as a writable root.
- */
+// Codex cannot write ~/.npm. Grant a shared cache outside the agents' working trees.
 const TOOL_CACHE_DIR = join(ROOT_DIR, "cache");
 
 const TOOL_CACHE_ENV = {
@@ -125,15 +83,8 @@ const TOOL_CACHE_ENV = {
   XDG_CACHE_HOME: TOOL_CACHE_DIR,
 };
 
-// ---------------------------------------------------------------------------
-// The employee runtime: each run spawns the employee's ACP agent, resume-first
-// (the agent's session store is the employee's working memory), with the game's
-// control-plane API reachable through run-scoped env.
-// ---------------------------------------------------------------------------
-
 export interface RunResult {
   outcome: RunOutcome;
-  /** The agent's final message. */
   summary: string;
   /** The session to remember for this employee after the run; null forgets it. */
   session: string | null;
@@ -141,14 +92,12 @@ export interface RunResult {
 }
 
 class AgentDriver {
-  // CLI probes run async in the background; `probes` holds the latest results
-  // and `probing` is awaited by anything that needs a definitive answer.
+  // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
   private active = new Map<string, AbortController>(); // employeeId -> abort
   private restingUntil = new Map<AgentRunner, number>(); // runner -> epoch its limit lifts
 
-  /** Kick off CLI probes (never blocks — boot calls this before the window shows). */
   init(): void {
     this.probing = probeRunners().then((probes) => {
       this.probes = probes;
@@ -156,7 +105,6 @@ class AgentDriver {
     });
   }
 
-  /** Re-probe (after installs/logins) and wait for the fresh results. */
   refresh(): Promise<RunnerProbe[]> {
     this.init();
     return this.probing;
@@ -167,20 +115,12 @@ class AgentDriver {
     return this.availableRunners().length > 0;
   }
 
-  /** Runners that can execute work, per the most recent probe. */
   availableRunners(): AgentRunner[] {
-    // The probe answers for the CLI's login, which the ACP adapter rides on.
-    // The adapter itself is a separate thing that can be missing from a build,
-    // and a runner whose agent won't resolve should read as unavailable at
-    // boot rather than throwing mid-run.
+    // A signed-in CLI still needs its separately packaged ACP adapter.
     return this.probes.filter((p) => isReady(p) && acpAgentInstalled(p.id)).map((p) => p.id);
   }
 
-  /**
-   * Mixed-roster assignment: round-robin across whatever is available (awake
-   * first). Throws when nothing is: an employee bound to a CLI that is not
-   * signed in would sit forever, and every hire path can say so instead.
-   */
+  /** Round-robin across ready runners, preferring those without a usage limit. */
   pickRunner(index: number): AgentRunner {
     const available = this.availableRunners();
     const awake = available.filter((r) => this.restingRunner(r) === null);
@@ -190,7 +130,6 @@ class AgentDriver {
     return runner;
   }
 
-  /** Every runner currently parked on a usage limit, and until when. */
   restingRunners(): RestingRunners {
     const resting: RestingRunners = {};
     for (const runner of RUNNER_IDS) {
@@ -240,11 +179,7 @@ class AgentDriver {
     }
   }
 
-  /**
-   * How the turn ended, as the scheduler settles it. A pending ask wins over
-   * everything (the agent stopped to wait for the founder); a usage limit is a
-   * wall, not a flake — the runner is parked so nothing retries into it.
-   */
+  /** A pending founder ask takes precedence over the runner's exit status. */
   private outcomeOf(runner: AgentRunner, turn: AcpTurnResult, ask: BlockedAsk | null): RunOutcome {
     if (ask) return { kind: "blocked", ask };
     if (turn.end.kind === "completed") return { kind: "done" };
@@ -302,7 +237,6 @@ class AgentDriver {
     }
   }
 
-  /** Abort a live run (employee released, reset, quit). */
   disposeEmployee(employeeId: string): void {
     this.active.get(employeeId)?.abort();
     this.active.delete(employeeId);

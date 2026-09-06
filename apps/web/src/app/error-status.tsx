@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { Cta } from "@/app/cta";
 import { StatusPage } from "@/app/status-page";
 
-/** An error boundary's page: log it, say what broke, offer the retry Next gives us. */
 export function ErrorStatus({
   error,
   description,

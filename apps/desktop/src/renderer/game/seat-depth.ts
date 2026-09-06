@@ -5,7 +5,6 @@
 // is always SOUTH of whoever sits in it, so y-sort buries the sitter behind the chair.
 // A seat is lifted just above the topmost thing its occupant's bust actually overlaps
 // and no further, so a colleague walking past the front of the desk still occludes them.
-import type Phaser from "phaser";
 import { BUST, characterDepth } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
 import type { PixelPoint } from "@/shared/office-layout-schema";
@@ -91,11 +90,4 @@ export function seatDepth<T extends RoomImage>(
     depth = image.depth;
   }
   return depth + SEAT_LIFT;
-}
-
-/** `seatDepth` over a built room's images, reading only the textures whose bounds reach a seat. */
-export function seatDepthOracle(
-  maskOf: (key: string) => OpaqueMask | null,
-): (seat: PixelPoint, room: readonly Phaser.GameObjects.Image[]) => number {
-  return (seat, room) => seatDepth(seat, room, (image) => maskOf(image.texture.key));
 }

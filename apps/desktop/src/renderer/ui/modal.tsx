@@ -1,11 +1,18 @@
 import { useEffect, type ReactNode } from "react";
 import { setModalOpen } from "@/renderer/state/store";
 
-/** Phaser's keyboard sleeps while the caller is mounted, so typing here never walks the player. */
+const openModals = new Set<symbol>();
+
+/** Overlapping overlays keep Phaser's keyboard suspended until the last one closes. */
 export function useModal(): void {
   useEffect(() => {
+    const modal = Symbol();
+    openModals.add(modal);
     setModalOpen(true);
-    return () => setModalOpen(false);
+    return () => {
+      openModals.delete(modal);
+      setModalOpen(openModals.size > 0);
+    };
   }, []);
 }
 
@@ -17,7 +24,6 @@ const WIDTH_CLASS = {
   "3xl": "max-w-3xl",
 } satisfies Record<ModalWidth, string>;
 
-/** A centred pixel window over the office: title bar, optional extra actions, Done, scrolling body. */
 export function Modal({
   title,
   subtitle,

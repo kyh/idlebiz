@@ -6,17 +6,11 @@ import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady, type RunnerProbe } from "@repo/agent-driver/detect";
 import { acpAgentFor, agentDriver } from "@/main/agents/agent-driver";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
-import { businessTypeById } from "@/shared/domain";
+import { foundingTeamPrompt } from "@/main/prompts/onboarding";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
 import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
 import { HireCandidateSchema, type AuthFlowEvent, type HireCandidate } from "@/shared/ipc-registry";
-
-// ---------------------------------------------------------------------------
-// First-run onboarding backend. The workforce runs on the player's own coding
-// CLIs (claude / codex): detect them, install one if none exist, walk their
-// login flows, and cast the founding team with a one-shot CLI call.
-// ---------------------------------------------------------------------------
 
 let setupRunning = false;
 
@@ -49,10 +43,6 @@ function streamCommand(
 
 const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
 
-/**
- * The guided workforce setup: probe CLIs → install one if none → log in the
- * ones that need it → re-probe. Events stream to the onboarding dialog.
- */
 export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void> {
   if (setupRunning) {
     emit({ type: "progress", message: "Setup already in progress…" });
@@ -114,11 +104,8 @@ export async function startLogin(emit: (e: AuthFlowEvent) => void): Promise<void
   }
 }
 
-// ---- LLM-generated founding team -------------------------------------------
-
 const CandidatesSchema = z.array(HireCandidateSchema).min(3).max(8);
 
-/** One-shot completion on whichever CLI is available (no tools, no session). */
 async function completeOneShot(prompt: string): Promise<string> {
   const runner: AgentRunner = agentDriver.pickRunner(0);
   const res = await runAcpTurn({
@@ -128,8 +115,7 @@ async function completeOneShot(prompt: string): Promise<string> {
     cwd: tmpdir(),
     idleTimeoutMs: 3 * 60_000,
     maxSessionMs: 5 * 60_000,
-    // Casting a roster is one JSON answer in a temp dir — it has no business
-    // touching anything. Saying so beats trusting the model not to try.
+    // Roster generation needs no tools or filesystem access.
     onPermission: () => Promise.resolve({ allow: false }),
     onEvent: () => {},
   });
@@ -137,29 +123,12 @@ async function completeOneShot(prompt: string): Promise<string> {
   return res.summary;
 }
 
-/** Generate a founding team tailored to the player's pitch (one cheap LLM call). */
 export async function generateCandidates(input: {
   companyName: string;
   mission: string;
   businessType: BusinessTypeId;
 }): Promise<HireCandidate[]> {
-  const biz = businessTypeById(input.businessType);
-  const typeHint =
-    input.businessType === "custom" ? "" : `\nBusiness type: ${biz.label}. ${biz.hireHint}`;
-  const prompt = `You are casting the founding team of a startup for a business-sim game.
-
-Company: ${input.companyName}
-Pitch: ${input.mission}${typeHint}
-
-Invent 5 distinct hires tailored to THIS pitch — whatever business it is. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; an investment firm needs sourcing + analysis + IR; a shop needs product + ops + marketing). Each person gets:
-- name: a memorable first name (diverse, varied)
-- role: a short lowercase role key like "engineer", "pixel-artist", "writer"
-- title: their job title
-- persona: 2-3 sentences of working style + personality that will be used as their AI system prompt — concrete, vivid, useful
-- blurb: a fun one-line resume hook
-
-Reply with ONLY a JSON array of 5 objects with keys name, role, title, persona, blurb. No markdown fence, no commentary.`;
-
+  const prompt = foundingTeamPrompt(input.companyName, input.mission, input.businessType);
   const raw = await completeOneShot(prompt);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
   return CandidatesSchema.parse(parseJson(jsonText));

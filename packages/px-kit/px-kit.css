@@ -1,13 +1,5 @@
-/* The pixel-UI kit: the Modern-UI (Style 2) palette, the VG5000 face and the
- * `.px-*` classes both apps are built from. Imported by each app's stylesheet
- * after Tailwind, and deliberately outside any @layer: Tailwind's utilities
- * are layered, and unlayered CSS beats layered CSS whatever the specificity —
- * so a utility on the same element never overrides a property a kit class
- * sets. Size and colour live here, as kit classes, never per component.
- *
- * Cursors are the app's, not the kit's: a class that set `cursor` would beat
- * the app's element rules (the web's pixel arrow, the desktop's pointer).
- * The font file ships in each app's public/fonts, at the path below. */
+/* Unlayered kit rules override Tailwind utilities. Keep kit sizing and colors here;
+ * apps own cursors through element selectors and serve /fonts/vg5000.woff2. */
 
 @font-face {
   font-family: "VG5000";
@@ -42,9 +34,7 @@
   letter-spacing: 0.02em;
 }
 
-/* The palette as Tailwind colour tokens — `text-fg-dim`, `bg-ink`, `border-danger`.
- * `inline` so a utility compiles to `var(--ink)` and the :root palette above stays the
- * one place a value lives (for the kit and inline styles alike). */
+/* Inline tokens keep the palette shared with kit rules and inline styles. */
 @theme inline {
   --color-ink: var(--ink);
   --color-edge: var(--edge);
@@ -100,7 +90,6 @@
     inset -1px -1px 0 0 var(--face-hi);
 }
 
-/* generic raised button */
 .px-btn {
   font-family: inherit;
   font-size: 14px;
@@ -130,17 +119,7 @@
   opacity: 0.5;
 }
 
-/* An icon.
- *
- * Icons here are glyphs from the pixel font, not assets — so "icon size" IS font-size,
- * and every kit class that sets one (.px-btn: 14px) has been sizing icons as body text:
- * a 14px glyph adrift in a 36px button, which is the dead space you see around it. Wrap
- * the glyph so it sizes independently of any label beside it.
- *
- * Must live outside @layer, like the rest of the kit: Tailwind's utilities are layered,
- * and unlayered CSS beats layered CSS whatever the specificity. A `text-[20px]` next to
- * a kit class that sets font-size loses and silently does nothing.
- */
+/* Glyph icons need their own font size, independent of the surrounding button. */
 .px-icon {
   font-size: 18px;
   line-height: 1;
@@ -152,18 +131,11 @@
   font-size: 22px;
 }
 
-/* An icon-only button.
- *
- * .px-btn's padding is sized for a line of 14px text; a bigger glyph inside it doesn't
- * fit the content box and pushes the whole button out instead. Give the glyph that
- * padding rather than making the button fatter: 22px icon + 6px padding + 3px border
- * lands on the same ~40px box a text button already has.
- */
+/* Balance the larger glyph against the text button's height. */
 .px-btn-icon {
   padding: 6px 10px;
 }
 
-/* primary (accent blue) button */
 .px-btn-accent {
   color: var(--light);
   background: var(--accent);
@@ -184,13 +156,10 @@
     inset -2px -2px 0 0 var(--accent-hi);
 }
 
-/* destructive button. A kit class, not a `text-[var(--danger)]` utility: .px-btn sets
- * `color` unlayered, so a Tailwind colour utility on the same element never lands. */
 .px-btn-danger {
   color: var(--danger);
 }
 
-/* selectable option (toggle) */
 .px-opt {
   font-family: inherit;
   font-size: 14px;
@@ -209,7 +178,6 @@
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
 }
 
-/* text input / textarea carved inset */
 .px-field {
   font-family: inherit;
   font-size: 14px;
@@ -229,7 +197,6 @@
     inset 0 0 0 2px var(--accent);
 }
 
-/* a small chip (quick actions) */
 .px-chip {
   font-family: inherit;
   font-size: 12px;
@@ -253,7 +220,6 @@
   image-rendering: pixelated;
 }
 
-/* status badge */
 .px-badge {
   border: 2px solid var(--ink);
   padding: 2px 8px;
@@ -321,9 +287,7 @@
   }
 }
 
-/* a verbatim shell command shown to the founder for sign-off.
-   Composes with .px-inset for the sunken panel — this adds only the typography
-   a command needs (wrapping mid-token, so nothing is hidden off the edge). */
+/* Wrap held commands mid-token so the founder can inspect the complete command. */
 .px-code {
   font-family: inherit;
   font-size: 12px;
@@ -333,7 +297,6 @@
   word-break: break-all;
 }
 
-/* a quiet inline text action — secondary to any px-btn in the same row */
 .px-link {
   font-family: inherit;
   font-size: 11px;
@@ -366,8 +329,6 @@
   }
 }
 
-/* the "press to continue" cue at the end of a line of dialogue: a ▼ that bobs
-   in two frames, the way the battle box has always asked for the A button */
 .px-more {
   display: inline-block;
   animation: px-more 0.6s steps(2, start) infinite;

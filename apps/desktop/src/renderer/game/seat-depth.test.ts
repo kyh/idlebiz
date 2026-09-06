@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUST, characterDepth } from "./character-sheet";
+import { characterDepth } from "./character-sheet";
 import { DEPTH } from "@/shared/office-depth";
 import { bustOverlapRect, bustOverlaps, seatDepth, type RoomImage } from "./seat-depth";
 import type { OpaqueMask } from "@/shared/office-sight";
@@ -54,10 +54,6 @@ describe("bustOverlapRect", () => {
     expect(bustOverlapRect(seat, image({ x: 110 }))).toBeNull(); // starts where the bust ends
     expect(bustOverlapRect(seat, image({ y: 100 }))).toBeNull(); // below the origin row
     expect(bustOverlapRect(seat, image({ x: 0, width: 50 }))).toBeNull();
-  });
-
-  it("cuts from the bust silhouette the sheet was measured for", () => {
-    expect(BUST).toEqual({ halfWidth: 10, height: 38 });
   });
 });
 

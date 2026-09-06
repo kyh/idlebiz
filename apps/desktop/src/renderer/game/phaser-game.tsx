@@ -8,11 +8,11 @@ export function PhaserGame({
   onGame,
 }: {
   layout: OfficeLayoutData;
-  onGame?: (game: Phaser.Game) => void;
+  onGame?: (game: Phaser.Game | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
-  const handOff = useEffectEvent((game: Phaser.Game) => onGame?.(game));
+  const handOff = useEffectEvent((game: Phaser.Game | null) => onGame?.(game));
   const firstLayout = useEffectEvent(() => layout);
 
   useEffect(() => {
@@ -38,6 +38,7 @@ export function PhaserGame({
     handOff(game);
 
     return () => {
+      handOff(null);
       game.destroy(true);
       gameRef.current = null;
       window.__game = undefined;

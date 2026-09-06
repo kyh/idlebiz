@@ -2,14 +2,7 @@ import { z } from "zod";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { BlockedAskSchema, BudgetSchema, RunOutcomeSchema, TASK_STATUSES } from "./domain";
 
-// ---------------------------------------------------------------------------
-// The activity stream: everything the office says happened, as one typed union.
-//
-// Main publishes it (see main/activity.ts), the renderer store, the scene and
-// the feeds switch on `kind`, and activity.jsonl persists it one row per line.
-// The same schema reads the log back, so a consumer never re-parses a payload:
-// what an event carries is settled here, once.
-// ---------------------------------------------------------------------------
+// main/activity.ts publishes this union and persists it as activity.jsonl rows.
 
 /** What an event is about. Every field is optional: a budget halt names nobody. */
 const subject = z.object({
@@ -18,12 +11,10 @@ const subject = z.object({
   employeeId: z.string().nullish(),
 });
 
-/** One event: its subject, the discriminant, and whatever that kind carries. */
 const event = <K extends string, F extends Record<string, z.ZodType>>(kind: K, fields: F) =>
   subject.extend({ kind: z.literal(kind), ...fields });
 
 const ActivityInputSchema = z.discriminatedUnion("kind", [
-  // ---- what an employee did, streamed from the run ----
   /** ACP `kind` is what the call does (read, edit, execute…); the office poses on it. */
   event("tool_call", {
     message: z.string(),
@@ -36,7 +27,6 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   /** A completed task's summary — the real counter behind the product version. */
   event("ship", { message: z.string() }),
 
-  // ---- the task lifecycle ----
   event("status", { message: z.enum(TASK_STATUSES) }),
   event("run.start", {}),
   event("run.end", {
@@ -59,7 +49,6 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   }),
   event("task.dead", { payload: z.object({ attempts: z.number(), error: z.string() }) }),
 
-  // ---- the office ----
   event("runner.resting", { payload: z.object({ runner: z.enum(RUNNER_IDS), until: z.number() }) }),
   event("org.hired", {
     payload: z.object({ by: z.string(), name: z.string(), title: z.string() }),
@@ -79,14 +68,9 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
 export type ActivityInput = z.infer<typeof ActivityInputSchema>;
 export type ActivityKind = ActivityInput["kind"];
 
-/** Every event of one kind, with the stamped fields. */
 export type ActivityEvent = ActivityInput & { id: number; createdAt: number };
 
-/**
- * One activity.jsonl row. Rows written before the lifecycle events had kinds of
- * their own carry `kind: "lifecycle"` and the event name in `message`; they are
- * lifted on the way in. Anything the schema cannot place is dropped by the reader.
- */
+// Older lifecycle rows stored their kind in `message`; migrate them when reading.
 const legacyLifecycleRow = z.object({ kind: z.literal("lifecycle"), message: z.string() }).loose();
 
 export const PersistedActivitySchema = z.preprocess(

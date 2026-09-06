@@ -4,19 +4,7 @@ import type { JsonValue } from "@/shared/json";
 import { getSecret } from "@/main/secrets";
 import type { VercelDeployment, VercelProject } from "@/shared/ipc-registry";
 
-// ---------------------------------------------------------------------------
-// Vercel REST API helpers. The founder connects with a personal access token
-// (no OAuth app needed): validate → pick a project → the token lands in
-// secrets.json as VERCEL_TOKEN, which both the metrics pulse (users =
-// Web Analytics visitors) and the agents' shells (real deploys via the
-// vercel CLI) inherit.
-// ---------------------------------------------------------------------------
-
 const API = "https://api.vercel.com";
-
-function envToken(): string | null {
-  return getSecret("VERCEL_TOKEN");
-}
 
 function apiGet(
   path: string,
@@ -31,13 +19,10 @@ function apiGet(
   );
 }
 
-// ---- token validation --------------------------------------------------------
-
 const UserSchema = z.object({
   user: z.object({ username: z.string().optional(), name: z.string().nullish() }),
 });
 
-/** Cheap token check; returns the account name it belongs to. */
 export async function validateToken(token: string): Promise<{ ok: boolean; account?: string }> {
   try {
     const parsed = UserSchema.safeParse(await apiGet("/v2/user", token));
@@ -47,8 +32,6 @@ export async function validateToken(token: string): Promise<{ ok: boolean; accou
     return { ok: false };
   }
 }
-
-// ---- projects ----------------------------------------------------------------
 
 const ProjectsSchema = z.object({
   projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
@@ -84,22 +67,16 @@ export async function listProjects(token: string): Promise<VercelProject[]> {
   return out;
 }
 
-// ---- web analytics (users) ---------------------------------------------------
-
 const VisitsCountSchema = z.object({
   data: z.object({ visitors: z.number().optional(), pageviews: z.number().optional() }),
 });
 
-/**
- * Unique visitors for the project — the HUD's "users" number. Prefers a
- * 30-day window; falls back to the unscoped production total if the dated
- * query is rejected.
- */
+/** Prefer 30-day visitors; fall back to the production total if the dated query fails. */
 export async function webAnalyticsVisitors(
   projectId: string,
   teamId?: string,
 ): Promise<number | null> {
-  const token = envToken();
+  const token = getSecret("VERCEL_TOKEN");
   if (!token) return null;
   const base: Record<string, string> = teamId ? { projectId, teamId } : { projectId };
   const since = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString().slice(0, 10);
@@ -117,8 +94,6 @@ export async function webAnalyticsVisitors(
   }
   return null;
 }
-
-// ---- deployments (product state) ---------------------------------------------
 
 const DeploymentsSchema = z.object({
   deployments: z
@@ -144,7 +119,7 @@ export async function latestDeployment(
   projectId: string,
   teamId?: string,
 ): Promise<VercelDeployment | null> {
-  const token = envToken();
+  const token = getSecret("VERCEL_TOKEN");
   if (!token) return null;
   const cached = deployCache.get(projectId);
   if (cached && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) return cached.value;

@@ -12,26 +12,22 @@ import type {
 import { serializeBlockedAsk } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
-// Everything the scheduler says to an employee when it hands them work. Pure
-// functions of domain values: the scheduler gathers, these phrase.
-
-/** What a task asks for: a title the office shows, and the prose the agent reads. */
 export interface TaskBrief {
   title: string;
   description: string;
 }
 
-/** A room line as an agent reads it back. */
-const roomLine = (m: TeamMessage, nameOf: (id: string) => string): string =>
-  `- ${m.fromEmployeeId ? nameOf(m.fromEmployeeId) : "founder"}: ${m.text}`;
-
-/** The team room, newest last, or a note that it is empty. */
 export const roomTranscript = (
   messages: readonly TeamMessage[],
   nameOf: (id: string) => string,
-): string => messages.map((m) => roomLine(m, nameOf)).join("\n") || "(no messages yet)";
+): string =>
+  messages
+    .map(
+      (message) =>
+        `- ${message.fromEmployeeId ? nameOf(message.fromEmployeeId) : "founder"}: ${message.text}`,
+    )
+    .join("\n") || "(no messages yet)";
 
-/** How much has been spent, and whether that should change how the employee works. */
 function budgetLine(company: Company): string {
   if (company.budget.mode !== "capped") {
     return `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
@@ -43,10 +39,8 @@ function budgetLine(company: Company): string {
 export interface AutonomousBriefInput {
   company: Company;
   employee: Employee;
-  /** Everything the company builds, and the one this run is turned to. */
   products: readonly Product[];
   focus: Product | null;
-  /** Everyone at the company. */
   employees: readonly Employee[];
   room: readonly TeamMessage[];
   /** Summaries of recent ships, newest last. */
@@ -56,11 +50,6 @@ export interface AutonomousBriefInput {
   nameOf: (id: string) => string;
 }
 
-/**
- * The per-employee heartbeat: prompt for their next autonomous move, grounded
- * in the team room, recent ships, and recent failures. The team leader is asked
- * to coordinate (chain / fan out) while members execute and report back.
- */
 export function autonomousBrief(input: AutonomousBriefInput): TaskBrief {
   const { company, employee, employees, products, focus, room, ships, problems, nameOf } = input;
   const portfolio = products
@@ -113,10 +102,6 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
   return { title: `Advance ${focus?.name ?? company.name}`, description };
 }
 
-/**
- * What every run opens with: which product the task is for and where its code
- * lives, so the agent's cwd is never a surprise. Company-level work says so.
- */
 export function runPreamble(product: Product | null, company: Company): string {
   if (!product) {
     return `COMPANY-LEVEL WORK (not for one product). Working directory: ${company.workspaceDir}.`;
@@ -128,13 +113,11 @@ export function runPreamble(product: Product | null, company: Company): string {
   return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}${shared}`;
 }
 
-/** A recurring directive, fired on its cadence. */
 export const routineBrief = (r: Routine): TaskBrief => ({
   title: r.name,
   description: `${r.instruction}\n\n(Recurring company routine — runs every ${r.intervalHours}h.)`,
 });
 
-/** The founder @-mentioned them in the room. */
 export const founderPing = (text: string): TaskBrief => ({
   title: `Founder: ${text.slice(0, 48)}`,
   description: [
@@ -145,21 +128,17 @@ export const founderPing = (text: string): TaskBrief => ({
   ].join("\n"),
 });
 
-/** The task they were blocked on can continue: here is what the founder said. */
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
   title: `Continue: ${task.title.slice(0, 60)}`,
   description: `You previously asked the founder:\n> ${serializeBlockedAsk(ask)}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${task.title}`,
 });
 
-/** What the founder "said" when they connected the integration a task was waiting on. */
 export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
   `${INTEGRATION_LABELS[kind]} is now connected — the credentials are in your environment. Continue where you left off.`;
 
-/** What the founder "said" by deciding on a held command. */
 export const approvalAnswer = (approved: boolean): string =>
   approved
     ? "Approved — run it once. The sign-off covers this one command this one time, so running it again, or anything else outward-facing, needs a fresh approval."
     : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
 
-/** What the founder's reply to a question looks like in the settled task. */
 export const answeredSummary = (answer: string): string => `Founder answered: ${answer}`;

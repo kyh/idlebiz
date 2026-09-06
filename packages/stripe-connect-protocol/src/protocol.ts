@@ -1,18 +1,8 @@
 import { z } from "zod";
 import { PublicKeySchema } from "./seal";
 
-// ---------------------------------------------------------------------------
-// The handshake between idlebiz.com and the desktop app.
-//
-// The desktop opens the site's authorize route with a state naming its
-// ephemeral loopback port, a nonce and a one-flow public key; after the
-// founder approves on Stripe, the site's callback exchanges the code (the
-// platform secret never leaves the server), seals the account to that key
-// (seal.ts) and redirects the envelope to the desktop's loopback server. The
-// desktop later asks the site to deauthorize. Every field either side reads
-// is declared here, once, so a rename is a type error and not a silent
-// failure across the seam.
-// ---------------------------------------------------------------------------
+// The site exchanges Stripe's code and seals the account to the desktop's
+// one-flow public key. Only that envelope returns through the loopback callback.
 
 export const AUTHORIZE_PATH = "/api/stripe/authorize";
 export const CALLBACK_PATH = "/api/stripe/callback";
@@ -49,7 +39,6 @@ export function parseState(raw: string | null): OAuthState | null {
   }
 }
 
-/** The account the site connected: what the sealed envelope holds. */
 export const ConnectedAccountSchema = z.object({
   accessToken: z.string().min(1),
   stripeUserId: z.string().min(1),
@@ -57,7 +46,6 @@ export const ConnectedAccountSchema = z.object({
 });
 export type ConnectedAccount = z.infer<typeof ConnectedAccountSchema>;
 
-/** What the site tells the desktop: an envelope to open, or why there is none. */
 export type CallbackOutcome =
   | { kind: "sealed"; sealed: string }
   | { kind: "failed"; error: string };
@@ -68,7 +56,6 @@ const callbackQuerySchema = z.object({
   sealed: z.string().optional(),
 });
 
-/** The desktop's loopback URL carrying the outcome for `state`. */
 export function loopbackUrl(state: OAuthState, outcome: CallbackOutcome): string {
   const query = new URLSearchParams({ nonce: state.nonce });
   if (outcome.kind === "failed") query.set("error", outcome.error);
@@ -76,7 +63,6 @@ export function loopbackUrl(state: OAuthState, outcome: CallbackOutcome): string
   return `http://127.0.0.1:${state.port}${LOOPBACK_CALLBACK_PATH}?${query.toString()}`;
 }
 
-/** The outcome the loopback server was handed, or null when the query is not one. */
 export function parseCallback(
   params: URLSearchParams,
 ): { nonce: string; outcome: CallbackOutcome } | null {

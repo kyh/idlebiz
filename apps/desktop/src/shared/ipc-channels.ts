@@ -1,7 +1,5 @@
-// Plain channel metadata — ZERO runtime deps (no zod), so it is safe to import
-// from the sandboxed preload (which may only `require("electron")`). This is the
-// single runtime source of truth for channel names + kinds. Typed contracts and
-// zod payload schemas live in ipc-registry.ts (main/renderer only).
+// No runtime imports: the sandboxed preload can only require Electron.
+// Schemas and typed contracts live in ipc-registry.ts.
 
 export const CHANNELS = {
   hasAuth: { channel: "agent:hasAuth", kind: "invoke-void" },
@@ -58,11 +56,11 @@ export const CHANNELS = {
 type Channels = typeof CHANNELS;
 export type IpcMethod = keyof Channels;
 export type IpcKind<M extends IpcMethod> = Channels[M]["kind"];
+export type InvokeMethod = {
+  [M in IpcMethod]: IpcKind<M> extends "event" ? never : M;
+}[IpcMethod];
 
-/**
- * The JSON-ish domain the bridge actually sends over structured-clone IPC —
- * the honest type of a payload before main-process validation narrows it.
- */
+/** Structured-clone payloads before main validates them. */
 export type WireValue =
   | string
   | number

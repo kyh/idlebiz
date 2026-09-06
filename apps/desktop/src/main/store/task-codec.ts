@@ -14,13 +14,7 @@ import {
   type FrontmatterDoc,
 } from "@/main/store/frontmatter";
 
-// TASK.md ⇄ Task. Pure, so every state round-trips under test.
-
-/**
- * TASK.md keeps the state as the flat scalars it always had — `status` plus
- * the fields that state carries — so a file written before the union reads
- * the same, and a founder reading one sees the same lines.
- */
+// Keep status and state-specific fields flat for compatibility with existing TASK.md files.
 export function taskToDoc(t: Task): FrontmatterDoc {
   const metadata: FrontmatterDoc["metadata"] = {
     status: t.state.kind,
@@ -75,10 +69,8 @@ function parseTaskStatus(raw: string | null): TaskStatus {
   return TASK_STATUSES.find((s) => s === raw) ?? "todo";
 }
 
-/** A blocked task whose ask went missing is still waiting on the founder; say so. */
 const LOST_ASK: BlockedAsk = { type: "question", question: "(question lost)" };
 
-/** The state a file describes. A running task with no lock is one whose run was lost. */
 function parseTaskState(m: FrontmatterDoc["metadata"]): TaskState {
   const status = parseTaskStatus(optStr(m, "status"));
   const summary = optStr(m, "summary");

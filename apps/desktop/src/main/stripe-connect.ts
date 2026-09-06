@@ -1,6 +1,5 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
-import { shell } from "electron";
 import {
   ConnectedAccountSchema,
   DEAUTHORIZE_PATH,
@@ -14,22 +13,19 @@ import { newKeyring, open, type Keyring } from "@repo/stripe-connect-protocol/se
 import { listenLoopback } from "@/main/lib/http";
 import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
+import { requireCompany } from "@/main/store/store";
+import { errorMessage } from "@/shared/errors";
 import type { StripeStatus } from "@/shared/ipc-registry";
 
-// ---------------------------------------------------------------------------
-// Stripe Connect OAuth, desktop side. We open the browser at the site's
-// authorize route with a state naming our ephemeral loopback port; the site's
-// callback exchanges the code (platform secret never leaves Vercel) and
-// redirects the read-only connected-account token to us. The token then lives
-// in ~/.idlebiz/secrets.json and the metrics pulse reads real revenue +
-// customer counts with it. The handshake's shapes: @repo/stripe-connect-protocol.
-// ---------------------------------------------------------------------------
+// The web callback exchanges the OAuth code and seals the read-only token for
+// this loopback flow. The platform secret stays on the web server.
 
 const WEB_BASE = process.env["IDLEBIZ_WEB_URL"] ?? "https://idlebiz.com";
 const FLOW_TIMEOUT_MS = 5 * 60_000;
 const STRIPE_TOKEN_KEY = "STRIPE_CONNECT_TOKEN";
 
 interface PendingFlow {
+  companyId: string;
   server: Server;
   nonce: string;
   /** This flow's key pair; the private half dies with the flow. */
@@ -38,19 +34,25 @@ interface PendingFlow {
 }
 
 let pending: PendingFlow | null = null;
+let generation = 0;
+let revoking: Promise<void> | null = null;
 let lastError: string | null = null;
 
 type Notify = (status: StripeStatus) => void;
 let notify: Notify = () => {};
 let onConnected: (companyId: string) => void = () => {};
+let openExternal: (url: string) => Promise<void> = async () => {
+  throw new Error("Stripe Connect is not initialized");
+};
 
 export function initStripeConnect(hooks: {
   notify: Notify;
-  /** Fired after a successful connect so the caller can pulse metrics immediately. */
   onConnected: (companyId: string) => void;
+  openExternal: (url: string) => Promise<void>;
 }): void {
   notify = hooks.notify;
   onConnected = hooks.onConnected;
+  openExternal = hooks.openExternal;
 }
 
 export function getStripeStatus(companyId: string): StripeStatus {
@@ -63,7 +65,6 @@ export function getStripeStatus(companyId: string): StripeStatus {
   return { state: "disconnected" };
 }
 
-/** The flow stopped: remember why (the status query reports it) and tell the window. */
 function fail(message: string): void {
   lastError = message;
   notify({ state: "error", message });
@@ -74,25 +75,35 @@ export function markAuthError(message: string): void {
   if (lastError !== message) fail(message);
 }
 
-function closePending(): void {
-  if (!pending) return;
-  clearTimeout(pending.timeout);
+function closeFlow(flow: PendingFlow): void {
+  clearTimeout(flow.timeout);
   try {
-    pending.server.close();
+    flow.server.close();
   } catch {
     /* already closed */
   }
-  pending = null;
+  if (pending === flow) pending = null;
+}
+
+function cancelPending(): number {
+  generation += 1;
+  if (pending) closeFlow(pending);
+  return generation;
 }
 
 function html(body: string): string {
   return `<!doctype html><meta charset="utf-8"><title>IdleBiz</title><body style="background:#12141c;color:#f5f3ea;font-family:ui-monospace,monospace;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h1 style="font-size:18px">${body}</h1><p style="color:#66739f;font-size:13px">You can close this tab and return to IdleBiz.</p></div></body>`;
 }
 
-/** Start the loopback server + open the browser at the hosted authorize route. */
 export async function beginConnect(companyId: string): Promise<{ started: boolean }> {
-  closePending();
+  requireCompany(companyId);
+  const current = cancelPending();
   lastError = null;
+  // Deauthorization revokes the account, including a token a new flow might obtain.
+  if (revoking) {
+    await revoking;
+    if (current !== generation) return { started: false };
+  }
 
   const nonce = randomBytes(16).toString("base64url");
   const server = createServer((req, res) => {
@@ -101,35 +112,65 @@ export async function beginConnect(companyId: string): Promise<{ started: boolea
       res.writeHead(404).end();
       return;
     }
-    void handleCallback(companyId, url.searchParams).then((ok) => {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html(ok ? "Stripe connected ✓" : "Stripe connection failed"));
-      closePending();
-      return null;
-    });
+    const flow = pending;
+    if (!flow || flow.server !== server) {
+      res.writeHead(410).end();
+      return;
+    }
+    void handleCallback(flow, url.searchParams)
+      .catch((cause: unknown) => {
+        if (current === generation) fail(errorMessage(cause));
+        return false;
+      })
+      .then((ok) => {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(html(ok ? "Stripe connected ✓" : "Stripe connection failed"));
+        closeFlow(flow);
+        return null;
+      });
   });
 
-  const port = await listenLoopback(server);
-  const ring = await newKeyring();
+  try {
+    const port = await listenLoopback(server);
+    if (current !== generation) {
+      server.close();
+      return { started: false };
+    }
+    const ring = await newKeyring();
+    if (current !== generation) {
+      server.close();
+      return { started: false };
+    }
 
-  pending = {
-    server,
-    nonce,
-    ring,
-    timeout: setTimeout(() => {
-      closePending();
-      fail("Stripe connection timed out — try again.");
-    }, FLOW_TIMEOUT_MS),
-  };
-  notify({ state: "connecting" });
+    const flow: PendingFlow = {
+      companyId,
+      server,
+      nonce,
+      ring,
+      timeout: setTimeout(() => {
+        if (pending !== flow) return;
+        closeFlow(flow);
+        fail("Stripe connection timed out — try again.");
+      }, FLOW_TIMEOUT_MS),
+    };
+    pending = flow;
+    notify({ state: "connecting" });
 
-  await shell.openExternal(authorizeUrl(WEB_BASE, { port, nonce, key: ring.publicKey }));
-  return { started: true };
+    await openExternal(authorizeUrl(WEB_BASE, { port, nonce, key: ring.publicKey }));
+    return { started: current === generation };
+  } catch (cause) {
+    server.close();
+    if (current !== generation) return { started: false };
+    if (pending?.server === server) closeFlow(pending);
+    fail(errorMessage(cause));
+    throw cause;
+  }
 }
 
-async function handleCallback(companyId: string, params: URLSearchParams): Promise<boolean> {
+async function handleCallback(flow: PendingFlow, params: URLSearchParams): Promise<boolean> {
   const callback = parseCallback(params);
-  if (!pending || !callback || callback.nonce !== pending.nonce) {
+  if (pending !== flow) return false;
+  if (!callback || callback.nonce !== flow.nonce) {
     fail("Stripe callback rejected (bad nonce).");
     return false;
   }
@@ -142,16 +183,19 @@ async function handleCallback(companyId: string, params: URLSearchParams): Promi
     );
     return false;
   }
-  const account = await open(pending.ring, outcome.sealed, ConnectedAccountSchema);
+  const account = await open(flow.ring, outcome.sealed, ConnectedAccountSchema);
+  if (pending !== flow) return false;
   if (!account) {
     fail("Stripe callback rejected (envelope not ours).");
     return false;
   }
-  connect(companyId, account);
+  closeFlow(flow);
+  connect(flow.companyId, account);
   return true;
 }
 
 function connect(companyId: string, account: ConnectedAccount): void {
+  requireCompany(companyId);
   const { accessToken, stripeUserId: accountId, livemode } = account;
   setSecret(STRIPE_TOKEN_KEY, accessToken);
   writeMetricsConfig(companyId, {
@@ -165,25 +209,30 @@ function connect(companyId: string, account: ConnectedAccount): void {
 
 /** Deauthorize on Stripe's side (best effort) and clean up local state. */
 export async function disconnectStripe(companyId: string): Promise<{ ok: boolean }> {
-  closePending();
+  requireCompany(companyId);
+  cancelPending();
   const token = getSecret(STRIPE_TOKEN_KEY);
   const account = readMetricsConfig(companyId)?.stripeAccount;
-  if (token && account) {
-    const body: DeauthorizeBody = { accessToken: token, stripeUserId: account.accountId };
-    try {
-      await fetch(`${WEB_BASE}${DEAUTHORIZE_PATH}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(8000),
-      });
-    } catch {
-      /* best effort — local cleanup still proceeds */
-    }
-  }
+  // Clear local credentials immediately; new authorization waits for remote revocation below.
   deleteSecret(STRIPE_TOKEN_KEY);
   writeMetricsConfig(companyId, { stripe: undefined, stripeAccount: undefined });
   lastError = null;
   notify({ state: "disconnected" });
+  if (token && account) {
+    const body: DeauthorizeBody = { accessToken: token, stripeUserId: account.accountId };
+    const revocation = fetch(`${WEB_BASE}${DEAUTHORIZE_PATH}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    })
+      .then(() => undefined)
+      .catch(() => {
+        /* best effort — local cleanup already completed */
+      });
+    revoking = revocation;
+    await revocation;
+    if (revoking === revocation) revoking = null;
+  }
   return { ok: true };
 }

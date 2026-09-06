@@ -5,21 +5,15 @@ import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
 import type { VercelProject } from "@/shared/ipc-registry";
 
-/** What the pasted token turned up. */
 type Lookup =
   | { state: "idle" }
   | { state: "loading" }
   | { state: "error"; message: string }
   | { state: "loaded"; account: string | undefined; projects: VercelProject[] };
 
-/** The chosen project on its way to becoming the connection. */
 type Pick = { state: "idle" } | { state: "connecting" } | { state: "error"; message: string };
 
-/**
- * Bind a product to a Vercel project with a personal access token: paste →
- * validate + list projects → pick one. The token powers the users metric (Web
- * Analytics), the product's deploy state, and the team's real `vercel` deploys.
- */
+// The token also powers product metrics and the team's deployments.
 export function ConnectVercel({ productId, onClose }: { productId: string; onClose: () => void }) {
   const product = useStore((s) => s.products).find((p) => p.id === productId);
   const [token, setToken] = useState("");

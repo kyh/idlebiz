@@ -10,8 +10,6 @@ import { Modal } from "@/renderer/ui/modal";
 import { isOutOfBudget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
-/** Budget control + Stripe connection: how much real money the office may burn,
- *  and where the real revenue/user numbers come from. */
 export function BudgetModal({ onClose }: { onClose: () => void }) {
   const company = useStore((s) => s.company);
   const stripeStatus = useStore((s) => s.stripeStatus);

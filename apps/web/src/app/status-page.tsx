@@ -7,7 +7,6 @@ type StatusPageProps = {
   action: ReactNode;
 };
 
-/** The centered "something is off" page shared by the error boundaries and 404. */
 export function StatusPage({ code, title, description, action }: StatusPageProps) {
   return (
     <main className="px-floor flex min-h-dvh flex-col items-center justify-center gap-6 px-4 py-10 text-center">

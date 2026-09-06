@@ -1,46 +1,8 @@
-// The static gate for office-design.json: does the office the data promises exist,
-// and can the founder be seen walking around in it?
-//
-// Four lies are checked, all of which the game renders without complaint:
-//
-//  1. Places nobody can reach. The layout names seats, points of interest and a
-//     door; each must be walkable from the founder's spawn, or an employee is
-//     told to sit somewhere and stands in a corridor forever. `layoutIssues` in
-//     src/shared/office-grid.ts is the judge — the same BFS the scene walks.
-//
-//  2. Floor nobody can stand on. A cell the collision grid leaves open that no
-//     reachable body ever probes is a pocket: floor the founder can see and can
-//     never step on — a lane narrower than the body, a corner behind a plant, a
-//     room sealed by one tile. The walker seals these at load; the data should
-//     not have them.
-//
-//  3. Places the player can stand where their art hangs over nothing. The office
-//     keeps its art and its collision in two independent sections — sprites come
-//     from `objects`, solidity from `collision` — and nothing reconciles them.
-//     They disagree easily, because the probe that stops the player is a 16x12
-//     box while the sprite drawn is 32x64: the art overhangs the body by ~8px per
-//     side. Let the body reach a wall tile whose opaque face starts inboard of its
-//     cell and the character renders against the background, sliced at the wall's
-//     edge. For every place the player can actually reach: does any OPAQUE pixel
-//     of their sprite land on a pixel the room paints nothing at?
-//
-//  4. Places the player can stand and not be seen. Characters y-sort on their
-//     soles and furniture on its floor line, so standing north of a desk puts
-//     your legs behind it — that is right. Standing where something in front of
-//     you covers your FACE is not: a pocket behind a bookshelf, an overhead prop
-//     over a lane. For every reachable position: what fraction of the face is
-//     painted over by sprites the scene draws above the character?
-//
-// The office builder can author any of these back at any time, so run it after
-// editing a layout. The schema, the grid, the paint order and the character frame
-// are imported from src/shared as-is (node strips the types), so this cannot
-// drift from what the game and the save handler check.
-//
+// Checks reachability, floor pockets, sprite overhang and face occlusion using
+// the same geometry as the game. Art and collision are authored independently.
 // Usage: node scripts/check-office.mjs [--layout path.json] [--sheet path.png]
-//        exit 0 = clean, 1 = something the founder would hit or not see
+// Exit 0 = clean, 1 = invalid layout.
 import path from "node:path";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
 import { parseOfficeLayout } from "../src/shared/office-layout-schema.ts";
@@ -55,11 +17,9 @@ import { comparePaintOrder } from "../src/shared/office-depth.ts";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
 import { hiddenNodes, opaqueAt } from "../src/shared/office-sight.ts";
 import { objectSpritePath } from "../src/renderer/game/office-object-sprite.ts";
+import { loadRaw } from "./lib/pixels.cjs";
 
-const require = createRequire(import.meta.url);
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { sprite } = require("./lib/office-assets.cjs");
-const { loadRaw } = require("./lib/pixels.cjs");
+const appRoot = path.resolve(import.meta.dirname, "..");
 
 const { values: flags } = parseArgs({
   options: {
@@ -83,11 +43,15 @@ function maskOf(img) {
 /** Every sprite the room paints, in paint order, with its decoded pixels. */
 async function paintedSprites(layout) {
   const out = [];
+  const masks = new Map();
   for (const obj of layout.objects.toSorted(comparePaintOrder)) {
-    out.push({
-      obj,
-      mask: maskOf(await sprite(path.join(appRoot, "public", objectSpritePath(obj)))),
-    });
+    const file = path.join(appRoot, "public", objectSpritePath(obj));
+    let mask = masks.get(file);
+    if (!mask) {
+      mask = maskOf(await loadRaw(file));
+      masks.set(file, mask);
+    }
+    out.push({ obj, mask });
   }
   return out;
 }
@@ -140,7 +104,6 @@ function report(found, clean, offenders, format, advice) {
   process.exitCode = 1;
 }
 
-// ---- 1. reachability -------------------------------------------------------
 function checkReachability(layout) {
   const issues = layoutIssues(layout);
   console.log(
@@ -157,7 +120,6 @@ function checkReachability(layout) {
   );
 }
 
-// ---- 2. floor pockets ------------------------------------------------------
 function checkPockets(layout) {
   // the walker seals these at load; the gate reports them so the data stays honest
   const pockets = pocketCells(authoredGrid(layout), layout.spawn).map(({ r, c }) => ({
@@ -169,14 +131,13 @@ function checkPockets(layout) {
     "open floor cell(s) no body can ever stand on",
     "every open floor cell is somewhere the founder can stand",
     pockets,
-    (p) => `${at(p)}`,
+    at,
     "Open floor nobody can reach reads as a place to go, and the nodes beside it stand\n" +
       "half inside furniture. Widen the lane to the body's 16x12, connect the room, or\n" +
       "mark the cell solid (Rebuild collision in the builder does this).",
   );
 }
 
-// ---- 3. art over void ------------------------------------------------------
 function checkVoid(layout, painted, silhouette, nodes) {
   const { width: W, height: H } = layout;
   const offenders = [];
@@ -209,7 +170,6 @@ function checkVoid(layout, painted, silhouette, nodes) {
   );
 }
 
-// ---- 4. face occlusion -----------------------------------------------------
 function checkOcclusion(layout, sprites, silhouette) {
   const hidden = hiddenNodes(walkGridOf(layout), layout.spawn, sprites, silhouette);
   report(

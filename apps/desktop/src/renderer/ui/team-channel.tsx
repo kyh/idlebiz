@@ -3,8 +3,10 @@ import { useStore, sendFounderChat } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { formatTime } from "@/shared/format";
+import { errorMessage } from "@/shared/errors";
 
-/** What the room shows: what people said, shipped, and who came and went. */
+type Submission = { kind: "ready" } | { kind: "sending" } | { kind: "failed"; message: string };
+
 const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
   "chat",
   "ship",
@@ -15,17 +17,13 @@ const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
 
 const inFeed = (a: ActivityEvent): boolean => FEED_KINDS.has(a.kind);
 
-/**
- * The team channel (bottom-right): a live room the founder is actually in.
- * Agents' chatter, ships and org changes stream here; typing posts to the
- * room, and @first-name wakes that employee with the message.
- */
 export function TeamChannel() {
   const employees = useStore((s) => s.employees);
   const activity = useStore((s) => s.activity);
   const company = useStore((s) => s.company);
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
+  const [submission, setSubmission] = useState<Submission>({ kind: "ready" });
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -45,11 +43,17 @@ export function TeamChannel() {
 
   const nameOf = (id?: string | null): string => (id ? employeeName(employees, id, "team") : "you");
 
-  const send = () => {
+  const send = async () => {
     const text = draft.trim();
-    if (!text) return;
-    setDraft("");
-    void sendFounderChat(text);
+    if (!text || submission.kind === "sending") return;
+    setSubmission({ kind: "sending" });
+    try {
+      await sendFounderChat(text);
+      setDraft("");
+      setSubmission({ kind: "ready" });
+    } catch (cause) {
+      setSubmission({ kind: "failed", message: errorMessage(cause) });
+    }
   };
 
   return (
@@ -73,22 +77,34 @@ export function TeamChannel() {
       <div className="flex gap-1 p-1.5">
         <input
           value={draft}
+          disabled={submission.kind === "sending"}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              send();
+              void send();
             }
           }}
           placeholder={focused ? "@name wakes them up" : "Message the team…"}
           className="px-field min-w-0 flex-1"
         />
-        <button type="button" onClick={send} disabled={!draft.trim()} className="px-btn">
+        <button
+          type="button"
+          onClick={() => void send()}
+          disabled={!draft.trim() || submission.kind === "sending"}
+          aria-label={submission.kind === "sending" ? "Sending message" : "Send message"}
+          className="px-btn"
+        >
           <span className="px-icon px-icon-solo">➤</span>
         </button>
       </div>
+      {submission.kind === "failed" ? (
+        <div role="alert" className="px-2 pb-2 text-xs text-danger">
+          Could not send: {submission.message}
+        </div>
+      ) : null}
     </div>
   );
 }

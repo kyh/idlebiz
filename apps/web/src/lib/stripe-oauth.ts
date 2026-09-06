@@ -1,9 +1,4 @@
-// Stripe Connect OAuth, site side. The desktop opens /api/stripe/authorize
-// with a state naming its loopback port; after the founder approves on Stripe,
-// /api/stripe/callback exchanges the code here (the platform secret never
-// leaves the server) and forwards the read-only connected-account token to the
-// desktop. The handshake's shapes live in @repo/stripe-connect-protocol.
-
+// Exchange codes on the server so the platform secret never reaches the desktop.
 import { z } from "zod";
 import { env } from "@/lib/env";
 import type { ConnectedAccount } from "@repo/stripe-connect-protocol/protocol";
@@ -16,7 +11,6 @@ const tokenResponseSchema = z.object({
 
 const tokenErrorSchema = z.object({ error_description: z.string() });
 
-/** POST connect.stripe.com/oauth/token with the platform secret. */
 export async function exchangeCode(code: string): Promise<ConnectedAccount> {
   const secret = env.STRIPE_SECRET_KEY;
   if (!secret) throw new Error("STRIPE_SECRET_KEY not configured");

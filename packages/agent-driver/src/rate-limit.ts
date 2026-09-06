@@ -1,8 +1,3 @@
-// Subscription CLIs hit usage/session limits in normal play — the single
-// most common real-world run failure. Detect it from the error text and
-// recover the reset time so the caller can PARK work instead of burning
-// retries on a wall that won't move.
-
 /** How long to park when the message names no reset time. */
 const DEFAULT_PARK_MS = 30 * 60_000;
 
@@ -23,10 +18,7 @@ export interface RateLimitInfo {
   resetsAt: number;
 }
 
-/**
- * Current wall-clock minutes-of-day in an IANA zone, via Intl — avoids any
- * hand-rolled offset math. Returns null for an unknown zone.
- */
+/** Wall-clock minutes in an IANA zone; null for an unknown zone. */
 function minutesOfDayIn(zone: string, at: Date): number | null {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -52,12 +44,7 @@ function nextWallClock(targetMinutes: number, zone: string, now: Date): number |
   return now.getTime() + (deltaMin === 0 ? 24 * 60 : deltaMin) * 60_000;
 }
 
-/**
- * Detect a usage/session/rate limit in a run's error text. Understands the
- * CLIs' human formats — "resets 10:30pm (America/Los_Angeles)",
- * "try again at 3am", "try again in 2 hours 15 minutes" — and falls back to
- * a default park window when only the fact of the limit is recognizable.
- */
+/** Parse a CLI limit message into a reset time, defaulting when no time is readable. */
 export function parseRateLimit(text: string | undefined, now = new Date()): RateLimitInfo | null {
   if (!text || !LIMIT_PATTERNS.some((p) => p.test(text))) return null;
 
