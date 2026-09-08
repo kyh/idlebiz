@@ -1,33 +1,36 @@
 import { useEffect, useEffectEvent, useRef } from "react";
-import Phaser from "phaser";
+import { AUTO, Game, Scale } from "phaser";
+import type Phaser from "phaser";
 import type { OfficeLayoutData } from "@/renderer/game/office-layout";
 import { OfficeScene, officeSceneData } from "@/renderer/game/scenes/office-scene";
 
-export function PhaserGame({
+export const PhaserGame = ({
   layout,
   onGame,
 }: {
   layout: OfficeLayoutData;
   onGame?: (game: Phaser.Game | null) => void;
-}) {
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const handOff = useEffectEvent((game: Phaser.Game | null) => onGame?.(game));
   const firstLayout = useEffectEvent(() => layout);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current) {
+      return;
+    }
 
-    const game = new Phaser.Game({
-      type: Phaser.AUTO,
-      parent: containerRef.current,
+    const game = new Game({
+      audio: { noAudio: true },
       backgroundColor: "#12141c",
+      parent: containerRef.current,
       pixelArt: true,
-      roundPixels: true,
       // dev-only: lets CDP/snapshot tooling capture the WebGL canvas for visual QA
       render: { preserveDrawingBuffer: import.meta.env.DEV },
-      audio: { noAudio: true },
-      scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
+      roundPixels: true,
+      scale: { height: "100%", mode: Scale.RESIZE, width: "100%" },
+      type: AUTO,
     });
     // the layout rides in as scene data, so the scene has it from init() on
     game.scene.add("office", OfficeScene, true, officeSceneData(firstLayout()));
@@ -48,7 +51,9 @@ export function PhaserGame({
   // a new layout while the office is up: the scene rebuilds from it
   useEffect(() => {
     const scene = gameRef.current?.scene.getScene("office");
-    if (scene?.scene.isActive()) scene.scene.restart(officeSceneData(layout));
+    if (scene?.scene.isActive()) {
+      scene.scene.restart(officeSceneData(layout));
+    }
   }, [layout]);
 
   return (
@@ -56,4 +61,4 @@ export function PhaserGame({
       <div ref={containerRef} className="absolute inset-0" />
     </div>
   );
-}
+};

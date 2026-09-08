@@ -6,32 +6,34 @@ import type { VercelDeployment, VercelProject } from "@/shared/ipc-registry";
 
 const API = "https://api.vercel.com";
 
-function apiGet(
+const apiGet = (
   path: string,
   token: string,
   params: Record<string, string> = {},
-): Promise<JsonValue> {
+): Promise<JsonValue> => {
   const qs = new URLSearchParams(params).toString();
   return getJson(
     `${API}${path}${qs ? `?${qs}` : ""}`,
     { Authorization: `Bearer ${token}` },
     10_000,
   );
-}
+};
 
 const UserSchema = z.object({
-  user: z.object({ username: z.string().optional(), name: z.string().nullish() }),
+  user: z.object({ name: z.string().nullish(), username: z.string().optional() }),
 });
 
-export async function validateToken(token: string): Promise<{ ok: boolean; account?: string }> {
+export const validateToken = async (token: string): Promise<{ ok: boolean; account?: string }> => {
   try {
     const parsed = UserSchema.safeParse(await apiGet("/v2/user", token));
-    if (!parsed.success) return { ok: true };
-    return { ok: true, account: parsed.data.user.name ?? parsed.data.user.username };
+    if (!parsed.success) {
+      return { ok: true };
+    }
+    return { account: parsed.data.user.name ?? parsed.data.user.username, ok: true };
   } catch {
     return { ok: false };
   }
-}
+};
 
 const ProjectsSchema = z.object({
   projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
@@ -41,7 +43,7 @@ const TeamsSchema = z.object({
 });
 
 /** Projects across the personal account and every team the token can see. */
-export async function listProjects(token: string): Promise<VercelProject[]> {
+export const listProjects = async (token: string): Promise<VercelProject[]> => {
   const out: VercelProject[] = [];
   const personal = ProjectsSchema.safeParse(await apiGet("/v9/projects", token, { limit: "100" }));
   if (personal.success) {
@@ -55,7 +57,9 @@ export async function listProjects(token: string): Promise<VercelProject[]> {
           const projs = ProjectsSchema.safeParse(
             await apiGet("/v9/projects", token, { limit: "100", teamId: team.id }),
           );
-          if (!projs.success) return [];
+          if (!projs.success) {
+            return [];
+          }
           return projs.data.projects.map((p) => ({ id: p.id, name: p.name, teamId: team.id }));
         }),
       );
@@ -65,19 +69,21 @@ export async function listProjects(token: string): Promise<VercelProject[]> {
     /* personal-only token */
   }
   return out;
-}
+};
 
 const VisitsCountSchema = z.object({
-  data: z.object({ visitors: z.number().optional(), pageviews: z.number().optional() }),
+  data: z.object({ pageviews: z.number().optional(), visitors: z.number().optional() }),
 });
 
 /** Prefer 30-day visitors; fall back to the production total if the dated query fails. */
-export async function webAnalyticsVisitors(
+export const webAnalyticsVisitors = async (
   projectId: string,
   teamId?: string,
-): Promise<number | null> {
+): Promise<number | null> => {
   const token = getSecret("VERCEL_TOKEN");
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
   const base: Record<string, string> = teamId ? { projectId, teamId } : { projectId };
   const since = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString().slice(0, 10);
   for (const params of [{ ...base, since }, base]) {
@@ -93,17 +99,17 @@ export async function webAnalyticsVisitors(
     }
   }
   return null;
-}
+};
 
 const DeploymentsSchema = z.object({
   deployments: z
     .array(
       z.object({
-        url: z.string().optional(),
-        state: z.string().optional(),
-        readyState: z.string().optional(),
-        createdAt: z.number().optional(),
         created: z.number().optional(),
+        createdAt: z.number().optional(),
+        readyState: z.string().optional(),
+        state: z.string().optional(),
+        url: z.string().optional(),
       }),
     )
     .default([]),
@@ -115,26 +121,30 @@ const DEPLOY_CACHE_TTL_MS = 60_000;
 const deployCache = new Map<string, { at: number; value: VercelDeployment | null }>();
 
 /** The latest production deployment — the product panel's "LIVE" state. */
-export async function latestDeployment(
+export const latestDeployment = async (
   projectId: string,
   teamId?: string,
-): Promise<VercelDeployment | null> {
+): Promise<VercelDeployment | null> => {
   const token = getSecret("VERCEL_TOKEN");
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
   const cached = deployCache.get(projectId);
-  if (cached && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) return cached.value;
+  if (cached && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) {
+    return cached.value;
+  }
   const params: Record<string, string> = teamId
-    ? { projectId, limit: "1", target: "production", teamId }
-    : { projectId, limit: "1", target: "production" };
+    ? { limit: "1", projectId, target: "production", teamId }
+    : { limit: "1", projectId, target: "production" };
   let value: VercelDeployment | null = null;
   try {
     const parsed = DeploymentsSchema.safeParse(await apiGet("/v6/deployments", token, params));
     const d = parsed.success ? parsed.data.deployments[0] : undefined;
     if (d?.url) {
       value = {
-        url: `https://${d.url}`,
-        state: d.state ?? d.readyState ?? "UNKNOWN",
         createdAt: d.createdAt ?? d.created ?? 0,
+        state: d.state ?? d.readyState ?? "UNKNOWN",
+        url: `https://${d.url}`,
       };
     }
   } catch {
@@ -142,4 +152,4 @@ export async function latestDeployment(
   }
   deployCache.set(projectId, { at: Date.now(), value });
   return value;
-}
+};

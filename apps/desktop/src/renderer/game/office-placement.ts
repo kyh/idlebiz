@@ -23,11 +23,11 @@ export type SeatPlan = ReadonlyMap<string, number | null>;
  * into when it is free, else the lowest free seat, else none. Order of
  * `employees` breaks ties, so the roster's own order is the priority order.
  */
-export function planSeats(
+export const planSeats = (
   seatCount: number,
   employees: readonly SeatedEmployee[],
   previous: SeatPlan,
-): SeatPlan {
+): SeatPlan => {
   const plan = new Map<string, number | null>();
   const taken = new Set<number>();
   const claim = (id: string, seat: number): void => {
@@ -37,12 +37,18 @@ export function planSeats(
 
   for (const emp of employees) {
     const prior = previous.get(emp.id);
-    if (prior === undefined || prior === null) continue;
-    if (prior < seatCount && !taken.has(prior)) claim(emp.id, prior);
+    if (prior === undefined || prior === null) {
+      continue;
+    }
+    if (prior < seatCount && !taken.has(prior)) {
+      claim(emp.id, prior);
+    }
   }
 
   for (const emp of employees) {
-    if (plan.has(emp.id)) continue;
+    if (plan.has(emp.id)) {
+      continue;
+    }
     if (seatCount === 0) {
       plan.set(emp.id, null);
       continue;
@@ -61,8 +67,11 @@ export function planSeats(
         break;
       }
     }
-    if (free === null) plan.set(emp.id, null);
-    else claim(emp.id, free);
+    if (free === null) {
+      plan.set(emp.id, null);
+    } else {
+      claim(emp.id, free);
+    }
   }
   return plan;
-}
+};

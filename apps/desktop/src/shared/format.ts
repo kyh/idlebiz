@@ -9,8 +9,8 @@ export const formatTime = (epoch: number): string => timeFmt.format(epoch);
 export const formatDate = (epoch: number): string => dateFmt.format(epoch);
 
 const compactFmt = new Intl.NumberFormat(undefined, {
-  notation: "compact",
   maximumFractionDigits: 1,
+  notation: "compact",
 });
 
 /** "1.2k", "3.4M" — a scoreboard number. */
@@ -22,13 +22,12 @@ export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
 export const napLabel = (until: number): string => `☕ resting til ${formatTime(until)}`;
 
 /** When the office wakes: the earliest of the runners' usage-limit resets still ahead. */
-export function earliestReset(
+export const earliestReset = (
   resting: Readonly<Partial<Record<string, number>>>,
   now: number,
-): number | undefined {
-  return Object.values(resting)
+): number | undefined =>
+  Object.values(resting)
     .filter((t): t is number => t !== undefined && t > now)
     .toSorted((a, b) => a - b)[0];
-}
 
 export const spentLabel = (spentUsd: number): string => `spent ${formatUsd(spentUsd)}`;

@@ -13,35 +13,145 @@ import { taskIn } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
 import type { ChatOption } from "@/shared/ipc-registry";
 import { errorMessage } from "@/shared/errors";
+import { cn } from "cn";
 
 const NOTE_MS = 1800;
 
 type Submission = { kind: "ready" } | { kind: "sending" } | { kind: "failed"; message: string };
+type Spoken = Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }>;
 
-export function Dialogue() {
-  const game = useStore((s) => s.game);
-  const employees = useStore((s) => s.employees);
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!game) return;
-    const onInteract = (p: { employeeId: string }) => setOpenId(p.employeeId);
-    game.events.on("npc-interact", onInteract);
-    return () => {
-      game.events.off("npc-interact", onInteract);
-    };
-  }, [game]);
-
-  const emp = employees.find((e) => e.id === openId);
-  if (!emp) return null;
-  return <DialoguePanel key={emp.id} emp={emp} onClose={() => setOpenId(null)} />;
-}
-const isSpoken = (
-  a: ActivityEvent,
-): a is Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }> =>
+const isSpoken = (a: ActivityEvent): a is Spoken =>
   a.kind === "chat" || a.kind === "message" || a.kind === "ship";
 
-function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void }) {
+// what they SAY: the latest real utterance, Pokémon-style; with none, a line
+// about what they're doing
+const speechFor = (
+  latest: Spoken | undefined,
+  working: boolean,
+  running: { title: string } | undefined,
+): string => {
+  if (latest) {
+    return latest.kind === "ship" ? `Shipped it! ${latest.message}` : latest.message;
+  }
+  if (!working) {
+    return "All quiet. What should I do next?";
+  }
+  return running ? `On it — "${running.title}".` : "Heads down on something right now.";
+};
+
+const Identity = ({ emp, working }: { emp: Employee; working: boolean }) => (
+  <div className="flex items-center gap-3">
+    <Portrait seed={emp.spriteSeed} size="md" alt={emp.name} />
+    <div className="flex-1">
+      <div className="text-base uppercase tracking-wide">{emp.name}</div>
+      <div className="text-xs text-accent-lo">{emp.title || emp.role}</div>
+      <span
+        className="px-badge mt-1 inline-block"
+        style={
+          working
+            ? { background: "var(--warn)", color: "#3a2c0a" }
+            : { background: "#d8d4c4", color: "var(--fg)" }
+        }
+      >
+        {working ? <span className="px-live-dot">● working</span> : "idle"}
+      </span>
+    </div>
+  </div>
+);
+
+type Row = { kind: "ask"; option: ChatOption } | { kind: "talk" };
+const labelOf = (row: Row): string => (row.kind === "ask" ? row.option.label : "Talk…");
+const CommandMenu = ({
+  rows,
+  sel,
+  onHover,
+  onChoose,
+  disabled,
+}: {
+  rows: readonly Row[];
+  sel: number;
+  onHover: (i: number) => void;
+  onChoose: (i: number) => void;
+  disabled: boolean;
+}) => (
+  <>
+    <div className="mb-1 flex flex-1 flex-col content-start gap-y-0.5">
+      {rows.map((row, i) => (
+        <button
+          type="button"
+          key={labelOf(row)}
+          data-sel={sel === i}
+          onMouseEnter={() => onHover(i)}
+          onClick={() => onChoose(i)}
+          disabled={disabled}
+          className="px-cmd truncate"
+        >
+          {labelOf(row)}
+        </button>
+      ))}
+    </div>
+    <div className="text-right text-xs text-fg-dim">↑↓ move · ⏎ select · esc close</div>
+  </>
+);
+
+const SPEECH_CLASS = "text-sm leading-relaxed break-words text-fg";
+const Speech = ({ text, companyId }: { text: string; companyId: string }) => {
+  const { shown, done, skip } = useTypewriter(text);
+  if (done) {
+    return (
+      <div className={SPEECH_CLASS} style={{ cursor: "default" }}>
+        <RichText text={text} companyId={companyId} />
+        <span className="px-more ml-1 text-accent-lo">▼</span>
+      </div>
+    );
+  }
+  return (
+    <button type="button" onClick={skip} className={cn(SPEECH_CLASS, "block w-full text-left")}>
+      {shown}
+      <span className="px-live-dot">▌</span>
+    </button>
+  );
+};
+
+const SendStatus = ({ submission, note }: { submission: Submission; note: string | null }) => {
+  if (submission.kind === "failed") {
+    return (
+      <div role="alert" className="mt-1 text-center text-xs text-danger">
+        Could not send: {submission.message}
+      </div>
+    );
+  }
+  if (submission.kind === "ready" && note) {
+    return <div className="mt-1 text-center text-xs text-ok">{note}</div>;
+  }
+  return null;
+};
+
+interface LineStyle {
+  color: string;
+  prefix: string;
+}
+const LINE_STYLES = new Map<ActivityKind, LineStyle>([
+  ["tool_call", { color: "#2f6fb0", prefix: "⚙ " }],
+  ["message", { color: "#2b2f46", prefix: "💬 " }],
+  ["ship", { color: "#2e8a4e", prefix: "📦 " }],
+  ["chat", { color: "#5a4fae", prefix: "🗨 " }],
+  ["status", { color: "#6d7187", prefix: "› " }],
+]);
+const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
+
+const FeedLine = ({ e, companyId }: { e: ActivityEvent; companyId: string }) => {
+  const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
+  const text = "message" in e ? e.message : e.kind;
+  return (
+    <div className="break-words" style={{ color }}>
+      {prefix}
+      <RichText text={text.slice(0, 300)} companyId={companyId} />
+    </div>
+  );
+};
+
+const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void }) => {
   useModal();
   const company = useStore((s) => s.company);
   const activity = useStore((s) => s.activity);
@@ -86,24 +196,34 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
   // everything the founder says goes through the team channel; the @slug
   // mention wakes exactly this employee with the message as their brief
   const send = async (instruction: string): Promise<boolean> => {
-    if (submission.kind === "sending") return false;
+    if (submission.kind === "sending") {
+      return false;
+    }
     setSubmission({ kind: "sending" });
     try {
       await directEmployee(emp.id, instruction);
-      if (!mounted.current) return false;
+      if (!mounted.current) {
+        return false;
+      }
       setSubmission({ kind: "ready" });
       showNote(`Sent to ${emp.name} ✓`);
       return true;
-    } catch (cause) {
-      if (mounted.current) setSubmission({ kind: "failed", message: errorMessage(cause) });
+    } catch (error) {
+      if (mounted.current) {
+        setSubmission({ kind: "failed", message: errorMessage(error) });
+      }
       return false;
     }
   };
 
   const choose = (i: number) => {
-    if (submission.kind === "sending") return;
+    if (submission.kind === "sending") {
+      return;
+    }
     const row = rows[i];
-    if (!row) return;
+    if (!row) {
+      return;
+    }
     if (row.kind === "talk") {
       setMode("talk");
       window.setTimeout(() => inputRef.current?.focus(), 30);
@@ -114,7 +234,9 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
 
   const submitTalk = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text) {
+      return;
+    }
     if (await send(text)) {
       setInput("");
       setMode("menu");
@@ -130,13 +252,22 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
       }
       return;
     }
+    // typing an answer
     const tag = document.activeElement?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA") return; // typing an answer
-    if (e.key === "ArrowDown") setSel((s) => Math.min(rows.length - 1, s + 1));
-    else if (e.key === "ArrowUp") setSel((s) => Math.max(0, s - 1));
-    else if (e.key === "Enter" || e.key === " ") choose(sel);
-    else if (e.key === "Escape") onClose();
-    else return;
+    if (tag === "INPUT" || tag === "TEXTAREA") {
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      setSel((s) => Math.min(rows.length - 1, s + 1));
+    } else if (e.key === "ArrowUp") {
+      setSel((s) => Math.max(0, s - 1));
+    } else if (e.key === "Enter" || e.key === " ") {
+      choose(sel);
+    } else if (e.key === "Escape") {
+      onClose();
+    } else {
+      return;
+    }
     e.preventDefault();
   });
   useEffect(() => {
@@ -148,23 +279,17 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
     };
   }, []);
 
-  if (!company) return null;
+  if (!company) {
+    return null;
+  }
   // what they SAY: the latest real utterance (chat/message/ship), Pokémon-style
   const spoken = mine.filter(isSpoken).filter((a) => a.message);
-  const latest = spoken[spoken.length - 1];
+  const latest = spoken.at(-1);
   // what they're DOING: everything else stays a compact activity trail
   const trail: ActivityEvent[] = mine.filter((a) => a !== latest).slice(-3);
   const working = emp.status === "working";
   const running = tasks.find((t) => t.state.kind === "running" || t.state.kind === "queued");
-  const speech = latest
-    ? latest.kind === "ship"
-      ? `Shipped it! ${latest.message}`
-      : latest.message
-    : working
-      ? running
-        ? `On it — "${running.title}".`
-        : "Heads down on something right now."
-      : "All quiet. What should I do next?";
+  const speech = speechFor(latest, working, running);
 
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center p-4">
@@ -230,7 +355,9 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
                   </button>
                   <button
                     type="button"
-                    onClick={() => void submitTalk()}
+                    onClick={() => {
+                      void submitTalk();
+                    }}
                     disabled={!input.trim() || submission.kind === "sending"}
                     className="px-btn-accent px-btn flex-1"
                   >
@@ -240,13 +367,7 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
               </div>
             )}
           </div>
-          {submission.kind === "failed" ? (
-            <div role="alert" className="mt-1 text-center text-xs text-danger">
-              Could not send: {submission.message}
-            </div>
-          ) : submission.kind === "ready" && note ? (
-            <div className="mt-1 text-center text-xs text-ok">{note}</div>
-          ) : null}
+          <SendStatus submission={submission} note={note} />
         </div>
 
         <button
@@ -260,113 +381,27 @@ function DialoguePanel({ emp, onClose }: { emp: Employee; onClose: () => void })
       </div>
     </div>
   );
-}
-function Identity({ emp, working }: { emp: Employee; working: boolean }) {
-  return (
-    <div className="flex items-center gap-3">
-      <Portrait seed={emp.spriteSeed} size="md" alt={emp.name} />
-      <div className="flex-1">
-        <div className="text-base uppercase tracking-wide">{emp.name}</div>
-        <div className="text-xs text-accent-lo">{emp.title || emp.role}</div>
-        <span
-          className="px-badge mt-1 inline-block"
-          style={
-            working
-              ? { background: "var(--warn)", color: "#3a2c0a" }
-              : { background: "#d8d4c4", color: "var(--fg)" }
-          }
-        >
-          {working ? <span className="px-live-dot">● working</span> : "idle"}
-        </span>
-      </div>
-    </div>
-  );
-}
-type Row = { kind: "ask"; option: ChatOption } | { kind: "talk" };
-const labelOf = (row: Row): string => (row.kind === "ask" ? row.option.label : "Talk…");
-function CommandMenu({
-  rows,
-  sel,
-  onHover,
-  onChoose,
-  disabled,
-}: {
-  rows: readonly Row[];
-  sel: number;
-  onHover: (i: number) => void;
-  onChoose: (i: number) => void;
-  disabled: boolean;
-}) {
-  return (
-    <>
-      <div className="mb-1 flex flex-1 flex-col content-start gap-y-0.5">
-        {rows.map((row, i) => (
-          <button
-            type="button"
-            key={labelOf(row)}
-            data-sel={sel === i}
-            onMouseEnter={() => onHover(i)}
-            onClick={() => onChoose(i)}
-            disabled={disabled}
-            className="px-cmd truncate"
-          >
-            {labelOf(row)}
-          </button>
-        ))}
-      </div>
-      <div className="text-right text-xs text-fg-dim">↑↓ move · ⏎ select · esc close</div>
-    </>
-  );
-}
-function Speech({ text, companyId }: { text: string; companyId: string }) {
-  const { shown, done, skip } = useTypewriter(text);
-  return (
-    <div
-      onClick={done ? undefined : skip}
-      onKeyDown={
-        done
-          ? undefined
-          : (event) => {
-              if (event.key !== "Enter" && event.key !== " ") return;
-              event.preventDefault();
-              skip();
-            }
-      }
-      role={done ? undefined : "button"}
-      tabIndex={done ? undefined : 0}
-      className="text-sm leading-relaxed break-words text-fg"
-      style={{ cursor: done ? "default" : "pointer" }}
-    >
-      {done ? <RichText text={text} companyId={companyId} /> : shown}
-      {done ? (
-        <span className="px-more ml-1 text-accent-lo">▼</span>
-      ) : (
-        <span className="px-live-dot">▌</span>
-      )}
-    </div>
-  );
-}
+};
 
-interface LineStyle {
-  color: string;
-  prefix: string;
-}
-const LINE_STYLES = new Map<ActivityKind, LineStyle>([
-  ["tool_call", { color: "#2f6fb0", prefix: "⚙ " }],
-  ["message", { color: "#2b2f46", prefix: "💬 " }],
-  ["ship", { color: "#2e8a4e", prefix: "📦 " }],
-  ["chat", { color: "#5a4fae", prefix: "🗨 " }],
-  ["status", { color: "#6d7187", prefix: "› " }],
-]);
-const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
+export const Dialogue = () => {
+  const game = useStore((s) => s.game);
+  const employees = useStore((s) => s.employees);
+  const [openId, setOpenId] = useState<string | null>(null);
 
-function FeedLine({ e, companyId }: { e: ActivityEvent; companyId: string }) {
-  const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
-  const text = "message" in e ? e.message : e.kind;
-  return (
-    <div className="break-words" style={{ color }}>
-      {prefix}
-      <RichText text={text.slice(0, 300)} companyId={companyId} />
-    </div>
-  );
-}
+  useEffect(() => {
+    if (!game) {
+      return;
+    }
+    const onInteract = (p: { employeeId: string }) => setOpenId(p.employeeId);
+    game.events.on("npc-interact", onInteract);
+    return () => {
+      game.events.off("npc-interact", onInteract);
+    };
+  }, [game]);
+
+  const emp = employees.find((e) => e.id === openId);
+  if (!emp) {
+    return null;
+  }
+  return <DialoguePanel key={emp.id} emp={emp} onClose={() => setOpenId(null)} />;
+};

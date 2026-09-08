@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { RUNNERS } from "./registry";
-import { RUNNER_IDS, type RunnerId } from "./runner";
+import { RUNNER_IDS } from "./runner";
+import type { RunnerId } from "./runner";
 
 // Probe the player's CLI login, which the ACP adapter inherits.
 export const runnerBin = (id: RunnerId): string =>
@@ -15,12 +16,15 @@ export const isReady = (p: RunnerProbe): boolean => p.installed && p.authed;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
-function run(bin: string, args: string[]): Promise<{ ok: boolean; output: string }> {
-  return new Promise((resolve) => {
+const run = (bin: string, args: string[]): Promise<{ ok: boolean; output: string }> =>
+  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process events)
+  new Promise((resolve) => {
     let output = "";
     let settled = false;
     const done = (ok: boolean): void => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       resolve({ ok, output });
     };
@@ -51,23 +55,22 @@ function run(bin: string, args: string[]): Promise<{ ok: boolean; output: string
       done(code === 0);
     });
   });
-}
 
-async function probeRunner(id: RunnerId): Promise<RunnerProbe> {
+const probeRunner = async (id: RunnerId): Promise<RunnerProbe> => {
   const bin = runnerBin(id);
   const version = await run(bin, ["--version"]);
-  if (!version.ok) return { id, bin, installed: false };
+  if (!version.ok) {
+    return { bin, id, installed: false };
+  }
   const { authProbe } = RUNNERS[id];
   const auth = await run(bin, authProbe.args);
   return {
-    id,
+    authed: auth.ok && authProbe.loggedIn(auth.output),
     bin,
+    id,
     installed: true,
     version: version.output.trim().split("\n")[0] ?? null,
-    authed: auth.ok && authProbe.loggedIn(auth.output),
   };
-}
+};
 
-export function probeRunners(): Promise<RunnerProbe[]> {
-  return Promise.all(RUNNER_IDS.map(probeRunner));
-}
+export const probeRunners = (): Promise<RunnerProbe[]> => Promise.all(RUNNER_IDS.map(probeRunner));

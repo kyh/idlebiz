@@ -12,11 +12,8 @@ import type {
   TeamMessage,
 } from "@/shared/domain";
 import type { LoadSkip, ProductStatus, RestingRunners, StripeStatus } from "@/shared/ipc-registry";
-import {
-  BUNDLED_LAYOUT,
-  parseOfficeLayout,
-  type OfficeLayoutData,
-} from "@/renderer/game/office-layout";
+import { BUNDLED_LAYOUT, parseOfficeLayout } from "@/renderer/game/office-layout";
+import type { OfficeLayoutData } from "@/renderer/game/office-layout";
 import { bridge } from "@/renderer/bridge";
 
 interface State {
@@ -40,31 +37,34 @@ interface State {
   company: Company | null;
   employees: Employee[];
   activity: ActivityEvent[];
-  pendingAsks: TaskIn<"blocked">[]; // awaiting the founder's answer
-  stuckTasks: TaskIn<"dead">[]; // dead-lettered, needing a retry
+  /** Awaiting the founder's answer. */
+  pendingAsks: TaskIn<"blocked">[];
+  /** Dead-lettered, needing a retry. */
+  stuckTasks: TaskIn<"dead">[];
   game: Phaser.Game | null;
-  modalOpen: boolean; // a dialogue/modal overlay is up (ambient HUD chrome hides)
+  /** A dialogue/modal overlay is up (ambient HUD chrome hides). */
+  modalOpen: boolean;
   /** Derived on every set(): what the window shows, one of four. */
   boot: Boot;
 }
 
 let state: State = {
-  booted: false,
-  layout: null,
+  activity: [],
   authed: true,
-  stripeStatus: { state: "disconnected" },
-  products: [],
-  productStatus: new Map(),
-  resting: {},
-  saveIssues: [],
+  boot: { kind: "loading" },
+  booted: false,
   company: null,
   employees: [],
-  activity: [],
-  pendingAsks: [],
-  stuckTasks: [],
   game: null,
+  layout: null,
   modalOpen: false,
-  boot: { kind: "loading" },
+  pendingAsks: [],
+  productStatus: new Map(),
+  products: [],
+  resting: {},
+  saveIssues: [],
+  stripeStatus: { state: "disconnected" },
+  stuckTasks: [],
 };
 const listeners = new Set<() => void>();
 
@@ -79,19 +79,27 @@ export type Boot =
   | { kind: "onboarding" }
   | { kind: "office"; company: Company; authed: boolean };
 
-function bootOf(s: Omit<State, "boot">): Boot {
+const bootOf = (s: Omit<State, "boot">): Boot => {
   const issues = s.saveIssues.filter((issue) => issue.kind === "company");
-  if (issues.length > 0) return { kind: "unreadable", issues };
-  if (!s.booted) return { kind: "loading" };
-  if (!s.company) return { kind: "onboarding" };
-  return { kind: "office", company: s.company, authed: s.authed };
-}
+  if (issues.length > 0) {
+    return { issues, kind: "unreadable" };
+  }
+  if (!s.booted) {
+    return { kind: "loading" };
+  }
+  if (!s.company) {
+    return { kind: "onboarding" };
+  }
+  return { authed: s.authed, company: s.company, kind: "office" };
+};
 
-function set(patch: Partial<Omit<State, "boot">>): void {
+const set = (patch: Partial<Omit<State, "boot">>): void => {
   const next = { ...state, ...patch };
   state = { ...next, boot: bootOf(next) };
-  for (const l of listeners) l();
-}
+  for (const l of listeners) {
+    l();
+  }
+};
 const subscribe = (l: () => void): (() => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
@@ -110,63 +118,53 @@ export function useStore<T>(selector?: (s: State) => T): T | State {
 
 // ---- portrait cache --------------------------------------------------------
 const portraitCache = new Map<string, string>();
-export async function getPortrait(seed: string): Promise<string> {
+export const getPortrait = async (seed: string): Promise<string> => {
   const cached = portraitCache.get(seed);
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
   const assets = await bridge().composeCharacter({ seed });
   portraitCache.set(seed, assets.portraitDataUrl);
   return assets.portraitDataUrl;
-}
+};
 
-// ---- lifecycle -------------------------------------------------------------
-let initialized = false;
-export function initStore(): void {
-  if (initialized) return;
-  initialized = true;
-  void refresh();
-  void bridge()
-    .hasAuth()
-    .then((r) => set({ authed: r.ok }));
-  void bridge()
-    .stripeStatus()
-    .then((s) => set({ stripeStatus: s }));
-  bridge().onActivity(onActivity);
-  bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
-}
-
-export function setAuthed(ok: boolean): void {
+export const setAuthed = (ok: boolean): void => {
   set({ authed: ok });
-}
+};
 
-export function setGame(game: Phaser.Game | null): void {
+// Scene startup can finish after an overlay mounted; replay the current keyboard state.
+const syncModal = (): void => {
+  state.game?.events.emit("ui-modal", state.modalOpen);
+};
+
+export const setGame = (game: Phaser.Game | null): void => {
   state.game?.events.off("office-input-ready", syncModal);
   set({ game });
   game?.events.on("office-input-ready", syncModal);
   syncModal();
-}
+};
 
 /** Toggle Phaser keyboard so typing in overlays doesn't move the player. */
-export function setModalOpen(open: boolean): void {
+export const setModalOpen = (open: boolean): void => {
   set({ modalOpen: open });
   syncModal();
-}
-
-// Scene startup can finish after an overlay mounted; replay the current keyboard state.
-function syncModal(): void {
-  state.game?.events.emit("ui-modal", state.modalOpen);
-}
+};
 
 /**
  * Recover the player's saved office from disk before the Phaser scene boots; a
  * malformed file falls back to the bundled default. Once: the scene has built
  * the room by the time anything refreshes again.
  */
-async function settleLayout(): Promise<void> {
-  if (state.layout) return;
+const settleLayout = async (): Promise<void> => {
+  if (state.layout) {
+    return;
+  }
   let layout = BUNDLED_LAYOUT;
   try {
     const office = await bridge().loadOfficeDesign();
-    if (office.layout) layout = parseOfficeLayout(office.layout);
+    if (office.layout) {
+      layout = parseOfficeLayout(office.layout);
+    }
   } catch {
     // keep the bundled default layout
   }
@@ -174,14 +172,28 @@ async function settleLayout(): Promise<void> {
   // onboarding modal, and a founder shown onboarding because the bridge is down
   // would create a second company on top of the one they have.
   set({ layout });
-}
+};
 
 /** The builder saved an office: the scene rebuilds from it when it next mounts. */
-export function setLayout(layout: OfficeLayoutData): void {
+export const setLayout = (layout: OfficeLayoutData): void => {
   set({ layout });
-}
+};
 
-export async function refresh(): Promise<void> {
+/** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
+const refreshProductStatus = async (products: readonly Product[]): Promise<void> => {
+  const entries = await Promise.all(
+    products.map(async (p) => {
+      try {
+        return [p.id, await bridge().productStatus({ productId: p.id })] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
+};
+
+export const refresh = async (): Promise<void> => {
   await settleLayout();
   const [company, resting, load] = await Promise.all([
     bridge().getCompany(),
@@ -200,126 +212,52 @@ export async function refresh(): Promise<void> {
   set({
     booted: true,
     company,
+    employees,
+    pendingAsks,
+    products,
     resting,
     saveIssues: load.skipped,
-    employees,
-    products,
-    pendingAsks,
     stuckTasks,
   });
   void refreshProductStatus(products);
-}
+};
 
-/** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
-async function refreshProductStatus(products: readonly Product[]): Promise<void> {
-  const entries = await Promise.all(
-    products.map(async (p) => {
-      try {
-        return [p.id, await bridge().productStatus({ productId: p.id })] as const;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
-}
-
-async function reloadProducts(): Promise<void> {
-  const company = state.company;
-  if (!company) return;
+const reloadProducts = async (): Promise<void> => {
+  const { company } = state;
+  if (!company) {
+    return;
+  }
   const products = await bridge().listProducts({ companyId: company.id });
   set({ products });
   await refreshProductStatus(products);
-}
-
-export const createProduct = (name: string, description: string): Promise<void> =>
-  withCompany(async (companyId) => {
-    await bridge().createProduct({ companyId, name, description });
-    await reloadProducts();
-  });
-
-export async function teamMessages(limit = 30): Promise<TeamMessage[]> {
-  const c = state.company;
-  return c ? bridge().teamMessages({ companyId: c.id, limit }) : [];
-}
-
-const ACTIVITY_RING = 300;
-
-function onActivity(e: ActivityEvent): void {
-  const ring = state.activity;
-  const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
-  switch (e.kind) {
-    // live-patch employee status from run status events (keeps HUD + dialogue badge live)
-    case "status": {
-      const employeeId = e.employeeId;
-      const status = employeeStatusOf(e.message);
-      set({
-        activity,
-        employees: employeeId
-          ? state.employees.map((emp) => (emp.id === employeeId ? { ...emp, status } : emp))
-          : state.employees,
-      });
-      return;
-    }
-    // a CLI hit its usage limit — remember until when, so the HUD can say why
-    case "runner.resting":
-      set({ activity, resting: { ...state.resting, [e.payload.runner]: e.payload.until } });
-      return;
-    // both only move company fields — refetch just the company, not the world
-    case "metrics.pulse":
-    case "autopilot.changed":
-    case "budget.exhausted":
-      set({ activity });
-      void bridge()
-        .getCompany()
-        .then((company) => set({ company }))
-        .catch(() => undefined);
-      return;
-    // the team self-sizes: reflect hires/releases in the office immediately
-    // the lead started a product: the roster's next runs know it; the panels do now
-    case "product.created":
-      set({ activity });
-      void reloadProducts();
-      return;
-    case "org.hired":
-    case "org.released": {
-      set({ activity });
-      const hired = e.kind === "org.hired";
-      const employeeId = e.employeeId;
-      void refresh().then(() => {
-        if (hired && employeeId) {
-          const emp = state.employees.find((x) => x.id === employeeId);
-          if (emp) state.game?.events.emit("spawn-employee", emp);
-        } else if (employeeId) {
-          state.game?.events.emit("despawn-employee", employeeId); // surgical — no scene rebuild
-        }
-        return null;
-      });
-      return;
-    }
-    case "run.end":
-      set({ activity });
-      void refresh();
-      return;
-    default:
-      set({ activity });
-      return;
-  }
-}
+};
 
 // ---- actions ---------------------------------------------------------------
 
-async function withCompany(act: (companyId: string) => Promise<void>): Promise<void> {
-  if (state.company) await act(state.company.id);
-}
+const withCompany = async (act: (companyId: string) => Promise<void>): Promise<void> => {
+  if (state.company) {
+    await act(state.company.id);
+  }
+};
 const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
   withCompany(async (companyId) => set({ company: await call(companyId) }));
+
+export const createProduct = (name: string, description: string): Promise<void> =>
+  withCompany(async (companyId) => {
+    await bridge().createProduct({ companyId, description, name });
+    await reloadProducts();
+  });
+
+export const teamMessages = async (limit = 30): Promise<TeamMessage[]> => {
+  const c = state.company;
+  return c ? await bridge().teamMessages({ companyId: c.id, limit }) : [];
+};
 
 export const setAutopilot = (running: boolean): Promise<void> =>
   updateCompany((companyId) => bridge().setAutopilot({ companyId, running }));
 
 export const setBudget = (budget: Budget): Promise<void> =>
-  updateCompany((companyId) => bridge().setBudget({ companyId, budget }));
+  updateCompany((companyId) => bridge().setBudget({ budget, companyId }));
 
 export const resetSpend = (): Promise<void> =>
   updateCompany((companyId) => bridge().resetSpend({ companyId }));
@@ -337,58 +275,179 @@ export const disconnectStripe = (): Promise<void> =>
     await bridge().stripeDisconnect({ companyId });
   });
 
-export async function connectVercel(input: {
+export const connectVercel = async (input: {
   productId: string;
   token: string;
   projectId: string;
   projectName: string;
   teamId?: string;
-}): Promise<void> {
+}): Promise<void> => {
   await bridge().vercelConnect(input);
   await reloadProducts();
-}
+};
 
-export async function disconnectVercel(productId: string): Promise<void> {
+export const disconnectVercel = async (productId: string): Promise<void> => {
   await bridge().vercelDisconnect({ productId });
   await reloadProducts();
-}
+};
 
-export async function directEmployee(employeeId: string, instruction: string): Promise<void> {
+export const directEmployee = async (employeeId: string, instruction: string): Promise<void> => {
   const text = instruction.trim();
-  if (!text) return;
+  if (!text) {
+    return;
+  }
   await bridge().directEmployee({ employeeId, instruction: text });
-}
+};
 
 /** Founder posts in the team channel; @first-name wakes that employee. */
 export const sendFounderChat = (text: string): Promise<void> =>
   withCompany(async (companyId) => {
-    if (text.trim()) await bridge().postTeamChat({ companyId, text: text.trim() });
+    if (text.trim()) {
+      await bridge().postTeamChat({ companyId, text: text.trim() });
+    }
   });
 
 /** Founder decides on a held outward-facing command; the task resumes either way. */
-export async function resolveApproval(taskId: string, approved: boolean): Promise<void> {
-  await bridge().resolveApproval({ taskId, approved });
+export const resolveApproval = async (taskId: string, approved: boolean): Promise<void> => {
+  await bridge().resolveApproval({ approved, taskId });
   await refresh();
-}
+};
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
-export async function retryTask(task: Task): Promise<void> {
-  if (!task.assigneeId) return;
-  await bridge().assignTask({ taskId: task.id, employeeId: task.assigneeId });
+export const retryTask = async (task: Task): Promise<void> => {
+  if (!task.assigneeId) {
+    return;
+  }
+  await bridge().assignTask({ employeeId: task.assigneeId, taskId: task.id });
   await refresh();
-}
+};
 
-export async function listTasksFor(employeeId: string): Promise<Task[]> {
-  const company = state.company;
-  if (!company) return [];
-  return bridge().listTasks({
-    companyId: company.id,
+export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
+  const { company } = state;
+  if (!company) {
+    return [];
+  }
+  return await bridge().listTasks({
     assigneeId: employeeId,
+    companyId: company.id,
     status: ["queued", "running", "blocked"],
   });
-}
+};
 
-export async function answerQuestion(taskId: string, answer: string): Promise<void> {
-  await bridge().answerQuestion({ taskId, answer });
-  void refresh().catch((cause) => console.error("Could not refresh after answering", cause));
-}
+const refreshAfterAnswer = async (): Promise<void> => {
+  try {
+    await refresh();
+  } catch (error) {
+    console.error("Could not refresh after answering", error);
+  }
+};
+
+export const answerQuestion = async (taskId: string, answer: string): Promise<void> => {
+  await bridge().answerQuestion({ answer, taskId });
+  void refreshAfterAnswer();
+};
+
+// ---- activity --------------------------------------------------------------
+
+const ACTIVITY_RING = 300;
+
+const reloadCompany = async (): Promise<void> => {
+  try {
+    set({ company: await bridge().getCompany() });
+  } catch {
+    // the next refresh catches up
+  }
+};
+
+// Surgical: spawn or despawn the one employee, no scene rebuild.
+const syncOfficeRoster = async (
+  hired: boolean,
+  employeeId: string | null | undefined,
+): Promise<void> => {
+  await refresh();
+  if (hired && employeeId) {
+    const emp = state.employees.find((x) => x.id === employeeId);
+    if (emp) {
+      state.game?.events.emit("spawn-employee", emp);
+    }
+  } else if (employeeId) {
+    state.game?.events.emit("despawn-employee", employeeId);
+  }
+};
+
+const onActivity = (e: ActivityEvent): void => {
+  const ring = state.activity;
+  const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
+  switch (e.kind) {
+    // live-patch employee status from run status events (keeps HUD + dialogue badge live)
+    case "status": {
+      const { employeeId } = e;
+      const status = employeeStatusOf(e.message);
+      set({
+        activity,
+        employees: employeeId
+          ? state.employees.map((emp) => (emp.id === employeeId ? { ...emp, status } : emp))
+          : state.employees,
+      });
+      return;
+    }
+    // a CLI hit its usage limit — remember until when, so the HUD can say why
+    case "runner.resting": {
+      set({ activity, resting: { ...state.resting, [e.payload.runner]: e.payload.until } });
+      return;
+    }
+    // both only move company fields — refetch just the company, not the world
+    case "metrics.pulse":
+    case "autopilot.changed":
+    case "budget.exhausted": {
+      set({ activity });
+      void reloadCompany();
+      return;
+    }
+    // the team self-sizes: reflect hires/releases in the office immediately
+    // the lead started a product: the roster's next runs know it; the panels do now
+    case "product.created": {
+      set({ activity });
+      void reloadProducts();
+      return;
+    }
+    case "org.hired":
+    case "org.released": {
+      set({ activity });
+      void syncOfficeRoster(e.kind === "org.hired", e.employeeId);
+      return;
+    }
+    case "run.end": {
+      set({ activity });
+      void refresh();
+      return;
+    }
+    default: {
+      set({ activity });
+    }
+  }
+};
+
+// ---- lifecycle -------------------------------------------------------------
+
+const loadAuth = async (): Promise<void> => {
+  const r = await bridge().hasAuth();
+  set({ authed: r.ok });
+};
+
+const loadStripeStatus = async (): Promise<void> => {
+  set({ stripeStatus: await bridge().stripeStatus() });
+};
+
+let initialized = false;
+export const initStore = (): void => {
+  if (initialized) {
+    return;
+  }
+  initialized = true;
+  void refresh();
+  void loadAuth();
+  void loadStripeStatus();
+  bridge().onActivity(onActivity);
+  bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
+};

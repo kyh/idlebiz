@@ -54,6 +54,7 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS 鈥
 
 - **Verify**: `pnpm verify` (typecheck 路 lint 路 format 路 check:office 路 test 路 build). There is no
   GitHub Actions; Vercel's build of `apps/web` is the only remote gate and `verify` runs it.
+- **`pnpm lint` is a clean gate.** `oxlint.config.ts` extends the ultracite presets (core, react, anti-slop; next for `apps/web`); every rule is an error. Fix the code, don't add config overrides; a `// oxlint-disable-next-line rule -- why` needs a stated reason.
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.
 - **CLI-free surfaces**: `apps/web`, the onboarding modal, and the two hash routes `#/ui`

@@ -19,33 +19,40 @@ export interface Typewriter {
  * zero revealed on the very first render — resetting it from an effect would
  * flash one frame of the new line at the old line's length.
  */
-export function useTypewriter(text: string): Typewriter {
-  const [progress, setProgress] = useState({ text, shown: 0 });
+export const useTypewriter = (text: string): Typewriter => {
+  const [progress, setProgress] = useState({ shown: 0, text });
   const reduced = useReducedMotion();
   const timerRef = useRef<number | null>(null);
 
-  const shown = reduced ? text.length : progress.text === text ? progress.shown : 0;
+  const revealed = progress.text === text ? progress.shown : 0;
+  const shown = reduced ? text.length : revealed;
 
   useEffect(() => {
-    if (reduced) return;
+    if (reduced) {
+      return;
+    }
     let next = 0;
     const tick = () => {
       next = Math.min(next + CHARS_PER_TICK, text.length);
-      setProgress({ text, shown: next });
+      setProgress({ shown: next, text });
       timerRef.current = next < text.length ? window.setTimeout(tick, TICK_MS) : null;
     };
     timerRef.current = window.setTimeout(tick, TICK_MS);
     return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+      }
       timerRef.current = null;
     };
   }, [text, reduced]);
 
   const skip = useCallback(() => {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
     timerRef.current = null;
-    setProgress({ text, shown: text.length });
+    setProgress({ shown: text.length, text });
   }, [text]);
 
-  return { shown: text.slice(0, shown), done: shown >= text.length, skip };
-}
+  return { done: shown >= text.length, shown: text.slice(0, shown), skip };
+};

@@ -23,9 +23,9 @@ const appRoot = path.resolve(import.meta.dirname, "..");
 
 const { values: flags } = parseArgs({
   options: {
-    layout: { type: "string", default: "src/renderer/game/office-design.json" },
+    layout: { default: "src/renderer/game/office-design.json", type: "string" },
     // any composited sheet: they share one silhouette, which is what we test
-    sheet: { type: "string", default: "resources/employee-sheets/employee-sheet-01.png" },
+    sheet: { default: "resources/employee-sheets/employee-sheet-01.png", type: "string" },
   },
 });
 const layoutPath = path.resolve(appRoot, flags.layout);
@@ -34,14 +34,16 @@ const sheetPath = path.resolve(appRoot, flags.sheet);
 const at = (p) => `(${String(p.x).padStart(3)},${String(p.y).padStart(3)})`;
 
 /** Opaque-pixel coverage of a decoded PNG, the shape office-sight judges with. */
-function maskOf(img) {
+const maskOf = (img) => {
   const opaque = new Uint8Array(img.w * img.h);
-  for (let i = 0; i < opaque.length; i++) opaque[i] = img.data[i * 4 + 3] === 0 ? 0 : 1;
-  return { opaque, w: img.w, h: img.h };
-}
+  for (let i = 0; i < opaque.length; i += 1) {
+    opaque[i] = img.data[i * 4 + 3] === 0 ? 0 : 1;
+  }
+  return { h: img.h, opaque, w: img.w };
+};
 
 /** Every sprite the room paints, in paint order, with its decoded pixels. */
-async function paintedSprites(layout) {
+const paintedSprites = async (layout) => {
   const out = [];
   const masks = new Map();
   for (const obj of layout.objects.toSorted(comparePaintOrder)) {
@@ -51,40 +53,46 @@ async function paintedSprites(layout) {
       mask = maskOf(await loadRaw(file));
       masks.set(file, mask);
     }
-    out.push({ obj, mask });
+    out.push({ mask, obj });
   }
   return out;
-}
+};
 
 /** Alpha of the room as the scene paints it: 1 where any object has an opaque pixel. */
-function paintedMask(layout, sprites) {
+const paintedMask = (layout, sprites) => {
   const { width: W, height: H } = layout;
   const painted = new Uint8Array(W * H);
   for (const { obj, mask } of sprites) {
-    for (let sy = 0; sy < mask.h; sy++) {
-      for (let sx = 0; sx < mask.w; sx++) {
-        if (!opaqueAt(mask, obj, sx, sy)) continue;
+    for (let sy = 0; sy < mask.h; sy += 1) {
+      for (let sx = 0; sx < mask.w; sx += 1) {
+        if (!opaqueAt(mask, obj, sx, sy)) {
+          continue;
+        }
         const wx = Math.round(obj.x) + sx;
         const wy = Math.round(obj.y) + sy;
-        if (wx >= 0 && wy >= 0 && wx < W && wy < H) painted[wy * W + wx] = 1;
+        if (wx >= 0 && wy >= 0 && wx < W && wy < H) {
+          painted[wy * W + wx] = 1;
+        }
       }
     }
   }
   return painted;
-}
+};
 
 /** The idle-down frame's opaque pixels — the silhouette actually drawn at a standstill. */
-async function characterSilhouette() {
+const characterSilhouette = async () => {
   const img = await loadRaw(sheetPath);
   const opaque = new Uint8Array(FRAME_W * FRAME_H);
-  for (let y = 0; y < FRAME_H; y++) {
-    for (let x = 0; x < FRAME_W; x++) {
+  for (let y = 0; y < FRAME_H; y += 1) {
+    for (let x = 0; x < FRAME_W; x += 1) {
       // frame 0 of the sheet = walk-down rest pose, at the sheet's top-left
-      if (img.data[(y * img.w + x) * 4 + 3] !== 0) opaque[y * FRAME_W + x] = 1;
+      if (img.data[(y * img.w + x) * 4 + 3] !== 0) {
+        opaque[y * FRAME_W + x] = 1;
+      }
     }
   }
-  return { opaque, w: FRAME_W, h: FRAME_H };
-}
+  return { h: FRAME_H, opaque, w: FRAME_W };
+};
 
 /** Where the character's frame lands for an origin at `node`. */
 const frameAt = (node) => ({
@@ -92,19 +100,23 @@ const frameAt = (node) => ({
   top: Math.round(node.y - FRAME_H * CHAR_ORIGIN_Y),
 });
 
-function report(found, clean, offenders, format, advice) {
+const report = (found, clean, offenders, format, advice) => {
   if (offenders.length === 0) {
     console.log(`clean  : ${clean}`);
     return;
   }
   console.log(`FOUND  : ${offenders.length} ${found}\n`);
-  for (const o of offenders.slice(0, 20)) console.log(`  ${format(o)}`);
-  if (offenders.length > 20) console.log(`  … and ${offenders.length - 20} more`);
+  for (const o of offenders.slice(0, 20)) {
+    console.log(`  ${format(o)}`);
+  }
+  if (offenders.length > 20) {
+    console.log(`  … and ${offenders.length - 20} more`);
+  }
   console.log(`\n${advice}\n`);
   process.exitCode = 1;
-}
+};
 
-function checkReachability(layout) {
+const checkReachability = (layout) => {
   const issues = layoutIssues(layout);
   console.log(
     `checked: ${layout.seats.length} seats, ${layout.pois.length} points of interest, the door`,
@@ -118,9 +130,9 @@ function checkReachability(layout) {
       "otherwise gives up silently. Open the lane in the collision grid, or move the\n" +
       "seat / POI / door onto floor the founder can walk to.",
   );
-}
+};
 
-function checkPockets(layout) {
+const checkPockets = (layout) => {
   // the walker seals these at load; the gate reports them so the data stays honest
   const pockets = pocketCells(authoredGrid(layout), layout.spawn).map(({ r, c }) => ({
     x: c * layout.cell,
@@ -136,24 +148,30 @@ function checkPockets(layout) {
       "half inside furniture. Widen the lane to the body's 16x12, connect the room, or\n" +
       "mark the cell solid (Rebuild collision in the builder does this).",
   );
-}
+};
 
-function checkVoid(layout, painted, silhouette, nodes) {
+const checkVoid = (layout, painted, silhouette, nodes) => {
   const { width: W, height: H } = layout;
   const offenders = [];
   for (const node of nodes) {
     const { left, top } = frameAt(node);
     let worst = 0;
-    for (let y = 0; y < FRAME_H; y++) {
-      for (let x = 0; x < FRAME_W; x++) {
-        if (!silhouette.opaque[y * FRAME_W + x]) continue;
+    for (let y = 0; y < FRAME_H; y += 1) {
+      for (let x = 0; x < FRAME_W; x += 1) {
+        if (!silhouette.opaque[y * FRAME_W + x]) {
+          continue;
+        }
         const wx = left + x;
         const wy = top + y;
         // off-canvas is void too — there is certainly no room out there
-        if (wx < 0 || wy < 0 || wx >= W || wy >= H || !painted[wy * W + wx]) worst++;
+        if (wx < 0 || wy < 0 || wx >= W || wy >= H || !painted[wy * W + wx]) {
+          worst += 1;
+        }
       }
     }
-    if (worst > 0) offenders.push({ ...node, px: worst });
+    if (worst > 0) {
+      offenders.push({ ...node, px: worst });
+    }
   }
   offenders.sort((a, b) => b.px - a.px);
   const total = FRAME_W * FRAME_H;
@@ -168,9 +186,9 @@ function checkVoid(layout, painted, silhouette, nodes) {
       "to a tile whose opaque face sits inboard of its cell, or the room has no backdrop\n" +
       "there. Fix the layout's collision, not the body box.",
   );
-}
+};
 
-function checkOcclusion(layout, sprites, silhouette) {
+const checkOcclusion = (layout, sprites, silhouette) => {
   const hidden = hiddenNodes(walkGridOf(layout), layout.spawn, sprites, silhouette);
   report(
     "position(s) where the player's face is painted over",
@@ -182,10 +200,10 @@ function checkOcclusion(layout, sprites, silhouette) {
       "over walkable floor. The scene seals these spots at boot; fix the data so it\n" +
       "does not have to: mark the cell solid, move the object, or lower its layer.",
   );
-}
+};
 
-async function main() {
-  const layout = parseOfficeLayout(JSON.parse(readFileSync(layoutPath, "utf8")));
+const main = async () => {
+  const layout = parseOfficeLayout(JSON.parse(readFileSync(layoutPath, "utf-8")));
   console.log(`layout : ${path.relative(appRoot, layoutPath)}`);
 
   checkReachability(layout);
@@ -197,5 +215,5 @@ async function main() {
   const silhouette = await characterSilhouette();
   checkVoid(layout, paintedMask(layout, sprites), silhouette, nodes);
   checkOcclusion(layout, sprites, silhouette);
-}
+};
 void main();

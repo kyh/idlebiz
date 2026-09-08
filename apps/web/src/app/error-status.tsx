@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { Cta } from "@/app/cta";
 import { StatusPage } from "@/app/status-page";
 
-export function ErrorStatus({
+export const ErrorStatus = ({
   error,
   description,
   reset,
@@ -12,7 +12,7 @@ export function ErrorStatus({
   error: Error;
   description: string;
   reset: () => void;
-}) {
+}) => {
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -23,4 +23,4 @@ export function ErrorStatus({
       action={<Cta onClick={reset}>Try again</Cta>}
     />
   );
-}
+};

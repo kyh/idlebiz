@@ -5,14 +5,14 @@ import {
   loopbackUrl,
   parseCallback,
   parseState,
-  type ConnectedAccount,
 } from "./protocol";
+import type { ConnectedAccount } from "./protocol";
 import { newKeyring, open, seal } from "./seal";
 
 const account: ConnectedAccount = {
   accessToken: "sk_test_51ExampleToken",
-  stripeUserId: "acct_1Example",
   livemode: false,
+  stripeUserId: "acct_1Example",
 };
 
 describe("the sealed envelope", () => {
@@ -45,7 +45,7 @@ describe("the sealed envelope", () => {
 describe("the state and the loopback URL", () => {
   it("round-trips the state through Stripe's opaque string", async () => {
     const { publicKey } = await newKeyring();
-    const state = { port: 4321, nonce: "abcdefghijklmnop", key: publicKey };
+    const state = { key: publicKey, nonce: "abcdefghijklmnop", port: 4321 };
     expect(parseState(encodeState(state))).toEqual(state);
     expect(parseState("nope")).toBeNull();
     expect(parseState(encodeState({ ...state, key: "short" }))).toBeNull();
@@ -53,7 +53,7 @@ describe("the state and the loopback URL", () => {
 
   it("puts only the nonce and the envelope on the loopback", async () => {
     const { publicKey } = await newKeyring();
-    const state = { port: 4321, nonce: "abcdefghijklmnop", key: publicKey };
+    const state = { key: publicKey, nonce: "abcdefghijklmnop", port: 4321 };
     const url = new URL(loopbackUrl(state, { kind: "sealed", sealed: "AAAA" }));
     expect(url.port).toBe("4321");
     expect([...url.searchParams.keys()].toSorted()).toEqual(["nonce", "sealed"]);
@@ -61,10 +61,10 @@ describe("the state and the loopback URL", () => {
       nonce: state.nonce,
       outcome: { kind: "sealed", sealed: "AAAA" },
     });
-    const failed = new URL(loopbackUrl(state, { kind: "failed", error: "access_denied" }));
+    const failed = new URL(loopbackUrl(state, { error: "access_denied", kind: "failed" }));
     expect(parseCallback(failed.searchParams)).toEqual({
       nonce: state.nonce,
-      outcome: { kind: "failed", error: "access_denied" },
+      outcome: { error: "access_denied", kind: "failed" },
     });
   });
 });

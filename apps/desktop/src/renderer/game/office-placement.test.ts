@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { planSeats, type SeatPlan } from "./office-placement";
+import { planSeats } from "./office-placement";
+import type { SeatPlan } from "./office-placement";
 
-const emp = (id: string, deskIndex: number) => ({ id, deskIndex });
+const emp = (id: string, deskIndex: number) => ({ deskIndex, id });
 const plan = (entries: [string, number | null][]): SeatPlan => new Map(entries);
 const none: SeatPlan = new Map();
 

@@ -1,11 +1,65 @@
 import { useMemo, useState } from "react";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
-import {
-  OFFICE_OBJECT_ASSETS,
-  type OfficeObjectAsset,
-} from "@/renderer/game/office-object-catalog.generated";
+import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
+import type { OfficeObjectAsset } from "@/renderer/game/office-object-catalog.generated";
 
-export function OfficeObjectCatalog() {
+const ObjectCard = ({
+  asset,
+  copied,
+  onCopy,
+}: {
+  asset: OfficeObjectAsset;
+  copied: boolean;
+  onCopy: () => void;
+}) => (
+  <article className="px-window flex min-h-[230px] flex-col overflow-hidden">
+    <div className="px-titlebar flex items-center justify-between gap-2 px-3 py-2">
+      <div className="min-w-0">
+        <h2 className="truncate text-sm">{asset.id}</h2>
+        <p className="text-xs text-[#d6d9e7]">source {asset.sourceId}</p>
+      </div>
+      <button type="button" onClick={onCopy} className="px-chip shrink-0">
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+
+    <div className="px-inset m-3 flex min-h-36 flex-1 flex-col gap-2 p-2">
+      <div
+        className="flex min-h-28 flex-1 items-center justify-center overflow-auto"
+        style={{
+          backgroundColor: "#d8d9d4",
+          backgroundImage:
+            "linear-gradient(45deg, #c7c8c2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #c7c8c2 75%)",
+          backgroundPosition: "0 0, 8px 8px",
+          backgroundSize: "16px 16px",
+          minHeight: asset.h + 32,
+        }}
+      >
+        <img
+          src={`/${asset.path}`}
+          alt={asset.id}
+          className="max-w-none shrink-0 [image-rendering:pixelated]"
+        />
+      </div>
+      <div className="text-right text-xs text-fg-dim">
+        {asset.w}x{asset.h}
+      </div>
+    </div>
+  </article>
+);
+
+const matchesQuery = (asset: OfficeObjectAsset, query: string) => {
+  if (query.length === 0) {
+    return true;
+  }
+  return (
+    asset.id.includes(query) ||
+    String(asset.sourceId).includes(query) ||
+    `${asset.w}x${asset.h}`.includes(query)
+  );
+};
+
+export const OfficeObjectCatalog = () => {
   const [query, setQuery] = useState("");
   const [copiedId, flashCopied] = useTransientNote(900);
 
@@ -15,9 +69,13 @@ export function OfficeObjectCatalog() {
     [normalizedQuery],
   );
 
-  const copyId = (id: string) => {
+  const copyId = async (id: string) => {
     flashCopied(id);
-    void navigator.clipboard.writeText(id).catch(() => undefined);
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      // a clipboard the page may not write to is not worth an error
+    }
   };
 
   return (
@@ -57,7 +115,9 @@ export function OfficeObjectCatalog() {
                   key={asset.id}
                   asset={asset}
                   copied={copiedId === asset.id}
-                  onCopy={() => copyId(asset.id)}
+                  onCopy={() => {
+                    void copyId(asset.id);
+                  }}
                 />
               ))}
             </div>
@@ -68,60 +128,4 @@ export function OfficeObjectCatalog() {
       </div>
     </main>
   );
-}
-
-function ObjectCard({
-  asset,
-  copied,
-  onCopy,
-}: {
-  asset: OfficeObjectAsset;
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  return (
-    <article className="px-window flex min-h-[230px] flex-col overflow-hidden">
-      <div className="px-titlebar flex items-center justify-between gap-2 px-3 py-2">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm">{asset.id}</h2>
-          <p className="text-xs text-[#d6d9e7]">source {asset.sourceId}</p>
-        </div>
-        <button type="button" onClick={onCopy} className="px-chip shrink-0">
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-
-      <div className="px-inset m-3 flex min-h-36 flex-1 flex-col gap-2 p-2">
-        <div
-          className="flex min-h-28 flex-1 items-center justify-center overflow-auto"
-          style={{
-            backgroundColor: "#d8d9d4",
-            backgroundImage:
-              "linear-gradient(45deg, #c7c8c2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #c7c8c2 75%)",
-            backgroundPosition: "0 0, 8px 8px",
-            backgroundSize: "16px 16px",
-            minHeight: asset.h + 32,
-          }}
-        >
-          <img
-            src={`/${asset.path}`}
-            alt={asset.id}
-            className="max-w-none shrink-0 [image-rendering:pixelated]"
-          />
-        </div>
-        <div className="text-right text-xs text-fg-dim">
-          {asset.w}x{asset.h}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function matchesQuery(asset: OfficeObjectAsset, query: string) {
-  if (query.length === 0) return true;
-  return (
-    asset.id.includes(query) ||
-    String(asset.sourceId).includes(query) ||
-    `${asset.w}x${asset.h}`.includes(query)
-  );
-}
+};

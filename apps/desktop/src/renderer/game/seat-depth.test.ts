@@ -1,59 +1,60 @@
 import { describe, expect, it } from "vitest";
 import { characterDepth } from "./character-sheet";
 import { DEPTH } from "@/shared/office-depth";
-import { bustOverlapRect, bustOverlaps, seatDepth, type RoomImage } from "./seat-depth";
+import { bustOverlapRect, bustOverlaps, seatDepth } from "./seat-depth";
+import type { RoomImage } from "./seat-depth";
 import type { OpaqueMask } from "@/shared/office-sight";
 
 // A seat at (100, 100): the bust spans x 90..110 and y 62..100 (height 38 above the origin).
 const seat = { x: 100, y: 100 };
 
-function image(overrides: Partial<RoomImage> = {}): RoomImage {
-  return {
-    x: 80,
-    y: 40,
-    width: 40,
-    height: 80,
-    depth: 0,
-    flipX: false,
-    flipY: false,
-    ...overrides,
-  };
-}
+const image = (overrides: Partial<RoomImage> = {}): RoomImage => ({
+  depth: 0,
+  flipX: false,
+  flipY: false,
+  height: 80,
+  width: 40,
+  x: 80,
+  y: 40,
+  ...overrides,
+});
 
 /** A w×h mask with one opaque pixel at (px, py) in texture space. */
-function dotMask(w: number, h: number, px: number, py: number): OpaqueMask {
+const dotMask = (w: number, h: number, px: number, py: number): OpaqueMask => {
   const opaque = new Uint8Array(w * h);
   opaque[py * w + px] = 1;
-  return { opaque, w, h };
-}
-const clear = (w: number, h: number): OpaqueMask => ({ opaque: new Uint8Array(w * h), w, h });
+  return { h, opaque, w };
+};
+const clear = (w: number, h: number): OpaqueMask => ({ h, opaque: new Uint8Array(w * h), w });
 const solid = (w: number, h: number): OpaqueMask => ({
+  h,
   opaque: new Uint8Array(w * h).fill(1),
   w,
-  h,
 });
 
 describe("bustOverlapRect", () => {
   it("is the bust clipped to the image bounds, in whole pixels", () => {
-    expect(bustOverlapRect(seat, image())).toEqual({ x0: 90, y0: 62, x1: 110, y1: 100 });
-    expect(bustOverlapRect(seat, image({ x: 105, width: 20 }))).toEqual({
+    expect(bustOverlapRect(seat, image())).toEqual({ x0: 90, x1: 110, y0: 62, y1: 100 });
+    expect(bustOverlapRect(seat, image({ width: 20, x: 105 }))).toEqual({
       x0: 105,
-      y0: 62,
       x1: 110,
+      y0: 62,
       y1: 100,
     });
     expect(bustOverlapRect(seat, image({ height: 30 }))).toEqual({
       x0: 90,
-      y0: 62,
       x1: 110,
+      y0: 62,
       y1: 70,
     });
   });
 
   it("is null when the bounds do not meet", () => {
-    expect(bustOverlapRect(seat, image({ x: 110 }))).toBeNull(); // starts where the bust ends
-    expect(bustOverlapRect(seat, image({ y: 100 }))).toBeNull(); // below the origin row
-    expect(bustOverlapRect(seat, image({ x: 0, width: 50 }))).toBeNull();
+    // starts where the bust ends
+    expect(bustOverlapRect(seat, image({ x: 110 }))).toBeNull();
+    // below the origin row
+    expect(bustOverlapRect(seat, image({ y: 100 }))).toBeNull();
+    expect(bustOverlapRect(seat, image({ width: 50, x: 0 }))).toBeNull();
   });
 });
 
@@ -77,8 +78,10 @@ describe("bustOverlaps", () => {
   it("looks for an opaque pixel inside the overlap, not just anywhere on the canvas", () => {
     // image at (80, 40): the bust covers texture x 10..30, y 22..60
     expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 15, 30))).toBe(true);
-    expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 2, 30))).toBe(false); // left of the bust
-    expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 15, 70))).toBe(false); // below the origin
+    // left of the bust
+    expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 2, 30))).toBe(false);
+    // below the origin
+    expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 15, 70))).toBe(false);
     expect(bustOverlaps(seat, image(), () => clear(40, 80))).toBe(false);
   });
 
@@ -104,7 +107,8 @@ describe("seatDepth", () => {
     const room = [
       image({ depth: base + 3 }),
       image({ depth: base + 9 }),
-      image({ depth: base + 30, x: 200 }), // above, but off to the side
+      // above, but off to the side
+      image({ depth: base + 30, x: 200 }),
     ];
     expect(seatDepth(seat, room, () => solid(40, 80))).toBeCloseTo(base + 9.25);
   });

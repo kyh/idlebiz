@@ -1,21 +1,26 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
-import { comparePaintOrder } from "@/shared/office-depth";
-import {
-  officeLayoutSchema,
-  parseOfficeLayout,
+import { objectSpritePath } from "@/renderer/game/office-object-sprite";
+import { walkGridOf } from "@/shared/office-grid";
+import type { WalkGrid } from "@/shared/office-grid";
+import { officeLayoutSchema } from "@/shared/office-layout-schema";
+import type {
+  OfficeLayoutData,
+  OfficeObjectDef,
+  OfficePoi,
+  OfficeSeat,
+  PixelPoint,
+} from "@/shared/office-layout-schema";
+
+export { comparePaintOrder } from "@/shared/office-depth";
+export { parseOfficeLayout } from "@/shared/office-layout-schema";
+export {
   type OfficeLayer,
   type OfficeLayoutData,
-  type OfficeObjectDef,
   type OfficePoi,
   type OfficeSeat,
   type PixelPoint,
 } from "@/shared/office-layout-schema";
-import { walkGridOf, type WalkGrid } from "@/shared/office-grid";
-import { objectSpritePath } from "@/renderer/game/office-object-sprite";
-
-export type { OfficeLayer, OfficeLayoutData, OfficePoi, OfficeSeat, PixelPoint };
-export { comparePaintOrder, parseOfficeLayout };
 
 interface OfficeObjectPlacement {
   /** The object as authored: its band and floor line, for anything that judges draw order. */
@@ -65,39 +70,40 @@ const STACK_STEP = 1e-3;
  * y-sorts — furniture and actors share it, sorting on floor contact (the +0.5
  * biases furniture to win ties, so a character draws behind what they stand at).
  */
-function depthFor(obj: OfficeObjectDef, index: number): number {
+const depthFor = (obj: OfficeObjectDef, index: number): number => {
   switch (obj.layer) {
-    case "floor":
+    case "floor": {
       return DEPTH.ground + STACK_STEP * (index + 1);
-    case "overhead":
+    }
+    case "overhead": {
       return DEPTH.overhead + STACK_STEP * (index + 1);
-    case "object":
+    }
+    case "object": {
       return DEPTH.entityBase + obj.anchorY + 0.5;
+    }
+    // no default
   }
-}
+};
 
-function placementsOf(objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] {
-  return objects.map((obj, index) => ({
+const placementsOf = (objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] =>
+  objects.map((obj, index) => ({
     def: obj,
+    depth: depthFor(obj, index),
+    flipX: obj.flipX ?? false,
+    flipY: obj.flipY ?? false,
     id: obj.id,
     key: `office-object-sprite-${obj.id}`,
     path: objectSpritePath(obj),
     x: obj.x,
     y: obj.y,
-    depth: depthFor(obj, index),
-    flipX: obj.flipX ?? false,
-    flipY: obj.flipY ?? false,
   }));
-}
 
 /** The layout as the scene reads it: the walk grid and the paint-ordered placements. */
-export function officeOf(layout: OfficeLayoutData): Office {
-  return {
-    spawn: layout.spawn,
-    door: layout.door,
-    seats: layout.seats,
-    pois: layout.pois,
-    grid: walkGridOf(layout),
-    placements: placementsOf(layout.objects),
-  };
-}
+export const officeOf = (layout: OfficeLayoutData): Office => ({
+  door: layout.door,
+  grid: walkGridOf(layout),
+  placements: placementsOf(layout.objects),
+  pois: layout.pois,
+  seats: layout.seats,
+  spawn: layout.spawn,
+});

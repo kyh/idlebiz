@@ -11,7 +11,7 @@ const BODY_HALF_HEIGHT = 6;
 /** How far (in nodes) a blocked target is allowed to snap to reach a walkable one. */
 const PATH_SEARCH_RADIUS = 6;
 
-const CARDINAL_STEPS: ReadonlyArray<readonly [number, number]> = [
+const CARDINAL_STEPS: readonly (readonly [number, number])[] = [
   [0, 1],
   [0, -1],
   [1, 0],
@@ -42,18 +42,16 @@ type GridSource = Pick<
 >;
 
 /** The authored collision, cell for cell, before the walker's own rules. */
-function rawGrid(layout: GridSource): WalkGrid {
-  return {
-    cell: layout.cell,
-    cols: layout.cols,
-    rows: layout.rows,
-    width: layout.width,
-    height: layout.height,
-    solid: layout.collision.map((row) => Array.from(row, (ch) => ch === "1")),
-    pathCols: Math.ceil(layout.width / PATH_STEP),
-    pathRows: Math.ceil(layout.height / PATH_STEP),
-  };
-}
+const rawGrid = (layout: GridSource): WalkGrid => ({
+  cell: layout.cell,
+  cols: layout.cols,
+  height: layout.height,
+  pathCols: Math.ceil(layout.width / PATH_STEP),
+  pathRows: Math.ceil(layout.height / PATH_STEP),
+  rows: layout.rows,
+  solid: layout.collision.map((row) => Array.from(row, (ch) => ch === "1")),
+  width: layout.width,
+});
 
 /** A collision cell, by row and column. */
 export interface GridCell {
@@ -62,82 +60,33 @@ export interface GridCell {
 }
 
 const cellOf = (grid: WalkGrid, p: PixelPoint): GridCell => ({
-  r: Math.floor(p.y / grid.cell),
   c: Math.floor(p.x / grid.cell),
+  r: Math.floor(p.y / grid.cell),
 });
 
 /** A copy of the grid with the given cells solid. */
-function withSolid(grid: WalkGrid, cells: Iterable<GridCell>): WalkGrid {
+const withSolid = (grid: WalkGrid, cells: Iterable<GridCell>): WalkGrid => {
   const solid = grid.solid.map((row) => [...row]);
   for (const { r, c } of cells) {
     const row = solid[r];
-    if (row && c >= 0 && c < row.length) row[c] = true;
-  }
-  return { ...grid, solid };
-}
-
-/** Open cells no reachable body probes, such as narrow gaps beside furniture. */
-export function pocketCells(grid: WalkGrid, spawn: PixelPoint): GridCell[] {
-  const probed = new Set<string>();
-  for (const key of reachableTiles(grid, spawn)) {
-    const p = nodeCenter(parseTileKey(key));
-    for (const [dx, dy] of BODY_CORNERS) {
-      const { r, c } = cellOf(grid, { x: p.x + dx, y: p.y + dy });
-      probed.add(`${r},${c}`);
+    if (row && c >= 0 && c < row.length) {
+      row[c] = true;
     }
   }
-  const pockets: GridCell[] = [];
-  grid.solid.forEach((row, r) => {
-    row.forEach((solid, c) => {
-      if (!solid && !probed.has(`${r},${c}`)) pockets.push({ r, c });
-    });
-  });
-  return pockets;
-}
-
-// Chairs block walkers; sitters are placed on them. Seal pockets without changing
-// reachability: no reachable body probes a pocket cell.
-export function walkGridOf(layout: GridSource): WalkGrid {
-  const seated = authoredGrid(layout);
-  return withSolid(seated, pocketCells(seated, layout.spawn));
-}
-
-/** The authored collision with chairs solid and nothing sealed: what a layout promises. */
-export function authoredGrid(layout: GridSource): WalkGrid {
-  const raw = rawGrid(layout);
-  return withSolid(
-    raw,
-    layout.seats.map((seat) => cellOf(raw, seat)),
-  );
-}
-
-/** Close hidden standing spots and seal resulting pockets. Nodes match cells on the 16px grid. */
-export function withoutNodes(
-  grid: WalkGrid,
-  spawn: PixelPoint,
-  nodes: readonly PixelPoint[],
-): WalkGrid {
-  const closed = withSolid(
-    grid,
-    nodes.map((node) => cellOf(grid, node)),
-  );
-  return withSolid(closed, pocketCells(closed, spawn));
-}
-
-/** The authored collision with the walker's rules written into it, for saving. */
-export function sealedCollision(layout: GridSource): string[] {
-  return walkGridOf(layout).solid.map((row) => row.map((s) => (s ? "1" : "0")).join(""));
-}
+  return { ...grid, solid };
+};
 
 /** Is the collision cell under this pixel solid? Off-grid is solid. */
-export function solidAt(grid: WalkGrid, x: number, y: number): boolean {
+export const solidAt = (grid: WalkGrid, x: number, y: number): boolean => {
   const c = Math.floor(x / grid.cell);
   const r = Math.floor(y / grid.cell);
-  if (r < 0 || c < 0 || r >= grid.rows || c >= grid.cols) return true;
+  if (r < 0 || c < 0 || r >= grid.rows || c >= grid.cols) {
+    return true;
+  }
   return grid.solid[r]?.[c] ?? true;
-}
+};
 
-const BODY_CORNERS: ReadonlyArray<readonly [number, number]> = [
+const BODY_CORNERS: readonly (readonly [number, number])[] = [
   [-BODY_HALF_WIDTH, -BODY_HALF_HEIGHT],
   [BODY_HALF_WIDTH, -BODY_HALF_HEIGHT],
   [-BODY_HALF_WIDTH, BODY_HALF_HEIGHT],
@@ -145,65 +94,73 @@ const BODY_CORNERS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /** Can a body centred here stand without any corner inside a solid cell? */
-export function bodyBlockedAt(grid: WalkGrid, x: number, y: number): boolean {
-  return BODY_CORNERS.some(([dx, dy]) => solidAt(grid, x + dx, y + dy));
-}
+export const bodyBlockedAt = (grid: WalkGrid, x: number, y: number): boolean =>
+  BODY_CORNERS.some(([dx, dy]) => solidAt(grid, x + dx, y + dy));
 
 /** Pixel centre of a path node. */
-export function nodeCenter(tile: PathTile): PixelPoint {
-  return { x: tile.tx * PATH_STEP + PATH_STEP / 2, y: tile.ty * PATH_STEP + PATH_STEP / 2 };
-}
+export const nodeCenter = (tile: PathTile): PixelPoint => ({
+  x: tile.tx * PATH_STEP + PATH_STEP / 2,
+  y: tile.ty * PATH_STEP + PATH_STEP / 2,
+});
 
 /** The path node a pixel falls in. */
-export function tileOf(x: number, y: number): PathTile {
-  return { tx: Math.floor(x / PATH_STEP), ty: Math.floor(y / PATH_STEP) };
-}
+export const tileOf = (x: number, y: number): PathTile => ({
+  tx: Math.floor(x / PATH_STEP),
+  ty: Math.floor(y / PATH_STEP),
+});
 
-export function walkableNode(grid: WalkGrid, tile: PathTile): boolean {
-  if (tile.tx < 0 || tile.ty < 0 || tile.tx >= grid.pathCols || tile.ty >= grid.pathRows)
+export const walkableNode = (grid: WalkGrid, tile: PathTile): boolean => {
+  if (tile.tx < 0 || tile.ty < 0 || tile.tx >= grid.pathCols || tile.ty >= grid.pathRows) {
     return false;
+  }
   const p = nodeCenter(tile);
   return !bodyBlockedAt(grid, p.x, p.y);
-}
+};
 
 /** The node itself if walkable, else the nearest walkable node in a growing ring. */
-function nearestWalkable(grid: WalkGrid, tile: PathTile): PathTile | null {
-  if (walkableNode(grid, tile)) return tile;
+const nearestWalkable = (grid: WalkGrid, tile: PathTile): PathTile | null => {
+  if (walkableNode(grid, tile)) {
+    return tile;
+  }
   for (let radius = 1; radius <= PATH_SEARCH_RADIUS; radius += 1) {
     for (let oy = -radius; oy <= radius; oy += 1) {
       for (let ox = -radius; ox <= radius; ox += 1) {
-        if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
+        if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) {
+          continue;
+        }
         const candidate = { tx: tile.tx + ox, ty: tile.ty + oy };
-        if (walkableNode(grid, candidate)) return candidate;
+        if (walkableNode(grid, candidate)) {
+          return candidate;
+        }
       }
     }
   }
   return null;
-}
+};
 
 /** Nearest walkable node centre to a pixel, or null when nothing is in range. */
-export function nearestFloor(grid: WalkGrid, x: number, y: number): PixelPoint | null {
+export const nearestFloor = (grid: WalkGrid, x: number, y: number): PixelPoint | null => {
   const tile = nearestWalkable(grid, tileOf(x, y));
   return tile ? nodeCenter(tile) : null;
-}
+};
 
 const tileKey = (tile: PathTile): string => `${tile.tx},${tile.ty}`;
 
-function parseTileKey(key: string): PathTile {
+const parseTileKey = (key: string): PathTile => {
   const comma = key.indexOf(",");
   return { tx: Number(key.slice(0, comma)), ty: Number(key.slice(comma + 1)) };
-}
+};
 
-function samePoint(a: PixelPoint, b: PixelPoint): boolean {
-  return Math.hypot(a.x - b.x, a.y - b.y) < 1;
-}
+const samePoint = (a: PixelPoint, b: PixelPoint): boolean => Math.hypot(a.x - b.x, a.y - b.y) < 1;
 
 /** Pixel waypoints, or null when unreachable. Ends snap to walkable nodes; use the exact
  * target as the final waypoint when the body fits there. */
-export function findPath(grid: WalkGrid, from: PixelPoint, to: PixelPoint): PixelPoint[] | null {
+export const findPath = (grid: WalkGrid, from: PixelPoint, to: PixelPoint): PixelPoint[] | null => {
   const start = nearestWalkable(grid, tileOf(from.x, from.y));
   const goal = nearestWalkable(grid, tileOf(to.x, to.y));
-  if (!start || !goal) return null;
+  if (!start || !goal) {
+    return null;
+  }
   const goalPoint = bodyBlockedAt(grid, to.x, to.y) ? nodeCenter(goal) : to;
   const startKey = tileKey(start);
   const goalKey = tileKey(goal);
@@ -214,11 +171,15 @@ export function findPath(grid: WalkGrid, from: PixelPoint, to: PixelPoint): Pixe
   while (cursor < queue.length && !found) {
     const cur = queue[cursor];
     cursor += 1;
-    if (!cur) break;
+    if (!cur) {
+      break;
+    }
     for (const [dx, dy] of CARDINAL_STEPS) {
       const next = { tx: cur.tx + dx, ty: cur.ty + dy };
       const nextKey = tileKey(next);
-      if (!walkableNode(grid, next) || parent.has(nextKey)) continue;
+      if (!walkableNode(grid, next) || parent.has(nextKey)) {
+        continue;
+      }
       parent.set(nextKey, tileKey(cur));
       if (nextKey === goalKey) {
         found = true;
@@ -227,7 +188,9 @@ export function findPath(grid: WalkGrid, from: PixelPoint, to: PixelPoint): Pixe
       queue.push(next);
     }
   }
-  if (!found) return null;
+  if (!found) {
+    return null;
+  }
   const keys: string[] = [];
   let walkBack: string | null = goalKey;
   while (walkBack) {
@@ -235,50 +198,116 @@ export function findPath(grid: WalkGrid, from: PixelPoint, to: PixelPoint): Pixe
     walkBack = parent.get(walkBack) ?? null;
   }
   const points = keys.map((key) => nodeCenter(parseTileKey(key)));
-  points.shift(); // the start node is where the walker already stands
-  const last = points[points.length - 1];
-  if (!last || !samePoint(last, goalPoint)) points.push(goalPoint);
+  // the start node is where the walker already stands
+  points.shift();
+  const last = points.at(-1);
+  if (!last || !samePoint(last, goalPoint)) {
+    points.push(goalPoint);
+  }
   return points;
-}
+};
 
 /** Every node key a walker starting at `from` can reach (BFS, flood fill). */
-export function reachableTiles(grid: WalkGrid, from: PixelPoint): ReadonlySet<string> {
+export const reachableTiles = (grid: WalkGrid, from: PixelPoint): ReadonlySet<string> => {
   const start = nearestWalkable(grid, tileOf(from.x, from.y));
   const seen = new Set<string>();
-  if (!start) return seen;
+  if (!start) {
+    return seen;
+  }
   seen.add(tileKey(start));
   const queue: PathTile[] = [start];
   let cursor = 0;
   while (cursor < queue.length) {
     const cur = queue[cursor];
     cursor += 1;
-    if (!cur) break;
+    if (!cur) {
+      break;
+    }
     for (const [dx, dy] of CARDINAL_STEPS) {
       const next = { tx: cur.tx + dx, ty: cur.ty + dy };
       const key = tileKey(next);
-      if (seen.has(key) || !walkableNode(grid, next)) continue;
+      if (seen.has(key) || !walkableNode(grid, next)) {
+        continue;
+      }
       seen.add(key);
       queue.push(next);
     }
   }
   return seen;
-}
+};
+
+/** The authored collision with chairs solid and nothing sealed: what a layout promises. */
+export const authoredGrid = (layout: GridSource): WalkGrid => {
+  const raw = rawGrid(layout);
+  return withSolid(
+    raw,
+    layout.seats.map((seat) => cellOf(raw, seat)),
+  );
+};
+
+/** Open cells no reachable body probes, such as narrow gaps beside furniture. */
+export const pocketCells = (grid: WalkGrid, spawn: PixelPoint): GridCell[] => {
+  const probed = new Set<string>();
+  for (const key of reachableTiles(grid, spawn)) {
+    const p = nodeCenter(parseTileKey(key));
+    for (const [dx, dy] of BODY_CORNERS) {
+      const { r, c } = cellOf(grid, { x: p.x + dx, y: p.y + dy });
+      probed.add(`${r},${c}`);
+    }
+  }
+  const pockets: GridCell[] = [];
+  for (const [r, row] of grid.solid.entries()) {
+    for (const [c, solid] of row.entries()) {
+      if (!solid && !probed.has(`${r},${c}`)) {
+        pockets.push({ c, r });
+      }
+    }
+  }
+  return pockets;
+};
+
+// Chairs block walkers; sitters are placed on them. Seal pockets without changing
+// reachability: no reachable body probes a pocket cell.
+export const walkGridOf = (layout: GridSource): WalkGrid => {
+  const seated = authoredGrid(layout);
+  return withSolid(seated, pocketCells(seated, layout.spawn));
+};
+
+/** Close hidden standing spots and seal resulting pockets. Nodes match cells on the 16px grid. */
+export const withoutNodes = (
+  grid: WalkGrid,
+  spawn: PixelPoint,
+  nodes: readonly PixelPoint[],
+): WalkGrid => {
+  const closed = withSolid(
+    grid,
+    nodes.map((node) => cellOf(grid, node)),
+  );
+  return withSolid(closed, pocketCells(closed, spawn));
+};
+
+/** The authored collision with the walker's rules written into it, for saving. */
+export const sealedCollision = (layout: GridSource): string[] =>
+  walkGridOf(layout).solid.map((row) => row.map((s) => (s ? "1" : "0")).join(""));
 
 /** Every node centre a walker starting at `from` can stand on. */
-export function reachableNodes(grid: WalkGrid, from: PixelPoint): PixelPoint[] {
-  return [...reachableTiles(grid, from)].map((key) => nodeCenter(parseTileKey(key)));
-}
+export const reachableNodes = (grid: WalkGrid, from: PixelPoint): PixelPoint[] =>
+  [...reachableTiles(grid, from)].map((key) => nodeCenter(parseTileKey(key)));
 
 /** Can a walker whose reachable set is `reachable` get to (or beside) this pixel? */
-export function canReach(grid: WalkGrid, reachable: ReadonlySet<string>, to: PixelPoint): boolean {
+export const canReach = (
+  grid: WalkGrid,
+  reachable: ReadonlySet<string>,
+  to: PixelPoint,
+): boolean => {
   const goal = nearestWalkable(grid, tileOf(to.x, to.y));
   return goal !== null && reachable.has(tileKey(goal));
-}
+};
 
 const at = (p: PixelPoint): string => `${p.x},${p.y}`;
 
 /** Check grid dimensions and reachability from the founder's spawn. */
-export function layoutIssues(layout: OfficeLayoutData): string[] {
+export const layoutIssues = (layout: OfficeLayoutData): string[] => {
   // judged on the layout as authored: sealing a pocket must not let a seat in a
   // sealed room pass by snapping to the nearest floor on the other side of its wall
   const grid = authoredGrid(layout);
@@ -286,39 +315,60 @@ export function layoutIssues(layout: OfficeLayoutData): string[] {
   const inWorld = (p: PixelPoint): boolean =>
     p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;
 
-  if (layout.collision.length !== layout.rows)
+  if (layout.collision.length !== layout.rows) {
     issues.push(`collision has ${layout.collision.length} rows, expected ${layout.rows}`);
-  layout.collision.forEach((row, r) => {
-    if (row.length !== layout.cols)
+  }
+  for (const [r, row] of layout.collision.entries()) {
+    if (row.length !== layout.cols) {
       issues.push(`collision row ${r} has ${row.length} cells, expected ${layout.cols}`);
-  });
-  if (issues.length > 0) return issues; // the grid itself is wrong; nothing on it can be judged
+    }
+  }
+  // the grid itself is wrong; nothing on it can be judged
+  if (issues.length > 0) {
+    return issues;
+  }
 
   // The founder is placed at the spawn exactly, never snapped: a body inside a
   // wall there can't take a single step.
-  if (!inWorld(layout.spawn)) issues.push(`spawn ${at(layout.spawn)} is outside the world`);
-  else if (bodyBlockedAt(grid, layout.spawn.x, layout.spawn.y))
+  if (!inWorld(layout.spawn)) {
+    issues.push(`spawn ${at(layout.spawn)} is outside the world`);
+  } else if (bodyBlockedAt(grid, layout.spawn.x, layout.spawn.y)) {
     issues.push(`spawn ${at(layout.spawn)} is inside collision`);
-  if (issues.length > 0) return issues; // nothing else can be judged without a start
+  }
+  // nothing else can be judged without a start
+  if (issues.length > 0) {
+    return issues;
+  }
 
   const reachable = reachableTiles(grid, layout.spawn);
-  if (!inWorld(layout.door)) issues.push(`door ${at(layout.door)} is outside the world`);
-  else if (!canReach(grid, reachable, layout.door))
+  if (!inWorld(layout.door)) {
+    issues.push(`door ${at(layout.door)} is outside the world`);
+  } else if (!canReach(grid, reachable, layout.door)) {
     issues.push(`door ${at(layout.door)} is unreachable from spawn`);
+  }
 
   const seen = new Map<string, number>();
-  layout.seats.forEach((seat, i) => {
+  for (const [i, seat] of layout.seats.entries()) {
     const label = `seat ${i} (${seat.role} at ${at(seat)})`;
     const prior = seen.get(at(seat));
-    if (prior !== undefined) issues.push(`${label} duplicates seat ${prior}`);
-    else seen.set(at(seat), i);
-    if (!inWorld(seat)) issues.push(`${label} is outside the world`);
-    else if (!canReach(grid, reachable, seat)) issues.push(`${label} is unreachable from spawn`);
-  });
-  layout.pois.forEach((poi, i) => {
+    if (prior === undefined) {
+      seen.set(at(seat), i);
+    } else {
+      issues.push(`${label} duplicates seat ${prior}`);
+    }
+    if (!inWorld(seat)) {
+      issues.push(`${label} is outside the world`);
+    } else if (!canReach(grid, reachable, seat)) {
+      issues.push(`${label} is unreachable from spawn`);
+    }
+  }
+  for (const [i, poi] of layout.pois.entries()) {
     const label = `poi ${i} (facing ${poi.face} at ${at(poi)})`;
-    if (!inWorld(poi)) issues.push(`${label} is outside the world`);
-    else if (!canReach(grid, reachable, poi)) issues.push(`${label} is unreachable from spawn`);
-  });
+    if (!inWorld(poi)) {
+      issues.push(`${label} is outside the world`);
+    } else if (!canReach(grid, reachable, poi)) {
+      issues.push(`${label} is unreachable from spawn`);
+    }
+  }
   return issues;
-}
+};

@@ -2,12 +2,15 @@ import { useAsync } from "@/renderer/hooks/use-async";
 import { useStore, teamMessages } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Modal } from "@/renderer/ui/modal";
-export function Teams({ onClose }: { onClose: () => void }) {
+
+export const Teams = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
   const room = useAsync(() => teamMessages(30), []) ?? [];
 
-  if (!company) return null;
+  if (!company) {
+    return null;
+  }
   const headcount = `${employees.length} ${employees.length === 1 ? "person" : "people"}`;
 
   return (
@@ -44,4 +47,4 @@ export function Teams({ onClose }: { onClose: () => void }) {
       </div>
     </Modal>
   );
-}
+};

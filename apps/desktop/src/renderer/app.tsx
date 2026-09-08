@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useStore, type Boot } from "@/renderer/state/store";
+import { initStore, setGame, useStore } from "@/renderer/state/store";
+import type { Boot } from "@/renderer/state/store";
 import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
@@ -25,8 +26,44 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 
 const getHash = (): string => window.location.hash;
 
+const OpenOverlay = ({
+  overlay,
+  onOpen,
+  onClose,
+}: {
+  overlay: Overlay | null;
+  onOpen: (overlay: Overlay) => void;
+  onClose: () => void;
+}) => {
+  if (overlay === null) {
+    return null;
+  }
+  switch (overlay.kind) {
+    case "ships": {
+      return <Ships onOpen={onOpen} onClose={onClose} />;
+    }
+    case "inbox": {
+      // Stripe connect lives in the budget modal; a Vercel ask binds a product
+      return <Inbox onClose={onClose} onOpen={onOpen} />;
+    }
+    case "teams": {
+      return <Teams onClose={onClose} />;
+    }
+    case "budget": {
+      return <BudgetModal onClose={onClose} />;
+    }
+    case "vercel": {
+      return <ConnectVercel productId={overlay.productId} onClose={onClose} />;
+    }
+    case "settings": {
+      return <Settings onClose={onClose} />;
+    }
+    // no default
+  }
+};
+
 /** The one thing the window shows over the office, by where boot got to. */
-function Screen({
+const Screen = ({
   boot,
   overlay,
   onOverlay,
@@ -34,15 +71,18 @@ function Screen({
   boot: Boot;
   overlay: Overlay | null;
   onOverlay: (overlay: Overlay | null) => void;
-}) {
+}) => {
   switch (boot.kind) {
-    case "loading":
+    case "loading": {
       return null;
-    case "unreadable":
+    }
+    case "unreadable": {
       return <SaveUnreadable issues={boot.issues} />;
-    case "onboarding":
+    }
+    case "onboarding": {
       return <PokeOnboarding />;
-    case "office":
+    }
+    case "office": {
       return (
         <>
           {boot.authed ? null : <AuthGate />}
@@ -52,37 +92,12 @@ function Screen({
           <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
         </>
       );
+    }
+    // no default
   }
-}
+};
 
-function OpenOverlay({
-  overlay,
-  onOpen,
-  onClose,
-}: {
-  overlay: Overlay | null;
-  onOpen: (overlay: Overlay) => void;
-  onClose: () => void;
-}) {
-  if (overlay === null) return null;
-  switch (overlay.kind) {
-    case "ships":
-      return <Ships onOpen={onOpen} onClose={onClose} />;
-    case "inbox":
-      // Stripe connect lives in the budget modal; a Vercel ask binds a product
-      return <Inbox onClose={onClose} onOpen={onOpen} />;
-    case "teams":
-      return <Teams onClose={onClose} />;
-    case "budget":
-      return <BudgetModal onClose={onClose} />;
-    case "vercel":
-      return <ConnectVercel productId={overlay.productId} onClose={onClose} />;
-    case "settings":
-      return <Settings onClose={onClose} />;
-  }
-}
-
-export function App() {
+export const App = () => {
   const boot = useStore((s) => s.boot);
   const layout = useStore((s) => s.layout);
   const game = useStore((s) => s.game);
@@ -95,7 +110,9 @@ export function App() {
 
   // when onboarding finishes, the office scene re-boots with the new team
   useEffect(() => {
-    if (!game) return;
+    if (!game) {
+      return;
+    }
     const onDone = () => game.events.emit("company-ready");
     window.addEventListener("idlebiz:onboarded", onDone);
     return () => window.removeEventListener("idlebiz:onboarded", onDone);
@@ -120,4 +137,4 @@ export function App() {
       </div>
     </div>
   );
-}
+};
