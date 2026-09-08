@@ -2,17 +2,8 @@ import { z } from "zod";
 import type { IpcMethod, IpcKind, InvokeMethod } from "@/shared/ipc-channels";
 import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
-import {
-  BUSINESS_TYPE_IDS,
-  BudgetSchema,
-  TASK_STATUSES,
-  type AgentRunner,
-  type Company,
-  type Employee,
-  type Product,
-  type Task,
-  type TeamMessage,
-} from "@/shared/domain";
+import { BUSINESS_TYPE_IDS, BudgetSchema, TASK_STATUSES } from "@/shared/domain";
+import type { AgentRunner, Company, Employee, Product, Task, TeamMessage } from "@/shared/domain";
 
 /** Streamed steps of the workforce setup flow (CLI detect/install/login). */
 export type AuthFlowEvent =
@@ -25,15 +16,21 @@ export type AuthFlowEvent =
 export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
 /** A package on disk the store could not read at boot, and why. */
-export type LoadSkip = {
+export interface LoadSkip {
   kind: "company" | "employee" | "task" | "routine" | "product" | "team";
   path: string;
   error: string;
-};
+}
 /** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
-export type LoadReport = { companies: number; skipped: LoadSkip[] };
+export interface LoadReport {
+  companies: number;
+  skipped: LoadSkip[];
+}
 
-export type FounderChoice = { seed: string; portraitDataUrl: string };
+export interface FounderChoice {
+  seed: string;
+  portraitDataUrl: string;
+}
 
 /** Stripe Connect link state, streamed to the renderer. */
 export type StripeStatus =
@@ -43,40 +40,53 @@ export type StripeStatus =
   | { state: "error"; message: string };
 
 /** A Vercel project the founder can bind the company to. */
-export type VercelProject = { id: string; name: string; teamId?: string };
+export interface VercelProject {
+  id: string;
+  name: string;
+  teamId?: string;
+}
 
 /** The latest production deployment of the bound Vercel project. */
-export type VercelDeployment = { url: string; state: string; createdAt: number };
+export interface VercelDeployment {
+  url: string;
+  state: string;
+  createdAt: number;
+}
 
-export type ProductStatus = {
+export interface ProductStatus {
   /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
   entry: string | null;
   /** Latest production deployment when Vercel is connected. */
   deploy: VercelDeployment | null;
-};
+}
 
 /** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
-export type ChatOption = { label: string; instruction: string };
+export interface ChatOption {
+  label: string;
+  instruction: string;
+}
 
 /** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
-export type CharacterAssets = {
-  walkSheetDataUrl: string; // 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right
-  portraitDataUrl: string; // 64x64 PNG
-};
+export interface CharacterAssets {
+  /** 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right */
+  walkSheetDataUrl: string;
+  /** 64x64 PNG */
+  portraitDataUrl: string;
+}
 
 const BusinessTypeSchema = z.enum(BUSINESS_TYPE_IDS);
 
 /** An LLM-proposed hire, as cast: the shape the roster generator must produce. */
 export const HireCandidateSchema = z.object({
+  blurb: z.string().min(2).max(120),
   name: z.string().min(1).max(40),
+  persona: z.string().min(10).max(600),
   role: z
     .string()
     .min(2)
     .max(32)
-    .transform((s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-")),
+    .transform((s) => s.toLowerCase().replaceAll(/[^a-z0-9]+/gu, "-")),
   title: z.string().min(2).max(60),
-  persona: z.string().min(10).max(600),
-  blurb: z.string().min(2).max(120),
 });
 export type HireCandidate = z.infer<typeof HireCandidateSchema>;
 /** A candidate the founder can hire: main has given them a look. */
@@ -84,70 +94,70 @@ const HireProposalSchema = HireCandidateSchema.extend({ spriteSeed: z.string() }
 export type HireProposal = z.infer<typeof HireProposalSchema>;
 
 export const SCHEMAS = {
-  hasAuth: z.void(),
-  startLogin: z.void(),
-  getFounderChoices: z.void(),
-  getCompany: z.void(),
-  loadReport: z.void(),
-  openSaveFolder: z.void(),
-  resetGame: z.void(),
-  stripeStatus: z.void(),
-  restingRunners: z.void(),
-  loadOfficeDesign: z.void(),
+  answerQuestion: z.object({ answer: z.string(), taskId: z.string() }),
+  assignTask: z.object({ employeeId: z.string(), taskId: z.string() }),
   composeCharacter: z.object({ seed: z.string() }),
+  createProduct: z.object({
+    companyId: z.string(),
+    description: z.string().trim().min(1).max(600),
+    name: z.string().trim().min(1).max(80),
+  }),
+  directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
+  employeeOptions: z.object({ employeeId: z.string() }),
   foundCompany: z.object({
-    name: z.string(),
-    mission: z.string(),
+    // Set the cap at creation; the scheduler can spend on its first tick.
+    budget: BudgetSchema,
     businessType: BusinessTypeSchema,
     founderName: z.string(),
     founderSpriteSeed: z.string(),
-    // Set the cap at creation; the scheduler can spend on its first tick.
-    budget: BudgetSchema,
     hires: z.array(HireProposalSchema).min(1),
+    mission: z.string(),
+    name: z.string(),
   }),
-  setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
-  listEmployees: z.object({ companyId: z.string() }),
-  teamMessages: z.object({ companyId: z.string(), limit: z.number().int().optional() }),
-  employeeOptions: z.object({ employeeId: z.string() }),
-  postTeamChat: z.object({ companyId: z.string(), text: z.string().min(1).max(2000) }),
-  directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
-  setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
-  listTasks: z.object({
-    companyId: z.string(),
-    assigneeId: z.string().optional(),
-    status: z.array(z.enum(TASK_STATUSES)).optional(),
-  }),
-  assignTask: z.object({ taskId: z.string(), employeeId: z.string() }),
-  answerQuestion: z.object({ taskId: z.string(), answer: z.string() }),
-  resolveApproval: z.object({ taskId: z.string(), approved: z.boolean() }),
-  openCompanyPath: z.object({ companyId: z.string(), rel: z.string() }),
-  openProduct: z.object({ productId: z.string() }),
   generateHires: z.object({
+    businessType: BusinessTypeSchema,
     companyName: z.string(),
     mission: z.string(),
-    businessType: BusinessTypeSchema,
   }),
-  setBudget: z.object({ companyId: z.string(), budget: BudgetSchema }),
+  getCompany: z.void(),
+  getFounderChoices: z.void(),
+  hasAuth: z.void(),
+  listEmployees: z.object({ companyId: z.string() }),
+  listProducts: z.object({ companyId: z.string() }),
+  listTasks: z.object({
+    assigneeId: z.string().optional(),
+    companyId: z.string(),
+    status: z.array(z.enum(TASK_STATUSES)).optional(),
+  }),
+  loadOfficeDesign: z.void(),
+  loadReport: z.void(),
+  openCompanyPath: z.object({ companyId: z.string(), rel: z.string() }),
+  openProduct: z.object({ productId: z.string() }),
+  openSaveFolder: z.void(),
+  postTeamChat: z.object({ companyId: z.string(), text: z.string().min(1).max(2000) }),
+  productStatus: z.object({ productId: z.string() }),
+  resetGame: z.void(),
   resetSpend: z.object({ companyId: z.string() }),
+  resolveApproval: z.object({ approved: z.boolean(), taskId: z.string() }),
+  restingRunners: z.void(),
+  saveOfficeDesign: z.object({ json: z.string() }),
+  setAutopilot: z.object({ companyId: z.string(), running: z.boolean() }),
+  setBudget: z.object({ budget: BudgetSchema, companyId: z.string() }),
+  setMaxAgents: z.object({ companyId: z.string(), maxAgents: z.number().int().min(1).max(64) }),
+  startLogin: z.void(),
   stripeConnect: z.object({ companyId: z.string() }),
   stripeDisconnect: z.object({ companyId: z.string() }),
-  vercelListProjects: z.object({ token: z.string() }),
+  stripeStatus: z.void(),
+  teamMessages: z.object({ companyId: z.string(), limit: z.number().int().optional() }),
   vercelConnect: z.object({
     productId: z.string(),
-    token: z.string(),
     projectId: z.string(),
     projectName: z.string(),
     teamId: z.string().optional(),
+    token: z.string(),
   }),
   vercelDisconnect: z.object({ productId: z.string() }),
-  listProducts: z.object({ companyId: z.string() }),
-  createProduct: z.object({
-    companyId: z.string(),
-    name: z.string().trim().min(1).max(80),
-    description: z.string().trim().min(1).max(600),
-  }),
-  productStatus: z.object({ productId: z.string() }),
-  saveOfficeDesign: z.object({ json: z.string() }),
+  vercelListProjects: z.object({ token: z.string() }),
 } satisfies {
   [M in InvokeMethod]: IpcKind<M> extends "invoke-void" ? z.ZodType<void> : z.ZodType;
 };
@@ -208,7 +218,7 @@ interface Results {
 
 type Payload<M extends IpcMethod> = M extends keyof typeof SCHEMAS
   ? z.infer<(typeof SCHEMAS)[M]>
-  : void;
+  : undefined;
 
 export type Contract = { [M in IpcMethod]: { payload: Payload<M>; result: Results[M] } };
 

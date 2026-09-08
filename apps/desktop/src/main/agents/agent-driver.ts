@@ -1,23 +1,26 @@
-import { isReady, probeRunners, runnerBin, type RunnerProbe } from "@repo/agent-driver/detect";
+import { isReady, probeRunners, runnerBin } from "@repo/agent-driver/detect";
+import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { parseRateLimit } from "@repo/agent-driver/rate-limit";
-import { RUNNERS, type RunnerAdapter } from "@repo/agent-driver/registry";
+import { RUNNERS } from "@repo/agent-driver/registry";
+import type { RunnerAdapter } from "@repo/agent-driver/registry";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_MS,
   RUNNER_IDS,
 } from "@repo/agent-driver/runner";
-import {
-  runAcpTurn,
-  type AcpAgent,
-  type PermissionDecision,
-  type AcpTurnResult,
-  type PermissionRequest,
+import { runAcpTurn } from "@repo/agent-driver/acp-session";
+import type {
+  AcpAgent,
+  PermissionDecision,
+  AcpTurnResult,
+  PermissionRequest,
 } from "@repo/agent-driver/acp-session";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
-import { join, sep } from "node:path";
+import path from "node:path";
 import { createRequire } from "node:module";
-import { controlPlane, type RunToolHooks } from "@/main/control-plane";
+import { controlPlane } from "@/main/control-plane";
+import type { RunToolHooks } from "@/main/control-plane";
 import type { RestingRunners } from "@/shared/ipc-registry";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
@@ -27,60 +30,71 @@ import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/s
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
 
-export function acpAgentFor(runner: AgentRunner): AcpAgent {
+// Child processes cannot execute files inside asar; matches electron-builder's asarUnpack.
+const unpacked = (file: string): string =>
+  file.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+
+export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
   const adapter: RunnerAdapter = RUNNERS[runner];
   // The packaged executable is Electron; child agents need its Node mode.
   const env: AcpAgent["env"] = { ELECTRON_RUN_AS_NODE: "1" };
-  if (adapter.binEnvVar) env[adapter.binEnvVar] = runnerBin(runner);
+  if (adapter.binEnvVar) {
+    env[adapter.binEnvVar] = runnerBin(runner);
+  }
   return {
     command: [process.execPath, unpacked(resolveFromApp.resolve(adapter.acpEntry))],
-    sessionModeId: adapter.sessionModeId,
     env,
+    sessionModeId: adapter.sessionModeId,
   };
-}
+};
 
-// Child processes cannot execute files inside asar; matches electron-builder's asarUnpack.
-function unpacked(path: string): string {
-  return path.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
-}
-
-function acpAgentInstalled(runner: AgentRunner): boolean {
+const acpAgentInstalled = (runner: AgentRunner): boolean => {
   try {
     resolveFromApp.resolve(RUNNERS[runner].acpEntry);
     return true;
   } catch {
     return false;
   }
-}
+};
 
 /** An approval permits one execution of the exact command. */
-async function decidePermission(
+const decidePermission = (
   companyId: string,
   request: PermissionRequest,
   block: (ask: BlockedAsk) => void,
-): Promise<PermissionDecision> {
+): PermissionDecision => {
   const command = normalizeCommand(request.command);
-  if (!command) return { allow: true };
+  if (!command) {
+    return { allow: true };
+  }
   const verdict = classifyCommand(command);
-  if (verdict.decision === "allow") return { allow: true };
-  if (store.consumeApproval(companyId, command)) return { allow: true };
-  block({ type: "approval", command, rule: verdict.rule.id });
+  if (verdict.decision === "allow") {
+    return { allow: true };
+  }
+  if (store.consumeApproval(companyId, command)) {
+    return { allow: true };
+  }
+  block({ command, rule: verdict.rule.id, type: "approval" });
   return { allow: false };
-}
+};
 
 /** Prefer reported dollars; otherwise price tokens at the runner's default model. */
-function priceRun(emp: Employee, usage: AgentUsage): number {
-  if (usage.costUsd > 0) return usage.costUsd;
-  if (usage.inputTokens + usage.outputTokens === 0) return 0;
+const priceRun = (emp: Employee, usage: AgentUsage): number => {
+  if (usage.costUsd > 0) {
+    return usage.costUsd;
+  }
+  if (usage.inputTokens + usage.outputTokens === 0) {
+    return 0;
+  }
   return priceUsage(RUNNERS[emp.runner].fallbackPricingModel, usage);
-}
+};
 
 // Codex cannot write ~/.npm. Grant a shared cache outside the agents' working trees.
-const TOOL_CACHE_DIR = join(ROOT_DIR, "cache");
+const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
 
 const TOOL_CACHE_ENV = {
-  npm_config_cache: join(TOOL_CACHE_DIR, "npm"),
   XDG_CACHE_HOME: TOOL_CACHE_DIR,
+  npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
 };
 
 export interface RunResult {
@@ -95,14 +109,19 @@ class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
-  private active = new Map<string, AbortController>(); // employeeId -> abort
-  private restingUntil = new Map<AgentRunner, number>(); // runner -> epoch its limit lifts
+  // employeeId -> abort
+  private active = new Map<string, AbortController>();
+  // runner -> epoch its limit lifts
+  private restingUntil = new Map<AgentRunner, number>();
 
   init(): void {
-    this.probing = probeRunners().then((probes) => {
-      this.probes = probes;
-      return probes;
-    });
+    this.probing = this.probe();
+  }
+
+  private async probe(): Promise<RunnerProbe[]> {
+    const probes = await probeRunners();
+    this.probes = probes;
+    return probes;
   }
 
   refresh(): Promise<RunnerProbe[]> {
@@ -126,7 +145,9 @@ class AgentDriver {
     const awake = available.filter((r) => this.restingRunner(r) === null);
     const pool = awake.length > 0 ? awake : available;
     const runner = pool[index % pool.length];
-    if (runner === undefined) throw new Error("no signed-in coding CLI to run on");
+    if (runner === undefined) {
+      throw new Error("no signed-in coding CLI to run on");
+    }
     return runner;
   }
 
@@ -134,7 +155,9 @@ class AgentDriver {
     const resting: RestingRunners = {};
     for (const runner of RUNNER_IDS) {
       const until = this.restingRunner(runner);
-      if (until !== null) resting[runner] = until;
+      if (until !== null) {
+        resting[runner] = until;
+      }
     }
     return resting;
   }
@@ -142,7 +165,9 @@ class AgentDriver {
   /** Epoch until which this runner's usage limit holds, or null if it's awake. */
   restingRunner(runner: AgentRunner): number | null {
     const until = this.restingUntil.get(runner);
-    if (until === undefined) return null;
+    if (until === undefined) {
+      return null;
+    }
     if (until <= Date.now()) {
       this.restingUntil.delete(runner);
       return null;
@@ -157,7 +182,9 @@ class AgentDriver {
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
   ): Promise<RunResult> {
-    if (this.active.has(emp.id)) throw new Error(`employee ${emp.id} already running a task`);
+    if (this.active.has(emp.id)) {
+      throw new Error(`employee ${emp.id} already running a task`);
+    }
     const abort = new AbortController();
     this.active.set(emp.id, abort);
     try {
@@ -181,12 +208,18 @@ class AgentDriver {
 
   /** A pending founder ask takes precedence over the runner's exit status. */
   private outcomeOf(runner: AgentRunner, turn: AcpTurnResult, ask: BlockedAsk | null): RunOutcome {
-    if (ask) return { kind: "blocked", ask };
-    if (turn.end.kind === "completed") return { kind: "done" };
+    if (ask) {
+      return { ask, kind: "blocked" };
+    }
+    if (turn.end.kind === "completed") {
+      return { kind: "done" };
+    }
     const limit = parseRateLimit(turn.end.error);
-    if (!limit) return { kind: "failed", error: turn.end.error };
+    if (!limit) {
+      return { error: turn.end.error, kind: "failed" };
+    }
     this.restingUntil.set(runner, limit.resetsAt);
-    return { kind: "resting", until: limit.resetsAt, error: turn.end.error };
+    return { error: turn.end.error, kind: "resting", until: limit.resetsAt };
   }
 
   private async invoke(
@@ -209,17 +242,12 @@ class AgentDriver {
       // for what is shared across products
       const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
       const res = await runAcpTurn({
-        agent: acpAgentFor(emp.runner),
-        prompt: run.prompt,
-        systemPrompt: store.employeeInstructions(emp.id),
-        cwd: run.workspace,
-        resumeSessionId,
         addDirs: [...shared, employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
+        agent: acpAgentFor(emp.runner),
+        cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV },
-        onPermission: (request) => decidePermission(company.id, request, handle.block),
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
-        signal: abort.signal,
         onEvent: (e) => {
           sawOutput = true;
           try {
@@ -228,10 +256,16 @@ class AgentDriver {
             /* a listener must never break the run */
           }
         },
+        onPermission: (request) =>
+          Promise.resolve(decidePermission(company.id, request, handle.block)),
+        prompt: run.prompt,
+        resumeSessionId,
+        signal: abort.signal,
+        systemPrompt: store.employeeInstructions(emp.id),
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       const outcome = this.outcomeOf(emp.runner, res, handle.outcome().blocked);
-      return { result: { outcome, summary: res.summary, usage }, turn: res, sawOutput };
+      return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();
     }
@@ -243,7 +277,9 @@ class AgentDriver {
   }
 
   disposeAll(): void {
-    for (const abort of this.active.values()) abort.abort();
+    for (const abort of this.active.values()) {
+      abort.abort();
+    }
     this.active.clear();
   }
 }

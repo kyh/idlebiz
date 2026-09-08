@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from "react";
+import { Component } from "react";
+import type { ReactNode } from "react";
 import { errorMessage } from "@/shared/errors";
 
 // Catch overlay errors without unmounting the Phaser canvas.
@@ -7,14 +8,19 @@ interface Crashed {
 }
 
 export class CrashScreen extends Component<{ children: ReactNode }, Crashed> {
-  override state: Crashed = { error: null };
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
 
   static getDerivedStateFromError(cause: unknown): Crashed {
     return { error: errorMessage(cause) };
   }
 
   override render(): ReactNode {
-    if (this.state.error === null) return this.props.children;
+    if (this.state.error === null) {
+      return this.props.children;
+    }
     return (
       <div className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-[#10121b]/90 p-6">
         <div className="px-battle w-full max-w-lg p-4">

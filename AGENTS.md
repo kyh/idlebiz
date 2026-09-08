@@ -56,6 +56,8 @@ only remote check, and `pnpm verify` runs the same `next build`):
 pnpm verify
 ```
 
+**Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. `no-await-in-loop` is the one deliberate override (sequential awaits are intentional). Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
+
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
 ```sh

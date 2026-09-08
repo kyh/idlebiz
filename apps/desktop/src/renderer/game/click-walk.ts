@@ -2,7 +2,8 @@ import type Phaser from "phaser";
 import type { Dir } from "@/renderer/game/character-sheet";
 import { DEPTH, WALK_SPEED } from "@/renderer/game/config";
 import { facingToward, stepToward } from "@/renderer/game/movement";
-import { findPath, type WalkGrid } from "@/shared/office-grid";
+import { findPath } from "@/shared/office-grid";
+import type { WalkGrid } from "@/shared/office-grid";
 import type { PixelPoint } from "@/shared/office-layout-schema";
 
 /** The player, as click-to-walk drives them. The scene keeps the sprite and the collision. */
@@ -10,20 +11,20 @@ export interface Walker {
   /** Where they stand, read live — the sprite itself will do. */
   readonly position: PixelPoint;
   /** Land exactly here: a waypoint is walkable by construction, so no collision test. */
-  place(at: PixelPoint): void;
+  place: (at: PixelPoint) => void;
   /** Try to move by a delta; collision may allow less, or nothing at all. */
-  move(dx: number, dy: number): void;
+  move: (dx: number, dy: number) => void;
   /** Stand still, looking `dir`. */
-  face(dir: Dir): void;
+  face: (dir: Dir) => void;
   /** Walk, animated, looking `dir`. */
-  walk(dir: Dir): void;
+  walk: (dir: Dir) => void;
 }
 
 /** The colleagues a click can land on — what the NPC manager answers about them. */
 export interface Colleagues {
-  interactAt(x: number, y: number): string | null;
-  positionOf(employeeId: string): PixelPoint | null;
-  inReach(employeeId: string, point: PixelPoint): boolean;
+  interactAt: (x: number, y: number) => string | null;
+  positionOf: (employeeId: string) => PixelPoint | null;
+  inReach: (employeeId: string, point: PixelPoint) => boolean;
 }
 
 /**
@@ -50,14 +51,25 @@ interface Route {
 export class ClickWalk {
   private route: Route | null = null;
   private marker?: Phaser.GameObjects.Graphics;
+  private readonly scene: Phaser.Scene;
+  private readonly grid: WalkGrid;
+  private readonly walker: Walker;
+  private readonly colleagues: Colleagues;
+  private readonly talk: (employeeId: string) => void;
 
   constructor(
-    private scene: Phaser.Scene,
-    private grid: WalkGrid,
-    private walker: Walker,
-    private colleagues: Colleagues,
-    private talk: (employeeId: string) => void,
-  ) {}
+    scene: Phaser.Scene,
+    grid: WalkGrid,
+    walker: Walker,
+    colleagues: Colleagues,
+    talk: (employeeId: string) => void,
+  ) {
+    this.scene = scene;
+    this.grid = grid;
+    this.walker = walker;
+    this.colleagues = colleagues;
+    this.talk = talk;
+  }
 
   onPointerDown(to: PixelPoint): void {
     const { walker, colleagues } = this;
@@ -81,9 +93,13 @@ export class ClickWalk {
 
   /** One frame along the route. False when there is no route, or it just ended. */
   update(dt: number): boolean {
-    const route = this.route;
-    if (!route) return false;
-    if (this.follow(route, dt)) return true;
+    const { route } = this;
+    if (!route) {
+      return false;
+    }
+    if (this.follow(route, dt)) {
+      return true;
+    }
     this.arrive(route);
     return false;
   }
@@ -103,18 +119,23 @@ export class ClickWalk {
   private start(to: PixelPoint, talkTo: string | null): void {
     const points = findPath(this.grid, this.walker.position, to);
     if (!points || points.length === 0) {
-      this.cancel(); // nowhere to stand over there; don't leave a marker lying
+      // nowhere to stand over there; don't leave a marker lying
+      this.cancel();
       return;
     }
-    this.route = { points, index: 0, talkTo };
-    const goal = points[points.length - 1];
-    if (goal) this.mark(goal);
+    this.route = { index: 0, points, talkTo };
+    const goal = points.at(-1);
+    if (goal) {
+      this.mark(goal);
+    }
   }
 
   /** Advance along the route. Returns false when there's no further to go. */
   private follow(route: Route, dt: number): boolean {
     const point = route.points[route.index];
-    if (!point) return false;
+    if (!point) {
+      return false;
+    }
     const { walker } = this;
     const step = stepToward(walker.position, point, WALK_SPEED * dt);
     if (step.kind === "arrive") {
@@ -126,7 +147,9 @@ export class ClickWalk {
     walker.move(step.dx, step.dy);
     // the path is walkable by construction, so being stuck means the world moved under
     // us (a layout swap, a body wedged on a corner). Give up rather than shove forever.
-    if (walker.position.x === wasX && walker.position.y === wasY) return false;
+    if (walker.position.x === wasX && walker.position.y === wasY) {
+      return false;
+    }
     walker.walk(step.facing);
     return true;
   }
@@ -134,9 +157,13 @@ export class ClickWalk {
   private arrive(route: Route): void {
     this.cancel();
     const { talkTo } = route;
-    if (!talkTo) return;
+    if (!talkTo) {
+      return;
+    }
     // they may have wandered off mid-walk; only talk if they're actually still here
-    if (!this.colleagues.inReach(talkTo, this.walker.position)) return;
+    if (!this.colleagues.inReach(talkTo, this.walker.position)) {
+      return;
+    }
     this.faceToward(this.colleagues.positionOf(talkTo) ?? this.walker.position);
     this.talk(talkTo);
   }
@@ -152,7 +179,7 @@ export class ClickWalk {
     const g = this.scene.add.graphics();
     // above every floor decal, below anyone standing on it
     g.setDepth(DEPTH.entityBase - 1);
-    g.lineStyle(2, 0x86c0ee, 1);
+    g.lineStyle(2, 0x86_c0_ee, 1);
     g.beginPath();
     g.moveTo(at.x, at.y - 4);
     g.lineTo(at.x + 7, at.y);

@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import path from "node:path";
 import { mkdirSync } from "node:fs";
 
 // Default save layout; IDLEBIZ_ROOT_DIR overrides the root.
@@ -20,67 +20,73 @@ import { mkdirSync } from "node:fs";
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
-export const ROOT_DIR = resolve(process.env["IDLEBIZ_ROOT_DIR"] ?? join(homedir(), ".idlebiz"));
+export const ROOT_DIR = path.resolve(
+  process.env["IDLEBIZ_ROOT_DIR"] ?? path.join(homedir(), ".idlebiz"),
+);
 /** The player's saved office layout (built in #/ui). Overrides the bundled default. */
-export const OFFICE_DESIGN_PATH = join(ROOT_DIR, "office-design.json");
+export const OFFICE_DESIGN_PATH = path.join(ROOT_DIR, "office-design.json");
 
-export const companyDir = (companySlug: string): string => join(ROOT_DIR, companySlug);
+export const companyDir = (companySlug: string): string => path.join(ROOT_DIR, companySlug);
 export const companyFile = (companySlug: string): string =>
-  join(companyDir(companySlug), "COMPANY.md");
+  path.join(companyDir(companySlug), "COMPANY.md");
 /** Shared workspace where all of a company's employees do real work together. */
 export const companyWorkspace = (companySlug: string): string =>
-  join(companyDir(companySlug), "workspace");
+  path.join(companyDir(companySlug), "workspace");
 export const activityFile = (companySlug: string): string =>
-  join(companyDir(companySlug), "activity.jsonl");
+  path.join(companyDir(companySlug), "activity.jsonl");
 
-export const agentsDir = (companySlug: string): string => join(companyDir(companySlug), "agents");
+export const agentsDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "agents");
 /** Released employees are archived here (package preserved, never deleted). */
-export const alumniDir = (companySlug: string): string => join(companyDir(companySlug), "alumni");
+export const alumniDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "alumni");
 /** Per-employee package dir (AGENTS.md lives here); granted to the agent as a writable root. */
 export const employeeAgentDir = (companySlug: string, employeeSlug: string): string =>
-  join(agentsDir(companySlug), employeeSlug);
+  path.join(agentsDir(companySlug), employeeSlug);
 export const employeeFile = (companySlug: string, employeeSlug: string): string =>
-  join(employeeAgentDir(companySlug, employeeSlug), "AGENTS.md");
+  path.join(employeeAgentDir(companySlug, employeeSlug), "AGENTS.md");
 export const employeeMemoryDir = (companySlug: string, employeeSlug: string): string =>
-  join(employeeAgentDir(companySlug, employeeSlug), "memory");
+  path.join(employeeAgentDir(companySlug, employeeSlug), "memory");
 export const employeeSessionDir = (companySlug: string, employeeSlug: string): string =>
-  join(employeeAgentDir(companySlug, employeeSlug), "sessions");
+  path.join(employeeAgentDir(companySlug, employeeSlug), "sessions");
 
-export const tasksDir = (companySlug: string): string => join(companyDir(companySlug), "tasks");
+export const tasksDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "tasks");
 export const taskFile = (companySlug: string, taskSlug: string): string =>
-  join(tasksDir(companySlug), taskSlug, "TASK.md");
+  path.join(tasksDir(companySlug), taskSlug, "TASK.md");
 /**
  * Done tasks move here. The open queue is what boot reads and the scheduler
  * scans; the shipping log grows without bound and is read when a panel asks.
  */
-export const shippedDir = (companySlug: string): string => join(companyDir(companySlug), "shipped");
+export const shippedDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "shipped");
 export const shippedTaskFile = (companySlug: string, taskSlug: string): string =>
-  join(shippedDir(companySlug), taskSlug, "TASK.md");
+  path.join(shippedDir(companySlug), taskSlug, "TASK.md");
 
 export const productsDir = (companySlug: string): string =>
-  join(companyDir(companySlug), "products");
+  path.join(companyDir(companySlug), "products");
 export const productFile = (companySlug: string, productSlug: string): string =>
-  join(productsDir(companySlug), productSlug, "PRODUCT.md");
+  path.join(productsDir(companySlug), productSlug, "PRODUCT.md");
 /** A later product's own workspace; the first product lives in the company workspace. */
 export const productWorkspace = (companySlug: string, productSlug: string): string =>
-  join(productsDir(companySlug), productSlug, "workspace");
+  path.join(productsDir(companySlug), productSlug, "workspace");
 
 /** Commands the founder has signed off but the agent has not run yet. */
 export const approvalsFile = (companySlug: string): string =>
-  join(companyDir(companySlug), "approvals.json");
+  path.join(companyDir(companySlug), "approvals.json");
 
 export const routinesDir = (companySlug: string): string =>
-  join(companyDir(companySlug), "routines");
+  path.join(companyDir(companySlug), "routines");
 export const routineFile = (companySlug: string, routineSlug: string): string =>
-  join(routinesDir(companySlug), routineSlug, "ROUTINE.md");
+  path.join(routinesDir(companySlug), routineSlug, "ROUTINE.md");
 
 /** Append-only company chat room (the room agents read + post to during runs). */
 export const chatFile = (companySlug: string): string =>
-  join(companyDir(companySlug), "chat.jsonl");
+  path.join(companyDir(companySlug), "chat.jsonl");
 /** Where saves from before the room was the company's kept it: one folder per team. */
 export const legacyTeamsDir = (companySlug: string): string =>
-  join(companyDir(companySlug), "teams");
+  path.join(companyDir(companySlug), "teams");
 
-export function ensureAppDirs(): void {
+export const ensureAppDirs = (): void => {
   mkdirSync(ROOT_DIR, { recursive: true });
-}
+};

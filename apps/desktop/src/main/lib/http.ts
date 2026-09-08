@@ -1,30 +1,35 @@
 import type { Server } from "node:http";
 import { z } from "zod";
-import { jsonValueSchema, type JsonValue } from "@/shared/json";
+import { jsonValueSchema } from "@/shared/json";
+import type { JsonValue } from "@/shared/json";
 
 /** A non-2xx answer, with the status so a caller can tell "revoked" from "down". */
 export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    url: string,
-  ) {
+  readonly status: number;
+
+  constructor(status: number, url: string) {
     super(`${url} -> ${status}`);
+    this.name = "HttpError";
+    this.status = status;
   }
 }
 
 /** GET a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */
-export async function getJson(
+export const getJson = async (
   url: string,
   headers: Record<string, string>,
   timeoutMs = 8000,
-): Promise<JsonValue> {
+): Promise<JsonValue> => {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new HttpError(res.status, url);
+  if (!res.ok) {
+    throw new HttpError(res.status, url);
+  }
   return jsonValueSchema.parse(await res.json());
-}
+};
 
 /** Bind a server to an ephemeral loopback port and return the port. */
-export async function listenLoopback(server: Server): Promise<number> {
+export const listenLoopback = async (server: Server): Promise<number> => {
+  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -36,4 +41,4 @@ export async function listenLoopback(server: Server): Promise<number> {
     throw new Error("loopback server failed to bind");
   }
   return address.data.port;
-}
+};

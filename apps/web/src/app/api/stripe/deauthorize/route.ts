@@ -1,7 +1,7 @@
 import { DeauthorizeBodySchema } from "@repo/stripe-connect-protocol/protocol";
 import { deauthorize, tokenAccountId } from "@/lib/stripe-oauth";
 
-export async function POST(req: Request): Promise<Response> {
+export const POST = async (req: Request): Promise<Response> => {
   let raw: unknown;
   try {
     raw = await req.json();
@@ -23,9 +23,9 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     await deauthorize(stripeUserId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "deauthorize failed";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "deauthorize failed";
     return Response.json({ error: message }, { status: 502 });
   }
   return Response.json({ ok: true });
-}
+};

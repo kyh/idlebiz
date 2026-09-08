@@ -10,17 +10,20 @@ export type WorkPose = "typing" | "reading" | "thinking";
 /** Fallback when a run starts, before its first tool call says otherwise. */
 export const DEFAULT_WORK_POSE: WorkPose = "typing";
 
-export function poseForToolKind(kind: string | undefined): WorkPose {
+export const poseForToolKind = (kind: string | undefined): WorkPose => {
   switch (kind) {
     case "read":
     case "search":
-    case "fetch":
+    case "fetch": {
       return "reading";
-    case "think":
+    }
+    case "think": {
       return "thinking";
-    default:
+    }
+    default: {
       // edit, delete, move, execute, switch_mode, other, and anything unlabelled:
       // hands on the keyboard is the honest default for "doing something"
       return "typing";
+    }
   }
-}
+};

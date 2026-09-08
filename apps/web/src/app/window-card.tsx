@@ -3,7 +3,13 @@
 import { useCallback, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 
-export function WindowCard({ titlebar, children }: { titlebar: ReactNode; children: ReactNode }) {
+export const WindowCard = ({
+  titlebar,
+  children,
+}: {
+  titlebar: ReactNode;
+  children: ReactNode;
+}) => {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{
     pointerId: number;
@@ -15,13 +21,15 @@ export function WindowCard({ titlebar, children }: { titlebar: ReactNode; childr
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (e.button !== 0 && e.pointerType === "mouse") {
+        return;
+      }
       dragRef.current = {
+        baseX: offset.x,
+        baseY: offset.y,
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
-        baseX: offset.x,
-        baseY: offset.y,
       };
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -34,12 +42,16 @@ export function WindowCard({ titlebar, children }: { titlebar: ReactNode; childr
 
   const onPointerMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
-    if (!d || d.pointerId !== e.pointerId) return;
+    if (!d || d.pointerId !== e.pointerId) {
+      return;
+    }
     setOffset({ x: d.baseX + (e.clientX - d.startX), y: d.baseY + (e.clientY - d.startY) });
   }, []);
 
   const onPointerUp = useCallback((e: PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
+    if (dragRef.current?.pointerId === e.pointerId) {
+      dragRef.current = null;
+    }
   }, []);
 
   return (
@@ -61,4 +73,4 @@ export function WindowCard({ titlebar, children }: { titlebar: ReactNode; childr
       {children}
     </div>
   );
-}
+};

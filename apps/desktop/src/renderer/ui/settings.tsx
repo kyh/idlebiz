@@ -3,20 +3,25 @@ import { bridge } from "@/renderer/bridge";
 import { useStore, setMaxAgents } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { SaveIssues } from "@/renderer/ui/save-issues";
-export function Settings({ onClose }: { onClose: () => void }) {
+
+export const Settings = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const saveIssues = useStore((s) => s.saveIssues);
   const [confirm, setConfirm] = useState("");
   const [resetting, setResetting] = useState(false);
   const [cap, setCap] = useState<string | null>(null);
 
-  if (!company) return null;
+  if (!company) {
+    return null;
+  }
   const armed = confirm.trim() === company.name;
   const capValue = cap ?? String(company.maxAgents);
 
   const saveCap = async () => {
     const n = Number(capValue);
-    if (!Number.isFinite(n) || n < 1) return;
+    if (!Number.isFinite(n) || n < 1) {
+      return;
+    }
     await setMaxAgents(Math.round(n));
     setCap(null);
   };
@@ -58,7 +63,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
             />
             <button
               type="button"
-              onClick={() => void saveCap()}
+              onClick={() => {
+                void saveCap();
+              }}
               disabled={cap === null || Number(capValue) === company.maxAgents}
               className="px-btn"
             >
@@ -113,7 +120,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 onClick={() => {
-                  if (!armed) return;
+                  if (!armed) {
+                    return;
+                  }
                   setResetting(true);
                   void bridge().resetGame();
                 }}
@@ -129,4 +138,4 @@ export function Settings({ onClose }: { onClose: () => void }) {
       </div>
     </Modal>
   );
-}
+};

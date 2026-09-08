@@ -1,13 +1,13 @@
 import type { Company, Employee, Product } from "@/shared/domain";
 
 // Rendered into AGENTS.md by the store and injected into every run by the driver.
-export function standingInstructions(input: {
+export const standingInstructions = (input: {
   employee: Employee;
   company: Company;
   products: readonly Product[];
   lead: boolean;
   memoryDir: string;
-}): string {
+}): string => {
   const { employee: e, company: co, products, lead, memoryDir } = input;
   const productList = products
     .map((p) => `- **${p.name}** (\`${p.id}\`) — ${p.description}\n  Workspace: ${p.workspaceDir}`)
@@ -73,4 +73,4 @@ Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. 
 - This rule is enforced, not just asked of you: an outward-facing tool call is refused at the boundary, and all you will see is that permission was denied. That is not a bug and not something to route around — no rewording, no alternate tool, no encoding. The founder gets a card with your exact command and the task resumes on their decision, so note where you were and carry on with whatever doesn't depend on it. Approval covers that one command once, so expect to be asked again for the next one.
 - After shipping something findable (a URL, a file), say exactly where it lives in your summary.
 `;
-}
+};

@@ -1,4 +1,5 @@
-import Phaser from "phaser";
+import { Input } from "phaser";
+import type Phaser from "phaser";
 import { DEPTH } from "@/renderer/game/config";
 import {
   characterAnims,
@@ -7,17 +8,18 @@ import {
   CHAR_ORIGIN_Y,
   idleFrame,
   SEAT_CROP,
-  type CharacterAnims,
-  type Dir,
-  type SitSide,
 } from "@/renderer/game/character-sheet";
+import type { CharacterAnims, Dir, SitSide } from "@/renderer/game/character-sheet";
 import { loadCharacter, unloadCharacter } from "@/renderer/game/characters";
 import { randomFloor, stepToward } from "@/renderer/game/movement";
 import type { PixelPoint } from "@/renderer/game/office-layout";
-import { planSeats, type SeatPlan } from "@/renderer/game/office-placement";
-import { DEFAULT_WORK_POSE, type WorkPose } from "@/renderer/game/office-poses";
+import { planSeats } from "@/renderer/game/office-placement";
+import type { SeatPlan } from "@/renderer/game/office-placement";
+import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
+import type { WorkPose } from "@/renderer/game/office-poses";
 import type { Employee } from "@/shared/domain";
-import { findPath, nearestFloor, type WalkGrid } from "@/shared/office-grid";
+import { findPath, nearestFloor } from "@/shared/office-grid";
+import type { WalkGrid } from "@/shared/office-grid";
 
 /**
  * What the scheduler says an employee is doing. Only a working employee has a pose:
@@ -94,7 +96,8 @@ interface Npc {
 }
 
 const EMOTE_FRAME = { alert: 0, think: 1 } satisfies Record<"alert" | "think", number>;
-const NPC_SPEED = 64; // px/s
+/** px/s */
+const NPC_SPEED = 64;
 const INTERACT_RADIUS = 38;
 const BUBBLE_MS = 3200;
 /** Gap between two hires walking through the door — a procession, not a spawn burst. */
@@ -114,13 +117,58 @@ const IDLE_CHAT_LINES: readonly string[] = [
 ];
 
 /** Where to stand to talk to someone: just off their right shoulder. */
-function besideOf(at: PixelPoint): PixelPoint {
-  return { x: at.x + 26, y: at.y + 6 };
-}
+const besideOf = (at: PixelPoint): PixelPoint => ({ x: at.x + 26, y: at.y + 6 });
 
-function setDepthIfChanged(sprite: Phaser.GameObjects.Sprite, depth: number): void {
-  if (sprite.depth !== depth) sprite.setDepth(depth);
-}
+const setDepthIfChanged = (sprite: Phaser.GameObjects.Sprite, depth: number): void => {
+  if (sprite.depth !== depth) {
+    sprite.setDepth(depth);
+  }
+};
+
+const clearPending = (npc: Npc): void => {
+  npc.pendingTimer?.remove();
+  npc.pendingTimer = undefined;
+};
+
+const atSeat = (npc: Npc): boolean => {
+  const { seat } = npc;
+  return seat !== null && Math.hypot(npc.sprite.x - seat.x, npc.sprite.y - seat.y) < 4;
+};
+
+const standFacing = (npc: Npc, dir: Dir): void => {
+  npc.sprite.anims.stop();
+  npc.sprite.setFrame(idleFrame(dir));
+};
+
+/** Hidden and still: a paused tween costs nothing, a hidden sprite is not moved. */
+const clearEmote = (npc: Npc): void => {
+  if (!npc.emote) {
+    return;
+  }
+  npc.emote.sprite.setVisible(false);
+  npc.emote.tween.pause();
+};
+
+/**
+ * Seated employees are drawn as a bust lifted above their workstation — the pack paints
+ * its seated workers over the chair with the desk in front, which y-sorting alone can't
+ * do (a chair's floor contact is south of its occupant, so it would hide them). Walkers
+ * y-sort normally, on their soles.
+ */
+const applyDepth = (npc: Npc): void => {
+  const { seat } = npc;
+  if (!npc.plan && npc.phase === "settled" && seat && atSeat(npc)) {
+    if (!npc.sprite.isCropped) {
+      npc.sprite.setCrop(SEAT_CROP.x, SEAT_CROP.y, SEAT_CROP.w, SEAT_CROP.h);
+    }
+    setDepthIfChanged(npc.sprite, seat.depth);
+    return;
+  }
+  if (npc.sprite.isCropped) {
+    npc.sprite.setCrop();
+  }
+  setDepthIfChanged(npc.sprite, characterDepth(npc.sprite.y));
+};
 
 /**
  * Hired employees as living NPCs: they walk in through the door, sit to work,
@@ -141,25 +189,53 @@ export class NpcManager {
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private released = new Set<string>();
+  private readonly scene: Phaser.Scene;
+  private readonly seats: readonly Seat[];
+  private readonly grid: WalkGrid;
+  private readonly pois: readonly Poi[];
+  private readonly door: PixelPoint;
 
   constructor(
-    private scene: Phaser.Scene,
-    private seats: ReadonlyArray<Seat>,
-    private grid: WalkGrid,
-    private pois: ReadonlyArray<Poi>,
-    private door: PixelPoint,
-  ) {}
+    scene: Phaser.Scene,
+    seats: readonly Seat[],
+    grid: WalkGrid,
+    pois: readonly Poi[],
+    door: PixelPoint,
+  ) {
+    this.scene = scene;
+    this.seats = seats;
+    this.grid = grid;
+    this.pois = pois;
+    this.door = door;
+  }
 
   spawn(emp: Employee, passage: Passage): Promise<void> {
-    this.chain = this.chain.then(() => this.doSpawn(emp, passage)).catch(() => {});
+    this.chain = this.spawnAfter(this.chain, emp, passage);
     return this.chain;
   }
 
+  private async spawnAfter(
+    previous: Promise<void>,
+    emp: Employee,
+    passage: Passage,
+  ): Promise<void> {
+    await previous;
+    try {
+      await this.doSpawn(emp, passage);
+    } catch {
+      // a failed spawn must not hold up the hires queued behind it
+    }
+  }
+
   private async doSpawn(emp: Employee, passage: Passage): Promise<void> {
-    if (this.npcs.has(emp.id)) return;
+    if (this.npcs.has(emp.id)) {
+      return;
+    }
     const key = `emp-${emp.id}`;
     await loadCharacter(this.scene, key, emp.spriteSeed);
-    if (this.released.delete(emp.id)) return;
+    if (this.released.delete(emp.id)) {
+      return;
+    }
 
     this.roster.set(emp.id, emp);
     const seat = this.seatFor(this.replan().get(emp.id));
@@ -169,37 +245,39 @@ export class NpcManager {
       .sprite(start.x, start.y, key, idleFrame("up"))
       .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
     // hoverable once they are actually in the room, not while queued unseen at the door
-    if (passage === "settled") sprite.setInteractive(HOVERABLE);
+    if (passage === "settled") {
+      sprite.setInteractive(HOVERABLE);
+    }
 
     // Who this is and what runs them: the roster is mixed, and nothing else in
     // the office says which CLI a colleague is.
     const label = this.scene.add
       .text(start.x, start.y + LABEL_DY, `${emp.name} · ${emp.runner}`, {
+        backgroundColor: "#000000aa",
+        color: "#ffffff",
         fontFamily: "monospace",
         fontSize: "10px",
-        color: "#ffffff",
-        backgroundColor: "#000000aa",
       })
       .setOrigin(0.5, 0)
       .setPadding(3, 1, 3, 1)
       .setDepth(DEPTH.emote)
       .setVisible(false);
-    sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => label.setVisible(true));
-    sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => label.setVisible(false));
+    sprite.on(Input.Events.GAMEOBJECT_POINTER_OVER, () => label.setVisible(true));
+    sprite.on(Input.Events.GAMEOBJECT_POINTER_OUT, () => label.setVisible(false));
 
     const npc: Npc = {
-      id: emp.id,
-      name: emp.name,
-      key,
-      anims: characterAnims(key),
-      sprite,
-      label,
-      seat,
-      phase: passage === "settled" ? "settled" : "queued",
       activity: { kind: "idle" },
+      anims: characterAnims(key),
       asking: false,
-      plan: null,
+      id: emp.id,
+      key,
+      label,
+      name: emp.name,
       nextWanderAt: this.scene.time.now + 4000 + Math.random() * 8000,
+      phase: passage === "settled" ? "settled" : "queued",
+      plan: null,
+      seat,
+      sprite,
     };
     this.npcs.set(emp.id, npc);
     if (passage === "door") {
@@ -207,7 +285,7 @@ export class NpcManager {
       this.arrivals.push(emp.id);
     }
     this.setState(emp.id, emp.status);
-    this.applyDepth(npc);
+    applyDepth(npc);
   }
 
   // ---- seating (the director) ----------------------------------------------
@@ -231,48 +309,64 @@ export class NpcManager {
     this.seatPlan = next;
     for (const [id, index] of next) {
       const npc = this.npcs.get(id);
-      if (!npc) continue;
+      if (!npc) {
+        continue;
+      }
       const seat = this.seatFor(index);
-      if (seat === npc.seat) continue;
+      if (seat === npc.seat) {
+        continue;
+      }
       npc.seat = seat;
-      if (npc.phase === "entering") this.routeIn(npc);
-      else if (npc.phase === "settled" && npc.activity.kind !== "idle") this.goToSeat(npc);
+      if (npc.phase === "entering") {
+        this.routeIn(npc);
+      } else if (npc.phase === "settled" && npc.activity.kind !== "idle") {
+        this.goToSeat(npc);
+      }
     }
     return next;
   }
 
   /** Let the next hire in the queue through the door. */
   private releaseArrival(now: number): void {
-    if (this.arrivals.length === 0 || now < this.nextArrivalAt) return;
+    if (this.arrivals.length === 0 || now < this.nextArrivalAt) {
+      return;
+    }
     const id = this.arrivals.shift();
     const npc = id === undefined ? undefined : this.npcs.get(id);
-    if (!npc) return;
+    if (!npc) {
+      return;
+    }
     this.nextArrivalAt = now + ARRIVAL_INTERVAL_MS;
     npc.phase = "entering";
     npc.sprite.setPosition(this.door.x, this.door.y);
     npc.sprite.setInteractive(HOVERABLE);
-    this.scene.tweens.add({ targets: npc.sprite, alpha: 1, duration: FADE_MS });
-    this.applyLook(npc); // whatever they were asked or told while queued shows now
+    this.scene.tweens.add({ alpha: 1, duration: FADE_MS, targets: npc.sprite });
+    // whatever they were asked or told while queued shows now
+    this.applyLook(npc);
     this.routeIn(npc);
   }
 
   /** Walk from wherever they are to their seat (or a standing spot), then settle. */
   private routeIn(npc: Npc): void {
     const dest = npc.seat ?? this.standingSpot();
-    if (!this.walkTo(npc, dest, () => this.settle(npc))) this.settle(npc);
+    if (!this.walkTo(npc, dest, () => this.settle(npc))) {
+      this.settle(npc);
+    }
   }
 
   private settle(npc: Npc): void {
     npc.phase = "settled";
-    if (npc.seat) npc.sprite.setPosition(npc.seat.x, npc.seat.y);
+    if (npc.seat) {
+      npc.sprite.setPosition(npc.seat.x, npc.seat.y);
+    }
     npc.nextWanderAt = this.scene.time.now + 1500 + Math.random() * 3000;
     this.applyLook(npc);
   }
 
   /** Back to the desk — walking, or a snap when there is no way through. */
   private goToSeat(npc: Npc): void {
-    const seat = npc.seat;
-    if (!seat || this.atSeat(npc)) {
+    const { seat } = npc;
+    if (!seat || atSeat(npc)) {
       this.applyLook(npc);
       return;
     }
@@ -285,8 +379,8 @@ export class NpcManager {
   /** Out through the door. Their seat is already someone else's to claim. */
   private leave(npc: Npc): void {
     npc.phase = "leaving";
-    this.clearPending(npc);
-    this.clearEmote(npc);
+    clearPending(npc);
+    clearEmote(npc);
     npc.label.setVisible(false);
     npc.sprite.disableInteractive();
     if (npc.bubble) {
@@ -295,39 +389,50 @@ export class NpcManager {
     }
     const gone = (): void => {
       this.scene.tweens.add({
-        targets: npc.sprite,
         alpha: 0,
         duration: FADE_MS,
         onComplete: () => this.destroyNpc(npc),
+        targets: npc.sprite,
       });
     };
-    if (!this.walkTo(npc, this.door, gone)) this.destroyNpc(npc);
+    if (!this.walkTo(npc, this.door, gone)) {
+      this.destroyNpc(npc);
+    }
   }
 
   // ---- state ---------------------------------------------------------------
   setState(id: string, state: NpcState): void {
     const npc = this.npcs.get(id);
-    if (!npc) return;
+    if (!npc) {
+      return;
+    }
     npc.activity =
       state === "working" ? { kind: "working", pose: DEFAULT_WORK_POSE } : { kind: state };
-    this.clearPending(npc);
+    clearPending(npc);
     // idle: the run settled without a hanging question, or it was answered;
     // working: a new run, so whatever they asked last time has been dealt with
-    if (state !== "blocked") npc.asking = false;
+    if (state !== "blocked") {
+      npc.asking = false;
+    }
     if (state === "idle") {
       npc.nextWanderAt = this.scene.time.now + 700 + Math.random() * 1800;
       this.applyLook(npc);
       return;
     }
     // working / blocked employees belong at their computer
-    if (npc.phase === "settled") this.goToSeat(npc);
-    else this.applyLook(npc);
+    if (npc.phase === "settled") {
+      this.goToSeat(npc);
+    } else {
+      this.applyLook(npc);
+    }
   }
 
   /** A tool call landed: hands on the keyboard, or eyes on the screen. */
   onTool(id: string, pose: WorkPose): void {
     const npc = this.npcs.get(id);
-    if (!npc || npc.activity.kind !== "working") return;
+    if (!npc || npc.activity.kind !== "working") {
+      return;
+    }
     npc.activity = { kind: "working", pose };
     this.applyLook(npc);
   }
@@ -335,24 +440,11 @@ export class NpcManager {
   /** They asked the founder something mid-run: raise the "!" now, not at run end. */
   onAsk(id: string): void {
     const npc = this.npcs.get(id);
-    if (!npc) return;
+    if (!npc) {
+      return;
+    }
     npc.asking = true;
     this.applyLook(npc);
-  }
-
-  private clearPending(npc: Npc): void {
-    npc.pendingTimer?.remove();
-    npc.pendingTimer = undefined;
-  }
-
-  private atSeat(npc: Npc): boolean {
-    const seat = npc.seat;
-    return seat !== null && Math.hypot(npc.sprite.x - seat.x, npc.sprite.y - seat.y) < 4;
-  }
-
-  private standFacing(npc: Npc, dir: Dir): void {
-    npc.sprite.anims.stop();
-    npc.sprite.setFrame(idleFrame(dir));
   }
 
   /**
@@ -362,57 +454,48 @@ export class NpcManager {
   private applyLook(npc: Npc): void {
     // still outside: an emote here would hang over the door with nobody under it
     if (npc.phase === "queued") {
-      this.clearEmote(npc);
+      clearEmote(npc);
       return;
     }
     const { activity } = npc;
-    if (activity.kind === "blocked" || npc.asking) this.showEmote(npc, EMOTE_FRAME.alert);
-    else if (activity.kind === "working" && activity.pose === "thinking")
+    if (activity.kind === "blocked" || npc.asking) {
+      this.showEmote(npc, EMOTE_FRAME.alert);
+    } else if (activity.kind === "working" && activity.pose === "thinking") {
       this.showEmote(npc, EMOTE_FRAME.think);
-    else this.clearEmote(npc);
+    } else {
+      clearEmote(npc);
+    }
 
-    if (npc.phase !== "settled" || npc.plan) return;
-    if (activity.kind === "idle") {
-      this.standFacing(npc, "down");
+    if (npc.phase !== "settled" || npc.plan) {
       return;
     }
-    const atDesk = this.atSeat(npc);
+    if (activity.kind === "idle") {
+      standFacing(npc, "down");
+      return;
+    }
+    const atDesk = atSeat(npc);
     if (atDesk && activity.kind === "working" && activity.pose === "typing") {
       npc.sprite.play(npc.anims.walk.up, true);
       return;
     }
     // reading / thinking / blocked: still, facing the screen (or the room, deskless)
-    this.standFacing(npc, atDesk ? "up" : "down");
-  }
-
-  /**
-   * Seated employees are drawn as a bust lifted above their workstation — the pack paints
-   * its seated workers over the chair with the desk in front, which y-sorting alone can't
-   * do (a chair's floor contact is south of its occupant, so it would hide them). Walkers
-   * y-sort normally, on their soles.
-   */
-  private applyDepth(npc: Npc): void {
-    const seat = npc.seat;
-    if (!npc.plan && npc.phase === "settled" && seat && this.atSeat(npc)) {
-      if (!npc.sprite.isCropped)
-        npc.sprite.setCrop(SEAT_CROP.x, SEAT_CROP.y, SEAT_CROP.w, SEAT_CROP.h);
-      setDepthIfChanged(npc.sprite, seat.depth);
-      return;
-    }
-    if (npc.sprite.isCropped) npc.sprite.setCrop();
-    setDepthIfChanged(npc.sprite, characterDepth(npc.sprite.y));
+    standFacing(npc, atDesk ? "up" : "down");
   }
 
   // ---- movement --------------------------------------------------------------
   private walkTo(npc: Npc, to: PixelPoint, onArrive?: () => void): boolean {
     const start = nearestFloor(this.grid, npc.sprite.x, npc.sprite.y);
-    if (!start) return false;
+    if (!start) {
+      return false;
+    }
     if (Math.hypot(npc.sprite.x - start.x, npc.sprite.y - start.y) > 2) {
       npc.sprite.setPosition(start.x, start.y);
     }
     const path = findPath(this.grid, npc.sprite, to);
-    if (!path || path.length === 0) return false;
-    npc.plan = { path, onArrive };
+    if (!path || path.length === 0) {
+      return false;
+    }
+    npc.plan = { onArrive, path };
     return true;
   }
 
@@ -420,7 +503,9 @@ export class NpcManager {
    *  deliver the message as a speech bubble, then head home. */
   onChat(employeeId: string, message: string, to: string | null): void {
     const npc = this.npcs.get(employeeId);
-    if (!npc || npc.phase === "queued") return;
+    if (!npc || npc.phase === "queued") {
+      return;
+    }
 
     if (npc.phase !== "settled" || npc.activity.kind !== "idle") {
       this.showBubble(npc, message);
@@ -442,7 +527,9 @@ export class NpcManager {
         this.stepAway(npc);
       });
     });
-    if (!ok) this.showBubble(npc, message);
+    if (!ok) {
+      this.showBubble(npc, message);
+    }
   }
 
   /** Employees you can walk up to: everyone who has actually come through the door. */
@@ -459,7 +546,9 @@ export class NpcManager {
     let best: { id: string; d: number } | null = null;
     for (const npc of this.inRoom()) {
       const d = Math.hypot(npc.sprite.x - px, npc.sprite.y - py);
-      if (d <= INTERACT_RADIUS && (!best || d < best.d)) best = { id: npc.id, d };
+      if (d <= INTERACT_RADIUS && (!best || d < best.d)) {
+        best = { d, id: npc.id };
+      }
     }
     return best?.id ?? null;
   }
@@ -486,93 +575,100 @@ export class NpcManager {
       // (an ask while heading back to the desk) and has to keep up
       const bob = { dy: 0 };
       const tween = this.scene.tweens.add({
-        targets: bob,
-        dy: -4,
         duration: 480,
-        yoyo: true,
-        repeat: -1,
+        dy: -4,
         ease: "Sine.InOut",
+        repeat: -1,
+        targets: bob,
+        yoyo: true,
       });
-      npc.emote = { sprite, bob, tween };
+      npc.emote = { bob, sprite, tween };
     }
     npc.emote.sprite.setFrame(frame).setVisible(true);
     npc.emote.tween.resume();
   }
-  /** Hidden and still: a paused tween costs nothing, a hidden sprite is not moved. */
-  private clearEmote(npc: Npc): void {
-    if (!npc.emote) return;
-    npc.emote.sprite.setVisible(false);
-    npc.emote.tween.pause();
-  }
-
   private showBubble(npc: Npc, message: string): void {
     npc.bubble?.root.destroy();
     const text = this.scene.add
       .text(0, 0, message.length > 90 ? `${message.slice(0, 87)}…` : message, {
+        align: "left",
+        color: "#2b2f46",
         fontFamily: "monospace",
         fontSize: "9px",
-        color: "#2b2f46",
         wordWrap: { width: 124 },
-        align: "left",
       })
       .setOrigin(0.5, 1);
     const w = Math.max(34, text.width + 12);
     const h = text.height + 10;
     const g = this.scene.add.graphics();
-    g.fillStyle(0xf8f5ec, 1).lineStyle(2, 0x1d2136, 1);
+    g.fillStyle(0xf8_f5_ec, 1).lineStyle(2, 0x1d_21_36, 1);
     g.fillRoundedRect(-w / 2, -h - 4, w, h, 5).strokeRoundedRect(-w / 2, -h - 4, w, h, 5);
-    g.fillTriangle(-4, -5, 4, -5, 0, 1).lineStyle(2, 0x1d2136, 1);
+    g.fillTriangle(-4, -5, 4, -5, 0, 1).lineStyle(2, 0x1d_21_36, 1);
     text.setY(-9);
     const root = this.scene.add
       .container(npc.sprite.x, npc.sprite.y + BUBBLE_DY, [g, text])
       .setDepth(DEPTH.emote + 1)
       .setAlpha(0);
-    this.scene.tweens.add({ targets: root, alpha: 1, duration: 140 });
+    this.scene.tweens.add({ alpha: 1, duration: 140, targets: root });
     npc.bubble = { root, until: this.scene.time.now + BUBBLE_MS };
   }
 
   // ---- per-frame -------------------------------------------------------------
   update(): void {
-    const now = this.scene.time.now;
+    const { now } = this.scene.time;
     const dt = Math.min(this.scene.game.loop.delta, 50) / 1000;
     this.releaseArrival(now);
 
     for (const npc of this.npcs.values()) {
       this.followAttachments(npc, now);
-      if (npc.phase === "queued") continue; // still outside
-      if (npc.plan) this.stepAlong(npc, npc.plan, dt);
-      else if (npc.phase === "settled" && npc.activity.kind === "idle" && now >= npc.nextWanderAt)
+      if (npc.phase === "queued") {
+        continue;
+      }
+      if (npc.plan) {
+        this.stepAlong(npc, npc.plan, dt);
+      } else if (
+        npc.phase === "settled" &&
+        npc.activity.kind === "idle" &&
+        now >= npc.nextWanderAt
+      ) {
         this.wander(npc, now);
-      this.applyDepth(npc);
+      }
+      applyDepth(npc);
     }
   }
 
   /** The label, emote and bubble ride along with the sprite; a bubble also expires. */
   private followAttachments(npc: Npc, now: number): void {
     npc.label.setPosition(npc.sprite.x, npc.sprite.y + LABEL_DY);
-    const emote = npc.emote;
-    if (emote?.sprite.visible)
+    const { emote } = npc;
+    if (emote?.sprite.visible) {
       emote.sprite.setPosition(npc.sprite.x, npc.sprite.y + EMOTE_DY + emote.bob.dy);
-    const bubble = npc.bubble;
-    if (!bubble) return;
+    }
+    const { bubble } = npc;
+    if (!bubble) {
+      return;
+    }
     bubble.root.setPosition(npc.sprite.x, npc.sprite.y + BUBBLE_DY);
-    if (now <= bubble.until) return;
+    if (now <= bubble.until) {
+      return;
+    }
     npc.bubble = undefined;
     this.scene.tweens.add({
-      targets: bubble.root,
       alpha: 0,
       duration: 180,
       onComplete: () => bubble.root.destroy(),
+      targets: bubble.root,
     });
   }
 
   /** One frame along the plan; the arrival hook runs once the last waypoint is reached. */
   private stepAlong(npc: Npc, plan: WalkPlan, dt: number): void {
-    const waypoint = plan.path[0];
+    const [waypoint] = plan.path;
     if (!waypoint) {
       npc.plan = null;
       this.applyLook(npc);
-      plan.onArrive?.(); // an arrival pose (POI facing / sitting) overrides the default look
+      // an arrival pose (POI facing / sitting) overrides the default look
+      plan.onArrive?.();
       return;
     }
     const step = stepToward(npc.sprite, waypoint, NPC_SPEED * dt);
@@ -589,23 +685,32 @@ export class NpcManager {
   /** The idle life: a chat with a colleague, a point of interest, or a stroll. */
   private wander(npc: Npc, now: number): void {
     npc.nextWanderAt = now + 5000 + Math.random() * 9000;
-    if (this.startIdleChat(npc) || this.visitPoi(npc)) return;
+    if (this.startIdleChat(npc) || this.visitPoi(npc)) {
+      return;
+    }
     const home = npc.seat ?? this.door;
     const spot =
       randomFloor(this.grid, npc.sprite, 180) ??
       randomFloor(this.grid, { x: home.x, y: home.y + 128 }, 240);
-    if (spot && Math.random() < 0.85) this.walkTo(npc, spot);
+    if (spot && Math.random() < 0.85) {
+      this.walkTo(npc, spot);
+    }
   }
 
   /** Wander flavor: walk to a point of interest, face it (or sit) for a bit. */
   private visitPoi(npc: Npc): boolean {
-    if (this.pois.length === 0 || Math.random() > 0.35) return false;
+    if (this.pois.length === 0 || Math.random() > 0.35) {
+      return false;
+    }
     const poi = this.pois[Math.floor(Math.random() * this.pois.length)];
-    if (!poi) return false;
+    if (!poi) {
+      return false;
+    }
     // don't crowd an occupied spot
     for (const other of this.npcs.values()) {
-      if (other.id !== npc.id && Math.hypot(other.sprite.x - poi.x, other.sprite.y - poi.y) < 10)
+      if (other.id !== npc.id && Math.hypot(other.sprite.x - poi.x, other.sprite.y - poi.y) < 10) {
         return false;
+      }
     }
     const dwell = 2500 + Math.random() * 4000;
     return this.walkTo(npc, poi, () => {
@@ -614,10 +719,12 @@ export class NpcManager {
         // the chair is furniture the walker stops beside; the sitter is placed on it
         npc.sprite.setPosition(poi.x, poi.y);
         npc.sprite.play(npc.anims.sit[poi.sit], true);
-      } else this.standFacing(npc, poi.face);
+      } else {
+        standFacing(npc, poi.face);
+      }
       npc.pendingTimer = this.scene.time.delayedCall(dwell, () => {
         if (!npc.plan && npc.activity.kind === "idle") {
-          this.standFacing(npc, "down");
+          standFacing(npc, "down");
           this.stepAway(npc);
         }
       });
@@ -625,16 +732,24 @@ export class NpcManager {
   }
 
   private startIdleChat(npc: Npc): boolean {
-    if (Math.random() > 0.68) return false;
+    if (Math.random() > 0.68) {
+      return false;
+    }
     const target = this.pickIdlePartner(npc);
-    if (!target) return false;
+    if (!target) {
+      return false;
+    }
     const nearTarget = randomFloor(this.grid, target.sprite, 48) ?? besideOf(target.sprite);
 
     return this.walkTo(npc, nearTarget, () => {
       this.showIdleBubble(npc);
-      if (target.activity.kind === "idle") this.showIdleBubble(target);
+      if (target.activity.kind === "idle") {
+        this.showIdleBubble(target);
+      }
       npc.pendingTimer = this.scene.time.delayedCall(1700 + Math.random() * 1800, () => {
-        if (!npc.plan && npc.activity.kind === "idle") this.stepAway(npc);
+        if (!npc.plan && npc.activity.kind === "idle") {
+          this.stepAway(npc);
+        }
       });
     });
   }
@@ -646,16 +761,21 @@ export class NpcManager {
         candidate.id !== npc.id &&
         candidate.phase === "settled" &&
         candidate.activity.kind === "idle"
-      )
+      ) {
         choices.push(candidate);
+      }
     }
-    if (choices.length === 0) return null;
+    if (choices.length === 0) {
+      return null;
+    }
     return choices[Math.floor(Math.random() * choices.length)] ?? null;
   }
 
   private stepAway(npc: Npc): void {
     const spot = randomFloor(this.grid, npc.sprite, 96);
-    if (spot) this.walkTo(npc, spot);
+    if (spot) {
+      this.walkTo(npc, spot);
+    }
   }
 
   private showIdleBubble(npc: Npc): void {
@@ -676,8 +796,11 @@ export class NpcManager {
     }
     this.roster.delete(employeeId);
     this.replan();
-    if (passage === "door" && npc.phase === "settled") this.leave(npc);
-    else this.destroyNpc(npc);
+    if (passage === "door" && npc.phase === "settled") {
+      this.leave(npc);
+    } else {
+      this.destroyNpc(npc);
+    }
   }
 
   private destroyNpc(npc: Npc): void {
@@ -696,7 +819,9 @@ export class NpcManager {
 
   destroy(): void {
     // deleting the current entry mid-iteration is defined for Map
-    for (const npc of this.npcs.values()) this.destroyNpc(npc);
+    for (const npc of this.npcs.values()) {
+      this.destroyNpc(npc);
+    }
     this.roster.clear();
     this.released.clear();
     this.seatPlan = new Map();

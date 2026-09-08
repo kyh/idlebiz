@@ -2,8 +2,8 @@ import { useAsync } from "@/renderer/hooks/use-async";
 import { getPortrait } from "@/renderer/state/store";
 
 type PortraitSize = "sm" | "md";
-const SIZE_CLASS = { sm: "h-12 w-12", md: "h-16 w-16" } satisfies Record<PortraitSize, string>;
-export function Portrait({
+const SIZE_CLASS = { md: "h-16 w-16", sm: "h-12 w-12" } satisfies Record<PortraitSize, string>;
+export const Portrait = ({
   seed,
   size,
   alt = "",
@@ -11,8 +11,8 @@ export function Portrait({
   seed: string;
   size: PortraitSize;
   alt?: string;
-}) {
+}) => {
   const url = useAsync(() => getPortrait(seed), [seed]);
   const className = `px-portrait shrink-0 ${SIZE_CLASS[size]}`;
   return url ? <img src={url} alt={alt} className={className} /> : <span className={className} />;
-}
+};

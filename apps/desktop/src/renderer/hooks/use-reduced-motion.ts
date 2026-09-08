@@ -10,6 +10,4 @@ const subscribe = (onStoreChange: () => void): (() => void) => {
 
 const getSnapshot = (): boolean => query.matches;
 
-export function useReducedMotion(): boolean {
-  return useSyncExternalStore(subscribe, getSnapshot);
-}
+export const useReducedMotion = (): boolean => useSyncExternalStore(subscribe, getSnapshot);

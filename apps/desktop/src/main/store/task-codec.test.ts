@@ -4,18 +4,18 @@ import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
 const base: Omit<Task, "state"> = {
-  id: "ship-the-thing",
-  companyId: "acme",
-  productId: "widget",
-  title: "Ship the thing",
-  description: "Build it, then ship it.",
-  priority: "high",
-  assigneeId: "priya",
   artifacts: ["dist/index.html"],
+  assigneeId: "priya",
   attempts: 2,
-  createdAt: 1_700_000_000_000,
-  startedAt: 1_700_000_001_000,
+  companyId: "acme",
   completedAt: 1_700_000_002_000,
+  createdAt: 1_700_000_000_000,
+  description: "Build it, then ship it.",
+  id: "ship-the-thing",
+  priority: "high",
+  productId: "widget",
+  startedAt: 1_700_000_001_000,
+  title: "Ship the thing",
 };
 
 const roundTrip = (t: Task): Task => docToTask(parseDoc(serializeDoc(taskToDoc(t))), t.companyId);
@@ -23,13 +23,13 @@ const roundTrip = (t: Task): Task => docToTask(parseDoc(serializeDoc(taskToDoc(t
 describe("task codec", () => {
   it.each<TaskState>([
     { kind: "todo" },
-    { kind: "queued", nextAttemptAt: null, lastError: null },
-    { kind: "queued", nextAttemptAt: 1_700_000_003_000, lastError: "boom" },
+    { kind: "queued", lastError: null, nextAttemptAt: null },
+    { kind: "queued", lastError: "boom", nextAttemptAt: 1_700_000_003_000 },
     { kind: "running", runId: "run-1" },
-    { kind: "blocked", ask: { type: "question", question: "ship it?" }, summary: "halfway" },
+    { ask: { question: "ship it?", type: "question" }, kind: "blocked", summary: "halfway" },
     {
+      ask: { command: "npx vercel deploy", rule: "deploy", type: "approval" },
       kind: "blocked",
-      ask: { type: "approval", command: "npx vercel deploy", rule: "deploy" },
       summary: null,
     },
     { kind: "done", summary: "shipped to https://x.y" },
@@ -61,13 +61,13 @@ describe("task codec", () => {
     const doc = taskToDoc({ ...base, state: { kind: "running", runId: "run-1" } });
     const { runId: _lost, ...withoutLock } = doc.metadata;
     const out = docToTask({ ...doc, metadata: withoutLock }, "acme");
-    expect(out.state).toEqual({ kind: "queued", nextAttemptAt: null, lastError: "run lock lost" });
+    expect(out.state).toEqual({ kind: "queued", lastError: "run lock lost", nextAttemptAt: null });
   });
 
   it("keeps a blocked task waiting when its ask is missing, so the founder can still unstick it", () => {
     const doc = taskToDoc({
       ...base,
-      state: { kind: "blocked", ask: { type: "question", question: "?" }, summary: null },
+      state: { ask: { question: "?", type: "question" }, kind: "blocked", summary: null },
     });
     const { blockedQuestion: _lost, ...withoutAsk } = doc.metadata;
     const out = docToTask({ ...doc, metadata: withoutAsk }, "acme");

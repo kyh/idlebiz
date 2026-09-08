@@ -10,8 +10,10 @@ const PATH_OF = new Map(OFFICE_OBJECT_ASSETS.map((asset) => [asset.id, asset.pat
  * read a different pixel than the game paints. Relative imports with
  * extensions, like shared/, so Node can load it for the gate.
  */
-export function objectSpritePath(obj: Pick<OfficeObjectDef, "id" | "path">): string {
+export const objectSpritePath = (obj: Pick<OfficeObjectDef, "id" | "path">): string => {
   const found = obj.path ?? PATH_OF.get(obj.id);
-  if (found === undefined) throw new Error(`Missing office object asset: ${obj.id}`);
+  if (found === undefined) {
+    throw new Error(`Missing office object asset: ${obj.id}`);
+  }
   return found;
-}
+};

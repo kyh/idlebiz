@@ -1,13 +1,14 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
+import type { ReactNode } from "react";
 import { setModalOpen } from "@/renderer/state/store";
 import { cn } from "cn";
 
 const openModals = new Set<symbol>();
 
 /** Overlapping overlays keep Phaser's keyboard suspended until the last one closes. */
-export function useModal(): void {
+export const useModal = (): void => {
   useEffect(() => {
-    const modal = Symbol();
+    const modal = Symbol("modal");
     openModals.add(modal);
     setModalOpen(true);
     return () => {
@@ -15,17 +16,17 @@ export function useModal(): void {
       setModalOpen(openModals.size > 0);
     };
   }, []);
-}
+};
 
 type ModalWidth = "lg" | "xl" | "2xl" | "3xl";
 const WIDTH_CLASS = {
-  lg: "max-w-lg",
-  xl: "max-w-xl",
   "2xl": "max-w-2xl",
   "3xl": "max-w-3xl",
+  lg: "max-w-lg",
+  xl: "max-w-xl",
 } satisfies Record<ModalWidth, string>;
 
-export function Modal({
+export const Modal = ({
   title,
   subtitle,
   width = "xl",
@@ -40,7 +41,7 @@ export function Modal({
   actions?: ReactNode;
   onClose: () => void;
   children: ReactNode;
-}) {
+}) => {
   useModal();
   return (
     <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
@@ -61,4 +62,4 @@ export function Modal({
       </div>
     </div>
   );
-}
+};

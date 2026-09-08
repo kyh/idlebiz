@@ -6,24 +6,24 @@ import {
   afterFailure,
   MAX_TASK_ATTEMPTS,
   serializeBlockedAsk,
-  type BlockedAsk,
 } from "./domain";
+import type { BlockedAsk } from "./domain";
 
 describe("BlockedAsk round-trip through TASK.md", () => {
   it.each<BlockedAsk>([
-    { type: "question", question: "ship it?" },
-    { type: "question", question: "why did [approve] show up here?" },
-    { type: "integration", integration: "vercel", reason: "need hosting" },
-    { type: "approval", command: "npx vercel deploy --prod", rule: "deploy" },
+    { question: "ship it?", type: "question" },
+    { question: "why did [approve] show up here?", type: "question" },
+    { integration: "vercel", reason: "need hosting", type: "integration" },
+    { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
   ])("%j", (ask) => {
     expect(parseBlockedAsk(serializeBlockedAsk(ask))).toEqual(ask);
   });
 
   it("reads an approval without a rule id as held by the broadest rule", () => {
     expect(parseBlockedAsk("[approve] git push origin main")).toEqual({
-      type: "approval",
       command: "git push origin main",
       rule: "write-outside",
+      type: "approval",
     });
   });
 
@@ -31,9 +31,9 @@ describe("BlockedAsk round-trip through TASK.md", () => {
     const saved = "[approve:retired-rule] git push origin main";
     const ask = BlockedAskSchema.parse(parseBlockedAsk(saved));
     expect(ask).toEqual({
-      type: "approval",
       command: "git push origin main",
       rule: "retired-rule",
+      type: "approval",
     });
     expect(serializeBlockedAsk(ask)).toBe(saved);
   });
@@ -56,11 +56,11 @@ describe("resolveMentions", () => {
 
 describe("afterFailure", () => {
   it("backs off exponentially until the attempts are spent", () => {
-    expect(afterFailure(0, 1000)).toEqual({ kind: "retry", attempts: 1, retryAt: 16_000 });
-    expect(afterFailure(1, 1000)).toEqual({ kind: "retry", attempts: 2, retryAt: 31_000 });
+    expect(afterFailure(0, 1000)).toEqual({ attempts: 1, kind: "retry", retryAt: 16_000 });
+    expect(afterFailure(1, 1000)).toEqual({ attempts: 2, kind: "retry", retryAt: 31_000 });
     expect(afterFailure(MAX_TASK_ATTEMPTS - 1, 0)).toEqual({
-      kind: "dead",
       attempts: MAX_TASK_ATTEMPTS,
+      kind: "dead",
     });
   });
 });
