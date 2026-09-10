@@ -1,3 +1,6 @@
+import { Toggle } from "@base-ui/react/toggle";
+import { Picker } from "@/renderer/ui/picker";
+import type { PickerOption } from "@/renderer/ui/picker";
 import { memo, useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { parseOfficeLayout } from "@/renderer/game/office-layout";
 import type { PixelPoint } from "@/renderer/game/office-layout";
@@ -31,6 +34,10 @@ import { schemaIssues } from "@/shared/office-layout-schema";
 type PaletteMode = "objects" | "tiles";
 
 const SNAPS = [1, 8, 16, 32] as const;
+const MODES: readonly PickerOption<PaletteMode>[] = [
+  { label: "Objects", value: "objects" },
+  { label: "Room tiles", value: "tiles" },
+];
 const TOOLS: readonly { tool: Tool; label: string; hotkey: string }[] = [
   { hotkey: "v", label: "Select", tool: "select" },
   { hotkey: "p", label: "Place", tool: "place" },
@@ -42,6 +49,17 @@ const TOOLS: readonly { tool: Tool; label: string; hotkey: string }[] = [
   { hotkey: "b", label: "+Collision", tool: "block" },
   { hotkey: "x", label: "−Collision", tool: "clear" },
 ];
+const TOOL_OPTIONS: readonly PickerOption<Tool>[] = TOOLS.map((t) => ({
+  label: t.label,
+  title: `${t.label} (${t.hotkey.toUpperCase()})`,
+  value: t.tool,
+}));
+/** Snap distances as picker keys; the geometry keeps working in numbers. */
+type SnapKey = `${(typeof SNAPS)[number]}`;
+const SNAP_OPTIONS: readonly PickerOption<SnapKey>[] = SNAPS.map((s) => ({
+  label: s === 1 ? "free" : s,
+  value: `${s}`,
+}));
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 5;
 const ZOOM_STEP = 0.5;
@@ -80,17 +98,14 @@ const PaletteView = ({
 }) => (
   <aside className="px-window m-2 flex w-52 shrink-0 flex-col overflow-hidden">
     <div className="px-titlebar flex gap-1 px-2 py-2 text-sm">
-      {(["objects", "tiles"] as const).map((m) => (
-        <button
-          type="button"
-          key={m}
-          onClick={() => onMode(m)}
-          data-sel={mode === m}
-          className="px-opt flex-1 px-2 py-1 capitalize"
-        >
-          {m === "tiles" ? "Room tiles" : "Objects"}
-        </button>
-      ))}
+      <Picker
+        options={MODES}
+        value={mode}
+        onChange={onMode}
+        label="Palette"
+        className="flex flex-1 gap-1"
+        itemClassName="flex-1 px-2 py-1"
+      />
     </div>
     <input
       value={query}
@@ -109,7 +124,7 @@ const PaletteView = ({
             key={it.id}
             onClick={() => onPick(it.id)}
             title={it.id}
-            data-sel={picked === it.id}
+            data-pressed={picked === it.id ? "" : undefined}
             className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
           >
             <img
@@ -147,37 +162,30 @@ const Toolbar = ({
   onZoomIn: () => void;
   onZoomOut: () => void;
   showCollision: boolean;
-  onToggleCollision: () => void;
+  onToggleCollision: (pinned: boolean) => void;
   onRebuildCollision: () => void;
   onSave: () => void;
 }) => (
   <header className="px-window m-2 mb-0 shrink-0">
     <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
-      {TOOLS.map((t) => (
-        <button
-          type="button"
-          key={t.tool}
-          onClick={() => onTool(t.tool)}
-          data-sel={tool === t.tool}
-          title={`${t.label} (${t.hotkey.toUpperCase()})`}
-          className="px-opt px-2.5 py-1.5"
-        >
-          {t.label}
-        </button>
-      ))}
+      <Picker
+        options={TOOL_OPTIONS}
+        value={tool}
+        onChange={onTool}
+        label="Tool"
+        className="flex gap-2"
+        itemClassName="px-2.5 py-1.5"
+      />
       <span className="mx-1 opacity-40">|</span>
       <span className="text-fg-dim">snap</span>
-      {SNAPS.map((s) => (
-        <button
-          type="button"
-          key={s}
-          onClick={() => onSnap(s)}
-          data-sel={snap === s}
-          className="px-opt px-2 py-1.5"
-        >
-          {s === 1 ? "free" : s}
-        </button>
-      ))}
+      <Picker
+        options={SNAP_OPTIONS}
+        value={`${snap}`}
+        onChange={(key) => onSnap(Number(key))}
+        label="Snap"
+        className="flex gap-2"
+        itemClassName="px-2 py-1.5"
+      />
       <span className="mx-1 opacity-40">|</span>
       <button type="button" onClick={onZoomOut} className="px-btn px-2 py-1.5">
         −
@@ -186,14 +194,13 @@ const Toolbar = ({
       <button type="button" onClick={onZoomIn} className="px-btn px-2 py-1.5">
         +
       </button>
-      <button
-        type="button"
-        onClick={onToggleCollision}
-        data-sel={showCollision}
+      <Toggle
+        pressed={showCollision}
+        onPressedChange={onToggleCollision}
         className="px-opt px-2.5 py-1.5"
       >
         Collision
-      </button>
+      </Toggle>
       <button
         type="button"
         onClick={onRebuildCollision}
@@ -555,7 +562,7 @@ export const OfficeBuilder = () => {
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
           showCollision={showCollision}
-          onToggleCollision={() => setCollisionPinned((v) => !v)}
+          onToggleCollision={setCollisionPinned}
           onRebuildCollision={() => {
             commitLayout((L) => ({ ...L, collision: deriveCollision(L) }));
             setStatus("Rebuilt collision from floor tiles + solid furniture.");

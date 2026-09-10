@@ -107,7 +107,7 @@ const ProductCard = ({
     }
   };
   return (
-    <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5" data-sel={selected}>
+    <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5">
       <button type="button" onClick={onSelect} className="text-left">
         <div className="flex items-baseline justify-between gap-2">
           <span className={cn("truncate text-sm", selected ? "text-accent-lo" : "text-fg")}>

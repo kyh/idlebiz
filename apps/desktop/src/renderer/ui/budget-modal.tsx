@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Toggle } from "@base-ui/react/toggle";
-import { ToggleGroup } from "@base-ui/react/toggle-group";
 import {
   useStore,
   setBudget,
@@ -9,9 +7,17 @@ import {
   disconnectStripe,
 } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
+import { Picker } from "@/renderer/ui/picker";
+import type { PickerOption } from "@/renderer/ui/picker";
 import { isOutOfBudget } from "@/shared/domain";
+import type { Budget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 import type { StripeStatus } from "@/shared/ipc-registry";
+
+const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
+  { label: "∞ Infinite", value: "infinite" },
+  { label: "$ Capped", value: "capped" },
+];
 
 const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
   if (stripeStatus.state === "connected") {
@@ -109,25 +115,19 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
 
         <div>
           <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Spending cap</div>
-          <ToggleGroup
-            value={[budget.mode]}
-            onValueChange={([mode]) => {
+          <Picker
+            options={BUDGET_MODES}
+            value={budget.mode}
+            onChange={(mode) => {
               if (mode === "infinite") {
-                void setBudget({ mode: "infinite" });
-              } else if (mode === "capped") {
+                void setBudget({ mode });
+              } else {
                 setCap();
               }
             }}
-            aria-label="Spending cap"
+            label="Spending cap"
             className="grid grid-cols-2 gap-2"
-          >
-            <Toggle value="infinite" className="px-opt">
-              ∞ Infinite
-            </Toggle>
-            <Toggle value="capped" className="px-opt">
-              $ Capped
-            </Toggle>
-          </ToggleGroup>
+          />
           <div className="mt-2 flex items-center gap-2">
             <span className="text-sm text-fg">$</span>
             <input

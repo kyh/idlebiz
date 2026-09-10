@@ -1,3 +1,4 @@
+import { Toggle } from "@base-ui/react/toggle";
 import type { OfficeLayer } from "@/renderer/game/office-layout";
 import {
   flipObject,
@@ -136,24 +137,22 @@ export const Inspector = ({
         <StackButtons onRestack={onRestack} />
       )}
       <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => onChange(flipObject(obj, "x"))}
-          data-sel={obj.flipX}
+        <Toggle
+          pressed={obj.flipX}
+          onPressedChange={() => onChange(flipObject(obj, "x"))}
           className="px-opt flex-1 py-1.5"
           title="Flip horizontal (⇧H)"
         >
           Flip H
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(flipObject(obj, "y"))}
-          data-sel={obj.flipY}
+        </Toggle>
+        <Toggle
+          pressed={obj.flipY}
+          onPressedChange={() => onChange(flipObject(obj, "y"))}
           className="px-opt flex-1 py-1.5"
           title="Flip vertical (⇧V)"
         >
           Flip V
-        </button>
+        </Toggle>
       </div>
       <label className="flex items-center gap-2">
         <input

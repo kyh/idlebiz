@@ -169,7 +169,6 @@
   box-shadow: inset 2px 2px 0 0 var(--face-lo);
   padding: 10px;
 }
-.px-opt[data-sel="true"],
 .px-opt[data-pressed] {
   background: var(--accent);
   color: var(--light);
