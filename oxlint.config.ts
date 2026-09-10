@@ -6,7 +6,7 @@ import react from "ultracite/oxlint/react";
 
 export default defineConfig({
   extends: [core, react, antiSlop],
-  ignorePatterns: [...core.ignorePatterns, "dist-electron", ".claude", "*.tsbuildinfo"],
+  ignorePatterns: [...(core.ignorePatterns ?? []), "dist-electron", ".claude", "*.tsbuildinfo"],
   overrides: [{ files: ["apps/web/**"], plugins: next.plugins, rules: next.rules }],
   rules: {
     // Sequential awaits in loops are deliberate here (ordered agent turns, paced writes).
