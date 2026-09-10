@@ -31,5 +31,11 @@ jobs:
       - name: Format
         run: pnpm format
 
+      - name: Check office layout
+        run: pnpm -F @repo/desktop check:office
+
+      - name: Test
+        run: pnpm test
+
       - name: Build
         run: pnpm build
