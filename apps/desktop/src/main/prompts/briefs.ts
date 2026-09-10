@@ -27,6 +27,25 @@ export const roomTranscript = (
     )
     .join("\n") || "(no messages yet)";
 
+/** The live numbers the founder's HUD shows, so a run can steer by them.
+ *  Null is "no source connected", never zero: the difference decides whether
+ *  the next move is growth or asking for the connection. */
+const realNumbers = (company: Company, products: readonly Product[]): string => {
+  const revenue =
+    company.revenueUsd === null
+      ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" when there is something to charge for.'
+      : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live).`;
+  const users =
+    company.users === null
+      ? '- Users: no source connected — nobody can see traffic; a product deployed on Vercel reports visitors (request_integration "vercel").'
+      : `- Users: ${company.users} visitors across products (Vercel Web Analytics, live).`;
+  const perProduct = products
+    .filter((p) => p.users !== null)
+    .map((p) => `  - ${p.name}: ${p.users} visitors`)
+    .join("\n");
+  return [revenue, users, perProduct].filter((line) => line.length > 0).join("\n");
+};
+
 const budgetLine = (company: Company): string => {
   if (company.budget.mode !== "capped") {
     return `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
@@ -89,6 +108,9 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     ``,
     `Recently shipped:`,
     shipped,
+    ``,
+    `Real numbers (what the founder sees; grow these):`,
+    realNumbers(company, products),
     ``,
     `Recent failures to consider fixing or unblocking:`,
     failures,
