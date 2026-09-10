@@ -467,3 +467,50 @@ describe("active company ownership", () => {
     },
   );
 });
+
+describe("the digest", () => {
+  it("sums what the log says happened after the founder last looked", () => {
+    const company = found();
+    const t0 = Date.now();
+    store.markSeen(company.id, t0);
+    store.logActivity({ createdAt: t0 - 1, kind: "ship", message: "before they left" }, true);
+    store.logActivity({ createdAt: t0 + 1, kind: "ship", message: "v0 shipped" }, true);
+    store.logActivity(
+      {
+        createdAt: t0 + 2,
+        kind: "run.end",
+        payload: { costUsd: 0.25, outcome: { kind: "done" }, summary: "done" },
+      },
+      true,
+    );
+    store.logActivity(
+      { createdAt: t0 + 3, kind: "org.hired", payload: { by: "lead", name: "Mira", title: "PM" } },
+      true,
+    );
+    store.logActivity(
+      { createdAt: t0 + 4, kind: "task.dead", payload: { attempts: 3, error: "boom" } },
+      true,
+    );
+    expect(store.digestSince(company.id, t0)).toEqual({
+      dead: 1,
+      hired: ["Mira"],
+      released: [],
+      runs: 1,
+      ships: ["v0 shipped"],
+      since: t0,
+      spentUsd: 0.25,
+      truncated: false,
+    });
+  });
+
+  it("remembers the last look on disk, and a read is a look", () => {
+    const company = found();
+    expect(company.lastSeenAt).toBeNull();
+    expect(store.digest(company.id)).toBeNull();
+    const first = store.getCompany(company.id)?.lastSeenAt;
+    expect(first).not.toBeNull();
+    store.initStore();
+    expect(store.getCompany(company.id)?.lastSeenAt).toBe(first);
+    expect(store.digest(company.id)).not.toBeNull();
+  });
+});

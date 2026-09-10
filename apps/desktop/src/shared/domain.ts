@@ -211,6 +211,8 @@ export interface Company {
   budget: Budget;
   /** lifetime real token spend (USD) */
   spentUsd: number;
+  /** When the founder last had the office in view; null before the first look. */
+  lastSeenAt: number | null;
   createdAt: number;
 }
 

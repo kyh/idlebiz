@@ -11,6 +11,7 @@ export const CHANNELS = {
   foundCompany: { channel: "onboard:found", kind: "invoke" },
   generateHires: { channel: "onboard:hires", kind: "invoke" },
   getCompany: { channel: "company:get", kind: "invoke-void" },
+  getDigest: { channel: "company:digest", kind: "invoke" },
   getFounderChoices: { channel: "char:founders", kind: "invoke-void" },
   hasAuth: { channel: "agent:hasAuth", kind: "invoke-void" },
   listEmployees: { channel: "employee:list", kind: "invoke" },

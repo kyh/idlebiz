@@ -142,6 +142,7 @@ const registerIpcHandlers = (): void => {
   });
 
   handle("resetSpend", ({ companyId }) => store.resetSpend(companyId));
+  handle("getDigest", ({ companyId }) => store.digest(companyId));
 
   handle("resetGame", resetGame);
 
@@ -276,6 +277,14 @@ const isWebUrl = (url: string): boolean => {
   }
 };
 
+/** "Seen" is the last moment the founder had the office in front of them; the next digest starts there. */
+const leaving = (): void => {
+  const company = store.getDefaultCompany();
+  if (company) {
+    store.markSeen(company.id, Date.now());
+  }
+};
+
 const createWindow = (): BrowserWindow => {
   const win = new BrowserWindow({
     backgroundColor: "#12141c",
@@ -312,6 +321,11 @@ const createWindow = (): BrowserWindow => {
   if (isDev) {
     win.webContents.openDevTools({ mode: "detach" });
   }
+
+  win.on("blur", leaving);
+  win.on("hide", leaving);
+  win.on("minimize", leaving);
+  win.on("close", leaving);
 
   win.on("closed", () => {
     if (mainWindow === win) {

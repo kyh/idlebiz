@@ -27,6 +27,21 @@ export interface LoadReport {
   skipped: LoadSkip[];
 }
 
+/** What happened while the founder was away, summed from the activity since `since`. */
+export interface Digest {
+  since: number;
+  /** Ship summaries, oldest first. */
+  ships: string[];
+  runs: number;
+  spentUsd: number;
+  hired: string[];
+  released: string[];
+  /** Tasks that gave up while they were away. */
+  dead: number;
+  /** The activity ring ran past the absence, so the counts are a floor. */
+  truncated: boolean;
+}
+
 /** Stripe Connect link state, streamed to the renderer. */
 export type StripeStatus =
   | { state: "disconnected" }
@@ -115,6 +130,7 @@ export const SCHEMAS = {
     mission: z.string(),
   }),
   getCompany: z.void(),
+  getDigest: z.object({ companyId: z.string() }),
   getFounderChoices: z.void(),
   hasAuth: z.void(),
   listEmployees: z.object({ companyId: z.string() }),
@@ -170,6 +186,8 @@ interface Results {
   foundCompany: Company;
 
   getCompany: Company | null;
+  /** Null before the founder's first look, or without a company. */
+  getDigest: Digest | null;
   loadReport: LoadReport;
   openSaveFolder: { ok: boolean };
   setAutopilot: Company;

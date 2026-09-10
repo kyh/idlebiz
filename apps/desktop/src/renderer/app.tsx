@@ -9,6 +9,7 @@ import { CrashScreen } from "@/renderer/ui/crash-screen";
 import { Hud } from "@/renderer/ui/hud";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Dialogue } from "@/renderer/ui/dialogue";
+import { Digest } from "@/renderer/ui/digest";
 import { Ships } from "@/renderer/ui/ships";
 import { Inbox } from "@/renderer/ui/inbox";
 import { Teams } from "@/renderer/ui/teams";
@@ -89,6 +90,7 @@ const Screen = ({
           <Hud onOpen={onOverlay} />
           <TeamChannel />
           <Dialogue />
+          <Digest />
           <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
         </>
       );

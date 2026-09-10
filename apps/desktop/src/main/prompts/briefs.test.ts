@@ -10,6 +10,7 @@ const company: Company = {
   founderName: "Ada",
   founderSpriteSeed: "s",
   id: "acme",
+  lastSeenAt: null,
   leaderId: "lead",
   maxAgents: 12,
   mission: "a to-do app",

@@ -4,6 +4,7 @@ import { AnswerForm } from "@/renderer/ui/answer-form";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
+import { plural } from "@/shared/format";
 import { describeRule } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
@@ -193,7 +194,7 @@ export const Inbox = ({
   return (
     <Modal
       title="Inbox"
-      subtitle={`${pendingAsks.length} question${pendingAsks.length === 1 ? "" : "s"} · ${stuckTasks.length} stuck`}
+      subtitle={`${plural(pendingAsks.length, "question")} · ${stuckTasks.length} stuck`}
       width="2xl"
       onClose={onClose}
     >

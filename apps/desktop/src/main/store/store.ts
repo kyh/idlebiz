@@ -48,7 +48,7 @@ import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import { errorMessage } from "@/shared/errors";
-import type { LoadReport, LoadSkip } from "@/shared/ipc-registry";
+import type { Digest, LoadReport, LoadSkip } from "@/shared/ipc-registry";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
@@ -181,6 +181,9 @@ const companyToDoc = (co: Company): FrontmatterDoc => {
     metadata.budgetCapUsd = co.budget.capUsd;
   }
   metadata.spentUsd = co.spentUsd;
+  if (co.lastSeenAt !== null) {
+    metadata.lastSeenAt = co.lastSeenAt;
+  }
   metadata.createdAt = co.createdAt;
   return {
     body: `# ${co.name}\n\n${co.mission}\n`,
@@ -219,6 +222,7 @@ const docToCompany = (doc: FrontmatterDoc): Company => {
     founderName: optStr(m, "founderName") ?? "Founder",
     founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? DEFAULT_FOUNDER_SEED,
     id,
+    lastSeenAt: nullableNum(m, "lastSeenAt"),
     leaderId: optStr(m, "leaderId"),
     maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
     mission: optStr(f, "description") ?? "",
@@ -581,6 +585,8 @@ export const recordSpend = (id: string, costUsd: number): Company | null => {
 export const setBudget = (id: string, budget: Budget): Company => patchCompany(id, { budget });
 
 export const resetSpend = (id: string): Company => patchCompany(id, { spentUsd: 0 });
+
+export const markSeen = (id: string, at: number): Company => patchCompany(id, { lastSeenAt: at });
 
 /** Null metrics keep the last reported value through provider failures. */
 export const setRealMetrics = (
@@ -1113,6 +1119,7 @@ export const foundCompany = (input: {
     founderName: input.founderName,
     founderSpriteSeed: input.founderSpriteSeed,
     id,
+    lastSeenAt: null,
     leaderId: null,
     maxAgents: DEFAULT_MAX_AGENTS,
     mission: input.mission,
@@ -1337,6 +1344,71 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
   }
   appendJsonl(activityFile(active.company.id), row);
   return entry;
+};
+
+/**
+ * What happened since `since`, from the activity ring. The ring keeps the
+ * newest 600 rows, so a long absence can run past its start; `truncated`
+ * says the counts are a floor.
+ */
+
+export const digestSince = (companyId: string, since: number): Digest | null => {
+  const active = activeCompany(companyId);
+  if (!active) {
+    return null;
+  }
+  const [oldest] = active.activity;
+  const summary: Digest = {
+    dead: 0,
+    hired: [],
+    released: [],
+    runs: 0,
+    ships: [],
+    since,
+    spentUsd: 0,
+    truncated:
+      oldest !== undefined && oldest.createdAt > since && active.activity.length >= ACTIVITY_RING,
+  };
+  for (const e of active.activity) {
+    if (e.createdAt <= since) {
+      continue;
+    }
+    switch (e.kind) {
+      case "ship": {
+        summary.ships.push(e.message);
+        break;
+      }
+      case "run.end": {
+        summary.runs += 1;
+        summary.spentUsd += e.payload.costUsd ?? 0;
+        break;
+      }
+      case "task.dead": {
+        summary.dead += 1;
+        break;
+      }
+      case "org.hired": {
+        summary.hired.push(e.payload.name);
+        break;
+      }
+      case "org.released": {
+        summary.released.push(e.payload.name);
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }
+  return summary;
+};
+
+/** The digest, and the look itself: reading it sets the clock for the next one. Null before a first look. */
+export const digest = (companyId: string): Digest | null => {
+  const since = getCompany(companyId)?.lastSeenAt ?? null;
+  const summary = since === null ? null : digestSince(companyId, since);
+  markSeen(companyId, Date.now());
+  return summary;
 };
 
 const ofKind =

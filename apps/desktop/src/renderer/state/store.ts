@@ -11,7 +11,13 @@ import type {
   TaskIn,
   TeamMessage,
 } from "@/shared/domain";
-import type { LoadSkip, ProductStatus, RestingRunners, StripeStatus } from "@/shared/ipc-registry";
+import type {
+  Digest,
+  LoadSkip,
+  ProductStatus,
+  RestingRunners,
+  StripeStatus,
+} from "@/shared/ipc-registry";
 import { BUNDLED_LAYOUT, parseOfficeLayout } from "@/renderer/game/office-layout";
 import type { OfficeLayoutData } from "@/renderer/game/office-layout";
 import { bridge } from "@/renderer/bridge";
@@ -256,6 +262,10 @@ export const setBudget = (budget: Budget): Promise<void> =>
 
 export const resetSpend = (): Promise<void> =>
   updateCompany((companyId) => bridge().resetSpend({ companyId }));
+
+/** What happened since the founder last looked; asking is the look. */
+export const digest = (): Promise<Digest | null> =>
+  state.company ? bridge().getDigest({ companyId: state.company.id }) : Promise.resolve(null);
 
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
   updateCompany((companyId) => bridge().setMaxAgents({ companyId, maxAgents }));
