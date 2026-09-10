@@ -24,6 +24,7 @@
     "@agentclientprotocol/claude-agent-acp": "^0.70.0",
     "@agentclientprotocol/codex-acp": "^1.7.0",
     "@agentclientprotocol/sdk": "catalog:",
+    "@base-ui/react": "1.8.0",
     "@repo/agent-driver": "workspace:*",
     "@repo/px-kit": "workspace:*",
     "@repo/stripe-connect-protocol": "workspace:*",

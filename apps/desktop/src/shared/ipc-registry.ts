@@ -27,11 +27,6 @@ export interface LoadReport {
   skipped: LoadSkip[];
 }
 
-export interface FounderChoice {
-  seed: string;
-  portraitDataUrl: string;
-}
-
 /** Stripe Connect link state, streamed to the renderer. */
 export type StripeStatus =
   | { state: "disconnected" }
@@ -70,8 +65,8 @@ export interface ChatOption {
 export interface CharacterAssets {
   /** 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right */
   walkSheetDataUrl: string;
-  /** 64x64 PNG */
-  portraitDataUrl: string;
+  /** 44x44 PNG: the drawn head-and-shoulders bust */
+  bustDataUrl: string;
 }
 
 const BusinessTypeSchema = z.enum(BUSINESS_TYPE_IDS);
@@ -169,7 +164,8 @@ interface Results {
   startLogin: { started: boolean };
   onAuthEvent: AuthFlowEvent;
   composeCharacter: CharacterAssets;
-  getFounderChoices: FounderChoice[];
+  /** Sprite seeds the founder may pick a look from. */
+  getFounderChoices: string[];
   generateHires: HireProposal[];
   foundCompany: Company;
 

@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { initStore, setGame, useStore } from "@/renderer/state/store";
 import type { Boot } from "@/renderer/state/store";
-import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
+import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
 import { CrashScreen } from "@/renderer/ui/crash-screen";
@@ -80,7 +80,7 @@ const Screen = ({
       return <SaveUnreadable issues={boot.issues} />;
     }
     case "onboarding": {
-      return <PokeOnboarding />;
+      return <Onboarding />;
     }
     case "office": {
       return (

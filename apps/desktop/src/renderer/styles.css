@@ -28,8 +28,17 @@ button:disabled {
   cursor: default;
 }
 
-/* ---- the founding: a night street, and an office that lights up floor by floor ---- */
+/* ---- the founding: a night street, and an office that lights up floor by floor ----
+   The street line is fixed at --ob-street from the bottom; nothing above it reflows
+   when the textbox grows, because the textbox is its own layer under the street. */
 .ob-scene {
+  --ob-street: 236px;
+  /* every character is a 32x64 frame from a 6x6 sheet (shared/character-frame.ts);
+     the street draws them at 3x, the building's scale, and the close-ups at 6x */
+  --ob-frame-w: 32px;
+  --ob-frame-h: 64px;
+  --ob-street-scale: 3;
+  --ob-closeup-scale: 6;
   background: linear-gradient(#10121b 0%, #10121b 40%, #1d2136 100%);
 }
 .ob-sky {
@@ -37,6 +46,11 @@ button:disabled {
   inset: 0;
   background: url("/onboarding/skyline.png") center bottom / cover no-repeat;
   image-rendering: pixelated;
+  transition: filter 0.4s steps(4);
+}
+/* the close-up: the skyline falls back so whoever is talking stands out */
+.ob-sky[data-dim="true"] {
+  filter: brightness(0.45) saturate(0.6);
 }
 .ob-star {
   position: absolute;
@@ -51,17 +65,36 @@ button:disabled {
   }
 }
 
+/* the title screen: logo, tagline, and the one thing to do */
+.ob-title-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.ob-title-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding-bottom: 12vh;
+}
 .ob-title {
-  font-size: 64px;
+  font-size: 88px;
   line-height: 1;
   color: var(--light);
   text-shadow:
-    -3px 0 0 var(--ink),
-    3px 0 0 var(--ink),
-    0 -3px 0 var(--ink),
-    0 3px 0 var(--ink),
-    0 6px 0 var(--chrome),
-    0 9px 0 var(--ink);
+    -4px 0 0 var(--ink),
+    4px 0 0 var(--ink),
+    0 -4px 0 var(--ink),
+    0 4px 0 var(--ink),
+    0 8px 0 var(--chrome),
+    0 12px 0 var(--ink);
   animation: ob-drop 0.5s steps(5) both;
 }
 @keyframes ob-drop {
@@ -78,26 +111,21 @@ button:disabled {
   }
 }
 
-/* the stage: what the step shows on the left, the office on the right, one street under both */
+/* the stage sits on the street: its bottom edge IS the street's top */
 .ob-stage {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  align-items: end;
+  position: absolute;
+  left: 50%;
+  bottom: var(--ob-street);
   width: 100%;
   max-width: 56rem;
-  min-height: 220px;
-  padding-bottom: 14px;
-}
-.ob-stage-left {
-  align-self: center;
-  padding: 0 24px 24px 0;
+  height: 420px;
+  transform: translateX(-50%);
 }
 .ob-street {
   position: absolute;
-  left: -100vw;
-  right: -100vw;
-  bottom: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--ob-street) - 14px);
   height: 14px;
   background: var(--chrome);
   border-top: 3px solid var(--ink);
@@ -106,120 +134,179 @@ button:disabled {
 /* the ground under the street, so the skyline is a horizon and not a window */
 .ob-ground {
   position: absolute;
-  left: -100vw;
-  right: -100vw;
-  top: 100%;
-  height: 100vh;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--ob-street) - 14px);
   background: #151827;
   border-top: 3px solid #10121b;
 }
 
-.ob-building {
-  position: relative;
-  width: 232px;
-  margin: 0 auto;
-  padding: 10px 12px 0;
-  background: #313a5e;
-  border: 3px solid var(--ink);
-  border-bottom: 0;
-  box-shadow:
-    inset 3px 0 0 0 #3d4a72,
-    inset -3px 0 0 0 #262d4a;
-}
-.ob-roof {
-  height: 10px;
-  margin: -13px -15px 8px;
-  background: var(--chrome);
-  border: 3px solid var(--ink);
-  box-shadow: inset 0 3px 0 0 var(--chrome-hi);
-}
-.ob-floor {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 10px;
-  padding: 5px 0 9px;
-  border-bottom: 2px solid #262d4a;
-}
-.ob-window {
-  height: 14px;
-  background: #1d2136;
-  border: 2px solid #10121b;
-  box-shadow: inset 0 -3px 0 0 #151827;
-}
-.ob-window[data-lit="true"] {
-  background: var(--warn);
-  box-shadow:
-    inset 0 -3px 0 0 #c98f2a,
-    0 0 8px 1px rgba(232, 176, 75, 0.35);
-  animation: ob-light-on 0.5s steps(3) both;
-}
-@keyframes ob-light-on {
-  0% {
-    background: #1d2136;
-    box-shadow: none;
-  }
-  40% {
-    background: var(--face);
-  }
-  70% {
-    background: #1d2136;
-    box-shadow: none;
-  }
-}
-.ob-door {
-  width: 34px;
-  height: 36px;
-  margin: 8px auto -3px;
-  background: var(--accent-lo);
-  border: 3px solid var(--ink);
-  border-bottom: 0;
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-.ob-door[data-open="true"] {
-  background: var(--warn);
-  box-shadow: inset 0 0 0 2px var(--face);
+/* what the step shows, floating over the street to the building's left */
+.ob-panel {
+  position: absolute;
+  left: 0;
+  right: 300px;
+  /* above the heads on the street, so nobody stands behind it */
+  bottom: 200px;
+  display: flex;
+  justify-content: center;
+  padding-right: 24px;
 }
 
-/* the founder, on the street, walking to work: a 2x walk sheet stepped through its down row */
-.ob-sprite {
+/* the office: one sprite, dark, with its lit twin clipped to the floors that are on */
+.ob-building {
   position: absolute;
-  /* the frame keeps 9 empty rows under the soles (CHAR_ORIGIN_Y); at 2x that is 18px below the street's top */
-  bottom: -4px;
-  width: 64px;
-  height: 128px;
+  right: 24px;
+  bottom: 0;
+  width: 240px;
+  height: 420px;
+  background: url("/onboarding/building-dark.png") 0 0 / 240px 420px no-repeat;
+  image-rendering: pixelated;
+}
+.ob-building-lit {
+  position: absolute;
+  inset: 0;
+  background: url("/onboarding/building.png") 0 0 / 240px 420px no-repeat;
+  image-rendering: pixelated;
+  transition: clip-path 0.45s steps(3);
+}
+/* the door glass sits at columns 35–43, rows 129–137 of the sprite */
+.ob-door-glow {
+  position: absolute;
+  left: 102px;
+  bottom: 6px;
+  width: 30px;
+  height: 30px;
+  background: var(--warn);
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+.ob-door-glow[data-open="true"] {
+  opacity: 1;
+  box-shadow: 0 0 24px 10px rgba(232, 176, 75, 0.7);
+  animation: ob-door-glow 0.4s steps(2, start) infinite alternate;
+}
+@keyframes ob-door-glow {
+  to {
+    opacity: 0.6;
+  }
+}
+
+/* someone on the street: one frame of a walk sheet at the street's scale.
+   Soles sit two rows above the frame's bottom edge, so the frame hangs that far below it. */
+.ob-sprite {
+  --s: var(--ob-street-scale);
+  position: absolute;
+  bottom: calc(-2px * var(--s));
+  width: calc(var(--ob-frame-w) * var(--s));
+  height: calc(var(--ob-frame-h) * var(--s));
   transform: translateX(-50%);
   background-repeat: no-repeat;
-  background-size: 384px 768px;
+  background-size: calc(var(--ob-frame-w) * 6 * var(--s)) calc(var(--ob-frame-h) * 6 * var(--s));
   image-rendering: pixelated;
   transition: left 0.7s steps(7);
 }
+/* the founder walking: the down row, six frames wide */
 .ob-sprite-walk {
   animation: ob-gait 0.6s steps(6) infinite;
+}
+/* through the door: the founder shrinks into the building, the way a player enters a house */
+.ob-sprite-enter {
+  animation: ob-enter 0.5s steps(5) 0.1s both;
+}
+@keyframes ob-enter {
+  to {
+    transform: translateX(-50%) translateY(-60px) scale(0.15);
+    opacity: 0;
+  }
 }
 @keyframes ob-gait {
   from {
     background-position-x: 0;
   }
   to {
-    background-position-x: -384px;
+    background-position-x: calc(var(--ob-frame-w) * -6 * var(--s));
   }
 }
 
-/* the office's own emotes, at 2x: "!" when someone arrives, "…" while the agency thinks */
+/* the close-up: whoever is talking, one frame big, centred on the street */
+.ob-closeup {
+  --s: var(--ob-closeup-scale);
+  position: absolute;
+  left: 50%;
+  bottom: calc(-2px * var(--s));
+  width: calc(var(--ob-frame-w) * var(--s));
+  height: calc(var(--ob-frame-h) * var(--s));
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  animation: ob-step-in 0.3s steps(3) both;
+}
+@keyframes ob-step-in {
+  from {
+    transform: translateX(-50%) translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%);
+    opacity: 1;
+  }
+}
+/* the founder's close-up reads its walk sheet; Chad's is a single frame */
+.ob-closeup-founder {
+  background-size: calc(var(--ob-frame-w) * 6 * var(--s)) calc(var(--ob-frame-h) * 6 * var(--s));
+}
+.ob-narrator {
+  background-image: url("/onboarding/vc.png");
+  background-size: 100% 100%;
+}
+/* on the street Chad is a passer-by's size, by the door */
+.ob-narrator-street {
+  left: 92%;
+  background-image: url("/onboarding/vc.png");
+  background-size: 100% 100%;
+}
+.ob-arrow {
+  position: absolute;
+  bottom: 120px;
+  font-family: inherit;
+  font-size: 40px;
+  line-height: 1;
+  color: var(--light);
+  background: transparent;
+  border: 0;
+  padding: 8px;
+  text-shadow: 0 3px 0 var(--ink);
+  animation: ob-nudge 0.7s steps(2, start) infinite alternate;
+}
+.ob-arrow:hover {
+  color: var(--accent-hi);
+}
+.ob-arrow-l {
+  left: calc(50% - 200px);
+}
+.ob-arrow-r {
+  left: calc(50% + 140px);
+}
+@keyframes ob-nudge {
+  to {
+    transform: translateY(4px);
+  }
+}
+
+/* the office's own "…" emote (the second 32px frame of its strip) over whoever is thinking */
 .ob-emote {
-  width: 64px;
-  height: 64px;
-  background: url("/workspace-kit/emotes.png") 0 0 / 512px 64px no-repeat;
+  position: absolute;
+  left: 0;
+  /* just over the hair: Chad's starts 39 rows above his soles, which sit 2 rows up the frame */
+  bottom: calc(41px * var(--s));
+  width: calc(32px * var(--s));
+  height: calc(32px * var(--s));
+  background: url("/workspace-kit/emotes.png") calc(-32px * var(--s)) 0 / calc(256px * var(--s))
+    calc(32px * var(--s)) no-repeat;
   image-rendering: pixelated;
   animation: ob-bob 0.5s steps(2, start) infinite alternate;
-}
-.ob-emote[data-frame="1"] {
-  background-position-x: -64px;
-}
-.ob-emote-door {
-  position: absolute;
-  right: 118px;
-  bottom: 44px;
 }
 @keyframes ob-bob {
   to {
@@ -273,14 +360,67 @@ button:disabled {
   background: repeating-linear-gradient(90deg, var(--accent) 0 8px, var(--accent-hi) 8px 16px);
 }
 
-/* the battle-start flash: two pops of white, then the office */
+/* the dock: the textbox fixed to the bottom, and the choice window above its right edge */
+.ob-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  z-index: 10;
+  width: calc(100% - 48px);
+  max-width: 40rem;
+  transform: translateX(-50%);
+}
+/* the textbox: three lines tall, the prompt under the text */
+.ob-box {
+  position: relative;
+  min-height: 124px;
+  padding: 16px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ob-box-text {
+  min-height: 52px;
+  width: 100%;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--fg);
+}
+.ob-field {
+  width: 100%;
+}
+.ob-back {
+  align-self: flex-start;
+}
+.ob-skip {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+}
+
+/* the choice window opens above the textbox on the right, the way a YES/NO box does */
+.ob-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 1;
+}
+
+/* the battle-start flash: two pops of white, then the office. It waits for the
+   walk to the door (0.7s) and the step inside (0.6s) — FINALE_MS covers all three. */
 .ob-flash {
   position: absolute;
   inset: 0;
   z-index: 20;
   background: var(--light);
   pointer-events: none;
-  animation: ob-flash 0.7s steps(1, end) both;
+  animation: ob-flash 0.7s steps(1, end) 1.4s both;
 }
 @keyframes ob-flash {
   0% {
@@ -300,18 +440,55 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   .ob-star,
   .ob-title,
-  .ob-window[data-lit="true"],
+  .ob-door-glow[data-open="true"],
   .ob-sprite-walk,
+  .ob-sprite-enter,
+  .ob-closeup,
+  .ob-arrow,
   .ob-emote,
   .ob-parade > *,
   .ob-flash {
     animation: none;
   }
   .ob-sprite,
+  .ob-sky,
+  .ob-building-lit,
   .ob-meter-fill {
     transition: none;
   }
   .ob-flash {
     opacity: 1;
   }
+}
+
+/* ---- talking to an employee: their bust beside the text, the choices above it ---- */
+.dlg {
+  position: relative;
+  width: 100%;
+  max-width: 48rem;
+}
+.dlg-box {
+  display: flex;
+  align-items: stretch;
+  gap: 20px;
+  min-height: 252px;
+  padding: 16px 20px 14px 16px;
+}
+.dlg-bust {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+.dlg-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.dlg-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 1;
 }

@@ -13,7 +13,7 @@ export interface Typewriter {
 }
 
 /**
- * Pokémon-style character-by-character reveal.
+ * RPG-style character-by-character reveal.
  *
  * Progress is stored alongside the text it belongs to so a new `text` reads as
  * zero revealed on the very first render — resetting it from an effect would

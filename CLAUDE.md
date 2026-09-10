@@ -48,6 +48,17 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   where the founder's face would be painted over, judged from the real textures, so a
   saved layout the gate never saw still cannot hide them.
 
+## UI conventions
+
+- **Headless interactions come from Base UI** (`@base-ui/react`, per-part imports like
+  `@base-ui/react/dialog`), skinned with px-kit classes. Dialogs, choice windows (Toolbar),
+  toggles and the like are never hand-rolled: `renderer/ui/modal.tsx` and
+  `renderer/ui/choice-menu.tsx` are the patterns. Base UI composites learn their items a
+  render after mount, so focus them from a deferred effect and mark the default tab stop
+  with `data-composite-item-active`, not `autoFocus`.
+- The game reads as a handheld RPG but never names one: no "Pokémon"/"poke" in code,
+  comments, copy or docs.
+
 ## Agent-driven development
 
 `AGENTS.md` is the full workflow — read it before driving this repo. The essentials:

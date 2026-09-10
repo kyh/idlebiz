@@ -1,6 +1,7 @@
 import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
 import { bridge } from "@/renderer/bridge";
+import { getCharacterAssets } from "@/renderer/character-assets";
 import {
   characterAnims,
   characterDepth,
@@ -263,7 +264,7 @@ export class OfficeScene extends Scene {
     // the office is already staffed when it opens: nobody parades in on boot.
     // Spawns serialise on Phaser's loader, but composing the sheets need not:
     // main caches by seed, so warming them all at once makes the chain read hits.
-    await Promise.all(employees.map((emp) => bridge().composeCharacter({ seed: emp.spriteSeed })));
+    await Promise.all(employees.map((emp) => getCharacterAssets(emp.spriteSeed)));
     if (generation !== this.generation) {
       return;
     }

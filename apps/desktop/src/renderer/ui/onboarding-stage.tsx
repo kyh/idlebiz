@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { getCharacterAssets } from "@/renderer/character-assets";
 import { useAsync } from "@/renderer/hooks/use-async";
-import { Portrait } from "@/renderer/ui/portrait";
+import { Bust } from "@/renderer/ui/bust";
+import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import type { HireProposal } from "@/shared/ipc-registry";
 import { cn } from "cn";
 
@@ -18,9 +19,9 @@ const STARS: readonly (readonly [number, number])[] = [
   [93, 22],
 ];
 
-export const NightSky = () => (
+export const NightSky = ({ dim }: { dim: boolean }) => (
   <div className="pointer-events-none absolute inset-0" aria-hidden>
-    <div className="ob-sky" />
+    <div className="ob-sky" data-dim={dim} />
     {STARS.map(([x, y], i) => (
       <span
         key={`${x}-${y}`}
@@ -31,35 +32,44 @@ export const NightSky = () => (
   </div>
 );
 
-export const FLOORS = 7;
-const WINDOWS = 6;
+/** The office sprite is 140 rows tall. Its floors light from the ground up;
+ *  these are the rows where each floor's windows start, ground floor first,
+ *  measured from the sprite's top. The scale it is drawn at is the CSS's business. */
+const BUILDING_ROWS = 140;
+const FLOOR_TOPS: readonly number[] = [128, 110, 91, 72, 53, 33, 14];
+export const FLOORS = FLOOR_TOPS.length;
+
+/** How far down from the top the lit layer starts showing: everything below the
+ *  lowest dark floor's windows, as a share of the sprite's height. */
+const litInset = (lit: number): string => {
+  if (lit <= 0) {
+    return "100%";
+  }
+  const top = FLOOR_TOPS[Math.min(lit, FLOORS) - 1] ?? 0;
+  return `${((top - 1) / BUILDING_ROWS) * 100}%`;
+};
 
 export const Building = ({ lit, open }: { lit: number; open: boolean }) => (
   <div className="ob-building" aria-hidden>
-    <div className="ob-roof" />
-    {Array.from({ length: FLOORS }, (_, i) => {
-      const floor = FLOORS - 1 - i;
-      return (
-        <div key={floor} className="ob-floor">
-          {Array.from({ length: WINDOWS }, (_column, w) => (
-            <span
-              key={w}
-              className="ob-window"
-              data-lit={floor < lit}
-              style={{ animationDelay: `${w * 60}ms` }}
-            />
-          ))}
-        </div>
-      );
-    })}
-    <div className="ob-door" data-open={open} />
+    <div className="ob-building-lit" style={{ clipPath: `inset(${litInset(lit)} 0 0 0)` }} />
+    <div className="ob-door-glow" data-open={open} />
   </div>
 );
 
 const WALK_MS = 700;
 
-export const FounderSprite = ({ seed, at }: { seed: string; at: number }) => {
-  const assets = useAsync(() => bridge().composeCharacter({ seed }), [seed]);
+/** The founder on the street, walking to work: a 2x walk sheet stepped through
+ *  its down row. `entering` steps them through the door once they reach it. */
+export const FounderSprite = ({
+  seed,
+  at,
+  entering,
+}: {
+  seed: string;
+  at: number;
+  entering: boolean;
+}) => {
+  const assets = useAsync(() => getCharacterAssets(seed), [seed]);
   const [walkedTo, setWalkedTo] = useState(at);
   useEffect(() => {
     if (walkedTo === at) {
@@ -74,16 +84,49 @@ export const FounderSprite = ({ seed, at }: { seed: string; at: number }) => {
   const walking = walkedTo !== at;
   return (
     <div
-      className={walking ? "ob-sprite ob-sprite-walk" : "ob-sprite"}
+      className={cn(
+        "ob-sprite",
+        walking && "ob-sprite-walk",
+        entering && !walking && "ob-sprite-enter",
+      )}
       style={{ backgroundImage: `url(${assets.walkSheetDataUrl})`, left: `${at}%` }}
       aria-hidden
     />
   );
 };
 
-/** One of the office's own emotes: "!" for an arrival, "…" for waiting. */
-export const Emote = ({ frame, className = "" }: { frame: 0 | 1; className?: string }) => (
-  <span className={cn("ob-emote", className)} data-frame={frame} aria-hidden />
+/** The founder up close, the way a starter is shown before it is picked: the idle down frame. */
+export const FounderCloseUp = ({ seed }: { seed: string }) => {
+  const assets = useAsync(() => getCharacterAssets(seed), [seed]);
+  if (!assets) {
+    return <div className="ob-closeup" />;
+  }
+  return (
+    <div
+      key={seed}
+      className="ob-closeup ob-closeup-founder"
+      style={{ backgroundImage: `url(${assets.walkSheetDataUrl})` }}
+      aria-hidden
+    />
+  );
+};
+
+/** Chad Runwayson, the VC who owns the building and does the talking. Up close
+ *  in the intro, then a passer-by's size out on the street, where the office's
+ *  own "…" emote floats over him while he waits on his recruiter. */
+export const Narrator = ({
+  frame,
+  thinking = false,
+}: {
+  frame: "closeup" | "street";
+  thinking?: boolean;
+}) => (
+  <div
+    className={frame === "closeup" ? "ob-closeup ob-narrator" : "ob-sprite ob-narrator-street"}
+    aria-hidden
+  >
+    {thinking ? <span className="ob-emote" /> : null}
+  </div>
 );
 
 export const TeamParade = ({ hires }: { hires: HireProposal[] }) => (
@@ -94,11 +137,9 @@ export const TeamParade = ({ hires }: { hires: HireProposal[] }) => (
         className="px-inset flex items-start gap-2 p-2 text-left"
         style={{ animationDelay: `${i * 180}ms` }}
       >
-        <Portrait seed={h.spriteSeed} size="sm" />
+        <Bust seed={h.spriteSeed} size="md" />
         <span className="min-w-0">
-          <span className="block text-sm text-fg">
-            {h.name} · <span className="text-accent-lo">{h.title}</span>
-          </span>
+          <EmployeeTag name={h.name} title={h.title} />
           <span className="block text-xs text-fg-dim">{h.blurb}</span>
         </span>
       </div>
