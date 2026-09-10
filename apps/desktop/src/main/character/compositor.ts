@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import type { CharacterAssets } from "@/shared/ipc-registry";
@@ -89,15 +89,6 @@ const buildWalkSheet = async (sheetPath: string): Promise<Buffer> => {
     .toBuffer();
 };
 
-// The down-facing head and shoulders occupy y18..50 within the 32x64 frame.
-const PORTRAIT_HEAD_TOP = WALK_TOP + 18;
-const buildPortrait = (sheetPath: string): Promise<Buffer> =>
-  sharp(sheetPath)
-    .extract({ height: 32, left: 18 * FRAME_W, top: PORTRAIT_HEAD_TOP, width: 32 })
-    .resize({ height: 64, kernel: "nearest", width: 64 })
-    .png()
-    .toBuffer();
-
 /** Seeds of the form "employee-sheet:<n>" pin an exact sheet. */
 const indexForSeed = (seed: string, count: number): number => {
   const pinned = /^employee-sheet:(?<n>\d+)$/u.exec(seed)?.groups?.n;
@@ -120,12 +111,16 @@ export const listFounderChoices = async (n: number): Promise<string[]> => {
   return seeds;
 };
 
+/** The drawn bust that ships beside each sheet — a curated asset, so a missing one is a packaging error. */
+const readBust = (sheetPath: string): Promise<Buffer> =>
+  readFile(sheetPath.replace(/employee-sheet-(?<n>\d{2})\.png$/u, "employee-portrait-$<n>.png"));
+
 // Cache by sheet so employees sharing a sheet reuse its assets.
 const composed = new Map<string, Promise<CharacterAssets>>();
 
 const buildAssets = async (sheetPath: string): Promise<CharacterAssets> => {
-  const [walk, portrait] = await Promise.all([buildWalkSheet(sheetPath), buildPortrait(sheetPath)]);
-  return { portraitDataUrl: toDataUrl(portrait), walkSheetDataUrl: toDataUrl(walk) };
+  const [walk, bust] = await Promise.all([buildWalkSheet(sheetPath), readBust(sheetPath)]);
+  return { bustDataUrl: toDataUrl(bust), walkSheetDataUrl: toDataUrl(walk) };
 };
 
 const composeSheet = (sheetPath: string): Promise<CharacterAssets> => {

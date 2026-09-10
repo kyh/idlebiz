@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Toggle } from "@base-ui/react/toggle";
+import { ToggleGroup } from "@base-ui/react/toggle-group";
 import {
   useStore,
   setBudget,
@@ -107,26 +109,25 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
 
         <div>
           <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Spending cap</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
+          <ToggleGroup
+            value={[budget.mode]}
+            onValueChange={([mode]) => {
+              if (mode === "infinite") {
                 void setBudget({ mode: "infinite" });
-              }}
-              data-sel={budget.mode === "infinite"}
-              className="px-opt"
-            >
+              } else if (mode === "capped") {
+                setCap();
+              }
+            }}
+            aria-label="Spending cap"
+            className="grid grid-cols-2 gap-2"
+          >
+            <Toggle value="infinite" className="px-opt">
               ∞ Infinite
-            </button>
-            <button
-              type="button"
-              onClick={setCap}
-              data-sel={budget.mode === "capped"}
-              className="px-opt"
-            >
+            </Toggle>
+            <Toggle value="capped" className="px-opt">
               $ Capped
-            </button>
-          </div>
+            </Toggle>
+          </ToggleGroup>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-sm text-fg">$</span>
             <input

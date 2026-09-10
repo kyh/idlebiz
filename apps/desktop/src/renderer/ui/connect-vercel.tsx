@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { bridge } from "@/renderer/bridge";
 import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
+import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
 import type { VercelProject } from "@/shared/ipc-registry";
@@ -36,6 +37,7 @@ export const ConnectVercel = ({
 }) => {
   const product = useStore((s) => s.products).find((p) => p.id === productId);
   const [token, setToken] = useState("");
+  const [cursor, setCursor] = useState(0);
   const [lookup, setLookup] = useState<Lookup>({ state: "idle" });
   const [pick, setPick] = useState<Pick>({ state: "idle" });
   const busy = lookup.state === "loading" || pick.state === "connecting";
@@ -137,20 +139,24 @@ export const ConnectVercel = ({
                 <div className="mb-1 text-xs uppercase tracking-wide text-fg-dim">
                   Pick the product&apos;s project
                 </div>
-                {lookup.projects.map((p) => (
-                  <button
-                    type="button"
-                    key={p.id}
-                    onClick={() => {
-                      void choose(p);
-                    }}
-                    disabled={busy}
-                    className="px-opt block w-full text-left"
-                  >
-                    {p.name}
-                    {p.teamId ? <span className="ml-2 text-xs text-fg-dim">team</span> : null}
-                  </button>
-                ))}
+                <ChoiceMenu
+                  menu={{
+                    cursor,
+                    items: lookup.projects.map((p) => ({
+                      disabled: busy,
+                      hint: p.teamId ? "a team project" : undefined,
+                      label: p.name,
+                    })),
+                    pick: (i) => {
+                      const project = lookup.projects[i];
+                      if (project) {
+                        void choose(project);
+                      }
+                    },
+                    setCursor,
+                  }}
+                  className="w-full"
+                />
               </div>
             ) : null}
           </>

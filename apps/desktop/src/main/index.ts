@@ -99,14 +99,8 @@ const registerIpcHandlers = (): void => {
   });
 
   handle("getFounderChoices", async () => {
-    const { listFounderChoices, composeCharacter } = await import("@/main/character/compositor");
-    const seeds = await listFounderChoices(6);
-    return Promise.all(
-      seeds.map(async (seed) => {
-        const assets = await composeCharacter(seed);
-        return { portraitDataUrl: assets.portraitDataUrl, seed };
-      }),
-    );
+    const { listFounderChoices } = await import("@/main/character/compositor");
+    return listFounderChoices(6);
   });
 
   handle("generateHires", async ({ companyName, mission, businessType }) => {

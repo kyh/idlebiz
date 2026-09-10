@@ -1,6 +1,6 @@
 # IdleBiz
 
-A Pokémon-style idle business sim where your employees are real AI agents. They
+A retro RPG-style idle business sim where your employees are real AI agents. They
 write real code and docs in a real folder on your machine, coordinate with each
 other, ship products, ask you for permission before doing anything public — and
 the dashboard can read your actual Stripe revenue and analytics.

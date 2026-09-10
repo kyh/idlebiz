@@ -44,6 +44,8 @@ interface State {
   game: Phaser.Game | null;
   /** A dialogue/modal overlay is up (ambient HUD chrome hides). */
   modalOpen: boolean;
+  /** The employee the founder is talking to, from the office or the roster. */
+  talkingTo: string | null;
   /** Derived on every set(): what the window shows, one of four. */
   boot: Boot;
 }
@@ -65,6 +67,7 @@ let state: State = {
   saveIssues: [],
   stripeStatus: { state: "disconnected" },
   stuckTasks: [],
+  talkingTo: null,
 };
 const listeners = new Set<() => void>();
 
@@ -116,18 +119,6 @@ export function useStore<T>(selector?: (s: State) => T): T | State {
   return useSyncExternalStore(subscribe, select, select);
 }
 
-// ---- portrait cache --------------------------------------------------------
-const portraitCache = new Map<string, string>();
-export const getPortrait = async (seed: string): Promise<string> => {
-  const cached = portraitCache.get(seed);
-  if (cached) {
-    return cached;
-  }
-  const assets = await bridge().composeCharacter({ seed });
-  portraitCache.set(seed, assets.portraitDataUrl);
-  return assets.portraitDataUrl;
-};
-
 export const setAuthed = (ok: boolean): void => {
   set({ authed: ok });
 };
@@ -142,6 +133,10 @@ export const setGame = (game: Phaser.Game | null): void => {
   set({ game });
   game?.events.on("office-input-ready", syncModal);
   syncModal();
+};
+
+export const setTalkingTo = (employeeId: string | null): void => {
+  set({ talkingTo: employeeId });
 };
 
 /** Toggle Phaser keyboard so typing in overlays doesn't move the player. */

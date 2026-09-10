@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import { useNow } from "@/renderer/hooks/use-now";
+import { Bust } from "@/renderer/ui/bust";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee, Product } from "@/shared/domain";
@@ -20,6 +22,7 @@ const Stat = ({
   sub,
   accent,
   title,
+  face,
   onClick,
 }: {
   label: string;
@@ -27,22 +30,27 @@ const Stat = ({
   sub?: string;
   accent?: string;
   title?: string;
+  /** A bust beside the figures, for a plate that is about a person. */
+  face?: ReactNode;
   onClick: () => void;
 }) => (
   <button
     type="button"
     onClick={onClick}
-    className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
+    className="px-plate pointer-events-auto flex min-w-[64px] cursor-pointer items-center gap-2 px-3 py-1.5 text-center"
     title={title}
   >
-    <div className="text-xs uppercase tracking-wide text-[#c3c9de]">{label}</div>
-    <div
-      className="text-base leading-tight tabular-nums"
-      style={accent ? { color: accent } : undefined}
-    >
-      {value}
-    </div>
-    {sub ? <div className="text-xs tabular-nums text-[#a7adc6]">{sub}</div> : null}
+    {face}
+    <span className="block flex-1">
+      <span className="block text-xs uppercase tracking-wide text-[#c3c9de]">{label}</span>
+      <span
+        className="block text-base leading-tight tabular-nums"
+        style={accent ? { color: accent } : undefined}
+      >
+        {value}
+      </span>
+      {sub ? <span className="block text-xs tabular-nums text-[#a7adc6]">{sub}</span> : null}
+    </span>
   </button>
 );
 
@@ -84,8 +92,7 @@ const InboxButton = ({ needsYou, onClick }: { needsYou: number; onClick: () => v
     <button
       type="button"
       onClick={onClick}
-      className={cn("px-btn pointer-events-auto", !hasCount && "px-btn-icon")}
-      style={hasCount ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
+      className={cn("px-btn pointer-events-auto", hasCount ? "px-hot" : "px-btn-icon")}
       title="Questions, connect requests and stuck tasks waiting on you"
     >
       {hasCount ? (
@@ -124,6 +131,7 @@ const CompanyPlates = ({
   const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
   const working = employees.filter((e) => e.status === "working").length;
   const teamSub = working > 0 ? `${working} working` : (nap ?? "idle");
+  const leader = employees.find((e) => e.id === company.leaderId);
   return (
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
       <Stat
@@ -138,6 +146,7 @@ const CompanyPlates = ({
         label="team"
         value={String(employees.length)}
         sub={teamSub}
+        face={leader ? <Bust seed={leader.spriteSeed} size="sm" alt="" /> : undefined}
         title={
           nap
             ? "A CLI hit its usage limit — parked work resumes automatically at reset"

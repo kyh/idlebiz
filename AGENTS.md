@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**IdleBiz** is a Pokémon-style idle business sim where the employees are the player's own
+**IdleBiz** is a retro RPG-style idle business sim where the employees are the player's own
 coding CLIs. One Electron app (`apps/desktop`) spawns real `claude` / `codex` sessions and
 saves the whole company as human-readable markdown under `~/.idlebiz/`; a small Next.js
 landing page (`apps/web`) ships the download and the Stripe Connect OAuth hop. This is the
@@ -116,7 +116,7 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 | Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
-The last row is a hard gate, not a convenience: `renderer/ui/poke-onboarding.tsx` calls
+The last row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` calls
 `generateHires`, which dispatches a real agent run (`main/agents/onboarding.ts`), and
 `finalize()` bails when no hires come back. Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
 bundled seeded save. Employee runs still use the signed-in CLI.
@@ -158,6 +158,9 @@ rather than crashing boot.
   resolve only within the active company. There is no company switching during a launch.
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
+- **Headless interactions are Base UI** (`@base-ui/react/<part>`), skinned with px-kit:
+  `renderer/ui/modal.tsx` (Dialog) and `renderer/ui/choice-menu.tsx` (Toolbar) are the
+  patterns. Don't hand-roll a dialog, menu or toggle.
 - **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
   unlayered, so they win over any Tailwind utility that sets the same property. Size and
   colour belong in the kit as a class, never per-component. Full explanation in `CLAUDE.md`.

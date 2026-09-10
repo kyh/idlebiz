@@ -98,7 +98,7 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
-type EmployeeStatus = "idle" | "working";
+export type EmployeeStatus = "idle" | "working";
 
 /** How a run ended, as the scheduler settles the task and the office hears about it. */
 export const RunOutcomeSchema = z.discriminatedUnion("kind", [
