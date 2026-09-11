@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { autonomousBrief } from "./briefs";
+import type { RunMetrics } from "./briefs";
 import type { Company, Employee, Product } from "@/shared/domain";
 
 const company: Company = {
@@ -48,7 +49,7 @@ const product: Product = {
   workspaceDir: "/tmp/acme",
 };
 
-const briefFor = (co: Company, products: Product[]): string =>
+const briefFor = (co: Company, products: Product[], sinceLastRun: RunMetrics | null = null) =>
   autonomousBrief({
     company: co,
     employee,
@@ -59,6 +60,7 @@ const briefFor = (co: Company, products: Product[]): string =>
     products,
     room: [],
     ships: [],
+    sinceLastRun,
   }).description;
 
 describe("the brief's real numbers", () => {
@@ -78,5 +80,15 @@ describe("the brief's real numbers", () => {
     expect(text).toContain("Users: 340 visitors");
     expect(text).toContain("- App: 300 visitors");
     expect(text).not.toContain("- Site:");
+  });
+
+  it("says how the numbers moved since the employee's last run", () => {
+    const text = briefFor({ ...company, revenueUsd: 12.5, users: 340 }, [product], {
+      at: 0,
+      revenueUsd: 10,
+      users: 340,
+    });
+    expect(text).toContain("+$2.50 since your last run");
+    expect(text).toContain("unchanged since your last run");
   });
 });

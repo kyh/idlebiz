@@ -1,6 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "@/main/lib/fs";
+import {
+  appendJsonl,
+  atomicWrite,
+  moveDir,
+  readJsonFile,
+  readJsonlSince,
+  readJsonlTail,
+} from "@/main/lib/fs";
 import {
   ROOT_DIR,
   ensureAppDirs,
@@ -41,6 +48,7 @@ import {
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
+import type { RunMetrics } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
 import { defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
@@ -1347,17 +1355,19 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
 };
 
 /**
- * What happened since `since`, from the activity ring. The ring keeps the
- * newest 600 rows, so a long absence can run past its start; `truncated`
- * says the counts are a floor.
+ * What happened since `since`, read back from the log itself so a long
+ * absence is counted in full; `truncated` says the read stopped short.
  */
 
 export const digestSince = (companyId: string, since: number): Digest | null => {
-  const active = activeCompany(companyId);
-  if (!active) {
+  if (!activeCompany(companyId)) {
     return null;
   }
-  const [oldest] = active.activity;
+  const { rows, complete } = readJsonlSince(
+    activityFile(companyId),
+    PersistedActivitySchema,
+    since,
+  );
   const summary: Digest = {
     dead: 0,
     hired: [],
@@ -1366,13 +1376,9 @@ export const digestSince = (companyId: string, since: number): Digest | null => 
     ships: [],
     since,
     spentUsd: 0,
-    truncated:
-      oldest !== undefined && oldest.createdAt > since && active.activity.length >= ACTIVITY_RING,
+    truncated: !complete,
   };
-  for (const e of active.activity) {
-    if (e.createdAt <= since) {
-      continue;
-    }
+  for (const e of rows) {
     switch (e.kind) {
       case "ship": {
         summary.ships.push(e.message);
@@ -1415,6 +1421,19 @@ const ofKind =
   <K extends ActivityKind>(kind: K) =>
   (e: ActivityEvent): e is Extract<ActivityEvent, { kind: K }> =>
     e.kind === kind;
+
+/** The real numbers as this employee's last run ended, if the ring still holds it. */
+export const lastRunMetrics = (companyId: string, employeeId: string): RunMetrics | null => {
+  const active = activeCompany(companyId);
+  if (!active) {
+    return null;
+  }
+  const isRunEnd = ofKind("run.end");
+  const last = active.activity.findLast((e) => isRunEnd(e) && e.employeeId === employeeId);
+  return last && isRunEnd(last) && last.payload.metrics
+    ? { ...last.payload.metrics, at: last.createdAt }
+    : null;
+};
 
 export const recentActivity = <K extends ActivityKind>(
   companyId: string,

@@ -277,11 +277,20 @@ const isWebUrl = (url: string): boolean => {
   }
 };
 
-/** "Seen" is the last moment the founder had the office in front of them; the next digest starts there. */
-const leaving = (): void => {
+/** "Seen" is the last moment the founder had the office in front of them; the
+ *  next digest starts there. Focus comes and goes many times a minute, so a
+ *  blur only writes once a minute; leaving the screen always does. */
+const MARK_THROTTLE_MS = 60_000;
+let markedAt = 0;
+const markSeen = (throttled: boolean): void => {
+  const now = Date.now();
+  if (throttled && now - markedAt < MARK_THROTTLE_MS) {
+    return;
+  }
   const company = store.getDefaultCompany();
   if (company) {
-    store.markSeen(company.id, Date.now());
+    store.markSeen(company.id, now);
+    markedAt = now;
   }
 };
 
@@ -322,10 +331,10 @@ const createWindow = (): BrowserWindow => {
     win.webContents.openDevTools({ mode: "detach" });
   }
 
-  win.on("blur", leaving);
-  win.on("hide", leaving);
-  win.on("minimize", leaving);
-  win.on("close", leaving);
+  win.on("blur", () => markSeen(true));
+  win.on("hide", () => markSeen(false));
+  win.on("minimize", () => markSeen(false));
+  win.on("close", () => markSeen(false));
 
   win.on("closed", () => {
     if (mainWindow === win) {
