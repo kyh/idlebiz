@@ -133,14 +133,14 @@ describe("allocate", () => {
 
 describe("dream", () => {
   it("keeps the incumbent on thin history", () => {
-    expect(dream(DEFAULT_POLICY, [[closed("a", "app", 0, 100)]])).toBe(DEFAULT_POLICY);
+    expect(dream(DEFAULT_POLICY, [closed("a", "app", 0, 100)])).toBe(DEFAULT_POLICY);
   });
 
   it("never swaps to a policy that replays worse", () => {
     const history = Array.from({ length: 10 }, (_, i) =>
       closed(`b${i}`, i % 2 === 0 ? "app" : "site", i * (HOUR / 2), i % 2 === 0 ? 100 : 0),
     );
-    const next = dream(DEFAULT_POLICY, [history]);
+    const next = dream(DEFAULT_POLICY, history);
     expect(next.explore).toBeLessThanOrEqual(DEFAULT_POLICY.explore);
   });
 });

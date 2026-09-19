@@ -163,48 +163,43 @@ const CANDIDATES: readonly PolicyParams[] = [0, 0.5, 1, 2].flatMap((explore) =>
 );
 
 /**
- * Replay a policy against finished ledgers: at each moment a bet opened, the
- * policy picks among the bets that really were open then, knowing only what had
- * closed by then, and earns the yield per dollar its pick really returned.
+ * Replay a policy against the company's closed bets: at each moment a bet opened,
+ * the policy picks among the bets that really were open then, knowing only what
+ * had closed by then, and earns the yield per dollar its pick really returned.
  * Exact over what happened, silent about what did not.
  */
-const replayScore = (params: PolicyParams, ledgers: readonly (readonly ClosedBet[])[]): number => {
+const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number => {
   let earned = 0;
   let picks = 0;
-  for (const bets of ledgers) {
-    for (const opening of bets) {
-      const at = opening.createdAt;
-      const known = bets.filter((b) => b.state.closedAt <= at);
-      const available = bets.filter((b) => b.createdAt <= at && b.state.closedAt > at);
-      const choice = allocate(
-        {
-          bets: [
-            ...known,
-            ...available.map((b): Bet => ({ ...b, spentUsd: 0, state: { kind: "open" } })),
-          ],
-          busy: new Map(),
-          products: [...new Set(bets.map((b) => b.productId))],
-        },
-        params,
-      );
-      const picked =
-        choice.kind === "work" ? available.find((b) => b.id === choice.betId) : undefined;
-      if (picked) {
-        earned += yieldOf(picked) / Math.max(picked.spentUsd, 0.01);
-        picks += 1;
-      }
+  for (const opening of bets) {
+    const at = opening.createdAt;
+    const known = bets.filter((b) => b.state.closedAt <= at);
+    const available = bets.filter((b) => b.createdAt <= at && b.state.closedAt > at);
+    const choice = allocate(
+      {
+        bets: [
+          ...known,
+          ...available.map((b): Bet => ({ ...b, spentUsd: 0, state: { kind: "open" } })),
+        ],
+        busy: new Map(),
+        products: [...new Set(bets.map((b) => b.productId))],
+      },
+      params,
+    );
+    const picked =
+      choice.kind === "work" ? available.find((b) => b.id === choice.betId) : undefined;
+    if (picked) {
+      earned += yieldOf(picked) / Math.max(picked.spentUsd, 0.01);
+      picks += 1;
     }
   }
   return picks === 0 ? 0 : earned / picks;
 };
 
 /** The best-replaying policy. The incumbent is a candidate and wins ties, so a swap is never a step down. */
-export const dream = (
-  incumbent: PolicyParams,
-  ledgers: readonly (readonly Bet[])[],
-): PolicyParams => {
-  const closed = ledgers.map((bets) => bets.filter(isClosed));
-  if (closed.reduce((n, bets) => n + bets.length, 0) < MIN_BETS_TO_DREAM) {
+export const dream = (incumbent: PolicyParams, bets: readonly Bet[]): PolicyParams => {
+  const closed = bets.filter(isClosed);
+  if (closed.length < MIN_BETS_TO_DREAM) {
     return incumbent;
   }
   let best = incumbent;

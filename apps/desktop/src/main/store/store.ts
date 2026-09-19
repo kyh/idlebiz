@@ -966,7 +966,7 @@ export const recordBetSpend = (betId: string, costUsd: number): void => {
 };
 
 const retune = (active: ActiveCompany): void => {
-  const next = dream(active.policy, [active.bets]);
+  const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
     active.policy = next;
     atomicWrite(policyFile(active.company.id), JSON.stringify(next, null, 2));

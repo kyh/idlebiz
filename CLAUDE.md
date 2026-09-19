@@ -38,7 +38,8 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 - **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`
   against the closed bets and swaps only to a strictly better scorer, so the incumbent never
   loses to a tie. It stays on the defaults below eight closed bets. Steering changes go in
-  the policy, not into prompts as advice: briefs carry the ledger as facts only.
+  the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
+  single-player: the replay only ever sees this company's bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, including the browser: `BrowserWatch` holds any
   page-changing `agent-browser` verb on a non-loopback site until the founder signs for
   that site, once per run. Employee sessions also load the founder's own CLI settings, so
