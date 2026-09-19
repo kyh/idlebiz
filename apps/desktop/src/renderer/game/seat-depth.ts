@@ -8,7 +8,8 @@
 import { BUST, characterDepth } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
 import type { PixelPoint } from "@/shared/office-layout-schema";
-import { opaqueAt, type OpaqueMask } from "@/shared/office-sight";
+import { opaqueAt } from "@/shared/office-sight";
+import type { OpaqueMask } from "@/shared/office-sight";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;
@@ -35,13 +36,13 @@ interface PixelRect {
  * The whole-pixel rect where a bust seated at `seat` and `image` overlap, or null when
  * their bounds don't meet — decided from bounds alone, before any texture is read.
  */
-export function bustOverlapRect(seat: PixelPoint, image: RoomImage): PixelRect | null {
+export const bustOverlapRect = (seat: PixelPoint, image: RoomImage): PixelRect | null => {
   const x0 = Math.floor(Math.max(seat.x - BUST.halfWidth, image.x));
   const x1 = Math.ceil(Math.min(seat.x + BUST.halfWidth, image.x + image.width));
   const y0 = Math.floor(Math.max(seat.y - BUST.height, image.y));
   const y1 = Math.ceil(Math.min(seat.y, image.y + image.height));
-  return x1 <= x0 || y1 <= y0 ? null : { x0, y0, x1, y1 };
-}
+  return x1 <= x0 || y1 <= y0 ? null : { x0, x1, y0, y1 };
+};
 
 /**
  * Does a seated bust at `seat` touch any opaque pixel of `image`?
@@ -55,39 +56,49 @@ export function bustOverlapRect(seat: PixelPoint, image: RoomImage): PixelRect |
  * miss. TS types a Uint8Array read as `number`, so nothing would flag that; keep every
  * index an integer inside the mask instead of trusting placements to stay aligned.
  */
-export function bustOverlaps(
+export const bustOverlaps = (
   seat: PixelPoint,
   image: RoomImage,
   maskOf: () => OpaqueMask | null,
-): boolean {
+): boolean => {
   const rect = bustOverlapRect(seat, image);
-  if (!rect) return false;
+  if (!rect) {
+    return false;
+  }
   const mask = maskOf();
-  if (!mask) return true;
-  for (let y = rect.y0; y < rect.y1; y++) {
+  if (!mask) {
+    return true;
+  }
+  for (let y = rect.y0; y < rect.y1; y += 1) {
     const dy = Math.floor(y - image.y);
-    for (let x = rect.x0; x < rect.x1; x++) {
-      if (opaqueAt(mask, image, Math.floor(x - image.x), dy)) return true;
+    for (let x = rect.x0; x < rect.x1; x += 1) {
+      if (opaqueAt(mask, image, Math.floor(x - image.x), dy)) {
+        return true;
+      }
     }
   }
   return false;
-}
+};
 
 /**
  * Depth a seated employee renders at: just above the topmost entity-band image their
  * bust overlaps. Overhead props are meant to stay above actors, so a seat never lifts
  * past them.
  */
-export function seatDepth<T extends RoomImage>(
+export const seatDepth = <T extends RoomImage>(
   seat: PixelPoint,
   room: readonly T[],
   maskOf: (image: T) => OpaqueMask | null,
-): number {
+): number => {
   let depth = characterDepth(seat.y);
   for (const image of room) {
-    if (image.depth <= depth || image.depth >= DEPTH.overhead) continue;
-    if (!bustOverlaps(seat, image, () => maskOf(image))) continue;
-    depth = image.depth;
+    if (image.depth <= depth || image.depth >= DEPTH.overhead) {
+      continue;
+    }
+    if (!bustOverlaps(seat, image, () => maskOf(image))) {
+      continue;
+    }
+    depth = Math.max(depth, image.depth);
   }
   return depth + SEAT_LIFT;
-}
+};

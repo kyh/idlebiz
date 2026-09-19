@@ -8,13 +8,14 @@ import { RichText } from "@/renderer/ui/linkify";
 import { productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
-import { taskIn, type Product, type TaskIn } from "@/shared/domain";
+import { taskIn } from "@/shared/domain";
+import type { Employee, Product, TaskIn } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { errorMessage } from "@/shared/errors";
 import { formatDate } from "@/shared/format";
 import { cn } from "cn";
 
-const ShipRow = memo(function ShipRow({
+const ShipRowView = ({
   t,
   by,
   companyId,
@@ -22,7 +23,7 @@ const ShipRow = memo(function ShipRow({
   t: TaskIn<"done">;
   by: string;
   companyId: string;
-}) {
+}) => {
   const [open, setOpen] = useState(false);
   const summary = t.state.summary ?? "";
   const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
@@ -48,9 +49,41 @@ const ShipRow = memo(function ShipRow({
       ) : null}
     </div>
   );
-});
+};
+const ShipRow = memo(ShipRowView);
 
-function ProductCard({
+const ShippingLog = ({
+  shown,
+  employees,
+  companyId,
+}: {
+  shown: TaskIn<"done">[] | null;
+  employees: Employee[];
+  companyId: string;
+}) => {
+  if (shown === null) {
+    return <div className="text-sm text-fg-dim">Loading…</div>;
+  }
+  if (shown.length === 0) {
+    return (
+      <div className="text-sm text-fg-dim">
+        Nothing shipped yet — the team is just getting started.
+      </div>
+    );
+  }
+  return shown
+    .toReversed()
+    .map((t) => (
+      <ShipRow
+        key={t.id}
+        t={t}
+        by={employeeName(employees, t.assigneeId, "team")}
+        companyId={companyId}
+      />
+    ));
+};
+
+const ProductCard = ({
   product,
   status,
   selected,
@@ -64,14 +97,17 @@ function ProductCard({
   onSelect: () => void;
   onOpen: (overlay: Overlay) => void;
   onNote: (note: string) => void;
-}) {
+}) => {
   const state = productStateOf(status);
-  const open = () =>
-    bridge()
-      .openProduct({ productId: product.id })
-      .catch((cause) => onNote(errorMessage(cause)));
+  const open = async () => {
+    try {
+      await bridge().openProduct({ productId: product.id });
+    } catch (error) {
+      onNote(errorMessage(error));
+    }
+  };
   return (
-    <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5" data-sel={selected}>
+    <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5">
       <button type="button" onClick={onSelect} className="text-left">
         <div className="flex items-baseline justify-between gap-2">
           <span className={cn("truncate text-sm", selected ? "text-accent-lo" : "text-fg")}>
@@ -90,12 +126,18 @@ function ProductCard({
         </div>
         <div className="mt-0.5 text-xs text-fg-dim">
           {product.ships} shipped
-          {product.users !== null ? ` · ${product.users} users` : ""}
+          {product.users === null ? "" : ` · ${product.users} users`}
           {status?.deploy ? ` · ${status.deploy.url}` : ""}
         </div>
       </button>
       <div className="flex gap-1.5">
-        <button type="button" onClick={() => void open()} className="px-chip">
+        <button
+          type="button"
+          onClick={() => {
+            void open();
+          }}
+          className="px-chip"
+        >
           ▶ Open
         </button>
         <button
@@ -113,9 +155,9 @@ function ProductCard({
       </div>
     </div>
   );
-}
+};
 
-function NewProduct({ onNote }: { onNote: (note: string) => void }) {
+const NewProduct = ({ onNote }: { onNote: (note: string) => void }) => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -127,11 +169,10 @@ function NewProduct({ onNote }: { onNote: (note: string) => void }) {
       setName("");
       setDescription("");
       setOpen(false);
-    } catch (cause) {
-      onNote(errorMessage(cause));
-    } finally {
-      setBusy(false);
+    } catch (error) {
+      onNote(errorMessage(error));
     }
+    setBusy(false);
   };
   if (!open) {
     return (
@@ -165,7 +206,9 @@ function NewProduct({ onNote }: { onNote: (note: string) => void }) {
         </button>
         <button
           type="button"
-          onClick={() => void submit()}
+          onClick={() => {
+            void submit();
+          }}
           disabled={busy || !name.trim() || !description.trim()}
           className="px-btn-accent px-btn"
         >
@@ -174,15 +217,15 @@ function NewProduct({ onNote }: { onNote: (note: string) => void }) {
       </div>
     </div>
   );
-}
+};
 
-export function Ships({
+export const Ships = ({
   onOpen,
   onClose,
 }: {
   onOpen: (overlay: Overlay) => void;
   onClose: () => void;
-}) {
+}) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
   const products = useStore((s) => s.products);
@@ -190,17 +233,17 @@ export function Ships({
   const [note, showNote] = useTransientNote(2500);
   // null: the whole company's log
   const [selected, setSelected] = useState<string | null>(null);
-  const ships = useAsync(
-    async () =>
-      company
-        ? (await bridge().listTasks({ companyId: company.id, status: ["done"] }))
-            .filter(taskIn("done"))
-            .filter((t) => t.state.summary)
-        : [],
-    [company],
-  );
+  const ships = useAsync(async () => {
+    if (!company) {
+      return [];
+    }
+    const done = await bridge().listTasks({ companyId: company.id, status: ["done"] });
+    return done.filter(taskIn("done")).filter((t) => t.state.summary);
+  }, [company]);
 
-  if (!company) return null;
+  if (!company) {
+    return null;
+  }
   const companyId = company.id;
   // work shipped before products existed names none; it was the first product's
   const firstId = products[0]?.id;
@@ -208,10 +251,13 @@ export function Ships({
     selected === null || t.productId === selected || (t.productId === null && selected === firstId);
   const shown = ships?.filter(ofSelected) ?? null;
 
-  const openWorkspace = () =>
-    bridge()
-      .openCompanyPath({ companyId, rel: "" })
-      .catch((cause) => showNote(errorMessage(cause)));
+  const openWorkspace = async () => {
+    try {
+      await bridge().openCompanyPath({ companyId, rel: "" });
+    } catch (error) {
+      showNote(errorMessage(error));
+    }
+  };
 
   return (
     <Modal
@@ -222,7 +268,9 @@ export function Ships({
       actions={
         <button
           type="button"
-          onClick={() => void openWorkspace()}
+          onClick={() => {
+            void openWorkspace();
+          }}
           className="px-btn"
           title="Reveal the real folder where the team works"
         >
@@ -251,26 +299,9 @@ export function Ships({
           {selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`}
         </div>
         <div className="space-y-2">
-          {shown === null ? (
-            <div className="text-sm text-fg-dim">Loading…</div>
-          ) : shown.length === 0 ? (
-            <div className="text-sm text-fg-dim">
-              Nothing shipped yet — the team is just getting started.
-            </div>
-          ) : (
-            shown
-              .toReversed()
-              .map((t) => (
-                <ShipRow
-                  key={t.id}
-                  t={t}
-                  by={employeeName(employees, t.assigneeId, "team")}
-                  companyId={companyId}
-                />
-              ))
-          )}
+          <ShippingLog shown={shown} employees={employees} companyId={companyId} />
         </div>
       </div>
     </Modal>
   );
-}
+};

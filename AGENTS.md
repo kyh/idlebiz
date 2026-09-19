@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**IdleBiz** is a Pokémon-style idle business sim where the employees are the player's own
+**IdleBiz** is a retro RPG-style idle business sim where the employees are the player's own
 coding CLIs. One Electron app (`apps/desktop`) spawns real `claude` / `codex` sessions and
 saves the whole company as human-readable markdown under `~/.idlebiz/`; a small Next.js
 landing page (`apps/web`) ships the download and the Stripe Connect OAuth hop. This is the
@@ -55,6 +55,8 @@ only remote check, and `pnpm verify` runs the same `next build`):
 ```sh
 pnpm verify
 ```
+
+**Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. `no-await-in-loop` is the one deliberate override (sequential awaits are intentional). Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
@@ -114,7 +116,7 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 | Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
-The last row is a hard gate, not a convenience: `renderer/ui/poke-onboarding.tsx` calls
+The last row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` calls
 `generateHires`, which dispatches a real agent run (`main/agents/onboarding.ts`), and
 `finalize()` bails when no hires come back. Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
 bundled seeded save. Employee runs still use the signed-in CLI.
@@ -156,6 +158,9 @@ rather than crashing boot.
   resolve only within the active company. There is no company switching during a launch.
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
+- **Headless interactions are Base UI** (`@base-ui/react/<part>`), skinned with px-kit:
+  `renderer/ui/modal.tsx` (Dialog) and `renderer/ui/choice-menu.tsx` (Toolbar) are the
+  patterns. Don't hand-roll a dialog, menu or toggle.
 - **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
   unlayered, so they win over any Tailwind utility that sets the same property. Size and
   colour belong in the kit as a class, never per-component. Full explanation in `CLAUDE.md`.
@@ -185,6 +190,16 @@ rather than crashing boot.
   stamps, persists and fans out one `ActivityEvent` (`shared/activity.ts`, a discriminated
   union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a
   payload, and a second emit path would be a listener somebody forgot.
+- **The activity log is an audit trail, not a query store.** State that outlives a run is
+  written where it is known: the founder's digest folds into `state/since-last-look.json` as
+  each event publishes (`store.logActivity`, `main/store/digest.ts`), and what a run leaves
+  for the next — the session to resume, where the real numbers stood — sits in
+  `agents/<slug>/run-state.json`, so AGENTS.md changes only when the instructions do.
+  The brief's "recently shipped" lines come from `state/recent-ships.json`, written with the
+  ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
+  the renderer, whose feed starts empty every launch. Company-level running state goes in
+  `<company>/state/` (path helpers in `main/paths.ts`); what the founder configured
+  (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
   so there is nothing to keep in sync.

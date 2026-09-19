@@ -10,7 +10,8 @@ import {
   reachableTiles,
   walkGridOf,
 } from "./office-grid";
-import { officeLayoutSchema, type OfficeLayoutData } from "./office-layout-schema";
+import { officeLayoutSchema } from "./office-layout-schema";
+import type { OfficeLayoutData } from "./office-layout-schema";
 
 // A 10x6 office of 16px cells. The body is 16px wide, so a node needs its own
 // cell AND the one to its right open: lanes are two cells wide.
@@ -25,30 +26,30 @@ import { officeLayoutSchema, type OfficeLayoutData } from "./office-layout-schem
 const OPEN = ["1111111111", "1000011001", "1000011001", "1000000001", "1000011001", "1111111111"];
 const SEALED = ["1111111111", "1000011001", "1000011001", "1000011001", "1000011001", "1111111111"];
 
-const spawn = { x: 24, y: 24 }; // node (1,1), in the west room
-const eastSpot = { x: 120, y: 24 }; // node (7,1), in the east room
+// node (1,1), in the west room
+const spawn = { x: 24, y: 24 };
+// node (7,1), in the east room
+const eastSpot = { x: 120, y: 24 };
 
-function office(
+const office = (
   collision: readonly string[],
   extra: Partial<OfficeLayoutData> = {},
-): OfficeLayoutData {
-  return {
-    version: 2,
-    tile: 32,
-    width: 160,
-    height: 96,
-    cell: 16,
-    cols: 10,
-    rows: 6,
-    spawn,
-    door: spawn,
-    seats: [],
-    pois: [],
-    objects: [],
-    collision: [...collision],
-    ...extra,
-  };
-}
+): OfficeLayoutData => ({
+  cell: 16,
+  collision: [...collision],
+  cols: 10,
+  door: spawn,
+  height: 96,
+  objects: [],
+  pois: [],
+  rows: 6,
+  seats: [],
+  spawn,
+  tile: 32,
+  version: 2,
+  width: 160,
+  ...extra,
+});
 
 /** The east room's spot as a workstation: its chair cell becomes furniture. */
 const eastSeat: Partial<OfficeLayoutData> = { seats: [{ role: "work", ...eastSpot }] };
@@ -57,9 +58,12 @@ describe("walk grid", () => {
   const grid = walkGridOf(office(OPEN));
 
   it("blocks a body whose corners touch a solid cell", () => {
-    expect(bodyBlockedAt(grid, 24, 24)).toBe(false); // cells 1,2 of row 1: open
-    expect(bodyBlockedAt(grid, 72, 24)).toBe(true); // cells 4,5: 5 is the wall
-    expect(bodyBlockedAt(grid, -4, 24)).toBe(true); // off-grid is solid
+    // cells 1,2 of row 1: open
+    expect(bodyBlockedAt(grid, 24, 24)).toBe(false);
+    // cells 4,5: 5 is the wall
+    expect(bodyBlockedAt(grid, 72, 24)).toBe(true);
+    // off-grid is solid
+    expect(bodyBlockedAt(grid, -4, 24)).toBe(true);
   });
 
   it("snaps a blocked target to the nearest walkable node", () => {
@@ -72,7 +76,9 @@ describe("walk grid", () => {
     const path = findPath(grid, spawn, eastSpot);
     expect(path?.at(-1)).toEqual(eastSpot);
     // every waypoint is somewhere the body can actually stand
-    for (const p of path ?? []) expect(bodyBlockedAt(grid, p.x, p.y), `${p.x},${p.y}`).toBe(false);
+    for (const p of path ?? []) {
+      expect(bodyBlockedAt(grid, p.x, p.y), `${p.x},${p.y}`).toBe(false);
+    }
   });
 
   it("ends on the snapped node when the target itself is blocked", () => {
@@ -107,7 +113,7 @@ describe("walk grid", () => {
 
 describe("layoutIssues", () => {
   it("is clean when everything the layout promises can be walked to", () => {
-    expect(layoutIssues(office(OPEN, { pois: [{ x: 120, y: 56, face: "up" }] }))).toEqual([]);
+    expect(layoutIssues(office(OPEN, { pois: [{ face: "up", x: 120, y: 56 }] }))).toEqual([]);
   });
 
   it("is clean with a seat whose chair is solid but whose desk side is walkable", () => {
@@ -122,7 +128,7 @@ describe("layoutIssues", () => {
 
   it("names an unreachable point of interest and door", () => {
     const issues = layoutIssues(
-      office(SEALED, { door: { x: 120, y: 56 }, pois: [{ x: 120, y: 40, face: "down" }] }),
+      office(SEALED, { door: { x: 120, y: 56 }, pois: [{ face: "down", x: 120, y: 40 }] }),
     );
     expect(issues).toContain("door 120,56 is unreachable from spawn");
     expect(issues).toContain("poi 0 (facing down at 120,40) is unreachable from spawn");
@@ -132,7 +138,7 @@ describe("layoutIssues", () => {
     const twice = office(OPEN, {
       seats: [
         { role: "work", x: 24, y: 40 },
-        { role: "rest", x: 24, y: 40, sit: "left" },
+        { role: "rest", sit: "left", x: 24, y: 40 },
       ],
     });
     expect(layoutIssues(twice)).toEqual(["seat 1 (rest at 24,40) duplicates seat 0"]);

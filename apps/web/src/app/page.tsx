@@ -8,7 +8,10 @@ import { Cta } from "@/app/cta";
 
 const GITHUB_REPO = siteConfig.githubRepo;
 
-type Download = { url: string; version: string | null };
+interface Download {
+  url: string;
+  version: string | null;
+}
 
 // fallback for every failure mode: API down or rate-limited, no .dmg on the release
 const RELEASES_PAGE: Download = {
@@ -17,19 +20,17 @@ const RELEASES_PAGE: Download = {
 };
 
 const releaseSchema = z.object({
+  assets: z.array(z.object({ browser_download_url: z.string(), name: z.string() })),
   tag_name: z.string().optional(),
-  assets: z.array(z.object({ name: z.string(), browser_download_url: z.string() })),
 });
 
-function MacLogoIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 1024 1024" fill="currentColor" aria-hidden>
-      <path d="M849.124134 704.896288c-1.040702 3.157923-17.300015 59.872622-57.250912 118.190843-34.577516 50.305733-70.331835 101.018741-126.801964 101.909018-55.532781 0.976234-73.303516-33.134655-136.707568-33.134655-63.323211 0-83.23061 32.244378-135.712915 34.110889-54.254671 2.220574-96.003518-54.951543-130.712017-105.011682-70.934562-102.549607-125.552507-290.600541-52.30118-416.625816 36.040844-63.055105 100.821243-103.135962 171.364903-104.230899 53.160757-1.004887 103.739712 36.012192 136.028093 36.012192 33.171494 0 94.357018-44.791136 158.90615-38.089503 27.02654 1.151219 102.622262 11.298324 151.328567 81.891102-3.832282 2.607384-90.452081 53.724599-89.487104 157.76107C739.079832 663.275355 847.952448 704.467523 849.124134 704.896288M633.69669 230.749408c29.107945-35.506678 48.235584-84.314291 43.202964-132.785236-41.560558 1.630127-92.196819 27.600615-122.291231 62.896492-26.609031 30.794353-50.062186 80.362282-43.521213 128.270409C557.264926 291.935955 604.745311 264.949324 633.69669 230.749408" />
-    </svg>
-  );
-}
+const MacLogoIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 1024 1024" fill="currentColor" aria-hidden>
+    <path d="M849.124134 704.896288c-1.040702 3.157923-17.300015 59.872622-57.250912 118.190843-34.577516 50.305733-70.331835 101.018741-126.801964 101.909018-55.532781 0.976234-73.303516-33.134655-136.707568-33.134655-63.323211 0-83.23061 32.244378-135.712915 34.110889-54.254671 2.220574-96.003518-54.951543-130.712017-105.011682-70.934562-102.549607-125.552507-290.600541-52.30118-416.625816 36.040844-63.055105 100.821243-103.135962 171.364903-104.230899 53.160757-1.004887 103.739712 36.012192 136.028093 36.012192 33.171494 0 94.357018-44.791136 158.90615-38.089503 27.02654 1.151219 102.622262 11.298324 151.328567 81.891102-3.832282 2.607384-90.452081 53.724599-89.487104 157.76107C739.079832 663.275355 847.952448 704.467523 849.124134 704.896288M633.69669 230.749408c29.107945-35.506678 48.235584-84.314291 43.202964-132.785236-41.560558 1.630127-92.196819 27.600615-122.291231 62.896492-26.609031 30.794353-50.062186 80.362282-43.521213 128.270409C557.264926 291.935955 604.745311 264.949324 633.69669 230.749408" />
+  </svg>
+);
 
-async function getLatestRelease(): Promise<Download> {
+const getLatestRelease = async (): Promise<Download> => {
   "use cache";
   cacheLife("hours");
   cacheTag("download-url");
@@ -38,11 +39,15 @@ async function getLatestRelease(): Promise<Download> {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
     });
-    if (!res.ok) return RELEASES_PAGE;
+    if (!res.ok) {
+      return RELEASES_PAGE;
+    }
 
     const data: unknown = await res.json();
     const release = releaseSchema.safeParse(data);
-    if (!release.success) return RELEASES_PAGE;
+    if (!release.success) {
+      return RELEASES_PAGE;
+    }
 
     const dmg = release.data.assets.find((a) => a.name.endsWith(".dmg"));
     return {
@@ -52,9 +57,9 @@ async function getLatestRelease(): Promise<Download> {
   } catch {
     return RELEASES_PAGE;
   }
-}
+};
 
-export default async function Page() {
+const Page = async () => {
   const { url: downloadUrl, version } = await getLatestRelease();
 
   return (
@@ -114,4 +119,6 @@ export default async function Page() {
       </footer>
     </main>
   );
-}
+};
+
+export default Page;

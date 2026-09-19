@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
@@ -7,47 +7,47 @@ const configDir = import.meta.dirname;
 
 export default defineConfig({
   main: {
-    resolve: {
-      alias: { "@": resolve(configDir, "src") },
-    },
     build: {
-      outDir: ".output/app/main",
       // bundle the workspace packages' source (raw .ts — must be inlined)
       externalizeDeps: { exclude: ["@repo/agent-driver", "@repo/stripe-connect-protocol"] },
+      outDir: ".output/app/main",
       rollupOptions: {
         // sharp is native: keep it external so it loads from node_modules at runtime
         external: ["electron", "sharp"],
-        input: { index: resolve(configDir, "src/main/index.ts") },
+        input: { index: path.resolve(configDir, "src/main/index.ts") },
       },
+    },
+    resolve: {
+      alias: { "@": path.resolve(configDir, "src") },
     },
   },
   preload: {
-    resolve: {
-      alias: { "@": resolve(configDir, "src") },
-    },
     build: {
-      outDir: ".output/app/preload",
       lib: {
-        entry: resolve(configDir, "src/preload/index.ts"),
+        entry: path.resolve(configDir, "src/preload/index.ts"),
         formats: ["cjs"],
       },
+      outDir: ".output/app/preload",
       rollupOptions: {
         external: ["electron"],
         output: { entryFileNames: "index.js" },
       },
     },
+    resolve: {
+      alias: { "@": path.resolve(configDir, "src") },
+    },
   },
   renderer: {
-    plugins: [tailwindcss(), react()],
-    publicDir: resolve(configDir, "public"),
-    resolve: {
-      alias: { "@": resolve(configDir, "src") },
-    },
     build: {
       outDir: ".output/app/renderer",
       rollupOptions: {
-        input: { index: resolve(configDir, "src/renderer/index.html") },
+        input: { index: path.resolve(configDir, "src/renderer/index.html") },
       },
+    },
+    plugins: [tailwindcss(), react()],
+    publicDir: path.resolve(configDir, "public"),
+    resolve: {
+      alias: { "@": path.resolve(configDir, "src") },
     },
   },
 });

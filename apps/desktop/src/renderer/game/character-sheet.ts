@@ -3,18 +3,10 @@
 // called. No Phaser here, so the seat oracle and the movement math can be
 // unit-tested; loading the sheet into a scene is characters.ts.
 import { DEPTH } from "@/renderer/game/config";
-import {
-  CHAR_ORIGIN_X,
-  CHAR_ORIGIN_Y,
-  FRAME_H,
-  FRAME_W,
-  HEAD_ROW,
-  SOLE_OFFSET,
-  type Dir,
-  type SitSide,
-} from "@/shared/character-frame";
+import { CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW, SOLE_OFFSET } from "@/shared/character-frame";
+import type { Dir, SitSide } from "@/shared/character-frame";
 
-export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide };
+export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@/shared/character-frame";
 
 // Six frames per row: walk down/left/right/up (rows 0-3), then sit-left (row 4)
 // and sit-right (row 5).
@@ -22,9 +14,7 @@ export const DIR_START = { down: 0, left: 6, right: 12, up: 18 } satisfies Recor
 export const SIT_START = { left: 24, right: 30 } satisfies Record<SitSide, number>;
 
 /** Depth of a character whose origin sits at world `y`. */
-export function characterDepth(y: number): number {
-  return DEPTH.entityBase + y + SOLE_OFFSET;
-}
+export const characterDepth = (y: number): number => DEPTH.entityBase + y + SOLE_OFFSET;
 
 /** Standing frame index for a direction (first frame of that direction's strip). */
 export const idleFrame = (dir: Dir): number => DIR_START[dir];
@@ -36,10 +26,10 @@ export const idleFrame = (dir: Dir): number => DIR_START[dir];
  * (seat-depth.ts) doesn't dangle legs across it.
  */
 export const SEAT_CROP = {
+  h: Math.round(FRAME_H * CHAR_ORIGIN_Y),
+  w: FRAME_W,
   x: 0,
   y: 0,
-  w: FRAME_W,
-  h: Math.round(FRAME_H * CHAR_ORIGIN_Y),
 } as const;
 
 /** Silhouette of that bust around its origin — what a seat tests for overlap. */
@@ -54,14 +44,12 @@ export interface CharacterAnims {
   readonly sit: Readonly<Record<SitSide, string>>;
 }
 
-export function characterAnims(key: string): CharacterAnims {
-  return {
-    walk: {
-      down: `${key}-walk-down`,
-      left: `${key}-walk-left`,
-      right: `${key}-walk-right`,
-      up: `${key}-walk-up`,
-    },
-    sit: { left: `${key}-sit-left`, right: `${key}-sit-right` },
-  };
-}
+export const characterAnims = (key: string): CharacterAnims => ({
+  sit: { left: `${key}-sit-left`, right: `${key}-sit-right` },
+  walk: {
+    down: `${key}-walk-down`,
+    left: `${key}-walk-left`,
+    right: `${key}-walk-right`,
+    up: `${key}-walk-up`,
+  },
+});

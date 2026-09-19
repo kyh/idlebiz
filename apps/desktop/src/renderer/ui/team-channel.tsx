@@ -17,7 +17,44 @@ const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
 
 const inFeed = (a: ActivityEvent): boolean => FEED_KINDS.has(a.kind);
 
-export function TeamChannel() {
+const FeedRow = ({ e, name }: { e: ActivityEvent; name: string }) => {
+  switch (e.kind) {
+    case "ship": {
+      return (
+        <div style={{ color: "var(--accent-lo)" }}>
+          📦 <span className="text-fg">{name}</span> shipped: {e.message}
+        </div>
+      );
+    }
+    case "runner.resting": {
+      return (
+        <div className="text-fg-dim">
+          ☕ {e.payload.runner} crew hit their limit — back at {formatTime(e.payload.until)}
+        </div>
+      );
+    }
+    case "org.hired": {
+      return <div className="text-fg-dim">🤝 {e.payload.name} joined the team</div>;
+    }
+    case "org.released": {
+      return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
+    }
+    case "chat": {
+      const founder = e.employeeId === null || e.employeeId === undefined;
+      return (
+        <div>
+          <span style={{ color: founder ? "var(--warn)" : "var(--accent-lo)" }}>{name}</span>{" "}
+          <span className="text-[#4c5064]">{e.message}</span>
+        </div>
+      );
+    }
+    default: {
+      return null;
+    }
+  }
+};
+
+export const TeamChannel = () => {
   const employees = useStore((s) => s.employees);
   const activity = useStore((s) => s.activity);
   const company = useStore((s) => s.company);
@@ -33,26 +70,34 @@ export function TeamChannel() {
   const newest = feed.at(-1)?.createdAt ?? null;
 
   useEffect(() => {
-    if (newest === null) return;
+    if (newest === null) {
+      return;
+    }
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight });
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight });
+    }
   }, [newest]);
 
   // hide while a dialogue/modal is up — a half-covered window reads as broken
-  if (!company || modalOpen) return null;
+  if (!company || modalOpen) {
+    return null;
+  }
 
   const nameOf = (id?: string | null): string => (id ? employeeName(employees, id, "team") : "you");
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || submission.kind === "sending") return;
+    if (!text || submission.kind === "sending") {
+      return;
+    }
     setSubmission({ kind: "sending" });
     try {
       await sendFounderChat(text);
       setDraft("");
       setSubmission({ kind: "ready" });
-    } catch (cause) {
-      setSubmission({ kind: "failed", message: errorMessage(cause) });
+    } catch (error) {
+      setSubmission({ kind: "failed", message: errorMessage(error) });
     }
   };
 
@@ -92,7 +137,9 @@ export function TeamChannel() {
         />
         <button
           type="button"
-          onClick={() => void send()}
+          onClick={() => {
+            void send();
+          }}
           disabled={!draft.trim() || submission.kind === "sending"}
           aria-label={submission.kind === "sending" ? "Sending message" : "Send message"}
           className="px-btn"
@@ -107,36 +154,4 @@ export function TeamChannel() {
       ) : null}
     </div>
   );
-}
-
-function FeedRow({ e, name }: { e: ActivityEvent; name: string }) {
-  switch (e.kind) {
-    case "ship":
-      return (
-        <div style={{ color: "var(--accent-lo)" }}>
-          📦 <span className="text-fg">{name}</span> shipped: {e.message}
-        </div>
-      );
-    case "runner.resting":
-      return (
-        <div className="text-fg-dim">
-          ☕ {e.payload.runner} crew hit their limit — back at {formatTime(e.payload.until)}
-        </div>
-      );
-    case "org.hired":
-      return <div className="text-fg-dim">🤝 {e.payload.name} joined the team</div>;
-    case "org.released":
-      return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
-    case "chat": {
-      const founder = e.employeeId == null;
-      return (
-        <div>
-          <span style={{ color: founder ? "var(--warn)" : "var(--accent-lo)" }}>{name}</span>{" "}
-          <span className="text-[#4c5064]">{e.message}</span>
-        </div>
-      );
-    }
-    default:
-      return null;
-  }
-}
+};

@@ -28,237 +28,339 @@ button:disabled {
   cursor: default;
 }
 
-/* ---- the founding: a night street, and an office that lights up floor by floor ---- */
+/* ---- founding: a pixel-art title card and the office coming to life ---- */
 .ob-scene {
-  background: linear-gradient(#10121b 0%, #10121b 40%, #1d2136 100%);
+  --ob-frame-w: 32px;
+  --ob-frame-h: 64px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 24px clamp(16px, 4vw, 56px) 20px;
+  background: #081320;
+  isolation: isolate;
 }
-.ob-sky {
+.ob-backdrop {
   position: absolute;
   inset: 0;
-  background: url("/onboarding/skyline.png") center bottom / cover no-repeat;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 42%,
+    #285980 0%,
+    #163956 36%,
+    #0d2238 62%,
+    #070f1b 100%
+  );
+}
+.ob-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(#9ac4dc0a 0% 25%, transparent 0% 50%) 0 0 / 4px 4px;
+}
+/* The transparent wordmark and desk props are independent artwork layers. */
+.ob-scene[data-frame="title"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 54px;
+}
+.ob-title-screen {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  text-align: center;
+}
+.ob-title-art {
+  position: relative;
+  width: min(720px, 94vw, calc((100dvh - 220px) * 1.5));
+  aspect-ratio: 3 / 2;
+}
+.ob-title-props,
+.ob-title-logo {
+  position: absolute;
+  display: block;
+  pointer-events: none;
   image-rendering: pixelated;
 }
-.ob-star {
+.ob-title-props {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ob-title-logo {
+  z-index: 1;
+  top: -3%;
+  left: 8%;
+  width: 76%;
+  height: auto;
+}
+.ob-tagline {
+  margin: 10px 0 26px;
+  color: #d0d9df;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ob-start {
+  min-width: 210px;
+}
+.ob-start:focus-visible,
+.ob-arrow:focus-visible,
+.ob-box-text:focus-visible {
+  outline: 2px solid #f2cf7b;
+  outline-offset: 5px;
+}
+.ob-start-hint {
+  margin-top: 13px;
+  color: #8eaac0;
+  font-size: 11px;
+}
+.ob-title-footer {
   position: absolute;
-  width: 2px;
-  height: 2px;
-  background: var(--light);
-  animation: ob-twinkle 2.4s steps(2, start) infinite;
-}
-@keyframes ob-twinkle {
-  50% {
-    opacity: 0.15;
-  }
+  bottom: 21px;
+  color: #607d96;
+  font-size: 10px;
 }
 
-.ob-title {
-  font-size: 64px;
-  line-height: 1;
-  color: var(--light);
-  text-shadow:
-    -3px 0 0 var(--ink),
-    3px 0 0 var(--ink),
-    0 -3px 0 var(--ink),
-    0 3px 0 var(--ink),
-    0 6px 0 var(--chrome),
-    0 9px 0 var(--ink);
-  animation: ob-drop 0.5s steps(5) both;
+/* A compact conversation set, using the same plates and dialogue as the office. */
+.ob-scene[data-frame="encounter"] {
+  --ob-founder-scale: 10;
+  --ob-mentor-scale: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--ink);
 }
-@keyframes ob-drop {
-  from {
-    transform: translateY(-32px);
-    opacity: 0;
-  }
-  60% {
-    transform: translateY(6px);
-    opacity: 1;
-  }
-  to {
-    transform: none;
-  }
+.ob-encounter {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 210px;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding-bottom: 12px;
 }
-
-/* the stage: what the step shows on the left, the office on the right, one street under both */
 .ob-stage {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  align-items: end;
-  width: 100%;
-  max-width: 56rem;
-  min-height: 220px;
-  padding-bottom: 14px;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chrome-lo);
 }
-.ob-stage-left {
-  align-self: center;
-  padding: 0 24px 24px 0;
-}
-.ob-street {
+.ob-office {
   position: absolute;
-  left: -100vw;
-  right: -100vw;
-  bottom: 0;
-  height: 14px;
-  background: var(--chrome);
-  border-top: 3px solid var(--ink);
-  box-shadow: inset 0 3px 0 0 var(--chrome-hi);
+  inset: 0;
+  pointer-events: none;
+  image-rendering: pixelated;
 }
-/* the ground under the street, so the skyline is a horizon and not a window */
-.ob-ground {
+.ob-office-wall {
   position: absolute;
-  left: -100vw;
-  right: -100vw;
-  top: 100%;
-  height: 100vh;
-  background: #151827;
-  border-top: 3px solid #10121b;
+  inset: 0 0 48%;
+  border-bottom: 6px solid var(--ink);
+  background: var(--chrome-lo);
+  box-shadow: inset 0 -6px var(--chrome);
 }
-
-.ob-building {
-  position: relative;
-  width: 232px;
-  margin: 0 auto;
-  padding: 10px 12px 0;
-  background: #313a5e;
-  border: 3px solid var(--ink);
-  border-bottom: 0;
-  box-shadow:
-    inset 3px 0 0 0 #3d4a72,
-    inset -3px 0 0 0 #262d4a;
+.ob-office-floor {
+  position: absolute;
+  inset: 52% 0 0;
+  background: url("/workspace-kit/room-builder/32/tile-11-6.png") 0 0 / 96px 96px repeat;
+  filter: brightness(0.72) saturate(0.5);
 }
-.ob-roof {
-  height: 10px;
-  margin: -13px -15px 8px;
-  background: var(--chrome);
-  border: 3px solid var(--ink);
-  box-shadow: inset 0 3px 0 0 var(--chrome-hi);
+.ob-office-board {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  width: 180px;
+  height: 138px;
+  transform: translateX(-50%);
+  background: url("/workspace-kit/office-objects/32/modern-office-32-170.png") -6px -138px / 192px
+    288px no-repeat;
 }
-.ob-floor {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+.ob-office-desk,
+.ob-office-cooler {
+  position: absolute;
+  height: auto;
+  image-rendering: pixelated;
+}
+.ob-office-desk {
+  left: 51%;
+  bottom: 16%;
+  width: 156px;
+  transform: translateX(-50%);
+}
+.ob-office-cooler {
+  right: 3%;
+  bottom: 18%;
+  width: 84px;
+}
+.ob-status {
+  position: absolute;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.ob-status strong {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ob-status > span {
+  opacity: 0.8;
+}
+.ob-status-guide {
+  right: 6%;
+  width: 34%;
+}
+.ob-status-founder {
+  left: 6%;
+  width: 40%;
+}
+.ob-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 5px 0 9px;
-  border-bottom: 2px solid #262d4a;
 }
-.ob-window {
-  height: 14px;
-  background: #1d2136;
-  border: 2px solid #10121b;
-  box-shadow: inset 0 -3px 0 0 #151827;
+.ob-progress {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
 }
-.ob-window[data-lit="true"] {
+.ob-progress > [data-lit] {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--ink);
+  background: var(--chrome-lo);
+}
+.ob-progress > [data-lit="true"] {
   background: var(--warn);
-  box-shadow:
-    inset 0 -3px 0 0 #c98f2a,
-    0 0 8px 1px rgba(232, 176, 75, 0.35);
-  animation: ob-light-on 0.5s steps(3) both;
 }
-@keyframes ob-light-on {
-  0% {
-    background: #1d2136;
-    box-shadow: none;
-  }
-  40% {
-    background: var(--face);
-  }
-  70% {
-    background: #1d2136;
-    box-shadow: none;
-  }
-}
-.ob-door {
-  width: 34px;
-  height: 36px;
-  margin: 8px auto -3px;
-  background: var(--accent-lo);
-  border: 3px solid var(--ink);
-  border-bottom: 0;
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-.ob-door[data-open="true"] {
-  background: var(--warn);
-  box-shadow: inset 0 0 0 2px var(--face);
-}
-
-/* the founder, on the street, walking to work: a 2x walk sheet stepped through its down row */
-.ob-sprite {
+.ob-founder {
+  --s: var(--ob-founder-scale);
   position: absolute;
-  /* the frame keeps 9 empty rows under the soles (CHAR_ORIGIN_Y); at 2x that is 18px below the street's top */
-  bottom: -4px;
-  width: 64px;
-  height: 128px;
+  z-index: 1;
+  left: 28%;
+  bottom: -40px;
+  width: calc(var(--ob-frame-w) * var(--s));
+  height: calc(var(--ob-frame-h) * var(--s));
   transform: translateX(-50%);
   background-repeat: no-repeat;
-  background-size: 384px 768px;
+  background-size: calc(var(--ob-frame-w) * 6 * var(--s)) calc(var(--ob-frame-h) * 6 * var(--s));
   image-rendering: pixelated;
-  transition: left 0.7s steps(7);
+  pointer-events: none;
 }
-.ob-sprite-walk {
-  animation: ob-gait 0.6s steps(6) infinite;
+.ob-founder[data-facing="back"] {
+  background-position-y: calc(var(--ob-frame-h) * -3 * var(--s));
 }
-@keyframes ob-gait {
-  from {
-    background-position-x: 0;
-  }
-  to {
-    background-position-x: -384px;
-  }
+.ob-stage[data-look="true"] .ob-founder {
+  --s: 9;
+  left: 50%;
+  bottom: 0;
 }
-
-/* the office's own emotes, at 2x: "!" when someone arrives, "…" while the agency thinks */
-.ob-emote {
-  width: 64px;
-  height: 64px;
-  background: url("/workspace-kit/emotes.png") 0 0 / 512px 64px no-repeat;
-  image-rendering: pixelated;
-  animation: ob-bob 0.5s steps(2, start) infinite alternate;
+.ob-stage[data-look="true"] .ob-status-guide {
+  display: none;
 }
-.ob-emote[data-frame="1"] {
-  background-position-x: -64px;
+.ob-stage[data-look="true"] .ob-status-founder {
+  left: 50%;
+  width: min(380px, 80%);
+  transform: translateX(-50%);
 }
-.ob-emote-door {
+.ob-mentor {
+  --s: var(--ob-mentor-scale);
   position: absolute;
-  right: 118px;
-  bottom: 44px;
+  z-index: 1;
+  right: 14%;
+  bottom: 0;
+  width: calc(var(--ob-frame-w) * var(--s));
+  height: calc(var(--ob-frame-h) * var(--s));
+  background: url("/onboarding/vc.png") center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
-@keyframes ob-bob {
-  to {
-    transform: translateY(-4px);
-  }
+.ob-arrow {
+  position: absolute;
+  z-index: 2;
+  bottom: 35%;
+  border: 0;
+  padding: 12px;
+  color: var(--light);
+  background: transparent;
+  font-family: inherit;
+  font-size: 28px;
+  line-height: 1;
 }
-
-/* the founding team arrives one at a time */
-.ob-parade > * {
-  animation: ob-arrive 0.35s steps(4) both;
+.ob-arrow:hover {
+  color: var(--accent-hi);
 }
-@keyframes ob-arrive {
-  from {
-    transform: translateY(16px);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
+.ob-arrow-l {
+  left: calc(50% - 190px);
 }
-
-/* the budget as a bar: how long the leash is, in the colours a health bar uses */
+.ob-arrow-r {
+  right: calc(50% - 190px);
+}
+.ob-emote {
+  position: absolute;
+  top: calc(18px * var(--s));
+  right: -12px;
+  transform: translateY(-50%);
+  padding: 0 8px 5px;
+  font-size: 24px;
+  line-height: 1;
+}
+.ob-panel {
+  position: absolute;
+  z-index: 2;
+  top: 76px;
+  left: 6%;
+  right: 44%;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  min-height: 0;
+}
+.ob-parade {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 8px;
+}
+.ob-team-member {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  text-align: left;
+}
 .ob-meter {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+  width: 100%;
+  padding: 16px;
 }
 .ob-meter-bar {
-  height: 16px;
+  height: 18px;
   overflow: hidden;
-  background: #1d2136;
   border: 3px solid var(--ink);
-  box-shadow: inset 0 3px 0 0 rgba(0, 0, 0, 0.35);
+  background: var(--chrome-lo);
 }
 .ob-meter-fill {
   height: 100%;
-  transition: width 0.4s steps(8);
+  transition: width 0.25s steps(6);
 }
 .ob-meter-fill[data-tone="tight"] {
   background: var(--danger);
@@ -273,45 +375,305 @@ button:disabled {
   background: repeating-linear-gradient(90deg, var(--accent) 0 8px, var(--accent-hi) 8px 16px);
 }
 
-/* the battle-start flash: two pops of white, then the office */
-.ob-flash {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  background: var(--light);
-  pointer-events: none;
-  animation: ob-flash 0.7s steps(1, end) both;
+/* Fixed dialogue space keeps the cast still while pages, inputs and choices appear. */
+.ob-dock {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 18px;
+  min-height: 0;
+  margin-inline: 12px;
+  padding: 18px 22px;
+  overflow: hidden;
 }
-@keyframes ob-flash {
-  0% {
-    opacity: 0;
-  }
-  25% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-  75% {
-    opacity: 1;
-  }
+.ob-dock:has(> .ob-actions:empty) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ob-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: end;
+  justify-self: end;
+  gap: 10px;
+  min-height: 0;
+  max-width: 320px;
+  max-height: 100%;
+  overflow: hidden;
+}
+.ob-actions:empty {
+  display: none;
+}
+.ob-auth {
+  width: 320px;
+  max-width: 100%;
+}
+.ob-auth > div > div:last-child {
+  justify-content: flex-end;
+  gap: 12px;
+}
+.ob-auth .px-btn {
+  margin-left: 0;
+}
+.ob-actions > .px-link {
+  flex-shrink: 0;
+}
+.ob-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ob-box-text {
+  min-height: 44px;
+  width: 100%;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+  color: var(--fg);
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: left;
+}
+.ob-field {
+  width: 100%;
+}
+.ob-menu {
+  position: relative;
+  width: clamp(190px, 24vw, 260px);
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  animation: none;
+}
+.ob-menu .px-menu-item {
+  white-space: normal;
 }
 
+/* Preserve the title's compact composition at smaller window sizes. */
+@media (max-height: 680px) {
+  .ob-scene {
+    gap: 6px;
+    padding-top: 14px;
+    padding-bottom: 10px;
+  }
+  .ob-tagline {
+    margin-bottom: 18px;
+  }
+  .ob-scene[data-frame="encounter"] {
+    --ob-founder-scale: 8;
+    --ob-mentor-scale: 7;
+  }
+  .ob-founder {
+    bottom: -32px;
+  }
+  .ob-stage[data-look="true"] .ob-founder {
+    --s: 7;
+  }
+}
+@media (max-width: 700px) {
+  .ob-scene {
+    padding-inline: 12px;
+  }
+  .ob-scene[data-frame="encounter"] {
+    --ob-founder-scale: 6;
+    --ob-mentor-scale: 5;
+  }
+  .ob-status {
+    top: 6px;
+    padding: 7px 8px;
+    font-size: 10px;
+  }
+  .ob-status strong {
+    font-size: 12px;
+  }
+  .ob-status-guide {
+    right: 3%;
+    width: 39%;
+  }
+  .ob-status-founder {
+    left: 3%;
+    width: 46%;
+  }
+  .ob-progress {
+    gap: 3px;
+  }
+  .ob-progress > [data-lit] {
+    width: 8px;
+    height: 8px;
+  }
+  .ob-mentor {
+    right: 10%;
+  }
+  .ob-dock {
+    gap: 12px;
+    padding-inline: 14px;
+  }
+  .ob-menu {
+    width: 190px;
+  }
+  .ob-auth {
+    width: 240px;
+  }
+  .ob-panel {
+    left: 3%;
+    right: 44%;
+    top: 70px;
+  }
+  .ob-arrow-l {
+    left: calc(50% - 140px);
+  }
+  .ob-arrow-r {
+    right: calc(50% - 140px);
+  }
+}
+@media (max-width: 520px) {
+  .ob-team-member {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ob-scene[data-frame="encounter"] {
+    --ob-founder-scale: 5;
+    --ob-mentor-scale: 4;
+  }
+  .ob-dock {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+  .ob-dock:has(> .ob-actions:empty) {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .ob-actions {
+    max-height: 120px;
+  }
+  .ob-status-row {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ob-status-guide {
+    width: 41%;
+  }
+  .ob-status-founder {
+    width: 49%;
+  }
+  .ob-mentor {
+    right: 7%;
+  }
+  .ob-panel {
+    left: 0;
+    right: 43%;
+    top: 88px;
+  }
+  .ob-meter {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .ob-meter-bar {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+  .ob-tagline {
+    max-width: 260px;
+    font-size: 12px;
+  }
+  .ob-arrow-l {
+    left: calc(50% - 110px);
+  }
+  .ob-arrow-r {
+    right: calc(50% - 110px);
+  }
+}
+@media (max-height: 620px) {
+  .ob-scene[data-frame="encounter"] {
+    --ob-founder-scale: 5;
+    --ob-mentor-scale: 4;
+  }
+  .ob-encounter {
+    grid-template-rows: minmax(0, 1fr) 190px;
+    gap: 8px;
+  }
+  .ob-founder {
+    bottom: -36px;
+  }
+  .ob-stage[data-look="true"] .ob-founder {
+    --s: 4;
+  }
+  .ob-dock {
+    padding-block: 12px;
+  }
+  .ob-office-board {
+    top: 42px;
+    width: 120px;
+    height: 92px;
+    background-position: -4px -92px;
+    background-size: 128px 192px;
+  }
+  .ob-office-floor {
+    background-size: 64px 64px;
+  }
+  .ob-office-desk {
+    width: 104px;
+  }
+  .ob-office-cooler {
+    width: 56px;
+  }
+}
+@media (max-height: 500px) {
+  .ob-scene {
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+  .ob-title-art {
+    width: min(76vw, calc((100dvh - 186px) * 1.5));
+  }
+  .ob-title-footer {
+    bottom: 10px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .ob-star,
-  .ob-title,
-  .ob-window[data-lit="true"],
-  .ob-sprite-walk,
-  .ob-emote,
-  .ob-parade > *,
-  .ob-flash {
+  .ob-scene .px-blink,
+  .ob-scene .px-menu-cursor {
     animation: none;
   }
-  .ob-sprite,
   .ob-meter-fill {
     transition: none;
   }
-  .ob-flash {
-    opacity: 1;
-  }
+}
+
+/* ---- talking to an employee: their bust beside the text, the choices above it ---- */
+.dlg {
+  position: relative;
+  width: 100%;
+  max-width: 48rem;
+}
+.dlg-box {
+  display: flex;
+  align-items: stretch;
+  gap: 20px;
+  min-height: 252px;
+  padding: 16px 20px 14px 16px;
+}
+.dlg-bust {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+.dlg-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.dlg-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 1;
 }

@@ -19,8 +19,10 @@ describe("poseForToolKind", () => {
   });
 
   it("falls back to the default when the agent gave no kind", () => {
+    // oxlint-disable-next-line unicorn/no-useless-undefined -- the parameter is required; this is the no-kind case
     expect(poseForToolKind(undefined)).toBe(DEFAULT_WORK_POSE);
     expect(poseForToolKind("")).toBe(DEFAULT_WORK_POSE);
-    expect(poseForToolKind("Read src/app.ts")).toBe(DEFAULT_WORK_POSE); // a title, not a kind
+    // a title, not a kind
+    expect(poseForToolKind("Read src/app.ts")).toBe(DEFAULT_WORK_POSE);
   });
 });

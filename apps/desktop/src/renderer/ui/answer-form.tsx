@@ -9,7 +9,17 @@ type Submission =
   | { kind: "sent" }
   | { kind: "failed"; message: string };
 
-export function AnswerForm({
+const submitLabel = (submission: Submission): string => {
+  if (submission.kind === "sent") {
+    return "Sent ✓";
+  }
+  if (submission.kind === "sending") {
+    return "Sending…";
+  }
+  return "Answer";
+};
+
+export const AnswerForm = ({
   task,
   autoFocus = false,
   onSent,
@@ -17,7 +27,7 @@ export function AnswerForm({
   task: Task;
   autoFocus?: boolean;
   onSent?: () => void;
-}) {
+}) => {
   const [answer, setAnswer] = useState("");
   const [submission, setSubmission] = useState<Submission>({ kind: "ready" });
   const mounted = useRef(false);
@@ -31,15 +41,21 @@ export function AnswerForm({
 
   const send = async () => {
     const text = answer.trim();
-    if (!text || disabled) return;
+    if (!text || disabled) {
+      return;
+    }
     setSubmission({ kind: "sending" });
     try {
       await answerQuestion(task.id, text);
-      if (!mounted.current) return;
+      if (!mounted.current) {
+        return;
+      }
       setSubmission({ kind: "sent" });
       onSent?.();
-    } catch (cause) {
-      if (mounted.current) setSubmission({ kind: "failed", message: errorMessage(cause) });
+    } catch (error) {
+      if (mounted.current) {
+        setSubmission({ kind: "failed", message: errorMessage(error) });
+      }
     }
   };
 
@@ -62,15 +78,13 @@ export function AnswerForm({
         />
         <button
           type="button"
-          onClick={() => void send()}
+          onClick={() => {
+            void send();
+          }}
           disabled={!answer.trim() || disabled}
           className="px-btn-accent px-btn"
         >
-          {submission.kind === "sent"
-            ? "Sent ✓"
-            : submission.kind === "sending"
-              ? "Sending…"
-              : "Answer"}
+          {submitLabel(submission)}
         </button>
       </div>
       {submission.kind === "failed" ? (
@@ -80,4 +94,4 @@ export function AnswerForm({
       ) : null}
     </div>
   );
-}
+};

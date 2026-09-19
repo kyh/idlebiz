@@ -5,23 +5,26 @@ import type { ConnectedAccount } from "@repo/stripe-connect-protocol/protocol";
 
 const tokenResponseSchema = z.object({
   access_token: z.string(),
-  stripe_user_id: z.string(),
+  // oxlint-disable-next-line promise/prefer-await-to-then -- zod's .catch, not a promise
   livemode: z.boolean().catch(false),
+  stripe_user_id: z.string(),
 });
 
 const tokenErrorSchema = z.object({ error_description: z.string() });
 
-export async function exchangeCode(code: string): Promise<ConnectedAccount> {
+export const exchangeCode = async (code: string): Promise<ConnectedAccount> => {
   const secret = env.STRIPE_SECRET_KEY;
-  if (!secret) throw new Error("STRIPE_SECRET_KEY not configured");
+  if (!secret) {
+    throw new Error("STRIPE_SECRET_KEY not configured");
+  }
   const res = await fetch("https://connect.stripe.com/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
       client_secret: secret,
+      code,
+      grant_type: "authorization_code",
     }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    method: "POST",
   });
   const data: unknown = await res.json();
   if (!res.ok) {
@@ -36,34 +39,40 @@ export async function exchangeCode(code: string): Promise<ConnectedAccount> {
   }
   return {
     accessToken: token.data.access_token,
-    stripeUserId: token.data.stripe_user_id,
     livemode: token.data.livemode,
+    stripeUserId: token.data.stripe_user_id,
   };
-}
+};
 
 const accountResponseSchema = z.object({ id: z.string() });
 
 /** The account id the token actually belongs to (ownership check for deauthorize). */
-export async function tokenAccountId(accessToken: string): Promise<string | null> {
+export const tokenAccountId = async (accessToken: string): Promise<string | null> => {
   const res = await fetch("https://api.stripe.com/v1/account", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    return null;
+  }
   const account = accountResponseSchema.safeParse(await res.json());
   return account.success ? account.data.id : null;
-}
+};
 
-export async function deauthorize(stripeUserId: string): Promise<void> {
+export const deauthorize = async (stripeUserId: string): Promise<void> => {
   const secret = env.STRIPE_SECRET_KEY;
   const clientId = env.STRIPE_CLIENT_ID;
-  if (!secret || !clientId) throw new Error("Stripe platform env not configured");
+  if (!secret || !clientId) {
+    throw new Error("Stripe platform env not configured");
+  }
   const res = await fetch("https://connect.stripe.com/oauth/deauthorize", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Bearer ${secret}`,
-    },
     body: new URLSearchParams({ client_id: clientId, stripe_user_id: stripeUserId }),
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    method: "POST",
   });
-  if (!res.ok) throw new Error(`deauthorize failed (${res.status})`);
-}
+  if (!res.ok) {
+    throw new Error(`deauthorize failed (${res.status})`);
+  }
+};

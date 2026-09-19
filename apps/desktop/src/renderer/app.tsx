@@ -1,13 +1,15 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useStore, type Boot } from "@/renderer/state/store";
-import { PokeOnboarding } from "@/renderer/ui/poke-onboarding";
+import { initStore, setGame, useStore } from "@/renderer/state/store";
+import type { Boot } from "@/renderer/state/store";
+import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
 import { CrashScreen } from "@/renderer/ui/crash-screen";
 import { Hud } from "@/renderer/ui/hud";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Dialogue } from "@/renderer/ui/dialogue";
+import { Digest } from "@/renderer/ui/digest";
 import { Ships } from "@/renderer/ui/ships";
 import { Inbox } from "@/renderer/ui/inbox";
 import { Teams } from "@/renderer/ui/teams";
@@ -25,37 +27,7 @@ const subscribeToHash = (onStoreChange: () => void): (() => void) => {
 
 const getHash = (): string => window.location.hash;
 
-/** The one thing the window shows over the office, by where boot got to. */
-function Screen({
-  boot,
-  overlay,
-  onOverlay,
-}: {
-  boot: Boot;
-  overlay: Overlay | null;
-  onOverlay: (overlay: Overlay | null) => void;
-}) {
-  switch (boot.kind) {
-    case "loading":
-      return null;
-    case "unreadable":
-      return <SaveUnreadable issues={boot.issues} />;
-    case "onboarding":
-      return <PokeOnboarding />;
-    case "office":
-      return (
-        <>
-          {boot.authed ? null : <AuthGate />}
-          <Hud onOpen={onOverlay} />
-          <TeamChannel />
-          <Dialogue />
-          <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
-        </>
-      );
-  }
-}
-
-function OpenOverlay({
+const OpenOverlay = ({
   overlay,
   onOpen,
   onClose,
@@ -63,26 +35,71 @@ function OpenOverlay({
   overlay: Overlay | null;
   onOpen: (overlay: Overlay) => void;
   onClose: () => void;
-}) {
-  if (overlay === null) return null;
+}) => {
+  if (overlay === null) {
+    return null;
+  }
   switch (overlay.kind) {
-    case "ships":
+    case "ships": {
       return <Ships onOpen={onOpen} onClose={onClose} />;
-    case "inbox":
+    }
+    case "inbox": {
       // Stripe connect lives in the budget modal; a Vercel ask binds a product
       return <Inbox onClose={onClose} onOpen={onOpen} />;
-    case "teams":
+    }
+    case "teams": {
       return <Teams onClose={onClose} />;
-    case "budget":
+    }
+    case "budget": {
       return <BudgetModal onClose={onClose} />;
-    case "vercel":
+    }
+    case "vercel": {
       return <ConnectVercel productId={overlay.productId} onClose={onClose} />;
-    case "settings":
+    }
+    case "settings": {
       return <Settings onClose={onClose} />;
+    }
+    // no default
   }
-}
+};
 
-export function App() {
+/** The one thing the window shows over the office, by where boot got to. */
+const Screen = ({
+  boot,
+  overlay,
+  onOverlay,
+}: {
+  boot: Boot;
+  overlay: Overlay | null;
+  onOverlay: (overlay: Overlay | null) => void;
+}) => {
+  switch (boot.kind) {
+    case "loading": {
+      return null;
+    }
+    case "unreadable": {
+      return <SaveUnreadable issues={boot.issues} />;
+    }
+    case "onboarding": {
+      return <Onboarding />;
+    }
+    case "office": {
+      return (
+        <>
+          {boot.authed ? null : <AuthGate />}
+          <Hud onOpen={onOverlay} />
+          <TeamChannel />
+          <Dialogue />
+          <Digest />
+          <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
+        </>
+      );
+    }
+    // no default
+  }
+};
+
+export const App = () => {
   const boot = useStore((s) => s.boot);
   const layout = useStore((s) => s.layout);
   const game = useStore((s) => s.game);
@@ -95,7 +112,9 @@ export function App() {
 
   // when onboarding finishes, the office scene re-boots with the new team
   useEffect(() => {
-    if (!game) return;
+    if (!game) {
+      return;
+    }
     const onDone = () => game.events.emit("company-ready");
     window.addEventListener("idlebiz:onboarded", onDone);
     return () => window.removeEventListener("idlebiz:onboarded", onDone);
@@ -120,4 +139,4 @@ export function App() {
       </div>
     </div>
   );
-}
+};

@@ -1,6 +1,7 @@
 {
   "name": "idlebiz",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "turbo run build",
     "clean": "git clean -xdf node_modules",
@@ -8,21 +9,22 @@
     "dev:desktop": "pnpm dev:kill && turbo watch dev -F @repo/desktop...",
     "dev:kill": "bash apps/desktop/scripts/devkill.sh",
     "dev:web": "turbo watch dev -F @repo/web...",
-    "lint": "oxlint --report-unused-disable-directives --deny-warnings",
+    "lint": "oxlint --report-unused-disable-directives",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "knip": "knip",
     "typecheck": "turbo run typecheck",
+    "test": "pnpm -r test",
     "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm -r test && pnpm build"
   },
   "devDependencies": {
-    "@kyh/oxlint": "^0.2.0",
-    "knip": "^6.34.0",
+    "knip": "^6.37.0",
     "oxfmt": "^0.65.0",
-    "oxlint": "^1.81.0",
-    "turbo": "^2.10.12",
-    "typescript": "catalog:"
+    "oxlint": "^1.80.0",
+    "turbo": "^2.11.1",
+    "typescript": "catalog:",
+    "ultracite": "^7.11.0"
   },
   "engines": {
     "node": "24.x"

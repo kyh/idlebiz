@@ -13,39 +13,44 @@ const catalogPath = path.join(appRoot, "src/renderer/game/room-builder-tiles.gen
 
 (async () => {
   const img = await sharp(SRC).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const W = img.info.width,
-    H = img.info.height,
-    D = img.data;
-  const cols = Math.floor(W / TILE),
-    rows = Math.floor(H / TILE);
-  fs.rmSync(outDir, { recursive: true, force: true });
+  const W = img.info.width;
+  const H = img.info.height;
+  const D = img.data;
+  const cols = Math.floor(W / TILE);
+  const rows = Math.floor(H / TILE);
+  fs.rmSync(outDir, { force: true, recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
   const tiles = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
       const buf = Buffer.alloc(TILE * TILE * 4);
       let opaque = 0;
-      for (let y = 0; y < TILE; y++) {
-        for (let x = 0; x < TILE; x++) {
+      for (let y = 0; y < TILE; y += 1) {
+        for (let x = 0; x < TILE; x += 1) {
           const so = ((r * TILE + y) * W + (c * TILE + x)) * 4;
           const po = (y * TILE + x) * 4;
           buf[po] = D[so];
           buf[po + 1] = D[so + 1];
           buf[po + 2] = D[so + 2];
           buf[po + 3] = D[so + 3];
-          if (D[so + 3] > 20) opaque++;
+          if (D[so + 3] > 20) {
+            opaque += 1;
+          }
         }
       }
-      if (opaque < 8) continue; // skip blank tiles
+      // skip blank tiles
+      if (opaque < 8) {
+        continue;
+      }
       const name = `tile-${c}-${r}.png`;
-      await sharp(buf, { raw: { width: TILE, height: TILE, channels: 4 } })
+      await sharp(buf, { raw: { channels: 4, height: TILE, width: TILE } })
         .png()
         .toFile(path.join(outDir, name));
       tiles.push({
-        id: `rb-${c}-${r}`,
         col: c,
-        row: r,
+        id: `rb-${c}-${r}`,
         path: `workspace-kit/room-builder/32/${name}`,
+        row: r,
       });
     }
   }

@@ -11,15 +11,15 @@ const ICON_1X =
 const ICON_2X =
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAATElEQVRYhe2SQQoAMAzC+v9PZ0/oChviZsCrBLQqhH0Y5l2BDn8BLsdH4DQRwG4C1CdELdAxLY4AdhOgPiFqgdNEALsJUJ8QlUD4iwV6wR7wcXzNhgAAAABJRU5ErkJggg==";
 
-function trayIcon(): Electron.NativeImage {
+const trayIcon = (): Electron.NativeImage => {
   const img = nativeImage.createFromDataURL(`data:image/png;base64,${ICON_1X}`);
   img.addRepresentation({
-    scaleFactor: 2,
     dataURL: `data:image/png;base64,${ICON_2X}`,
+    scaleFactor: 2,
   });
   img.setTemplateImage(true);
   return img;
-}
+};
 
 interface OfficeStatus {
   company: ReturnType<typeof store.getDefaultCompany>;
@@ -28,37 +28,49 @@ interface OfficeStatus {
   active: boolean;
 }
 
-function officeStatus(): OfficeStatus {
+const officeStatus = (): OfficeStatus => {
   const company = store.getDefaultCompany();
   const working = company
     ? store.listEmployees(company.id).filter((e) => e.status === "working").length
     : 0;
   return {
-    company,
-    working,
-    napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
     active: working > 0 || company?.autopilot === true,
+    company,
+    napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
+    working,
   };
-}
+};
 
-function statusLine(s: OfficeStatus): string {
-  if (!s.company) return "No company yet";
+const statusLine = (s: OfficeStatus): string => {
+  if (!s.company) {
+    return "No company yet";
+  }
   const spent = spentLabel(s.company.spentUsd);
-  if (s.working > 0) return `${s.working} working · ${spent}`;
-  if (s.napUntil !== undefined) return napLabel(s.napUntil);
+  if (s.working > 0) {
+    return `${s.working} working · ${spent}`;
+  }
+  if (s.napUntil !== undefined) {
+    return napLabel(s.napUntil);
+  }
   return `${s.company.autopilot ? "idle" : "paused"} · ${spent}`;
-}
+};
 
-function badge(s: OfficeStatus, windowless: boolean): string {
-  if (!windowless) return "";
-  if (s.working > 0) return ` ● ${s.working}`;
-  if (s.napUntil !== undefined) return " ☕";
+const badge = (s: OfficeStatus, windowless: boolean): string => {
+  if (!windowless) {
+    return "";
+  }
+  if (s.working > 0) {
+    return ` ● ${s.working}`;
+  }
+  if (s.napUntil !== undefined) {
+    return " ☕";
+  }
   return s.active ? " ●" : "";
-}
+};
 
 interface TrayHost {
-  openWindow(): void;
-  setAutopilot(on: boolean): void;
+  openWindow: () => void;
+  setAutopilot: (on: boolean) => void;
 }
 
 class AppTray {
@@ -68,7 +80,9 @@ class AppTray {
   private windowless = false;
 
   init(host: TrayHost): void {
-    if (this.tray) return;
+    if (this.tray) {
+      return;
+    }
     this.host = host;
     this.tray = new Tray(trayIcon());
     this.tray.setToolTip("IdleBiz");
@@ -82,48 +96,54 @@ class AppTray {
 
   /** Notify once when the office continues working after its last window closes. */
   setWindowless(windowless: boolean): void {
-    if (this.windowless === windowless) return;
+    if (this.windowless === windowless) {
+      return;
+    }
     this.windowless = windowless;
     const s = officeStatus();
     if (windowless && s.active && Notification.isSupported()) {
       new Notification({
-        title: "IdleBiz is still running",
         body: `${statusLine(s)} — your team keeps working in the background. The 💼 in the menu bar has status and Quit.`,
         silent: true,
+        title: "IdleBiz is still running",
       }).show();
     }
     this.rebuild();
   }
 
   private scheduleRebuild(): void {
-    if (this.rebuildTimer) return;
+    if (this.rebuildTimer) {
+      return;
+    }
     this.rebuildTimer = setTimeout(() => {
       this.rebuildTimer = null;
       this.rebuild();
-    }, 1_500);
+    }, 1500);
     this.rebuildTimer.unref?.();
   }
 
   private rebuild(): void {
-    const tray = this.tray;
-    const host = this.host;
-    if (!tray || !host) return;
+    const { tray } = this;
+    const { host } = this;
+    if (!tray || !host) {
+      return;
+    }
     const s = officeStatus();
     const autopilot = s.company?.autopilot ?? false;
     const menu = Menu.buildFromTemplate([
-      { label: `Open ${s.company?.name ?? "IdleBiz"}`, click: () => host.openWindow() },
+      { click: () => host.openWindow(), label: `Open ${s.company?.name ?? "IdleBiz"}` },
       { type: "separator" },
-      { label: statusLine(s), enabled: false },
+      { enabled: false, label: statusLine(s) },
       ...(s.company
         ? [
             {
-              label: autopilot ? "Pause the office" : "Start the office",
               click: (): void => host.setAutopilot(!autopilot),
+              label: autopilot ? "Pause the office" : "Start the office",
             },
           ]
         : []),
       { type: "separator" },
-      { label: "Quit IdleBiz", click: () => app.quit() },
+      { click: () => app.quit(), label: "Quit IdleBiz" },
     ]);
     tray.setContextMenu(menu);
     tray.setToolTip(`IdleBiz — ${statusLine(s)}`);

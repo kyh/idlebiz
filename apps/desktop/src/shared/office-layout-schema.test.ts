@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import bundled from "@/renderer/game/office-design.json";
 import type { JsonValue } from "./json";
@@ -10,23 +10,23 @@ import {
   officeLayoutSchema,
   parseOfficeLayout,
   schemaIssues,
-  type OfficeLayoutData,
 } from "./office-layout-schema";
+import type { OfficeLayoutData } from "./office-layout-schema";
 
 /** A v1 office: the world and its workstations, nothing else. */
 const legacy: JsonValue = {
-  tile: 32,
-  width: 64,
-  height: 64,
   cell: 16,
+  collision: ["1111", "1001", "1001", "1111"],
   cols: 4,
+  height: 64,
+  objects: [
+    { id: "floor-a", layer: "floor", path: "tiles/a.png", x: 0, y: 0 },
+    { anchorY: 32, flipX: true, id: "office-object-desk", layer: "object", x: 0, y: 0 },
+  ],
   rows: 4,
   spawn: { x: 24, y: 24 },
-  objects: [
-    { id: "floor-a", layer: "floor", x: 0, y: 0, path: "tiles/a.png" },
-    { id: "office-object-desk", layer: "object", x: 0, y: 0, anchorY: 32, flipX: true },
-  ],
-  collision: ["1111", "1001", "1001", "1111"],
+  tile: 32,
+  width: 64,
   workSeats: [{ x: 24, y: 40 }],
 };
 
@@ -46,17 +46,17 @@ describe("parseOfficeLayout", () => {
   });
 
   it("rejects a layout that fits neither schema, naming the current one", () => {
-    expect(() => parseOfficeLayout({ version: 2, tile: 32 })).toThrow(/schema v2/);
-    expect(() => parseOfficeLayout("nope")).toThrow(/schema v2/);
+    expect(() => parseOfficeLayout({ tile: 32, version: 2 })).toThrow(/schema v2/u);
+    expect(() => parseOfficeLayout("nope")).toThrow(/schema v2/u);
   });
 
   it("holds a floor line at the top of the entity band and rejects the next one", () => {
     const withAnchor = (anchorY: number): JsonValue => ({
       ...legacy,
-      objects: [{ id: "x", layer: "object", x: 0, y: 0, anchorY }],
+      objects: [{ anchorY, id: "x", layer: "object", x: 0, y: 0 }],
     });
     expect(parseOfficeLayout(withAnchor(MAX_FLOOR_LINE)).objects).toHaveLength(1);
-    expect(() => parseOfficeLayout(withAnchor(MAX_FLOOR_LINE + 1))).toThrow(/anchorY/);
+    expect(() => parseOfficeLayout(withAnchor(MAX_FLOOR_LINE + 1))).toThrow(/anchorY/u);
   });
 
   it("rejects an object with nothing to resolve a sprite from", () => {
@@ -64,18 +64,18 @@ describe("parseOfficeLayout", () => {
       ...legacy,
       objects: [{ id: "", layer: "overhead", x: 0, y: 0 }],
     };
-    expect(() => parseOfficeLayout(blank)).toThrow(/id/);
+    expect(() => parseOfficeLayout(blank)).toThrow(/id/u);
   });
 
   it("rejects a collision row that is not 0s and 1s", () => {
     const smudged: JsonValue = { ...legacy, collision: ["1111", "1x01", "1001", "1111"] };
-    expect(() => parseOfficeLayout(smudged)).toThrow(/0s and 1s/);
+    expect(() => parseOfficeLayout(smudged)).toThrow(/0s and 1s/u);
   });
 
   it("rejects a rest seat without a side to sit on", () => {
     const v2 = canonicalOfficeLayout(parseOfficeLayout(legacy));
     const bad: JsonValue = { ...v2, seats: [{ role: "rest", x: 24, y: 40 }] };
-    expect(() => parseOfficeLayout(bad)).toThrow(/sit/);
+    expect(() => parseOfficeLayout(bad)).toThrow(/sit/u);
   });
 
   it("ships the bundled office at the current version, with the semantic layer filled in", () => {
@@ -95,9 +95,9 @@ describe("schemaIssues", () => {
     const data: OfficeLayoutData = parseOfficeLayout(legacy);
     const tooTall: OfficeLayoutData = {
       ...data,
-      objects: [{ id: "x", layer: "object", x: 0, y: 0, anchorY: MAX_FLOOR_LINE + 1 }],
+      objects: [{ anchorY: MAX_FLOOR_LINE + 1, id: "x", layer: "object", x: 0, y: 0 }],
     };
-    expect(schemaIssues(tooTall)).toEqual([expect.stringMatching(/^objects\.0\.anchorY: /)]);
+    expect(schemaIssues(tooTall)).toEqual([expect.stringMatching(/^objects\.0\.anchorY: /u)]);
   });
 });
 
@@ -121,19 +121,19 @@ describe("canonicalOfficeLayout", () => {
       "collision",
     ]);
     expect(out.objects[0]).toEqual({
-      layer: "floor",
       id: "floor-a",
+      layer: "floor",
+      path: "tiles/a.png",
       x: 0,
       y: 0,
-      path: "tiles/a.png",
     });
     expect(out.objects[1]).toEqual({
-      layer: "object",
       anchorY: 32,
+      flipX: true,
       id: "office-object-desk",
+      layer: "object",
       x: 0,
       y: 0,
-      flipX: true,
     });
     expect(JSON.stringify(out)).not.toContain("flipY");
   });
@@ -141,8 +141,8 @@ describe("canonicalOfficeLayout", () => {
   it("re-saves the bundled office byte for byte", () => {
     // main writes exactly this; a dev save mirrors it into the repo, so any drift
     // in key order would land as a diff over every row of the bundled file
-    const file = resolve(import.meta.dirname, "../renderer/game/office-design.json");
-    const text = readFileSync(file, "utf8");
+    const file = path.resolve(import.meta.dirname, "../renderer/game/office-design.json");
+    const text = readFileSync(file, "utf-8");
     const raw: JsonValue = JSON.parse(text);
     const saved = `${JSON.stringify(canonicalOfficeLayout(parseOfficeLayout(raw)), null, 2)}\n`;
     expect(saved).toBe(text);

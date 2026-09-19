@@ -1,18 +1,19 @@
-import { businessTypeById, type BusinessTypeId } from "@/shared/domain";
+import { businessTypeById } from "@/shared/domain";
+import type { BusinessTypeId } from "@/shared/domain";
 
 const HIRE_HINTS = {
-  software: "Lean product team: engineers, a designer, and someone on growth/marketing.",
-  "game-studio": "A game needs gameplay engineering, pixel art, sound, and game design.",
-  vc: "An investment firm needs sourcing, analysis/research, and investor-facing writing.",
-  ecommerce: "A shop needs product/merchandising, storefront engineering, ops, and marketing.",
   custom: "",
+  ecommerce: "A shop needs product/merchandising, storefront engineering, ops, and marketing.",
+  "game-studio": "A game needs gameplay engineering, pixel art, sound, and game design.",
+  software: "Lean product team: engineers, a designer, and someone on growth/marketing.",
+  vc: "An investment firm needs sourcing, analysis/research, and investor-facing writing.",
 } satisfies Record<BusinessTypeId, string>;
 
-export function foundingTeamPrompt(
+export const foundingTeamPrompt = (
   companyName: string,
   mission: string,
   businessType: BusinessTypeId,
-): string {
+): string => {
   const typeHint =
     businessType === "custom"
       ? ""
@@ -30,4 +31,4 @@ Invent 5 distinct hires tailored to THIS pitch — whatever business it is. Mix 
 - blurb: a fun one-line resume hook
 
 Reply with ONLY a JSON array of 5 objects with keys name, role, title, persona, blurb. No markdown fence, no commentary.`;
-}
+};

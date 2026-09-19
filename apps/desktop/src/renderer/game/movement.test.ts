@@ -31,7 +31,9 @@ describe("stepToward", () => {
   it("closes exactly `reach` px along the line to the waypoint, facing it", () => {
     const step = stepToward(from, { x: 40, y: 50 }, 5);
     expect(step.kind).toBe("advance");
-    if (step.kind !== "advance") return;
+    if (step.kind !== "advance") {
+      return;
+    }
     expect(Math.hypot(step.dx, step.dy)).toBeCloseTo(5);
     expect(step.dx / step.dy).toBeCloseTo(30 / 40);
     expect(step.facing).toBe("down");
@@ -46,14 +48,14 @@ describe("stepToward", () => {
 describe("randomFloor", () => {
   // 10x6 office of 16px cells; the body needs two open cells side by side.
   const grid = walkGridOf({
-    width: 160,
-    height: 96,
     cell: 16,
-    cols: 10,
-    rows: 6,
-    spawn: { x: 24, y: 24 },
-    seats: [],
     collision: ["1111111111", "1000011001", "1000011001", "1000000001", "1000011001", "1111111111"],
+    cols: 10,
+    height: 96,
+    rows: 6,
+    seats: [],
+    spawn: { x: 24, y: 24 },
+    width: 160,
   });
   const at = { x: 24, y: 24 };
 
@@ -66,7 +68,11 @@ describe("randomFloor", () => {
     // the first draws land in the wall to the west; only the last pair is on the floor
     const draws = [0, 0.5, 0, 0.5, 0.5, 0.5];
     let i = 0;
-    const spot = randomFloor(grid, at, 48, () => draws[i++] ?? 0.5);
+    const spot = randomFloor(grid, at, 48, () => {
+      const draw = draws[i] ?? 0.5;
+      i += 1;
+      return draw;
+    });
     expect(spot).toEqual({ x: 24, y: 24 });
     expect(i).toBe(6);
   });

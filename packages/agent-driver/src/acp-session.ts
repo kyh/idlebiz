@@ -1,8 +1,10 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { z } from "zod";
-import { zeroUsage, type AgentEvent, type AgentUsage } from "./events";
+import { zeroUsage } from "./events";
+import type { AgentEvent, AgentUsage } from "./events";
 
 // One ACP turn. Owns subprocess teardown, watchdogs and usage accounting;
 // adapters own the CLI wire formats.
@@ -24,35 +26,37 @@ const ToolCallInput = z.object({
 });
 
 // Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
-function webReadable(stream: Readable): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
+const webReadable = (stream: Readable): ReadableStream<Uint8Array> =>
+  new ReadableStream<Uint8Array>({
     start(controller) {
       // Both events can fire; closing twice would mask the original failure.
       let closed = false;
       const close = (): void => {
-        if (closed) return;
+        if (closed) {
+          return;
+        }
         closed = true;
         controller.close();
       };
       stream.on("data", (chunk: Buffer) => {
-        if (!closed) controller.enqueue(new Uint8Array(chunk));
+        if (!closed) {
+          controller.enqueue(new Uint8Array(chunk));
+        }
       });
       stream.on("end", close);
       stream.on("error", close);
     },
   });
-}
 
-function webWritable(stream: Writable): WritableStream<Uint8Array> {
-  return new WritableStream<Uint8Array>({
-    write(chunk) {
-      stream.write(chunk);
-    },
+const webWritable = (stream: Writable): WritableStream<Uint8Array> =>
+  new WritableStream<Uint8Array>({
     close() {
       stream.end();
     },
+    write(chunk) {
+      stream.write(chunk);
+    },
   });
-}
 
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
@@ -123,8 +127,9 @@ export interface AcpTurnResult {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
-  return new Promise((resolvePromise) => {
+export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
+  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process and ACP client events)
+  new Promise((resolve) => {
     let child: ChildProcess | undefined;
     let settled = false;
     // stderr is read only when the run fails: kept as chunks, bounded, joined then
@@ -151,16 +156,24 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     const flushMessage = (): void => {
       const text = pending.trim();
       pending = "";
-      if (!text) return;
+      if (!text) {
+        return;
+      }
       lastMessage = text;
-      opts.onEvent({ type: "message_end", text });
+      opts.onEvent({ text, type: "message_end" });
     };
 
     const settle = (res: AcpTurnResult): void => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
-      if (idleTimer) clearTimeout(idleTimer);
-      if (sessionTimer) clearTimeout(sessionTimer);
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
+      if (sessionTimer) {
+        clearTimeout(sessionTimer);
+      }
       // Orphaned grandchildren can keep pipes open after their parent dies.
       try {
         child?.stdin?.destroy();
@@ -171,22 +184,26 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       } catch {
         /* already gone */
       }
-      resolvePromise(res);
+      resolve(res);
     };
 
     /** A turn that died mid-flight still spent what it spent. */
     const result = (end: AcpTurnEnd): AcpTurnResult => ({
       end,
-      summary: lastMessage,
-      sessionId,
       resumed,
+      sessionId,
+      summary: lastMessage,
       usage: total,
     });
-    const failed = (error: string): AcpTurnResult => result({ kind: "failed", error });
+    const failed = (error: string): AcpTurnResult => result({ error, kind: "failed" });
 
     const pokeIdle = (): void => {
-      if (opts.idleTimeoutMs <= 0 || settled) return;
-      if (idleTimer) clearTimeout(idleTimer);
+      if (opts.idleTimeoutMs <= 0 || settled) {
+        return;
+      }
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
       idleTimer = setTimeout(() => {
         settle(failed(`no output for ${fmtMs(opts.idleTimeoutMs)} — treating the agent as hung`));
       }, opts.idleTimeoutMs);
@@ -203,11 +220,11 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       child = spawn(bin, args, {
         cwd: opts.cwd,
         env: { ...process.env, ...opts.agent.env, ...opts.env },
-        stdio: ["pipe", "pipe", "pipe"],
         signal: opts.signal,
+        stdio: ["pipe", "pipe", "pipe"],
       });
-    } catch (err) {
-      settle(failed(`failed to spawn ${bin}: ${errorMessage(err)}`));
+    } catch (error) {
+      settle(failed(`failed to spawn ${bin}: ${errorMessage(error)}`));
       return;
     }
 
@@ -218,8 +235,12 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
     }
     // The agent keeps writing for a moment after we kill it; that EPIPE is
     // expected teardown noise, not a run failure.
-    stdin.on("error", () => {});
-    stdout.on("error", () => {});
+    stdin.on("error", () => {
+      /* empty */
+    });
+    stdout.on("error", () => {
+      /* empty */
+    });
     stderr.on("data", (d: Buffer) => {
       pokeIdle();
       keepStderr(d);
@@ -254,23 +275,27 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         const optionId = decision.allow
           ? (pick("allow_once") ?? pick("allow_always"))
           : (pick("reject_once") ?? pick("reject_always"));
-        if (optionId === undefined) return { outcome: { outcome: "cancelled" } };
-        return { outcome: { outcome: "selected", optionId } };
+        if (optionId === undefined) {
+          return { outcome: { outcome: "cancelled" } };
+        }
+        return { outcome: { optionId, outcome: "selected" } };
       })
       .onNotification("session/update", (ctx) => {
         pokeIdle();
-        const update = ctx.params.update;
+        const { update } = ctx.params;
         if (update.sessionUpdate === "agent_message_chunk") {
-          if (update.content.type === "text") pending += update.content.text;
+          if (update.content.type === "text") {
+            pending += update.content.text;
+          }
           return;
         }
         if (update.sessionUpdate === "tool_call") {
           flushMessage();
           opts.onEvent({
-            type: "tool_start",
-            toolName: update.title || update.kind || "tool",
-            kind: update.kind ?? undefined,
             args: update.rawInput,
+            kind: update.kind ?? undefined,
+            toolName: update.title || update.kind || "tool",
+            type: "tool_start",
           });
           return;
         }
@@ -281,30 +306,35 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
       });
 
     const stream = ndJsonStream(webWritable(stdin), webReadable(stdout));
-    void app
-      .connectWith(stream, async (agent) => {
+    const turn = async (): Promise<void> => {
+      const stopReason = await app.connectWith(stream, async (agent) => {
         // Required before anything else. claude's adapter tolerates its
         // absence; codex's answers every later call with "Not initialized".
         const init = await agent.request("initialize", {
-          protocolVersion: PROTOCOL_VERSION,
-          clientInfo: { name: "idlebiz", version: "1" },
           clientCapabilities: {},
+          clientInfo: { name: "idlebiz", version: "1" },
+          protocolVersion: PROTOCOL_VERSION,
         });
 
         const additionalDirectories = opts.addDirs ?? [];
 
         // Resume without replaying history; a rejected session id falls back to fresh.
-        const resumedId =
-          opts.resumeSessionId !== undefined && init.agentCapabilities?.loadSession === true
-            ? await agent
-                .request("session/resume", {
-                  sessionId: opts.resumeSessionId,
-                  cwd: opts.cwd,
-                  additionalDirectories,
-                })
-                .then(() => opts.resumeSessionId)
-                .catch(() => undefined)
-            : undefined;
+        const resume = async (): Promise<string | undefined> => {
+          if (opts.resumeSessionId === undefined || init.agentCapabilities?.loadSession !== true) {
+            return undefined;
+          }
+          try {
+            await agent.request("session/resume", {
+              additionalDirectories,
+              cwd: opts.cwd,
+              sessionId: opts.resumeSessionId,
+            });
+            return opts.resumeSessionId;
+          } catch {
+            return undefined;
+          }
+        };
+        const resumedId = await resume();
         resumed = resumedId !== undefined;
 
         const startFresh = async (): Promise<string> => {
@@ -312,7 +342,8 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
           if (additionalDirectories.length > 0) {
             builder.withAdditionalDirectories(additionalDirectories);
           }
-          return (await builder.start()).sessionId;
+          const started = await builder.start();
+          return started.sessionId;
         };
         sessionId = resumedId ?? (await startFresh());
 
@@ -320,8 +351,8 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
         // set: Codex's default can execute without raising permission requests.
         if (opts.agent.sessionModeId !== undefined) {
           await agent.request("session/set_mode", {
-            sessionId,
             modeId: opts.agent.sessionModeId,
+            sessionId,
           });
         }
 
@@ -330,31 +361,34 @@ export function runAcpTurn(opts: AcpTurnOptions): Promise<AcpTurnResult> {
             ? `${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`
             : opts.prompt;
         const res = await agent.request("session/prompt", {
+          prompt: [{ text, type: "text" }],
           sessionId,
-          prompt: [{ type: "text", text }],
         });
         flushMessage();
         // the turn's own token totals are authoritative; the cost is what the agent reported above
         const u = res.usage;
         if (u) {
           total = {
-            inputTokens: (u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0),
-            outputTokens: u.outputTokens ?? 0,
             cachedTokens: u.cachedReadTokens ?? 0,
             costUsd: total.costUsd,
+            inputTokens: (u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0),
+            outputTokens: u.outputTokens ?? 0,
           };
         }
         return res.stopReason;
-      })
-      .then((stopReason) => {
-        const completed = stopReason === "end_turn" || stopReason === "max_tokens";
-        settle(
-          completed
-            ? result({ kind: "completed" })
-            : failed(stderrTail() || `agent stopped: ${stopReason}`),
-        );
-        return null;
-      })
-      .catch((cause: unknown) => settle(failed(errorMessage(cause))));
+      });
+      const completed = stopReason === "end_turn" || stopReason === "max_tokens";
+      settle(
+        completed
+          ? result({ kind: "completed" })
+          : failed(stderrTail() || `agent stopped: ${stopReason}`),
+      );
+    };
+    void (async () => {
+      try {
+        await turn();
+      } catch (error) {
+        settle(failed(errorMessage(error)));
+      }
+    })();
   });
-}

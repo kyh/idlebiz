@@ -20,8 +20,8 @@ export type AgentEvent =
     };
 
 export const zeroUsage = (): AgentUsage => ({
-  inputTokens: 0,
-  outputTokens: 0,
   cachedTokens: 0,
   costUsd: 0,
+  inputTokens: 0,
+  outputTokens: 0,
 });

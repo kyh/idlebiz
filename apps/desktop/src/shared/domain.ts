@@ -1,7 +1,8 @@
-// Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
-export type AgentRunner = import("@repo/agent-driver/runner").RunnerId;
-
 import { z } from "zod";
+import type { RunnerId } from "@repo/agent-driver/runner";
+
+// Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
+export type AgentRunner = RunnerId;
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
@@ -17,66 +18,79 @@ export const INTEGRATION_KINDS = ["vercel", "stripe"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
-  vercel: "Vercel",
   stripe: "Stripe",
+  vercel: "Vercel",
 } satisfies Record<IntegrationKind, string>;
 
 export const BlockedAskSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("question"), question: z.string() }),
+  z.object({ question: z.string(), type: z.literal("question") }),
   z.object({
-    type: z.literal("integration"),
     integration: z.enum(INTEGRATION_KINDS),
     reason: z.string(),
+    type: z.literal("integration"),
   }),
   z.object({
-    type: z.literal("approval"),
     command: z.string(),
     // Saved asks retain identifiers even after the runtime policy retires a rule.
-    rule: z.string().regex(/^[a-z-]+$/),
+    rule: z.string().regex(/^[a-z-]+$/u),
+    type: z.literal("approval"),
   }),
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
 // TASK.md stores a human-editable scalar; in memory, asks use the typed union.
-export function serializeBlockedAsk(a: BlockedAsk): string {
-  if (a.type === "question") return a.question;
-  if (a.type === "approval") return `[approve:${a.rule}] ${a.command}`;
-  return `[connect:${a.integration}] ${a.reason}`;
-}
-
-export function parseBlockedAsk(s: string): BlockedAsk {
-  const approval = /^\[approve(?::([a-z-]+))?\]\s*([\s\S]*)$/.exec(s);
-  if (approval) {
-    const command = (approval[2] ?? "").trim();
-    const rule = approval[1] ?? "write-outside";
-    return { type: "approval", command, rule };
+export const serializeBlockedAsk = (a: BlockedAsk): string => {
+  if (a.type === "question") {
+    return a.question;
   }
-  const m = /^\[connect:([a-z]+)\]\s*([\s\S]*)$/.exec(s);
-  const integration = INTEGRATION_KINDS.find((k) => k === m?.[1]);
-  if (!integration) return { type: "question", question: s };
-  return { type: "integration", integration, reason: (m?.[2] ?? "").trim() };
-}
+  if (a.type === "approval") {
+    return `[approve:${a.rule}] ${a.command}`;
+  }
+  return `[connect:${a.integration}] ${a.reason}`;
+};
+
+export const parseBlockedAsk = (s: string): BlockedAsk => {
+  const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
+  if (approval) {
+    const command = (approval.groups?.command ?? "").trim();
+    const rule = approval.groups?.rule ?? "write-outside";
+    return { command, rule, type: "approval" };
+  }
+  const m = /^\[connect:(?<kind>[a-z]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);
+  const integration = INTEGRATION_KINDS.find((k) => k === m?.groups?.kind);
+  if (!integration) {
+    return { question: s, type: "question" };
+  }
+  return { integration, reason: (m?.groups?.reason ?? "").trim(), type: "integration" };
+};
 
 /**
  * Resolve `@token` mentions against the roster: employee slug match first,
  * then exact first-name token (case-insensitive). Whole-token matching only —
  * `@sam` never wakes Samantha. Returns matched employee ids, deduped.
  */
-export function resolveMentions(
+export const resolveMentions = (
   text: string,
   roster: readonly { id: string; name: string }[],
-): string[] {
+): string[] => {
   const ids = new Set<string>();
-  for (const m of text.matchAll(/@([\w-]+)/g)) {
-    const token = (m[1] ?? "").toLowerCase();
-    if (!token) continue;
+  for (const m of text.matchAll(/@(?<token>[\w-]+)/gu)) {
+    const token = (m.groups?.token ?? "").toLowerCase();
+    if (!token) {
+      continue;
+    }
     const bySlug = roster.find((e) => e.id.toLowerCase() === token);
-    const byFirst = roster.filter((e) => e.name.split(/\s+/)[0]?.toLowerCase() === token);
-    if (bySlug) ids.add(bySlug.id);
-    else for (const e of byFirst) ids.add(e.id);
+    const byFirst = roster.filter((e) => e.name.split(/\s+/u)[0]?.toLowerCase() === token);
+    if (bySlug) {
+      ids.add(bySlug.id);
+    } else {
+      for (const e of byFirst) {
+        ids.add(e.id);
+      }
+    }
   }
   return [...ids];
-}
+};
 
 /** dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried. */
 export const TASK_STATUSES = ["todo", "queued", "running", "blocked", "done", "dead"] as const;
@@ -84,15 +98,15 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
-type EmployeeStatus = "idle" | "working";
+export type EmployeeStatus = "idle" | "working";
 
 /** How a run ended, as the scheduler settles the task and the office hears about it. */
 export const RunOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("done") }),
-  z.object({ kind: z.literal("blocked"), ask: BlockedAskSchema }),
+  z.object({ ask: BlockedAskSchema, kind: z.literal("blocked") }),
   // the CLI hit its usage limit: park until `until` without burning an attempt
-  z.object({ kind: z.literal("resting"), until: z.number(), error: z.string() }),
-  z.object({ kind: z.literal("failed"), error: z.string() }),
+  z.object({ error: z.string(), kind: z.literal("resting"), until: z.number() }),
+  z.object({ error: z.string(), kind: z.literal("failed") }),
 ]);
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
@@ -102,21 +116,21 @@ const RETRY_BASE_MS = 15_000;
 const RETRY_CAP_MS = 10 * 60_000;
 
 /** Exponential backoff for the Nth failed attempt (1-based), capped. */
-function retryDelayMs(attempt: number): number {
+const retryDelayMs = (attempt: number): number => {
   const d = RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1);
   return Math.min(d, RETRY_CAP_MS);
-}
+};
 
 export type FailureVerdict =
   | { kind: "retry"; attempts: number; retryAt: number }
   | { kind: "dead"; attempts: number };
 
-export function afterFailure(attemptsSoFar: number, now: number): FailureVerdict {
+export const afterFailure = (attemptsSoFar: number, now: number): FailureVerdict => {
   const attempts = attemptsSoFar + 1;
   return attempts >= MAX_TASK_ATTEMPTS
-    ? { kind: "dead", attempts }
-    : { kind: "retry", attempts, retryAt: now + retryDelayMs(attempts) };
-}
+    ? { attempts, kind: "dead" }
+    : { attempts, kind: "retry", retryAt: now + retryDelayMs(attempts) };
+};
 
 export const BUSINESS_TYPE_IDS = ["software", "game-studio", "vc", "ecommerce", "custom"] as const;
 export type BusinessTypeId = (typeof BUSINESS_TYPE_IDS)[number];
@@ -156,22 +170,23 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   },
 ];
 
-export function businessTypeById(id: BusinessTypeId): BusinessType {
+export const businessTypeById = (id: BusinessTypeId): BusinessType => {
   const found = BUSINESS_TYPES.find((b) => b.id === id);
-  if (!found) throw new Error(`unknown business type ${id}`);
+  if (!found) {
+    throw new Error(`unknown business type ${id}`);
+  }
   return found;
-}
+};
 
 /** Founder's AI spending budget. Infinite IS the off state — no third mode. */
 export const BudgetSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("infinite") }),
-  z.object({ mode: z.literal("capped"), capUsd: z.number().nonnegative() }),
+  z.object({ capUsd: z.number().nonnegative(), mode: z.literal("capped") }),
 ]);
 export type Budget = z.infer<typeof BudgetSchema>;
 
-export function isOutOfBudget(co: Company): boolean {
-  return co.budget.mode === "capped" && co.spentUsd >= co.budget.capUsd;
-}
+export const isOutOfBudget = (co: Company): boolean =>
+  co.budget.mode === "capped" && co.spentUsd >= co.budget.capUsd;
 
 export interface Company {
   id: string;
@@ -181,17 +196,31 @@ export interface Company {
   workspaceDir: string;
   founderName: string;
   founderSpriteSeed: string;
-  autopilot: boolean; // when true, idle employees self-direct work (idle-game loop)
-  maxAgents: number; // seat cap — the lead hires/releases freely below it
+  /** when true, idle employees self-direct work (idle-game loop) */
+  autopilot: boolean;
+  /** seat cap — the lead hires/releases freely below it */
+  maxAgents: number;
   /** The employee who coordinates: hires, releases, delegates. Null until someone is hired. */
   leaderId: string | null;
-  ships: number; // units of work the team has shipped
-  revenueUsd: number | null; // REAL revenue (Stripe); null until a source is connected
-  users: number | null; // REAL users (analytics); null until a source is connected
+  /** units of work the team has shipped */
+  ships: number;
+  /** REAL revenue (Stripe); null until a source is connected */
+  revenueUsd: number | null;
+  /** REAL users (analytics); null until a source is connected */
+  users: number | null;
   budget: Budget;
-  spentUsd: number; // lifetime real token spend (USD)
+  /** lifetime real token spend (USD) */
+  spentUsd: number;
   createdAt: number;
 }
+
+/** Where the real numbers stood when an employee's run ended. */
+export const RunMetricsSchema = z.object({
+  at: z.number(),
+  revenueUsd: z.number().nullable(),
+  users: z.number().nullable(),
+});
+export type RunMetrics = z.infer<typeof RunMetricsSchema>;
 
 export interface Employee {
   id: string;
@@ -199,11 +228,16 @@ export interface Employee {
   name: string;
   role: string;
   title: string;
-  persona: string; // system-prompt flavor for the agent
+  /** system-prompt flavor for the agent */
+  persona: string;
   runner: AgentRunner;
   sessionId: string | null;
-  spriteSeed: string; // deterministic sprite + portrait
-  deskIndex: number; // which desk slot in the office
+  /** deterministic sprite + portrait */
+  spriteSeed: string;
+  /** which desk slot in the office */
+  deskIndex: number;
+  /** The numbers as their last run ended, so the next brief can say what moved. Null before a first run. */
+  lastRunMetrics: RunMetrics | null;
   status: EmployeeStatus;
   createdAt: number;
 }
@@ -225,7 +259,8 @@ export interface Product {
   ships: number;
   /** When work for it last shipped; autopilot turns to the product waited on longest. */
   lastShipAt: number | null;
-  users: number | null; // REAL visitors of its deploy (Vercel Web Analytics); null until bound
+  /** REAL visitors of its deploy (Vercel Web Analytics); null until bound */
+  users: number | null;
   vercel: VercelBinding | null;
   createdAt: number;
 }
@@ -237,7 +272,8 @@ export const employeeStatusOf = (status: TaskStatus): EmployeeStatus =>
 export interface TeamMessage {
   id?: number;
   companyId: string;
-  fromEmployeeId: string | null; // null = system/founder
+  /** null = system/founder */
+  fromEmployeeId: string | null;
   text: string;
   createdAt: number;
 }
@@ -281,7 +317,8 @@ export interface Task {
   state: TaskState;
   priority: TaskPriority;
   assigneeId: string | null;
-  artifacts: string[]; // file paths the agent reported
+  /** file paths the agent reported */
+  artifacts: string[];
   /** Failed runs so far — drives retry backoff and the dead letter, across states. */
   attempts: number;
   createdAt: number;
@@ -298,6 +335,7 @@ export interface Routine {
   name: string;
   instruction: string;
   intervalHours: number;
-  role: string | null; // preferred assignee role (substring match), else anyone idle
+  /** preferred assignee role (substring match), else anyone idle */
+  role: string | null;
   lastRunAt: number | null;
 }

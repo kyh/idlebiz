@@ -1,4 +1,4 @@
-import { INTEGRATION_LABELS, businessTypeById } from "@/shared/domain";
+import { INTEGRATION_LABELS, businessTypeById, serializeBlockedAsk } from "@/shared/domain";
 import type {
   BlockedAsk,
   Company,
@@ -6,10 +6,10 @@ import type {
   IntegrationKind,
   Product,
   Routine,
+  RunMetrics,
   Task,
   TeamMessage,
 } from "@/shared/domain";
-import { serializeBlockedAsk } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
 export interface TaskBrief {
@@ -28,13 +28,49 @@ export const roomTranscript = (
     )
     .join("\n") || "(no messages yet)";
 
-function budgetLine(company: Company): string {
+/** The live numbers the founder's HUD shows, so a run can steer by them.
+ *  Null is "no source connected", never zero: the difference decides whether
+ *  the next move is growth or asking for the connection. */
+/** "; +$2.00 since your last run" — how a live number moved, when the previous run recorded one. */
+const movedBy = (now: number, then: number | null | undefined, money: boolean): string => {
+  if (then === null || then === undefined) {
+    return "";
+  }
+  const delta = now - then;
+  if (delta === 0) {
+    return "; unchanged since your last run";
+  }
+  const shown = money ? formatUsd(Math.abs(delta)) : `${Math.abs(delta)}`;
+  return `; ${delta > 0 ? "+" : "−"}${shown} since your last run`;
+};
+
+const realNumbers = (
+  company: Company,
+  products: readonly Product[],
+  since: RunMetrics | null,
+): string => {
+  const revenue =
+    company.revenueUsd === null
+      ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" when there is something to charge for.'
+      : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
+  const users =
+    company.users === null
+      ? '- Users: no source connected — nobody can see traffic; a product deployed on Vercel reports visitors (request_integration "vercel").'
+      : `- Users: ${company.users} visitors across products (Vercel Web Analytics, live${movedBy(company.users, since?.users, false)}).`;
+  const perProduct = products
+    .filter((p) => p.users !== null)
+    .map((p) => `  - ${p.name}: ${p.users} visitors`)
+    .join("\n");
+  return [revenue, users, perProduct].filter((line) => line.length > 0).join("\n");
+};
+
+const budgetLine = (company: Company): string => {
   if (company.budget.mode !== "capped") {
     return `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
   }
   const critical = company.spentUsd >= company.budget.capUsd * 0.8;
   return `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent${critical ? " — over 80%: critical work only, keep runs short" : ""}.`;
-}
+};
 
 export interface AutonomousBriefInput {
   company: Company;
@@ -50,7 +86,7 @@ export interface AutonomousBriefInput {
   nameOf: (id: string) => string;
 }
 
-export function autonomousBrief(input: AutonomousBriefInput): TaskBrief {
+export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
   const { company, employee, employees, products, focus, room, ships, problems, nameOf } = input;
   const portfolio = products
     .map((p) => `- ${p.name} (${p.id}): ${p.description}${p === focus ? " ← this run" : ""}`)
@@ -91,6 +127,9 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `Recently shipped:`,
     shipped,
     ``,
+    `Real numbers (what the founder sees; grow these):`,
+    realNumbers(company, products, employee.lastRunMetrics),
+    ``,
     `Recent failures to consider fixing or unblocking:`,
     failures,
     ``,
@@ -99,10 +138,10 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `When you finish, post a one-line update to the team room with message_team(text).`,
     `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
   ].join("\n");
-  return { title: `Advance ${focus?.name ?? company.name}`, description };
-}
+  return { description, title: `Advance ${focus?.name ?? company.name}` };
+};
 
-export function runPreamble(product: Product | null, company: Company): string {
+export const runPreamble = (product: Product | null, company: Company): string => {
   if (!product) {
     return `COMPANY-LEVEL WORK (not for one product). Working directory: ${company.workspaceDir}.`;
   }
@@ -111,26 +150,26 @@ export function runPreamble(product: Product | null, company: Company): string {
       ? ""
       : `\nThe company workspace, shared across products, is at ${company.workspaceDir}.`;
   return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}${shared}`;
-}
+};
 
 export const routineBrief = (r: Routine): TaskBrief => ({
-  title: r.name,
   description: `${r.instruction}\n\n(Recurring company routine — runs every ${r.intervalHours}h.)`,
+  title: r.name,
 });
 
 export const founderPing = (text: string): TaskBrief => ({
-  title: `Founder: ${text.slice(0, 48)}`,
   description: [
     "The founder pinged you in the team room:",
     `"${text}"`,
     "",
     "Read the room with read_team_chat for context, do what they're asking (or answer their question), and reply with message_team.",
   ].join("\n"),
+  title: `Founder: ${text.slice(0, 48)}`,
 });
 
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
-  title: `Continue: ${task.title.slice(0, 60)}`,
   description: `You previously asked the founder:\n> ${serializeBlockedAsk(ask)}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${task.title}`,
+  title: `Continue: ${task.title.slice(0, 60)}`,
 });
 
 export const integrationConnectedAnswer = (kind: IntegrationKind): string =>

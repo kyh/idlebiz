@@ -1,15 +1,17 @@
 import { channel } from "node:diagnostics_channel";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer, IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, IncomingMessage } from "node:http";
+import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { loopbackUrl, parseState, type OAuthState } from "@repo/stripe-connect-protocol/protocol";
+import { loopbackUrl, parseState } from "@repo/stripe-connect-protocol/protocol";
+import type { OAuthState } from "@repo/stripe-connect-protocol/protocol";
 import { seal } from "@repo/stripe-connect-protocol/seal";
 import { listenLoopback } from "./lib/http";
 
-const root = mkdtempSync(join(tmpdir(), "idlebiz-stripe-"));
+const root = mkdtempSync(path.join(tmpdir(), "idlebiz-stripe-"));
 const previous = {
   IDLEBIZ_ROOT_DIR: process.env["IDLEBIZ_ROOT_DIR"],
   IDLEBIZ_WEB_URL: process.env["IDLEBIZ_WEB_URL"],
@@ -19,8 +21,11 @@ process.env["IDLEBIZ_ROOT_DIR"] = root;
 let holdRevocation: ((res: ServerResponse) => void) | null = null;
 const web = createServer((req, res) => {
   req.resume();
-  if (holdRevocation) holdRevocation(res);
-  else res.writeHead(200).end();
+  if (holdRevocation) {
+    holdRevocation(res);
+  } else {
+    res.writeHead(200).end();
+  }
 });
 const port = await listenLoopback(web);
 process.env["IDLEBIZ_WEB_URL"] = `http://127.0.0.1:${port}`;
@@ -29,21 +34,22 @@ const store = await import("./store/store");
 const { getSecret } = await import("./secrets");
 store.initStore();
 const company = store.foundCompany({
-  name: "Stripe fixture",
-  mission: "test",
+  budget: { capUsd: 0, mode: "capped" },
   businessType: "software",
   founderName: "Fixture",
   founderSpriteSeed: "fixture",
-  budget: { mode: "capped", capUsd: 0 },
   hires: [],
+  mission: "test",
+  name: "Stripe fixture",
 });
 const urls: string[] = [];
 const connected: string[] = [];
 stripe.initStripeConnect({
   notify: () => {},
   onConnected: (id) => connected.push(id),
-  openExternal: async (url) => {
+  openExternal: (url) => {
     urls.push(url);
+    return Promise.resolve();
   },
 });
 beforeEach(() => {
@@ -55,31 +61,38 @@ afterEach(async () => {
   await stripe.disconnectStripe(company.id);
 });
 afterAll(async () => {
-  await new Promise<void>((resolve, reject) =>
-    web.close((error) => (error ? reject(error) : resolve())),
-  );
-  rmSync(root, { recursive: true, force: true });
+  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
+  await new Promise<void>((resolve, reject) => {
+    web.close((error) => (error ? reject(error) : resolve()));
+  });
+  rmSync(root, { force: true, recursive: true });
   for (const [key, value] of Object.entries(previous)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    if (value === undefined) {
+      // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 });
 
-function latestState(): OAuthState {
+const latestState = (): OAuthState => {
   const url = urls.at(-1);
   const state = url ? parseState(new URL(url).searchParams.get("state")) : null;
-  if (!state) throw new Error("no valid authorization URL opened");
+  if (!state) {
+    throw new Error("no valid authorization URL opened");
+  }
   return state;
-}
+};
 
-async function callbackUrl(state: OAuthState, token: string): Promise<string> {
+const callbackUrl = async (state: OAuthState, token: string): Promise<string> => {
   const sealed = await seal(state.key, {
     accessToken: token,
-    stripeUserId: "acct_fixture",
     livemode: false,
+    stripeUserId: "acct_fixture",
   });
   return loopbackUrl(state, { kind: "sealed", sealed });
-}
+};
 
 describe("Stripe flow ownership", () => {
   it("opens only the latest startup and completes its real encrypted callback", async () => {
@@ -102,7 +115,9 @@ describe("Stripe flow ownership", () => {
     const requests = channel("http.server.request.start");
     const onRequest: Parameters<typeof requests.subscribe>[0] = (message) => {
       const event = z.object({ request: z.instanceof(IncomingMessage) }).safeParse(message);
-      if (!event.success || event.data.request.socket.localPort !== Number(url.port)) return;
+      if (!event.success || event.data.request.socket.localPort !== Number(url.port)) {
+        return;
+      }
       requests.unsubscribe(onRequest);
       // Run after the HTTP handler reaches its first WebCrypto await, before decryption resumes.
       queueMicrotask(() => {

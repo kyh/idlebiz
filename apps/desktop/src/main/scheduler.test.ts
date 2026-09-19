@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 
-const root = mkdtempSync(join(tmpdir(), "idlebiz-scheduler-"));
+const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
@@ -11,30 +11,33 @@ const { scheduler } = await import("./scheduler");
 
 afterAll(() => {
   scheduler.stop();
-  rmSync(root, { recursive: true, force: true });
-  if (previousRoot === undefined) delete process.env["IDLEBIZ_ROOT_DIR"];
-  else process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+  rmSync(root, { force: true, recursive: true });
+  if (previousRoot === undefined) {
+    delete process.env["IDLEBIZ_ROOT_DIR"];
+  } else {
+    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+  }
 });
 
 it("ignores queue drains after stop and resumes admission only after start", () => {
   store.initStore();
   const company = store.foundCompany({
-    name: "Acme",
-    mission: "ship",
+    budget: { capUsd: 0, mode: "capped" },
     businessType: "software",
     founderName: "Kai",
     founderSpriteSeed: "seed",
-    budget: { mode: "capped", capUsd: 0 },
     hires: [
       {
         name: "Priya",
-        role: "engineer",
-        title: "Engineer",
         persona: "ships",
+        role: "engineer",
         runner: "claude",
         spriteSeed: "priya",
+        title: "Engineer",
       },
     ],
+    mission: "ship",
+    name: "Acme",
   });
   const task = store.createTask({ companyId: company.id, title: "Waiting" });
   store.claimTask(task.id, "priya");

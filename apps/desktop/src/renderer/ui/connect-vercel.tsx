@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { bridge } from "@/renderer/bridge";
 import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
+import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
 import type { VercelProject } from "@/shared/ipc-registry";
@@ -13,10 +14,30 @@ type Lookup =
 
 type Pick = { state: "idle" } | { state: "connecting" } | { state: "error"; message: string };
 
+const problemOf = (lookup: Lookup, pick: Pick): string | null => {
+  if (lookup.state === "error") {
+    return lookup.message;
+  }
+  if (pick.state === "error") {
+    return pick.message;
+  }
+  if (lookup.state === "loaded" && lookup.projects.length === 0) {
+    return "No projects on this account yet.";
+  }
+  return null;
+};
+
 // The token also powers product metrics and the team's deployments.
-export function ConnectVercel({ productId, onClose }: { productId: string; onClose: () => void }) {
+export const ConnectVercel = ({
+  productId,
+  onClose,
+}: {
+  productId: string;
+  onClose: () => void;
+}) => {
   const product = useStore((s) => s.products).find((p) => p.id === productId);
   const [token, setToken] = useState("");
+  const [cursor, setCursor] = useState(0);
   const [lookup, setLookup] = useState<Lookup>({ state: "idle" });
   const [pick, setPick] = useState<Pick>({ state: "idle" });
   const busy = lookup.state === "loading" || pick.state === "connecting";
@@ -28,14 +49,14 @@ export function ConnectVercel({ productId, onClose }: { productId: string; onClo
       const res = await bridge().vercelListProjects({ token: token.trim() });
       setLookup(
         res.ok
-          ? { state: "loaded", account: res.account, projects: res.projects }
+          ? { account: res.account, projects: res.projects, state: "loaded" }
           : {
-              state: "error",
               message: "That token was rejected — create one at vercel.com/account/tokens.",
+              state: "error",
             },
       );
-    } catch (e) {
-      setLookup({ state: "error", message: errorMessage(e) });
+    } catch (error) {
+      setLookup({ message: errorMessage(error), state: "error" });
     }
   };
 
@@ -46,29 +67,24 @@ export function ConnectVercel({ productId, onClose }: { productId: string; onClo
         p.teamId
           ? {
               productId,
-              token: token.trim(),
               projectId: p.id,
               projectName: p.name,
               teamId: p.teamId,
+              token: token.trim(),
             }
-          : { productId, token: token.trim(), projectId: p.id, projectName: p.name },
+          : { productId, projectId: p.id, projectName: p.name, token: token.trim() },
       );
       onClose();
-    } catch (e) {
-      setPick({ state: "error", message: errorMessage(e) });
+    } catch (error) {
+      setPick({ message: errorMessage(error), state: "error" });
     }
   };
 
-  const problem =
-    lookup.state === "error"
-      ? lookup.message
-      : pick.state === "error"
-        ? pick.message
-        : lookup.state === "loaded" && lookup.projects.length === 0
-          ? "No projects on this account yet."
-          : null;
+  const problem = problemOf(lookup, pick);
 
-  if (!product) return null;
+  if (!product) {
+    return null;
+  }
   return (
     <Modal title="Connect Vercel" subtitle={product.name} width="lg" onClose={onClose}>
       <div className="space-y-3">
@@ -76,11 +92,13 @@ export function ConnectVercel({ productId, onClose }: { productId: string; onClo
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm text-fg">
               ✓ <b>{product.name}</b> deploys to <b>{product.vercel.projectName}</b> — its users
-              come from that project's Web Analytics, and your team deploys to it for real.
+              come from that project&apos;s Web Analytics, and your team deploys to it for real.
             </div>
             <button
               type="button"
-              onClick={() => void disconnectVercel(productId)}
+              onClick={() => {
+                void disconnectVercel(productId);
+              }}
               className="px-btn"
             >
               Disconnect
@@ -104,7 +122,9 @@ export function ConnectVercel({ productId, onClose }: { productId: string; onClo
               />
               <button
                 type="button"
-                onClick={() => void loadProjects()}
+                onClick={() => {
+                  void loadProjects();
+                }}
                 disabled={busy || token.trim().length === 0}
                 className="px-btn-accent px-btn"
               >
@@ -117,20 +137,26 @@ export function ConnectVercel({ productId, onClose }: { productId: string; onClo
             {lookup.state === "loaded" && lookup.projects.length > 0 ? (
               <div className="px-inset max-h-64 overflow-y-auto p-2">
                 <div className="mb-1 text-xs uppercase tracking-wide text-fg-dim">
-                  Pick the product's project
+                  Pick the product&apos;s project
                 </div>
-                {lookup.projects.map((p) => (
-                  <button
-                    type="button"
-                    key={p.id}
-                    onClick={() => void choose(p)}
-                    disabled={busy}
-                    className="px-opt block w-full text-left"
-                  >
-                    {p.name}
-                    {p.teamId ? <span className="ml-2 text-xs text-fg-dim">team</span> : null}
-                  </button>
-                ))}
+                <ChoiceMenu
+                  menu={{
+                    cursor,
+                    items: lookup.projects.map((p) => ({
+                      disabled: busy,
+                      hint: p.teamId ? "a team project" : undefined,
+                      label: p.name,
+                    })),
+                    pick: (i) => {
+                      const project = lookup.projects[i];
+                      if (project) {
+                        void choose(project);
+                      }
+                    },
+                    setCursor,
+                  }}
+                  className="w-full"
+                />
               </div>
             ) : null}
           </>
@@ -139,4 +165,4 @@ export function ConnectVercel({ productId, onClose }: { productId: string; onClo
       </div>
     </Modal>
   );
-}
+};

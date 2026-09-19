@@ -19,10 +19,10 @@ export interface History<T> {
  * ref so successive edits inside one event handler compose instead of each
  * reading the render's stale value.
  */
-export function useHistory<T extends object>(init: () => T, cap = 100): History<T> {
+export const useHistory = <T extends object>(init: () => T, cap = 100): History<T> => {
   const [present, setPresent] = useState(init);
   const presentRef = useRef(present);
-  const stack = useRef<{ past: T[]; future: T[] }>({ past: [], future: [] });
+  const stack = useRef<{ past: T[]; future: T[] }>({ future: [], past: [] });
 
   const replace = useCallback((next: T) => {
     presentRef.current = next;
@@ -37,14 +37,18 @@ export function useHistory<T extends object>(init: () => T, cap = 100): History<
   const mark = useCallback(() => {
     const s = stack.current;
     s.past.push(presentRef.current);
-    if (s.past.length > cap) s.past.shift();
+    if (s.past.length > cap) {
+      s.past.shift();
+    }
     s.future = [];
   }, [cap]);
 
   const commit = useCallback(
     (updater: (t: T) => T) => {
       const next = updater(presentRef.current);
-      if (next === presentRef.current) return;
+      if (next === presentRef.current) {
+        return;
+      }
       mark();
       replace(next);
     },
@@ -54,7 +58,9 @@ export function useHistory<T extends object>(init: () => T, cap = 100): History<
   const undo = useCallback(() => {
     const s = stack.current;
     const prev = s.past.pop();
-    if (prev === undefined) return;
+    if (prev === undefined) {
+      return;
+    }
     s.future.push(presentRef.current);
     replace(prev);
   }, [replace]);
@@ -62,18 +68,20 @@ export function useHistory<T extends object>(init: () => T, cap = 100): History<
   const redo = useCallback(() => {
     const s = stack.current;
     const next = s.future.pop();
-    if (next === undefined) return;
+    if (next === undefined) {
+      return;
+    }
     s.past.push(presentRef.current);
     replace(next);
   }, [replace]);
 
   const reset = useCallback(
     (next: T) => {
-      stack.current = { past: [], future: [] };
+      stack.current = { future: [], past: [] };
       replace(next);
     },
     [replace],
   );
 
-  return { present, live, mark, commit, undo, redo, reset };
-}
+  return { commit, live, mark, present, redo, reset, undo };
+};

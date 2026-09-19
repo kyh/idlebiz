@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import { useNow } from "@/renderer/hooks/use-now";
+import { Bust } from "@/renderer/ui/bust";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee, Product } from "@/shared/domain";
@@ -14,12 +16,13 @@ const ALERT_GLYPH = "❗";
 const INBOX_GLYPH = "✉";
 const LIVE_GLYPH = "◉";
 
-function Stat({
+const Stat = ({
   label,
   value,
   sub,
   accent,
   title,
+  face,
   onClick,
 }: {
   label: string;
@@ -27,33 +30,43 @@ function Stat({
   sub?: string;
   accent?: string;
   title?: string;
+  /** A bust beside the figures, for a plate that is about a person. */
+  face?: ReactNode;
   onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="px-plate pointer-events-auto min-w-[64px] cursor-pointer px-3 py-1.5 text-center"
-      title={title}
-    >
-      <div className="text-xs uppercase tracking-wide text-[#c3c9de]">{label}</div>
-      <div
-        className="text-base leading-tight tabular-nums"
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="px-plate pointer-events-auto flex min-w-[64px] cursor-pointer items-center gap-2 px-3 py-1.5 text-center"
+    title={title}
+  >
+    {face}
+    <span className="block flex-1">
+      <span className="block text-xs uppercase tracking-wide text-[#c3c9de]">{label}</span>
+      <span
+        className="block text-base leading-tight tabular-nums"
         style={accent ? { color: accent } : undefined}
       >
         {value}
-      </div>
-      {sub ? <div className="text-xs tabular-nums text-[#a7adc6]">{sub}</div> : null}
-    </button>
-  );
-}
-function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: Overlay) => void }) {
+      </span>
+      {sub ? <span className="block text-xs tabular-nums text-[#a7adc6]">{sub}</span> : null}
+    </span>
+  </button>
+);
+
+const Scoreboard = ({
+  company,
+  onOpen,
+}: {
+  company: Company;
+  onOpen: (overlay: Overlay) => void;
+}) => {
   const out = isOutOfBudget(company);
   const spent = spentLabel(company.spentUsd);
   return (
     <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
       <Stat
-        label={company.revenueUsd !== null ? "revenue ⚡" : "revenue"}
+        label={company.revenueUsd === null ? "revenue" : "revenue ⚡"}
         value={
           company.revenueUsd === null ? "—" : `$${formatCompact(Math.floor(company.revenueUsd))}`
         }
@@ -63,7 +76,7 @@ function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: O
         onClick={() => onOpen({ kind: "budget" })}
       />
       <Stat
-        label={company.users !== null ? "users ⚡" : "users"}
+        label={company.users === null ? "users" : "users ⚡"}
         value={company.users === null ? "—" : formatCompact(company.users)}
         accent="#86c0ee"
         sub={company.users === null ? "connect" : "web analytics"}
@@ -72,8 +85,28 @@ function Scoreboard({ company, onOpen }: { company: Company; onOpen: (overlay: O
       />
     </div>
   );
-}
-function CompanyPlates({
+};
+const InboxButton = ({ needsYou, onClick }: { needsYou: number; onClick: () => void }) => {
+  const hasCount = needsYou > 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn("px-btn pointer-events-auto", hasCount ? "px-hot" : "px-btn-icon")}
+      title="Questions, connect requests and stuck tasks waiting on you"
+    >
+      {hasCount ? (
+        <span className="px-live-dot">
+          <span className="px-icon">{ALERT_GLYPH}</span> {needsYou}
+        </span>
+      ) : (
+        <span className="px-icon px-icon-solo">{INBOX_GLYPH}</span>
+      )}
+    </button>
+  );
+};
+
+const CompanyPlates = ({
   company,
   employees,
   products,
@@ -89,15 +122,16 @@ function CompanyPlates({
   needsYou: number;
   nap: string | null;
   onOpen: (overlay: Overlay) => void;
-}) {
+}) => {
   // the plate shows the company's first product; the panel behind it shows them all
-  const lead = products[0];
+  const [lead] = products;
   const status = lead ? productStatus.get(lead.id) : undefined;
   const deploy = status?.deploy ?? null;
   const productState = productStateOf(status);
   const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
   const working = employees.filter((e) => e.status === "working").length;
   const teamSub = working > 0 ? `${working} working` : (nap ?? "idle");
+  const leader = employees.find((e) => e.id === company.leaderId);
   return (
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
       <Stat
@@ -112,6 +146,7 @@ function CompanyPlates({
         label="team"
         value={String(employees.length)}
         sub={teamSub}
+        face={leader ? <Bust seed={leader.spriteSeed} size="sm" alt="" /> : undefined}
         title={
           nap
             ? "A CLI hit its usage limit — parked work resumes automatically at reset"
@@ -122,70 +157,51 @@ function CompanyPlates({
       <InboxButton needsYou={needsYou} onClick={() => onOpen({ kind: "inbox" })} />
     </div>
   );
-}
+};
 
-function InboxButton({ needsYou, onClick }: { needsYou: number; onClick: () => void }) {
-  const hasCount = needsYou > 0;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn("px-btn pointer-events-auto", !hasCount && "px-btn-icon")}
-      style={hasCount ? { background: "var(--warn)", color: "#3a2c0a" } : undefined}
-      title="Questions, connect requests and stuck tasks waiting on you"
-    >
-      {hasCount ? (
-        <span className="px-live-dot">
-          <span className="px-icon">{ALERT_GLYPH}</span> {needsYou}
-        </span>
-      ) : (
-        <span className="px-icon px-icon-solo">{INBOX_GLYPH}</span>
-      )}
-    </button>
-  );
-}
-function RunControls({
+const RunControls = ({
   company,
   onOpen,
 }: {
   company: Company;
   onOpen: (overlay: Overlay) => void;
-}) {
-  return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
-      <button
-        type="button"
-        onClick={() => void setAutopilot(!company.autopilot)}
-        className="px-btn pointer-events-auto"
-        style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
-        title={
-          company.autopilot
-            ? "Autopilot on — the company runs itself. Click to pause."
-            : "Autopilot paused. Click to resume."
-        }
-      >
-        {company.autopilot ? (
-          <>
-            <span className="px-icon">{LIVE_GLYPH}</span> LIVE
-          </>
-        ) : (
-          <>
-            <span className="px-icon">▶</span> Start
-          </>
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={() => onOpen({ kind: "settings" })}
-        className="px-btn px-btn-icon pointer-events-auto"
-        title="Settings"
-      >
-        <span className="px-icon px-icon-solo">⚙</span>
-      </button>
-    </div>
-  );
-}
-export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
+}) => (
+  <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
+    <button
+      type="button"
+      onClick={() => {
+        void setAutopilot(!company.autopilot);
+      }}
+      className="px-btn pointer-events-auto"
+      style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
+      title={
+        company.autopilot
+          ? "Autopilot on — the company runs itself. Click to pause."
+          : "Autopilot paused. Click to resume."
+      }
+    >
+      {company.autopilot ? (
+        <>
+          <span className="px-icon">{LIVE_GLYPH}</span> LIVE
+        </>
+      ) : (
+        <>
+          <span className="px-icon">▶</span> Start
+        </>
+      )}
+    </button>
+    <button
+      type="button"
+      onClick={() => onOpen({ kind: "settings" })}
+      className="px-btn px-btn-icon pointer-events-auto"
+      title="Settings"
+    >
+      <span className="px-icon px-icon-solo">⚙</span>
+    </button>
+  </div>
+);
+
+export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
   const pendingAsks = useStore((s) => s.pendingAsks);
@@ -194,7 +210,9 @@ export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
   const productStatus = useStore((s) => s.productStatus);
   const resting = useStore((s) => s.resting);
   const now = useNow();
-  if (!company) return null;
+  if (!company) {
+    return null;
+  }
   // a CLI on cooldown: the office naps until the earliest reset
   const until = earliestReset(resting, now);
   const nap = until === undefined ? null : napLabel(until);
@@ -213,4 +231,4 @@ export function Hud({ onOpen }: { onOpen: (overlay: Overlay) => void }) {
       <RunControls company={company} onOpen={onOpen} />
     </>
   );
-}
+};

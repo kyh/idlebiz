@@ -1,5 +1,17 @@
-import { linesOf, type Auth } from "@/renderer/hooks/use-auth-flow";
-export function AuthStep({
+import { linesOf } from "@/renderer/hooks/use-auth-flow";
+import type { Auth } from "@/renderer/hooks/use-auth-flow";
+
+const loginLabel = (phase: Auth["phase"]): string => {
+  if (phase === "logging-in") {
+    return "Setting up…";
+  }
+  if (phase === "login-failed") {
+    return "Try again";
+  }
+  return "Set up workforce";
+};
+
+export const AuthStep = ({
   auth,
   onLogin,
   aside,
@@ -7,7 +19,7 @@ export function AuthStep({
   auth: Auth;
   onLogin: () => void;
   aside?: React.ReactNode;
-}) {
+}) => {
   const lines = linesOf(auth);
   return (
     <div className="flex w-full flex-col gap-2">
@@ -24,13 +36,9 @@ export function AuthStep({
           disabled={auth.phase === "logging-in"}
           className="px-btn-accent px-btn ml-auto"
         >
-          {auth.phase === "logging-in"
-            ? "Setting up…"
-            : auth.phase === "login-failed"
-              ? "Try again"
-              : "Set up workforce"}
+          {loginLabel(auth.phase)}
         </button>
       </div>
     </div>
   );
-}
+};

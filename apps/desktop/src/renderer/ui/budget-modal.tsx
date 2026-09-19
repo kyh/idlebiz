@@ -7,10 +7,71 @@ import {
   disconnectStripe,
 } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
+import { Picker } from "@/renderer/ui/picker";
+import type { PickerOption } from "@/renderer/ui/picker";
 import { isOutOfBudget } from "@/shared/domain";
+import type { Budget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
+import type { StripeStatus } from "@/shared/ipc-registry";
 
-export function BudgetModal({ onClose }: { onClose: () => void }) {
+const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
+  { label: "∞ Infinite", value: "infinite" },
+  { label: "$ Capped", value: "capped" },
+];
+
+const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
+  if (stripeStatus.state === "connected") {
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-fg">
+          ✓ {stripeStatus.accountId}
+          <span
+            className="px-badge ml-2"
+            style={{
+              color: stripeStatus.livemode ? "var(--ok)" : "var(--warn)",
+            }}
+          >
+            {stripeStatus.livemode ? "live" : "test"}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            void disconnectStripe();
+          }}
+          className="px-btn"
+        >
+          Disconnect
+        </button>
+      </div>
+    );
+  }
+  if (stripeStatus.state === "connecting") {
+    return (
+      <div className="px-live-dot text-sm text-fg-dim">Waiting for Stripe in your browser…</div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-2">
+      {stripeStatus.state === "error" ? (
+        <span className="text-xs text-danger">{stripeStatus.message}</span>
+      ) : (
+        <span className="text-xs text-fg-dim">Not connected</span>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          void connectStripe();
+        }}
+        className="px-btn-accent px-btn"
+      >
+        {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
+      </button>
+    </div>
+  );
+};
+
+export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const stripeStatus = useStore((s) => s.stripeStatus);
   const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
@@ -22,13 +83,17 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
   // real revenue showing at all means the connection is live
   const liveMetrics = company !== null && company.revenueUsd !== null;
 
-  if (!company) return null;
-  const budget = company.budget;
+  if (!company) {
+    return null;
+  }
+  const { budget } = company;
   const out = isOutOfBudget(company);
-  const parsedCap = Number.parseFloat(capInput);
-  const capValid = Number.isFinite(parsedCap) && parsedCap >= 0;
+  const parsedCap = Number(capInput);
+  const capValid = capInput.trim() !== "" && Number.isFinite(parsedCap) && parsedCap >= 0;
   const setCap = () => {
-    if (capValid) void setBudget({ mode: "capped", capUsd: parsedCap });
+    if (capValid) {
+      void setBudget({ capUsd: parsedCap, mode: "capped" });
+    }
   };
 
   return (
@@ -41,7 +106,7 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
         {out ? (
           <div
             className="px-inset p-3 text-sm"
-            style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
           >
             ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite) to get the team
             working again.
@@ -50,24 +115,19 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
 
         <div>
           <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Spending cap</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => void setBudget({ mode: "infinite" })}
-              data-sel={budget.mode === "infinite"}
-              className="px-opt"
-            >
-              ∞ Infinite
-            </button>
-            <button
-              type="button"
-              onClick={setCap}
-              data-sel={budget.mode === "capped"}
-              className="px-opt"
-            >
-              $ Capped
-            </button>
-          </div>
+          <Picker
+            options={BUDGET_MODES}
+            value={budget.mode}
+            onChange={(mode) => {
+              if (mode === "infinite") {
+                void setBudget({ mode });
+              } else {
+                setCap();
+              }
+            }}
+            label="Spending cap"
+            className="grid grid-cols-2 gap-2"
+          />
           <div className="mt-2 flex items-center gap-2">
             <span className="text-sm text-fg">$</span>
             <input
@@ -93,7 +153,13 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               </div>
             ) : null}
           </div>
-          <button type="button" onClick={() => void resetSpend()} className="px-btn">
+          <button
+            type="button"
+            onClick={() => {
+              void resetSpend();
+            }}
+            className="px-btn"
+          >
             Reset meter
           </button>
         </div>
@@ -107,46 +173,10 @@ export function BudgetModal({ onClose }: { onClose: () => void }) {
               Connect your Stripe account to see your REAL revenue and customers — there are no
               numbers without it{liveMetrics ? " — live now ⚡" : ""}.
             </div>
-            {stripeStatus.state === "connected" ? (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-fg">
-                  ✓ {stripeStatus.accountId}
-                  <span
-                    className="px-badge ml-2"
-                    style={{
-                      color: stripeStatus.livemode ? "var(--ok)" : "var(--warn)",
-                    }}
-                  >
-                    {stripeStatus.livemode ? "live" : "test"}
-                  </span>
-                </span>
-                <button type="button" onClick={() => void disconnectStripe()} className="px-btn">
-                  Disconnect
-                </button>
-              </div>
-            ) : stripeStatus.state === "connecting" ? (
-              <div className="px-live-dot text-sm text-fg-dim">
-                Waiting for Stripe in your browser…
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-2">
-                {stripeStatus.state === "error" ? (
-                  <span className="text-xs text-danger">{stripeStatus.message}</span>
-                ) : (
-                  <span className="text-xs text-fg-dim">Not connected</span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void connectStripe()}
-                  className="px-btn-accent px-btn"
-                >
-                  {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
-                </button>
-              </div>
-            )}
+            <StripeConnection stripeStatus={stripeStatus} />
           </div>
         </div>
       </div>
     </Modal>
   );
-}
+};

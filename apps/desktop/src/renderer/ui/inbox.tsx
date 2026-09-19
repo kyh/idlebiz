@@ -4,99 +4,14 @@ import { AnswerForm } from "@/renderer/ui/answer-form";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
+import { plural } from "@/shared/format";
 import { describeRule } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
 
-export function Inbox({
-  onClose,
-  onOpen,
-}: {
-  onClose: () => void;
-  /** The connect flow for a typed integration ask lives in another window. */
-  onOpen: (overlay: Overlay) => void;
-}) {
-  const company = useStore((s) => s.company);
-  const employees = useStore((s) => s.employees);
-  const products = useStore((s) => s.products);
-  const pendingAsks = useStore((s) => s.pendingAsks);
-  const stuckTasks = useStore((s) => s.stuckTasks);
-
-  if (!company) return null;
-  const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
-  // Stripe is the company's; Vercel binds the product the ask came from
-  const connect = (kind: IntegrationKind, t: Task): void => {
-    if (kind === "stripe") {
-      onOpen({ kind: "budget" });
-      return;
-    }
-    const productId = t.productId ?? products[0]?.id;
-    if (productId !== undefined) onOpen({ kind: "vercel", productId });
-  };
-
-  return (
-    <Modal
-      title="Inbox"
-      subtitle={`${pendingAsks.length} question${pendingAsks.length === 1 ? "" : "s"} · ${stuckTasks.length} stuck`}
-      width="2xl"
-      onClose={onClose}
-    >
-      <div className="space-y-2">
-        {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
-          <div className="text-sm text-fg-dim">All clear — nobody's waiting on you.</div>
-        ) : null}
-        {pendingAsks.map((t) => {
-          const { ask } = t.state;
-          switch (ask.type) {
-            case "integration":
-              return (
-                <ConnectRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  integration={ask.integration}
-                  reason={ask.reason}
-                  onConnect={(kind) => connect(kind, t)}
-                />
-              );
-            case "approval":
-              return (
-                <ApprovalRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  command={ask.command}
-                  rule={ask.rule}
-                />
-              );
-            case "question":
-              return (
-                <AskRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  question={ask.question}
-                  companyId={company.id}
-                />
-              );
-          }
-        })}
-        {stuckTasks.length > 0 ? (
-          <div className="pt-1 text-xs uppercase tracking-wide text-fg-dim">
-            Stuck — needs a retry
-          </div>
-        ) : null}
-        {stuckTasks.map((t) => (
-          <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
-        ))}
-      </div>
-    </Modal>
-  );
-}
-
 // Connecting resumes integration asks automatically; no text answer is needed.
-function ConnectRow({
+const ConnectRow = ({
   t,
   by,
   integration,
@@ -108,7 +23,7 @@ function ConnectRow({
   integration: IntegrationKind;
   reason: string;
   onConnect: (kind: IntegrationKind) => void;
-}) {
+}) => {
   const label = INTEGRATION_LABELS[integration];
   return (
     <div className="px-inset p-3">
@@ -132,10 +47,10 @@ function ConnectRow({
       </div>
     </div>
   );
-}
+};
 
 // Show the exact held command; approval authorizes it once.
-function ApprovalRow({
+const ApprovalRow = ({
   t,
   by,
   command,
@@ -145,10 +60,12 @@ function ApprovalRow({
   by: string;
   command: string;
   rule: string;
-}) {
+}) => {
   const [sent, setSent] = useState(false);
   const decide = async (approved: boolean) => {
-    if (sent) return;
+    if (sent) {
+      return;
+    }
     setSent(true);
     await resolveApproval(t.id, approved);
   };
@@ -164,7 +81,9 @@ function ApprovalRow({
         <span className="flex gap-2">
           <button
             type="button"
-            onClick={() => void decide(false)}
+            onClick={() => {
+              void decide(false);
+            }}
             disabled={sent}
             className="px-btn"
           >
@@ -172,7 +91,9 @@ function ApprovalRow({
           </button>
           <button
             type="button"
-            onClick={() => void decide(true)}
+            onClick={() => {
+              void decide(true);
+            }}
             disabled={sent}
             className="px-btn-accent px-btn"
           >
@@ -182,12 +103,14 @@ function ApprovalRow({
       </div>
     </div>
   );
-}
+};
 
-function StuckRow({ t, by }: { t: TaskIn<"dead">; by: string }) {
+const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
   const [retried, setRetried] = useState(false);
   const retry = async () => {
-    if (retried || !t.assigneeId) return;
+    if (retried || !t.assigneeId) {
+      return;
+    }
     setRetried(true);
     await retryTask(t);
   };
@@ -200,7 +123,9 @@ function StuckRow({ t, by }: { t: TaskIn<"dead">; by: string }) {
       <div className="mt-2 flex justify-end">
         <button
           type="button"
-          onClick={() => void retry()}
+          onClick={() => {
+            void retry();
+          }}
           disabled={retried || !t.assigneeId}
           className="px-btn-accent px-btn"
         >
@@ -209,9 +134,9 @@ function StuckRow({ t, by }: { t: TaskIn<"dead">; by: string }) {
       </div>
     </div>
   );
-}
+};
 
-function AskRow({
+const AskRow = ({
   t,
   by,
   question,
@@ -221,7 +146,7 @@ function AskRow({
   by: string;
   question: string;
   companyId: string;
-}) {
+}) => {
   const [sent, setSent] = useState(false);
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
@@ -234,4 +159,100 @@ function AskRow({
       <AnswerForm task={t} onSent={() => setSent(true)} />
     </div>
   );
-}
+};
+
+export const Inbox = ({
+  onClose,
+  onOpen,
+}: {
+  onClose: () => void;
+  /** The connect flow for a typed integration ask lives in another window. */
+  onOpen: (overlay: Overlay) => void;
+}) => {
+  const company = useStore((s) => s.company);
+  const employees = useStore((s) => s.employees);
+  const products = useStore((s) => s.products);
+  const pendingAsks = useStore((s) => s.pendingAsks);
+  const stuckTasks = useStore((s) => s.stuckTasks);
+
+  if (!company) {
+    return null;
+  }
+  const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
+  // Stripe is the company's; Vercel binds the product the ask came from
+  const connect = (kind: IntegrationKind, t: Task): void => {
+    if (kind === "stripe") {
+      onOpen({ kind: "budget" });
+      return;
+    }
+    const productId = t.productId ?? products[0]?.id;
+    if (productId !== undefined) {
+      onOpen({ kind: "vercel", productId });
+    }
+  };
+
+  return (
+    <Modal
+      title="Inbox"
+      subtitle={`${plural(pendingAsks.length, "question")} · ${stuckTasks.length} stuck`}
+      width="2xl"
+      onClose={onClose}
+    >
+      <div className="space-y-2">
+        {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
+          <div className="text-sm text-fg-dim">All clear — nobody&apos;s waiting on you.</div>
+        ) : null}
+        {pendingAsks.map((t) => {
+          const { ask } = t.state;
+          switch (ask.type) {
+            case "integration": {
+              return (
+                <ConnectRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  integration={ask.integration}
+                  reason={ask.reason}
+                  onConnect={(kind) => connect(kind, t)}
+                />
+              );
+            }
+            case "approval": {
+              return (
+                <ApprovalRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  command={ask.command}
+                  rule={ask.rule}
+                />
+              );
+            }
+            case "question": {
+              return (
+                <AskRow
+                  key={t.id}
+                  t={t}
+                  by={nameOf(t.assigneeId)}
+                  question={ask.question}
+                  companyId={company.id}
+                />
+              );
+            }
+            default: {
+              return null;
+            }
+          }
+        })}
+        {stuckTasks.length > 0 ? (
+          <div className="pt-1 text-xs uppercase tracking-wide text-fg-dim">
+            Stuck — needs a retry
+          </div>
+        ) : null}
+        {stuckTasks.map((t) => (
+          <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
+        ))}
+      </div>
+    </Modal>
+  );
+};

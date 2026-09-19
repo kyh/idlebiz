@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import path from "node:path";
 import { afterAll, beforeEach, expect, it } from "vitest";
 
-const root = mkdtempSync(join(tmpdir(), "idlebiz-vercel-"));
+const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 const previousToken = process.env["VERCEL_TOKEN"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
@@ -13,16 +13,22 @@ const { getSecret, setSecret } = await import("@/main/secrets");
 const { connectVercel, disconnectVercel } = await import("./vercel-connect");
 
 beforeEach(() => {
-  rmSync(root, { recursive: true, force: true });
+  rmSync(root, { force: true, recursive: true });
   store.initStore();
 });
 
 afterAll(() => {
-  rmSync(root, { recursive: true, force: true });
-  if (previousRoot === undefined) delete process.env["IDLEBIZ_ROOT_DIR"];
-  else process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
-  if (previousToken === undefined) delete process.env["VERCEL_TOKEN"];
-  else process.env["VERCEL_TOKEN"] = previousToken;
+  rmSync(root, { force: true, recursive: true });
+  if (previousRoot === undefined) {
+    delete process.env["IDLEBIZ_ROOT_DIR"];
+  } else {
+    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+  }
+  if (previousToken === undefined) {
+    delete process.env["VERCEL_TOKEN"];
+  } else {
+    process.env["VERCEL_TOKEN"] = previousToken;
+  }
 });
 
 it("rejects an unknown product before replacing the founder's credential", () => {
@@ -31,9 +37,9 @@ it("rejects an unknown product before replacing the founder's credential", () =>
   expect(() =>
     connectVercel({
       productId: "missing",
-      token: "replacement-token",
       projectId: "prj_new",
       projectName: "new-project",
+      token: "replacement-token",
     }),
   ).toThrow();
 
@@ -43,21 +49,23 @@ it("rejects an unknown product before replacing the founder's credential", () =>
 
 it("unbinds the active product without removing the credential shared with older saves", () => {
   const company = store.foundCompany({
-    name: "Acme",
-    mission: "ship",
+    budget: { mode: "infinite" },
     businessType: "software",
     founderName: "Kai",
     founderSpriteSeed: "seed",
-    budget: { mode: "infinite" },
     hires: [],
+    mission: "ship",
+    name: "Acme",
   });
-  const product = store.listProducts(company.id)[0];
-  if (!product) throw new Error("missing founding product");
+  const [product] = store.listProducts(company.id);
+  if (!product) {
+    throw new Error("missing founding product");
+  }
   connectVercel({
     productId: product.id,
-    token: "shared-token",
     projectId: "prj_acme",
     projectName: "acme",
+    token: "shared-token",
   });
 
   disconnectVercel(product.id);
