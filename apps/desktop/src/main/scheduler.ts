@@ -125,12 +125,23 @@ const heartbeatBrief = (
     ships: store.recentShips(company.id),
   });
 
+// A run bills only when it ends, so runs in flight are counted at what one has
+// typically cost; without it three hands start on a $2 bet and land it at $5.
+const RUN_COST_ESTIMATE_USD = 1;
+
 /** Where the next idle employee goes, by the company's current policy. */
 const nextAllocation = (company: Company): Allocation => {
   const busy = new Map<string, number>();
+  const stalled = new Set<string>();
   for (const t of store.listOpenTasks(company.id)) {
-    if (t.betId !== null && (t.state.kind === "queued" || t.state.kind === "running")) {
+    if (t.betId === null) {
+      continue;
+    }
+    if (t.state.kind === "queued" || t.state.kind === "running") {
       busy.set(t.betId, (busy.get(t.betId) ?? 0) + 1);
+    }
+    if (t.state.kind === "blocked") {
+      stalled.add(t.betId);
     }
   }
   return allocate(
@@ -138,6 +149,8 @@ const nextAllocation = (company: Company): Allocation => {
       bets: store.listBets(company.id),
       busy,
       products: store.listProducts(company.id).map((p) => p.id),
+      runCostUsd: RUN_COST_ESTIMATE_USD,
+      stalled,
     },
     store.allocationPolicy(company.id),
   );
@@ -437,6 +450,18 @@ class Scheduler {
       return;
     }
     if (allocation.kind === "wait" || company.leaderId !== emp.id) {
+      return;
+    }
+    // a lead already waiting on the founder would only ask again
+    if (store.openTasksFor(emp.id).some((t) => t.state.kind === "blocked")) {
+      return;
+    }
+    if (allocation.kind === "settle") {
+      const bet = store.getBet(allocation.betId);
+      if (bet) {
+        const brief = heartbeatBrief(company, emp, employees, { bet, kind: "settle" });
+        this.brief(company, emp, brief, bet.productId);
+      }
       return;
     }
     const product = allocation.productId === null ? null : store.getProduct(allocation.productId);

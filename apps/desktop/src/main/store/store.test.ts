@@ -601,7 +601,8 @@ describe("bets", () => {
       throw new Error(bet.refused);
     }
     store.recordBetSpend(bet.id, 2);
-    expect(store.judgeBets(co.id, 0).map((b) => b.state.kind)).toEqual(["measuring"]);
+    expect(store.judgeBets(co.id, 0)).toEqual([]);
+    expect(store.measureBet(bet.id, 0)?.state.kind).toBe("measuring");
     store.setProductMetrics(product.id, { revenue: null, users: 60 });
     expect(store.judgeBets(co.id, 1).map((b) => b.state.kind)).toEqual(["won"]);
     expect(store.judgeBets(co.id, 2)).toEqual([]);

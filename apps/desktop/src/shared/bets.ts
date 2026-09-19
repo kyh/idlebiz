@@ -49,11 +49,14 @@ export const isClosed = (bet: Bet): bet is ClosedBet =>
 export const isFundable = (bet: Bet): boolean =>
   bet.state.kind === "open" && bet.spentUsd < bet.budgetUsd;
 
-const HOUR_MS = 3_600_000;
+/** Open with the budget gone: no more work, and the lead owes it a call — start the clock or kill it. */
+export const isSpentOut = (bet: Bet): boolean =>
+  bet.state.kind === "open" && bet.spentUsd >= bet.budgetUsd;
 
 /**
  * The verdict is the evaluator's, never the team's: a bet wins when the real
  * number moved by its target, and dies when its window closes short of it.
+ * Only the lead starts a window, by saying the work is out the door.
  * `reading` is null while no source reports the metric.
  */
 export const judge = (bet: Bet, reading: number | null, now: number): BetState => {
@@ -65,12 +68,10 @@ export const judge = (bet: Bet, reading: number | null, now: number): BetState =
   if (moved !== null && moved >= bet.target) {
     return { closedAt: now, kind: "won", moved };
   }
-  if (state.kind === "open") {
-    return bet.spentUsd >= bet.budgetUsd
-      ? { kind: "measuring", until: now + bet.windowHours * HOUR_MS }
-      : state;
-  }
-  if (now < state.until) {
+  // Spending the budget does not start the clock: the work that could move the
+  // number may still be waiting on the founder, and a window that runs out before
+  // anything shipped is a false verdict on the hypothesis.
+  if (state.kind === "open" || now < state.until) {
     return state;
   }
   return {
@@ -100,6 +101,8 @@ export const DEFAULT_POLICY: PolicyParams = { explore: 1, plateau: 3 };
 
 export type Allocation =
   | { kind: "work"; betId: string }
+  /** A bet spent its budget: the lead starts its clock or kills it before anything new is opened. */
+  | { kind: "settle"; betId: string }
   /** Nothing fundable: the lead opens a bet. `widen` asks for new ground, `productId` names the best proven one. */
   | { kind: "propose"; productId: string | null; widen: boolean }
   /** Every number is already being bet on and the portfolio is full: spend nothing until a verdict. */
@@ -114,6 +117,10 @@ export interface Ledger {
   products: readonly string[];
   /** Runs already in flight per bet, so idle hands spread out. */
   busy: ReadonlyMap<string, number>;
+  /** Bets with work waiting on the founder: more hands would only re-report the same blocker. */
+  stalled: ReadonlySet<string>;
+  /** What one more run is expected to cost, so runs in flight count against a budget before they bill. */
+  runCostUsd: number;
 }
 
 /** Mean yield of a product's closed bets plus a bonus that shrinks as its history grows. */
@@ -132,7 +139,15 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
     .toSorted((a, b) => a.state.closedAt - b.state.closedAt);
   const score = (productId: string): number => productScore(productId, closed, params.explore);
   const live = new Set(ledger.products);
-  const fundable = ledger.bets.filter((b) => isFundable(b) && live.has(b.productId));
+  const committed = (b: Bet): number =>
+    b.spentUsd + (ledger.busy.get(b.id) ?? 0) * ledger.runCostUsd;
+  const fundable = ledger.bets.filter(
+    (b) =>
+      isFundable(b) &&
+      live.has(b.productId) &&
+      !ledger.stalled.has(b.id) &&
+      committed(b) < b.budgetUsd,
+  );
   const [best] = fundable.toSorted(
     (a, b) =>
       score(b.productId) -
@@ -141,6 +156,10 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   );
   if (best) {
     return { betId: best.id, kind: "work" };
+  }
+  const spentOut = ledger.bets.find((b) => isSpentOut(b) && !ledger.stalled.has(b.id));
+  if (spentOut && (ledger.busy.get(spentOut.id) ?? 0) === 0) {
+    return { betId: spentOut.id, kind: "settle" };
   }
   const recent = closed.slice(-params.plateau);
   const widen = recent.length >= params.plateau && recent.every((b) => b.state.kind === "killed");
@@ -183,6 +202,8 @@ const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number =
         ],
         busy: new Map(),
         products: [...new Set(bets.map((b) => b.productId))],
+        runCostUsd: 0,
+        stalled: new Set(),
       },
       params,
     );

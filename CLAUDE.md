@@ -25,14 +25,18 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 number (`users` | `revenue`) of one product, with a spend cap and a window.
 
 - **The evaluator judges, never the team.** `judge` runs every scheduler tick against the
-  live product numbers: won when the number moved by the target, measuring once the budget
-  is spent (or the lead calls `measure_bet`), killed when the window closes short. No tool
+  live product numbers: won when the number moved by the target, killed when its window
+  closes short. Only the lead starts a window (`measure_bet`): spending out the budget stops
+  the work but not the clock, because the step that moves the number may still be waiting
+  on the founder and a window over nothing shipped is a false verdict. A spent-out bet gets
+  the lead a "settle" run: measure or kill. No tool
   lets an agent declare a win.
 - **One live bet per product per metric** (`store.openBet` refuses the second), so two bets
   never claim the same movement. Per-product revenue is Stripe charges tagged
   `metadata[product]=<slug>`; untagged revenue counts for the company only.
 - **Idle hands only spend against a fundable bet.** `allocate` picks it (product yield +
-  exploration bonus − crowding); with none fundable only the lead runs, to open the next
+  exploration bonus − crowding), counting runs in flight against the budget at ~$1 each and
+  skipping any bet with a task blocked on the founder; with none fundable only the lead runs, to open the next
   one, and a run of straight losses asks for new ground. Routines and founder pings are the
   only unfunded work.
 - **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { killBet } from "@/renderer/state/store";
-import { isClosed } from "@/shared/bets";
+import { isClosed, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { formatDate, formatTime, formatUsd } from "@/shared/format";
@@ -14,7 +14,9 @@ const verdictOf = (bet: Bet): string => {
   const st = bet.state;
   switch (st.kind) {
     case "open": {
-      return `${formatUsd(Math.max(0, bet.budgetUsd - bet.spentUsd))} left`;
+      return isSpentOut(bet)
+        ? "out of budget — the lead starts its clock or kills it"
+        : `${formatUsd(bet.budgetUsd - bet.spentUsd)} left`;
     }
     case "measuring": {
       return `til ${formatDate(st.until)} ${formatTime(st.until)}`;
