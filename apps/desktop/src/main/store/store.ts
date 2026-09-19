@@ -49,7 +49,7 @@ import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
-import { defaultRoutines } from "@/main/prompts/routines";
+import { RETIRED_ROUTINES, defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
 import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
@@ -660,6 +660,16 @@ const createRoutine = (input: RoutineDefinition & { companyId: string }): Routin
 const seedDefaultRoutines = (companyId: string, businessType: BusinessTypeId): void => {
   for (const routine of defaultRoutines(businessType)) {
     createRoutine({ companyId, ...routine });
+  }
+};
+
+const dropRetiredRoutines = (active: ActiveCompany): void => {
+  for (const routine of active.routines.filter((r) => RETIRED_ROUTINES.includes(r.id))) {
+    active.routines.splice(active.routines.indexOf(routine), 1);
+    rmSync(path.dirname(routineFile(routine.companyId, routine.id)), {
+      force: true,
+      recursive: true,
+    });
   }
 };
 
@@ -1558,6 +1568,7 @@ export const initStore = (): LoadReport => {
       active.company = { ...company, leaderId: leadOf(active.employees) };
       saveCompany(active.company);
     }
+    dropRetiredRoutines(active);
     if (active.routines.length === 0) {
       seedDefaultRoutines(company.id, company.businessType);
     }

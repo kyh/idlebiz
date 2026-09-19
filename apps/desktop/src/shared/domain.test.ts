@@ -4,6 +4,7 @@ import {
   parseBlockedAsk,
   resolveMentions,
   afterFailure,
+  isRoutineDue,
   MAX_TASK_ATTEMPTS,
   serializeBlockedAsk,
 } from "./domain";
@@ -62,5 +63,28 @@ describe("afterFailure", () => {
       attempts: MAX_TASK_ATTEMPTS,
       kind: "dead",
     });
+  });
+});
+
+describe("isRoutineDue", () => {
+  const routine = {
+    companyId: "co",
+    id: "playtest",
+    instruction: "play it",
+    intervalHours: 24,
+    lastRunAt: null,
+    name: "Playtest",
+    role: null,
+  };
+  const DAY = 86_400_000;
+
+  it("waits out the first interval from the founding", () => {
+    expect(isRoutineDue(routine, 1000, 1000)).toBe(false);
+    expect(isRoutineDue(routine, 1000, 1000 + DAY)).toBe(true);
+  });
+
+  it("counts from the last run once there is one", () => {
+    expect(isRoutineDue({ ...routine, lastRunAt: DAY }, 0, DAY + 1)).toBe(false);
+    expect(isRoutineDue({ ...routine, lastRunAt: DAY }, 0, 2 * DAY)).toBe(true);
   });
 });

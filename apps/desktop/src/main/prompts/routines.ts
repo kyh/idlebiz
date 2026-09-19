@@ -2,23 +2,9 @@ import type { BusinessTypeId, Routine } from "@/shared/domain";
 
 export type RoutineDefinition = Pick<Routine, "name" | "intervalHours" | "role" | "instruction">;
 
-const COMMON_ROUTINES: readonly RoutineDefinition[] = [
-  {
-    instruction:
-      "Step back and review the business: recent ships, team chat, and the product's current state. Identify the single weakest area (product, marketing, or distribution) and either fix it now or delegate it to the right teammate.",
-    intervalHours: 24,
-    name: "Business review",
-    role: null,
-  },
-  {
-    instruction:
-      "Produce one real piece of marketing for the product as it exists today: a launch/update post, landing copy, or outreach draft. Make it concrete and ready to publish. Ask the founder via ask_boss before posting anywhere public.",
-    intervalHours: 48,
-    name: "Marketing push",
-    role: "market",
-  },
-];
-
+// Only work that recurs by nature is a routine. Reviewing the business and
+// marketing the product are not: a bet does both with a budget and a verdict,
+// and a routine doing them spends outside every bet.
 const BUSINESS_ROUTINES = {
   custom: null,
   ecommerce: {
@@ -47,5 +33,8 @@ const BUSINESS_ROUTINES = {
 
 export const defaultRoutines = (businessType: BusinessTypeId): readonly RoutineDefinition[] => {
   const preset = BUSINESS_ROUTINES[businessType];
-  return preset ? [...COMMON_ROUTINES, preset] : COMMON_ROUTINES;
+  return preset ? [preset] : [];
 };
+
+/** Seeded slugs no company should run any more: the work belongs to bets, so boot removes them from a save. */
+export const RETIRED_ROUTINES: readonly string[] = ["business-review", "marketing-push"];

@@ -261,8 +261,7 @@ describe("founding publication", () => {
     expect(files.has("products/acme/PRODUCT.md")).toBe(true);
     expect(files.has("agents/priya/AGENTS.md")).toBe(true);
     expect(files.has("agents/mae/AGENTS.md")).toBe(true);
-    expect(files.has("routines/business-review/ROUTINE.md")).toBe(true);
-    expect(files.has("routines/marketing-push/ROUTINE.md")).toBe(true);
+    expect(files.has("routines/business-review/ROUTINE.md")).toBe(false);
     expect(files.has("routines/playtest-session/ROUTINE.md")).toBe(true);
     expect(files.get("agents/mae/AGENTS.md")).toContain("**hire**");
     for (const body of files.values()) {
@@ -281,7 +280,7 @@ describe("founding publication", () => {
         .map((employee) => employee.id)
         .toSorted(),
     ).toEqual(["mae", "priya"]);
-    expect(store.listRoutines(company.id)).toHaveLength(3);
+    expect(store.listRoutines(company.id).map((r) => r.id)).toEqual(["playtest-session"]);
   });
 
   it.each([false, true])(
@@ -395,7 +394,7 @@ describe("active company ownership", () => {
     expect(store.recordSpend(older.id, 10)).toBeNull();
     expect(store.setRealMetrics(older.id, { revenue: 10, users: 10 })).toBeNull();
     store.recordShip(older.id, "acme", "shipped");
-    store.markRoutineRun(older.id, "business-review");
+    store.markRoutineRun(older.id, "playtest-session");
     expect(saveSnapshot(older.id)).toEqual(before);
   });
 
@@ -403,7 +402,6 @@ describe("active company ownership", () => {
     const older = found();
     copyCompany(older.id, "newer", older.createdAt + 1);
     rmSync(path.join(root, older.id, "products"), { recursive: true });
-    rmSync(path.join(root, older.id, "routines"), { recursive: true });
     writeFileSync(
       path.join(root, older.id, "metrics.json"),
       JSON.stringify({ vercel: { projectId: "old" } }),
@@ -634,5 +632,30 @@ describe("bets", () => {
     expect(existsSync(path.join(productsDir(co.id), side.id))).toBe(false);
     store.initStore();
     expect(store.listProducts(co.id).map((p) => p.id)).toEqual([first.id]);
+  });
+});
+
+describe("retired routines", () => {
+  it("leaves a save at boot, and hand-written routines stay", () => {
+    const co = found();
+    const write = (slug: string) => {
+      const dir = path.join(root, co.id, "routines", slug);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        path.join(dir, "ROUTINE.md"),
+        serializeDoc({
+          body: "do it\n",
+          fields: { kind: "routine", name: slug, schema: "agentcompanies/v1", slug },
+          metadata: { intervalHours: 24 },
+        }),
+      );
+    };
+    write("business-review");
+    write("weekly-backup");
+
+    store.initStore();
+
+    expect(store.listRoutines(co.id).map((r) => r.id)).toEqual(["weekly-backup"]);
+    expect(existsSync(path.join(root, co.id, "routines", "business-review"))).toBe(false);
   });
 });

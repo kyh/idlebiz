@@ -343,3 +343,11 @@ export interface Routine {
   role: string | null;
   lastRunAt: number | null;
 }
+
+/**
+ * A routine that has never run waits out its first interval from the company's
+ * founding: due at once, every routine fires on the first tick, ahead of the
+ * lead's first bet and before there is anything to review.
+ */
+export const isRoutineDue = (routine: Routine, foundedAt: number, now: number): boolean =>
+  now - (routine.lastRunAt ?? foundedAt) >= routine.intervalHours * 3_600_000;

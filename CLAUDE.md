@@ -38,7 +38,8 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   exploration bonus − crowding), counting runs in flight against the budget at ~$1 each and
   skipping any bet with a task blocked on the founder; with none fundable only the lead runs, to open the next
   one, and a run of straight losses asks for new ground. Routines and founder pings are the
-  only unfunded work.
+  only unfunded work, and a routine is only work that recurs by nature (a playtest, a store
+  audit): reviewing or marketing the business is a bet's job.
 - **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`
   against the closed bets and swaps only to a strictly better scorer, so the incumbent never
   loses to a tie. It stays on the defaults below eight closed bets. Steering changes go in

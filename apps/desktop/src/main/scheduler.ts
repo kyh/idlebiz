@@ -19,7 +19,13 @@ import {
   runPreamble,
 } from "@/main/prompts/briefs";
 import type { Assignment, TaskBrief } from "@/main/prompts/briefs";
-import { MAX_TASK_ATTEMPTS, isOutOfBudget, resolveMentions, spriteSeedFor } from "@/shared/domain";
+import {
+  MAX_TASK_ATTEMPTS,
+  isOutOfBudget,
+  isRoutineDue,
+  resolveMentions,
+  spriteSeedFor,
+} from "@/shared/domain";
 import type {
   Company,
   Employee,
@@ -365,7 +371,7 @@ class Scheduler {
       if (this.active.size >= BACKGROUND_CAPACITY) {
         break;
       }
-      if (r.lastRunAt !== null && now - r.lastRunAt < r.intervalHours * 3_600_000) {
+      if (!isRoutineDue(r, company.createdAt, now)) {
         continue;
       }
       const idle = employees.filter((e) => e.status === "idle");
