@@ -550,6 +550,11 @@ describe("recently shipped", () => {
     for (let i = 0; i < 8; i += 1) {
       store.recordShip(company.id, null, `ship ${i}`);
     }
+    store.markSeen(company.id, 1);
+    expect(readdirSync(path.join(root, company.id, "state")).toSorted()).toEqual([
+      "recent-ships.json",
+      "since-last-look.json",
+    ]);
     store.initStore();
     expect(store.recentShips(company.id)).toEqual(
       Array.from({ length: 6 }, (_, i) => `ship ${i + 2}`),

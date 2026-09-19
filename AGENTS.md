@@ -191,13 +191,15 @@ rather than crashing boot.
   union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a
   payload, and a second emit path would be a listener somebody forgot.
 - **The activity log is an audit trail, not a query store.** State that outlives a run is
-  written where it is known: the founder's digest folds into `since-last-look.json` as
+  written where it is known: the founder's digest folds into `state/since-last-look.json` as
   each event publishes (`store.logActivity`, `main/store/digest.ts`), and what a run leaves
   for the next — the session to resume, where the real numbers stood — sits in
   `agents/<slug>/run-state.json`, so AGENTS.md changes only when the instructions do.
-  The brief's "recently shipped" lines come from `recent-ships.json`, written with the
+  The brief's "recently shipped" lines come from `state/recent-ships.json`, written with the
   ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
-  the renderer, whose feed starts empty every launch.
+  the renderer, whose feed starts empty every launch. Company-level running state goes in
+  `<company>/state/` (path helpers in `main/paths.ts`); what the founder configured
+  (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
   so there is nothing to keep in sync.
