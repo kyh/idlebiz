@@ -8,15 +8,14 @@ import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { bridge } from "@/renderer/bridge";
 import { refresh } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
+import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { useModal } from "@/renderer/ui/modal";
 import {
   BudgetMeter,
-  Building,
-  FLOORS,
-  FounderCloseUp,
+  Backdrop,
   FounderSprite,
   Narrator,
-  NightSky,
+  OfficeBackdrop,
   TeamParade,
 } from "@/renderer/ui/onboarding-stage";
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
@@ -42,8 +41,8 @@ const STEP_ORDER = [
 ] as const;
 type Step = (typeof STEP_ORDER)[number];
 
-/** The steps that each light a floor once answered — one per floor of the building. */
-const FLOOR_STEPS: readonly Step[] = [
+/** Each answer fills one of the founding markers. */
+const FOUNDING_STEPS: readonly Step[] = [
   "founder",
   "look",
   "company",
@@ -52,38 +51,24 @@ const FLOOR_STEPS: readonly Step[] = [
   "team",
   "budget",
 ];
-const litFloors = (step: Step): number =>
+const completedSteps = (step: Step): number =>
   step === "finalize"
-    ? FLOORS
-    : FLOOR_STEPS.filter((s) => STEP_ORDER.indexOf(s) < STEP_ORDER.indexOf(step)).length;
+    ? FOUNDING_STEPS.length
+    : FOUNDING_STEPS.filter((s) => STEP_ORDER.indexOf(s) < STEP_ORDER.indexOf(step)).length;
 
-/** The camera: up close on whoever is talking, or wide on the street. */
-const frameOf = (step: Step): "title" | "closeup" | "street" => {
-  switch (step) {
-    case "title": {
-      return "title";
-    }
-    case "intro":
-    case "auth":
-    case "founder":
-    case "look": {
-      return "closeup";
-    }
-    default: {
-      return "street";
-    }
-  }
-};
-
-/** Where the founder stands on the street, per step: from the left edge to the door. */
-const FOUNDER_AT = new Map<Step, number>([
-  ["company", 22],
-  ["biztype", 34],
-  ["pitch", 44],
-  ["team", 52],
-  ["budget", 56],
-  ["finalize", 84],
-]);
+const STEP_LABELS = {
+  auth: "Connect your workforce",
+  biztype: "Your business",
+  budget: "Your budget",
+  company: "Your company",
+  finalize: "Open for business",
+  founder: "The founder",
+  intro: "Meet your first investor",
+  look: "Your look",
+  pitch: "Your big idea",
+  team: "Your founding team",
+  title: "IdleBiz",
+} satisfies Record<Step, string>;
 
 /** Where "back" goes, or null where it doesn't go anywhere. Only the cheap,
  *  reversible steps rewind: casting the team spends a real CLI call, and past
@@ -130,10 +115,6 @@ const FAILED_ITEMS: readonly MenuItem[] = [
   { label: "Search again" },
   { label: "Rewrite the pitch" },
 ];
-
-/** The finale — the walk to the door, the step inside, the flash — must play out
- *  before the office is allowed to show. Matches the `.ob-flash` delay + length. */
-const FINALE_MS = 2200;
 
 const teamScript = (team: Team): readonly string[] => {
   switch (team.kind) {
@@ -251,11 +232,17 @@ const loadFounderChoices = async (): Promise<string[]> => {
   }
 };
 
-const TitleScreen = () => (
+const TitleScreen = ({ onStart }: { onStart: () => void }) => (
   <div className="ob-title-screen">
-    <div className="ob-title">IDLEBIZ</div>
-    <div className="mt-4 text-xs tracking-wide text-[#8a90ab]">a startup that runs itself</div>
-    <div className="px-blink mt-10 text-sm text-light">▶ PRESS ENTER</div>
+    <div className="ob-title-art">
+      <img className="ob-title-props" src="./onboarding/founding-props.webp" alt="" />
+      <img className="ob-title-logo" src="./onboarding/idlebiz-wordmark.webp" alt="IdleBiz" />
+    </div>
+    <p className="ob-tagline">A little office. A big idea. Your company.</p>
+    <button type="button" className="px-btn ob-start" onClick={onStart}>
+      Start your company
+    </button>
+    <span className="ob-start-hint">or press Enter ↵</span>
   </div>
 );
 
@@ -264,7 +251,6 @@ const Textbox = ({
   done,
   last,
   onAdvance,
-  onSkip,
   hint,
   problem,
   children,
@@ -273,21 +259,16 @@ const Textbox = ({
   done: boolean;
   last: boolean;
   onAdvance: () => void;
-  onSkip: () => void;
   hint: string | null;
   problem: string | null;
   children: React.ReactNode;
 }) => (
-  <div className="ob-box px-battle">
+  <div className="ob-box">
+    <EmployeeTag name="Chad Runwayson" title="Your first investor" />
     <button type="button" className="ob-box-text" onClick={onAdvance}>
       {shown}
       <TypeCursor done={done} more={!last} />
     </button>
-    {last ? null : (
-      <button type="button" onClick={onSkip} className="px-link ob-skip" title="Tab">
-        skip ▸
-      </button>
-    )}
     {children}
     {problem ? <div className="px-hint text-danger">{problem}</div> : null}
     {hint && !problem ? <div className="px-hint">{hint}</div> : null}
@@ -356,6 +337,47 @@ const PromptField = ({
     // no default
   }
 };
+
+const OnboardingActions = ({
+  step,
+  last,
+  promptOpen,
+  prompt,
+  auth,
+  menu,
+  onLogin,
+  onSkip,
+  onBack,
+}: {
+  step: Step;
+  last: boolean;
+  promptOpen: boolean;
+  prompt: Prompt | null;
+  auth: Auth;
+  menu: Menu | null;
+  onLogin: () => void;
+  onSkip: () => void;
+  onBack: () => void;
+}) => (
+  <div className="ob-actions">
+    {promptOpen && prompt?.kind === "auth" ? (
+      <div className="ob-auth">
+        <PromptField prompt={prompt} auth={auth} onLogin={onLogin} />
+      </div>
+    ) : null}
+    {menu ? <ChoiceMenu menu={menu} className="ob-menu" /> : null}
+    {last ? null : (
+      <button type="button" onClick={onSkip} className="px-link" title="Tab">
+        skip ▸
+      </button>
+    )}
+    {promptOpen && backStep(step) !== null ? (
+      <button type="button" onClick={onBack} className="px-link" title="Esc">
+        ← back
+      </button>
+    ) : null}
+  </div>
+);
 
 const promptFor = (
   step: Step,
@@ -437,55 +459,67 @@ const LookArrow = ({ side, onClick }: { side: "l" | "r"; onClick: () => void }) 
   </button>
 );
 
-/** The close-up: Chad talking, or the founder being picked. */
-const CloseUp = ({
+const Encounter = ({
   step,
   seed,
   looks,
+  team,
+  capUsd,
+  founderName,
+  companyName,
   onPrevLook,
   onNextLook,
 }: {
   step: Step;
   seed: string;
   looks: number;
-  onPrevLook: () => void;
-  onNextLook: () => void;
-}) => (
-  <div className="ob-stage">
-    {step === "look" ? (
-      <>
-        {looks > 1 ? <LookArrow side="l" onClick={onPrevLook} /> : null}
-        <FounderCloseUp seed={seed} />
-        {looks > 1 ? <LookArrow side="r" onClick={onNextLook} /> : null}
-      </>
-    ) : (
-      <Narrator frame="closeup" />
-    )}
-  </div>
-);
-
-/** The street: the office on the right, Chad at its door, the founder walking up. */
-const Street = ({
-  step,
-  team,
-  capUsd,
-  seed,
-}: {
-  step: Step;
   team: Team;
   capUsd: number | null;
-  seed: string;
+  founderName: string;
+  companyName: string;
+  onPrevLook: () => void;
+  onNextLook: () => void;
 }) => {
-  const at = FOUNDER_AT.get(step) ?? null;
+  const pickingLook = step === "look";
+  const showingTeam = step === "team" && team.kind === "cast";
+  const showingPanel = showingTeam || step === "budget";
   return (
-    <div className="ob-stage">
-      <div className="ob-panel">
-        {step === "team" && team.kind === "cast" ? <TeamParade hires={team.hires} /> : null}
-        {step === "budget" ? <BudgetMeter capUsd={capUsd} /> : null}
+    <div className="ob-stage" data-look={pickingLook} data-panel={showingPanel}>
+      <OfficeBackdrop />
+      <div className="ob-status ob-status-guide px-plate">
+        <strong>Chad Runwayson</strong>
+        <span>Your first investor</span>
       </div>
-      <Building lit={litFloors(step)} open={step === "finalize"} />
-      <Narrator frame="street" thinking={step === "team" && team.kind === "casting"} />
-      {at === null ? null : <FounderSprite seed={seed} at={at} entering={step === "finalize"} />}
+      {pickingLook ? (
+        <>
+          {looks > 1 ? <LookArrow side="l" onClick={onPrevLook} /> : null}
+          <FounderSprite seed={seed} facing="front" />
+          {looks > 1 ? <LookArrow side="r" onClick={onNextLook} /> : null}
+        </>
+      ) : (
+        <>
+          <Narrator thinking={step === "team" && team.kind === "casting"} />
+          {showingPanel ? null : <FounderSprite seed={seed} facing="back" />}
+        </>
+      )}
+      {showingPanel ? (
+        <div className="ob-panel">
+          {showingTeam && team.kind === "cast" ? <TeamParade hires={team.hires} /> : null}
+          {step === "budget" ? <BudgetMeter capUsd={capUsd} /> : null}
+        </div>
+      ) : null}
+      <div className="ob-status ob-status-founder px-plate">
+        <div className="ob-status-row">
+          <strong>{companyName || founderName || "New founder"}</strong>
+          <div className="ob-progress">
+            <span className="sr-only">{`${completedSteps(step)} of ${FOUNDING_STEPS.length} founding steps complete`}</span>
+            {FOUNDING_STEPS.map((item, index) => (
+              <span key={item} data-lit={index < completedSteps(step)} aria-hidden />
+            ))}
+          </div>
+        </div>
+        <span>{STEP_LABELS[step]}</span>
+      </div>
     </div>
   );
 };
@@ -543,22 +577,15 @@ export const Onboarding = () => {
     setFailure(null);
     setStep("finalize");
     try {
-      // the flash plays over the night; only then does the office get to show
-      await Promise.all([
-        bridge().foundCompany({
-          budget,
-          businessType: biz ?? "custom",
-          founderName: founderName.trim(),
-          founderSpriteSeed: choices[look] ?? DEFAULT_FOUNDER_SEED,
-          hires: team.hires,
-          mission: pitch.trim(),
-          name: companyName.trim(),
-        }),
-        // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-        new Promise<void>((resolve) => {
-          window.setTimeout(resolve, FINALE_MS);
-        }),
-      ]);
+      await bridge().foundCompany({
+        budget,
+        businessType: biz ?? "custom",
+        founderName: founderName.trim(),
+        founderSpriteSeed: choices[look] ?? DEFAULT_FOUNDER_SEED,
+        hires: team.hires,
+        mission: pitch.trim(),
+        name: companyName.trim(),
+      });
       await refresh();
       window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
     } catch (error) {
@@ -736,7 +763,6 @@ export const Onboarding = () => {
       ? "Checking your CLI…"
       : hintFor(step, look, looks, capUsd);
   const seed = choices[look] ?? DEFAULT_FOUNDER_SEED;
-  const frame = frameOf(step);
   const prompt = promptFor(step, {
     biz,
     companyName,
@@ -747,61 +773,67 @@ export const Onboarding = () => {
     setPitch,
   });
 
-  if (frame === "title") {
+  if (step === "title") {
     return (
-      <div className="ob-scene pointer-events-auto absolute inset-0 z-40 overflow-hidden">
-        <NightSky dim={false} />
-        <button type="button" className="ob-title-hit" onClick={() => setStep("intro")}>
-          <TitleScreen />
-        </button>
+      <div
+        className="ob-scene pointer-events-auto absolute inset-0 z-40 overflow-hidden"
+        data-frame="title"
+      >
+        <Backdrop />
+        <TitleScreen onStart={() => setStep("intro")} />
+        <div className="ob-title-footer">An idle business adventure</div>
       </div>
     );
   }
 
   return (
-    <div className="ob-scene pointer-events-auto absolute inset-0 z-40 overflow-hidden">
-      <NightSky dim={frame === "closeup"} />
-      {frame === "closeup" ? (
-        <CloseUp
+    <div
+      className="ob-scene pointer-events-auto absolute inset-0 z-40 overflow-hidden"
+      data-frame="encounter"
+    >
+      <div className="ob-encounter">
+        <Encounter
           step={step}
           seed={seed}
           looks={looks}
+          team={team}
+          capUsd={capUsd}
+          founderName={founderName}
+          companyName={companyName}
           onPrevLook={prevLook}
           onNextLook={nextLook}
         />
-      ) : (
-        <Street step={step} team={team} capUsd={capUsd} seed={seed} />
-      )}
-      <div className="ob-street" />
-      <div className="ob-ground" />
-
-      <div className="ob-dock">
-        <Textbox
-          shown={script.shown}
-          done={script.done}
-          last={script.last}
-          onAdvance={() => {
-            // a click on the text is the A button too, short of confirming a form
-            if (script.advance() && step === "intro") {
-              confirm();
-            }
-          }}
-          onSkip={() => script.skip()}
-          hint={script.promptOpen ? hint : null}
-          problem={problem}
-        >
-          {script.promptOpen && prompt ? (
-            <PromptField prompt={prompt} auth={auth} onLogin={login} />
-          ) : null}
-          {backStep(step) === null || !script.promptOpen ? null : (
-            <button type="button" onClick={back} className="px-link ob-back" title="Esc">
-              ← back
-            </button>
-          )}
-        </Textbox>
-        {menu ? <ChoiceMenu menu={menu} className="ob-menu" /> : null}
+        <div className="ob-dock px-battle">
+          <Textbox
+            shown={script.shown}
+            done={script.done}
+            last={script.last}
+            onAdvance={() => {
+              // a click on the text is the A button too, short of confirming a form
+              if (script.advance() && step === "intro") {
+                confirm();
+              }
+            }}
+            hint={script.promptOpen ? hint : null}
+            problem={problem}
+          >
+            {script.promptOpen && prompt && prompt.kind !== "auth" ? (
+              <PromptField prompt={prompt} auth={auth} onLogin={login} />
+            ) : null}
+          </Textbox>
+          <OnboardingActions
+            step={step}
+            last={script.last}
+            promptOpen={script.promptOpen}
+            prompt={prompt}
+            auth={auth}
+            menu={menu}
+            onLogin={login}
+            onSkip={() => script.skip()}
+            onBack={back}
+          />
+        </div>
       </div>
-      {step === "finalize" ? <div className="ob-flash" /> : null}
     </div>
   );
 };
