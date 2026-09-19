@@ -27,8 +27,11 @@ import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
 import {
   BROWSER_ACT,
   BrowserWatch,
+  EXTERNAL_TOOL,
   browserActCommand,
   classifyCommand,
+  externalServer,
+  externalToolCommand,
   normalizeCommand,
 } from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
@@ -63,11 +66,44 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
   }
 };
 
-/** An approval permits one execution of the exact command. */
+/** What one run has been signed off for beyond single commands. */
+interface RunLeases {
+  browser: BrowserWatch;
+  /** MCP servers the founder opened to this run. */
+  servers: Set<string>;
+}
+
+/** What a held call needs signing, or null when it may run. A lease covers the rest of the run. */
+const heldLease = (
+  command: string,
+  leases: RunLeases,
+): { key: string; ask: BlockedAsk; grant: () => void } | null => {
+  const host = leases.browser.heldHost(command);
+  if (host !== null) {
+    const key = browserActCommand(host);
+    return {
+      ask: { command: key, rule: BROWSER_ACT.id, type: "approval" },
+      grant: () => leases.browser.lease(host),
+      key,
+    };
+  }
+  const server = externalServer(command);
+  if (server !== null && !leases.servers.has(server)) {
+    const key = externalToolCommand(server);
+    return {
+      ask: { command: key, rule: EXTERNAL_TOOL.id, type: "approval" },
+      grant: () => leases.servers.add(server),
+      key,
+    };
+  }
+  return null;
+};
+
+/** An approval permits one execution of the exact command, or one lease for the run. */
 const decidePermission = (
   companyId: string,
   request: PermissionRequest,
-  browser: BrowserWatch,
+  leases: RunLeases,
   block: (ask: BlockedAsk) => void,
 ): PermissionDecision => {
   const command = normalizeCommand(request.command);
@@ -76,17 +112,15 @@ const decidePermission = (
   }
   const verdict = classifyCommand(command);
   if (verdict.decision === "allow") {
-    const host = browser.heldHost(command);
-    if (host === null) {
+    const held = heldLease(command, leases);
+    if (held === null) {
       return { allow: true };
     }
-    // the sign-off is for the site, not the keystroke: one card covers the run's work there
-    const key = browserActCommand(host);
-    if (store.consumeApproval(companyId, key)) {
-      browser.lease(host);
+    if (store.consumeApproval(companyId, held.key)) {
+      held.grant();
       return { allow: true };
     }
-    block({ command: key, rule: BROWSER_ACT.id, type: "approval" });
+    block(held.ask);
     return { allow: false };
   }
   if (store.consumeApproval(companyId, command)) {
@@ -254,7 +288,7 @@ class AgentDriver {
     sawOutput: boolean;
   }> {
     const handle = controlPlane.registerRun(hooks);
-    const browser = new BrowserWatch();
+    const leases: RunLeases = { browser: new BrowserWatch(), servers: new Set() };
     let sawOutput = false;
     try {
       // the product's workspace is the cwd; the company workspace stays reachable
@@ -276,7 +310,7 @@ class AgentDriver {
           }
         },
         onPermission: (request) =>
-          Promise.resolve(decidePermission(company.id, request, browser, handle.block)),
+          Promise.resolve(decidePermission(company.id, request, leases, handle.block)),
         prompt: run.prompt,
         resumeSessionId,
         signal: abort.signal,

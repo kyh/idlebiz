@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { BrowserWatch, classifyCommand, describeRule, normalizeCommand } from "./command-policy";
+import {
+  BrowserWatch,
+  classifyCommand,
+  describeRule,
+  externalServer,
+  normalizeCommand,
+} from "./command-policy";
 import type { RuleId } from "./command-policy";
 
 const MUST_ASK = {
@@ -182,5 +188,17 @@ describe("BrowserWatch", () => {
     expect(new BrowserWatch().heldHost("agent-browser press Enter")).toBe(
       "a page this run never opened",
     );
+  });
+});
+
+describe("externalServer", () => {
+  it("names the MCP server behind a tool call", () => {
+    expect(externalServer("mcp__claude-in-chrome__computer")).toBe("claude-in-chrome");
+    expect(externalServer("mcp__plugin_gmail_mail__send_message")).toBe("plugin_gmail_mail");
+  });
+
+  it("leaves built-in tools and shell commands alone", () => {
+    expect(externalServer("Load skill: deploy")).toBeNull();
+    expect(externalServer("ls mcp__notes__")).toBeNull();
   });
 });

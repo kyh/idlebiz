@@ -41,7 +41,9 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   the policy, not into prompts as advice: briefs carry the ledger as facts only.
 - **Outward-facing stays founder-gated**, including the browser: `BrowserWatch` holds any
   page-changing `agent-browser` verb on a non-loopback site until the founder signs for
-  that site, once per run.
+  that site, once per run. Employee sessions also load the founder's own CLI settings, so
+  their MCP servers (`mcp__<server>__…`, signed in as the founder) are leased the same way,
+  once per server per run. Only the claude adapter's tool titles are known to match.
 
 ## Two traps that fail silently
 

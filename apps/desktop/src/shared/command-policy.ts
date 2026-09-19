@@ -16,8 +16,8 @@ const RULE_IDS = [
 export type RuleId = (typeof RULE_IDS)[number];
 
 interface CommandRule {
-  /** `browser-act` is judged by the run's BrowserWatch, not by the command alone. */
-  id: RuleId | "browser-act";
+  /** `browser-act` and `external-tool` are leased per run, not judged from a shell command alone. */
+  id: RuleId | "browser-act" | "external-tool";
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
 }
@@ -136,6 +136,25 @@ export const BROWSER_ACT: CommandRule = {
   id: "browser-act",
 };
 
+/**
+ * Employee sessions load the founder's own CLI settings, so every MCP server the
+ * founder connected for themselves — a browser, a mailbox, a chat workspace — is
+ * in the employee's hands too, already signed in. None of it is a shell command,
+ * so no rule above can see it.
+ */
+export const EXTERNAL_TOOL: CommandRule = {
+  describe:
+    "Use a tool connected in your own CLI settings (an MCP server, signed in as you) for the rest of this run.",
+  id: "external-tool",
+};
+
+/** The MCP server behind a tool call titled `mcp__<server>__<tool>`, or null for anything else. */
+export const externalServer = (title: string): string | null =>
+  /^mcp__(?<server>.+?)__/u.exec(title)?.groups?.server ?? null;
+
+/** The approval key and card text for using `server`. */
+export const externalToolCommand = (server: string): string => `mcp: use ${server}`;
+
 const LOOPBACK_URL = /^(?:https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)|file:|about:)/u;
 
 const BROWSER_CALL = new RegExp(
@@ -208,7 +227,7 @@ export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Co
 
 /** What the approval card says about a held command, by the rule that held it. */
 export const describeRule = (id: string): string =>
-  [...RULES, BROWSER_ACT].find((rule) => rule.id === id)?.describe ??
+  [...RULES, BROWSER_ACT, EXTERNAL_TOOL].find((rule) => rule.id === id)?.describe ??
   `Saved rule "${id}" is unavailable in this version.`;
 
 export const classifyCommand = (command: string): CommandVerdict => {
