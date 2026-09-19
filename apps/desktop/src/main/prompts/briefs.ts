@@ -6,6 +6,7 @@ import type {
   IntegrationKind,
   Product,
   Routine,
+  RunMetrics,
   Task,
   TeamMessage,
 } from "@/shared/domain";
@@ -71,13 +72,6 @@ const budgetLine = (company: Company): string => {
   return `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent${critical ? " — over 80%: critical work only, keep runs short" : ""}.`;
 };
 
-/** Where the real numbers stood when the employee's previous run ended. */
-export interface RunMetrics {
-  at: number;
-  revenueUsd: number | null;
-  users: number | null;
-}
-
 export interface AutonomousBriefInput {
   company: Company;
   employee: Employee;
@@ -89,14 +83,11 @@ export interface AutonomousBriefInput {
   ships: readonly string[];
   /** Dead-lettered tasks worth a second look. */
   problems: readonly Task[];
-  /** Null on a first run, or once the log no longer holds the last one. */
-  sinceLastRun: RunMetrics | null;
   nameOf: (id: string) => string;
 }
 
 export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
   const { company, employee, employees, products, focus, room, ships, problems, nameOf } = input;
-  const { sinceLastRun } = input;
   const portfolio = products
     .map((p) => `- ${p.name} (${p.id}): ${p.description}${p === focus ? " ← this run" : ""}`)
     .join("\n");
@@ -137,7 +128,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     shipped,
     ``,
     `Real numbers (what the founder sees; grow these):`,
-    realNumbers(company, products, sinceLastRun),
+    realNumbers(company, products, employee.lastRunMetrics),
     ``,
     `Recent failures to consider fixing or unblocking:`,
     failures,

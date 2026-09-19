@@ -7,23 +7,24 @@ import type { Digest as DigestSummary } from "@/shared/ipc-registry";
 
 /** Shorter absences read as a glance away, not a return. */
 const AWAY_MS = 10 * 60_000;
-const SHIPS_SHOWN = 5;
 
 const eventful = (d: DigestSummary): boolean =>
-  d.ships.length + d.runs + d.hired.length + d.released.length + d.dead > 0;
+  d.shipped + d.runs + d.hired.length + d.released.length + d.dead > 0;
 
 const Lines = ({ d }: { d: DigestSummary }) => (
   <ul className="space-y-2 text-sm text-fg">
-    {d.ships.length > 0 ? (
+    {d.shipped > 0 ? (
       <li>
-        <span className="text-ok">{d.ships.length} shipped</span>
+        <span className="text-ok">{d.shipped} shipped</span>
         <ul className="mt-1 space-y-0.5 text-xs text-fg-dim">
-          {d.ships.slice(-SHIPS_SHOWN).map((s) => (
+          {d.shipped > d.ships.length ? (
+            <li>· {d.shipped - d.ships.length} earlier, then</li>
+          ) : null}
+          {d.ships.map((s) => (
             <li key={s} className="truncate">
               · {s}
             </li>
           ))}
-          {d.ships.length > SHIPS_SHOWN ? <li>· and {d.ships.length - SHIPS_SHOWN} more</li> : null}
         </ul>
       </li>
     ) : null}
@@ -36,9 +37,6 @@ const Lines = ({ d }: { d: DigestSummary }) => (
     {d.released.length > 0 ? <li>Released {formatNames(d.released)}</li> : null}
     {d.dead > 0 ? (
       <li className="text-danger">{plural(d.dead, "task")} gave up — retry from the inbox</li>
-    ) : null}
-    {d.truncated ? (
-      <li className="px-hint">The log ran out before then; these are floors.</li>
     ) : null}
   </ul>
 );

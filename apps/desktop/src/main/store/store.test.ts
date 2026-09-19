@@ -349,7 +349,7 @@ describe("active company ownership", () => {
     expect(store.listQueuedTasks().map((task) => task.companyId)).toEqual(["newer"]);
     expect(store.getTask(running.id)?.state.kind).toBe("queued");
 
-    store.setEmployeeSession(employee.id, "new-session");
+    store.noteRunEnd(employee.id, "new-session");
     store.setProductVercel(product.id, {
       projectId: "new-project",
       projectName: "New",
@@ -469,48 +469,77 @@ describe("active company ownership", () => {
 });
 
 describe("the digest", () => {
-  it("sums what the log says happened after the founder last looked", () => {
+  it("folds what happens after a look, and reading it is the next look", () => {
     const company = found();
-    const t0 = Date.now();
-    store.markSeen(company.id, t0);
-    store.logActivity({ createdAt: t0 - 1, kind: "ship", message: "before they left" }, true);
-    store.logActivity({ createdAt: t0 + 1, kind: "ship", message: "v0 shipped" }, true);
+    expect(store.digest(company.id)).toBeNull();
+    store.logActivity({ createdAt: 1, kind: "ship", message: "v0 shipped" }, true);
     store.logActivity(
       {
-        createdAt: t0 + 2,
+        createdAt: 2,
         kind: "run.end",
         payload: { costUsd: 0.25, outcome: { kind: "done" }, summary: "done" },
       },
       true,
     );
     store.logActivity(
-      { createdAt: t0 + 3, kind: "org.hired", payload: { by: "lead", name: "Mira", title: "PM" } },
+      { createdAt: 3, kind: "org.hired", payload: { by: "lead", name: "Mira", title: "PM" } },
       true,
     );
     store.logActivity(
-      { createdAt: t0 + 4, kind: "task.dead", payload: { attempts: 3, error: "boom" } },
+      { createdAt: 4, kind: "task.dead", payload: { attempts: 3, error: "boom" } },
       true,
     );
-    expect(store.digestSince(company.id, t0)).toEqual({
+    store.logActivity({ createdAt: 5, kind: "message", message: "not counted" }, true);
+
+    expect(store.digest(company.id)).toMatchObject({
       dead: 1,
       hired: ["Mira"],
       released: [],
       runs: 1,
+      shipped: 1,
       ships: ["v0 shipped"],
-      since: t0,
       spentUsd: 0.25,
-      truncated: false,
+    });
+    expect(store.digest(company.id)).toMatchObject({ runs: 0, shipped: 0, ships: [] });
+  });
+
+  it("survives a restart mid-absence", () => {
+    const company = found();
+    store.markSeen(company.id, 1234);
+    store.logActivity({ createdAt: 2000, kind: "ship", message: "while closed" }, true);
+    store.initStore();
+    expect(store.digest(company.id)).toMatchObject({ ships: ["while closed"], since: 1234 });
+  });
+});
+
+describe("what a run leaves behind", () => {
+  it("is kept beside the agent, never in its instructions, and survives a restart", () => {
+    const company = found();
+    const emp = store.createEmployee({ ...hire("Priya"), companyId: company.id });
+    const instructions = path.join(root, company.id, "agents", emp.id, "AGENTS.md");
+    const before = readFileSync(instructions, "utf-8");
+    store.setRealMetrics(company.id, { revenue: 12.5, users: null });
+
+    store.noteRunEnd(emp.id, "session-1");
+
+    expect(readFileSync(instructions, "utf-8")).toBe(before);
+    store.initStore();
+    expect(store.getEmployee(emp.id)).toMatchObject({
+      lastRunMetrics: { revenueUsd: 12.5, users: null },
+      sessionId: "session-1",
     });
   });
 
-  it("remembers the last look on disk, and a read is a look", () => {
+  it("still resumes a session a save from before run-state.json kept in AGENTS.md", () => {
     const company = found();
-    expect(company.lastSeenAt).toBeNull();
-    expect(store.digest(company.id)).toBeNull();
-    const first = store.getCompany(company.id)?.lastSeenAt;
-    expect(first).not.toBeNull();
+    const emp = store.createEmployee({ ...hire("Priya"), companyId: company.id });
+    const instructions = path.join(root, company.id, "agents", emp.id, "AGENTS.md");
+    const doc = parseDoc(readFileSync(instructions, "utf-8"));
+    writeFileSync(
+      instructions,
+      serializeDoc({ ...doc, metadata: { ...doc.metadata, sessionId: "legacy-session" } }),
+    );
     store.initStore();
-    expect(store.getCompany(company.id)?.lastSeenAt).toBe(first);
-    expect(store.digest(company.id)).not.toBeNull();
+    expect(store.getEmployee(emp.id)?.sessionId).toBe("legacy-session");
   });
 });

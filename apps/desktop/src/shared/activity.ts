@@ -33,10 +33,6 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
     payload: z.object({
       /** What the run cost, as its CLI billed it: the number the budget moved by. Rows from before it was recorded have none. */
       costUsd: z.number().optional(),
-      /** The real numbers as the run ended, so the next brief can say what moved. Rows from before it was recorded have none. */
-      metrics: z
-        .object({ revenueUsd: z.number().nullable(), users: z.number().nullable() })
-        .optional(),
       outcome: RunOutcomeSchema,
       summary: z.string(),
     }),

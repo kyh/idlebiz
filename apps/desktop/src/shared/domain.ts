@@ -211,10 +211,16 @@ export interface Company {
   budget: Budget;
   /** lifetime real token spend (USD) */
   spentUsd: number;
-  /** When the founder last had the office in view; null before the first look. */
-  lastSeenAt: number | null;
   createdAt: number;
 }
+
+/** Where the real numbers stood when an employee's run ended. */
+export const RunMetricsSchema = z.object({
+  at: z.number(),
+  revenueUsd: z.number().nullable(),
+  users: z.number().nullable(),
+});
+export type RunMetrics = z.infer<typeof RunMetricsSchema>;
 
 export interface Employee {
   id: string;
@@ -230,6 +236,8 @@ export interface Employee {
   spriteSeed: string;
   /** which desk slot in the office */
   deskIndex: number;
+  /** The numbers as their last run ended, so the next brief can say what moved. Null before a first run. */
+  lastRunMetrics: RunMetrics | null;
   status: EmployeeStatus;
   createdAt: number;
 }

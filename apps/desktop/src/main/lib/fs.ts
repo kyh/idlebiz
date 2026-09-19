@@ -81,16 +81,11 @@ const TAIL_BYTES = 1024 * 1024;
  * file's tail, dropping the partial first line, so the cost is bounded by
  * TAIL_BYTES rather than by how long the company has been playing.
  */
-/** The tail of a log as rows; `whole` when the file fit within TAIL_BYTES. */
-interface LogTail<T> {
-  rows: T[];
-  /** The whole file was read: nothing older was left behind the byte cap. */
-  whole: boolean;
-}
-
-const parseTail = <T>(file: string, schema: z.ZodType<T>, limit: number): LogTail<T> => {
+export const readJsonlTail = <T>(file: string, schema: z.ZodType<T>, limit: number): T[] => {
+  if (limit <= 0) {
+    return [];
+  }
   let text: string;
-  let whole = true;
   try {
     const fd = openSync(file, "r");
     try {
@@ -101,13 +96,12 @@ const parseTail = <T>(file: string, schema: z.ZodType<T>, limit: number): LogTai
       text = buf.toString("utf-8");
       if (start > 0) {
         text = text.slice(text.indexOf("\n") + 1);
-        whole = false;
       }
     } finally {
       closeSync(fd);
     }
   } catch {
-    return { rows: [], whole: true };
+    return [];
   }
   const rows: T[] = [];
   const lines = (text.endsWith("\n") ? text.slice(0, -1) : text).split("\n");
@@ -124,31 +118,5 @@ const parseTail = <T>(file: string, schema: z.ZodType<T>, limit: number): LogTai
       /* skip a bad line */
     }
   }
-  return { rows, whole };
-};
-
-export const readJsonlTail = <T>(file: string, schema: z.ZodType<T>, limit: number): T[] =>
-  limit <= 0 ? [] : parseTail(file, schema, limit).rows;
-
-/**
- * Every row stamped after `since`, newest last. `complete` is false when the
- * tail read stopped short of `since`, so what came back is a floor.
- */
-export interface LogSince<T> {
-  rows: T[];
-  /** The read reached `since`; false when the byte cap cut it short and the rows are a floor. */
-  complete: boolean;
-}
-
-export const readJsonlSince = <T extends { createdAt: number }>(
-  file: string,
-  schema: z.ZodType<T>,
-  since: number,
-): LogSince<T> => {
-  const { rows, whole } = parseTail(file, schema, Number.POSITIVE_INFINITY);
-  const [oldest] = rows;
-  return {
-    complete: whole || (oldest !== undefined && oldest.createdAt <= since),
-    rows: rows.filter((row) => row.createdAt > since),
-  };
+  return rows;
 };

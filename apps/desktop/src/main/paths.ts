@@ -10,13 +10,15 @@ import { mkdirSync } from "node:fs";
 //       AGENTS.md           the agent's canonical definition, injected into every run
 //       memory/             the agent's own scratch memory
 //       sessions/           the agent's own session continuity
+//       run-state.json      what a run leaves for the next: session to resume, the real numbers as it ended
 //     tasks/<slug>/TASK.md  open work
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log)
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product uses workspace/)
 //     workspace/            shared cwd where agents do real work
 //     chat.jsonl            the company room (non-canonical, append-only)
-//     activity.jsonl        append-only event log (non-canonical)
+//     activity.jsonl        append-only event log (non-canonical): an audit trail, never queried for state
+//     since-last-look.json  the founder's digest, folded from each event as it happens
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -32,6 +34,9 @@ export const companyFile = (companySlug: string): string =>
 /** Shared workspace where all of a company's employees do real work together. */
 export const companyWorkspace = (companySlug: string): string =>
   path.join(companyDir(companySlug), "workspace");
+/** The founder's digest-in-progress: what has happened since they last looked. */
+export const sinceLastLookFile = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "since-last-look.json");
 export const activityFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "activity.jsonl");
 
@@ -45,6 +50,10 @@ export const employeeAgentDir = (companySlug: string, employeeSlug: string): str
   path.join(agentsDir(companySlug), employeeSlug);
 export const employeeFile = (companySlug: string, employeeSlug: string): string =>
   path.join(employeeAgentDir(companySlug, employeeSlug), "AGENTS.md");
+/** What a run leaves behind for the next one: the session to resume, where the numbers stood.
+ *  Beside AGENTS.md, not in it, so the instructions only change when the instructions do. */
+export const employeeRunStateFile = (companySlug: string, employeeSlug: string): string =>
+  path.join(employeeAgentDir(companySlug, employeeSlug), "run-state.json");
 export const employeeMemoryDir = (companySlug: string, employeeSlug: string): string =>
   path.join(employeeAgentDir(companySlug, employeeSlug), "memory");
 export const employeeSessionDir = (companySlug: string, employeeSlug: string): string =>

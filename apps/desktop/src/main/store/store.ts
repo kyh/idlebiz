@@ -1,13 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import {
-  appendJsonl,
-  atomicWrite,
-  moveDir,
-  readJsonFile,
-  readJsonlSince,
-  readJsonlTail,
-} from "@/main/lib/fs";
+import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "@/main/lib/fs";
 import {
   ROOT_DIR,
   ensureAppDirs,
@@ -15,11 +8,13 @@ import {
   companyFile,
   companyWorkspace,
   activityFile,
+  sinceLastLookFile,
   agentsDir,
   approvalsFile,
   alumniDir,
   employeeAgentDir,
   employeeFile,
+  employeeRunStateFile,
   employeeMemoryDir,
   employeeSessionDir,
   tasksDir,
@@ -48,7 +43,6 @@ import {
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
-import type { RunMetrics } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
 import { defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
@@ -56,12 +50,15 @@ import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import { errorMessage } from "@/shared/errors";
+import { emptyDigest, foldDigest } from "@/main/store/digest";
+import { DigestSchema } from "@/shared/ipc-registry";
 import type { Digest, LoadReport, LoadSkip } from "@/shared/ipc-registry";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
   DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
+  RunMetricsSchema,
   afterFailure,
 } from "@/shared/domain";
 import { PersistedActivitySchema } from "@/shared/activity";
@@ -95,6 +92,8 @@ interface ActiveCompany {
   routines: Routine[];
   chat: TeamMessage[];
   activity: ActivityEvent[];
+  /** What has happened since the founder last looked. Null until they first do, so founding a company is not news. */
+  sinceLastLook: Digest | null;
 }
 
 interface Cache {
@@ -139,6 +138,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   products: [],
   routines: [],
   shipped: null,
+  sinceLastLook: null,
   tasks: [],
 });
 
@@ -189,9 +189,6 @@ const companyToDoc = (co: Company): FrontmatterDoc => {
     metadata.budgetCapUsd = co.budget.capUsd;
   }
   metadata.spentUsd = co.spentUsd;
-  if (co.lastSeenAt !== null) {
-    metadata.lastSeenAt = co.lastSeenAt;
-  }
   metadata.createdAt = co.createdAt;
   return {
     body: `# ${co.name}\n\n${co.mission}\n`,
@@ -230,7 +227,6 @@ const docToCompany = (doc: FrontmatterDoc): Company => {
     founderName: optStr(m, "founderName") ?? "Founder",
     founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? DEFAULT_FOUNDER_SEED,
     id,
-    lastSeenAt: nullableNum(m, "lastSeenAt"),
     leaderId: optStr(m, "leaderId"),
     maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
     mission: optStr(f, "description") ?? "",
@@ -264,9 +260,6 @@ const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]): 
     spriteSeed: e.spriteSeed,
     title: e.title,
   };
-  if (e.sessionId !== null) {
-    metadata.sessionId = e.sessionId;
-  }
   return {
     body: employeeBody(e, co, products),
     fields: {
@@ -280,6 +273,25 @@ const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]): 
   };
 };
 
+/** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
+const RunStateSchema = z.object({
+  lastRunMetrics: RunMetricsSchema.nullable(),
+  sessionId: z.string().nullable(),
+});
+
+const saveRunState = (e: Employee): void => {
+  const state: z.infer<typeof RunStateSchema> = {
+    lastRunMetrics: e.lastRunMetrics,
+    sessionId: e.sessionId,
+  };
+  atomicWrite(employeeRunStateFile(e.companyId, e.id), JSON.stringify(state, null, 2));
+};
+
+const withRunState = (e: Employee): Employee => ({
+  ...e,
+  ...readJsonFile(employeeRunStateFile(e.companyId, e.id), RunStateSchema),
+});
+
 const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
   const f = doc.fields;
   const m = doc.metadata;
@@ -288,10 +300,12 @@ const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
     createdAt: optNum(m, "createdAt", Date.now()),
     deskIndex: optNum(m, "deskIndex", 0),
     id: reqStr(f, "slug"),
+    lastRunMetrics: null,
     name: reqStr(f, "name"),
     persona: optStr(m, "persona") ?? "",
     role: optStr(m, "role") ?? "general",
     runner: parseRunner(optStr(m, "runner")),
+    // saves from before run-state.json kept the session here; withRunState prefers the file
     sessionId: optStr(m, "sessionId"),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     status: "idle",
@@ -594,8 +608,6 @@ export const setBudget = (id: string, budget: Budget): Company => patchCompany(i
 
 export const resetSpend = (id: string): Company => patchCompany(id, { spentUsd: 0 });
 
-export const markSeen = (id: string, at: number): Company => patchCompany(id, { lastSeenAt: at });
-
 /** Null metrics keep the last reported value through provider failures. */
 export const setRealMetrics = (
   id: string,
@@ -678,6 +690,7 @@ const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
   createdAt: Date.now(),
   deskIndex: input.deskIndex,
   id,
+  lastRunMetrics: null,
   name: input.name,
   persona: input.persona,
   role: input.role,
@@ -730,8 +743,15 @@ export const setEmployeeStatus = (id: string, status: Employee["status"]): void 
   }
 };
 
-export const setEmployeeSession = (id: string, sessionId: string | null): void => {
-  patchIn(c().active?.employees ?? [], id, { sessionId }, saveEmployee);
+/** A run ended: keep the session to resume and where the real numbers stood, for the next brief to measure from. */
+export const noteRunEnd = (id: string, sessionId: string | null): void => {
+  const { active } = c();
+  if (!active) {
+    return;
+  }
+  const { revenueUsd, users } = active.company;
+  const lastRunMetrics = { at: Date.now(), revenueUsd, users };
+  patchIn(active.employees, id, { lastRunMetrics, sessionId }, saveRunState);
 };
 
 /** Archive the employee package and unassign queued work. */
@@ -1127,7 +1147,6 @@ export const foundCompany = (input: {
     founderName: input.founderName,
     founderSpriteSeed: input.founderSpriteSeed,
     id,
-    lastSeenAt: null,
     leaderId: null,
     maxAgents: DEFAULT_MAX_AGENTS,
     mission: input.mission,
@@ -1247,7 +1266,9 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     agentsDir(company.id),
     (slug) => employeeFile(company.id, slug),
     (doc) => docToEmployee(doc, company.id),
-  ).toSorted(byAge);
+  )
+    .map(withRunState)
+    .toSorted(byAge);
   const tasks = loadPackages(
     "task",
     tasksDir(company.id),
@@ -1270,6 +1291,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   adoptLegacyTeam(company);
   loadRecentChat(active);
   loadRecentActivity(active);
+  active.sinceLastLook = readJsonFile(sinceLastLookFile(company.id), DigestSchema);
   return active;
 };
 
@@ -1340,6 +1362,19 @@ export const initStore = (): LoadReport => {
 };
 
 // ---- activity log ----------------------------------------------------------
+const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
+  active.sinceLastLook = next;
+  atomicWrite(sinceLastLookFile(active.company.id), JSON.stringify(next, null, 2));
+};
+
+/** The founder has the office in view as of `at`: what came before is seen, and the count starts over. */
+export const markSeen = (companyId: string, at: number): void => {
+  const active = activeCompany(companyId);
+  if (active) {
+    saveSinceLastLook(active, emptyDigest(at));
+  }
+};
+
 export const logActivity = (row: PersistedActivity, persist: boolean): ActivityEvent => {
   const entry: ActivityEvent = { ...row, id: nextId("nextActivityId") };
   const { active } = c();
@@ -1351,89 +1386,24 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
     active.activity = active.activity.slice(-ACTIVITY_RING);
   }
   appendJsonl(activityFile(active.company.id), row);
+  const folded = active.sinceLastLook && foldDigest(active.sinceLastLook, row);
+  if (folded) {
+    saveSinceLastLook(active, folded);
+  }
   return entry;
 };
 
-/**
- * What happened since `since`, read back from the log itself so a long
- * absence is counted in full; `truncated` says the read stopped short.
- */
-
-export const digestSince = (companyId: string, since: number): Digest | null => {
-  if (!activeCompany(companyId)) {
-    return null;
-  }
-  const { rows, complete } = readJsonlSince(
-    activityFile(companyId),
-    PersistedActivitySchema,
-    since,
-  );
-  const summary: Digest = {
-    dead: 0,
-    hired: [],
-    released: [],
-    runs: 0,
-    ships: [],
-    since,
-    spentUsd: 0,
-    truncated: !complete,
-  };
-  for (const e of rows) {
-    switch (e.kind) {
-      case "ship": {
-        summary.ships.push(e.message);
-        break;
-      }
-      case "run.end": {
-        summary.runs += 1;
-        summary.spentUsd += e.payload.costUsd ?? 0;
-        break;
-      }
-      case "task.dead": {
-        summary.dead += 1;
-        break;
-      }
-      case "org.hired": {
-        summary.hired.push(e.payload.name);
-        break;
-      }
-      case "org.released": {
-        summary.released.push(e.payload.name);
-        break;
-      }
-      default: {
-        break;
-      }
-    }
-  }
-  return summary;
-};
-
-/** The digest, and the look itself: reading it sets the clock for the next one. Null before a first look. */
+/** The digest, and the look itself: reading it starts the next one. Null before a first look. */
 export const digest = (companyId: string): Digest | null => {
-  const since = getCompany(companyId)?.lastSeenAt ?? null;
-  const summary = since === null ? null : digestSince(companyId, since);
+  const current = activeCompany(companyId)?.sinceLastLook ?? null;
   markSeen(companyId, Date.now());
-  return summary;
+  return current;
 };
 
 const ofKind =
   <K extends ActivityKind>(kind: K) =>
   (e: ActivityEvent): e is Extract<ActivityEvent, { kind: K }> =>
     e.kind === kind;
-
-/** The real numbers as this employee's last run ended, if the ring still holds it. */
-export const lastRunMetrics = (companyId: string, employeeId: string): RunMetrics | null => {
-  const active = activeCompany(companyId);
-  if (!active) {
-    return null;
-  }
-  const isRunEnd = ofKind("run.end");
-  const last = active.activity.findLast((e) => isRunEnd(e) && e.employeeId === employeeId);
-  return last && isRunEnd(last) && last.payload.metrics
-    ? { ...last.payload.metrics, at: last.createdAt }
-    : null;
-};
 
 export const recentActivity = <K extends ActivityKind>(
   companyId: string,

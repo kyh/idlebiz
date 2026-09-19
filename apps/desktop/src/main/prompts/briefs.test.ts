@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { autonomousBrief } from "./briefs";
-import type { RunMetrics } from "./briefs";
-import type { Company, Employee, Product } from "@/shared/domain";
+import type { Company, Employee, Product, RunMetrics } from "@/shared/domain";
 
 const company: Company = {
   autopilot: true,
@@ -11,7 +10,6 @@ const company: Company = {
   founderName: "Ada",
   founderSpriteSeed: "s",
   id: "acme",
-  lastSeenAt: null,
   leaderId: "lead",
   maxAgents: 12,
   mission: "a to-do app",
@@ -27,6 +25,7 @@ const employee: Employee = {
   createdAt: 0,
   deskIndex: 0,
   id: "lead",
+  lastRunMetrics: null,
   name: "Priya",
   persona: "",
   role: "engineer",
@@ -49,10 +48,10 @@ const product: Product = {
   workspaceDir: "/tmp/acme",
 };
 
-const briefFor = (co: Company, products: Product[], sinceLastRun: RunMetrics | null = null) =>
+const briefFor = (co: Company, products: Product[], lastRunMetrics: RunMetrics | null = null) =>
   autonomousBrief({
     company: co,
-    employee,
+    employee: { ...employee, lastRunMetrics },
     employees: [employee],
     focus: products[0] ?? null,
     nameOf: () => "Priya",
@@ -60,7 +59,6 @@ const briefFor = (co: Company, products: Product[], sinceLastRun: RunMetrics | n
     products,
     room: [],
     ships: [],
-    sinceLastRun,
   }).description;
 
 describe("the brief's real numbers", () => {

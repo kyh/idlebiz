@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readJsonlSince, readJsonlTail } from "./fs";
+import { readJsonlTail } from "./fs";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-jsonl-"));
 const file = path.join(root, "activity.jsonl");
@@ -36,39 +36,5 @@ describe("JSONL tail", () => {
     writeFileSync(file, `${oversized}\n{"value":2}\n{"value":3}\n`);
 
     expect(readJsonlTail(file, RowSchema, 10)).toEqual([{ value: 2 }, { value: 3 }]);
-  });
-});
-
-describe("JSONL since", () => {
-  const Stamped = z.object({ createdAt: z.number(), value: z.number() });
-
-  it("returns the rows after the moment, and knows it reached it", () => {
-    writeFileSync(
-      file,
-      '{"createdAt":1,"value":1}\n{"createdAt":5,"value":2}\n{"createdAt":9,"value":3}\n',
-    );
-
-    expect(readJsonlSince(file, Stamped, 5)).toEqual({
-      complete: true,
-      rows: [{ createdAt: 9, value: 3 }],
-    });
-    expect(readJsonlSince(file, Stamped, 0).rows).toHaveLength(3);
-  });
-
-  it("reports a floor when the byte cap cut the read before the moment", () => {
-    const oversized = JSON.stringify({ createdAt: 1, padding: "x".repeat(1024 * 1024), value: 1 });
-    writeFileSync(file, `${oversized}\n{"createdAt":7,"value":2}\n`);
-
-    expect(readJsonlSince(file, Stamped, 3)).toEqual({
-      complete: false,
-      rows: [{ createdAt: 7, value: 2 }],
-    });
-  });
-
-  it("is complete on a missing log", () => {
-    expect(readJsonlSince(path.join(root, "none.jsonl"), Stamped, 0)).toEqual({
-      complete: true,
-      rows: [],
-    });
   });
 });

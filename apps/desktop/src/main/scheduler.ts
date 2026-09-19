@@ -118,7 +118,6 @@ const heartbeatBrief = (
     products: store.listProducts(company.id),
     room: store.recentTeamMessages(company.id, 12),
     ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
-    sinceLastRun: store.lastRunMetrics(company.id, emp.id),
   });
 
 const admit = (company: Company): boolean => {
@@ -190,7 +189,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   }
 
   store.setEmployeeStatus(emp.id, "idle");
-  store.setEmployeeSession(emp.id, r.session);
+  store.noteRunEnd(emp.id, r.session);
 
   if (r.usage.costUsd > 0) {
     const before = store.getCompany(task.companyId);
@@ -201,16 +200,10 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   }
 
   publishActivity({ ...at, kind: "status", message: status });
-  const company = store.getCompany(task.companyId);
   publishActivity({
     ...at,
     kind: "run.end",
-    payload: {
-      costUsd: r.usage.costUsd,
-      metrics: company ? { revenueUsd: company.revenueUsd, users: company.users } : undefined,
-      outcome: o,
-      summary: r.summary,
-    },
+    payload: { costUsd: r.usage.costUsd, outcome: o, summary: r.summary },
   });
 };
 
