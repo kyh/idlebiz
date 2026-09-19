@@ -184,7 +184,7 @@ describe("products", () => {
     const gadget = store.createProduct({ companyId: co.id, description: "x", name: "Gadget" });
     const task = store.createTask({ companyId: co.id, productId: gadget.id, title: "Ship it" });
     finish(task.id, emp.id, "done");
-    store.recordShip(co.id, task.productId);
+    store.recordShip(co.id, task.productId, "shipped");
     expect(store.getProduct(gadget.id)?.ships).toBe(1);
     expect(store.getProduct(first?.id ?? "")?.ships).toBe(0);
     expect(store.getCompany(co.id)?.ships).toBe(1);
@@ -357,7 +357,7 @@ describe("active company ownership", () => {
     });
     store.lockTaskForRun(queued.id, "new-run");
     store.settleTask(queued.id, "new-run", { kind: "done", summary: "new company shipped" });
-    store.recordShip("newer", product.id);
+    store.recordShip("newer", product.id, "new company shipped");
     scheduler.tick();
 
     expect(store.getEmployee(employee.id)?.sessionId).toBe("new-session");
@@ -379,7 +379,7 @@ describe("active company ownership", () => {
     expect(store.listOpenTasks(older.id)).toEqual([]);
     expect(store.listShippedTasks(older.id)).toEqual([]);
     expect(store.recentTeamMessages(older.id)).toEqual([]);
-    expect(store.recentActivity(older.id, "ship")).toEqual([]);
+    expect(store.recentShips(older.id)).toEqual([]);
     expect(() => store.setAutopilot(older.id, false)).toThrow("not active");
     expect(() => store.createEmployee({ companyId: older.id, ...hire("Someone") })).toThrow(
       "not active",
@@ -393,7 +393,7 @@ describe("active company ownership", () => {
     expect(() => store.consumeApproval(older.id, "old command")).toThrow("not active");
     expect(store.recordSpend(older.id, 10)).toBeNull();
     expect(store.setRealMetrics(older.id, { revenue: 10, users: 10 })).toBeNull();
-    store.recordShip(older.id, "acme");
+    store.recordShip(older.id, "acme", "shipped");
     store.markRoutineRun(older.id, "business-review");
     expect(saveSnapshot(older.id)).toEqual(before);
   });
@@ -541,5 +541,18 @@ describe("what a run leaves behind", () => {
     );
     store.initStore();
     expect(store.getEmployee(emp.id)?.sessionId).toBe("legacy-session");
+  });
+});
+
+describe("recently shipped", () => {
+  it("keeps the latest summaries for the next brief, across a restart", () => {
+    const company = found();
+    for (let i = 0; i < 8; i += 1) {
+      store.recordShip(company.id, null, `ship ${i}`);
+    }
+    store.initStore();
+    expect(store.recentShips(company.id)).toEqual(
+      Array.from({ length: 6 }, (_, i) => `ship ${i + 2}`),
+    );
   });
 });

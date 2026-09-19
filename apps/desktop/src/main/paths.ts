@@ -17,8 +17,9 @@ import { mkdirSync } from "node:fs";
 //     products/<slug>/workspace/  its code (the first product uses workspace/)
 //     workspace/            shared cwd where agents do real work
 //     chat.jsonl            the company room (non-canonical, append-only)
-//     activity.jsonl        append-only event log (non-canonical): an audit trail, never queried for state
+//     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
 //     since-last-look.json  the founder's digest, folded from each event as it happens
+//     recent-ships.json     the latest ship summaries, for the next brief
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -34,6 +35,9 @@ export const companyFile = (companySlug: string): string =>
 /** Shared workspace where all of a company's employees do real work together. */
 export const companyWorkspace = (companySlug: string): string =>
   path.join(companyDir(companySlug), "workspace");
+/** The latest ship summaries, for the brief's "recently shipped" lines. */
+export const recentShipsFile = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "recent-ships.json");
 /** The founder's digest-in-progress: what has happened since they last looked. */
 export const sinceLastLookFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "since-last-look.json");

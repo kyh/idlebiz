@@ -8,6 +8,7 @@ import {
   companyFile,
   companyWorkspace,
   activityFile,
+  recentShipsFile,
   sinceLastLookFile,
   agentsDir,
   approvalsFile,
@@ -61,8 +62,7 @@ import {
   RunMetricsSchema,
   afterFailure,
 } from "@/shared/domain";
-import { PersistedActivitySchema } from "@/shared/activity";
-import type { ActivityEvent, ActivityKind, PersistedActivity } from "@/shared/activity";
+import type { ActivityEvent, PersistedActivity } from "@/shared/activity";
 import type {
   AgentRunner,
   FailureVerdict,
@@ -91,7 +91,8 @@ interface ActiveCompany {
   products: Product[];
   routines: Routine[];
   chat: TeamMessage[];
-  activity: ActivityEvent[];
+  /** The latest ship summaries, oldest first: what the next brief calls "recently shipped". */
+  recentShips: string[];
   /** What has happened since the founder last looked. Null until they first do, so founding a company is not news. */
   sinceLastLook: Digest | null;
 }
@@ -131,11 +132,11 @@ const requireActiveCompany = (companyId: string): ActiveCompany => {
 };
 
 const emptyCompany = (company: Company): ActiveCompany => ({
-  activity: [],
   chat: [],
   company,
   employees: [],
   products: [],
+  recentShips: [],
   routines: [],
   shipped: null,
   sinceLastLook: null,
@@ -377,8 +378,6 @@ const shelve = (t: Task): void => {
   moveDir(path.join(tasksDir(t.companyId), t.id), path.join(shippedDir(t.companyId), t.id));
 };
 
-const ACTIVITY_RING = 600;
-
 // ---- slug allocation ---------------------------------------------------------
 /** Scan suffixes once; onDisk also protects packages skipped during loading. */
 const uniqueSlug = (
@@ -462,17 +461,6 @@ const LEADER_RX = /(?:ceo|founder|chief|head|lead|manager|principal|director|\bp
 const leadOf = (emps: readonly Employee[]): string | null => {
   const byRole = emps.find((e) => LEADER_RX.test(`${e.role} ${e.title}`));
   return (byRole ?? emps[0])?.id ?? null;
-};
-
-const loadRecentActivity = (active: ActiveCompany): void => {
-  const rows = readJsonlTail(
-    activityFile(active.company.id),
-    PersistedActivitySchema,
-    ACTIVITY_RING,
-  );
-  for (const row of rows) {
-    active.activity.push({ ...row, id: nextId("nextActivityId") });
-  }
 };
 
 const TEAM_CHAT_RING = 200;
@@ -870,16 +858,26 @@ export const attentionProduct = (companyId: string): Product | null => {
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 };
 
-export const recordShip = (companyId: string, productId: string | null): void => {
-  const co = getCompany(companyId);
-  if (!co) {
+/** How many ship summaries a brief lists. */
+const RECENT_SHIPS = 6;
+const RecentShipsSchema = z.array(z.string());
+
+export const recentShips = (companyId: string): readonly string[] =>
+  activeCompany(companyId)?.recentShips ?? [];
+
+export const recordShip = (companyId: string, productId: string | null, summary: string): void => {
+  const active = activeCompany(companyId);
+  if (!active) {
     return;
   }
-  patchCompany(companyId, { ships: co.ships + 1 });
+  patchCompany(companyId, { ships: active.company.ships + 1 });
   const product = productId === null ? null : getProduct(productId);
   if (product) {
     patchProduct(product.id, { lastShipAt: Date.now(), ships: product.ships + 1 });
   }
+  // the counters are the record; the brief's list follows them
+  active.recentShips = [...active.recentShips, summary].slice(-RECENT_SHIPS);
+  atomicWrite(recentShipsFile(companyId), JSON.stringify(active.recentShips, null, 2));
 };
 
 // ---- the company room ------------------------------------------------------
@@ -1290,8 +1288,8 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   );
   adoptLegacyTeam(company);
   loadRecentChat(active);
-  loadRecentActivity(active);
   active.sinceLastLook = readJsonFile(sinceLastLookFile(company.id), DigestSchema);
+  active.recentShips = readJsonFile(recentShipsFile(company.id), RecentShipsSchema) ?? [];
   return active;
 };
 
@@ -1381,10 +1379,6 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
   if (!persist || !active) {
     return entry;
   }
-  active.activity.push(entry);
-  if (active.activity.length > ACTIVITY_RING) {
-    active.activity = active.activity.slice(-ACTIVITY_RING);
-  }
   appendJsonl(activityFile(active.company.id), row);
   const folded = active.sinceLastLook && foldDigest(active.sinceLastLook, row);
   if (folded) {
@@ -1398,35 +1392,4 @@ export const digest = (companyId: string): Digest | null => {
   const current = activeCompany(companyId)?.sinceLastLook ?? null;
   markSeen(companyId, Date.now());
   return current;
-};
-
-const ofKind =
-  <K extends ActivityKind>(kind: K) =>
-  (e: ActivityEvent): e is Extract<ActivityEvent, { kind: K }> =>
-    e.kind === kind;
-
-export const recentActivity = <K extends ActivityKind>(
-  companyId: string,
-  kind: K,
-  limit = 12,
-): Extract<ActivityEvent, { kind: K }>[] => {
-  const active = activeCompany(companyId);
-  if (!active) {
-    return [];
-  }
-  const ids = new Set(active.employees.map((e) => e.id));
-  const isKind = ofKind(kind);
-  const out: Extract<ActivityEvent, { kind: K }>[] = [];
-  const ring = active.activity;
-  for (let i = ring.length - 1; i >= 0 && out.length < limit; i -= 1) {
-    const e = ring[i];
-    if (!e || !isKind(e)) {
-      continue;
-    }
-    const { employeeId } = e;
-    if (employeeId !== null && employeeId !== undefined && ids.has(employeeId)) {
-      out.push(e);
-    }
-  }
-  return out.toReversed();
 };

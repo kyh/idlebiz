@@ -50,8 +50,9 @@ const ship = (
   at: { runId: string; taskId: string; employeeId: string },
   summary: string,
 ): void => {
-  store.recordShip(task.companyId, task.productId);
-  publishActivity({ ...at, kind: "ship", message: (summary || "shipped work").slice(0, 200) });
+  const message = (summary || "shipped work").slice(0, 200);
+  store.recordShip(task.companyId, task.productId, message);
+  publishActivity({ ...at, kind: "ship", message });
   const ships = store.getCompany(task.companyId)?.ships ?? 0;
   if (ships > 0 && ships % 10 === 0) {
     store.postTeamMessage(
@@ -117,7 +118,7 @@ const heartbeatBrief = (
       .slice(0, 5),
     products: store.listProducts(company.id),
     room: store.recentTeamMessages(company.id, 12),
-    ships: store.recentActivity(company.id, "ship", 6).map((s) => s.message),
+    ships: store.recentShips(company.id),
   });
 
 const admit = (company: Company): boolean => {

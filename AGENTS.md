@@ -195,8 +195,9 @@ rather than crashing boot.
   each event publishes (`store.logActivity`, `main/store/digest.ts`), and what a run leaves
   for the next — the session to resume, where the real numbers stood — sits in
   `agents/<slug>/run-state.json`, so AGENTS.md changes only when the instructions do.
-  Nothing reconstructs state by scanning `activity.jsonl`; its bounded tail only seeds the
-  in-memory ring behind the feed and the brief's "recently shipped" lines.
+  The brief's "recently shipped" lines come from `recent-ships.json`, written with the
+  ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
+  the renderer, whose feed starts empty every launch.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
   so there is nothing to keep in sync.

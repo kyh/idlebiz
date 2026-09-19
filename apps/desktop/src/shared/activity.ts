@@ -70,18 +70,9 @@ export type ActivityKind = ActivityInput["kind"];
 
 export type ActivityEvent = ActivityInput & { id: number; createdAt: number };
 
-// Older lifecycle rows stored their kind in `message`; migrate them when reading.
-const legacyLifecycleRow = z.object({ kind: z.literal("lifecycle"), message: z.string() }).loose();
-
-export const PersistedActivitySchema = z.preprocess(
-  (row) => {
-    const legacy = legacyLifecycleRow.safeParse(row);
-    if (!legacy.success) {
-      return row;
-    }
-    const { message, ...rest } = legacy.data;
-    return { ...rest, kind: message };
-  },
-  z.intersection(ActivityInputSchema, z.object({ createdAt: z.number() })),
+/** A row of activity.jsonl: what was published, stamped. Written, never read back. */
+export const PersistedActivitySchema = z.intersection(
+  ActivityInputSchema,
+  z.object({ createdAt: z.number() }),
 );
 export type PersistedActivity = z.infer<typeof PersistedActivitySchema>;

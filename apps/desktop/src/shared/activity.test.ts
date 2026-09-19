@@ -2,20 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PersistedActivitySchema } from "./activity";
 
 describe("PersistedActivitySchema", () => {
-  it("lifts a row written when lifecycle events shared one kind", () => {
-    const legacy = {
-      createdAt: 1,
-      employeeId: "priya",
-      kind: "lifecycle",
-      message: "runner.resting",
-      payload: { runner: "claude", until: 1_700_000_000_000 },
-    };
-    const out = PersistedActivitySchema.parse(legacy);
-    expect(out.kind).toBe("runner.resting");
-    expect("message" in out).toBe(false);
-  });
-
-  it("reads a current row as-is", () => {
+  it("accepts a current row as-is", () => {
     const row = {
       createdAt: 2,
       employeeId: "priya",
