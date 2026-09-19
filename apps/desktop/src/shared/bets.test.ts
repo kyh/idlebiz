@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POLICY, allocate, anonymize, dream, judge } from "@/shared/bets";
+import { DEFAULT_POLICY, allocate, dream, judge } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 
 const HOUR = 3_600_000;
@@ -142,13 +142,5 @@ describe("dream", () => {
     );
     const next = dream(DEFAULT_POLICY, [history]);
     expect(next.explore).toBeLessThanOrEqual(DEFAULT_POLICY.explore);
-  });
-});
-
-describe("anonymize", () => {
-  it("keeps the numbers and drops every name", () => {
-    const [row] = anonymize([closed("secret-launch", "secret-app", 0, 100)]);
-    expect(JSON.stringify(row)).not.toContain("secret");
-    expect(row).toMatchObject({ product: 0, verdict: "won" });
   });
 });

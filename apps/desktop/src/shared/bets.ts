@@ -85,7 +85,7 @@ export const judge = (bet: Bet, reading: number | null, now: number): BetState =
 };
 
 /** What a closed bet returned against what it promised, capped so one outlier cannot own the mean. */
-export const yieldOf = (bet: ClosedBet): number =>
+const yieldOf = (bet: ClosedBet): number =>
   Math.min(2, Math.max(0, (bet.state.moved ?? 0) / Math.max(bet.target, 1)));
 
 export const PolicyParamsSchema = z.object({
@@ -106,7 +106,7 @@ export type Allocation =
   | { kind: "wait" };
 
 /** Past this many live products a new one has to replace a killed one. */
-export const MAX_LIVE_PRODUCTS = 5;
+const MAX_LIVE_PRODUCTS = 5;
 
 export interface Ledger {
   bets: readonly Bet[];
@@ -156,7 +156,7 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
 };
 
 /** History shorter than this says too little to retune on. */
-export const MIN_BETS_TO_DREAM = 8;
+const MIN_BETS_TO_DREAM = 8;
 
 const CANDIDATES: readonly PolicyParams[] = [0, 0.5, 1, 2].flatMap((explore) =>
   [2, 3, 5].map((plateau) => ({ explore, plateau })),
@@ -217,35 +217,4 @@ export const dream = (
     }
   }
   return best;
-};
-
-/** A closed bet with everything that could name the company removed: what a shared pool may hold. */
-export const AnonymousBetSchema = z.object({
-  budgetUsd: z.number(),
-  metric: z.enum(BET_METRICS),
-  moved: z.number().nullable(),
-  /** Which of the company's products, as an index: keeps bets groupable without a name. */
-  product: z.number().int(),
-  spentUsd: z.number(),
-  target: z.number(),
-  tookHours: z.number(),
-  verdict: z.enum(["won", "killed"]),
-  windowHours: z.number(),
-});
-export type AnonymousBet = z.infer<typeof AnonymousBetSchema>;
-
-export const anonymize = (bets: readonly Bet[]): AnonymousBet[] => {
-  const closed = bets.filter(isClosed);
-  const products = [...new Set(closed.map((b) => b.productId))];
-  return closed.map((b) => ({
-    budgetUsd: b.budgetUsd,
-    metric: b.metric,
-    moved: b.state.moved,
-    product: products.indexOf(b.productId),
-    spentUsd: b.spentUsd,
-    target: b.target,
-    tookHours: Math.round((b.state.closedAt - b.createdAt) / HOUR_MS),
-    verdict: b.state.kind,
-    windowHours: b.windowHours,
-  }));
 };

@@ -8,7 +8,8 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   packages (COMPANY.md, agents/<slug>/AGENTS.md doubles as the live agent
   instructions, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
   products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
-  get products/<slug>/workspace/), routines/, activity.jsonl).
+  get products/<slug>/workspace/), bets/<slug>/BET.md, retired/<slug>/ for killed
+  products, routines/, activity.jsonl).
 - One active company per launch: newest `createdAt`, alphabetical slug on ties.
   Only that company's entities load or migrate; older saves remain untouched.
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
@@ -17,6 +18,30 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
 - Verify changes live: `pnpm dev:desktop` exposes CDP on :9222 (use agent-browser).
   Under headless automation the Phaser boot stalls (document.hidden) â€” force
   `window.__game.scene.start("office")` and step `game.loop.step(t)` to render.
+
+## The company is steered by bets
+
+`shared/bets.ts` is the whole steering loop, pure: a bet is one hypothesis about one real
+number (`users` | `revenue`) of one product, with a spend cap and a window.
+
+- **The evaluator judges, never the team.** `judge` runs every scheduler tick against the
+  live product numbers: won when the number moved by the target, measuring once the budget
+  is spent (or the lead calls `measure_bet`), killed when the window closes short. No tool
+  lets an agent declare a win.
+- **One live bet per product per metric** (`store.openBet` refuses the second), so two bets
+  never claim the same movement. Per-product revenue is Stripe charges tagged
+  `metadata[product]=<slug>`; untagged revenue counts for the company only.
+- **Idle hands only spend against a fundable bet.** `allocate` picks it (product yield +
+  exploration bonus âˆ’ crowding); with none fundable only the lead runs, to open the next
+  one, and a run of straight losses asks for new ground. Routines and founder pings are the
+  only unfunded work.
+- **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`
+  against the closed bets and swaps only to a strictly better scorer, so the incumbent never
+  loses to a tie. It stays on the defaults below eight closed bets. Steering changes go in
+  the policy, not into prompts as advice: briefs carry the ledger as facts only.
+- **Outward-facing stays founder-gated**, including the browser: `BrowserWatch` holds any
+  page-changing `agent-browser` verb on a non-loopback site until the founder signs for
+  that site, once per run.
 
 ## Two traps that fail silently
 

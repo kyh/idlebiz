@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, describeRule, normalizeCommand } from "./command-policy";
+import { BrowserWatch, classifyCommand, describeRule, normalizeCommand } from "./command-policy";
 import type { RuleId } from "./command-policy";
 
 const MUST_ASK = {
@@ -141,6 +141,46 @@ describe("describeRule", () => {
     expect(describeRule("git-push")).toBe("Push commits to a remote repository.");
     expect(describeRule("retired-rule")).toBe(
       'Saved rule "retired-rule" is unavailable in this version.',
+    );
+  });
+});
+
+describe("BrowserWatch", () => {
+  it("lets a run act on its own localhost build", () => {
+    const watch = new BrowserWatch();
+    expect(watch.heldHost("agent-browser open http://localhost:5173")).toBeNull();
+    expect(watch.heldHost("agent-browser click @e3")).toBeNull();
+  });
+
+  it("lets a run read anywhere", () => {
+    const watch = new BrowserWatch();
+    expect(watch.heldHost("agent-browser open https://news.example.com")).toBeNull();
+    expect(watch.heldHost("agent-browser snapshot")).toBeNull();
+    expect(watch.heldHost("agent-browser get text @e1")).toBeNull();
+  });
+
+  it("holds an act on a remote site until the founder leases it", () => {
+    const watch = new BrowserWatch();
+    watch.heldHost("agent-browser open https://news.example.com/submit");
+    expect(watch.heldHost('agent-browser fill @e2 "Show: our app"')).toBe("news.example.com");
+    watch.lease("news.example.com");
+    expect(watch.heldHost("agent-browser click @e5")).toBeNull();
+  });
+
+  it("tracks sessions apart and follows a chained command", () => {
+    const watch = new BrowserWatch();
+    watch.heldHost("agent-browser --session mara open http://127.0.0.1:3000");
+    expect(
+      watch.heldHost(
+        "agent-browser --session sam open https://forum.example.com && agent-browser --session sam click @e1",
+      ),
+    ).toBe("forum.example.com");
+    expect(watch.heldHost("agent-browser --session mara click @e1")).toBeNull();
+  });
+
+  it("holds an act on a page the run never opened", () => {
+    expect(new BrowserWatch().heldHost("agent-browser press Enter")).toBe(
+      "a page this run never opened",
     );
   });
 });

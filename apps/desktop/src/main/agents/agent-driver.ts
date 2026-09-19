@@ -24,7 +24,13 @@ import type { RunToolHooks } from "@/main/control-plane";
 import type { RestingRunners } from "@/shared/ipc-registry";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
-import { classifyCommand, normalizeCommand } from "@/shared/command-policy";
+import {
+  BROWSER_ACT,
+  BrowserWatch,
+  browserActCommand,
+  classifyCommand,
+  normalizeCommand,
+} from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
@@ -61,6 +67,7 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
 const decidePermission = (
   companyId: string,
   request: PermissionRequest,
+  browser: BrowserWatch,
   block: (ask: BlockedAsk) => void,
 ): PermissionDecision => {
   const command = normalizeCommand(request.command);
@@ -69,7 +76,18 @@ const decidePermission = (
   }
   const verdict = classifyCommand(command);
   if (verdict.decision === "allow") {
-    return { allow: true };
+    const host = browser.heldHost(command);
+    if (host === null) {
+      return { allow: true };
+    }
+    // the sign-off is for the site, not the keystroke: one card covers the run's work there
+    const key = browserActCommand(host);
+    if (store.consumeApproval(companyId, key)) {
+      browser.lease(host);
+      return { allow: true };
+    }
+    block({ command: key, rule: BROWSER_ACT.id, type: "approval" });
+    return { allow: false };
   }
   if (store.consumeApproval(companyId, command)) {
     return { allow: true };
@@ -236,6 +254,7 @@ class AgentDriver {
     sawOutput: boolean;
   }> {
     const handle = controlPlane.registerRun(hooks);
+    const browser = new BrowserWatch();
     let sawOutput = false;
     try {
       // the product's workspace is the cwd; the company workspace stays reachable
@@ -257,7 +276,7 @@ class AgentDriver {
           }
         },
         onPermission: (request) =>
-          Promise.resolve(decidePermission(company.id, request, handle.block)),
+          Promise.resolve(decidePermission(company.id, request, browser, handle.block)),
         prompt: run.prompt,
         resumeSessionId,
         signal: abort.signal,

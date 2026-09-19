@@ -16,7 +16,8 @@ const RULE_IDS = [
 export type RuleId = (typeof RULE_IDS)[number];
 
 interface CommandRule {
-  id: RuleId;
+  /** `browser-act` is judged by the run's BrowserWatch, not by the command alone. */
+  id: RuleId | "browser-act";
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
 }
@@ -128,6 +129,71 @@ const RULES: readonly Rule[] = [
   },
 ];
 
+/** What the founder signs for a browser session: acting on one site, for the rest of the run. */
+export const BROWSER_ACT: CommandRule = {
+  describe:
+    "Act in a real browser on this site — log in, type, click, submit — for the rest of this run.",
+  id: "browser-act",
+};
+
+const LOOPBACK_URL = /^(?:https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)|file:|about:)/u;
+
+const BROWSER_CALL = new RegExp(
+  AT_COMMAND + program("agent-browser") + String.raw`(?<args>[^\n;&|]*)`,
+  "gu",
+);
+
+/** Verbs that change a page. Reading — open, read, snapshot, get, screenshot, scroll, wait — stays free. */
+const BROWSER_WRITES =
+  /(?:^|\s)(?:click|dblclick|type|fill|press|keyboard|check|uncheck|select|drag|upload|eval|find|mouse)(?:\s|$)/u;
+
+const hostOf = (url: string): string | null => {
+  try {
+    return new URL(/^[a-z][a-z\d+.-]*:/iu.test(url) ? url : `https://${url}`).host || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * One run's view of the browser. A command names no site, only a verb, so the
+ * watch remembers where each session was last pointed: acting on the team's own
+ * localhost build is work, acting anywhere else is outward-facing. A page the
+ * run never opened is unknown, and unknown asks.
+ */
+export class BrowserWatch {
+  /** session → the remote host it is on; null is a local page */
+  private pages = new Map<string, string | null>();
+  private leased = new Set<string>();
+
+  /** The host a command would act on without a lease, or null when it may run. */
+  heldHost(command: string): string | null {
+    for (const call of command.matchAll(BROWSER_CALL)) {
+      const args = call.groups?.args ?? "";
+      const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
+      const opened = /(?:^|\s)open\s+["']?(?<url>[^\s"']+)/u.exec(args)?.groups?.url;
+      if (opened !== undefined) {
+        this.pages.set(session, LOOPBACK_URL.test(opened) ? null : hostOf(opened));
+      } else if (BROWSER_WRITES.test(args)) {
+        const host = this.pages.has(session)
+          ? this.pages.get(session)
+          : "a page this run never opened";
+        if (host !== null && host !== undefined && !this.leased.has(host)) {
+          return host;
+        }
+      }
+    }
+    return null;
+  }
+
+  lease(host: string): void {
+    this.leased.add(host);
+  }
+}
+
+/** The approval key and card text for acting on `host`. */
+export const browserActCommand = (host: string): string => `agent-browser: act on ${host}`;
+
 /** True when every internet target named is the game's own loopback API. */
 const onlyLoopbackTargets = (command: string): boolean => {
   const urls = command.match(/https?:\/\/[^\s"'`)]+/gu) ?? [];
@@ -142,7 +208,7 @@ export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Co
 
 /** What the approval card says about a held command, by the rule that held it. */
 export const describeRule = (id: string): string =>
-  RULES.find((rule) => rule.id === id)?.describe ??
+  [...RULES, BROWSER_ACT].find((rule) => rule.id === id)?.describe ??
   `Saved rule "${id}" is unavailable in this version.`;
 
 export const classifyCommand = (command: string): CommandVerdict => {

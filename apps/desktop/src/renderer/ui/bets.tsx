@@ -9,20 +9,21 @@ import { cn } from "cn";
 const goalOf = (bet: Bet): string =>
   bet.metric === "revenue" ? `+${formatUsd(bet.target)} revenue` : `+${bet.target} users`;
 
+/** What the badge does not already say: how long is left, how far it moved, why it died. */
 const verdictOf = (bet: Bet): string => {
   const st = bet.state;
   switch (st.kind) {
     case "open": {
-      return "open";
+      return `${formatUsd(Math.max(0, bet.budgetUsd - bet.spentUsd))} left`;
     }
     case "measuring": {
-      return `measuring til ${formatDate(st.until)} ${formatTime(st.until)}`;
+      return `til ${formatDate(st.until)} ${formatTime(st.until)}`;
     }
     case "won": {
-      return `won · moved ${st.moved}`;
+      return `moved ${st.moved}`;
     }
     case "killed": {
-      return `killed · ${st.reason}`;
+      return st.reason;
     }
     // no default
   }
