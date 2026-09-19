@@ -59,7 +59,11 @@ export const ChoiceMenu = ({ menu, className }: { menu: Menu; className?: string
           title={item.hint}
           disabled={item.disabled}
           onFocus={() => menu.setCursor(i)}
-          onMouseEnter={(e) => e.currentTarget.focus()}
+          onPointerMove={(e) => {
+            if (e.pointerType !== "touch") {
+              e.currentTarget.focus();
+            }
+          }}
           onClick={() => menu.pick(i)}
         >
           <span className="px-menu-cursor">▶</span>
