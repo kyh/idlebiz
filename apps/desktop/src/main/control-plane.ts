@@ -3,6 +3,8 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { listenLoopback } from "@/main/lib/http";
+import { BET_METRICS } from "@/shared/bets";
+import type { BetMetric } from "@/shared/bets";
 import { INTEGRATION_KINDS } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
@@ -14,13 +16,35 @@ import type { JsonValue } from "@/shared/json";
 export interface RunToolHooks {
   messageTeam: (text: string) => void;
   readTeam: () => string;
-  /** Returns a human-readable confirmation (or explains why nothing happened). Lands on the named product, else the run's own. */
-  delegate: (role: string, title: string, description: string, product: string | null) => string;
+  /** Returns a human-readable confirmation (or explains why nothing happened). Lands on the named bet's product, else the named product, else the run's own. */
+  delegate: (input: {
+    role: string;
+    title: string;
+    description: string;
+    product: string | null;
+    bet: string | null;
+  }) => string;
   createProduct: (name: string, description: string) => string;
+  killProduct: (slug: string, reason: string) => string;
+  /** The ledger as the team reads it: every live bet and the latest verdicts. */
+  readBets: () => string;
+  openBet: (input: OpenBetInput) => string;
+  measureBet: (slug: string) => string;
+  killBet: (slug: string, reason: string) => string;
   hire: (input: { role: string; title: string; name?: string; persona?: string }) => string;
   release: (slug: string, reason: string) => string;
   /** Raise the ask immediately, before the run settles. */
   raiseAsk: (ask: BlockedAsk) => void;
+}
+
+export interface OpenBetInput {
+  product: string | null;
+  title: string;
+  hypothesis: string;
+  metric: BetMetric;
+  target: number;
+  budgetUsd: number;
+  windowHours: number;
 }
 
 interface RunRecord {
@@ -52,6 +76,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const AskBossBody = z.object({ question: z.string().min(1) });
 const MessageTeamBody = z.object({ text: z.string().min(1) });
 const DelegateBody = z.object({
+  bet: z.string().min(1).optional(),
   description: z.string().min(1),
   product: z.string().min(1).optional(),
   role: z.string().min(1),
@@ -68,6 +93,19 @@ const CreateProductBody = z.object({
   description: z.string().trim().min(1).max(600),
   name: z.string().trim().min(1).max(80),
 });
+const KillProductBody = z.object({ reason: z.string().trim().min(1), slug: z.string().min(1) });
+const OpenBetBody = z.object({
+  budgetUsd: z.number().positive().max(1000),
+  hypothesis: z.string().trim().min(1).max(600),
+  metric: z.enum(BET_METRICS),
+  product: z.string().min(1).optional(),
+  target: z.number().positive(),
+  title: z.string().trim().min(1).max(80),
+  // long enough for a number to answer, short enough that a dud dies within the fortnight
+  windowHours: z.number().min(1).max(336),
+});
+const MeasureBetBody = z.object({ slug: z.string().min(1) });
+const KillBetBody = z.object({ reason: z.string().trim().min(1), slug: z.string().min(1) });
 const RequestIntegrationBody = z.object({
   kind: z.enum(INTEGRATION_KINDS),
   reason: z.string().min(1),
@@ -110,6 +148,71 @@ const readJsonBody = async (req: IncomingMessage): Promise<JsonValue> => {
   }
   return parseJson(Buffer.concat(chunks).toString("utf-8"));
 };
+
+type Tool = (run: RunRecord, raw: JsonValue) => Omit<ToolResponse, "ok">;
+
+/** Every company tool, by `METHOD /path`. Each parses its own body and answers in prose the agent reads. */
+const TOOLS = {
+  "GET /v1/bets": (run) => ({ message: run.hooks.readBets() }),
+  "GET /v1/team-chat": (run) => ({
+    messages: run.hooks.readTeam() || "(the team room is empty so far)",
+  }),
+  "POST /v1/ask-boss": (run, raw) => {
+    const body = parseBody(raw, AskBossBody);
+    raise(run, { question: body.question.trim(), type: "question" });
+    return {
+      message:
+        "Your question was sent to the founder. Note it and continue with anything you can still do.",
+    };
+  },
+  "POST /v1/create-product": (run, raw) => {
+    const { name, description } = parseBody(raw, CreateProductBody);
+    return { message: run.hooks.createProduct(name, description) };
+  },
+  "POST /v1/delegate": (run, raw) => {
+    const body = parseBody(raw, DelegateBody);
+    return {
+      message: run.hooks.delegate({
+        ...body,
+        bet: body.bet ?? null,
+        product: body.product ?? null,
+      }),
+    };
+  },
+  "POST /v1/hire": (run, raw) => ({ message: run.hooks.hire(parseBody(raw, HireBody)) }),
+  "POST /v1/kill-bet": (run, raw) => {
+    const { slug, reason } = parseBody(raw, KillBetBody);
+    return { message: run.hooks.killBet(slug, reason) };
+  },
+  "POST /v1/kill-product": (run, raw) => {
+    const { slug, reason } = parseBody(raw, KillProductBody);
+    return { message: run.hooks.killProduct(slug, reason) };
+  },
+  "POST /v1/measure-bet": (run, raw) => ({
+    message: run.hooks.measureBet(parseBody(raw, MeasureBetBody).slug),
+  }),
+  "POST /v1/message-team": (run, raw) => {
+    run.hooks.messageTeam(parseBody(raw, MessageTeamBody).text.trim());
+    return { message: "Posted to the team room." };
+  },
+  "POST /v1/open-bet": (run, raw) => {
+    const body = parseBody(raw, OpenBetBody);
+    return { message: run.hooks.openBet({ ...body, product: body.product ?? null }) };
+  },
+  "POST /v1/release": (run, raw) => {
+    const body = parseBody(raw, ReleaseBody);
+    return { message: run.hooks.release(body.slug, body.reason) };
+  },
+  "POST /v1/request-integration": (run, raw) => {
+    const body = parseBody(raw, RequestIntegrationBody);
+    raise(run, { integration: body.kind, reason: body.reason.trim(), type: "integration" });
+    return {
+      message: `The founder has a ${body.kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
+    };
+  },
+} satisfies Record<string, Tool>;
+
+const isTool = (route: string): route is keyof typeof TOOLS => Object.hasOwn(TOOLS, route);
 
 class ControlPlane {
   private server: Server | null = null;
@@ -163,71 +266,17 @@ class ControlPlane {
       }
       const [path] = (req.url ?? "").split("?");
       const route = `${req.method ?? "GET"} ${path}`;
-      const raw = req.method === "POST" ? await readJsonBody(req) : null;
+      const raw = req.method === "POST" ? await readJsonBody(req) : {};
       // A run may finish while its request body is still arriving.
       if (this.authenticate(req) !== run) {
         respond(res, 401, { error: "unknown or expired run token", ok: false });
         return;
       }
-      switch (route) {
-        case "GET /v1/team-chat": {
-          respond(res, 200, {
-            messages: run.hooks.readTeam() || "(the team room is empty so far)",
-            ok: true,
-          });
-          return;
-        }
-        case "POST /v1/ask-boss": {
-          const body = parseBody(raw, AskBossBody);
-          raise(run, { question: body.question.trim(), type: "question" });
-          respond(res, 200, {
-            message:
-              "Your question was sent to the founder. Note it and continue with anything you can still do.",
-            ok: true,
-          });
-          return;
-        }
-        case "POST /v1/message-team": {
-          const body = parseBody(raw, MessageTeamBody);
-          run.hooks.messageTeam(body.text.trim());
-          respond(res, 200, { message: "Posted to the team room.", ok: true });
-          return;
-        }
-        case "POST /v1/delegate": {
-          const { role, title, description, product } = parseBody(raw, DelegateBody);
-          respond(res, 200, {
-            message: run.hooks.delegate(role, title, description, product ?? null),
-            ok: true,
-          });
-          return;
-        }
-        case "POST /v1/create-product": {
-          const { name, description } = parseBody(raw, CreateProductBody);
-          respond(res, 200, { message: run.hooks.createProduct(name, description), ok: true });
-          return;
-        }
-        case "POST /v1/hire": {
-          const body = parseBody(raw, HireBody);
-          respond(res, 200, { message: run.hooks.hire(body), ok: true });
-          return;
-        }
-        case "POST /v1/release": {
-          const body = parseBody(raw, ReleaseBody);
-          respond(res, 200, { message: run.hooks.release(body.slug, body.reason), ok: true });
-          return;
-        }
-        case "POST /v1/request-integration": {
-          const body = parseBody(raw, RequestIntegrationBody);
-          raise(run, { integration: body.kind, reason: body.reason.trim(), type: "integration" });
-          respond(res, 200, {
-            message: `The founder has a ${body.kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
-            ok: true,
-          });
-          return;
-        }
-        default: {
-          respond(res, 404, { error: `no such tool: ${route}`, ok: false });
-        }
+      if (isTool(route)) {
+        const tool: Tool = TOOLS[route];
+        respond(res, 200, { ok: true, ...tool(run, raw) });
+      } else {
+        respond(res, 404, { error: `no such tool: ${route}`, ok: false });
       }
     } catch (error) {
       if (error instanceof BadRequestError) {

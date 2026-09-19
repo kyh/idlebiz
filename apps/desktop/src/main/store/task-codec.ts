@@ -21,6 +21,9 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
   if (t.productId !== null) {
     metadata.productId = t.productId;
   }
+  if (t.betId !== null) {
+    metadata.betId = t.betId;
+  }
   const st = t.state;
   switch (st.kind) {
     case "todo": {
@@ -139,6 +142,7 @@ export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
     artifacts: strArray(m, "artifacts"),
     assigneeId: optStr(m, "assigneeId"),
     attempts: optNum(m, "attempts", 0),
+    betId: optStr(m, "betId"),
     companyId,
     completedAt: nullableNum(m, "completedAt"),
     createdAt: optNum(m, "createdAt", Date.now()),

@@ -25,6 +25,10 @@ import {
   productsDir,
   productFile,
   productWorkspace,
+  retiredDir,
+  betsDir,
+  betFile,
+  policyFile,
   routinesDir,
   routineFile,
   chatFile,
@@ -47,9 +51,12 @@ import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
 import { defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
+import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
+import { DEFAULT_POLICY, PolicyParamsSchema, dream, isClosed, judge } from "@/shared/bets";
+import type { Bet, BetMetric, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
 import { DigestSchema } from "@/shared/ipc-registry";
@@ -89,6 +96,9 @@ interface ActiveCompany {
   // Loaded only when the shipping log is opened.
   shipped: Task[] | null;
   products: Product[];
+  bets: Bet[];
+  /** How the allocator weighs bets; retuned whenever one closes. */
+  policy: PolicyParams;
   routines: Routine[];
   chat: TeamMessage[];
   /** The latest ship summaries, oldest first: what the next brief calls "recently shipped". */
@@ -132,9 +142,11 @@ const requireActiveCompany = (companyId: string): ActiveCompany => {
 };
 
 const emptyCompany = (company: Company): ActiveCompany => ({
+  bets: [],
   chat: [],
   company,
   employees: [],
+  policy: DEFAULT_POLICY,
   products: [],
   recentShips: [],
   routines: [],
@@ -368,6 +380,10 @@ const saveTask = (t: Task): void => {
 
 const saveProduct = (p: Product): void => {
   atomicWrite(productFile(p.companyId, p.id), serializeDoc(productToDoc(p)));
+};
+
+const saveBet = (b: Bet): void => {
+  atomicWrite(betFile(b.companyId, b.id), serializeDoc(betToDoc(b)));
 };
 
 const saveRoutine = (r: Routine): void => {
@@ -786,6 +802,7 @@ const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   id: uniqueSlug(co.name, [], (s) => existsSync(path.join(productsDir(co.id), s))),
   lastShipAt: null,
   name: co.name,
+  revenueUsd: null,
   ships: co.ships,
   users: co.users,
   vercel,
@@ -828,6 +845,7 @@ export const createProduct = (input: {
     id,
     lastShipAt: null,
     name: input.name.trim(),
+    revenueUsd: null,
     ships: 0,
     users: null,
     vercel: null,
@@ -845,17 +863,166 @@ export const createProduct = (input: {
 export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product | null =>
   patchProduct(productId, { vercel });
 
-/** Real visitors per product, from the pulse; a null keeps the last-known value. */
-export const setProductUsers = (productId: string, users: number | null): void => {
-  if (users !== null) {
-    patchProduct(productId, { users: Math.max(0, Math.round(users)) });
+/** Real numbers per product, from the pulse; a null keeps the last-known value. */
+export const setProductMetrics = (
+  productId: string,
+  snapshot: { users: number | null; revenue: number | null },
+): void => {
+  const patch: Partial<Product> = {};
+  if (snapshot.users !== null) {
+    patch.users = Math.max(0, Math.round(snapshot.users));
+  }
+  if (snapshot.revenue !== null) {
+    patch.revenueUsd = Math.round(snapshot.revenue * 100) / 100;
+  }
+  if (Object.keys(patch).length > 0) {
+    patchProduct(productId, patch);
   }
 };
 
-/** Where autopilot turns next: the product that has waited longest for a ship. */
+/** Where work no bet pays for lands: the product that has waited longest for a ship. */
 export const attentionProduct = (companyId: string): Product | null => {
   const products = activeCompany(companyId)?.products ?? [];
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
+};
+
+// ---- bets ------------------------------------------------------------------
+export const listBets = (companyId: string): Bet[] => [...(activeCompany(companyId)?.bets ?? [])];
+
+export const getBet = (id: string): Bet | null =>
+  c().active?.bets.find((bet) => bet.id === id) ?? null;
+
+export const allocationPolicy = (companyId: string): PolicyParams =>
+  activeCompany(companyId)?.policy ?? DEFAULT_POLICY;
+
+const patchBet = (id: string, patch: Partial<Bet>): Bet | null =>
+  patchIn(c().active?.bets ?? [], id, patch, saveBet);
+
+/** What a product's metric reads now; null while no source reports it. */
+const readingOf = (product: Product | null, metric: BetMetric): number | null => {
+  if (!product) {
+    return null;
+  }
+  return metric === "users" ? product.users : product.revenueUsd;
+};
+
+/** Two live bets on one number of one product could not be told apart, so the second is refused. */
+export const openBet = (input: {
+  companyId: string;
+  productId: string;
+  title: string;
+  hypothesis: string;
+  metric: BetMetric;
+  target: number;
+  budgetUsd: number;
+  windowHours: number;
+}): Bet | { refused: string } => {
+  const active = requireActiveCompany(input.companyId);
+  const product = active.products.find((p) => p.id === input.productId);
+  if (!product) {
+    return {
+      refused: `No product "${input.productId}" here — the products are ${active.products.map((p) => p.id).join(", ")}.`,
+    };
+  }
+  const rival = active.bets.find(
+    (b) => b.productId === product.id && b.metric === input.metric && !isClosed(b),
+  );
+  if (rival) {
+    return {
+      refused: `"${rival.title}" (${rival.id}) is already betting on ${product.name}'s ${input.metric}, and two bets on one number cannot be told apart. Work that one, bet on the other metric, or bet on another product.`,
+    };
+  }
+  const id = uniqueSlug(
+    input.title,
+    active.bets.map((b) => b.id),
+    (s) => existsSync(path.join(betsDir(input.companyId), s)),
+  );
+  const bet: Bet = {
+    baseline: readingOf(product, input.metric) ?? 0,
+    budgetUsd: input.budgetUsd,
+    companyId: input.companyId,
+    createdAt: Date.now(),
+    hypothesis: input.hypothesis.trim(),
+    id,
+    metric: input.metric,
+    productId: product.id,
+    spentUsd: 0,
+    state: { kind: "open" },
+    target: input.target,
+    title: input.title.trim(),
+    windowHours: input.windowHours,
+  };
+  saveBet(bet);
+  active.bets.push(bet);
+  return bet;
+};
+
+export const recordBetSpend = (betId: string, costUsd: number): void => {
+  const bet = getBet(betId);
+  if (bet) {
+    const spentUsd = Math.round((bet.spentUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
+    patchBet(betId, { spentUsd });
+  }
+};
+
+const retune = (active: ActiveCompany): void => {
+  const next = dream(active.policy, [active.bets]);
+  if (next !== active.policy) {
+    active.policy = next;
+    atomicWrite(policyFile(active.company.id), JSON.stringify(next, null, 2));
+  }
+};
+
+/** The work is shipped: stop spending and let the number answer. */
+export const measureBet = (betId: string, now: number): Bet | null => {
+  const bet = getBet(betId);
+  if (!bet || bet.state.kind !== "open") {
+    return null;
+  }
+  return patchBet(betId, {
+    state: { kind: "measuring", until: now + bet.windowHours * 3_600_000 },
+  });
+};
+
+/** The lead gives up on a bet before its window does. */
+export const killBet = (betId: string, reason: string, now: number): Bet | null => {
+  const bet = getBet(betId);
+  if (!bet || isClosed(bet)) {
+    return null;
+  }
+  const reading = readingOf(getProduct(bet.productId), bet.metric);
+  const killed = patchBet(betId, {
+    state: {
+      closedAt: now,
+      kind: "killed",
+      moved: reading === null ? null : reading - bet.baseline,
+      reason,
+    },
+  });
+  retune(requireActiveCompany(bet.companyId));
+  return killed;
+};
+
+/** Judge every live bet against the real numbers; returns the ones whose state changed. */
+export const judgeBets = (companyId: string, now: number): Bet[] => {
+  const active = activeCompany(companyId);
+  if (!active) {
+    return [];
+  }
+  const changed: Bet[] = [];
+  for (const bet of active.bets) {
+    const state = judge(bet, readingOf(getProduct(bet.productId), bet.metric), now);
+    if (state !== bet.state) {
+      const next = patchBet(bet.id, { state });
+      if (next) {
+        changed.push(next);
+      }
+    }
+  }
+  if (changed.some(isClosed)) {
+    retune(active);
+  }
+  return changed;
 };
 
 /** How many ship summaries a brief lists. */
@@ -908,6 +1075,7 @@ export const recentTeamMessages = (companyId: string, limit = 20, since = 0): Te
 export const createTask = (t: {
   companyId: string;
   productId?: string | null;
+  betId?: string | null;
   title: string;
   description?: string | null;
   priority?: TaskPriority;
@@ -925,6 +1093,7 @@ export const createTask = (t: {
     artifacts: [],
     assigneeId: t.assigneeId ?? null,
     attempts: 0,
+    betId: t.betId ?? null,
     companyId: t.companyId,
     completedAt: null,
     createdAt: Date.now(),
@@ -1098,6 +1267,7 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
   const { ask } = t.state;
   close(taskId, { kind: "done", summary: answeredSummary(answer) });
   return createTask({
+    betId: t.betId,
     companyId: t.companyId,
     productId: t.productId,
     ...continuationBrief(t, ask, answer),
@@ -1115,6 +1285,46 @@ export const productOfEmployee = (employeeId: string): Product | null => {
   const [latest] = openTasksFor(employeeId).toSorted(newestFirst);
   const fromTask = latest?.productId ? getProduct(latest.productId) : null;
   return fromTask ?? c().active?.products[0] ?? null;
+};
+
+/**
+ * Retire a product: its live bets die with it, its open work is dead-lettered,
+ * and its package moves to retired/ whole. The last product cannot go — a
+ * company with none would be handed a fresh first product at the next boot.
+ */
+export const killProduct = (productId: string, reason: string): Product | { refused: string } => {
+  const product = getProduct(productId);
+  if (!product) {
+    return { refused: `No product "${productId}".` };
+  }
+  const active = requireActiveCompany(product.companyId);
+  if (active.products.length === 1) {
+    return {
+      refused: `${product.name} is the only product — start its successor with create_product first.`,
+    };
+  }
+  const now = Date.now();
+  for (const bet of active.bets.filter((b) => b.productId === productId && !isClosed(b))) {
+    killBet(bet.id, `product retired: ${reason}`, now);
+  }
+  for (const t of active.tasks.filter((x) => x.productId === productId)) {
+    if (t.state.kind !== "running" && t.state.kind !== "done") {
+      patchTask(t.id, { completedAt: now, state: { kind: "dead", lastError: "product retired" } });
+    }
+  }
+  active.products.splice(active.products.indexOf(product), 1);
+  try {
+    moveDir(
+      path.join(productsDir(product.companyId), productId),
+      path.join(retiredDir(product.companyId), productId),
+    );
+  } catch {
+    /* archive is best-effort — leaving the portfolio is what matters */
+  }
+  for (const e of active.employees) {
+    saveEmployee(e);
+  }
+  return product;
 };
 
 // ---- founding and boot -------------------------------------------------------
@@ -1280,6 +1490,13 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (slug) => productFile(company.id, slug),
     (doc) => docToProduct(doc, company.id),
   ).toSorted(byAge);
+  active.bets = loadPackages(
+    "bet",
+    betsDir(company.id),
+    (slug) => betFile(company.id, slug),
+    (doc) => docToBet(doc, company.id),
+  ).toSorted(byAge);
+  active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
   active.routines = loadPackages(
     "routine",
     routinesDir(company.id),

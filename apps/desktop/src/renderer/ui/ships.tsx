@@ -2,7 +2,8 @@ import { memo, useState } from "react";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { bridge } from "@/renderer/bridge";
-import { createProduct, useStore } from "@/renderer/state/store";
+import { createProduct, killProduct, useStore } from "@/renderer/state/store";
+import { BetList } from "@/renderer/ui/bets";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { productStateOf } from "@/renderer/ui/product-state";
@@ -12,7 +13,7 @@ import { taskIn } from "@/shared/domain";
 import type { Employee, Product, TaskIn } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/ipc-registry";
 import { errorMessage } from "@/shared/errors";
-import { formatDate } from "@/shared/format";
+import { formatDate, formatUsd } from "@/shared/format";
 import { cn } from "cn";
 
 const ShipRowView = ({
@@ -83,10 +84,57 @@ const ShippingLog = ({
     ));
 };
 
+/** Asks twice: a retired product leaves the portfolio, and its live bets die with it. */
+const RetireProduct = ({
+  product,
+  onNote,
+}: {
+  product: Product;
+  onNote: (note: string) => void;
+}) => {
+  const [arming, setArming] = useState(false);
+  const retire = async () => {
+    try {
+      await killProduct(product.id, "the founder retired it");
+    } catch (error) {
+      onNote(errorMessage(error));
+    }
+  };
+  if (!arming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setArming(true)}
+        className="px-link px-link-danger ml-auto"
+        title="Archive it under retired/ and free its budget"
+      >
+        retire
+      </button>
+    );
+  }
+  return (
+    <span className="ml-auto flex items-baseline gap-2">
+      <button type="button" onClick={() => setArming(false)} className="px-link">
+        keep
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          void retire();
+        }}
+        className="px-link px-link-danger"
+      >
+        retire it
+      </button>
+    </span>
+  );
+};
+
 const ProductCard = ({
   product,
   status,
   selected,
+  retirable,
   onSelect,
   onOpen,
   onNote,
@@ -94,6 +142,8 @@ const ProductCard = ({
   product: Product;
   status: ProductStatus | undefined;
   selected: boolean;
+  /** The last product stays: a company with none is handed a fresh one at boot. */
+  retirable: boolean;
   onSelect: () => void;
   onOpen: (overlay: Overlay) => void;
   onNote: (note: string) => void;
@@ -127,6 +177,7 @@ const ProductCard = ({
         <div className="mt-0.5 text-xs text-fg-dim">
           {product.ships} shipped
           {product.users === null ? "" : ` · ${product.users} users`}
+          {product.revenueUsd === null ? "" : ` · ${formatUsd(product.revenueUsd)}`}
           {status?.deploy ? ` · ${status.deploy.url}` : ""}
         </div>
       </button>
@@ -152,6 +203,7 @@ const ProductCard = ({
         >
           {product.vercel ? "▲ Vercel ✓" : "▲ Vercel"}
         </button>
+        {retirable ? <RetireProduct product={product} onNote={onNote} /> : null}
       </div>
     </div>
   );
@@ -230,6 +282,7 @@ export const Ships = ({
   const employees = useStore((s) => s.employees);
   const products = useStore((s) => s.products);
   const productStatus = useStore((s) => s.productStatus);
+  const bets = useStore((s) => s.bets);
   const [note, showNote] = useTransientNote(2500);
   // null: the whole company's log
   const [selected, setSelected] = useState<string | null>(null);
@@ -250,6 +303,9 @@ export const Ships = ({
   const ofSelected = (t: TaskIn<"done">): boolean =>
     selected === null || t.productId === selected || (t.productId === null && selected === firstId);
   const shown = ships?.filter(ofSelected) ?? null;
+
+  const selectedName =
+    selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`;
 
   const openWorkspace = async () => {
     try {
@@ -287,6 +343,7 @@ export const Ships = ({
               product={p}
               status={productStatus.get(p.id)}
               selected={selected === p.id}
+              retirable={products.length > 1}
               onSelect={() => setSelected(selected === p.id ? null : p.id)}
               onOpen={onOpen}
               onNote={showNote}
@@ -294,9 +351,15 @@ export const Ships = ({
           ))}
           <NewProduct onNote={showNote} />
         </div>
+        <div className="text-xs uppercase tracking-wide text-fg-dim">Bets{selectedName}</div>
+        <div className="space-y-2">
+          <BetList
+            bets={bets.filter((b) => selected === null || b.productId === selected)}
+            onNote={showNote}
+          />
+        </div>
         <div className="text-xs uppercase tracking-wide text-fg-dim">
-          Shipping log
-          {selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`}
+          Shipping log{selectedName}
         </div>
         <div className="space-y-2">
           <ShippingLog shown={shown} employees={employees} companyId={companyId} />

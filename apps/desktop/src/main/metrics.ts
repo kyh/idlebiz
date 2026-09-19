@@ -38,6 +38,8 @@ export interface RealSnapshot {
   users: number | null;
   revenue: number | null;
   productUsers: ReadonlyMap<string, number | null>;
+  /** Revenue from charges tagged with the product; empty while Stripe is not connected. */
+  productRevenue: ReadonlyMap<string, number | null>;
   /** A provider's credentials were rejected (e.g. Stripe token revoked). */
   authError?: boolean;
 }
@@ -110,6 +112,43 @@ const stripeRevenue = async (key: string): Promise<number | null> => {
   return Math.round(cents) / 100;
 };
 
+const StripeChargeSearchSchema = z.object({
+  data: z
+    .array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() }))
+    .default([]),
+  has_more: z.boolean().default(false),
+  next_page: z.string().nullish(),
+});
+
+/**
+ * What one product earned: paid charges the team tagged `metadata[product]=<id>`.
+ * Untagged revenue still counts for the company, but no product and no bet can claim it.
+ */
+const stripeProductRevenue = async (key: string, productId: string): Promise<number | null> => {
+  const query = encodeURIComponent(`metadata['product']:'${productId}' AND status:'succeeded'`);
+  let cents = 0;
+  let page: string | null = null;
+  for (let i = 0; i < 50; i += 1) {
+    const qs = `query=${query}&limit=100${page ? `&page=${encodeURIComponent(page)}` : ""}`;
+    const parsed = StripeChargeSearchSchema.safeParse(
+      await stripeGet(`/v1/charges/search?${qs}`, key),
+    );
+    if (!parsed.success) {
+      return null;
+    }
+    for (const ch of parsed.data.data) {
+      if (ch.paid === true && ch.amount !== undefined) {
+        cents += ch.amount;
+      }
+    }
+    if (!parsed.data.has_more || !parsed.data.next_page) {
+      break;
+    }
+    page = parsed.data.next_page;
+  }
+  return Math.round(cents) / 100;
+};
+
 /** Exact customer count via the search API; paginate fallback if search is unavailable. */
 const stripeCustomers = async (key: string): Promise<number | null> => {
   try {
@@ -147,22 +186,32 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
 interface StripeSnapshot {
   revenue: number | null;
   customers: number | null;
+  perProduct: Map<string, number | null>;
   authError: boolean;
 }
 
-const stripeSnapshot = async (): Promise<StripeSnapshot> => {
+const NO_STRIPE: StripeSnapshot = {
+  authError: false,
+  customers: null,
+  perProduct: new Map(),
+  revenue: null,
+};
+
+const stripeSnapshot = async (products: readonly Product[]): Promise<StripeSnapshot> => {
   const key = getSecret("STRIPE_CONNECT_TOKEN") ?? getSecret("STRIPE_SECRET_KEY");
   if (!key) {
-    return { authError: false, customers: null, revenue: null };
+    return NO_STRIPE;
   }
   try {
-    const [revenue, customers] = await Promise.all([stripeRevenue(key), stripeCustomers(key)]);
-    return { authError: false, customers, revenue };
+    const [revenue, customers, each] = await Promise.all([
+      stripeRevenue(key),
+      stripeCustomers(key),
+      Promise.all(products.map((p) => stripeProductRevenue(key, p.id))),
+    ]);
+    const perProduct = new Map(products.map((p, i) => [p.id, each[i] ?? null]));
+    return { authError: false, customers, perProduct, revenue };
   } catch (error) {
-    if (error instanceof StripeAuthError) {
-      return { authError: true, customers: null, revenue: null };
-    }
-    return { authError: false, customers: null, revenue: null };
+    return error instanceof StripeAuthError ? { ...NO_STRIPE, authError: true } : NO_STRIPE;
   }
 };
 
@@ -216,15 +265,15 @@ export const fetchRealMetrics = async (
   cfg: MetricsConfig | null,
   products: readonly Product[],
 ): Promise<RealSnapshot> => {
-  const none: StripeSnapshot = { authError: false, customers: null, revenue: null };
   const [stripe, vercel, visitors, custom] = await Promise.all([
-    cfg?.stripe ? stripeSnapshot() : Promise.resolve(none),
+    cfg?.stripe ? stripeSnapshot(products) : Promise.resolve(NO_STRIPE),
     productVisitors(products),
     cfg?.plausible ? plausibleVisitors(cfg.plausible.domain) : Promise.resolve(null),
     cfg?.custom ? customSnapshot(cfg.custom.url) : Promise.resolve({ revenue: null, users: null }),
   ]);
   return {
     authError: stripe.authError,
+    productRevenue: stripe.perProduct,
     productUsers: vercel.each,
     revenue: stripe.revenue ?? custom.revenue,
     // real traffic first; paying customers as the fallback "users" signal

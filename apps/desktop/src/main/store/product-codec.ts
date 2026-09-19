@@ -14,6 +14,9 @@ export const productToDoc = (p: Product): FrontmatterDoc => {
   if (p.users !== null) {
     metadata.users = p.users;
   }
+  if (p.revenueUsd !== null) {
+    metadata.revenueUsd = p.revenueUsd;
+  }
   if (p.vercel) {
     metadata.vercelProjectId = p.vercel.projectId;
     metadata.vercelProjectName = p.vercel.projectName;
@@ -38,6 +41,7 @@ export const docToProduct = (doc: FrontmatterDoc, companyId: string): Product =>
     id: reqStr(doc.fields, "slug"),
     lastShipAt: nullableNum(m, "lastShipAt"),
     name: reqStr(doc.fields, "name"),
+    revenueUsd: nullableNum(m, "revenueUsd"),
     ships: optNum(m, "ships", 0),
     users: nullableNum(m, "users"),
     vercel:

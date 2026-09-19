@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { IpcMethod, IpcKind, InvokeMethod } from "@/shared/ipc-channels";
 import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
+import type { Bet } from "@/shared/bets";
 import { BUSINESS_TYPE_IDS, BudgetSchema, TASK_STATUSES } from "@/shared/domain";
 import type { AgentRunner, Company, Employee, Product, Task, TeamMessage } from "@/shared/domain";
 
@@ -17,7 +18,7 @@ export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
 /** A package on disk the store could not read at boot, and why. */
 export interface LoadSkip {
-  kind: "company" | "employee" | "task" | "routine" | "product" | "team";
+  kind: "company" | "employee" | "task" | "routine" | "product" | "bet" | "team";
   path: string;
   error: string;
 }
@@ -138,6 +139,9 @@ export const SCHEMAS = {
   getDigest: z.object({ companyId: z.string() }),
   getFounderChoices: z.void(),
   hasAuth: z.void(),
+  killBet: z.object({ betId: z.string(), reason: z.string().trim().min(1).max(200) }),
+  killProduct: z.object({ productId: z.string(), reason: z.string().trim().min(1).max(200) }),
+  listBets: z.object({ companyId: z.string() }),
   listEmployees: z.object({ companyId: z.string() }),
   listProducts: z.object({ companyId: z.string() }),
   listTasks: z.object({
@@ -212,6 +216,9 @@ interface Results {
   listProducts: Product[];
   createProduct: Product;
   productStatus: ProductStatus;
+  killProduct: Product;
+  listBets: Bet[];
+  killBet: Bet;
 
   listEmployees: Employee[];
   restingRunners: RestingRunners;

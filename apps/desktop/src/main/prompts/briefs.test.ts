@@ -42,6 +42,7 @@ const product: Product = {
   id: "app",
   lastShipAt: null,
   name: "App",
+  revenueUsd: null,
   ships: 0,
   users: null,
   vercel: null,
@@ -50,10 +51,11 @@ const product: Product = {
 
 const briefFor = (co: Company, products: Product[], lastRunMetrics: RunMetrics | null = null) =>
   autonomousBrief({
+    assignment: { kind: "propose", product: products[0] ?? null, widen: false },
+    bets: [],
     company: co,
     employee: { ...employee, lastRunMetrics },
     employees: [employee],
-    focus: products[0] ?? null,
     nameOf: () => "Priya",
     problems: [],
     products,

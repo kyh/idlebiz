@@ -7,6 +7,7 @@ const base: Omit<Task, "state"> = {
   artifacts: ["dist/index.html"],
   assigneeId: "priya",
   attempts: 2,
+  betId: "launch-post",
   companyId: "acme",
   completedAt: 1_700_000_002_000,
   createdAt: 1_700_000_000_000,

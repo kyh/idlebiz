@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
+import type { Bet } from "@/shared/bets";
 import { employeeStatusOf, taskIn } from "@/shared/domain";
 import type {
   Budget,
@@ -37,6 +38,8 @@ interface State {
   /** Everything the company builds, oldest first, and where each one really is. */
   products: Product[];
   productStatus: ReadonlyMap<string, ProductStatus>;
+  /** Every bet the company has made, oldest first. */
+  bets: Bet[];
   resting: RestingRunners;
   /** Packages boot could not read. A skipped company blocks the office (see App). */
   saveIssues: LoadSkip[];
@@ -59,6 +62,7 @@ interface State {
 let state: State = {
   activity: [],
   authed: true,
+  bets: [],
   boot: { kind: "loading" },
   booted: false,
   company: null,
@@ -201,16 +205,18 @@ export const refresh = async (): Promise<void> => {
     bridge().restingRunners(),
     bridge().loadReport(),
   ]);
-  const [employees, tasks, products] = company
+  const [employees, tasks, products, bets] = company
     ? await Promise.all([
         bridge().listEmployees({ companyId: company.id }),
         bridge().listTasks({ companyId: company.id, status: ["blocked", "dead"] }),
         bridge().listProducts({ companyId: company.id }),
+        bridge().listBets({ companyId: company.id }),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
   const pendingAsks = tasks.filter(taskIn("blocked"));
   const stuckTasks = tasks.filter(taskIn("dead"));
   set({
+    bets,
     booted: true,
     company,
     employees,
@@ -233,6 +239,13 @@ const reloadProducts = async (): Promise<void> => {
   await refreshProductStatus(products);
 };
 
+const reloadBets = async (): Promise<void> => {
+  const { company } = state;
+  if (company) {
+    set({ bets: await bridge().listBets({ companyId: company.id }) });
+  }
+};
+
 // ---- actions ---------------------------------------------------------------
 
 const withCompany = async (act: (companyId: string) => Promise<void>): Promise<void> => {
@@ -242,6 +255,16 @@ const withCompany = async (act: (companyId: string) => Promise<void>): Promise<v
 };
 const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
   withCompany(async (companyId) => set({ company: await call(companyId) }));
+
+export const killBet = async (betId: string, reason: string): Promise<void> => {
+  await bridge().killBet({ betId, reason });
+  await reloadBets();
+};
+
+export const killProduct = async (productId: string, reason: string): Promise<void> => {
+  await bridge().killProduct({ productId, reason });
+  await Promise.all([reloadProducts(), reloadBets()]);
+};
 
 export const createProduct = (name: string, description: string): Promise<void> =>
   withCompany(async (companyId) => {
@@ -414,6 +437,17 @@ const onActivity = (e: ActivityEvent): void => {
     case "product.created": {
       set({ activity });
       void reloadProducts();
+      return;
+    }
+    case "product.killed": {
+      set({ activity });
+      void reloadProducts();
+      void reloadBets();
+      return;
+    }
+    case "bet.changed": {
+      set({ activity });
+      void reloadBets();
       return;
     }
     case "org.hired":

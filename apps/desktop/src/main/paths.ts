@@ -15,12 +15,15 @@ import { mkdirSync } from "node:fs";
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log)
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product uses workspace/)
+//     retired/<slug>/       a product the lead killed: its package, moved here whole
+//     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
 //     workspace/            shared cwd where agents do real work
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
 //     state/                running state main keeps for itself; deleting it loses nothing canonical
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
+//       policy.json           how the allocator weighs bets, retuned by replaying closed ones
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -87,6 +90,17 @@ export const productFile = (companySlug: string, productSlug: string): string =>
 /** A later product's own workspace; the first product lives in the company workspace. */
 export const productWorkspace = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "workspace");
+
+/** Killed products are archived here (package and workspace preserved, never deleted). */
+export const retiredDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "retired");
+
+export const betsDir = (companySlug: string): string => path.join(companyDir(companySlug), "bets");
+export const betFile = (companySlug: string, betSlug: string): string =>
+  path.join(betsDir(companySlug), betSlug, "BET.md");
+/** The allocator's tuned parameters; deleting it falls back to the defaults. */
+export const policyFile = (companySlug: string): string =>
+  path.join(stateDir(companySlug), "policy.json");
 
 /** Commands the founder has signed off but the agent has not run yet. */
 export const approvalsFile = (companySlug: string): string =>

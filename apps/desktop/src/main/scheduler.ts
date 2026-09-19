@@ -4,18 +4,21 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import type { RunResult } from "@/main/agents/agent-driver";
-import type { RunToolHooks } from "@/main/control-plane";
+import type { OpenBetInput, RunToolHooks } from "@/main/control-plane";
+import { allocate, isClosed, isFundable } from "@/shared/bets";
+import type { Allocation, Bet } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import {
   approvalAnswer,
   autonomousBrief,
+  betLedger,
   founderPing,
   integrationConnectedAnswer,
   roomTranscript,
   routineBrief,
   runPreamble,
 } from "@/main/prompts/briefs";
-import type { TaskBrief } from "@/main/prompts/briefs";
+import type { Assignment, TaskBrief } from "@/main/prompts/briefs";
 import { MAX_TASK_ATTEMPTS, isOutOfBudget, resolveMentions, spriteSeedFor } from "@/shared/domain";
 import type {
   Company,
@@ -104,13 +107,14 @@ const heartbeatBrief = (
   company: Company,
   emp: Employee,
   employees: Employee[],
-  focus: Product | null,
+  assignment: Assignment,
 ): TaskBrief =>
   autonomousBrief({
+    assignment,
+    bets: store.listBets(company.id),
     company,
     employee: emp,
     employees,
-    focus,
     nameOf: empName,
     problems: store
       .listOpenTasks(company.id)
@@ -120,6 +124,96 @@ const heartbeatBrief = (
     room: store.recentTeamMessages(company.id, 12),
     ships: store.recentShips(company.id),
   });
+
+/** Where the next idle employee goes, by the company's current policy. */
+const nextAllocation = (company: Company): Allocation => {
+  const busy = new Map<string, number>();
+  for (const t of store.listOpenTasks(company.id)) {
+    if (t.betId !== null && (t.state.kind === "queued" || t.state.kind === "running")) {
+      busy.set(t.betId, (busy.get(t.betId) ?? 0) + 1);
+    }
+  }
+  return allocate(
+    {
+      bets: store.listBets(company.id),
+      busy,
+      products: store.listProducts(company.id).map((p) => p.id),
+    },
+    store.allocationPolicy(company.id),
+  );
+};
+
+const announceBet = (bet: Bet): void => {
+  publishActivity({
+    kind: "bet.changed",
+    message: bet.title,
+    payload: { betId: bet.id, state: bet.state },
+  });
+  const st = bet.state;
+  switch (st.kind) {
+    case "open": {
+      store.postTeamMessage(bet.companyId, null, `🎲 New bet: ${bet.title} — ${bet.hypothesis}`);
+      break;
+    }
+    case "measuring": {
+      store.postTeamMessage(
+        bet.companyId,
+        null,
+        `⏳ ${bet.title}: spending stopped — the number has ${bet.windowHours}h to answer.`,
+      );
+      break;
+    }
+    case "won": {
+      store.postTeamMessage(
+        bet.companyId,
+        null,
+        `🏆 Bet won: ${bet.title} — ${bet.metric} moved ${st.moved}.`,
+      );
+      break;
+    }
+    case "killed": {
+      store.postTeamMessage(bet.companyId, null, `🪦 Bet killed: ${bet.title} — ${st.reason}.`);
+      break;
+    }
+    // no default
+  }
+};
+
+/** Give up on a live bet, from the lead's tool or the founder's panel. */
+export const killBet = (betId: string, reason: string): Bet => {
+  const killed = store.killBet(betId, reason, Date.now());
+  if (!killed) {
+    throw new Error(`no live bet "${betId}"`);
+  }
+  announceBet(killed);
+  return killed;
+};
+
+/** Retire a product and everything riding on it. `by` is the lead who called it; null is the founder. */
+export const retireProduct = (productId: string, reason: string, by: string | null): Product => {
+  const product = store.requireProduct(productId);
+  const dying = store
+    .listBets(product.companyId)
+    .filter((b) => b.productId === productId && !isClosed(b));
+  const result = store.killProduct(productId, reason);
+  if ("refused" in result) {
+    throw new Error(result.refused);
+  }
+  for (const b of dying) {
+    const closed = store.getBet(b.id);
+    if (closed) {
+      announceBet(closed);
+    }
+  }
+  store.postTeamMessage(product.companyId, by, `🪦 Retired ${product.name} — ${reason}`);
+  publishActivity({
+    employeeId: by,
+    kind: "product.killed",
+    message: product.name,
+    payload: { productId, reason },
+  });
+  return product;
+};
 
 const admit = (company: Company): boolean => {
   if (!isOutOfBudget(company)) {
@@ -195,6 +289,9 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   if (r.usage.costUsd > 0) {
     const before = store.getCompany(task.companyId);
     const after = store.recordSpend(task.companyId, r.usage.costUsd);
+    if (task.betId !== null) {
+      store.recordBetSpend(task.betId, r.usage.costUsd);
+    }
     if (before && after && !isOutOfBudget(before) && isOutOfBudget(after)) {
       haltForBudget(after);
     }
@@ -224,8 +321,20 @@ class Scheduler {
 
   // Retry queued work even with autopilot off.
   private onTick(): void {
+    this.judgeBets();
     this.tick();
     this.tickAutopilot();
+  }
+
+  /** Verdicts come from the real numbers on every tick, autopilot or not: a window closes on its own. */
+  private judgeBets(): void {
+    const company = store.getDefaultCompany();
+    if (this.stopped || !company) {
+      return;
+    }
+    for (const bet of store.judgeBets(company.id, Date.now())) {
+      announceBet(bet);
+    }
   }
 
   /** Stop scheduling; in-flight runs settle on their own. */
@@ -272,8 +381,10 @@ class Scheduler {
     brief: TaskBrief,
     productId: string | null,
     priority: TaskPriority = "medium",
+    betId: string | null = null,
   ): Task {
     const task = store.createTask({
+      betId,
       companyId: company.id,
       productId,
       ...brief,
@@ -310,15 +421,37 @@ class Scheduler {
       if (open) {
         continue;
       }
-      const focus = store.attentionProduct(company.id);
-      this.brief(company, emp, heartbeatBrief(company, emp, employees, focus), focus?.id ?? null);
+      this.heartbeat(company, emp, employees);
     }
+  }
+
+  /** Idle hands only spend against a bet; with none fundable, only the lead runs, to open one. */
+  private heartbeat(company: Company, emp: Employee, employees: Employee[]): void {
+    const allocation = nextAllocation(company);
+    if (allocation.kind === "work") {
+      const bet = store.getBet(allocation.betId);
+      if (bet) {
+        const brief = heartbeatBrief(company, emp, employees, { bet, kind: "bet" });
+        this.brief(company, emp, brief, bet.productId, "medium", bet.id);
+      }
+      return;
+    }
+    if (allocation.kind === "wait" || company.leaderId !== emp.id) {
+      return;
+    }
+    const product = allocation.productId === null ? null : store.getProduct(allocation.productId);
+    const brief = heartbeatBrief(company, emp, employees, {
+      kind: "propose",
+      product,
+      widen: allocation.widen,
+    });
+    this.brief(company, emp, brief, product?.id ?? null);
   }
 
   private hooksFor(
     emp: Employee,
     company: Company,
-    run: { runId: string; taskId: string; productId: string | null },
+    run: { runId: string; taskId: string; productId: string | null; betId: string | null },
   ): RunToolHooks {
     const isLeader = company.leaderId === emp.id;
 
@@ -342,9 +475,18 @@ class Scheduler {
         post(`🆕 New product: ${product.name} — ${product.description}`);
         return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Delegate work to it with "product":"${product.id}".`;
       },
-      delegate: (role: string, title: string, description: string, product: string | null) => {
+      delegate: ({ role, title, description, product, bet }) => {
+        const betId = bet ?? (product === null ? run.betId : null);
+        const funded = betId === null ? null : store.getBet(betId);
+        if (bet !== null && (!funded || funded.companyId !== company.id || !isFundable(funded))) {
+          return `No fundable bet "${bet}" — read_bets lists what is open with budget left.`;
+        }
         const productId =
-          product ?? run.productId ?? store.attentionProduct(company.id)?.id ?? null;
+          funded?.productId ??
+          product ??
+          run.productId ??
+          store.attentionProduct(company.id)?.id ??
+          null;
         if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
           return `No product "${productId}" here — the products are ${store
             .listProducts(company.id)
@@ -362,6 +504,7 @@ class Scheduler {
         }
         const t = store.createTask({
           assigneeId: mate.id,
+          betId: funded && isFundable(funded) ? funded.id : null,
           companyId: company.id,
           description,
           priority: "medium",
@@ -401,7 +544,60 @@ class Scheduler {
         });
         return `Hired ${hired.name} (${title}) — slug "${hired.id}". They start picking up work autonomously; delegate to them right away if you have something specific.`;
       },
+      killBet: (slug: string, reason: string): string => {
+        if (!isLeader) {
+          return "Only the team lead can kill a bet — make the case in the team room.";
+        }
+        try {
+          const killed = killBet(slug, reason);
+          return `Killed "${killed.title}". Its remaining budget is free for the next bet.`;
+        } catch (error) {
+          return `${errorMessage(error)} — read_bets lists the live ones.`;
+        }
+      },
+      killProduct: (slug: string, reason: string): string => {
+        if (!isLeader) {
+          return "Only the team lead can retire a product — make the case in the team room.";
+        }
+        try {
+          const retired = retireProduct(slug, reason, emp.id);
+          return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.`;
+        } catch (error) {
+          return errorMessage(error);
+        }
+      },
+      measureBet: (slug: string): string => {
+        const target = store.getBet(slug);
+        if (!target || target.companyId !== company.id) {
+          return `No bet "${slug}" — read_bets lists them.`;
+        }
+        if (!isLeader) {
+          return "Only the team lead starts a bet's clock — tell them the work is out the door.";
+        }
+        const measuring = store.measureBet(slug, Date.now());
+        if (!measuring) {
+          return `"${target.title}" is not open, so there is nothing to stop.`;
+        }
+        announceBet(measuring);
+        return `"${target.title}" is measuring: no more work is spent on it, and ${target.metric} has ${target.windowHours}h to move by ${target.target}.`;
+      },
       messageTeam: (text: string): void => post(text.slice(0, 400)),
+      openBet: (input: OpenBetInput): string => {
+        if (!isLeader) {
+          return "Only the team lead opens bets — pitch it in the team room.";
+        }
+        const productId =
+          input.product ?? run.productId ?? store.attentionProduct(company.id)?.id ?? null;
+        if (productId === null) {
+          return "There is no product to bet on — create_product first.";
+        }
+        const opened = store.openBet({ ...input, companyId: company.id, productId });
+        if ("refused" in opened) {
+          return opened.refused;
+        }
+        announceBet(opened);
+        return `Opened "${opened.title}" (${opened.id}) from a baseline of ${opened.baseline}. Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
+      },
       // The task only turns `blocked` when the run settles, but the ask exists
       // now — so the office raises the "!" over the employee's head at once.
       raiseAsk: (ask): void => {
@@ -413,6 +609,7 @@ class Scheduler {
           taskId: run.taskId,
         });
       },
+      readBets: (): string => betLedger(store.listBets(company.id)),
       readTeam: (): string => roomTranscript(store.recentTeamMessages(company.id, 15), empName),
       release: (slug, reason): string => {
         if (!isLeader) {
@@ -639,7 +836,12 @@ class Scheduler {
         workspace: product?.workspaceDir ?? company.workspaceDir,
       },
       (ev: AgentEvent) => onAgentEvent(runId, task, emp, ev),
-      this.hooksFor(emp, company, { productId: task.productId, runId, taskId: task.id }),
+      this.hooksFor(emp, company, {
+        betId: task.betId,
+        productId: task.productId,
+        runId,
+        taskId: task.id,
+      }),
     );
     finish(runId, task, emp, result);
   }

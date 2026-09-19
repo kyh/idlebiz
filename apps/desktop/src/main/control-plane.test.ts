@@ -56,8 +56,13 @@ describe("run-scoped control-plane requests", () => {
         },
         delegate: unexpected,
         hire: unexpected,
+        killBet: unexpected,
+        killProduct: unexpected,
+        measureBet: unexpected,
         messageTeam: unexpected,
+        openBet: unexpected,
         raiseAsk: unexpected,
+        readBets: unexpected,
         readTeam: unexpected,
         release: unexpected,
       };

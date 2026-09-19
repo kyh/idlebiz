@@ -20,7 +20,8 @@ const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store");
 const { scheduler } = await import("@/main/scheduler");
-const { productWorkspace, productsDir, shippedDir, tasksDir } = await import("@/main/paths");
+const { betFile, productWorkspace, productsDir, retiredDir, shippedDir, tasksDir } =
+  await import("@/main/paths");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -559,5 +560,78 @@ describe("recently shipped", () => {
     expect(store.recentShips(company.id)).toEqual(
       Array.from({ length: 6 }, (_, i) => `ship ${i + 2}`),
     );
+  });
+});
+
+describe("bets", () => {
+  const launch = (companyId: string, productId: string) =>
+    store.openBet({
+      budgetUsd: 2,
+      companyId,
+      hypothesis: "a launch post brings visitors",
+      metric: "users",
+      productId,
+      target: 50,
+      title: "Launch post",
+      windowHours: 24,
+    });
+
+  const firstProductOf = (companyId: string) => {
+    const [product] = store.listProducts(companyId);
+    if (!product) {
+      throw new Error("no first product");
+    }
+    return product;
+  };
+
+  it("opens from the live number and refuses a second bet on it", () => {
+    const co = found();
+    const product = firstProductOf(co.id);
+    store.setProductMetrics(product.id, { revenue: null, users: 10 });
+    const bet = launch(co.id, product.id);
+    expect(bet).toMatchObject({ baseline: 10, state: { kind: "open" } });
+    expect(launch(co.id, product.id)).toHaveProperty("refused");
+  });
+
+  it("is judged by the real number, and the verdict survives a restart", () => {
+    const co = found();
+    const product = firstProductOf(co.id);
+    const bet = launch(co.id, product.id);
+    if ("refused" in bet) {
+      throw new Error(bet.refused);
+    }
+    store.recordBetSpend(bet.id, 2);
+    expect(store.judgeBets(co.id, 0).map((b) => b.state.kind)).toEqual(["measuring"]);
+    store.setProductMetrics(product.id, { revenue: null, users: 60 });
+    expect(store.judgeBets(co.id, 1).map((b) => b.state.kind)).toEqual(["won"]);
+    expect(store.judgeBets(co.id, 2)).toEqual([]);
+    expect(existsSync(betFile(co.id, bet.id))).toBe(true);
+    store.initStore();
+    expect(store.getBet(bet.id)).toMatchObject({ spentUsd: 2, state: { kind: "won", moved: 60 } });
+  });
+
+  it("retires a product with its bets and open work, but never the last one", () => {
+    const co = found();
+    const first = firstProductOf(co.id);
+    expect(store.killProduct(first.id, "dud")).toHaveProperty("refused");
+    const side = store.createProduct({ companyId: co.id, description: "a side bet", name: "Side" });
+    const bet = launch(co.id, side.id);
+    if ("refused" in bet) {
+      throw new Error(bet.refused);
+    }
+    const task = store.createTask({
+      betId: bet.id,
+      companyId: co.id,
+      productId: side.id,
+      title: "Post",
+    });
+    expect(store.killProduct(side.id, "no traction")).toMatchObject({ id: side.id });
+    expect(store.listProducts(co.id).map((p) => p.id)).toEqual([first.id]);
+    expect(store.getBet(bet.id)?.state).toMatchObject({ kind: "killed" });
+    expect(store.getTask(task.id)?.state.kind).toBe("dead");
+    expect(existsSync(path.join(retiredDir(co.id), side.id, "PRODUCT.md"))).toBe(true);
+    expect(existsSync(path.join(productsDir(co.id), side.id))).toBe(false);
+    store.initStore();
+    expect(store.listProducts(co.id).map((p) => p.id)).toEqual([first.id]);
   });
 });

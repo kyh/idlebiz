@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
+import { BetStateSchema } from "./bets";
 import { BlockedAskSchema, BudgetSchema, RunOutcomeSchema, TASK_STATUSES } from "./domain";
 
 // main/activity.ts publishes this union and persists it as activity.jsonl rows.
@@ -57,6 +58,15 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
     payload: z.object({ by: z.string(), name: z.string(), reason: z.string() }),
   }),
   event("product.created", { message: z.string(), payload: z.object({ productId: z.string() }) }),
+  event("product.killed", {
+    message: z.string(),
+    payload: z.object({ productId: z.string(), reason: z.string() }),
+  }),
+  /** A bet opened or changed state; the message is its title. */
+  event("bet.changed", {
+    message: z.string(),
+    payload: z.object({ betId: z.string(), state: BetStateSchema }),
+  }),
   event("budget.exhausted", { payload: z.object({ budget: BudgetSchema, spentUsd: z.number() }) }),
   event("metrics.pulse", {
     payload: z.object({ revenue: z.number().nullable(), users: z.number().nullable() }),

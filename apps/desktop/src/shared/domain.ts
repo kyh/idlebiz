@@ -261,6 +261,8 @@ export interface Product {
   lastShipAt: number | null;
   /** REAL visitors of its deploy (Vercel Web Analytics); null until bound */
   users: number | null;
+  /** REAL revenue from Stripe charges tagged `metadata[product]=<id>`; null until Stripe is connected */
+  revenueUsd: number | null;
   vercel: VercelBinding | null;
   createdAt: number;
 }
@@ -312,6 +314,8 @@ export interface Task {
   companyId: string;
   /** The product this work is for; null is company-level work (a review, a routine). */
   productId: string | null;
+  /** The bet this work spends against; null is work no bet pays for (a founder ping, a review). */
+  betId: string | null;
   title: string;
   description: string | null;
   state: TaskState;

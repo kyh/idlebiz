@@ -11,7 +11,7 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { openProduct, openWorkspacePath, productEntry } from "@/main/product";
 import { chatOptions } from "@/main/prompts/chat-options";
-import { haltForBudget, scheduler } from "@/main/scheduler";
+import { haltForBudget, killBet, retireProduct, scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
 import { readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
@@ -56,8 +56,11 @@ const runMetricsPulse = (): void => {
   void (async () => {
     const snap = await fetchRealMetrics(cfg, products);
     store.setRealMetrics(company.id, snap);
-    for (const [productId, users] of snap.productUsers) {
-      store.setProductUsers(productId, users);
+    for (const product of products) {
+      store.setProductMetrics(product.id, {
+        revenue: snap.productRevenue.get(product.id) ?? null,
+        users: snap.productUsers.get(product.id) ?? null,
+      });
     }
     if (snap.authError) {
       markAuthError("Stripe access was revoked — reconnect in the HUD.");
@@ -196,6 +199,9 @@ const registerIpcHandlers = (): void => {
     });
     return product;
   });
+  handle("killProduct", ({ productId, reason }) => retireProduct(productId, reason, null));
+  handle("listBets", ({ companyId }) => store.listBets(companyId));
+  handle("killBet", ({ betId, reason }) => killBet(betId, reason));
   handle("productStatus", async ({ productId }) => {
     const { vercel } = store.requireProduct(productId);
     const deploy = vercel
