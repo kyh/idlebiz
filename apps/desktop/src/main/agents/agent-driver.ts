@@ -17,7 +17,11 @@ import type {
   PermissionRequest,
 } from "@repo/agent-driver/acp-session";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
+import { z } from "zod";
+import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import type { RunToolHooks } from "@/main/control-plane";
@@ -34,6 +38,7 @@ import {
   externalToolCommand,
   normalizeCommand,
 } from "@/shared/command-policy";
+import type { LiveUrl } from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
@@ -73,12 +78,30 @@ interface RunLeases {
   servers: Set<string>;
 }
 
+const execFileAsync = promisify(execFile);
+
+const LiveUrlOutput = z.object({ data: z.object({ url: z.string() }) });
+
+/** Ask the browser itself: the session is the agent's, but any process of this user can read it. */
+const liveBrowserUrl: LiveUrl = async (session) => {
+  const scope = session === "" ? [] : ["--session", session];
+  try {
+    const { stdout } = await execFileAsync("agent-browser", [...scope, "get", "url", "--json"], {
+      timeout: 8000,
+    });
+    const parsed = LiveUrlOutput.safeParse(parseJson(stdout));
+    return parsed.success ? parsed.data.data.url : null;
+  } catch {
+    return null;
+  }
+};
+
 /** What a held call needs signing, or null when it may run. A lease covers the rest of the run. */
-const heldLease = (
+const heldLease = async (
   command: string,
   leases: RunLeases,
-): { key: string; ask: BlockedAsk; grant: () => void } | null => {
-  const host = leases.browser.heldHost(command);
+): Promise<{ key: string; ask: BlockedAsk; grant: () => void } | null> => {
+  const host = await leases.browser.heldHost(command, liveBrowserUrl);
   if (host !== null) {
     const key = browserActCommand(host);
     return {
@@ -100,19 +123,19 @@ const heldLease = (
 };
 
 /** An approval permits one execution of the exact command, or one lease for the run. */
-const decidePermission = (
+const decidePermission = async (
   companyId: string,
   request: PermissionRequest,
   leases: RunLeases,
   block: (ask: BlockedAsk) => void,
-): PermissionDecision => {
+): Promise<PermissionDecision> => {
   const command = normalizeCommand(request.command);
   if (!command) {
     return { allow: true };
   }
   const verdict = classifyCommand(command);
   if (verdict.decision === "allow") {
-    const held = heldLease(command, leases);
+    const held = await heldLease(command, leases);
     if (held === null) {
       return { allow: true };
     }
@@ -309,8 +332,7 @@ class AgentDriver {
             /* a listener must never break the run */
           }
         },
-        onPermission: (request) =>
-          Promise.resolve(decidePermission(company.id, request, leases, handle.block)),
+        onPermission: (request) => decidePermission(company.id, request, leases, handle.block),
         prompt: run.prompt,
         resumeSessionId,
         signal: abort.signal,

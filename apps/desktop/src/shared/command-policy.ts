@@ -148,9 +148,11 @@ export const EXTERNAL_TOOL: CommandRule = {
   id: "external-tool",
 };
 
-/** The MCP server behind a tool call titled `mcp__<server>__<tool>`, or null for anything else. */
-export const externalServer = (title: string): string | null =>
-  /^mcp__(?<server>.+?)__/u.exec(title)?.groups?.server ?? null;
+/** The MCP server behind a tool call, as claude (`mcp__<server>__<tool>`) or codex (`mcp.<server>.<tool>`) titles it; null for anything else. */
+export const externalServer = (title: string): string | null => {
+  const named = /^mcp(?:__(?<claude>.+?)__|\.(?<codex>[^.\s]+)\.)/u.exec(title)?.groups;
+  return named?.claude ?? named?.codex ?? null;
+};
 
 /** The approval key and card text for using `server`. */
 export const externalToolCommand = (server: string): string => `mcp: use ${server}`;
@@ -174,31 +176,35 @@ const hostOf = (url: string): string | null => {
   }
 };
 
+/** Where a browser session is right now; null when nothing could say. "" is the default session. */
+export type LiveUrl = (session: string) => Promise<string | null>;
+
+const UNREADABLE_PAGE = "a page nobody could read";
+
 /**
- * One run's view of the browser. A command names no site, only a verb, so the
- * watch remembers where each session was last pointed: acting on the team's own
- * localhost build is work, acting anywhere else is outward-facing. A page the
- * run never opened is unknown, and unknown asks.
+ * One run's leases on the browser. A command names a verb, never a site, so the
+ * site comes from the browser itself: a click on the team's own localhost build
+ * can land anywhere, and only the live URL knows. An `open` earlier in the same
+ * chained command wins, since the browser is not there yet when the ask arrives.
  */
 export class BrowserWatch {
-  /** session → the remote host it is on; null is a local page */
-  private pages = new Map<string, string | null>();
   private leased = new Set<string>();
 
   /** The host a command would act on without a lease, or null when it may run. */
-  heldHost(command: string): string | null {
+  async heldHost(command: string, liveUrl: LiveUrl): Promise<string | null> {
+    const opening = new Map<string, string>();
     for (const call of command.matchAll(BROWSER_CALL)) {
       const args = call.groups?.args ?? "";
       const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
       const opened = /(?:^|\s)open\s+["']?(?<url>[^\s"']+)/u.exec(args)?.groups?.url;
       if (opened !== undefined) {
-        this.pages.set(session, LOOPBACK_URL.test(opened) ? null : hostOf(opened));
+        opening.set(session, opened);
       } else if (BROWSER_WRITES.test(args)) {
-        const host = this.pages.has(session)
-          ? this.pages.get(session)
-          : "a page this run never opened";
-        if (host !== null && host !== undefined && !this.leased.has(host)) {
-          return host;
+        const url = opening.get(session) ?? (await liveUrl(session));
+        const host = url === null ? UNREADABLE_PAGE : hostOf(url);
+        const local = url !== null && LOOPBACK_URL.test(url);
+        if (!local && !this.leased.has(host ?? UNREADABLE_PAGE)) {
+          return host ?? UNREADABLE_PAGE;
         }
       }
     }

@@ -23,7 +23,12 @@ const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 const ToolCallInput = z.object({
   command: z.string().optional(),
   description: z.string().optional(),
+  /** codex names the MCP server here when the approval stands alone */
+  serverName: z.string().optional(),
 });
+
+/** codex marks an MCP tool approval in the request's `_meta`; its tool call may carry no title at all. */
+const McpApprovalMeta = z.object({ is_mcp_tool_approval: z.literal(true) });
 
 // Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
 const webReadable = (stream: Readable): ReadableStream<Uint8Array> =>
@@ -69,7 +74,7 @@ export interface AcpAgent {
 
 /** A tool call an agent wants to make, as the policy layer sees it. */
 export interface PermissionRequest {
-  /** The shell command, or the tool call's title when it isn't a command. */
+  /** The shell command, or the tool call's title when it isn't a command (`mcp__server__tool` from claude, `mcp.server.tool` from codex). */
   command: string;
   /** The agent's own one-line account of what it is doing, when it gives one. */
   description?: string;
@@ -258,13 +263,20 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       sessionTimer.unref?.();
     }
 
+    const toolTitles = new Map<string, string>();
     const app = client({ name: "idlebiz" })
       .onRequest("session/request_permission", async (ctx) => {
         pokeIdle();
         const tool = ToolCallInput.safeParse(ctx.params.toolCall.rawInput);
         const input = tool.success ? tool.data : {};
+        const { toolCall } = ctx.params;
+        // an approval may name only the id of a call announced earlier
+        const announced = toolCall.title ?? toolTitles.get(toolCall.toolCallId);
+        const mcpApproval = McpApprovalMeta.safeParse(ctx.params._meta).success;
+        const asMcp = input.serverName === undefined ? announced : `mcp.${input.serverName}.call`;
         const request: PermissionRequest = {
-          command: input.command ?? ctx.params.toolCall.title ?? "",
+          // an MCP approval nothing can name is still an MCP approval: held, not waved through
+          command: input.command ?? (mcpApproval ? (asMcp ?? "mcp.unknown.call") : announced) ?? "",
           description: input.description,
           kind: ctx.params.toolCall.kind ?? undefined,
         };
@@ -290,6 +302,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           return;
         }
         if (update.sessionUpdate === "tool_call") {
+          toolTitles.set(update.toolCallId, update.title);
           flushMessage();
           opts.onEvent({
             args: update.rawInput,

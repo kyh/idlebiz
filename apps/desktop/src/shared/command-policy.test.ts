@@ -6,7 +6,7 @@ import {
   externalServer,
   normalizeCommand,
 } from "./command-policy";
-import type { RuleId } from "./command-policy";
+import type { LiveUrl, RuleId } from "./command-policy";
 
 const MUST_ASK = {
   deploy: [
@@ -151,42 +151,60 @@ describe("describeRule", () => {
   });
 });
 
+const at =
+  (pages: Record<string, string>): LiveUrl =>
+  (session) =>
+    Promise.resolve(pages[session] ?? null);
+
 describe("BrowserWatch", () => {
-  it("lets a run act on its own localhost build", () => {
+  it("lets a run act on its own localhost build", async () => {
     const watch = new BrowserWatch();
-    expect(watch.heldHost("agent-browser open http://localhost:5173")).toBeNull();
-    expect(watch.heldHost("agent-browser click @e3")).toBeNull();
+    const live = at({ "": "http://localhost:5173/settings" });
+    expect(await watch.heldHost("agent-browser click @e3", live)).toBeNull();
   });
 
-  it("lets a run read anywhere", () => {
+  it("lets a run read anywhere", async () => {
     const watch = new BrowserWatch();
-    expect(watch.heldHost("agent-browser open https://news.example.com")).toBeNull();
-    expect(watch.heldHost("agent-browser snapshot")).toBeNull();
-    expect(watch.heldHost("agent-browser get text @e1")).toBeNull();
+    const live = at({ "": "https://news.example.com" });
+    expect(await watch.heldHost("agent-browser open https://news.example.com", live)).toBeNull();
+    expect(await watch.heldHost("agent-browser snapshot", live)).toBeNull();
+    expect(await watch.heldHost("agent-browser get text @e1", live)).toBeNull();
   });
 
-  it("holds an act on a remote site until the founder leases it", () => {
+  it("holds an act on a remote site until the founder leases it", async () => {
     const watch = new BrowserWatch();
-    watch.heldHost("agent-browser open https://news.example.com/submit");
-    expect(watch.heldHost('agent-browser fill @e2 "Show: our app"')).toBe("news.example.com");
+    const live = at({ "": "https://news.example.com/submit" });
+    expect(await watch.heldHost('agent-browser fill @e2 "Show: our app"', live)).toBe(
+      "news.example.com",
+    );
     watch.lease("news.example.com");
-    expect(watch.heldHost("agent-browser click @e5")).toBeNull();
+    expect(await watch.heldHost("agent-browser click @e5", live)).toBeNull();
   });
 
-  it("tracks sessions apart and follows a chained command", () => {
+  it("judges by where the browser is, not where the run last pointed it", async () => {
     const watch = new BrowserWatch();
-    watch.heldHost("agent-browser --session mara open http://127.0.0.1:3000");
+    await watch.heldHost("agent-browser open http://localhost:3000", at({}));
+    const wandered = at({ "": "https://forum.example.com/new" });
+    expect(await watch.heldHost("agent-browser type @e1 hello", wandered)).toBe(
+      "forum.example.com",
+    );
+  });
+
+  it("tracks sessions apart and follows a chained command", async () => {
+    const watch = new BrowserWatch();
+    const live = at({ mara: "http://127.0.0.1:3000" });
     expect(
-      watch.heldHost(
+      await watch.heldHost(
         "agent-browser --session sam open https://forum.example.com && agent-browser --session sam click @e1",
+        live,
       ),
     ).toBe("forum.example.com");
-    expect(watch.heldHost("agent-browser --session mara click @e1")).toBeNull();
+    expect(await watch.heldHost("agent-browser --session mara click @e1", live)).toBeNull();
   });
 
-  it("holds an act on a page the run never opened", () => {
-    expect(new BrowserWatch().heldHost("agent-browser press Enter")).toBe(
-      "a page this run never opened",
+  it("holds an act on a page nobody could read", async () => {
+    expect(await new BrowserWatch().heldHost("agent-browser press Enter", at({}))).toBe(
+      "a page nobody could read",
     );
   });
 });
@@ -195,6 +213,8 @@ describe("externalServer", () => {
   it("names the MCP server behind a tool call", () => {
     expect(externalServer("mcp__claude-in-chrome__computer")).toBe("claude-in-chrome");
     expect(externalServer("mcp__plugin_gmail_mail__send_message")).toBe("plugin_gmail_mail");
+    expect(externalServer("mcp.slack.post_message")).toBe("slack");
+    expect(externalServer("mcp.unknown.call")).toBe("unknown");
   });
 
   it("leaves built-in tools and shell commands alone", () => {

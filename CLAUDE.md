@@ -41,10 +41,13 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
   single-player: the replay only ever sees this company's bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, including the browser: `BrowserWatch` holds any
-  page-changing `agent-browser` verb on a non-loopback site until the founder signs for
-  that site, once per run. Employee sessions also load the founder's own CLI settings, so
-  their MCP servers (`mcp__<server>__…`, signed in as the founder) are leased the same way,
-  once per server per run. Only the claude adapter's tool titles are known to match.
+  page-changing `agent-browser` verb unless the session's live URL (read from the browser,
+  since a click can land anywhere) is loopback, until the founder signs for that site, once
+  per run. Employee sessions also load the founder's own CLI settings, so their MCP servers
+  (signed in as the founder) are leased the same way, once per server per run: claude titles
+  the call `mcp__server__tool`, codex `mcp.server.tool` or a bare approval that
+  `acp-session.ts` names from the announced call. What nothing can name is held, never waved
+  through.
 
 ## Two traps that fail silently
 
