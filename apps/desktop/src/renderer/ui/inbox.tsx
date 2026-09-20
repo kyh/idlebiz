@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, resolveApproval, retryTask } from "@/renderer/state/store";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { employeeName } from "@/renderer/ui/employee-name";
+import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { plural } from "@/shared/format";
@@ -9,6 +11,7 @@ import { describeRule } from "@/shared/command-policy";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
+import { cn } from "cn";
 
 // Connecting resumes integration asks automatically; no text answer is needed.
 const ConnectRow = ({
@@ -61,16 +64,12 @@ const ApprovalRow = ({
   command: string;
   rule: string;
 }) => {
-  const [sent, setSent] = useState(false);
-  const decide = async (approved: boolean) => {
-    if (sent) {
-      return;
-    }
-    setSent(true);
-    await resolveApproval(t.id, approved);
-  };
+  const { submission, submit } = useSubmission((approved: boolean) =>
+    resolveApproval(t.id, approved),
+  );
+  const decided = submission.kind === "sending" || submission.kind === "sent";
   return (
-    <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
+    <div className={cn("px-inset p-3", decided && "opacity-50")}>
       <div className="text-xs text-warn">
         🔐 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
@@ -79,43 +78,29 @@ const ApprovalRow = ({
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-fg-dim">Approving covers this exact command, once.</span>
         <span className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              void decide(false);
-            }}
-            disabled={sent}
-            className="px-btn"
-          >
+          <button type="button" onClick={() => submit(false)} disabled={decided} className="px-btn">
             Deny
           </button>
           <button
             type="button"
-            onClick={() => {
-              void decide(true);
-            }}
-            disabled={sent}
+            onClick={() => submit(true)}
+            disabled={decided}
             className="px-btn-accent px-btn"
           >
             Approve
           </button>
         </span>
       </div>
+      <Failure submission={submission} />
     </div>
   );
 };
 
 const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
-  const [retried, setRetried] = useState(false);
-  const retry = async () => {
-    if (retried || !t.assigneeId) {
-      return;
-    }
-    setRetried(true);
-    await retryTask(t);
-  };
+  const { submission, submit } = useSubmission(() => retryTask(t));
+  const retried = submission.kind === "sending" || submission.kind === "sent";
   return (
-    <div className="px-inset p-3" style={{ opacity: retried ? 0.5 : 1 }}>
+    <div className={cn("px-inset p-3", retried && "opacity-50")}>
       <div className="text-xs text-danger">
         💀 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
@@ -123,15 +108,14 @@ const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
       <div className="mt-2 flex justify-end">
         <button
           type="button"
-          onClick={() => {
-            void retry();
-          }}
+          onClick={() => submit()}
           disabled={retried || !t.assigneeId}
           className="px-btn-accent px-btn"
         >
           {retried ? "Retrying…" : "Retry"}
         </button>
       </div>
+      <Failure submission={submission} />
     </div>
   );
 };
@@ -139,7 +123,7 @@ const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
 const AskRow = ({ t, by, question }: { t: Task; by: string; question: string }) => {
   const [sent, setSent] = useState(false);
   return (
-    <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
+    <div className={cn("px-inset p-3", sent && "opacity-50")}>
       <div className="text-xs text-danger">
         ❗ {by} · <span className="text-fg-dim">{t.title}</span>
       </div>

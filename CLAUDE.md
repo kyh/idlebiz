@@ -113,6 +113,10 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   kind is a compile error, not a silent default) turns it into a patch and the slices to
   refetch. Answers can land out of order, so every fetch takes a ticket and a slice keeps
   only an answer at least as new as its last (`ordering.ts`). Don't put entities in events.
+- **Every mutation goes through `useSubmission`** (`renderer/hooks/use-submission.ts`, on
+  React's `useActionState`): the control is busy while main works and a refusal lands beside
+  it as a `<Failure>`. No `void action()` in a handler, no hand-rolled `mounted` refs — a
+  throw inside an action goes to the error boundary, so the hook returns failure as state.
 - **React and the office scene talk through `renderer/game/office-port.ts`**, a typed
   vocabulary over Phaser's emitter. The scene still fetches its own roster when it boots: it
   restarts the moment a company is founded, before the store has refreshed.

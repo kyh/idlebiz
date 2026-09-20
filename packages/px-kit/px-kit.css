@@ -146,6 +146,11 @@
     0 3px 0 0 rgba(0, 0, 0, 0.3);
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
 }
+/* a control showing that something is running right now: autopilot while it is on */
+.px-btn-live {
+  color: #0e2a16;
+  background: var(--ok);
+}
 .px-btn-accent:hover:not(:disabled) {
   background: #5aa9e8;
 }

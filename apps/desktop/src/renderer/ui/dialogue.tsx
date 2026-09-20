@@ -1,8 +1,10 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { bridge } from "@/renderer/bridge";
 import { hear } from "@/renderer/game/office-port";
 import { useStore, directEmployee, listTasksFor, setTalkingTo } from "@/renderer/state/store";
 import { useAsync } from "@/renderer/hooks/use-async";
+import { useSubmission } from "@/renderer/hooks/use-submission";
+import type { Submission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { AnswerForm } from "@/renderer/ui/answer-form";
@@ -18,12 +20,10 @@ import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { taskIn } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
 import type { ChatOption } from "@/shared/ipc-registry";
-import { errorMessage } from "@/shared/errors";
 import { cn } from "cn";
 
 const NOTE_MS = 1800;
 
-type Submission = { kind: "ready" } | { kind: "sending" } | { kind: "failed"; message: string };
 type Spoken = Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }>;
 
 const isSpoken = (a: ActivityEvent): a is Spoken =>
@@ -127,7 +127,7 @@ const SendStatus = ({ submission, note }: { submission: Submission; note: string
       </div>
     );
   }
-  if (submission.kind === "ready" && note) {
+  if (submission.kind !== "sending" && note) {
     return <div className="mt-1 text-center text-xs text-ok">{note}</div>;
   }
   return null;
@@ -164,9 +164,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const [mode, setMode] = useState<"menu" | "talk">("menu");
   const [sel, setSel] = useState(0);
   const [input, setInput] = useState("");
-  const [submission, setSubmission] = useState<Submission>({ kind: "ready" });
   const [note, showNote] = useTransientNote(NOTE_MS);
-  const mounted = useRef(false);
 
   const mine = useMemo(() => activity.filter((a) => a.employeeId === emp.id), [activity, emp.id]);
   // Only a status event moves a task, so its id is what a task list is current
@@ -201,24 +199,19 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
 
   // everything the founder says goes through the team channel; the @slug
   // mention wakes exactly this employee with the message as their brief
-  const send = async (instruction: string): Promise<boolean> => {
-    if (submission.kind === "sending") {
-      return false;
-    }
-    setSubmission({ kind: "sending" });
-    try {
-      await directEmployee(emp.id, instruction);
-      if (!mounted.current) {
-        return false;
-      }
-      setSubmission({ kind: "ready" });
+  const { submission, submit } = useSubmission(
+    async (said: { instruction: string; typed: boolean }) => {
+      await directEmployee(emp.id, said.instruction);
       showNote(`Sent to ${emp.name} ✓`);
-      return true;
-    } catch (error) {
-      if (mounted.current) {
-        setSubmission({ kind: "failed", message: errorMessage(error) });
+      if (said.typed) {
+        setInput("");
+        setMode("menu");
       }
-      return false;
+    },
+  );
+  const send = (instruction: string, typed = false): void => {
+    if (submission.kind !== "sending") {
+      submit({ instruction, typed });
     }
   };
 
@@ -240,21 +233,17 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
         break;
       }
       case "ask": {
-        void send(row.option.instruction);
+        send(row.option.instruction);
         break;
       }
       // no default
     }
   };
 
-  const submitTalk = async () => {
+  const submitTalk = () => {
     const text = input.trim();
-    if (!text) {
-      return;
-    }
-    if (await send(text)) {
-      setInput("");
-      setMode("menu");
+    if (text) {
+      send(text, true);
     }
   };
 
@@ -279,10 +268,8 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
     }
   });
   useEffect(() => {
-    mounted.current = true;
     window.addEventListener("keydown", onKey);
     return () => {
-      mounted.current = false;
       window.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -336,7 +323,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
                 sending={sending}
                 onChange={setInput}
                 onSubmit={() => {
-                  void submitTalk();
+                  submitTalk();
                 }}
               />
             ) : null}

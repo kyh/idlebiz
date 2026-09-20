@@ -1,10 +1,12 @@
 import { memo, useState } from "react";
 import { useAsync } from "@/renderer/hooks/use-async";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { bridge } from "@/renderer/bridge";
 import { createProduct, killProduct, useStore } from "@/renderer/state/store";
 import { BetList } from "@/renderer/ui/bets";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
+import { Failure } from "@/renderer/ui/failure";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { productStateOf } from "@/renderer/ui/product-state";
@@ -102,10 +104,7 @@ const ProductCard = ({
             {selected ? "▶ " : ""}
             {product.name}
           </span>
-          <span
-            className="shrink-0 text-xs uppercase"
-            style={state === "LIVE" ? { color: "var(--ok)" } : undefined}
-          >
+          <span className={cn("shrink-0 text-xs uppercase", state === "LIVE" && "text-ok")}>
             {state}
           </span>
         </div>
@@ -148,7 +147,6 @@ const ProductCard = ({
             title="Archive it under retired/ and free its budget"
             className="ml-auto"
             onConfirm={() => killProduct(product.id, "the founder retired it")}
-            onNote={onNote}
           />
         ) : null}
       </div>
@@ -156,23 +154,17 @@ const ProductCard = ({
   );
 };
 
-const NewProduct = ({ onNote }: { onNote: (note: string) => void }) => {
+const NewProduct = () => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await createProduct(name, description);
-      setName("");
-      setDescription("");
-      setOpen(false);
-    } catch (error) {
-      onNote(errorMessage(error));
-    }
-    setBusy(false);
-  };
+  const { submission, submit } = useSubmission(async () => {
+    await createProduct(name, description);
+    setName("");
+    setDescription("");
+    setOpen(false);
+  });
+  const busy = submission.kind === "sending";
   if (!open) {
     return (
       <button
@@ -205,15 +197,14 @@ const NewProduct = ({ onNote }: { onNote: (note: string) => void }) => {
         </button>
         <button
           type="button"
-          onClick={() => {
-            void submit();
-          }}
+          onClick={() => submit()}
           disabled={busy || !name.trim() || !description.trim()}
           className="px-btn-accent px-btn"
         >
           Start it
         </button>
       </div>
+      <Failure submission={submission} />
     </div>
   );
 };
@@ -295,14 +286,11 @@ export const Ships = ({
               onNote={showNote}
             />
           ))}
-          <NewProduct onNote={showNote} />
+          <NewProduct />
         </div>
         <div className="text-xs uppercase tracking-wide text-fg-dim">Bets{selectedName}</div>
         <div className="space-y-2">
-          <BetList
-            bets={bets.filter((b) => selected === null || b.productId === selected)}
-            onNote={showNote}
-          />
+          <BetList bets={bets.filter((b) => selected === null || b.productId === selected)} />
         </div>
         <div className="text-xs uppercase tracking-wide text-fg-dim">
           Shipping log{selectedName}

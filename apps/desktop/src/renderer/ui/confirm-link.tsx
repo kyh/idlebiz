@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { errorMessage } from "@/shared/errors";
+import { useSubmission } from "@/renderer/hooks/use-submission";
+import { Failure } from "@/renderer/ui/failure";
 import { cn } from "cn";
 
 /** A destructive link that asks twice: what it does cannot be undone from the UI. */
@@ -9,23 +10,15 @@ export const ConfirmLink = ({
   title,
   className,
   onConfirm,
-  onNote,
 }: {
   label: string;
   confirmLabel: string;
   title?: string;
   className?: string;
   onConfirm: () => Promise<void>;
-  onNote: (note: string) => void;
 }) => {
   const [arming, setArming] = useState(false);
-  const confirm = async () => {
-    try {
-      await onConfirm();
-    } catch (error) {
-      onNote(errorMessage(error));
-    }
-  };
+  const { submission, submit } = useSubmission(onConfirm);
   if (!arming) {
     return (
       <button
@@ -39,19 +32,21 @@ export const ConfirmLink = ({
     );
   }
   return (
-    <span className={cn("flex items-baseline gap-2", className)}>
-      <button type="button" onClick={() => setArming(false)} className="px-link">
-        keep
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          void confirm();
-        }}
-        className="px-link px-link-danger"
-      >
-        {confirmLabel}
-      </button>
+    <span className={cn("flex flex-col items-end", className)}>
+      <span className="flex items-baseline gap-2">
+        <button type="button" onClick={() => setArming(false)} className="px-link">
+          keep
+        </button>
+        <button
+          type="button"
+          onClick={() => submit()}
+          disabled={submission.kind === "sending"}
+          className="px-link px-link-danger"
+        >
+          {confirmLabel}
+        </button>
+      </span>
+      <Failure submission={submission} />
     </span>
   );
 };

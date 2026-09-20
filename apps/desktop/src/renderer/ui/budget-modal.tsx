@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useSubmission } from "@/renderer/hooks/use-submission";
+import { Failure } from "@/renderer/ui/failure";
 import {
   useStore,
   setBudget,
@@ -20,6 +22,8 @@ const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
 ];
 
 const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
+  const connecting = useSubmission(connectStripe);
+  const disconnecting = useSubmission(disconnectStripe);
   if (stripeStatus.state === "connected") {
     return (
       <div className="flex items-center justify-between gap-2">
@@ -36,13 +40,13 @@ const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
         </span>
         <button
           type="button"
-          onClick={() => {
-            void disconnectStripe();
-          }}
+          onClick={() => disconnecting.submit()}
+          disabled={disconnecting.submission.kind === "sending"}
           className="px-btn"
         >
           Disconnect
         </button>
+        <Failure submission={disconnecting.submission} doing="disconnect" />
       </div>
     );
   }
@@ -60,9 +64,8 @@ const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
       )}
       <button
         type="button"
-        onClick={() => {
-          void connectStripe();
-        }}
+        onClick={() => connecting.submit()}
+        disabled={connecting.submission.kind === "sending"}
         className="px-btn-accent px-btn"
       >
         {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
@@ -82,6 +85,8 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const setCapInput = (value: string) => setDraft({ savedCap, value });
   // real revenue showing at all means the connection is live
   const liveMetrics = company !== null && company.revenueUsd !== null;
+  const saving = useSubmission(setBudget);
+  const resetting = useSubmission(resetSpend);
 
   if (!company) {
     return null;
@@ -92,7 +97,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const capValid = capInput.trim() !== "" && Number.isFinite(parsedCap) && parsedCap >= 0;
   const setCap = () => {
     if (capValid) {
-      void setBudget({ capUsd: parsedCap, mode: "capped" });
+      saving.submit({ capUsd: parsedCap, mode: "capped" });
     }
   };
 
@@ -120,7 +125,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
             value={budget.mode}
             onChange={(mode) => {
               if (mode === "infinite") {
-                void setBudget({ mode });
+                saving.submit({ mode });
               } else {
                 setCap();
               }
@@ -141,6 +146,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
               Set cap
             </button>
           </div>
+          <Failure submission={saving.submission} doing="save the budget" />
         </div>
 
         <div className="px-inset flex items-center justify-between p-3">
@@ -155,14 +161,14 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
           </div>
           <button
             type="button"
-            onClick={() => {
-              void resetSpend();
-            }}
+            onClick={() => resetting.submit()}
+            disabled={resetting.submission.kind === "sending"}
             className="px-btn"
           >
             Reset meter
           </button>
         </div>
+        <Failure submission={resetting.submission} doing="reset the meter" />
 
         <div>
           <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">

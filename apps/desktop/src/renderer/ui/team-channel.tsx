@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { formatTime } from "@/shared/format";
-import { errorMessage } from "@/shared/errors";
-
-type Submission = { kind: "ready" } | { kind: "sending" } | { kind: "failed"; message: string };
 
 const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
   "chat",
@@ -60,7 +58,10 @@ export const TeamChannel = () => {
   const company = useStore((s) => s.company);
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
-  const [submission, setSubmission] = useState<Submission>({ kind: "ready" });
+  const { submission, submit } = useSubmission(async (text: string) => {
+    await sendFounderChat(text);
+    setDraft("");
+  });
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -86,18 +87,10 @@ export const TeamChannel = () => {
 
   const nameOf = (id?: string | null): string => (id ? employeeName(employees, id, "team") : "you");
 
-  const send = async () => {
+  const send = () => {
     const text = draft.trim();
-    if (!text || submission.kind === "sending") {
-      return;
-    }
-    setSubmission({ kind: "sending" });
-    try {
-      await sendFounderChat(text);
-      setDraft("");
-      setSubmission({ kind: "ready" });
-    } catch (error) {
-      setSubmission({ kind: "failed", message: errorMessage(error) });
+    if (text && submission.kind !== "sending") {
+      submit(text);
     }
   };
 
@@ -129,7 +122,7 @@ export const TeamChannel = () => {
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              void send();
+              send();
             }
           }}
           placeholder={focused ? "@name wakes them up" : "Message the team…"}
@@ -138,7 +131,7 @@ export const TeamChannel = () => {
         <button
           type="button"
           onClick={() => {
-            void send();
+            send();
           }}
           disabled={!draft.trim() || submission.kind === "sending"}
           aria-label={submission.kind === "sending" ? "Sending message" : "Send message"}

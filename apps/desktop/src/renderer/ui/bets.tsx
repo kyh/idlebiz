@@ -27,7 +27,7 @@ const verdictOf = (bet: Bet): string => {
   }
 };
 
-const BetRow = ({ bet, onNote }: { bet: Bet; onNote: (note: string) => void }) => {
+const BetRow = ({ bet }: { bet: Bet }) => {
   const live = !isClosed(bet);
   return (
     <div className="px-inset p-2.5">
@@ -57,7 +57,6 @@ const BetRow = ({ bet, onNote }: { bet: Bet; onNote: (note: string) => void }) =
             label="kill"
             confirmLabel="kill it"
             onConfirm={() => killBet(bet.id, "the founder called it")}
-            onNote={onNote}
           />
         ) : null}
       </div>
@@ -66,7 +65,7 @@ const BetRow = ({ bet, onNote }: { bet: Bet; onNote: (note: string) => void }) =
 };
 
 /** Live bets first, then verdicts newest first. */
-export const BetList = ({ bets, onNote }: { bets: Bet[]; onNote: (note: string) => void }) => {
+export const BetList = ({ bets }: { bets: Bet[] }) => {
   if (bets.length === 0) {
     return (
       <div className="text-sm text-fg-dim">
@@ -74,5 +73,5 @@ export const BetList = ({ bets, onNote }: { bets: Bet[]; onNote: (note: string) 
       </div>
     );
   }
-  return ledgerOrder(bets).map((b) => <BetRow key={b.id} bet={b} onNote={onNote} />);
+  return ledgerOrder(bets).map((b) => <BetRow key={b.id} bet={b} />);
 };

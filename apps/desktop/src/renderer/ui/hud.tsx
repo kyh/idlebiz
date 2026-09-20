@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { useNow } from "@/renderer/hooks/use-now";
+import { useSubmission } from "@/renderer/hooks/use-submission";
+import type { Submission } from "@/renderer/hooks/use-submission";
 import { Bust } from "@/renderer/ui/bust";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
@@ -159,47 +161,53 @@ const CompanyPlates = ({
   );
 };
 
+const autopilotTitle = (company: Company, submission: Submission): string => {
+  if (submission.kind === "failed") {
+    return `Could not switch autopilot: ${submission.message}`;
+  }
+  return company.autopilot
+    ? "Autopilot on — the company runs itself. Click to pause."
+    : "Autopilot paused. Click to resume.";
+};
+
 const RunControls = ({
   company,
   onOpen,
 }: {
   company: Company;
   onOpen: (overlay: Overlay) => void;
-}) => (
-  <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
-    <button
-      type="button"
-      onClick={() => {
-        void setAutopilot(!company.autopilot);
-      }}
-      className="px-btn pointer-events-auto"
-      style={company.autopilot ? { background: "var(--ok)", color: "#0e2a16" } : undefined}
-      title={
-        company.autopilot
-          ? "Autopilot on — the company runs itself. Click to pause."
-          : "Autopilot paused. Click to resume."
-      }
-    >
-      {company.autopilot ? (
-        <>
-          <span className="px-icon">{LIVE_GLYPH}</span> LIVE
-        </>
-      ) : (
-        <>
-          <span className="px-icon">▶</span> Start
-        </>
-      )}
-    </button>
-    <button
-      type="button"
-      onClick={() => onOpen({ kind: "settings" })}
-      className="px-btn px-btn-icon pointer-events-auto"
-      title="Settings"
-    >
-      <span className="px-icon px-icon-solo">⚙</span>
-    </button>
-  </div>
-);
+}) => {
+  const { submission, submit } = useSubmission(setAutopilot);
+  return (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
+      <button
+        type="button"
+        onClick={() => submit(!company.autopilot)}
+        disabled={submission.kind === "sending"}
+        className={cn("px-btn pointer-events-auto", company.autopilot && "px-btn-live")}
+        title={autopilotTitle(company, submission)}
+      >
+        {company.autopilot ? (
+          <>
+            <span className="px-icon">{LIVE_GLYPH}</span> LIVE
+          </>
+        ) : (
+          <>
+            <span className="px-icon">▶</span> Start
+          </>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => onOpen({ kind: "settings" })}
+        className="px-btn px-btn-icon pointer-events-auto"
+        title="Settings"
+      >
+        <span className="px-icon px-icon-solo">⚙</span>
+      </button>
+    </div>
+  );
+};
 
 export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
   const company = useStore((s) => s.company);
