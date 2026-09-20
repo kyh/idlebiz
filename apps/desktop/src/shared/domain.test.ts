@@ -90,21 +90,9 @@ describe("isRoutineDue", () => {
   });
 });
 
-const hire = (id: string, title: string) => ({ id, role: "staff", title });
-
 describe("leadOf", () => {
-  it("passes over craft titles that merely contain a leadership word", () => {
-    const team = [
-      hire("ngozi", "Founding Full-Stack Engineer"),
-      hire("mirae", "Product Designer"),
-      hire("desmond", "Growth & SEO Lead"),
-    ];
-    expect(leadOf(team)).toBe("ngozi");
-  });
-
-  it("prefers someone whose title runs a company", () => {
-    expect(leadOf([hire("sam", "Engineer"), hire("ana", "Head of Product")])).toBe("ana");
-    expect(leadOf([hire("sam", "Engineer"), hire("raj", "Product Manager")])).toBe("raj");
+  it("is the first hire, whatever anyone's title says", () => {
+    expect(leadOf([{ id: "ngozi" }, { id: "mirae" }, { id: "desmond" }])).toBe("ngozi");
   });
 
   it("has nobody to pick from an empty roster", () => {

@@ -251,7 +251,7 @@ describe("founding publication", () => {
       businessType: "game-studio",
       founderName: "Kai",
       founderSpriteSeed: "seed",
-      hires: [hire("Priya"), { ...hire("Mae"), role: "lead", title: "Team lead" }],
+      hires: [{ ...hire("Mae"), role: "lead", title: "Team lead" }, hire("Priya")],
       mission: "ship",
       name: "Acme",
     });
