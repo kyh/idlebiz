@@ -34,12 +34,18 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 - **One live bet per product per metric** (`store.openBet` refuses the second), so two bets
   never claim the same movement. Per-product revenue is Stripe charges tagged
   `metadata[product]=<slug>`; untagged revenue counts for the company only.
-- **Idle hands only spend against a fundable bet.** `allocate` picks it (product yield +
-  exploration bonus − crowding), counting runs in flight against the budget at ~$1 each and
-  skipping any bet with a task blocked on the founder; with none fundable only the lead runs, to open the next
-  one, and a run of straight losses asks for new ground. Routines and founder pings are the
-  only unfunded work, and a routine is only work that recurs by nature (a playtest, a store
-  audit): reviewing or marketing the business is a bet's job.
+- **Idle hands only spend against a fundable bet.** `allocate` decides everything about
+  where a run goes, and the scheduler only carries it out: work on the best open bet
+  (product yield + exploration bonus − crowding, runs in flight counted against the budget
+  at ~$1 each), else the lead settles a spent-out bet, else the lead opens the next one (a
+  run of straight losses asks for new ground), else wait. "Waiting on the founder" is
+  modelled there once: a bet with a blocked task gets no hands — settle runs carry their
+  bet, so that covers them — and a lead whose last proposal is blocked is not asked again.
+  Routines and founder pings are the only unfunded work, and a routine is only work that
+  recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
+  bet's job.
+- **The store refuses by throwing**, with the sentence the agent should read; tools turn it
+  into their answer (`orWhyNot` in the scheduler), IPC turns it into the founder's note.
 - **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`
   against the closed bets and swaps only to a strictly better scorer, so the incumbent never
   loses to a tie. It stays on the defaults below eight closed bets. Steering changes go in

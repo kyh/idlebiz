@@ -588,19 +588,16 @@ describe("bets", () => {
     store.setProductMetrics(product.id, { revenue: null, users: 10 });
     const bet = launch(co.id, product.id);
     expect(bet).toMatchObject({ baseline: 10, state: { kind: "open" } });
-    expect(launch(co.id, product.id)).toHaveProperty("refused");
+    expect(() => launch(co.id, product.id)).toThrow("two bets on one number");
   });
 
   it("is judged by the real number, and the verdict survives a restart", () => {
     const co = found();
     const product = firstProductOf(co.id);
     const bet = launch(co.id, product.id);
-    if ("refused" in bet) {
-      throw new Error(bet.refused);
-    }
     store.recordBetSpend(bet.id, 2);
     expect(store.judgeBets(co.id, 0)).toEqual([]);
-    expect(store.measureBet(bet.id, 0)?.state.kind).toBe("measuring");
+    expect(store.measureBet(bet.id, 0).state.kind).toBe("measuring");
     store.setProductMetrics(product.id, { revenue: null, users: 60 });
     expect(store.judgeBets(co.id, 1).map((b) => b.state.kind)).toEqual(["won"]);
     expect(store.judgeBets(co.id, 2)).toEqual([]);
@@ -612,19 +609,16 @@ describe("bets", () => {
   it("retires a product with its bets and open work, but never the last one", () => {
     const co = found();
     const first = firstProductOf(co.id);
-    expect(store.killProduct(first.id, "dud")).toHaveProperty("refused");
+    expect(() => store.killProduct(first.id, "dud")).toThrow("only product");
     const side = store.createProduct({ companyId: co.id, description: "a side bet", name: "Side" });
     const bet = launch(co.id, side.id);
-    if ("refused" in bet) {
-      throw new Error(bet.refused);
-    }
     const task = store.createTask({
       betId: bet.id,
       companyId: co.id,
       productId: side.id,
       title: "Post",
     });
-    expect(store.killProduct(side.id, "no traction")).toMatchObject({ id: side.id });
+    expect(store.killProduct(side.id, "no traction").map((b) => b.id)).toEqual([bet.id]);
     expect(store.listProducts(co.id).map((p) => p.id)).toEqual([first.id]);
     expect(store.getBet(bet.id)?.state).toMatchObject({ kind: "killed" });
     expect(store.getTask(task.id)?.state.kind).toBe("dead");

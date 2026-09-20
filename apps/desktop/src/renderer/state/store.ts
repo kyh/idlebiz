@@ -256,14 +256,13 @@ const withCompany = async (act: (companyId: string) => Promise<void>): Promise<v
 const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
   withCompany(async (companyId) => set({ company: await call(companyId) }));
 
+// main answers both with `bet.changed` / `product.killed`, and those events reload what moved
 export const killBet = async (betId: string, reason: string): Promise<void> => {
   await bridge().killBet({ betId, reason });
-  await reloadBets();
 };
 
 export const killProduct = async (productId: string, reason: string): Promise<void> => {
   await bridge().killProduct({ productId, reason });
-  await Promise.all([reloadProducts(), reloadBets()]);
 };
 
 export const createProduct = (name: string, description: string): Promise<void> =>

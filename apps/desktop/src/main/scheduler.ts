@@ -5,13 +5,14 @@ import { publishActivity } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import type { RunResult } from "@/main/agents/agent-driver";
 import type { OpenBetInput, RunToolHooks } from "@/main/control-plane";
-import { allocate, isClosed, isFundable } from "@/shared/bets";
+import { allocate, betGoal, isFundable } from "@/shared/bets";
 import type { Allocation, Bet } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import {
   approvalAnswer,
   autonomousBrief,
   betLedger,
+  betNews,
   founderPing,
   integrationConnectedAnswer,
   roomTranscript,
@@ -21,6 +22,7 @@ import {
 import type { Assignment, TaskBrief } from "@/main/prompts/briefs";
 import {
   MAX_TASK_ATTEMPTS,
+  isLead,
   isOutOfBudget,
   isRoutineDue,
   resolveMentions,
@@ -150,11 +152,13 @@ const nextAllocation = (company: Company): Allocation => {
       stalled.add(t.betId);
     }
   }
+  const leadTasks = company.leaderId === null ? [] : store.openTasksFor(company.leaderId);
   return allocate(
     {
       bets: store.listBets(company.id),
       busy,
       products: store.listProducts(company.id).map((p) => p.id),
+      proposalPending: leadTasks.some((t) => t.betId === null && t.state.kind === "blocked"),
       runCostUsd: RUN_COST_ESTIMATE_USD,
       stalled,
     },
@@ -168,42 +172,12 @@ const announceBet = (bet: Bet): void => {
     message: bet.title,
     payload: { betId: bet.id, state: bet.state },
   });
-  const st = bet.state;
-  switch (st.kind) {
-    case "open": {
-      store.postTeamMessage(bet.companyId, null, `🎲 New bet: ${bet.title} — ${bet.hypothesis}`);
-      break;
-    }
-    case "measuring": {
-      store.postTeamMessage(
-        bet.companyId,
-        null,
-        `⏳ ${bet.title}: spending stopped — the number has ${bet.windowHours}h to answer.`,
-      );
-      break;
-    }
-    case "won": {
-      store.postTeamMessage(
-        bet.companyId,
-        null,
-        `🏆 Bet won: ${bet.title} — ${bet.metric} moved ${st.moved}.`,
-      );
-      break;
-    }
-    case "killed": {
-      store.postTeamMessage(bet.companyId, null, `🪦 Bet killed: ${bet.title} — ${st.reason}.`);
-      break;
-    }
-    // no default
-  }
+  store.postTeamMessage(bet.companyId, null, betNews(bet));
 };
 
 /** Give up on a live bet, from the lead's tool or the founder's panel. */
 export const killBet = (betId: string, reason: string): Bet => {
   const killed = store.killBet(betId, reason, Date.now());
-  if (!killed) {
-    throw new Error(`no live bet "${betId}"`);
-  }
   announceBet(killed);
   return killed;
 };
@@ -211,18 +185,8 @@ export const killBet = (betId: string, reason: string): Bet => {
 /** Retire a product and everything riding on it. `by` is the lead who called it; null is the founder. */
 export const retireProduct = (productId: string, reason: string, by: string | null): Product => {
   const product = store.requireProduct(productId);
-  const dying = store
-    .listBets(product.companyId)
-    .filter((b) => b.productId === productId && !isClosed(b));
-  const result = store.killProduct(productId, reason);
-  if ("refused" in result) {
-    throw new Error(result.refused);
-  }
-  for (const b of dying) {
-    const closed = store.getBet(b.id);
-    if (closed) {
-      announceBet(closed);
-    }
+  for (const bet of store.killProduct(productId, reason)) {
+    announceBet(bet);
   }
   store.postTeamMessage(product.companyId, by, `🪦 Retired ${product.name} — ${reason}`);
   publishActivity({
@@ -232,6 +196,15 @@ export const retireProduct = (productId: string, reason: string, by: string | nu
     payload: { productId, reason },
   });
   return product;
+};
+
+/** A tool answers in prose either way: what it did, or why the store would not. */
+const orWhyNot = (act: () => string): string => {
+  try {
+    return act();
+  } catch (error) {
+    return errorMessage(error);
+  }
 };
 
 const admit = (company: Company): boolean => {
@@ -444,39 +417,30 @@ class Scheduler {
     }
   }
 
-  /** Idle hands only spend against a bet; with none fundable, only the lead runs, to open one. */
+  /** Idle hands only spend against a bet; what is left — settling one, opening the next — is the lead's. */
   private heartbeat(company: Company, emp: Employee, employees: Employee[]): void {
     const allocation = nextAllocation(company);
-    if (allocation.kind === "work") {
-      const bet = store.getBet(allocation.betId);
-      if (bet) {
-        const brief = heartbeatBrief(company, emp, employees, { bet, kind: "bet" });
-        this.brief(company, emp, brief, bet.productId, "medium", bet.id);
-      }
+    if (allocation.kind === "wait" || (allocation.kind !== "work" && !isLead(company, emp))) {
       return;
     }
-    if (allocation.kind === "wait" || company.leaderId !== emp.id) {
+    if (allocation.kind === "propose") {
+      const product = allocation.productId === null ? null : store.getProduct(allocation.productId);
+      const assignment: Assignment = { kind: "propose", product, widen: allocation.widen };
+      this.brief(
+        company,
+        emp,
+        heartbeatBrief(company, emp, employees, assignment),
+        product?.id ?? null,
+      );
       return;
     }
-    // a lead already waiting on the founder would only ask again
-    if (store.openTasksFor(emp.id).some((t) => t.state.kind === "blocked")) {
-      return;
+    // a settle run carries its bet too: the call it makes is that bet's cost, and one
+    // blocked on the founder stalls the bet like any other work would
+    const bet = store.getBet(allocation.betId);
+    if (bet) {
+      const brief = heartbeatBrief(company, emp, employees, { bet, kind: allocation.kind });
+      this.brief(company, emp, brief, bet.productId, "medium", bet.id);
     }
-    if (allocation.kind === "settle") {
-      const bet = store.getBet(allocation.betId);
-      if (bet) {
-        const brief = heartbeatBrief(company, emp, employees, { bet, kind: "settle" });
-        this.brief(company, emp, brief, bet.productId);
-      }
-      return;
-    }
-    const product = allocation.productId === null ? null : store.getProduct(allocation.productId);
-    const brief = heartbeatBrief(company, emp, employees, {
-      kind: "propose",
-      product,
-      widen: allocation.widen,
-    });
-    this.brief(company, emp, brief, product?.id ?? null);
   }
 
   private hooksFor(
@@ -484,45 +448,47 @@ class Scheduler {
     company: Company,
     run: { runId: string; taskId: string; productId: string | null; betId: string | null },
   ): RunToolHooks {
-    const isLeader = company.leaderId === emp.id;
+    const isLeader = isLead(company, emp);
 
     const post = (text: string, to: string | null = null): void => {
       store.postTeamMessage(company.id, emp.id, text);
       publishActivity({ employeeId: emp.id, kind: "chat", message: text, payload: { to } });
     };
 
+    /** Headcount, the portfolio and the bets are the lead's alone; anyone else is told who to take it to. */
+    const leadOnly =
+      <A extends unknown[]>(refusal: string, tool: (...args: A) => string) =>
+      (...args: A): string =>
+        isLeader ? tool(...args) : refusal;
+
+    /** The product a tool means: the one it names, else the run's own, else the one waited on longest. */
+    const productFor = (named: string | null): string | null =>
+      named ?? run.productId ?? store.attentionProduct(company.id)?.id ?? null;
+
     return {
-      createProduct: (name: string, description: string): string => {
-        if (!isLeader) {
-          return "Only the team lead can start a product — raise it in the team room.";
-        }
-        const product = store.createProduct({ companyId: company.id, description, name });
-        publishActivity({
-          employeeId: emp.id,
-          kind: "product.created",
-          message: product.name,
-          payload: { productId: product.id },
-        });
-        post(`🆕 New product: ${product.name} — ${product.description}`);
-        return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Delegate work to it with "product":"${product.id}".`;
-      },
+      createProduct: leadOnly(
+        "Only the team lead can start a product — raise it in the team room.",
+        (name: string, description: string) => {
+          const product = store.createProduct({ companyId: company.id, description, name });
+          publishActivity({
+            employeeId: emp.id,
+            kind: "product.created",
+            message: product.name,
+            payload: { productId: product.id },
+          });
+          post(`🆕 New product: ${product.name} — ${product.description}`);
+          return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Delegate work to it with "product":"${product.id}".`;
+        },
+      ),
       delegate: ({ role, title, description, product, bet }) => {
         const betId = bet ?? (product === null ? run.betId : null);
         const funded = betId === null ? null : store.getBet(betId);
         if (bet !== null && (!funded || funded.companyId !== company.id || !isFundable(funded))) {
           return `No fundable bet "${bet}" — read_bets lists what is open with budget left.`;
         }
-        const productId =
-          funded?.productId ??
-          product ??
-          run.productId ??
-          store.attentionProduct(company.id)?.id ??
-          null;
+        const productId = funded?.productId ?? productFor(product);
         if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
-          return `No product "${productId}" here — the products are ${store
-            .listProducts(company.id)
-            .map((p) => p.id)
-            .join(", ")}.`;
+          return store.noSuchProduct(company.id, productId);
         }
         const want = role.toLowerCase();
         const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
@@ -546,89 +512,75 @@ class Scheduler {
         this.tryAssign(t.id, mate.id);
         return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
       },
-      hire: ({ role, title, name, persona }): string => {
-        if (!isLeader) {
-          return "Only the team lead can hire — raise it in the team room.";
-        }
-        const all = store.listEmployees(company.id);
-        const hireName = name ?? `${title} ${all.length + 1}`;
-        let hired: Employee;
-        try {
-          hired = store.createEmployee({
-            companyId: company.id,
-            deskIndex: all.length,
-            name: hireName,
-            persona: persona ?? `A focused, pragmatic ${title} who ships.`,
-            role,
-            runner: agentDriver.pickRunner(all.length),
-            spriteSeed: spriteSeedFor(role, hireName),
-            title,
+      hire: leadOnly(
+        "Only the team lead can hire — raise it in the team room.",
+        ({ role, title, name, persona }: Parameters<RunToolHooks["hire"]>[0]) => {
+          const all = store.listEmployees(company.id);
+          const hireName = name ?? `${title} ${all.length + 1}`;
+          let hired: Employee;
+          try {
+            hired = store.createEmployee({
+              companyId: company.id,
+              deskIndex: all.length,
+              name: hireName,
+              persona: persona ?? `A focused, pragmatic ${title} who ships.`,
+              role,
+              runner: agentDriver.pickRunner(all.length),
+              spriteSeed: spriteSeedFor(role, hireName),
+              title,
+            });
+          } catch (error) {
+            return `Couldn't hire: ${errorMessage(error)}. Release someone first or work with the team you have.`;
+          }
+          post(`🤝 hired ${hired.name} (${title})`);
+          publishActivity({
+            employeeId: hired.id,
+            kind: "org.hired",
+            payload: { by: emp.id, name: hired.name, title },
           });
-        } catch (error) {
-          return `Couldn't hire: ${errorMessage(error)}. Release someone first or work with the team you have.`;
-        }
-        post(`🤝 hired ${hired.name} (${title})`);
-        publishActivity({
-          employeeId: hired.id,
-          kind: "org.hired",
-          payload: { by: emp.id, name: hired.name, title },
-        });
-        return `Hired ${hired.name} (${title}) — slug "${hired.id}". They start picking up work autonomously; delegate to them right away if you have something specific.`;
-      },
-      killBet: (slug: string, reason: string): string => {
-        if (!isLeader) {
-          return "Only the team lead can kill a bet — make the case in the team room.";
-        }
-        try {
-          const killed = killBet(slug, reason);
-          return `Killed "${killed.title}". Its remaining budget is free for the next bet.`;
-        } catch (error) {
-          return `${errorMessage(error)} — read_bets lists the live ones.`;
-        }
-      },
-      killProduct: (slug: string, reason: string): string => {
-        if (!isLeader) {
-          return "Only the team lead can retire a product — make the case in the team room.";
-        }
-        try {
-          const retired = retireProduct(slug, reason, emp.id);
-          return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.`;
-        } catch (error) {
-          return errorMessage(error);
-        }
-      },
-      measureBet: (slug: string): string => {
-        const target = store.getBet(slug);
-        if (!target || target.companyId !== company.id) {
-          return `No bet "${slug}" — read_bets lists them.`;
-        }
-        if (!isLeader) {
-          return "Only the team lead starts a bet's clock — tell them the work is out the door.";
-        }
-        const measuring = store.measureBet(slug, Date.now());
-        if (!measuring) {
-          return `"${target.title}" is not open, so there is nothing to stop.`;
-        }
-        announceBet(measuring);
-        return `"${target.title}" is measuring: no more work is spent on it, and ${target.metric} has ${target.windowHours}h to move by ${target.target}.`;
-      },
+          return `Hired ${hired.name} (${title}) — slug "${hired.id}". They start picking up work autonomously; delegate to them right away if you have something specific.`;
+        },
+      ),
+      killBet: leadOnly(
+        "Only the team lead can kill a bet — make the case in the team room.",
+        (slug: string, reason: string) =>
+          orWhyNot(() => {
+            const killed = killBet(slug, reason);
+            return `Killed "${killed.title}". Its remaining budget is free for the next bet.`;
+          }),
+      ),
+      killProduct: leadOnly(
+        "Only the team lead can retire a product — make the case in the team room.",
+        (slug: string, reason: string) =>
+          orWhyNot(() => {
+            const retired = retireProduct(slug, reason, emp.id);
+            return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.`;
+          }),
+      ),
+      measureBet: leadOnly(
+        "Only the team lead starts a bet's clock — tell them the work is out the door.",
+        (slug: string) =>
+          orWhyNot(() => {
+            const bet = store.measureBet(slug, Date.now());
+            announceBet(bet);
+            return `"${bet.title}" is measuring: no more work is spent on it, and ${bet.metric} has ${bet.windowHours}h to move by ${betGoal(bet)}.`;
+          }),
+      ),
       messageTeam: (text: string): void => post(text.slice(0, 400)),
-      openBet: (input: OpenBetInput): string => {
-        if (!isLeader) {
-          return "Only the team lead opens bets — pitch it in the team room.";
-        }
-        const productId =
-          input.product ?? run.productId ?? store.attentionProduct(company.id)?.id ?? null;
-        if (productId === null) {
-          return "There is no product to bet on — create_product first.";
-        }
-        const opened = store.openBet({ ...input, companyId: company.id, productId });
-        if ("refused" in opened) {
-          return opened.refused;
-        }
-        announceBet(opened);
-        return `Opened "${opened.title}" (${opened.id}) from a baseline of ${opened.baseline}. Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
-      },
+      openBet: leadOnly(
+        "Only the team lead opens bets — pitch it in the team room.",
+        (input: OpenBetInput) => {
+          const productId = productFor(input.product);
+          if (productId === null) {
+            return "There is no product to bet on — create_product first.";
+          }
+          return orWhyNot(() => {
+            const opened = store.openBet({ ...input, companyId: company.id, productId });
+            announceBet(opened);
+            return `Opened "${opened.title}" (${opened.id}) from a baseline of ${opened.baseline}. Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
+          });
+        },
+      ),
       // The task only turns `blocked` when the run settles, but the ask exists
       // now — so the office raises the "!" over the employee's head at once.
       raiseAsk: (ask): void => {
@@ -642,30 +594,30 @@ class Scheduler {
       },
       readBets: (): string => betLedger(store.listBets(company.id)),
       readTeam: (): string => roomTranscript(store.recentTeamMessages(company.id, 15), empName),
-      release: (slug, reason): string => {
-        if (!isLeader) {
-          return "Only the team lead can release teammates.";
-        }
-        if (slug === emp.id) {
-          return "You can't release yourself.";
-        }
-        const target = store.getEmployee(slug);
-        if (!target || target.companyId !== company.id) {
-          return `No teammate with slug "${slug}" — check the roster in your brief.`;
-        }
-        if (isWorking(slug)) {
-          return `${target.name} is mid-task right now — try again when they're idle.`;
-        }
-        agentDriver.disposeEmployee(slug);
-        store.archiveEmployee(slug);
-        post(`👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
-        publishActivity({
-          employeeId: target.id,
-          kind: "org.released",
-          payload: { by: emp.id, name: target.name, reason },
-        });
-        return `Released ${target.name}. Their workspace contributions and memory are archived under alumni/.`;
-      },
+      release: leadOnly(
+        "Only the team lead can release teammates.",
+        (slug: string, reason: string) => {
+          if (slug === emp.id) {
+            return "You can't release yourself.";
+          }
+          const target = store.getEmployee(slug);
+          if (!target || target.companyId !== company.id) {
+            return `No teammate with slug "${slug}" — check the roster in your brief.`;
+          }
+          if (isWorking(slug)) {
+            return `${target.name} is mid-task right now — try again when they're idle.`;
+          }
+          agentDriver.disposeEmployee(slug);
+          store.archiveEmployee(slug);
+          post(`👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
+          publishActivity({
+            employeeId: target.id,
+            kind: "org.released",
+            payload: { by: emp.id, name: target.name, reason },
+          });
+          return `Released ${target.name}. Their workspace contributions and memory are archived under alumni/.`;
+        },
+      ),
     };
   }
 

@@ -254,6 +254,11 @@ export const leadOf = (
   (employees.find((e) => RUNS_THE_COMPANY.test(`${e.role} ${e.title}`)) ?? employees[0])?.id ??
   null;
 
+export const isLead = (
+  company: Pick<Company, "leaderId">,
+  employee: Pick<Employee, "id">,
+): boolean => company.leaderId === employee.id;
+
 /** The Vercel project a product deploys to; the token is the founder's, one per company. */
 export interface VercelBinding {
   projectId: string;

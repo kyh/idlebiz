@@ -55,7 +55,15 @@ import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
-import { DEFAULT_POLICY, PolicyParamsSchema, dream, isClosed, judge } from "@/shared/bets";
+import {
+  DEFAULT_POLICY,
+  PolicyParamsSchema,
+  dream,
+  isClosed,
+  judge,
+  movedOf,
+  windowEnd,
+} from "@/shared/bets";
 import type { Bet, BetMetric, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
@@ -593,13 +601,13 @@ export const consumeApproval = (companyId: string, key: string): boolean => {
   return true;
 };
 
+/** A running spend total, kept to a hundredth of a cent so many small runs do not drift. */
+const addSpend = (totalUsd: number, costUsd: number): number =>
+  Math.round((totalUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
+
 export const recordSpend = (id: string, costUsd: number): Company | null => {
   const co = getCompany(id);
-  if (!co) {
-    return null;
-  }
-  const spent = Math.round((co.spentUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
-  return patchCompany(id, { spentUsd: spent });
+  return co ? patchCompany(id, { spentUsd: addSpend(co.spentUsd, costUsd) }) : null;
 };
 
 export const setBudget = (id: string, budget: Budget): Company => patchCompany(id, { budget });
@@ -920,6 +928,12 @@ const readingOf = (product: Product | null, metric: BetMetric): number | null =>
   return metric === "users" ? product.users : product.revenueUsd;
 };
 
+/** What a tool is told when it names a product the company does not have. */
+export const noSuchProduct = (companyId: string, productId: string): string =>
+  `No product "${productId}" here — the products are ${listProducts(companyId)
+    .map((p) => p.id)
+    .join(", ")}.`;
+
 /** Two live bets on one number of one product could not be told apart, so the second is refused. */
 export const openBet = (input: {
   companyId: string;
@@ -930,21 +944,19 @@ export const openBet = (input: {
   target: number;
   budgetUsd: number;
   windowHours: number;
-}): Bet | { refused: string } => {
+}): Bet => {
   const active = requireActiveCompany(input.companyId);
   const product = active.products.find((p) => p.id === input.productId);
   if (!product) {
-    return {
-      refused: `No product "${input.productId}" here — the products are ${active.products.map((p) => p.id).join(", ")}.`,
-    };
+    throw new Error(noSuchProduct(input.companyId, input.productId));
   }
   const rival = active.bets.find(
     (b) => b.productId === product.id && b.metric === input.metric && !isClosed(b),
   );
   if (rival) {
-    return {
-      refused: `"${rival.title}" (${rival.id}) is already betting on ${product.name}'s ${input.metric}, and two bets on one number cannot be told apart. Work that one, bet on the other metric, or bet on another product.`,
-    };
+    throw new Error(
+      `"${rival.title}" (${rival.id}) is already betting on ${product.name}'s ${input.metric}, and two bets on one number cannot be told apart. Work that one, bet on the other metric, or bet on another product.`,
+    );
   }
   const id = uniqueSlug(
     input.title,
@@ -974,8 +986,7 @@ export const openBet = (input: {
 export const recordBetSpend = (betId: string, costUsd: number): void => {
   const bet = getBet(betId);
   if (bet) {
-    const spentUsd = Math.round((bet.spentUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
-    patchBet(betId, { spentUsd });
+    patchBet(betId, { spentUsd: addSpend(bet.spentUsd, costUsd) });
   }
 };
 
@@ -988,31 +999,26 @@ const retune = (active: ActiveCompany): void => {
 };
 
 /** The work is shipped: stop spending and let the number answer. */
-export const measureBet = (betId: string, now: number): Bet | null => {
+export const measureBet = (betId: string, now: number): Bet => {
   const bet = getBet(betId);
   if (!bet || bet.state.kind !== "open") {
-    return null;
+    throw new Error(`no open bet "${betId}"`);
   }
-  return patchBet(betId, {
-    state: { kind: "measuring", until: now + bet.windowHours * 3_600_000 },
-  });
+  return patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } }) ?? bet;
 };
 
-/** The lead gives up on a bet before its window does. */
-export const killBet = (betId: string, reason: string, now: number): Bet | null => {
+const closeAsKilled = (bet: Bet, reason: string, now: number): Bet => {
+  const moved = movedOf(bet, readingOf(getProduct(bet.productId), bet.metric));
+  return patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved, reason } }) ?? bet;
+};
+
+/** Someone gives up on a bet before its window does. */
+export const killBet = (betId: string, reason: string, now: number): Bet => {
   const bet = getBet(betId);
   if (!bet || isClosed(bet)) {
-    return null;
+    throw new Error(`no live bet "${betId}"`);
   }
-  const reading = readingOf(getProduct(bet.productId), bet.metric);
-  const killed = patchBet(betId, {
-    state: {
-      closedAt: now,
-      kind: "killed",
-      moved: reading === null ? null : reading - bet.baseline,
-      reason,
-    },
-  });
+  const killed = closeAsKilled(bet, reason, now);
   retune(requireActiveCompany(bet.companyId));
   return killed;
 };
@@ -1305,21 +1311,22 @@ export const productOfEmployee = (employeeId: string): Product | null => {
  * Retire a product: its live bets die with it, its open work is dead-lettered,
  * and its package moves to retired/ whole. The last product cannot go — a
  * company with none would be handed a fresh first product at the next boot.
+ * Returns the bets it took down.
  */
-export const killProduct = (productId: string, reason: string): Product | { refused: string } => {
-  const product = getProduct(productId);
-  if (!product) {
-    return { refused: `No product "${productId}".` };
-  }
+export const killProduct = (productId: string, reason: string): Bet[] => {
+  const product = requireProduct(productId);
   const active = requireActiveCompany(product.companyId);
   if (active.products.length === 1) {
-    return {
-      refused: `${product.name} is the only product — start its successor with create_product first.`,
-    };
+    throw new Error(
+      `${product.name} is the only product — start its successor with create_product first.`,
+    );
   }
   const now = Date.now();
-  for (const bet of active.bets.filter((b) => b.productId === productId && !isClosed(b))) {
-    killBet(bet.id, `product retired: ${reason}`, now);
+  const killed = active.bets
+    .filter((b) => b.productId === productId && !isClosed(b))
+    .map((bet) => closeAsKilled(bet, `product retired: ${reason}`, now));
+  if (killed.length > 0) {
+    retune(active);
   }
   for (const t of active.tasks.filter((x) => x.productId === productId)) {
     if (t.state.kind !== "running" && t.state.kind !== "done") {
@@ -1336,9 +1343,9 @@ export const killProduct = (productId: string, reason: string): Product | { refu
     /* archive is best-effort — leaving the portfolio is what matters */
   }
   for (const e of active.employees) {
-    saveEmployee(e);
+    saveEmployee(e, { onlyIfChanged: true });
   }
-  return product;
+  return killed;
 };
 
 // ---- founding and boot -------------------------------------------------------

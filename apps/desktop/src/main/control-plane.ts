@@ -93,7 +93,7 @@ const CreateProductBody = z.object({
   description: z.string().trim().min(1).max(600),
   name: z.string().trim().min(1).max(80),
 });
-const KillProductBody = z.object({ reason: z.string().trim().min(1), slug: z.string().min(1) });
+const SlugReasonBody = z.object({ reason: z.string().trim().min(1), slug: z.string().min(1) });
 const OpenBetBody = z.object({
   budgetUsd: z.number().positive().max(1000),
   hypothesis: z.string().trim().min(1).max(600),
@@ -105,7 +105,6 @@ const OpenBetBody = z.object({
   windowHours: z.number().min(1).max(336),
 });
 const MeasureBetBody = z.object({ slug: z.string().min(1) });
-const KillBetBody = z.object({ reason: z.string().trim().min(1), slug: z.string().min(1) });
 const RequestIntegrationBody = z.object({
   kind: z.enum(INTEGRATION_KINDS),
   reason: z.string().min(1),
@@ -181,11 +180,11 @@ const TOOLS = {
   },
   "POST /v1/hire": (run, raw) => ({ message: run.hooks.hire(parseBody(raw, HireBody)) }),
   "POST /v1/kill-bet": (run, raw) => {
-    const { slug, reason } = parseBody(raw, KillBetBody);
+    const { slug, reason } = parseBody(raw, SlugReasonBody);
     return { message: run.hooks.killBet(slug, reason) };
   },
   "POST /v1/kill-product": (run, raw) => {
-    const { slug, reason } = parseBody(raw, KillProductBody);
+    const { slug, reason } = parseBody(raw, SlugReasonBody);
     return { message: run.hooks.killProduct(slug, reason) };
   },
   "POST /v1/measure-bet": (run, raw) => ({

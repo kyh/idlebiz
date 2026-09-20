@@ -4,6 +4,7 @@ import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { bridge } from "@/renderer/bridge";
 import { createProduct, killProduct, useStore } from "@/renderer/state/store";
 import { BetList } from "@/renderer/ui/bets";
+import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
 import { productStateOf } from "@/renderer/ui/product-state";
@@ -84,52 +85,6 @@ const ShippingLog = ({
     ));
 };
 
-/** Asks twice: a retired product leaves the portfolio, and its live bets die with it. */
-const RetireProduct = ({
-  product,
-  onNote,
-}: {
-  product: Product;
-  onNote: (note: string) => void;
-}) => {
-  const [arming, setArming] = useState(false);
-  const retire = async () => {
-    try {
-      await killProduct(product.id, "the founder retired it");
-    } catch (error) {
-      onNote(errorMessage(error));
-    }
-  };
-  if (!arming) {
-    return (
-      <button
-        type="button"
-        onClick={() => setArming(true)}
-        className="px-link px-link-danger ml-auto"
-        title="Archive it under retired/ and free its budget"
-      >
-        retire
-      </button>
-    );
-  }
-  return (
-    <span className="ml-auto flex items-baseline gap-2">
-      <button type="button" onClick={() => setArming(false)} className="px-link">
-        keep
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          void retire();
-        }}
-        className="px-link px-link-danger"
-      >
-        retire it
-      </button>
-    </span>
-  );
-};
-
 const ProductCard = ({
   product,
   status,
@@ -203,7 +158,16 @@ const ProductCard = ({
         >
           {product.vercel ? "▲ Vercel ✓" : "▲ Vercel"}
         </button>
-        {retirable ? <RetireProduct product={product} onNote={onNote} /> : null}
+        {retirable ? (
+          <ConfirmLink
+            label="retire"
+            confirmLabel="retire it"
+            title="Archive it under retired/ and free its budget"
+            className="ml-auto"
+            onConfirm={() => killProduct(product.id, "the founder retired it")}
+            onNote={onNote}
+          />
+        ) : null}
       </div>
     </div>
   );

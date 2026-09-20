@@ -33,6 +33,7 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
   bets,
   busy: new Map<string, number>(),
   products,
+  proposalPending: false,
   runCostUsd: 1,
   stalled: new Set<string>(),
 });
@@ -112,6 +113,20 @@ describe("allocate", () => {
       betId: "dry",
       kind: "settle",
     });
+  });
+
+  it("does not ask a lead already waiting on the founder to open another", () => {
+    expect(allocate({ ...ledger([]), proposalPending: true }, DEFAULT_POLICY)).toEqual({
+      kind: "wait",
+    });
+  });
+
+  it("leaves a spent-out bet alone while its settle run is in flight or blocked", () => {
+    const dry = [bet({ id: "dry", spentUsd: 5 })];
+    const settling = { ...ledger(dry, ["app"]), busy: new Map([["dry", 1]]) };
+    const blocked = { ...ledger(dry, ["app"]), stalled: new Set(["dry"]) };
+    expect(allocate(settling, DEFAULT_POLICY).kind).not.toBe("settle");
+    expect(allocate(blocked, DEFAULT_POLICY).kind).not.toBe("settle");
   });
 
   it("ignores bets on a killed product", () => {

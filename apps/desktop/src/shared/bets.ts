@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatUsd } from "@/shared/format";
 
 // A bet is the unit the company is steered by: a hypothesis about one real
 // number of one product, a spend cap, and a window to be proven in. Everything
@@ -53,6 +54,32 @@ export const isFundable = (bet: Bet): boolean =>
 export const isSpentOut = (bet: Bet): boolean =>
   bet.state.kind === "open" && bet.spentUsd >= bet.budgetUsd;
 
+const HOUR_MS = 3_600_000;
+
+/** How far the metric has moved since the bet opened; null while no source reports it. */
+export const movedOf = (bet: Bet, reading: number | null): number | null =>
+  reading === null ? null : reading - bet.baseline;
+
+/** When a window started now would close. */
+export const windowEnd = (bet: Bet, now: number): number => now + bet.windowHours * HOUR_MS;
+
+/** "+50 users" / "+$20.00 revenue": what the bet has to move. */
+export const betGoal = (bet: Bet): string =>
+  bet.metric === "revenue" ? `+${formatUsd(bet.target)} revenue` : `+${bet.target} users`;
+
+/** "$1.42 of $3.00": what it has burned of what it may. */
+export const betMoney = (bet: Bet): string =>
+  `${formatUsd(bet.spentUsd)} of ${formatUsd(bet.budgetUsd)}`;
+
+/** The ledger as anyone reads it: live bets first, then verdicts newest first, at most `verdicts` of them. */
+export const ledgerOrder = (bets: readonly Bet[], verdicts = Infinity): Bet[] => [
+  ...bets.filter((b) => !isClosed(b)),
+  ...bets
+    .filter(isClosed)
+    .toSorted((a, b) => b.state.closedAt - a.state.closedAt)
+    .slice(0, verdicts),
+];
+
 /**
  * The verdict is the evaluator's, never the team's: a bet wins when the real
  * number moved by its target, and dies when its window closes short of it.
@@ -64,7 +91,7 @@ export const judge = (bet: Bet, reading: number | null, now: number): BetState =
   if (state.kind === "won" || state.kind === "killed") {
     return state;
   }
-  const moved = reading === null ? null : reading - bet.baseline;
+  const moved = movedOf(bet, reading);
   if (moved !== null && moved >= bet.target) {
     return { closedAt: now, kind: "won", moved };
   }
@@ -105,7 +132,7 @@ export type Allocation =
   | { kind: "settle"; betId: string }
   /** Nothing fundable: the lead opens a bet. `widen` asks for new ground, `productId` names the best proven one. */
   | { kind: "propose"; productId: string | null; widen: boolean }
-  /** Every number is already being bet on and the portfolio is full: spend nothing until a verdict. */
+  /** Nothing to spend on until a verdict or the founder: every number is bet on and the portfolio is full, or the lead's last proposal is waiting on them. */
   | { kind: "wait" };
 
 /** Past this many live products a new one has to replace a killed one. */
@@ -121,6 +148,8 @@ export interface Ledger {
   stalled: ReadonlySet<string>;
   /** What one more run is expected to cost, so runs in flight count against a budget before they bill. */
   runCostUsd: number;
+  /** The lead's last call on what to open next is waiting on the founder: asking again would only repeat it. */
+  proposalPending: boolean;
 }
 
 /** Mean yield of a product's closed bets plus a bonus that shrinks as its history grows. */
@@ -137,29 +166,27 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   const closed = ledger.bets
     .filter(isClosed)
     .toSorted((a, b) => a.state.closedAt - b.state.closedAt);
-  const score = (productId: string): number => productScore(productId, closed, params.explore);
-  const live = new Set(ledger.products);
-  const committed = (b: Bet): number =>
-    b.spentUsd + (ledger.busy.get(b.id) ?? 0) * ledger.runCostUsd;
-  const fundable = ledger.bets.filter(
-    (b) =>
-      isFundable(b) &&
-      live.has(b.productId) &&
-      !ledger.stalled.has(b.id) &&
-      committed(b) < b.budgetUsd,
+  const scores = new Map(
+    ledger.products.map((id) => [id, productScore(id, closed, params.explore)]),
   );
-  const [best] = fundable.toSorted(
-    (a, b) =>
-      score(b.productId) -
-      CROWDING * (ledger.busy.get(b.id) ?? 0) -
-      (score(a.productId) - CROWDING * (ledger.busy.get(a.id) ?? 0)),
+  const busyOn = (bet: Bet): number => ledger.busy.get(bet.id) ?? 0;
+  const rank = (bet: Bet): number => (scores.get(bet.productId) ?? 0) - CROWDING * busyOn(bet);
+  // a bet on a retired product has no score, and nobody works for or settles a bet waiting on the founder
+  const open = ledger.bets.filter(
+    (b) => b.state.kind === "open" && scores.has(b.productId) && !ledger.stalled.has(b.id),
   );
+  const [best] = open
+    .filter((b) => b.spentUsd + busyOn(b) * ledger.runCostUsd < b.budgetUsd)
+    .toSorted((a, b) => rank(b) - rank(a));
   if (best) {
     return { betId: best.id, kind: "work" };
   }
-  const spentOut = ledger.bets.find((b) => isSpentOut(b) && !ledger.stalled.has(b.id));
-  if (spentOut && (ledger.busy.get(spentOut.id) ?? 0) === 0) {
+  const spentOut = open.find((b) => isSpentOut(b) && busyOn(b) === 0);
+  if (spentOut) {
     return { betId: spentOut.id, kind: "settle" };
+  }
+  if (ledger.proposalPending) {
+    return { kind: "wait" };
   }
   const recent = closed.slice(-params.plateau);
   const widen = recent.length >= params.plateau && recent.every((b) => b.state.kind === "killed");
@@ -167,7 +194,7 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   // a product has room while one of its numbers has no live bet on it
   const [proven] = ledger.products
     .filter((id) => liveBets.filter((b) => b.productId === id).length < BET_METRICS.length)
-    .toSorted((a, b) => score(b) - score(a));
+    .toSorted((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
   if (proven === undefined && ledger.products.length >= MAX_LIVE_PRODUCTS) {
     return { kind: "wait" };
   }
@@ -176,6 +203,8 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
 
 /** History shorter than this says too little to retune on. */
 const MIN_BETS_TO_DREAM = 8;
+/** The replay is quadratic in bets and runs on the main process; the latest verdicts are also the ones the policy should fit. */
+const MAX_BETS_TO_DREAM = 100;
 
 const CANDIDATES: readonly PolicyParams[] = [0, 0.5, 1, 2].flatMap((explore) =>
   [2, 3, 5].map((plateau) => ({ explore, plateau })),
@@ -190,6 +219,7 @@ const CANDIDATES: readonly PolicyParams[] = [0, 0.5, 1, 2].flatMap((explore) =>
 const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number => {
   let earned = 0;
   let picks = 0;
+  const products = [...new Set(bets.map((b) => b.productId))];
   for (const opening of bets) {
     const at = opening.createdAt;
     const known = bets.filter((b) => b.state.closedAt <= at);
@@ -201,7 +231,8 @@ const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number =
           ...available.map((b): Bet => ({ ...b, spentUsd: 0, state: { kind: "open" } })),
         ],
         busy: new Map(),
-        products: [...new Set(bets.map((b) => b.productId))],
+        products,
+        proposalPending: false,
         runCostUsd: 0,
         stalled: new Set(),
       },
@@ -219,7 +250,10 @@ const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number =
 
 /** The best-replaying policy. The incumbent is a candidate and wins ties, so a swap is never a step down. */
 export const dream = (incumbent: PolicyParams, bets: readonly Bet[]): PolicyParams => {
-  const closed = bets.filter(isClosed);
+  const closed = bets
+    .filter(isClosed)
+    .toSorted((a, b) => a.state.closedAt - b.state.closedAt)
+    .slice(-MAX_BETS_TO_DREAM);
   if (closed.length < MIN_BETS_TO_DREAM) {
     return incumbent;
   }

@@ -1,6 +1,6 @@
-import { isClosed } from "@/shared/bets";
+import { betGoal, betMoney, ledgerOrder } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
-import { INTEGRATION_LABELS, businessTypeById, serializeBlockedAsk } from "@/shared/domain";
+import { INTEGRATION_LABELS, businessTypeById, isLead, serializeBlockedAsk } from "@/shared/domain";
 import type {
   BlockedAsk,
   Company,
@@ -74,18 +74,13 @@ const budgetLine = (company: Company): string => {
   return `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent${critical ? " — over 80%: critical work only, keep runs short" : ""}.`;
 };
 
-/** What the allocator decided this run is for. */
+/** What the allocator decided this run is for: an `Allocation` with its ids resolved. */
 export type Assignment =
-  | { kind: "bet"; bet: Bet }
+  | { kind: "work"; bet: Bet }
   /** The bet's budget is gone: the lead starts its clock or kills it. */
   | { kind: "settle"; bet: Bet }
   /** Nothing is fundable, so the lead opens the next bet: on `product`, or on new ground when `widen`. */
   | { kind: "propose"; product: Product | null; widen: boolean };
-
-const betMoney = (bet: Bet): string => `${formatUsd(bet.spentUsd)} of ${formatUsd(bet.budgetUsd)}`;
-
-const betGoal = (bet: Bet): string =>
-  bet.metric === "revenue" ? `+${formatUsd(bet.target)} revenue` : `+${bet.target} users`;
 
 const betLine = (bet: Bet): string => {
   const st = bet.state;
@@ -107,65 +102,96 @@ const betLine = (bet: Bet): string => {
   }
 };
 
+/** What the team room hears when a bet opens or changes state. */
+export const betNews = (bet: Bet): string => {
+  const st = bet.state;
+  switch (st.kind) {
+    case "open": {
+      return `🎲 New bet: ${bet.title} — ${bet.hypothesis}`;
+    }
+    case "measuring": {
+      return `⏳ ${bet.title}: spending stopped — the number has ${bet.windowHours}h to answer.`;
+    }
+    case "won": {
+      return `🏆 Bet won: ${bet.title} — ${bet.metric} moved ${st.moved}.`;
+    }
+    case "killed": {
+      return `🪦 Bet killed: ${bet.title} — ${st.reason}.`;
+    }
+    // no default
+  }
+};
+
 /** How many verdicts a brief lists. Facts only: what was bet, what it cost, what the number did. */
 const VERDICTS_SHOWN = 6;
 
 /** The ledger as the team reads it, in the brief and from read_bets. */
-export const betLedger = (bets: readonly Bet[]): string => {
-  const live = bets.filter((b) => !isClosed(b));
-  const verdicts = bets
-    .filter(isClosed)
-    .toSorted((a, b) => b.state.closedAt - a.state.closedAt)
-    .slice(0, VERDICTS_SHOWN);
-  return [...live, ...verdicts].map(betLine).join("\n") || "(no bets yet)";
-};
+export const betLedger = (bets: readonly Bet[]): string =>
+  ledgerOrder(bets, VERDICTS_SHOWN).map(betLine).join("\n") || "(no bets yet)";
 
-const assignmentLines = (assignment: Assignment, isLeader: boolean): string[] => {
-  if (assignment.kind === "bet") {
-    const { bet } = assignment;
-    return [
-      `THIS RUN SPENDS AGAINST A BET: "${bet.title}" (${bet.id}).`,
-      `Hypothesis: ${bet.hypothesis}`,
-      `It wins only if ${bet.productId}'s real ${bet.metric} move by ${betGoal(bet)} — the app judges that from the live number, not from what anyone reports. ${betMoney(bet)} of its budget is spent; when the budget runs out the work stops. Once the lead calls the work live, the number gets ${bet.windowHours}h to answer.`,
-      `If the next step is waiting on the founder (a connection, an approval) and a teammate has already asked, do not ask again: do what can be done without it, or stop.`,
-      `Do the one thing most likely to move that number. Shipping is not the goal; the number is.`,
-      isLeader
-        ? `When the work that could move it is out the door, call measure_bet so the spending stops and the clock starts. If the bet is plainly dead, kill_bet and say why.`
-        : `If you believe the work that could move it is already out the door, tell the lead in the team room.`,
-    ];
-  }
-  if (assignment.kind === "settle") {
-    const { bet } = assignment;
-    return [
-      `A BET IS OUT OF BUDGET AND NEEDS YOUR CALL: "${bet.title}" (${bet.id}) has spent ${betMoney(bet)}. Nobody works on it until you decide, and nothing new opens on ${bet.productId}'s ${bet.metric} while it is live.`,
-      `If the work that could move the number is really out the door — deployed, posted, reachable — call measure_bet: ${bet.metric} then has ${bet.windowHours}h to move by ${betGoal(bet)}.`,
-      `If it is not, a clock would only produce a false verdict: kill_bet with the honest reason, and if the hypothesis still deserves a test, open it again with a budget that covers the work.`,
-      `Decide this run. Do not do the work yourself here.`,
-    ];
-  }
-  const where = assignment.product
-    ? `${assignment.product.name} (${assignment.product.id}) has room for one`
-    : "every product already has its numbers bet on";
-  return [
-    `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet has budget left. Opening the next one is your job this run.`,
-    assignment.widen
-      ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
-      : `${where}.`,
-    `Call open_bet with a falsifiable hypothesis, the metric it should move ("users" or "revenue"), by how much, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about $1, so a budget under $3 buys almost nothing; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
-    `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
-  ];
-};
+/** How one assignment reads in a brief: its title, the product it lands on, and what it asks for. */
+interface AssignmentBrief {
+  title: string;
+  focus: Product | null;
+  lines: string[];
+}
 
-const assignmentTitle = (assignment: Assignment, fallback: string): string => {
+const assignmentBrief = (
+  assignment: Assignment,
+  {
+    company,
+    products,
+    isLeader,
+  }: { company: Company; products: readonly Product[]; isLeader: boolean },
+): AssignmentBrief => {
   switch (assignment.kind) {
-    case "bet": {
-      return `Bet: ${assignment.bet.title}`;
+    case "work": {
+      const { bet } = assignment;
+      return {
+        focus: products.find((p) => p.id === bet.productId) ?? null,
+        lines: [
+          `THIS RUN SPENDS AGAINST A BET: "${bet.title}" (${bet.id}).`,
+          `Hypothesis: ${bet.hypothesis}`,
+          `It wins only if ${bet.productId}'s real ${bet.metric} move by ${betGoal(bet)} — the app judges that from the live number, not from what anyone reports. ${betMoney(bet)} of its budget is spent; when the budget runs out the work stops. Once the lead calls the work live, the number gets ${bet.windowHours}h to answer.`,
+          `If the next step is waiting on the founder (a connection, an approval) and a teammate has already asked, do not ask again: do what can be done without it, or stop.`,
+          `Do the one thing most likely to move that number. Shipping is not the goal; the number is.`,
+          isLeader
+            ? `When the work that could move it is out the door, call measure_bet so the spending stops and the clock starts. If the bet is plainly dead, kill_bet and say why.`
+            : `If you believe the work that could move it is already out the door, tell the lead in the team room.`,
+        ],
+        title: `Bet: ${bet.title}`,
+      };
     }
     case "settle": {
-      return `Settle the bet: ${assignment.bet.title}`;
+      const { bet } = assignment;
+      return {
+        focus: products.find((p) => p.id === bet.productId) ?? null,
+        lines: [
+          `A BET IS OUT OF BUDGET AND NEEDS YOUR CALL: "${bet.title}" (${bet.id}) has spent ${betMoney(bet)}. Nobody works on it until you decide, and nothing new opens on ${bet.productId}'s ${bet.metric} while it is live.`,
+          `If the work that could move the number is really out the door — deployed, posted, reachable — call measure_bet: ${bet.metric} then has ${bet.windowHours}h to move by ${betGoal(bet)}.`,
+          `If it is not, a clock would only produce a false verdict: kill_bet with the honest reason, and if the hypothesis still deserves a test, open it again with a budget that covers the work.`,
+          `Decide this run. Do not do the work yourself here.`,
+        ],
+        title: `Settle the bet: ${bet.title}`,
+      };
     }
     case "propose": {
-      return `Open the next bet for ${fallback}`;
+      const { product, widen } = assignment;
+      const where = product
+        ? `${product.name} (${product.id}) has room for one`
+        : "every product already has its numbers bet on";
+      return {
+        focus: product,
+        lines: [
+          `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet has budget left. Opening the next one is your job this run.`,
+          widen
+            ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
+            : `${where}.`,
+          `Call open_bet with a falsifiable hypothesis, the metric it should move ("users" or "revenue"), by how much, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about $1, so a budget under $3 buys almost nothing; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
+          `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
+        ],
+        title: `Open the next bet for ${product?.name ?? company.name}`,
+      };
     }
     // no default
   }
@@ -199,14 +225,11 @@ export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
     problems,
     nameOf,
   } = input;
-  const focus =
-    assignment.kind === "propose"
-      ? assignment.product
-      : (products.find((p) => p.id === assignment.bet.productId) ?? null);
+  const isLeader = isLead(company, employee);
+  const { title, focus, lines } = assignmentBrief(assignment, { company, isLeader, products });
   const portfolio = products
     .map((p) => `- ${p.name} (${p.id}): ${p.description}${p === focus ? " ← this run" : ""}`)
     .join("\n");
-  const isLeader = company.leaderId === employee.id;
   const roster =
     employees
       .map((e) => `${e.name} (${e.title})${company.leaderId === e.id ? " — lead" : ""}`)
@@ -236,7 +259,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `Products:`,
     portfolio,
     ``,
-    ...assignmentLines(assignment, isLeader),
+    ...lines,
     ``,
     `Bets (live first, then the latest verdicts):`,
     betLedger(bets),
@@ -258,7 +281,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `When you finish, post a one-line update to the team room with message_team(text).`,
     `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
   ].join("\n");
-  return { description, title: assignmentTitle(assignment, focus?.name ?? company.name) };
+  return { description, title };
 };
 
 export const runPreamble = (product: Product | null, company: Company): string => {
