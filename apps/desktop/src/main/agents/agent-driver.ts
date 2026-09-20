@@ -24,7 +24,8 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
-import type { RunToolHooks } from "@/main/control-plane";
+import type { ToolCaller } from "@/main/control-plane";
+import type { AskBox } from "@/main/tools";
 import type { RestingRunners } from "@/shared/ipc-registry";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
@@ -85,19 +86,19 @@ const decidePermission = async (
   task: { companyId: string; id: string },
   request: PermissionRequest,
   leases: Set<string>,
-  block: (ask: BlockedAsk) => void,
+  hold: (ask: BlockedAsk) => void,
 ): Promise<PermissionDecision> => {
-  const hold = await holdFor(request.tool, leases, liveBrowserUrl);
-  if (hold === null) {
+  const held = await holdFor(request.tool, leases, liveBrowserUrl);
+  if (held === null) {
     return { allow: true };
   }
-  if (store.consumeApproval(task.companyId, task.id, hold.key)) {
-    if (hold.leasable) {
-      leases.add(hold.key);
+  if (store.consumeApproval(task.companyId, task.id, held.key)) {
+    if (held.leasable) {
+      leases.add(held.key);
     }
     return { allow: true };
   }
-  block({ command: hold.key, rule: hold.rule, type: "approval" });
+  hold({ command: held.key, rule: held.rule, type: "approval" });
   return { allow: false };
 };
 
@@ -136,6 +137,12 @@ export const outcomeOf = (
     ? { error: end.error, kind: "failed" }
     : { error: end.error, kind: "resting", until: restingUntil };
 };
+
+/** What a run can reach of the company: its tools over the loopback API, and the one ask it may leave the founder. */
+export interface RunTools {
+  call: ToolCaller;
+  asks: AskBox;
+}
 
 export interface RunResult {
   outcome: RunOutcome;
@@ -220,7 +227,7 @@ class AgentDriver {
     company: Company,
     task: { id: string; title: string; description: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
-    hooks: RunToolHooks,
+    tools: RunTools,
   ): Promise<RunResult> {
     if (this.active.has(emp.id)) {
       throw new Error(`employee ${emp.id} already running a task`);
@@ -231,7 +238,7 @@ class AgentDriver {
       const prompt = `${task.title}\n\n${task.description}`.trim();
       const resumeId = emp.sessionId ?? undefined;
       const run = { prompt, taskId: task.id, workspace: task.workspace };
-      const first = await this.invoke(emp, company, run, onEvent, hooks, resumeId, abort);
+      const first = await this.invoke(emp, company, run, onEvent, tools, resumeId, abort);
       // A resumed session that dies without producing any output is almost
       // always stale on the agent's side — retry once fresh before failing.
       const retryFresh =
@@ -239,7 +246,7 @@ class AgentDriver {
       if (!retryFresh) {
         return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
       }
-      const retry = await this.invoke(emp, company, run, onEvent, hooks, undefined, abort);
+      const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, abort);
       return { ...retry.result, session: retry.turn.sessionId ?? null };
     } finally {
       this.active.delete(emp.id);
@@ -253,7 +260,7 @@ class AgentDriver {
     company: Company,
     run: { prompt: string; taskId: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
-    hooks: RunToolHooks,
+    tools: RunTools,
     resumeSessionId: string | undefined,
     abort: AbortController,
   ): Promise<{
@@ -261,7 +268,7 @@ class AgentDriver {
     turn: AcpTurnResult;
     sawOutput: boolean;
   }> {
-    const handle = controlPlane.registerRun(hooks);
+    const handle = controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;
     try {
@@ -288,7 +295,7 @@ class AgentDriver {
             { companyId: company.id, id: run.taskId },
             request,
             leases,
-            handle.block,
+            tools.asks.raise,
           ),
         prompt: run.prompt,
         resumeSessionId,
@@ -301,7 +308,7 @@ class AgentDriver {
       if (limit) {
         this.restingUntil.set(emp.runner, limit.resetsAt);
       }
-      const outcome = outcomeOf(res.end, handle.outcome().blocked, limit?.resetsAt ?? null);
+      const outcome = outcomeOf(res.end, tools.asks.current(), limit?.resetsAt ?? null);
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();

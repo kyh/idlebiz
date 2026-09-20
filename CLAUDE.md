@@ -50,8 +50,13 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   Routines and founder pings are the only unfunded work, and a routine is only work that
   recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
   bet's job.
-- **The store refuses by throwing**, with the sentence the agent should read; tools turn it
-  into their answer (`orWhyNot` in the scheduler), IPC turns it into the founder's note.
+- **The store refuses by throwing**, with the sentence the agent should read; a tool turns it
+  into its answer, IPC into the founder's note.
+- **A company tool is described once**, in `shared/tool-specs.ts`: route, body, lead-only
+  refusal, doc and example. The agents' instructions are rendered from it, `main/tools.ts`
+  binds each implementation to its spec, and `control-plane.ts` is only transport. A change
+  everyone should hear about (a bet, a product, autopilot) goes through
+  `main/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's IPC.
 - **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`
   against the closed bets and swaps only to a strictly better scorer, so the incumbent never
   loses to a tie. It stays on the defaults below eight closed bets. Steering changes go in

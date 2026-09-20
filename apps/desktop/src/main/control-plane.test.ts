@@ -1,14 +1,9 @@
 import { request } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { controlPlane } from "./control-plane";
-import type { RunToolHooks } from "./control-plane";
 
 beforeAll(() => controlPlane.start());
 afterAll(() => controlPlane.stop());
-
-const unexpected = (): never => {
-  throw new Error("unexpected hook");
-};
 
 const post = (
   url: string,
@@ -48,25 +43,11 @@ describe("run-scoped control-plane requests", () => {
   it.each([false, true])(
     "checks the run token after reading the body (released: %s)",
     async (released) => {
-      const products: string[] = [];
-      const hooks: RunToolHooks = {
-        createProduct: (name, description) => {
-          products.push(`${name}: ${description}`);
-          return "created";
-        },
-        delegate: unexpected,
-        hire: unexpected,
-        killBet: unexpected,
-        killProduct: unexpected,
-        measureBet: unexpected,
-        messageTeam: unexpected,
-        openBet: unexpected,
-        raiseAsk: unexpected,
-        readBets: unexpected,
-        readTeam: unexpected,
-        release: unexpected,
-      };
-      const handle = controlPlane.registerRun(hooks);
+      const calls: string[] = [];
+      const handle = controlPlane.registerRun((route, raw) => {
+        calls.push(`${route} ${JSON.stringify(raw)}`);
+        return "created";
+      });
       try {
         const status = await post(
           `${controlPlane.baseUrl()}/v1/create-product`,
@@ -79,7 +60,11 @@ describe("run-scoped control-plane requests", () => {
           },
         );
         expect(status).toBe(released ? 401 : 200);
-        expect(products).toEqual(released ? [] : ["Widget: Ships widgets"]);
+        expect(calls).toEqual(
+          released
+            ? []
+            : ['POST /v1/create-product {"description":"Ships widgets","name":"Widget"}'],
+        );
       } finally {
         handle.release();
       }

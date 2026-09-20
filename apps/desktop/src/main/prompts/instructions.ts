@@ -1,4 +1,5 @@
 import type { Company, Employee, Product } from "@/shared/domain";
+import { toolDocs } from "@/shared/tool-specs";
 
 // Rendered into AGENTS.md by the store and injected into every run by the driver.
 export const standingInstructions = (input: {
@@ -12,23 +13,6 @@ export const standingInstructions = (input: {
   const productList = products
     .map((p) => `- **${p.name}** (\`${p.id}\`) — ${p.description}\n  Workspace: ${p.workspaceDir}`)
     .join("\n");
-  const leadTools = lead
-    ? `
-- **create_product** — a genuinely separate product (its own code, its own deploy), not a feature of one you have. It gets its own workspace; delegate work to it by slug.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/create-product" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"name":"...","description":"..."}'\`
-- **kill_product** — retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. The last product cannot be killed: start its successor first.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/kill-product" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"slug":"product-slug","reason":"..."}'\`
-- **open_bet** — the team only spends against bets, so this is how work gets funded. One falsifiable hypothesis about one product: \`metric\` is \`"users"\` or \`"revenue"\`, \`target\` is how much of it the bet must bring in, \`budgetUsd\` is the most the bet may burn, \`windowHours\` is how long the number gets to answer once the work stops. A bet counts only what carries its mark (see "Marking a bet's traffic"), so several can run on one product at once. A users bet gets a landing path of its own, \`/b/<bet slug>\`; pass \`"landingPath":"/guides"\` instead when the bet IS a set of pages (search pages, a docs section) — a path another live bet already covers is refused.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/open-bet" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"product":"product-slug","title":"...","hypothesis":"...","metric":"users","target":50,"budgetUsd":3,"windowHours":48}'\`
-- **measure_bet** — the work that could move the number is out the door: stop spending on the bet and start its clock.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/measure-bet" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"slug":"bet-slug"}'\`
-- **kill_bet** — give up on a bet before its window does. You cannot declare one won: only the real number can.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/kill-bet" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"slug":"bet-slug","reason":"..."}'\`
-- **hire** — you lead the team and own headcount (hard cap ${co.maxAgents} seats): add a role the backlog demands. Give a real first name and a vivid 2-3 sentence persona.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/hire" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"Frontend Engineer","name":"Mara","persona":"..."}'\`
-- **release** — let a teammate go when their role stopped pulling weight (their work is archived, never deleted).
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/release" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"slug":"teammate-slug","reason":"..."}'\``
-    : "";
   return `# ${e.name} — ${e.title || e.role}
 
 You are ${e.name}, the ${e.title || e.role} at "${co.name}", a startup.
@@ -49,18 +33,7 @@ Every task says which product it is for; that product's workspace is your workin
 
 ## Company tools (the IdleBiz API)
 Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl; always send the Authorization header. Quote JSON carefully (single-quote the payload).
-- **ask_boss** — you are blocked or need a decision only the founder can make. Use sparingly; prefer making reasonable choices yourself. Note the answer arrives later — continue with whatever you can still do.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"question":"..."}'\`
-- **message_team** — post a one-line update, decision, ask, or handoff to the team room so teammates see it live. The room already shows your name — never prefix messages with it.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"text":"..."}'\`
-- **read_team_chat** — catch up on the room before you act, so you build on teammates' work instead of duplicating it.
-  \`curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"\`
-- **delegate** — hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel. It spends against your current bet and lands on your current product unless you name another with \`"bet":"<slug>"\` or \`"product":"<slug>"\`.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"role":"engineer","title":"...","description":"..."}'\`
-- **read_bets** — the ledger: every live bet, what it has spent, and the latest verdicts.
-  \`curl -s "$IDLEBIZ_API_URL/v1/bets" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"\`
-- **request_integration** — the business needs a real-world connection: \`"vercel"\` (hosting, deploys, traffic analytics) or \`"stripe"\` (charging money). The founder gets a card with a Connect button; this task resumes automatically once they connect.
-  \`curl -s -X POST "$IDLEBIZ_API_URL/v1/request-integration" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"kind":"vercel","reason":"..."}'\`${leadTools}
+${toolDocs(lead)}
 
 ## Working with your team
 - You operate autonomously to grow the business — you don't wait to be told what to do.

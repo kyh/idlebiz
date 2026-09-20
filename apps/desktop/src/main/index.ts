@@ -11,7 +11,14 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
 import { openProduct, openWorkspacePath, productEntry } from "@/main/product";
 import { chatOptions } from "@/main/prompts/chat-options";
-import { haltForBudget, killBet, retireProduct, scheduler } from "@/main/scheduler";
+import {
+  haltForBudget,
+  killBet,
+  retireProduct,
+  setAutopilot,
+  startProduct,
+} from "@/main/company-actions";
+import { scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
 import { readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
@@ -147,7 +154,7 @@ const registerIpcHandlers = (): void => {
     return { ok: true };
   });
 
-  handle("setAutopilot", ({ companyId, running }) => store.setAutopilot(companyId, running));
+  handle("setAutopilot", ({ companyId, running }) => setAutopilot(companyId, running));
 
   handle("setBudget", ({ companyId, budget }) => {
     const company = store.setBudget(companyId, budget);
@@ -203,15 +210,7 @@ const registerIpcHandlers = (): void => {
   });
 
   handle("listProducts", ({ companyId }) => store.listProducts(companyId));
-  handle("createProduct", ({ companyId, name, description }) => {
-    const product = store.createProduct({ companyId, description, name });
-    publishActivity({
-      kind: "product.created",
-      message: product.name,
-      payload: { productId: product.id },
-    });
-    return product;
-  });
+  handle("createProduct", (input) => startProduct(input, null));
   handle("killProduct", ({ productId, reason }) => retireProduct(productId, reason, null));
   handle("listBets", ({ companyId }) => store.listBets(companyId));
   handle("killBet", ({ betId, reason }) => killBet(betId, reason));
@@ -439,8 +438,7 @@ void (async () => {
       if (!company) {
         return;
       }
-      store.setAutopilot(company.id, on);
-      publishActivity({ kind: "autopilot.changed", payload: { on } });
+      setAutopilot(company.id, on);
     },
   });
 
