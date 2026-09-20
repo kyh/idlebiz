@@ -4,6 +4,9 @@
 import { z } from "zod";
 import { parseJson } from "@/shared/json";
 
+/** The package format every file here is written in. A file naming another is someone else's, and is left alone. */
+export const PACKAGE_SCHEMA = "agentcompanies/v1";
+
 export type Scalar = string | number | boolean | null;
 export interface FrontmatterDoc {
   fields: Record<string, Scalar>;
@@ -94,6 +97,10 @@ export const parseDoc = (text: string): FrontmatterDoc => {
     if (key) {
       target[key] = parseValue(value);
     }
+  }
+  const { schema } = fields;
+  if (schema !== undefined && schema !== PACKAGE_SCHEMA) {
+    throw new Error(`written as "${String(schema)}", which this app does not read`);
   }
   return { body, fields, metadata };
 };

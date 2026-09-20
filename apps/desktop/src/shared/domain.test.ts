@@ -4,6 +4,7 @@ import {
   parseBlockedAsk,
   resolveMentions,
   afterFailure,
+  entering,
   isRoutineDue,
   leadOf,
   MAX_TASK_ATTEMPTS,
@@ -97,5 +98,14 @@ describe("leadOf", () => {
 
   it("has nobody to pick from an empty roster", () => {
     expect(leadOf([])).toBeNull();
+  });
+});
+
+describe("entering", () => {
+  it("stamps a run's start and the moment it settled, and nothing else", () => {
+    expect(entering({ kind: "running", runId: "r" }, 5)).toMatchObject({ startedAt: 5 });
+    expect(entering({ kind: "done", summary: null }, 7)).toMatchObject({ completedAt: 7 });
+    expect(entering({ kind: "dead", lastError: "x" }, 8)).toMatchObject({ completedAt: 8 });
+    expect(entering({ kind: "todo" }, 9)).toEqual({ state: { kind: "todo" } });
   });
 });

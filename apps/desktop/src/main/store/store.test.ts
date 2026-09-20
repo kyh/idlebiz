@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Budget } from "@/shared/domain";
-import { parseDoc, reqStr, serializeDoc } from "./frontmatter";
+import { parseDoc, reqNum, reqStr, serializeDoc } from "./frontmatter";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
@@ -47,6 +47,12 @@ const hire = (name: string) =>
     spriteSeed: name,
     title: "Engineer",
   }) as const;
+
+/** Take the stamp off, as a save from before saves were stamped. */
+const unstamp = (companyId: string): void => {
+  const file = path.join(root, companyId, "COMPANY.md");
+  writeFileSync(file, readFileSync(file, "utf-8").replace(/\n {2}format: \d+/u, ""));
+};
 
 const found = (budget?: Budget) =>
   store.foundCompany({
@@ -201,6 +207,7 @@ describe("products", () => {
       path.join(root, co.id, "metrics.json"),
       JSON.stringify({ vercel: { projectId: "prj_old", projectName: "old", teamId: "team_9" } }),
     );
+    unstamp(co.id);
     store.initStore();
     const [first] = store.listProducts();
     expect(first?.workspaceDir).toBe(co.workspaceDir);
@@ -656,6 +663,7 @@ describe("retired routines", () => {
     };
     write("business-review");
     write("weekly-backup");
+    unstamp(co.id);
 
     store.initStore();
 
@@ -686,5 +694,71 @@ describe("founder approvals", () => {
     writeFileSync(path.join(root, co.id, "approvals.json"), JSON.stringify(["git push"]));
     store.initStore();
     expect(store.consumeApproval("any-task", "git push")).toBe(false);
+  });
+});
+
+describe("the save format", () => {
+  const stampOf = (companyId: string): number =>
+    reqNum(
+      parseDoc(readFileSync(path.join(root, companyId, "COMPANY.md"), "utf-8")).metadata,
+      "format",
+    );
+
+  it("stamps what it writes", () => {
+    expect(stampOf(found().id)).toBe(1);
+  });
+
+  it("refuses a save a newer build wrote, and leaves it as it found it", () => {
+    const co = found();
+    const file = path.join(root, co.id, "COMPANY.md");
+    writeFileSync(file, readFileSync(file, "utf-8").replace("format: 1", "format: 99"));
+    const before = saveSnapshot(co.id);
+
+    const report = store.initStore();
+
+    expect(report.companies).toBe(0);
+    expect(report.skipped[0]).toMatchObject({ kind: "company" });
+    expect(report.skipped[0]?.error).toContain("newer IdleBiz");
+    expect(store.getCompany()).toBeNull();
+    expect(saveSnapshot(co.id)).toEqual(before);
+  });
+
+  it("adopts an unstamped save once, and only once", () => {
+    const co = found();
+    unstamp(co.id);
+    const retired = path.join(root, co.id, "routines", "business-review");
+    const seed = (): void => {
+      mkdirSync(retired, { recursive: true });
+      writeFileSync(
+        path.join(retired, "ROUTINE.md"),
+        serializeDoc({
+          body: "review\n",
+          fields: { kind: "routine", name: "Business review", slug: "business-review" },
+          metadata: { intervalHours: 24 },
+        }),
+      );
+    };
+    seed();
+
+    store.initStore();
+    expect(existsSync(retired)).toBe(false);
+    expect(stampOf(co.id)).toBe(1);
+
+    seed();
+    store.initStore();
+    expect(existsSync(retired)).toBe(true);
+  });
+
+  it("leaves alone a package written in a schema it does not read", () => {
+    const co = found();
+    const dir = path.join(root, co.id, "routines", "foreign");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "ROUTINE.md"),
+      '---\nname: "Foreign"\nschema: "agentcompanies/v9"\nslug: "foreign"\nmetadata:\n  intervalHours: 1\n---\nhi\n',
+    );
+    const report = store.initStore();
+    expect(report.skipped[0]?.error).toContain("agentcompanies/v9");
+    expect(store.listRoutines().map((r) => r.id)).not.toContain("foreign");
   });
 });

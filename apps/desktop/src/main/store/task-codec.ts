@@ -5,7 +5,14 @@ import {
   serializeBlockedAsk,
 } from "@/shared/domain";
 import type { BlockedAsk, Task, TaskState, TaskStatus } from "@/shared/domain";
-import { nullableNum, optNum, optStr, reqStr, strArray } from "@/main/store/frontmatter";
+import {
+  PACKAGE_SCHEMA,
+  nullableNum,
+  optNum,
+  optStr,
+  reqStr,
+  strArray,
+} from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 
 // Keep status and state-specific fields flat for compatibility with existing TASK.md files.
@@ -80,7 +87,7 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
     fields: {
       kind: "task",
       name: t.title,
-      schema: "agentcompanies/v1",
+      schema: PACKAGE_SCHEMA,
       slug: t.id,
     },
     metadata,
@@ -132,15 +139,20 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
   }
 };
 
+/** Queued and running belong to someone; a file saying otherwise (a hand edit, a released assignee) is work nobody has. */
+const UNOWNED: TaskState = { kind: "todo" };
+
 export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
   const f = doc.fields;
   const m = doc.metadata;
   const prioRaw = optStr(m, "priority");
   const priority = TASK_PRIORITIES.find((p) => p === prioRaw) ?? "medium";
   const body = doc.body.trim();
+  const assigneeId = optStr(m, "assigneeId");
+  const state = parseTaskState(m);
   return {
     artifacts: strArray(m, "artifacts"),
-    assigneeId: optStr(m, "assigneeId"),
+    assigneeId,
     attempts: optNum(m, "attempts", 0),
     betId: optStr(m, "betId"),
     companyId,
@@ -151,7 +163,10 @@ export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
     priority,
     productId: optStr(m, "productId"),
     startedAt: nullableNum(m, "startedAt"),
-    state: parseTaskState(m),
+    state:
+      assigneeId === null && (state.kind === "queued" || state.kind === "running")
+        ? UNOWNED
+        : state,
     title: reqStr(f, "name"),
   };
 };

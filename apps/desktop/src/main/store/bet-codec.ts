@@ -1,6 +1,13 @@
 import { BetClaimSchema, BetStateSchema } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
-import { nullableNum, optNum, optStr, reqNum, reqStr } from "@/main/store/frontmatter";
+import {
+  PACKAGE_SCHEMA,
+  nullableNum,
+  optNum,
+  optStr,
+  reqNum,
+  reqStr,
+} from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 
 // State-specific fields sit flat in the metadata block, like TASK.md, so a BET.md stays hand-editable.
@@ -47,7 +54,7 @@ export const betToDoc = (b: Bet): FrontmatterDoc => {
   }
   return {
     body: `${b.hypothesis}\n`,
-    fields: { kind: "bet", name: b.title, schema: "agentcompanies/v1", slug: b.id },
+    fields: { kind: "bet", name: b.title, schema: PACKAGE_SCHEMA, slug: b.id },
     metadata,
   };
 };

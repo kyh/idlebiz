@@ -35,6 +35,7 @@ import {
   legacyTeamsDir,
 } from "@/main/paths";
 import {
+  PACKAGE_SCHEMA,
   parseDoc,
   serializeDoc,
   slugify,
@@ -95,6 +96,7 @@ import {
   DEFAULT_MAX_AGENTS,
   RunMetricsSchema,
   afterFailure,
+  entering,
   leadOf,
 } from "@/shared/domain";
 import type { ActivityEvent, PersistedActivity } from "@/shared/activity";
@@ -197,6 +199,16 @@ const patchIn = <T extends Owned>(
 };
 
 // ---- serialization ----------------------------------------------------------
+/**
+ * What this build writes. A save stamped higher was written by a newer build:
+ * writers rebuild every file from what they understand, so opening it would
+ * quietly drop whatever the newer build added. It is refused instead. A save
+ * stamped lower is adopted once at boot, then carries this stamp.
+ */
+const SAVE_FORMAT = 1;
+
+const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
+
 const companyToDoc = (co: Company): FrontmatterDoc => {
   const metadata: FrontmatterDoc["metadata"] = {
     autopilot: co.autopilot,
@@ -222,13 +234,14 @@ const companyToDoc = (co: Company): FrontmatterDoc => {
   }
   metadata.spentUsd = co.spentUsd;
   metadata.createdAt = co.createdAt;
+  metadata.format = SAVE_FORMAT;
   return {
     body: `# ${co.name}\n\n${co.mission}\n`,
     fields: {
       description: co.mission,
       kind: "company",
       name: co.name,
-      schema: "agentcompanies/v1",
+      schema: PACKAGE_SCHEMA,
       slug: co.id,
     },
     metadata,
@@ -248,6 +261,11 @@ const parseBudget = (m: FrontmatterDoc["metadata"]): Budget => {
 };
 
 const docToCompany = (doc: FrontmatterDoc): Company => {
+  if (formatOf(doc) > SAVE_FORMAT) {
+    throw new Error(
+      `this save was written by a newer IdleBiz (format ${formatOf(doc)}, this build reads ${SAVE_FORMAT}) — update the app to open it`,
+    );
+  }
   const f = doc.fields;
   const m = doc.metadata;
   const id = reqStr(f, "slug");
@@ -298,7 +316,7 @@ const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]): 
       description: e.title || e.role,
       kind: "agent",
       name: e.name,
-      schema: "agentcompanies/v1",
+      schema: PACKAGE_SCHEMA,
       slug: e.id,
     },
     metadata,
@@ -355,7 +373,7 @@ const routineToDoc = (r: Routine): FrontmatterDoc => {
   }
   return {
     body: `${r.instruction}\n`,
-    fields: { name: r.name, schema: "agentcompanies/v1", slug: r.id },
+    fields: { name: r.name, schema: PACKAGE_SCHEMA, slug: r.id },
     metadata,
   };
 };
@@ -503,9 +521,7 @@ const PersistedTeamMessageSchema = z.object({
 const loadRecentChat = (active: ActiveCompany): void => {
   const companyId = active.company.id;
   const rows = readJsonlTail(chatFile(companyId), PersistedTeamMessageSchema, TEAM_CHAT_RING);
-  for (const row of rows) {
-    active.chat.push({ ...row, companyId, id: nextId("nextTeamMessageId") });
-  }
+  active.chat = rows.map((row) => ({ ...row, companyId, id: nextId("nextTeamMessageId") }));
 };
 
 /** Adopt legacy team leadership and chat without deleting the original files. */
@@ -1184,7 +1200,7 @@ type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
 
 // Persist before shelving so boot can recover a crash between the two writes.
 const close = (taskId: string, state: Settled): void => {
-  const t = patchTask(taskId, { completedAt: Date.now(), state });
+  const t = patchTask(taskId, entering(state, Date.now()));
   if (t.state.kind !== "done") {
     return;
   }
@@ -1235,7 +1251,7 @@ export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
   if (t.state.nextAttemptAt !== null && t.state.nextAttemptAt > Date.now()) {
     return null;
   }
-  return patchTask(taskId, { startedAt: Date.now(), state: { kind: "running", runId } });
+  return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
 };
 
 /** The run settled: the task is done, or waits on the founder. Only the owning run may. */
@@ -1251,7 +1267,7 @@ const failed = (t: Task, lastError: string) => {
   const verdict = afterFailure(t.attempts, now);
   const task: Task =
     verdict.kind === "dead"
-      ? { ...t, attempts: verdict.attempts, completedAt: now, state: { kind: "dead", lastError } }
+      ? { ...t, attempts: verdict.attempts, ...entering({ kind: "dead", lastError }, now) }
       : {
           ...t,
           attempts: verdict.attempts,
@@ -1330,7 +1346,7 @@ export const killProduct = (productId: string, reason: string): Bet[] => {
   }
   for (const t of active.tasks.filter((x) => x.productId === productId)) {
     if (t.state.kind !== "running" && t.state.kind !== "done") {
-      patchTask(t.id, { completedAt: now, state: { kind: "dead", lastError: "product retired" } });
+      patchTask(t.id, entering({ kind: "dead", lastError: "product retired" }, now));
     }
   }
   active.products.splice(active.products.indexOf(product), 1);
@@ -1440,8 +1456,14 @@ export const foundCompany = (input: {
   return co;
 };
 
-const readCompanies = (): Company[] => {
-  const companies: Company[] = [];
+interface FoundSave {
+  company: Company;
+  /** The format it was last written in; lower than SAVE_FORMAT means boot still has adopting to do. */
+  format: number;
+}
+
+const readCompanies = (): FoundSave[] => {
+  const companies: FoundSave[] = [];
   for (const entry of safeReaddir(ROOT_DIR)) {
     if (entry.startsWith(".")) {
       continue;
@@ -1451,11 +1473,12 @@ const readCompanies = (): Company[] => {
       continue;
     }
     try {
-      const company = docToCompany(parseDoc(readFileSync(file, "utf-8")));
+      const doc = parseDoc(readFileSync(file, "utf-8"));
+      const company = docToCompany(doc);
       if (company.id !== entry) {
         throw new Error("company slug does not match its directory");
       }
-      companies.push(company);
+      companies.push({ company, format: formatOf(doc) });
     } catch (error) {
       skip("company", file, error);
     }
@@ -1525,35 +1548,47 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (slug) => routineFile(company.id, slug),
     (doc) => docToRoutine(doc, company.id),
   );
-  adoptLegacyTeam(company);
   loadRecentChat(active);
   active.sinceLastLook = readJsonFile(sinceLastLookFile(company.id), DigestSchema);
   active.recentShips = readJsonFile(recentShipsFile(company.id), RecentShipsSchema) ?? [];
   return active;
 };
 
-/** Migrate legacy company-level product metrics before rendering instructions. */
-const ensureFirstProduct = (active: ActiveCompany): void => {
-  if (active.products.length > 0) {
-    return;
+/** A company always has a product to work on; one that lost its last is given its mission back as one. */
+const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null): void => {
+  if (active.products.length === 0) {
+    const first = firstProduct(active.company, vercel);
+    active.products.push(first);
+    saveProduct(first);
   }
-  const { company } = active;
-  const legacy = readMetricsConfig(company.id)?.vercel;
-  const first = firstProduct(
-    company,
-    legacy
-      ? {
-          projectId: legacy.projectId,
-          projectName: legacy.projectName ?? legacy.projectId,
-          teamId: legacy.teamId ?? null,
-        }
-      : null,
-  );
-  active.products.push(first);
-  saveProduct(first);
-  if (legacy) {
-    writeMetricsConfig(company.id, { vercel: undefined });
+};
+
+/** The Vercel binding a save from before products kept on the company, taken off it for the first product to hold. */
+const liftLegacyVercel = (companyId: string): VercelBinding | null => {
+  const legacy = readMetricsConfig(companyId)?.vercel;
+  if (!legacy) {
+    return null;
   }
+  writeMetricsConfig(companyId, { vercel: undefined });
+  return {
+    projectId: legacy.projectId,
+    projectName: legacy.projectName ?? legacy.projectId,
+    teamId: legacy.teamId ?? null,
+  };
+};
+
+/**
+ * Bring a save written in an older format up to this one, once: saveCompany
+ * then stamps it, and none of this runs for it again. Everything that reads an
+ * old shape of the company's files belongs here, so it has a date it can be
+ * deleted on; tolerant field reads inside the codecs are not migrations.
+ */
+const adoptOlderSave = (active: ActiveCompany): void => {
+  adoptLegacyTeam(active.company);
+  loadRecentChat(active);
+  ensureFirstProduct(active, liftLegacyVercel(active.company.id));
+  dropRetiredRoutines(active);
+  saveCompany(active.company);
 };
 
 export const initStore = (): LoadReport => {
@@ -1566,21 +1601,25 @@ export const initStore = (): LoadReport => {
     return lastLoad;
   }
   // Newest save wins; equal timestamps use the first slug alphabetically.
-  const [company] = companies.toSorted(
-    (a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id),
+  const [newest] = companies.toSorted(
+    (a, b) => b.company.createdAt - a.company.createdAt || a.company.id.localeCompare(b.company.id),
   );
-  if (!company) {
+  if (!newest) {
     return lastLoad;
   }
+  const { company, format } = newest;
   try {
     const active = loadActiveCompany(company);
     cache.active = active;
-    ensureFirstProduct(active);
+    // three different jobs, in this order: adopt an older format, repair what must always hold, then serve
+    if (format < SAVE_FORMAT) {
+      adoptOlderSave(active);
+    }
+    ensureFirstProduct(active, null);
     if (active.employees.length > 0 && !active.employees.some((e) => e.id === company.leaderId)) {
       active.company = { ...company, leaderId: leadOf(active.employees) };
       saveCompany(active.company);
     }
-    dropRetiredRoutines(active);
     if (active.routines.length === 0) {
       seedDefaultRoutines(company.id, company.businessType);
     }

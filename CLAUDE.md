@@ -5,11 +5,17 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 `any`, no `!`, no `as`). Full map and workflow in `AGENTS.md`.
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
-  packages (COMPANY.md, agents/<slug>/AGENTS.md doubles as the live agent
-  instructions, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
+  packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
+  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
   products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
   get products/<slug>/workspace/), bets/<slug>/BET.md, retired/<slug>/ for killed
   products, routines/, activity.jsonl).
+- COMPANY.md carries `format`. A save stamped higher than this build writes is refused
+  (writers rebuild files from what they understand, so opening it would drop what a newer
+  build added); one stamped lower is adopted once in `adoptOlderSave`, the only home for
+  code that reads an old shape of a save, then stamped. Tolerant field reads in the codecs
+  are not migrations. A frontmatter key the app does not know is still dropped on the next
+  write of that file.
 - One active company per launch: newest `createdAt`, alphabetical slug on ties.
   Only that company's entities load or migrate; older saves remain untouched.
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`

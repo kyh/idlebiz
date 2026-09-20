@@ -81,3 +81,20 @@ describe("task codec", () => {
     expect(out.state).toEqual({ kind: "todo" });
   });
 });
+
+describe("a task nobody owns", () => {
+  it.each(["queued", "running"])(
+    "reads a %s task with no assignee as work to pick up",
+    (status) => {
+      const task = docToTask(
+        {
+          body: "",
+          fields: { kind: "task", name: "Orphan", slug: "orphan" },
+          metadata: { createdAt: 1, runId: "run", status },
+        },
+        "co",
+      );
+      expect(task.state).toEqual({ kind: "todo" });
+    },
+  );
+});

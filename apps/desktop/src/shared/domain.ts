@@ -321,6 +321,19 @@ type _AssertStatusesAreStates = TaskStatus extends TaskState["kind"] ? true : ne
 const taskStatesInSync: _AssertStatesAreStatuses & _AssertStatusesAreStates = true;
 void taskStatesInSync;
 
+/** Entering a state, stamped: a run's start, or the moment it settled. Every change of state goes through here, so the timestamps cannot disagree with it. */
+export const entering = (
+  state: TaskState,
+  now: number,
+): Pick<Task, "state"> & Partial<Pick<Task, "startedAt" | "completedAt">> => {
+  if (state.kind === "running") {
+    return { startedAt: now, state };
+  }
+  return state.kind === "done" || state.kind === "blocked" || state.kind === "dead"
+    ? { completedAt: now, state }
+    : { state };
+};
+
 /** A task known to be in one state, so its fields need no second check. */
 export type TaskIn<K extends TaskStatus> = Task & { state: Extract<TaskState, { kind: K }> };
 

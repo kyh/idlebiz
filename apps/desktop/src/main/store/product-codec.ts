@@ -1,5 +1,12 @@
 import type { Product } from "@/shared/domain";
-import { nullableNum, optNum, optStr, reqNum, reqStr } from "@/main/store/frontmatter";
+import {
+  PACKAGE_SCHEMA,
+  nullableNum,
+  optNum,
+  optStr,
+  reqNum,
+  reqStr,
+} from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 
 export const productToDoc = (p: Product): FrontmatterDoc => {
@@ -26,7 +33,7 @@ export const productToDoc = (p: Product): FrontmatterDoc => {
   }
   return {
     body: `${p.description}\n`,
-    fields: { kind: "product", name: p.name, schema: "agentcompanies/v1", slug: p.id },
+    fields: { kind: "product", name: p.name, schema: PACKAGE_SCHEMA, slug: p.id },
     metadata,
   };
 };
