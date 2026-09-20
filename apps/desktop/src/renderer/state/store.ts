@@ -207,10 +207,10 @@ export const refresh = async (): Promise<void> => {
   ]);
   const [employees, tasks, products, bets] = company
     ? await Promise.all([
-        bridge().listEmployees({ companyId: company.id }),
-        bridge().listTasks({ companyId: company.id, status: ["blocked", "dead"] }),
-        bridge().listProducts({ companyId: company.id }),
-        bridge().listBets({ companyId: company.id }),
+        bridge().listEmployees(),
+        bridge().listTasks({ status: ["blocked", "dead"] }),
+        bridge().listProducts(),
+        bridge().listBets(),
       ])
     : [[], [], [], []];
   const pendingAsks = tasks.filter(taskIn("blocked"));
@@ -234,7 +234,7 @@ const reloadProducts = async (): Promise<void> => {
   if (!company) {
     return;
   }
-  const products = await bridge().listProducts({ companyId: company.id });
+  const products = await bridge().listProducts();
   set({ products });
   await refreshProductStatus(products);
 };
@@ -242,19 +242,19 @@ const reloadProducts = async (): Promise<void> => {
 const reloadBets = async (): Promise<void> => {
   const { company } = state;
   if (company) {
-    set({ bets: await bridge().listBets({ companyId: company.id }) });
+    set({ bets: await bridge().listBets() });
   }
 };
 
 // ---- actions ---------------------------------------------------------------
 
-const withCompany = async (act: (companyId: string) => Promise<void>): Promise<void> => {
+const withCompany = async (act: () => Promise<void>): Promise<void> => {
   if (state.company) {
-    await act(state.company.id);
+    await act();
   }
 };
-const updateCompany = (call: (companyId: string) => Promise<Company>): Promise<void> =>
-  withCompany(async (companyId) => set({ company: await call(companyId) }));
+const updateCompany = (call: () => Promise<Company>): Promise<void> =>
+  withCompany(async () => set({ company: await call() }));
 
 // main answers both with `bet.changed` / `product.killed`, and those events reload what moved
 export const killBet = async (betId: string, reason: string): Promise<void> => {
@@ -266,40 +266,39 @@ export const killProduct = async (productId: string, reason: string): Promise<vo
 };
 
 export const createProduct = (name: string, description: string): Promise<void> =>
-  withCompany(async (companyId) => {
-    await bridge().createProduct({ companyId, description, name });
+  withCompany(async () => {
+    await bridge().createProduct({ description, name });
     await reloadProducts();
   });
 
 export const teamMessages = async (limit = 30): Promise<TeamMessage[]> => {
   const c = state.company;
-  return c ? await bridge().teamMessages({ companyId: c.id, limit }) : [];
+  return c ? await bridge().teamMessages({ limit }) : [];
 };
 
 export const setAutopilot = (running: boolean): Promise<void> =>
-  updateCompany((companyId) => bridge().setAutopilot({ companyId, running }));
+  updateCompany(() => bridge().setAutopilot({ running }));
 
 export const setBudget = (budget: Budget): Promise<void> =>
-  updateCompany((companyId) => bridge().setBudget({ budget, companyId }));
+  updateCompany(() => bridge().setBudget({ budget }));
 
-export const resetSpend = (): Promise<void> =>
-  updateCompany((companyId) => bridge().resetSpend({ companyId }));
+export const resetSpend = (): Promise<void> => updateCompany(() => bridge().resetSpend());
 
 /** What happened since the founder last looked; asking is the look. */
 export const digest = (): Promise<Digest | null> =>
-  state.company ? bridge().getDigest({ companyId: state.company.id }) : Promise.resolve(null);
+  state.company ? bridge().getDigest() : Promise.resolve(null);
 
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
-  updateCompany((companyId) => bridge().setMaxAgents({ companyId, maxAgents }));
+  updateCompany(() => bridge().setMaxAgents({ maxAgents }));
 
 export const connectStripe = (): Promise<void> =>
-  withCompany(async (companyId) => {
-    await bridge().stripeConnect({ companyId });
+  withCompany(async () => {
+    await bridge().stripeConnect();
   });
 
 export const disconnectStripe = (): Promise<void> =>
-  withCompany(async (companyId) => {
-    await bridge().stripeDisconnect({ companyId });
+  withCompany(async () => {
+    await bridge().stripeDisconnect();
   });
 
 export const connectVercel = async (input: {
@@ -328,9 +327,9 @@ export const directEmployee = async (employeeId: string, instruction: string): P
 
 /** Founder posts in the team channel; @first-name wakes that employee. */
 export const sendFounderChat = (text: string): Promise<void> =>
-  withCompany(async (companyId) => {
+  withCompany(async () => {
     if (text.trim()) {
-      await bridge().postTeamChat({ companyId, text: text.trim() });
+      await bridge().postTeamChat({ text: text.trim() });
     }
   });
 
@@ -356,7 +355,6 @@ export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
   }
   return await bridge().listTasks({
     assigneeId: employeeId,
-    companyId: company.id,
     status: ["queued", "running", "blocked"],
   });
 };

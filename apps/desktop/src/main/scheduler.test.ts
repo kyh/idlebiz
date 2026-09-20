@@ -76,10 +76,9 @@ const scripted = () => {
   return { driver, resting, running };
 };
 
-const queue = (companyId: string, employeeId: string, priority: Task["priority"] = "medium") => {
+const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
   const task = store.createTask({
     assigneeId: employeeId,
-    companyId,
     priority,
     title: `Work for ${employeeId}`,
   });
@@ -90,18 +89,18 @@ const queue = (companyId: string, employeeId: string, priority: Task["priority"]
 const kindOf = (task: Task): string | undefined => store.getTask(task.id)?.state.kind;
 
 it("ignores queue drains after stop and resumes admission only after start", () => {
-  const company = found({ capUsd: 0, mode: "capped" });
-  const task = queue(company.id, "priya");
+  found({ capUsd: 0, mode: "capped" });
+  const task = queue("priya");
 
   scheduler.stop();
   scheduler.tick();
 
-  expect(store.getCompany(company.id)?.autopilot).toBe(true);
+  expect(store.getCompany()?.autopilot).toBe(true);
   expect(kindOf(task)).toBe("queued");
 
   scheduler.start();
 
-  expect(store.getCompany(company.id)?.autopilot).toBe(false);
+  expect(store.getCompany()?.autopilot).toBe(false);
   expect(kindOf(task)).toBe("queued");
   expect(store.getEmployee("priya")?.status).toBe("idle");
   scheduler.stop();
@@ -109,10 +108,10 @@ it("ignores queue drains after stop and resumes admission only after start", () 
 
 describe("draining the queue", () => {
   it("keeps a slot back for the founder", () => {
-    const company = found();
+    found();
     const { driver, running } = scripted();
     const drain = createScheduler(driver);
-    const background = ["priya", "mae", "sam"].map((id) => queue(company.id, id));
+    const background = ["priya", "mae", "sam"].map((id) => queue(id));
 
     drain.tick();
     drain.tick();
@@ -122,13 +121,13 @@ describe("draining the queue", () => {
   });
 
   it("gives the reserved slot to the founder's request", () => {
-    const company = found();
+    found();
     const { driver } = scripted();
     const drain = createScheduler(driver);
-    queue(company.id, "priya");
-    queue(company.id, "mae");
-    const urgent = queue(company.id, "ana", "high");
-    const waiting = queue(company.id, "sam");
+    queue("priya");
+    queue("mae");
+    const urgent = queue("ana", "high");
+    const waiting = queue("sam");
 
     drain.tick();
 
@@ -137,11 +136,11 @@ describe("draining the queue", () => {
   });
 
   it("starts nothing on a runner that is resting", () => {
-    const company = found();
+    found();
     const { driver, resting } = scripted();
     resting.add("codex");
-    const parked = queue(company.id, "ana");
-    const free = queue(company.id, "priya");
+    const parked = queue("ana");
+    const free = queue("priya");
 
     createScheduler(driver).tick();
 
@@ -157,7 +156,6 @@ describe("settling a run", () => {
     const task = store.createTask({
       assigneeId: "priya",
       betId,
-      companyId: company.id,
       title: "Work",
     });
     store.claimTask(task.id, "priya");
@@ -168,17 +166,16 @@ describe("settling a run", () => {
   };
 
   it("ships finished work and frees the employee", async () => {
-    const { company, task } = await runOne(done(0.5));
+    const { task } = await runOne(done(0.5));
     expect(store.getTask(task.id)).toBeNull();
-    expect(store.getCompany(company.id)).toMatchObject({ ships: 1, spentUsd: 0.5 });
+    expect(store.getCompany()).toMatchObject({ ships: 1, spentUsd: 0.5 });
   });
 
   it("bills the run to the bet it worked for", async () => {
-    const company = found();
-    const [product] = store.listProducts(company.id);
+    found();
+    const [product] = store.listProducts();
     const bet = store.openBet({
       budgetUsd: 5,
-      companyId: company.id,
       hypothesis: "a post brings visitors",
       landingPath: null,
       metric: "users",
@@ -191,7 +188,6 @@ describe("settling a run", () => {
     const task = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
-      companyId: company.id,
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
@@ -229,13 +225,13 @@ describe("settling a run", () => {
   });
 
   it("takes an unused sign-off away with the task", async () => {
-    const company = found();
+    found();
     const { driver, running } = scripted();
-    const task = queue(company.id, "priya");
-    store.grantApproval(company.id, task.id, "git push");
+    const task = queue("priya");
+    store.grantApproval(task.id, "git push");
     createScheduler(driver).tick();
     running.get("priya")?.(done());
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
-    expect(store.consumeApproval(company.id, task.id, "git push")).toBe(false);
+    expect(store.consumeApproval(task.id, "git push")).toBe(false);
   });
 });

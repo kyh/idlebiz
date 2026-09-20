@@ -54,7 +54,7 @@ import type { RoutineDefinition } from "@/main/prompts/routines";
 import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
-import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
+import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import {
   DEFAULT_POLICY,
   PolicyParamsSchema,
@@ -99,6 +99,9 @@ import type {
 // Synchronous cache mutations make check-and-set atomic in the main process.
 // Markdown writes use tmp+rename; activity and chat use append-only JSONL logs.
 
+const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
+type Grant = z.infer<typeof GrantSchema>;
+
 interface ActiveCompany {
   company: Company;
   employees: Employee[];
@@ -106,6 +109,8 @@ interface ActiveCompany {
   // Loaded only when the shipping log is opened.
   shipped: Task[] | null;
   products: Product[];
+  /** Sign-offs the founder gave that no run has used yet. */
+  grants: Grant[];
   bets: Bet[];
   /** How the allocator weighs bets; retuned whenever one closes. */
   policy: PolicyParams;
@@ -138,17 +143,16 @@ const nextId = (counter: "nextActivityId" | "nextTeamMessageId"): number => {
   return id;
 };
 
-const activeCompany = (companyId: string): ActiveCompany | null => {
-  const { active } = c();
-  return active?.company.id === companyId ? active : null;
-};
+/** The company this launch runs, or null before one is founded. */
+const maybeCurrent = (): ActiveCompany | null => c().active;
 
-const requireActiveCompany = (companyId: string): ActiveCompany => {
-  const active = activeCompany(companyId);
-  if (!active) {
-    throw new Error(`company ${companyId} is not active`);
+/** The company this launch runs. There is only ever one, so nothing takes its id; asking with none loaded is a bug in the caller. */
+const current = (): ActiveCompany => {
+  const company = c().active;
+  if (!company) {
+    throw new Error("no company is loaded");
   }
-  return active;
+  return company;
 };
 
 const emptyCompany = (company: Company): ActiveCompany => ({
@@ -156,6 +160,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   chat: [],
   company,
   employees: [],
+  grants: [],
   policy: DEFAULT_POLICY,
   products: [],
   recentShips: [],
@@ -175,11 +180,12 @@ const patchIn = <T extends Owned>(
   id: string,
   patch: Partial<T>,
   save: (row: T) => void,
-): T | null => {
+): T => {
   const idx = list.findIndex((row) => row.id === id);
   const cur = list[idx];
+  // every caller looked the row up first, so a missing one is a bug, not an outcome
   if (!cur) {
-    return null;
+    throw new Error(`nothing to patch at "${id}"`);
   }
   const next = { ...cur, ...patch, companyId: cur.companyId, id: cur.id };
   list[idx] = next;
@@ -375,7 +381,7 @@ const saveCompany = (co: Company): void => {
 };
 
 const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void => {
-  const { company, products } = requireActiveCompany(e.companyId);
+  const { company, products } = current();
   const file = employeeFile(e.companyId, e.id);
   const text = serializeDoc(employeeToDoc(e, company, products));
   if (opts.onlyIfChanged && readTextIfPresent(file) === text) {
@@ -544,20 +550,13 @@ const adoptLegacyTeam = (co: Company): void => {
 };
 
 // ---- companies -------------------------------------------------------------
-export const getCompany = (id: string): Company | null => activeCompany(id)?.company ?? null;
+/** The company this launch runs; null before one is founded. */
+export const getCompany = (): Company | null => maybeCurrent()?.company ?? null;
 
-export const requireCompany = (id: string): Company => {
-  const company = getCompany(id);
-  if (!company) {
-    throw new Error(`company ${id} not found`);
-  }
-  return company;
-};
+export const requireCompany = (): Company => current().company;
 
-export const getDefaultCompany = (): Company | null => c().active?.company ?? null;
-
-const patchCompany = (id: string, patch: Partial<Company>): Company => {
-  const active = requireActiveCompany(id);
+const patchCompany = (patch: Partial<Company>): Company => {
+  const active = current();
   const co = active.company;
   const next = { ...co, ...patch, id: co.id };
   active.company = next;
@@ -565,58 +564,45 @@ const patchCompany = (id: string, patch: Partial<Company>): Company => {
   return next;
 };
 
-export const setMaxAgents = (id: string, maxAgents: number): Company =>
-  patchCompany(id, { maxAgents: Math.max(1, Math.round(maxAgents)) });
+export const setMaxAgents = (maxAgents: number): Company =>
+  patchCompany({ maxAgents: Math.max(1, Math.round(maxAgents)) });
 
-export const setAutopilot = (id: string, on: boolean): Company =>
-  patchCompany(id, { autopilot: on });
+export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: on });
 
 // ---- founder approvals -------------------------------------------------------
 // Exact-command approvals survive restart and are consumed once.
 // A sign-off belongs to the task it was given for: the continuation that will
 // run the command. Company-wide, a grant the agent never used (it reworded the
 // command) would wait for anyone who later ran that exact string.
-const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
-type Grant = z.infer<typeof GrantSchema>;
-
-const readGrants = (companyId: string): Grant[] => {
-  requireActiveCompany(companyId);
-  return readJsonFile(approvalsFile(companyId), z.array(GrantSchema)) ?? [];
+const writeGrants = (grants: Grant[]): void => {
+  const active = current();
+  active.grants = grants;
+  atomicWrite(approvalsFile(active.company.id), JSON.stringify(grants, null, 2));
 };
 
-const writeGrants = (companyId: string, grants: readonly Grant[]): void => {
-  atomicWrite(approvalsFile(companyId), JSON.stringify(grants, null, 2));
-};
-
-export const grantApproval = (companyId: string, taskId: string, key: string): void => {
-  const grants = readGrants(companyId);
+export const grantApproval = (taskId: string, key: string): void => {
+  const { grants } = current();
   if (!grants.some((g) => g.taskId === taskId && g.key === key)) {
-    writeGrants(companyId, [...grants, { grantedAt: Date.now(), key, taskId }]);
+    writeGrants([...grants, { grantedAt: Date.now(), key, taskId }]);
   }
 };
 
 /** Spend the sign-off, if this task holds one for exactly this. */
-export const consumeApproval = (companyId: string, taskId: string, key: string): boolean => {
-  const grants = readGrants(companyId);
+export const consumeApproval = (taskId: string, key: string): boolean => {
+  const { grants } = current();
   const held = grants.find((g) => g.taskId === taskId && g.key === key);
   if (!held) {
     return false;
   }
-  writeGrants(
-    companyId,
-    grants.filter((g) => g !== held),
-  );
+  writeGrants(grants.filter((g) => g !== held));
   return true;
 };
 
 /** A task that has ended takes its unused sign-offs with it. */
-export const revokeApprovals = (companyId: string, taskId: string): void => {
-  const grants = readGrants(companyId);
+export const revokeApprovals = (taskId: string): void => {
+  const { grants } = current();
   if (grants.some((g) => g.taskId === taskId)) {
-    writeGrants(
-      companyId,
-      grants.filter((g) => g.taskId !== taskId),
-    );
+    writeGrants(grants.filter((g) => g.taskId !== taskId));
   }
 };
 
@@ -624,14 +610,12 @@ export const revokeApprovals = (companyId: string, taskId: string): void => {
 const addSpend = (totalUsd: number, costUsd: number): number =>
   Math.round((totalUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
 
-export const recordSpend = (id: string, costUsd: number): Company | null => {
-  const co = getCompany(id);
-  return co ? patchCompany(id, { spentUsd: addSpend(co.spentUsd, costUsd) }) : null;
-};
+export const recordSpend = (costUsd: number): Company =>
+  patchCompany({ spentUsd: addSpend(current().company.spentUsd, costUsd) });
 
-export const setBudget = (id: string, budget: Budget): Company => patchCompany(id, { budget });
+export const setBudget = (budget: Budget): Company => patchCompany({ budget });
 
-export const resetSpend = (id: string): Company => patchCompany(id, { spentUsd: 0 });
+export const resetSpend = (): Company => patchCompany({ spentUsd: 0 });
 
 interface MetricsSnapshot {
   users: number | null;
@@ -645,32 +629,29 @@ interface MetricsPatch {
 
 /** What a snapshot changes. A null keeps the last reported value through provider failures, and a number that did not move writes nothing. */
 const metricsPatch = (
-  current: { users: number | null; revenueUsd: number | null },
+  held: { users: number | null; revenueUsd: number | null },
   snapshot: MetricsSnapshot,
 ): MetricsPatch => {
   const patch: MetricsPatch = {};
   if (snapshot.users !== null) {
     const users = Math.max(0, Math.round(snapshot.users));
-    if (users !== current.users) {
+    if (users !== held.users) {
       patch.users = users;
     }
   }
   if (snapshot.revenue !== null) {
     const revenueUsd = Math.round(snapshot.revenue * 100) / 100;
-    if (revenueUsd !== current.revenueUsd) {
+    if (revenueUsd !== held.revenueUsd) {
       patch.revenueUsd = revenueUsd;
     }
   }
   return patch;
 };
 
-export const setRealMetrics = (id: string, snapshot: MetricsSnapshot): Company | null => {
-  const co = getCompany(id);
-  if (!co) {
-    return null;
-  }
+export const setRealMetrics = (snapshot: MetricsSnapshot): Company => {
+  const co = current().company;
   const patch = metricsPatch(co, snapshot);
-  return Object.keys(patch).length === 0 ? co : patchCompany(id, patch);
+  return Object.keys(patch).length === 0 ? co : patchCompany(patch);
 };
 
 // ---- routines --------------------------------------------------------------
@@ -685,7 +666,7 @@ const routineRecord = (input: RoutineDefinition & { companyId: string }, id: str
 });
 
 const createRoutine = (input: RoutineDefinition & { companyId: string }): Routine => {
-  const list = requireActiveCompany(input.companyId).routines;
+  const list = current().routines;
   const id = uniqueSlug(
     input.name,
     list.map((r) => r.id),
@@ -712,12 +693,10 @@ const dropRetiredRoutines = (active: ActiveCompany): void => {
   }
 };
 
-export const listRoutines = (companyId: string): Routine[] => [
-  ...(activeCompany(companyId)?.routines ?? []),
-];
+export const listRoutines = (): Routine[] => [...current().routines];
 
-export const markRoutineRun = (companyId: string, routineId: string): void => {
-  const list = activeCompany(companyId)?.routines;
+export const markRoutineRun = (routineId: string): void => {
+  const list = current().routines;
   const r = list?.find((x) => x.id === routineId);
   if (!r) {
     return;
@@ -754,8 +733,9 @@ const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
   title: input.title,
 });
 
-export const createEmployee = (input: EmployeeInput): Employee => {
-  const { company, employees: list } = requireActiveCompany(input.companyId);
+export const createEmployee = (hire: FoundingHire & { deskIndex: number }): Employee => {
+  const { company, employees: list } = current();
+  const input: EmployeeInput = { ...hire, companyId: company.id };
   if (list.length >= company.maxAgents) {
     throw new Error(`the office is at its ${company.maxAgents}-seat cap`);
   }
@@ -773,20 +753,18 @@ export const createEmployee = (input: EmployeeInput): Employee => {
 };
 
 export const getEmployee = (id: string): Employee | null =>
-  c().active?.employees.find((employee) => employee.id === id) ?? null;
+  maybeCurrent()?.employees.find((employee) => employee.id === id) ?? null;
 
 export const employeeInstructions = (employeeId: string): string => {
   const e = getEmployee(employeeId);
   if (!e) {
     throw new Error(`employee ${employeeId} not found`);
   }
-  const { company, products } = requireActiveCompany(e.companyId);
+  const { company, products } = current();
   return employeeBody(e, company, products);
 };
 
-export const listEmployees = (companyId: string): Employee[] => [
-  ...(activeCompany(companyId)?.employees ?? []),
-];
+export const listEmployees = (): Employee[] => [...(current().employees ?? [])];
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
 export const setEmployeeStatus = (id: string, status: Employee["status"]): void => {
@@ -813,7 +791,7 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
   if (!emp) {
     return null;
   }
-  const active = requireActiveCompany(emp.companyId);
+  const active = current();
   const companyTasks = active.tasks;
   for (const t of companyTasks) {
     if (t.assigneeId === employeeId && (t.state.kind === "todo" || t.state.kind === "queued")) {
@@ -835,9 +813,9 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
     /* archive is best-effort — the roster removal is what matters */
   }
   // the lead left: whoever remains elects one, so the tools keep an owner
-  const company = getCompany(emp.companyId);
+  const company = getCompany();
   if (company?.leaderId === employeeId) {
-    patchCompany(company.id, { leaderId: leadOf(listEmployees(company.id)) });
+    patchCompany({ leaderId: leadOf(listEmployees()) });
   }
   return emp;
 };
@@ -859,7 +837,7 @@ const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
 });
 
 export const getProduct = (id: string): Product | null =>
-  c().active?.products.find((product) => product.id === id) ?? null;
+  maybeCurrent()?.products.find((product) => product.id === id) ?? null;
 
 export const requireProduct = (id: string): Product => {
   const p = getProduct(id);
@@ -869,19 +847,14 @@ export const requireProduct = (id: string): Product => {
   return p;
 };
 
-export const listProducts = (companyId: string): Product[] => [
-  ...(activeCompany(companyId)?.products ?? []),
-];
+export const listProducts = (): Product[] => [...(current().products ?? [])];
 
-const patchProduct = (id: string, patch: Partial<Product>): Product | null =>
-  patchIn(c().active?.products ?? [], id, patch, saveProduct);
+const patchProduct = (id: string, patch: Partial<Product>): Product =>
+  patchIn(current().products, id, patch, saveProduct);
 
-export const createProduct = (input: {
-  companyId: string;
-  name: string;
-  description: string;
-}): Product => {
-  const list = requireActiveCompany(input.companyId).products;
+export const createProduct = (named: { name: string; description: string }): Product => {
+  const { company, products: list } = current();
+  const input = { ...named, companyId: company.id };
   const id = uniqueSlug(
     input.name,
     list.map((p) => p.id),
@@ -903,13 +876,13 @@ export const createProduct = (input: {
   mkdirSync(product.workspaceDir, { recursive: true });
   saveProduct(product);
   list.push(product);
-  for (const e of listEmployees(input.companyId)) {
+  for (const e of listEmployees()) {
     saveEmployee(e);
   }
   return product;
 };
 
-export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product | null =>
+export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product =>
   patchProduct(productId, { vercel });
 
 /** Real numbers per product, from the pulse. */
@@ -922,26 +895,25 @@ export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot):
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
-export const attentionProduct = (companyId: string): Product | null => {
-  const products = activeCompany(companyId)?.products ?? [];
+export const attentionProduct = (): Product | null => {
+  const products = current().products ?? [];
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 };
 
 // ---- bets ------------------------------------------------------------------
-export const listBets = (companyId: string): Bet[] => [...(activeCompany(companyId)?.bets ?? [])];
+export const listBets = (): Bet[] => [...(current().bets ?? [])];
 
 export const getBet = (id: string): Bet | null =>
-  c().active?.bets.find((bet) => bet.id === id) ?? null;
+  maybeCurrent()?.bets.find((bet) => bet.id === id) ?? null;
 
-export const allocationPolicy = (companyId: string): PolicyParams =>
-  activeCompany(companyId)?.policy ?? DEFAULT_POLICY;
+export const allocationPolicy = (): PolicyParams => current().policy ?? DEFAULT_POLICY;
 
-const patchBet = (id: string, patch: Partial<Bet>): Bet | null =>
-  patchIn(c().active?.bets ?? [], id, patch, saveBet);
+const patchBet = (id: string, patch: Partial<Bet>): Bet =>
+  patchIn(current().bets, id, patch, saveBet);
 
 /** What a tool is told when it names a product the company does not have. */
-export const noSuchProduct = (companyId: string, productId: string): string =>
-  `No product "${productId}" here — the products are ${listProducts(companyId)
+export const noSuchProduct = (productId: string): string =>
+  `No product "${productId}" here — the products are ${listProducts()
     .map((p) => p.id)
     .join(", ")}.`;
 
@@ -950,8 +922,7 @@ export const noSuchProduct = (companyId: string, productId: string): string =>
  * another live bet already covers is refused, since both would count the same
  * visitors.
  */
-export const openBet = (input: {
-  companyId: string;
+export const openBet = (wager: {
   productId: string;
   title: string;
   hypothesis: string;
@@ -961,10 +932,11 @@ export const openBet = (input: {
   budgetUsd: number;
   windowHours: number;
 }): Bet => {
-  const active = requireActiveCompany(input.companyId);
+  const active = current();
+  const input = { ...wager, companyId: active.company.id };
   const product = active.products.find((p) => p.id === input.productId);
   if (!product) {
-    throw new Error(noSuchProduct(input.companyId, input.productId));
+    throw new Error(noSuchProduct(input.productId));
   }
   const id = uniqueSlug(
     input.title,
@@ -1029,7 +1001,7 @@ export const measureBet = (betId: string, now: number): Bet => {
   if (!bet || bet.state.kind !== "open") {
     throw new Error(`no open bet "${betId}"`);
   }
-  return patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } }) ?? bet;
+  return patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
 };
 
 const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
@@ -1042,24 +1014,18 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
     throw new Error(`no live bet "${betId}"`);
   }
   const killed = closeAsKilled(bet, reason, now);
-  retune(requireActiveCompany(bet.companyId));
+  retune(current());
   return killed;
 };
 
 /** Judge every live bet against the real numbers; returns the ones whose state changed. */
-export const judgeBets = (companyId: string, now: number): Bet[] => {
-  const active = activeCompany(companyId);
-  if (!active) {
-    return [];
-  }
+export const judgeBets = (now: number): Bet[] => {
+  const active = current();
   const changed: Bet[] = [];
   for (const bet of active.bets) {
     const state = judge(bet, now);
     if (state !== bet.state) {
-      const next = patchBet(bet.id, { state });
-      if (next) {
-        changed.push(next);
-      }
+      changed.push(patchBet(bet.id, { state }));
     }
   }
   if (changed.some(isClosed)) {
@@ -1072,51 +1038,47 @@ export const judgeBets = (companyId: string, now: number): Bet[] => {
 const RECENT_SHIPS = 6;
 const RecentShipsSchema = z.array(z.string());
 
-export const recentShips = (companyId: string): readonly string[] =>
-  activeCompany(companyId)?.recentShips ?? [];
+export const recentShips = (): readonly string[] => current().recentShips ?? [];
 
-export const recordShip = (companyId: string, productId: string | null, summary: string): void => {
-  const active = activeCompany(companyId);
-  if (!active) {
-    return;
-  }
-  patchCompany(companyId, { ships: active.company.ships + 1 });
+export const recordShip = (productId: string | null, summary: string): void => {
+  const active = current();
+  patchCompany({ ships: active.company.ships + 1 });
   const product = productId === null ? null : getProduct(productId);
   if (product) {
     patchProduct(product.id, { lastShipAt: Date.now(), ships: product.ships + 1 });
   }
   // the counters are the record; the brief's list follows them
   active.recentShips = [...active.recentShips, summary].slice(-RECENT_SHIPS);
-  atomicWrite(recentShipsFile(companyId), JSON.stringify(active.recentShips, null, 2));
+  atomicWrite(recentShipsFile(active.company.id), JSON.stringify(active.recentShips, null, 2));
 };
 
 // ---- the company room ------------------------------------------------------
-export const postTeamMessage = (
-  companyId: string,
-  fromEmployeeId: string | null,
-  text: string,
-): TeamMessage => {
-  const active = requireActiveCompany(companyId);
-  const msg: TeamMessage = { companyId, createdAt: Date.now(), fromEmployeeId, text };
+export const postTeamMessage = (fromEmployeeId: string | null, text: string): TeamMessage => {
+  const active = current();
+  const msg: TeamMessage = {
+    companyId: active.company.id,
+    createdAt: Date.now(),
+    fromEmployeeId,
+    text,
+  };
   const ring = active.chat;
   const stored: TeamMessage = { ...msg, id: nextId("nextTeamMessageId") };
   ring.push(stored);
   if (ring.length > TEAM_CHAT_RING) {
     ring.splice(0, ring.length - TEAM_CHAT_RING);
   }
-  appendJsonl(chatFile(companyId), msg);
+  appendJsonl(chatFile(active.company.id), msg);
   return stored;
 };
 
-export const recentTeamMessages = (companyId: string, limit = 20, since = 0): TeamMessage[] => {
-  const ring = activeCompany(companyId)?.chat ?? [];
+export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
+  const ring = current().chat ?? [];
   const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
   return filtered.slice(-limit);
 };
 
 // ---- tasks -----------------------------------------------------------------
-export const createTask = (t: {
-  companyId: string;
+export const createTask = (brief: {
   productId?: string | null;
   betId?: string | null;
   title: string;
@@ -1124,7 +1086,8 @@ export const createTask = (t: {
   priority?: TaskPriority;
   assigneeId?: string | null;
 }): Task => {
-  const list = requireActiveCompany(t.companyId).tasks;
+  const { company, tasks: list } = current();
+  const t = { ...brief, companyId: company.id };
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
@@ -1155,20 +1118,17 @@ export const createTask = (t: {
 
 /** An open task by id. Shipped work is history, not something to act on. */
 export const getTask = (id: string): Task | null =>
-  c().active?.tasks.find((task) => task.id === id) ?? null;
+  maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
 /** The company's open queue: everything not yet done, newest first. */
-export const listOpenTasks = (companyId: string): Task[] =>
-  (activeCompany(companyId)?.tasks ?? []).toSorted(newestFirst);
+export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
 
 /** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
-export const listShippedTasks = (companyId: string): Task[] => {
-  const active = activeCompany(companyId);
-  if (!active) {
-    return [];
-  }
+export const listShippedTasks = (): Task[] => {
+  const active = current();
+  const companyId = active.company.id;
   if (active.shipped === null) {
     active.shipped = loadPackages(
       "task",
@@ -1181,14 +1141,14 @@ export const listShippedTasks = (companyId: string): Task[] => {
 };
 
 export const openTasksFor = (employeeId: string): Task[] =>
-  c().active?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
+  maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
 
 const TASK_PRIORITY_ORDER = { high: 0, low: 2, medium: 1 } satisfies Record<TaskPriority, number>;
 
 /** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
 export const listQueuedTasks = (): Task[] => {
   const now = Date.now();
-  const out = (c().active?.tasks ?? []).filter((task) => {
+  const out = (maybeCurrent()?.tasks ?? []).filter((task) => {
     const { state } = task;
     return state.kind === "queued" && (state.nextAttemptAt === null || state.nextAttemptAt <= now);
   });
@@ -1199,15 +1159,15 @@ export const listQueuedTasks = (): Task[] => {
   );
 };
 
-const patchTask = (id: string, patch: Partial<Task>): Task | null =>
-  patchIn(c().active?.tasks ?? [], id, patch, saveTask);
+const patchTask = (id: string, patch: Partial<Task>): Task =>
+  patchIn(current().tasks, id, patch, saveTask);
 
 type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
 
 // Persist before shelving so boot can recover a crash between the two writes.
 const close = (taskId: string, state: Settled): void => {
   const t = patchTask(taskId, { completedAt: Date.now(), state });
-  if (!t || t.state.kind !== "done") {
+  if (t.state.kind !== "done") {
     return;
   }
   try {
@@ -1216,7 +1176,7 @@ const close = (taskId: string, state: Settled): void => {
     console.error(`could not shelve ${t.id}: ${errorMessage(error)}`);
     return;
   }
-  const active = requireActiveCompany(t.companyId);
+  const active = current();
   const idx = active.tasks.findIndex((task) => task.id === t.id);
   if (idx !== -1) {
     active.tasks.splice(idx, 1);
@@ -1311,7 +1271,6 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
   close(taskId, { kind: "done", summary: answeredSummary(answer) });
   return createTask({
     betId: t.betId,
-    companyId: t.companyId,
     productId: t.productId,
     ...continuationBrief(t, ask, answer),
     assigneeId: t.assigneeId,
@@ -1327,7 +1286,7 @@ export const productOfEmployee = (employeeId: string): Product | null => {
   }
   const [latest] = openTasksFor(employeeId).toSorted(newestFirst);
   const fromTask = latest?.productId ? getProduct(latest.productId) : null;
-  return fromTask ?? c().active?.products[0] ?? null;
+  return fromTask ?? maybeCurrent()?.products[0] ?? null;
 };
 
 /**
@@ -1338,7 +1297,7 @@ export const productOfEmployee = (employeeId: string): Product | null => {
  */
 export const killProduct = (productId: string, reason: string): Bet[] => {
   const product = requireProduct(productId);
-  const active = requireActiveCompany(product.companyId);
+  const active = current();
   if (active.products.length === 1) {
     throw new Error(
       `${product.name} is the only product — start its successor with create_product first.`,
@@ -1541,6 +1500,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (doc) => docToBet(doc, company.id),
   ).toSorted(byAge);
   active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
+  active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];
   active.routines = loadPackages(
     "routine",
     routinesDir(company.id),
@@ -1628,11 +1588,8 @@ const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
 };
 
 /** The founder has the office in view as of `at`: what came before is seen, and the count starts over. */
-export const markSeen = (companyId: string, at: number): void => {
-  const active = activeCompany(companyId);
-  if (active) {
-    saveSinceLastLook(active, emptyDigest(at));
-  }
+export const markSeen = (at: number): void => {
+  saveSinceLastLook(current(), emptyDigest(at));
 };
 
 export const logActivity = (row: PersistedActivity, persist: boolean): ActivityEvent => {
@@ -1650,8 +1607,8 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
 };
 
 /** The digest, and the look itself: reading it starts the next one. Null before a first look. */
-export const digest = (companyId: string): Digest | null => {
-  const current = activeCompany(companyId)?.sinceLastLook ?? null;
-  markSeen(companyId, Date.now());
-  return current;
+export const digest = (): Digest | null => {
+  const since = current().sinceLastLook;
+  markSeen(Date.now());
+  return since;
 };

@@ -66,12 +66,14 @@ const parseState = (m: FrontmatterDoc["metadata"]): BetState => {
 
 export const docToBet = (doc: FrontmatterDoc, companyId: string): Bet => {
   const m = doc.metadata;
+  const metric = optStr(m, "metric");
   const claim = BetClaimSchema.safeParse({
-    landingPath: optStr(m, "landingPath") ?? undefined,
-    metric: optStr(m, "metric"),
+    // a users bet from before bets owned a path counted the whole product, which is what "/" claims
+    landingPath: optStr(m, "landingPath") ?? (metric === "users" ? "/" : undefined),
+    metric,
   });
   if (!claim.success) {
-    throw new Error("expected a claim: metric users with a landingPath, or metric revenue");
+    throw new Error("expected metric to be users or revenue");
   }
   return {
     budgetUsd: reqNum(m, "budgetUsd"),

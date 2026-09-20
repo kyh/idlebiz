@@ -61,12 +61,12 @@ const labelOf = (row: Row): string => {
 };
 
 const SPEECH_CLASS = "text-sm leading-relaxed break-words text-fg";
-const Speech = ({ text, companyId }: { text: string; companyId: string }) => {
+const Speech = ({ text }: { text: string }) => {
   const { shown, done, skip } = useTypewriter(text);
   if (done) {
     return (
       <div className={SPEECH_CLASS} style={{ cursor: "default" }}>
-        <RichText text={text} companyId={companyId} />
+        <RichText text={text} />
         <TypeCursor done more />
       </div>
     );
@@ -145,13 +145,13 @@ const LINE_STYLES = new Map<ActivityKind, LineStyle>([
 ]);
 const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
 
-const FeedLine = ({ e, companyId }: { e: ActivityEvent; companyId: string }) => {
+const FeedLine = ({ e }: { e: ActivityEvent }) => {
   const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
   const text = "message" in e ? e.message : e.kind;
   return (
     <div className="break-words" style={{ color }}>
       {prefix}
-      <RichText text={text.slice(0, 300)} companyId={companyId} />
+      <RichText text={text.slice(0, 300)} />
     </div>
   );
 };
@@ -312,21 +312,17 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
               <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
                 <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
                 <div className="mt-1 text-sm leading-snug text-fg">
-                  <RichText text={question} companyId={company.id} />
+                  <RichText text={question} />
                 </div>
                 <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
               </div>
             ) : (
               <div className="px-scroll flex min-h-[64px] flex-1 flex-col overflow-y-auto">
-                <Speech
-                  key={latest?.id ?? "flavor"}
-                  text={speech.slice(0, 280)}
-                  companyId={company.id}
-                />
+                <Speech key={latest?.id ?? "flavor"} text={speech.slice(0, 280)} />
                 {trail.length > 0 ? (
                   <div className="mt-auto space-y-0.5 pt-2 text-xs leading-snug opacity-70">
                     {trail.map((a) => (
-                      <FeedLine key={a.id} e={a} companyId={company.id} />
+                      <FeedLine key={a.id} e={a} />
                     ))}
                   </div>
                 ) : null}

@@ -21,7 +21,8 @@ import {
 import { scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
-import { readMetricsConfig, fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { fetchRealMetrics, PULSE_MS } from "@/main/metrics";
+import { readMetricsConfig } from "@/main/store/metrics-config";
 import { latestDeployment } from "@/main/vercel";
 import {
   connectVercel,
@@ -53,11 +54,11 @@ let metricsTimer: ReturnType<typeof setInterval> | null = null;
 let pulseInFlight = false;
 
 const runMetricsPulse = (): void => {
-  const company = store.getDefaultCompany();
+  const company = store.getCompany();
   if (!company) {
     return;
   }
-  const products = store.listProducts(company.id);
+  const products = store.listProducts();
   const cfg = readMetricsConfig(company.id);
   if (!cfg?.stripe && !cfg?.plausible && !cfg?.custom && products.every((p) => p.vercel === null)) {
     return;
@@ -68,11 +69,11 @@ const runMetricsPulse = (): void => {
   }
   pulseInFlight = true;
   void (async () => {
-    const bets = store.listBets(company.id).filter((b) => !isClosed(b));
+    const bets = store.listBets().filter((b) => !isClosed(b));
     const snap = await fetchRealMetrics(cfg, products, bets).finally(() => {
       pulseInFlight = false;
     });
-    store.setRealMetrics(company.id, snap);
+    store.setRealMetrics(snap);
     for (const product of products) {
       store.setProductMetrics(product.id, {
         revenue: snap.productRevenue.get(product.id) ?? null,
@@ -144,7 +145,7 @@ const registerIpcHandlers = (): void => {
     }),
   );
 
-  handle("getCompany", store.getDefaultCompany);
+  handle("getCompany", store.getCompany);
   handle("loadReport", store.loadReport);
   handle("openSaveFolder", async () => {
     const err = await shell.openPath(ROOT_DIR);
@@ -154,18 +155,18 @@ const registerIpcHandlers = (): void => {
     return { ok: true };
   });
 
-  handle("setAutopilot", ({ companyId, running }) => setAutopilot(companyId, running));
+  handle("setAutopilot", ({ running }) => setAutopilot(running));
 
-  handle("setBudget", ({ companyId, budget }) => {
-    const company = store.setBudget(companyId, budget);
+  handle("setBudget", ({ budget }) => {
+    const company = store.setBudget(budget);
     if (isOutOfBudget(company)) {
       haltForBudget(company);
     }
-    return store.requireCompany(companyId);
+    return store.requireCompany();
   });
 
-  handle("resetSpend", ({ companyId }) => store.resetSpend(companyId));
-  handle("getDigest", ({ companyId }) => store.digest(companyId));
+  handle("resetSpend", store.resetSpend);
+  handle("getDigest", store.digest);
 
   handle("resetGame", resetGame);
 
@@ -193,11 +194,11 @@ const registerIpcHandlers = (): void => {
   }));
 
   handle("stripeStatus", () => {
-    const company = store.getDefaultCompany();
+    const company = store.getCompany();
     return company ? getStripeStatus(company.id) : { state: "disconnected" };
   });
-  handle("stripeConnect", ({ companyId }) => beginConnect(companyId));
-  handle("stripeDisconnect", ({ companyId }) => disconnectStripe(companyId));
+  handle("stripeConnect", () => beginConnect(store.requireCompany().id));
+  handle("stripeDisconnect", () => disconnectStripe(store.requireCompany().id));
 
   handle("vercelListProjects", ({ token }) => listVercelProjects(token));
   handle("vercelConnect", (input) => {
@@ -209,10 +210,10 @@ const registerIpcHandlers = (): void => {
     return { ok: true };
   });
 
-  handle("listProducts", ({ companyId }) => store.listProducts(companyId));
+  handle("listProducts", store.listProducts);
   handle("createProduct", (input) => startProduct(input, null));
   handle("killProduct", ({ productId, reason }) => retireProduct(productId, reason, null));
-  handle("listBets", ({ companyId }) => store.listBets(companyId));
+  handle("listBets", store.listBets);
   handle("killBet", ({ betId, reason }) => killBet(betId, reason));
   handle("productStatus", async ({ productId }) => {
     const { vercel } = store.requireProduct(productId);
@@ -222,7 +223,7 @@ const registerIpcHandlers = (): void => {
     return { deploy, entry: productEntry(productId) };
   });
 
-  handle("listEmployees", ({ companyId }) => store.listEmployees(companyId));
+  handle("listEmployees", store.listEmployees);
   handle("restingRunners", () => agentDriver.restingRunners());
 
   handle("employeeOptions", ({ employeeId }) => {
@@ -231,19 +232,13 @@ const registerIpcHandlers = (): void => {
       throw new Error(`no employee ${employeeId}`);
     }
     const mine = (t: Task) => t.assigneeId === employeeId;
-    return chatOptions(
-      emp,
-      store.openTasksFor(employeeId),
-      store.listShippedTasks(emp.companyId).filter(mine),
-    );
+    return chatOptions(emp, store.openTasksFor(employeeId), store.listShippedTasks().filter(mine));
   });
 
-  handle("teamMessages", ({ companyId, limit }) =>
-    store.recentTeamMessages(companyId, limit ?? 30),
-  );
+  handle("teamMessages", ({ limit }) => store.recentTeamMessages(limit ?? 30));
 
-  handle("postTeamChat", ({ companyId, text }) => {
-    scheduler.founderMessage(companyId, text.trim());
+  handle("postTeamChat", ({ text }) => {
+    scheduler.founderMessage(text.trim());
     return { ok: true };
   });
 
@@ -252,14 +247,14 @@ const registerIpcHandlers = (): void => {
     return { ok: true };
   });
 
-  handle("setMaxAgents", ({ companyId, maxAgents }) => store.setMaxAgents(companyId, maxAgents));
+  handle("setMaxAgents", ({ maxAgents }) => store.setMaxAgents(maxAgents));
 
   // filtered in main: the shipping log is thousands of briefs, read only when asked for
-  handle("listTasks", ({ companyId, assigneeId, status }) => {
+  handle("listTasks", ({ assigneeId, status }) => {
     const wantsShipped = status === undefined || status.includes("done");
     const pool = wantsShipped
-      ? [...store.listOpenTasks(companyId), ...store.listShippedTasks(companyId)]
-      : store.listOpenTasks(companyId);
+      ? [...store.listOpenTasks(), ...store.listShippedTasks()]
+      : store.listOpenTasks();
     return pool
       .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
       .filter((t) => status === undefined || status.includes(t.state.kind))
@@ -271,8 +266,8 @@ const registerIpcHandlers = (): void => {
   handle("answerQuestion", ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer));
   handle("resolveApproval", ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved));
 
-  handle("openCompanyPath", async ({ companyId, rel }) => {
-    await openWorkspacePath(companyId, rel);
+  handle("openCompanyPath", async ({ rel }) => {
+    await openWorkspacePath(rel);
     return { ok: true };
   });
   handle("openProduct", async ({ productId }) => ({
@@ -305,9 +300,9 @@ const markSeen = (throttled: boolean): void => {
   if (throttled && now - markedAt < MARK_THROTTLE_MS) {
     return;
   }
-  const company = store.getDefaultCompany();
+  const company = store.getCompany();
   if (company) {
-    store.markSeen(company.id, now);
+    store.markSeen(now);
     markedAt = now;
   }
 };
@@ -434,11 +429,9 @@ void (async () => {
   appTray.init({
     openWindow: ensureWindow,
     setAutopilot: (on) => {
-      const company = store.getDefaultCompany();
-      if (!company) {
-        return;
+      if (store.getCompany()) {
+        setAutopilot(on);
       }
-      setAutopilot(company.id, on);
     },
   });
 

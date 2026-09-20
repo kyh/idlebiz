@@ -40,10 +40,17 @@ describe("bet codec", () => {
     expect(docToBet(parseDoc(serializeDoc(betToDoc(revenue))), "co")).toEqual(revenue);
   });
 
-  it("refuses a users bet that names no landing path", () => {
+  it("reads a users bet from before bets owned a path as claiming the whole product", () => {
     const doc = betToDoc(bet({ kind: "open" }));
     delete doc.metadata.landingPath;
-    expect(() => docToBet(doc, "co")).toThrow("expected a claim");
+    doc.metadata.baseline = 3;
+    expect(docToBet(doc, "co").claim).toEqual({ landingPath: "/", metric: "users" });
+  });
+
+  it("refuses a bet on a number it does not know", () => {
+    const doc = betToDoc(bet({ kind: "open" }));
+    doc.metadata.metric = "vibes";
+    expect(() => docToBet(doc, "co")).toThrow("expected metric");
   });
 
   it("reopens a bet whose state cannot be read", () => {

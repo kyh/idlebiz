@@ -10,8 +10,8 @@ import type { Company, Product, Task } from "@/shared/domain";
 // the same whoever made it.
 
 /** A system line in the team room. `to` names the teammate it is for, if any. */
-export const say = (companyId: string, line: string, to: string | null): void => {
-  store.postTeamMessage(companyId, null, line);
+export const say = (line: string, to: string | null): void => {
+  store.postTeamMessage(null, line);
   publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to } });
 };
 
@@ -21,7 +21,7 @@ export const announceBet = (bet: Bet): void => {
     message: bet.title,
     payload: { betId: bet.id, state: bet.state },
   });
-  store.postTeamMessage(bet.companyId, null, betNews(bet));
+  store.postTeamMessage(null, betNews(bet));
 };
 
 /** Give up on a live bet, from the lead's tool or the founder's panel. */
@@ -37,7 +37,7 @@ export const retireProduct = (productId: string, reason: string, by: string | nu
   for (const bet of store.killProduct(productId, reason)) {
     announceBet(bet);
   }
-  store.postTeamMessage(product.companyId, by, `🪦 Retired ${product.name} — ${reason}`);
+  store.postTeamMessage(by, `🪦 Retired ${product.name} — ${reason}`);
   publishActivity({
     employeeId: by,
     kind: "product.killed",
@@ -49,7 +49,7 @@ export const retireProduct = (productId: string, reason: string, by: string | nu
 
 /** Start a product, from the lead's tool or the founder's panel. */
 export const startProduct = (
-  input: { companyId: string; name: string; description: string },
+  input: { name: string; description: string },
   by: string | null,
 ): Product => {
   const product = store.createProduct(input);
@@ -63,8 +63,8 @@ export const startProduct = (
 };
 
 /** Turn autopilot on or off, from the HUD or the tray. */
-export const setAutopilot = (companyId: string, on: boolean): Company => {
-  const company = store.setAutopilot(companyId, on);
+export const setAutopilot = (on: boolean): Company => {
+  const company = store.setAutopilot(on);
   publishActivity({ kind: "autopilot.changed", payload: { on } });
   return company;
 };
@@ -75,15 +75,11 @@ export const ship = (
   summary: string,
 ): void => {
   const message = (summary || "shipped work").slice(0, 200);
-  store.recordShip(task.companyId, task.productId, message);
+  store.recordShip(task.productId, message);
   publishActivity({ ...at, kind: "ship", message });
-  const ships = store.getCompany(task.companyId)?.ships ?? 0;
+  const ships = store.getCompany()?.ships ?? 0;
   if (ships > 0 && ships % 10 === 0) {
-    store.postTeamMessage(
-      task.companyId,
-      null,
-      `🎉 Milestone: ${ships} things shipped — keep going!`,
-    );
+    store.postTeamMessage(null, `🎉 Milestone: ${ships} things shipped — keep going!`);
   }
 };
 
@@ -92,7 +88,7 @@ export const haltForBudget = (company: Company, spentUsd = company.spentUsd): vo
   if (!company.autopilot) {
     return;
   }
-  store.setAutopilot(company.id, false);
+  store.setAutopilot(false);
   publishActivity({
     kind: "budget.exhausted",
     payload: { budget: company.budget, spentUsd },

@@ -17,15 +17,7 @@ import { errorMessage } from "@/shared/errors";
 import { formatDate, formatUsd } from "@/shared/format";
 import { cn } from "cn";
 
-const ShipRowView = ({
-  t,
-  by,
-  companyId,
-}: {
-  t: TaskIn<"done">;
-  by: string;
-  companyId: string;
-}) => {
+const ShipRowView = ({ t, by }: { t: TaskIn<"done">; by: string }) => {
   const [open, setOpen] = useState(false);
   const summary = t.state.summary ?? "";
   const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
@@ -46,7 +38,7 @@ const ShipRowView = ({
       </button>
       {open ? (
         <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#4c5064]">
-          <RichText text={summary.slice(0, 1500)} companyId={companyId} />
+          <RichText text={summary.slice(0, 1500)} />
         </p>
       ) : null}
     </div>
@@ -57,11 +49,9 @@ const ShipRow = memo(ShipRowView);
 const ShippingLog = ({
   shown,
   employees,
-  companyId,
 }: {
   shown: TaskIn<"done">[] | null;
   employees: Employee[];
-  companyId: string;
 }) => {
   if (shown === null) {
     return <div className="text-sm text-fg-dim">Loading…</div>;
@@ -75,14 +65,7 @@ const ShippingLog = ({
   }
   return shown
     .toReversed()
-    .map((t) => (
-      <ShipRow
-        key={t.id}
-        t={t}
-        by={employeeName(employees, t.assigneeId, "team")}
-        companyId={companyId}
-      />
-    ));
+    .map((t) => <ShipRow key={t.id} t={t} by={employeeName(employees, t.assigneeId, "team")} />);
 };
 
 const ProductCard = ({
@@ -254,14 +237,13 @@ export const Ships = ({
     if (!company) {
       return [];
     }
-    const done = await bridge().listTasks({ companyId: company.id, status: ["done"] });
+    const done = await bridge().listTasks({ status: ["done"] });
     return done.filter(taskIn("done")).filter((t) => t.state.summary);
   }, [company]);
 
   if (!company) {
     return null;
   }
-  const companyId = company.id;
   // work shipped before products existed names none; it was the first product's
   const firstId = products[0]?.id;
   const ofSelected = (t: TaskIn<"done">): boolean =>
@@ -273,7 +255,7 @@ export const Ships = ({
 
   const openWorkspace = async () => {
     try {
-      await bridge().openCompanyPath({ companyId, rel: "" });
+      await bridge().openCompanyPath({ rel: "" });
     } catch (error) {
       showNote(errorMessage(error));
     }
@@ -326,7 +308,7 @@ export const Ships = ({
           Shipping log{selectedName}
         </div>
         <div className="space-y-2">
-          <ShippingLog shown={shown} employees={employees} companyId={companyId} />
+          <ShippingLog shown={shown} employees={employees} />
         </div>
       </div>
     </Modal>

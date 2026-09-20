@@ -50,8 +50,13 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   Routines and founder pings are the only unfunded work, and a routine is only work that
   recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
   bet's job.
-- **The store refuses by throwing**, with the sentence the agent should read; a tool turns it
-  into its answer, IPC into the founder's note.
+- **The store holds the one company this launch runs**, so nothing in its API takes a
+  company id: `getCompany()` is null before one is founded, and everything else throws "no
+  company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
+  Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only
+  that a claim or lock race was lost. It refuses with the sentence the agent should read; a
+  tool turns that into its answer, IPC into the founder's note. Don't split it by entity or
+  make it async: its synchronous check-and-set is what makes the task lock correct.
 - **A company tool is described once**, in `shared/tool-specs.ts`: route, body, lead-only
   refusal, doc and example. The agents' instructions are rendered from it, `main/tools.ts`
   binds each implementation to its spec, and `control-plane.ts` is only transport. A change

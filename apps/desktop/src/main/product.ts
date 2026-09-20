@@ -78,10 +78,10 @@ const openTarget = async (target: string): Promise<void> => {
  * so the path is tried against the company's and every product's, and the
  * first that has it wins.
  */
-export const openWorkspacePath = async (companyId: string, rel: string): Promise<void> => {
+export const openWorkspacePath = async (rel: string): Promise<void> => {
   const roots = [
-    store.requireCompany(companyId).workspaceDir,
-    ...store.listProducts(companyId).map((p) => p.workspaceDir),
+    store.requireCompany().workspaceDir,
+    ...store.listProducts().map((p) => p.workspaceDir),
   ];
   const targets = roots.map((root) => inside(root, rel)).filter((t): t is string => t !== null);
   const target = targets.find((t) => statSync(t, { throwIfNoEntry: false })) ?? targets[0];

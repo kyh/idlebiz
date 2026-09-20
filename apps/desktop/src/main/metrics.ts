@@ -1,38 +1,16 @@
 import { z } from "zod";
-import path from "node:path";
-import { atomicWrite, readJsonFile } from "@/main/lib/fs";
 import { HttpError, getJson } from "@/main/lib/http";
-import { companyDir } from "@/main/paths";
 import { getSecret } from "@/main/secrets";
+import type { MetricsConfig } from "@/main/store/metrics-config";
 import type { Bet } from "@/shared/bets";
 import type { Product } from "@/shared/domain";
 import { jsonValueSchema } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
-// Providers live in each company's metrics.json; credentials live in secrets.json.
+// Which providers a company reads is in its metrics.json (main/store/metrics-config.ts); credentials live in secrets.json.
 
 export const PULSE_MS = 30_000;
-
-// oxlint-disable-next-line sort-keys -- order is written to metrics.json
-const MetricsConfigSchema = z.object({
-  stripe: z.boolean().optional(),
-  stripeAccount: z
-    .object({ accountId: z.string(), connectedAt: z.number(), livemode: z.boolean() })
-    .optional(),
-  // a Vercel binding belongs to a product; saves from before products kept it
-  // here, and boot moves it to the first product
-  vercel: z
-    .object({
-      projectId: z.string(),
-      projectName: z.string().optional(),
-      teamId: z.string().optional(),
-    })
-    .optional(),
-  plausible: z.object({ domain: z.string() }).optional(),
-  custom: z.object({ url: z.string() }).optional(),
-});
-export type MetricsConfig = z.infer<typeof MetricsConfigSchema>;
 
 /** Null metrics preserve the last reported value when a source is absent or unavailable. */
 export interface RealSnapshot {
@@ -46,18 +24,6 @@ export interface RealSnapshot {
   /** A provider's credentials were rejected (e.g. Stripe token revoked). */
   authError?: boolean;
 }
-
-const metricsPath = (companyId: string): string => path.join(companyDir(companyId), "metrics.json");
-
-export const readMetricsConfig = (companyId: string): MetricsConfig | null =>
-  readJsonFile(metricsPath(companyId), MetricsConfigSchema);
-
-/** Merge a patch into metrics.json; an `undefined` field drops that provider. The file is a MetricsConfig both ways. */
-export const writeMetricsConfig = (companyId: string, patch: Partial<MetricsConfig>): void => {
-  const existing = readJsonFile(metricsPath(companyId), MetricsConfigSchema) ?? {};
-  const next = MetricsConfigSchema.parse({ ...existing, ...patch });
-  atomicWrite(metricsPath(companyId), JSON.stringify(next, null, 2));
-};
 
 const num = (v: JsonValue | undefined): number | null => {
   const parsed = z.number().safeParse(v);

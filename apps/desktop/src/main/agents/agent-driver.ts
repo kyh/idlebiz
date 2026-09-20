@@ -92,7 +92,7 @@ const decidePermission = async (
   if (held === null) {
     return { allow: true };
   }
-  if (store.consumeApproval(task.companyId, task.id, held.key)) {
+  if (store.consumeApproval(task.id, held.key)) {
     if (held.leasable) {
       leases.add(held.key);
     }

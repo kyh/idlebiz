@@ -35,7 +35,6 @@ export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void
 };
 
 export const disconnectVercel = (productId: string): void => {
-  store.requireProduct(productId);
   // Older saves may still use the founder's shared token.
   store.setProductVercel(productId, null);
 };

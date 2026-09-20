@@ -15,20 +15,20 @@ const relFromToken = (token: string): string => {
   return i === -1 ? token : token.slice(i + "/workspace/".length);
 };
 
-const openAsset = async (companyId: string, token: string): Promise<void> => {
+const openAsset = async (token: string): Promise<void> => {
   if (/^https?:\/\//u.test(token)) {
     window.open(token, "_blank");
     return;
   }
   try {
-    await bridge().openCompanyPath({ companyId, rel: relFromToken(token) });
+    await bridge().openCompanyPath({ rel: relFromToken(token) });
   } catch {
     // a path main refuses is dropped on purpose; the text stays as it was
   }
 };
 
 /** One line/paragraph of agent text with URLs + file paths made clickable. */
-export const RichText = ({ text, companyId }: { text: string; companyId: string }) => {
+export const RichText = ({ text }: { text: string }) => {
   const parts: ReactNode[] = [];
   let last = 0;
   // matchAll, not exec: exec advances TOKEN.lastIndex, and mutating
@@ -44,7 +44,7 @@ export const RichText = ({ text, companyId }: { text: string; companyId: string 
         key={`${m.index}-${token}`}
         onClick={(e) => {
           e.stopPropagation();
-          void openAsset(companyId, token);
+          void openAsset(token);
         }}
         className="cursor-pointer underline decoration-dotted underline-offset-2"
         style={{ color: "var(--accent-lo)", font: "inherit", letterSpacing: "inherit" }}

@@ -136,17 +136,7 @@ const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
   );
 };
 
-const AskRow = ({
-  t,
-  by,
-  question,
-  companyId,
-}: {
-  t: Task;
-  by: string;
-  question: string;
-  companyId: string;
-}) => {
+const AskRow = ({ t, by, question }: { t: Task; by: string; question: string }) => {
   const [sent, setSent] = useState(false);
   return (
     <div className="px-inset p-3" style={{ opacity: sent ? 0.5 : 1 }}>
@@ -154,7 +144,7 @@ const AskRow = ({
         ❗ {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
       <div className="mt-1 text-sm leading-snug text-fg">
-        <RichText text={question} companyId={companyId} />
+        <RichText text={question} />
       </div>
       <AnswerForm task={t} onSent={() => setSent(true)} />
     </div>
@@ -229,15 +219,7 @@ export const Inbox = ({
               );
             }
             case "question": {
-              return (
-                <AskRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  question={ask.question}
-                  companyId={company.id}
-                />
-              );
+              return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} question={ask.question} />;
             }
             default: {
               return null;

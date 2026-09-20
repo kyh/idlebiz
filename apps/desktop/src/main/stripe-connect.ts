@@ -13,7 +13,7 @@ import { newKeyring, open } from "@repo/stripe-connect-protocol/seal";
 import type { Keyring } from "@repo/stripe-connect-protocol/seal";
 import { listenLoopback } from "@/main/lib/http";
 import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
-import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
+import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import { requireCompany } from "@/main/store/store";
 import { errorMessage } from "@/shared/errors";
 import type { StripeStatus } from "@/shared/ipc-registry";
@@ -107,7 +107,7 @@ const html = (body: string): string =>
   `<!doctype html><meta charset="utf-8"><title>IdleBiz</title><body style="background:#12141c;color:#f5f3ea;font-family:ui-monospace,monospace;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h1 style="font-size:18px">${body}</h1><p style="color:#66739f;font-size:13px">You can close this tab and return to IdleBiz.</p></div></body>`;
 
 const connect = (companyId: string, account: ConnectedAccount): void => {
-  requireCompany(companyId);
+  requireCompany();
   const { accessToken, stripeUserId: accountId, livemode } = account;
   setSecret(STRIPE_TOKEN_KEY, accessToken);
   writeMetricsConfig(companyId, {
@@ -171,7 +171,7 @@ const finishCallback = async (
 };
 
 export const beginConnect = async (companyId: string): Promise<{ started: boolean }> => {
-  requireCompany(companyId);
+  requireCompany();
   const current = cancelPending();
   lastError = null;
   // Deauthorization revokes the account, including a token a new flow might obtain.
@@ -255,7 +255,7 @@ const revoke = async (body: DeauthorizeBody): Promise<void> => {
 
 /** Deauthorize on Stripe's side (best effort) and clean up local state. */
 export const disconnectStripe = async (companyId: string): Promise<{ ok: boolean }> => {
-  requireCompany(companyId);
+  requireCompany();
   cancelPending();
   const token = getSecret(STRIPE_TOKEN_KEY);
   const account = readMetricsConfig(companyId)?.stripeAccount;

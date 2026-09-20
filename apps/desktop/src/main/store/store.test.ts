@@ -106,26 +106,26 @@ const saveSnapshot = (companyId: string): Map<string, string> => {
 describe("the shipping log", () => {
   it("moves a task that settles done out of the open queue into shipped/", () => {
     const co = found();
-    const emp = store.createEmployee({ companyId: co.id, ...hire("Priya") });
-    const task = store.createTask({ companyId: co.id, title: "Ship it" });
+    const emp = store.createEmployee({ ...hire("Priya") });
+    const task = store.createTask({ title: "Ship it" });
     finish(task.id, emp.id, "shipped");
 
     expect(existsSync(path.join(tasksDir(co.id), task.id))).toBe(false);
     expect(existsSync(path.join(shippedDir(co.id), task.id, "TASK.md"))).toBe(true);
-    expect(store.listOpenTasks(co.id)).toEqual([]);
+    expect(store.listOpenTasks()).toEqual([]);
     expect(store.getTask(task.id)).toBeNull();
-    expect(store.listShippedTasks(co.id).map((t) => t.id)).toEqual([task.id]);
+    expect(store.listShippedTasks().map((t) => t.id)).toEqual([task.id]);
   });
 
   it("reads the shipping log from disk only when asked, and boot shelves done work left in the queue", () => {
     const co = found();
-    const emp = store.createEmployee({ companyId: co.id, ...hire("Sana") });
-    const shipped = store.createTask({ companyId: co.id, title: "Done before" });
+    const emp = store.createEmployee({ ...hire("Sana") });
+    const shipped = store.createTask({ title: "Done before" });
     finish(shipped.id, emp.id, "one");
-    const open = store.createTask({ companyId: co.id, title: "Still open" });
+    const open = store.createTask({ title: "Still open" });
 
     // a save from before shipped/ existed: a done package still under tasks/
-    const legacy = store.createTask({ companyId: co.id, title: "Legacy done" });
+    const legacy = store.createTask({ title: "Legacy done" });
     store.claimTask(legacy.id, emp.id);
     store.lockTaskForRun(legacy.id, "run-2");
     store.settleTask(legacy.id, "run-2", { kind: "done", summary: "two" });
@@ -135,21 +135,21 @@ describe("the shipping log", () => {
     store.initStore();
     expect(existsSync(path.join(tasksDir(co.id), legacy.id))).toBe(false);
     expect(existsSync(legacyPkg)).toBe(true);
-    expect(store.listOpenTasks(co.id).map((t) => t.id)).toEqual([open.id]);
+    expect(store.listOpenTasks().map((t) => t.id)).toEqual([open.id]);
     expect(
       store
-        .listShippedTasks(co.id)
+        .listShippedTasks()
         .map((t) => t.id)
         .toSorted(),
     ).toEqual([legacy.id, shipped.id].toSorted());
   });
 
   it("never hands a new task a slug the shipping log already holds", () => {
-    const co = found();
-    const emp = store.createEmployee({ companyId: co.id, ...hire("Wren") });
-    const first = store.createTask({ companyId: co.id, title: "Same title" });
+    found();
+    const emp = store.createEmployee({ ...hire("Wren") });
+    const first = store.createTask({ title: "Same title" });
     finish(first.id, emp.id, "done");
-    const second = store.createTask({ companyId: co.id, title: "Same title" });
+    const second = store.createTask({ title: "Same title" });
     expect(second.id).not.toBe(first.id);
   });
 });
@@ -157,7 +157,7 @@ describe("the shipping log", () => {
 describe("products", () => {
   it("founds a company with its first product, born in the company workspace", () => {
     const co = found();
-    const [first, ...rest] = store.listProducts(co.id);
+    const [first, ...rest] = store.listProducts();
     expect(rest).toEqual([]);
     expect(first?.name).toBe(co.name);
     expect(first?.workspaceDir).toBe(co.workspaceDir);
@@ -166,31 +166,30 @@ describe("products", () => {
 
   it("gives a later product its own workspace and tells every agent about it", () => {
     const co = found();
-    const emp = store.createEmployee({ companyId: co.id, ...hire("Quinn") });
+    const emp = store.createEmployee({ ...hire("Quinn") });
     const gadget = store.createProduct({
-      companyId: co.id,
       description: "A second thing.",
       name: "Gadget",
     });
     expect(gadget.workspaceDir).toBe(productWorkspace(co.id, gadget.id));
     expect(existsSync(gadget.workspaceDir)).toBe(true);
     expect(store.employeeInstructions(emp.id)).toContain(gadget.workspaceDir);
-    expect(store.attentionProduct(co.id)?.id).toBe(store.listProducts(co.id)[0]?.id);
+    expect(store.attentionProduct()?.id).toBe(store.listProducts()[0]?.id);
   });
 
   it("attributes a ship to the product the task named, and turns autopilot to the other", () => {
-    const co = found();
-    const emp = store.createEmployee({ companyId: co.id, ...hire("Ravi") });
-    const [first] = store.listProducts(co.id);
-    const gadget = store.createProduct({ companyId: co.id, description: "x", name: "Gadget" });
-    const task = store.createTask({ companyId: co.id, productId: gadget.id, title: "Ship it" });
+    found();
+    const emp = store.createEmployee({ ...hire("Ravi") });
+    const [first] = store.listProducts();
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    const task = store.createTask({ productId: gadget.id, title: "Ship it" });
     finish(task.id, emp.id, "done");
-    store.recordShip(co.id, task.productId, "shipped");
+    store.recordShip(task.productId, "shipped");
     expect(store.getProduct(gadget.id)?.ships).toBe(1);
     expect(store.getProduct(first?.id ?? "")?.ships).toBe(0);
-    expect(store.getCompany(co.id)?.ships).toBe(1);
-    expect(store.attentionProduct(co.id)?.id).toBe(first?.id);
-    expect(store.listShippedTasks(co.id)[0]?.productId).toBe(gadget.id);
+    expect(store.getCompany()?.ships).toBe(1);
+    expect(store.attentionProduct()?.id).toBe(first?.id);
+    expect(store.listShippedTasks()[0]?.productId).toBe(gadget.id);
   });
 
   it("gives a company from before products its one product, with the binding metrics.json held", () => {
@@ -203,7 +202,7 @@ describe("products", () => {
       JSON.stringify({ vercel: { projectId: "prj_old", projectName: "old", teamId: "team_9" } }),
     );
     store.initStore();
-    const [first] = store.listProducts(co.id);
+    const [first] = store.listProducts();
     expect(first?.workspaceDir).toBe(co.workspaceDir);
     expect(first?.vercel).toEqual({ projectId: "prj_old", projectName: "old", teamId: "team_9" });
     expect(readFileSync(path.join(root, co.id, "metrics.json"), "utf-8")).not.toContain("prj_old");
@@ -212,34 +211,34 @@ describe("products", () => {
 
 describe("scheduler queue admission", () => {
   it("leaves capped work queued without spinning on its first task", () => {
-    const company = found({ capUsd: 0, mode: "capped" });
-    const employee = store.createEmployee({ companyId: company.id, ...hire("Priya") });
-    const teammate = store.createEmployee({ companyId: company.id, ...hire("Sana") });
-    const task = store.createTask({ companyId: company.id, title: "First task" });
-    const next = store.createTask({ companyId: company.id, title: "Next task" });
+    found({ capUsd: 0, mode: "capped" });
+    const employee = store.createEmployee({ ...hire("Priya") });
+    const teammate = store.createEmployee({ ...hire("Sana") });
+    const task = store.createTask({ title: "First task" });
+    const next = store.createTask({ title: "Next task" });
     store.claimTask(task.id, employee.id);
     store.claimTask(next.id, teammate.id);
 
     scheduler.tick();
 
-    expect(store.getCompany(company.id)?.autopilot).toBe(false);
+    expect(store.getCompany()?.autopilot).toBe(false);
     expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([task.id, next.id]);
     expect(store.getEmployee(employee.id)?.status).toBe("idle");
     expect(store.getEmployee(teammate.id)?.status).toBe("idle");
   });
 
   it("skips a missing assignee and still checks later work", () => {
-    const company = found({ capUsd: 0, mode: "capped" });
-    const employee = store.createEmployee({ companyId: company.id, ...hire("Priya") });
-    const orphan = store.createTask({ companyId: company.id, priority: "high", title: "Orphan" });
-    const task = store.createTask({ companyId: company.id, title: "Waiting" });
+    found({ capUsd: 0, mode: "capped" });
+    const employee = store.createEmployee({ ...hire("Priya") });
+    const orphan = store.createTask({ priority: "high", title: "Orphan" });
+    const task = store.createTask({ title: "Waiting" });
     store.claimTask(orphan.id, "missing-employee");
     store.claimTask(task.id, employee.id);
 
     scheduler.tick();
 
     expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([orphan.id, task.id]);
-    expect(store.getCompany(company.id)?.autopilot).toBe(false);
+    expect(store.getCompany()?.autopilot).toBe(false);
     expect(store.getEmployee(employee.id)?.status).toBe("idle");
   });
 });
@@ -273,14 +272,14 @@ describe("founding publication", () => {
     expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([]);
 
     expect(store.initStore()).toEqual({ companies: 1, skipped: [] });
-    expect(store.getDefaultCompany()?.leaderId).toBe("mae");
+    expect(store.getCompany()?.leaderId).toBe("mae");
     expect(
       store
-        .listEmployees(company.id)
+        .listEmployees()
         .map((employee) => employee.id)
         .toSorted(),
     ).toEqual(["mae", "priya"]);
-    expect(store.listRoutines(company.id).map((r) => r.id)).toEqual(["playtest-session"]);
+    expect(store.listRoutines().map((r) => r.id)).toEqual(["playtest-session"]);
   });
 
   it.each([false, true])(
@@ -302,13 +301,13 @@ describe("founding publication", () => {
       const before = saveSnapshot(staging);
 
       expect(store.initStore()).toEqual({ companies: 0, skipped: [] });
-      expect(store.getDefaultCompany()).toBeNull();
+      expect(store.getCompany()).toBeNull();
       expect(existsSync(path.join(root, "acme"))).toBe(false);
 
       const company = found({ capUsd: 0, mode: "capped" });
 
       expect(company.id).toBe("acme");
-      expect(store.getDefaultCompany()?.id).toBe(company.id);
+      expect(store.getCompany()?.id).toBe(company.id);
       expect(existsSync(path.join(root, company.id, "COMPANY.md"))).toBe(true);
       expect(saveSnapshot(staging)).toEqual(before);
       expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([
@@ -321,26 +320,25 @@ describe("founding publication", () => {
 describe("active company ownership", () => {
   it("confines duplicate employee, task, and product slugs to the newest company", () => {
     const older = found({ capUsd: 0, mode: "capped" });
-    const employee = store.createEmployee({ companyId: older.id, ...hire("Priya") });
-    const [product] = store.listProducts(older.id);
+    const employee = store.createEmployee({ ...hire("Priya") });
+    const [product] = store.listProducts();
     if (!product) {
       throw new Error("founding must create a product");
     }
-    const queued = store.createTask({ companyId: older.id, title: "Ship it" });
+    const queued = store.createTask({ title: "Ship it" });
     store.claimTask(queued.id, employee.id);
-    const running = store.createTask({ companyId: older.id, title: "In flight" });
+    const running = store.createTask({ title: "In flight" });
     store.claimTask(running.id, employee.id);
     store.lockTaskForRun(running.id, "old-run");
-    store.postTeamMessage(older.id, employee.id, "existing room history");
+    store.postTeamMessage(employee.id, "existing room history");
     copyCompany(older.id, "newer", older.createdAt + 1);
-    const oldOnly = store.createEmployee({ companyId: older.id, ...hire("Old only") });
-    const oldTask = store.createTask({ companyId: older.id, title: "Old only" });
+    const oldOnly = store.createEmployee({ ...hire("Old only") });
+    const oldTask = store.createTask({ title: "Old only" });
     store.claimTask(oldTask.id, oldOnly.id);
     const before = saveSnapshot(older.id);
 
     expect(store.initStore()).toEqual({ companies: 1, skipped: [] });
-    expect(store.getDefaultCompany()?.id).toBe("newer");
-    expect(store.getCompany(older.id)).toBeNull();
+    expect(store.getCompany()?.id).toBe("newer");
     expect(store.getEmployee(employee.id)?.companyId).toBe("newer");
     expect(store.getTask(queued.id)?.companyId).toBe("newer");
     expect(store.getProduct(product.id)?.companyId).toBe("newer");
@@ -357,45 +355,41 @@ describe("active company ownership", () => {
     });
     store.lockTaskForRun(queued.id, "new-run");
     store.settleTask(queued.id, "new-run", { kind: "done", summary: "new company shipped" });
-    store.recordShip("newer", product.id, "new company shipped");
+    store.recordShip(product.id, "new company shipped");
     scheduler.tick();
 
     expect(store.getEmployee(employee.id)?.sessionId).toBe("new-session");
     expect(store.getProduct(product.id)?.ships).toBe(1);
-    expect(store.listShippedTasks("newer").map((task) => task.id)).toEqual([queued.id]);
+    expect(store.listShippedTasks().map((task) => task.id)).toEqual([queued.id]);
     expect(saveSnapshot(older.id)).toEqual(before);
   });
 
-  it("keeps inactive company reads and explicit-company writes outside the cache", () => {
+  it("cannot reach an inactive save: whatever the API does lands on the newest company", () => {
     const older = found();
-    store.grantApproval(older.id, "some-task", "old command");
     copyCompany(older.id, "newer", older.createdAt + 1);
     const before = saveSnapshot(older.id);
     store.initStore();
 
-    expect(store.listEmployees(older.id)).toEqual([]);
-    expect(store.listProducts(older.id)).toEqual([]);
-    expect(store.listRoutines(older.id)).toEqual([]);
-    expect(store.listOpenTasks(older.id)).toEqual([]);
-    expect(store.listShippedTasks(older.id)).toEqual([]);
-    expect(store.recentTeamMessages(older.id)).toEqual([]);
-    expect(store.recentShips(older.id)).toEqual([]);
-    expect(() => store.setAutopilot(older.id, false)).toThrow("not active");
-    expect(() => store.createEmployee({ companyId: older.id, ...hire("Someone") })).toThrow(
-      "not active",
-    );
-    expect(() =>
-      store.createProduct({ companyId: older.id, description: "No", name: "No" }),
-    ).toThrow("not active");
-    expect(() => store.createTask({ companyId: older.id, title: "No" })).toThrow("not active");
-    expect(() => store.postTeamMessage(older.id, null, "No")).toThrow("not active");
-    expect(() => store.grantApproval(older.id, "some-task", "new command")).toThrow("not active");
-    expect(() => store.consumeApproval(older.id, "some-task", "old command")).toThrow("not active");
-    expect(store.recordSpend(older.id, 10)).toBeNull();
-    expect(store.setRealMetrics(older.id, { revenue: 10, users: 10 })).toBeNull();
-    store.recordShip(older.id, "acme", "shipped");
-    store.markRoutineRun(older.id, "playtest-session");
+    store.setAutopilot(false);
+    store.createEmployee(hire("Someone"));
+    store.createProduct({ description: "Another", name: "Another" });
+    store.createTask({ title: "Work" });
+    store.postTeamMessage(null, "hello");
+    store.grantApproval("some-task", "a command");
+    store.recordSpend(10);
+    store.setRealMetrics({ revenue: 10, users: 10 });
+    store.recordShip(null, "shipped");
+
+    expect(store.getCompany()).toMatchObject({ id: "newer", spentUsd: 10 });
     expect(saveSnapshot(older.id)).toEqual(before);
+  });
+
+  it("refuses to act with no company loaded", () => {
+    expect(store.getCompany()).toBeNull();
+    expect(store.getEmployee("nobody")).toBeNull();
+    expect(store.listQueuedTasks()).toEqual([]);
+    expect(() => store.listEmployees()).toThrow("no company is loaded");
+    expect(() => store.createTask({ title: "No" })).toThrow("no company is loaded");
   });
 
   it("does not migrate an inactive legacy save", () => {
@@ -410,7 +404,7 @@ describe("active company ownership", () => {
 
     store.initStore();
 
-    expect(store.getDefaultCompany()?.id).toBe("newer");
+    expect(store.getCompany()?.id).toBe("newer");
     expect(saveSnapshot(older.id)).toEqual(before);
   });
 
@@ -420,9 +414,9 @@ describe("active company ownership", () => {
     copyCompany(first.id, "a-first", first.createdAt + 1);
 
     store.initStore();
-    expect(store.getDefaultCompany()?.id).toBe("a-first");
+    expect(store.getCompany()?.id).toBe("a-first");
     store.initStore();
-    expect(store.getDefaultCompany()?.id).toBe("a-first");
+    expect(store.getCompany()?.id).toBe("a-first");
   });
 
   it("rejects a second founding without touching the active save", () => {
@@ -431,7 +425,7 @@ describe("active company ownership", () => {
 
     expect(() => found()).toThrow("already active");
 
-    expect(store.getDefaultCompany()?.id).toBe(company.id);
+    expect(store.getCompany()?.id).toBe(company.id);
     expect(existsSync(path.join(root, "acme-2"))).toBe(false);
     expect(saveSnapshot(company.id)).toEqual(before);
   });
@@ -440,8 +434,8 @@ describe("active company ownership", () => {
     "starts no company when another save has %s",
     (failure) => {
       const older = found({ capUsd: 0, mode: "capped" });
-      const employee = store.createEmployee({ companyId: older.id, ...hire("Priya") });
-      const task = store.createTask({ companyId: older.id, title: "Waiting" });
+      const employee = store.createEmployee({ ...hire("Priya") });
+      const task = store.createTask({ title: "Waiting" });
       store.claimTask(task.id, employee.id);
       copyCompany(older.id, "broken", older.createdAt + 1);
       const file = path.join(root, "broken", "COMPANY.md");
@@ -458,7 +452,7 @@ describe("active company ownership", () => {
 
       expect(report.companies).toBe(0);
       expect(report.skipped).toEqual([expect.objectContaining({ kind: "company", path: file })]);
-      expect(store.getDefaultCompany()).toBeNull();
+      expect(store.getCompany()).toBeNull();
       expect(store.listQueuedTasks()).toEqual([]);
       scheduler.tick();
       expect(() => found()).toThrow("loaded or repaired");
@@ -469,8 +463,8 @@ describe("active company ownership", () => {
 
 describe("the digest", () => {
   it("folds what happens after a look, and reading it is the next look", () => {
-    const company = found();
-    expect(store.digest(company.id)).toBeNull();
+    found();
+    expect(store.digest()).toBeNull();
     store.logActivity({ createdAt: 1, kind: "ship", message: "v0 shipped" }, true);
     store.logActivity(
       {
@@ -490,7 +484,7 @@ describe("the digest", () => {
     );
     store.logActivity({ createdAt: 5, kind: "message", message: "not counted" }, true);
 
-    expect(store.digest(company.id)).toMatchObject({
+    expect(store.digest()).toMatchObject({
       dead: 1,
       hired: ["Mira"],
       released: [],
@@ -499,25 +493,25 @@ describe("the digest", () => {
       ships: ["v0 shipped"],
       spentUsd: 0.25,
     });
-    expect(store.digest(company.id)).toMatchObject({ runs: 0, shipped: 0, ships: [] });
+    expect(store.digest()).toMatchObject({ runs: 0, shipped: 0, ships: [] });
   });
 
   it("survives a restart mid-absence", () => {
-    const company = found();
-    store.markSeen(company.id, 1234);
+    found();
+    store.markSeen(1234);
     store.logActivity({ createdAt: 2000, kind: "ship", message: "while closed" }, true);
     store.initStore();
-    expect(store.digest(company.id)).toMatchObject({ ships: ["while closed"], since: 1234 });
+    expect(store.digest()).toMatchObject({ ships: ["while closed"], since: 1234 });
   });
 });
 
 describe("what a run leaves behind", () => {
   it("is kept beside the agent, never in its instructions, and survives a restart", () => {
     const company = found();
-    const emp = store.createEmployee({ ...hire("Priya"), companyId: company.id });
+    const emp = store.createEmployee(hire("Priya"));
     const instructions = path.join(root, company.id, "agents", emp.id, "AGENTS.md");
     const before = readFileSync(instructions, "utf-8");
-    store.setRealMetrics(company.id, { revenue: 12.5, users: null });
+    store.setRealMetrics({ revenue: 12.5, users: null });
 
     store.noteRunEnd(emp.id, "session-1");
 
@@ -531,7 +525,7 @@ describe("what a run leaves behind", () => {
 
   it("still resumes a session a save from before run-state.json kept in AGENTS.md", () => {
     const company = found();
-    const emp = store.createEmployee({ ...hire("Priya"), companyId: company.id });
+    const emp = store.createEmployee(hire("Priya"));
     const instructions = path.join(root, company.id, "agents", emp.id, "AGENTS.md");
     const doc = parseDoc(readFileSync(instructions, "utf-8"));
     writeFileSync(
@@ -547,25 +541,22 @@ describe("recently shipped", () => {
   it("keeps the latest summaries for the next brief, across a restart", () => {
     const company = found();
     for (let i = 0; i < 8; i += 1) {
-      store.recordShip(company.id, null, `ship ${i}`);
+      store.recordShip(null, `ship ${i}`);
     }
-    store.markSeen(company.id, 1);
+    store.markSeen(1);
     expect(readdirSync(path.join(root, company.id, "state")).toSorted()).toEqual([
       "recent-ships.json",
       "since-last-look.json",
     ]);
     store.initStore();
-    expect(store.recentShips(company.id)).toEqual(
-      Array.from({ length: 6 }, (_, i) => `ship ${i + 2}`),
-    );
+    expect(store.recentShips()).toEqual(Array.from({ length: 6 }, (_, i) => `ship ${i + 2}`));
   });
 });
 
 describe("bets", () => {
-  const launch = (companyId: string, productId: string) =>
+  const launch = (productId: string) =>
     store.openBet({
       budgetUsd: 2,
-      companyId,
       hypothesis: "a launch post brings visitors",
       landingPath: null,
       metric: "users",
@@ -575,8 +566,8 @@ describe("bets", () => {
       windowHours: 24,
     });
 
-  const firstProductOf = (companyId: string) => {
-    const [product] = store.listProducts(companyId);
+  const firstProduct = () => {
+    const [product] = store.listProducts();
     if (!product) {
       throw new Error("no first product");
     }
@@ -584,19 +575,18 @@ describe("bets", () => {
   };
 
   it("gives a users bet a path of its own and refuses one another bet already covers", () => {
-    const co = found();
-    const product = firstProductOf(co.id);
-    const bet = launch(co.id, product.id);
+    found();
+    const product = firstProduct();
+    const bet = launch(product.id);
     expect(bet).toMatchObject({
       claim: { landingPath: `/b/${bet.id}`, metric: "users" },
       reading: null,
       state: { kind: "open" },
     });
-    expect(launch(co.id, product.id).id).not.toBe(bet.id);
+    expect(launch(product.id).id).not.toBe(bet.id);
     expect(() =>
       store.openBet({
         budgetUsd: 2,
-        companyId: co.id,
         hypothesis: "the whole site grows",
         landingPath: "/",
         metric: "users",
@@ -610,14 +600,14 @@ describe("bets", () => {
 
   it("is judged by what it brought in, and the verdict survives a restart", () => {
     const co = found();
-    const bet = launch(co.id, firstProductOf(co.id).id);
+    const bet = launch(firstProduct().id);
     store.recordBetSpend(bet.id, 2);
-    expect(store.judgeBets(co.id, 0)).toEqual([]);
+    expect(store.judgeBets(0)).toEqual([]);
     expect(store.measureBet(bet.id, 0).state.kind).toBe("measuring");
     store.setBetReading(bet.id, 60);
     store.setBetReading(bet.id, null);
-    expect(store.judgeBets(co.id, 1).map((b) => b.state.kind)).toEqual(["won"]);
-    expect(store.judgeBets(co.id, 2)).toEqual([]);
+    expect(store.judgeBets(1).map((b) => b.state.kind)).toEqual(["won"]);
+    expect(store.judgeBets(2)).toEqual([]);
     expect(existsSync(betFile(co.id, bet.id))).toBe(true);
     store.initStore();
     expect(store.getBet(bet.id)).toMatchObject({
@@ -629,24 +619,23 @@ describe("bets", () => {
 
   it("retires a product with its bets and open work, but never the last one", () => {
     const co = found();
-    const first = firstProductOf(co.id);
+    const first = firstProduct();
     expect(() => store.killProduct(first.id, "dud")).toThrow("only product");
-    const side = store.createProduct({ companyId: co.id, description: "a side bet", name: "Side" });
-    const bet = launch(co.id, side.id);
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const bet = launch(side.id);
     const task = store.createTask({
       betId: bet.id,
-      companyId: co.id,
       productId: side.id,
       title: "Post",
     });
     expect(store.killProduct(side.id, "no traction").map((b) => b.id)).toEqual([bet.id]);
-    expect(store.listProducts(co.id).map((p) => p.id)).toEqual([first.id]);
+    expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
     expect(store.getBet(bet.id)?.state).toMatchObject({ kind: "killed" });
     expect(store.getTask(task.id)?.state.kind).toBe("dead");
     expect(existsSync(path.join(retiredDir(co.id), side.id, "PRODUCT.md"))).toBe(true);
     expect(existsSync(path.join(productsDir(co.id), side.id))).toBe(false);
     store.initStore();
-    expect(store.listProducts(co.id).map((p) => p.id)).toEqual([first.id]);
+    expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
   });
 });
 
@@ -670,31 +659,32 @@ describe("retired routines", () => {
 
     store.initStore();
 
-    expect(store.listRoutines(co.id).map((r) => r.id)).toEqual(["weekly-backup"]);
+    expect(store.listRoutines().map((r) => r.id)).toEqual(["weekly-backup"]);
     expect(existsSync(path.join(root, co.id, "routines", "business-review"))).toBe(false);
   });
 });
 
 describe("founder approvals", () => {
   it("belong to the task they were given for, once", () => {
-    const co = found();
-    store.grantApproval(co.id, "continue-deploy", "vercel deploy --prod");
-    expect(store.consumeApproval(co.id, "someone-elses-task", "vercel deploy --prod")).toBe(false);
-    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy")).toBe(false);
-    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy --prod")).toBe(true);
-    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy --prod")).toBe(false);
+    found();
+    store.grantApproval("continue-deploy", "vercel deploy --prod");
+    expect(store.consumeApproval("someone-elses-task", "vercel deploy --prod")).toBe(false);
+    expect(store.consumeApproval("continue-deploy", "vercel deploy")).toBe(false);
+    expect(store.consumeApproval("continue-deploy", "vercel deploy --prod")).toBe(true);
+    expect(store.consumeApproval("continue-deploy", "vercel deploy --prod")).toBe(false);
   });
 
   it("leave with a task that ended without using them", () => {
-    const co = found();
-    store.grantApproval(co.id, "continue-deploy", "vercel deploy --prod");
-    store.revokeApprovals(co.id, "continue-deploy");
-    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy --prod")).toBe(false);
+    found();
+    store.grantApproval("continue-deploy", "vercel deploy --prod");
+    store.revokeApprovals("continue-deploy");
+    expect(store.consumeApproval("continue-deploy", "vercel deploy --prod")).toBe(false);
   });
 
   it("ignore the company-wide grants older saves kept", () => {
     const co = found();
     writeFileSync(path.join(root, co.id, "approvals.json"), JSON.stringify(["git push"]));
-    expect(store.consumeApproval(co.id, "any-task", "git push")).toBe(false);
+    store.initStore();
+    expect(store.consumeApproval("any-task", "git push")).toBe(false);
   });
 });

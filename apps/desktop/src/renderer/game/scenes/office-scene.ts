@@ -247,8 +247,8 @@ export class OfficeScene extends Scene {
     // because Phaser's loader is single-batch and the founder's sheet must land first
     const [player, employees, blocked] = await Promise.all([
       this.spawnPlayer(company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED),
-      company ? bridge().listEmployees({ companyId: company.id }) : [],
-      company ? bridge().listTasks({ companyId: company.id, status: ["blocked"] }) : [],
+      company ? bridge().listEmployees() : [],
+      company ? bridge().listTasks({ status: ["blocked"] }) : [],
     ]);
     if (generation !== this.generation) {
       return;

@@ -82,18 +82,18 @@ const heartbeatBrief = (
 ): TaskBrief =>
   autonomousBrief({
     assignment,
-    bets: store.listBets(company.id),
+    bets: store.listBets(),
     company,
     employee: emp,
     employees,
     nameOf: empName,
     problems: store
-      .listOpenTasks(company.id)
+      .listOpenTasks()
       .filter((t) => t.state.kind === "dead")
       .slice(0, 5),
-    products: store.listProducts(company.id),
-    room: store.recentTeamMessages(company.id, 12),
-    ships: store.recentShips(company.id),
+    products: store.listProducts(),
+    room: store.recentTeamMessages(12),
+    ships: store.recentShips(),
   });
 
 // A run bills only when it ends, so runs in flight are counted at what one has
@@ -104,7 +104,7 @@ const RUN_COST_ESTIMATE_USD = 1;
 const nextAllocation = (company: Company): Allocation => {
   const busy = new Map<string, number>();
   const stalled = new Set<string>();
-  for (const t of store.listOpenTasks(company.id)) {
+  for (const t of store.listOpenTasks()) {
     if (t.betId === null) {
       continue;
     }
@@ -118,14 +118,14 @@ const nextAllocation = (company: Company): Allocation => {
   const leadTasks = company.leaderId === null ? [] : store.openTasksFor(company.leaderId);
   return allocate(
     {
-      bets: store.listBets(company.id),
+      bets: store.listBets(),
       busy,
-      products: store.listProducts(company.id).map((p) => p.id),
+      products: store.listProducts().map((p) => p.id),
       proposalPending: leadTasks.some((t) => t.betId === null && t.state.kind === "blocked"),
       runCostUsd: RUN_COST_ESTIMATE_USD,
       stalled,
     },
-    store.allocationPolicy(company.id),
+    store.allocationPolicy(),
   );
 };
 
@@ -199,14 +199,14 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
 
   // a run that was only parked or will retry keeps its sign-off; one that ended does not
   if (status !== "queued") {
-    store.revokeApprovals(task.companyId, task.id);
+    store.revokeApprovals(task.id);
   }
   store.setEmployeeStatus(emp.id, "idle");
   store.noteRunEnd(emp.id, r.session);
 
   if (r.usage.costUsd > 0) {
-    const before = store.getCompany(task.companyId);
-    const after = store.recordSpend(task.companyId, r.usage.costUsd);
+    const before = store.getCompany();
+    const after = store.recordSpend(r.usage.costUsd);
     if (task.betId !== null) {
       store.recordBetSpend(task.betId, r.usage.costUsd);
     }
@@ -257,11 +257,11 @@ class Scheduler {
 
   /** Verdicts come from the real numbers on every tick, autopilot or not: a window closes on its own. */
   private judgeBets(): void {
-    const company = store.getDefaultCompany();
+    const company = store.getCompany();
     if (this.stopped || !company) {
       return;
     }
-    for (const bet of store.judgeBets(company.id, Date.now())) {
+    for (const bet of store.judgeBets(Date.now())) {
       announceBet(bet);
     }
   }
@@ -277,7 +277,7 @@ class Scheduler {
 
   private fireDueRoutines(company: Company, employees: Employee[]): void {
     const now = Date.now();
-    for (const r of store.listRoutines(company.id)) {
+    for (const r of store.listRoutines()) {
       if (this.active.size >= BACKGROUND_CAPACITY) {
         break;
       }
@@ -289,20 +289,14 @@ class Scheduler {
       if (!assignee) {
         continue;
       }
-      store.markRoutineRun(company.id, r.id);
+      store.markRoutineRun(r.id);
       // a routine is about the company, but its work lands on a product:
       // the one waited on longest, like autopilot's own turn
-      this.brief(
-        company,
-        assignee,
-        routineBrief(r),
-        store.attentionProduct(company.id)?.id ?? null,
-      );
+      this.brief(assignee, routineBrief(r), store.attentionProduct()?.id ?? null);
     }
   }
 
   private brief(
-    company: Company,
     emp: Employee,
     brief: TaskBrief,
     productId: string | null,
@@ -311,7 +305,6 @@ class Scheduler {
   ): Task {
     const task = store.createTask({
       betId,
-      companyId: company.id,
       productId,
       ...brief,
       assigneeId: emp.id,
@@ -325,11 +318,11 @@ class Scheduler {
     if (this.stopped) {
       return;
     }
-    const company = store.getDefaultCompany();
+    const company = store.getCompany();
     if (!company || !company.autopilot || !admit(company)) {
       return;
     }
-    const employees = store.listEmployees(company.id);
+    const employees = store.listEmployees();
     this.fireDueRoutines(company, employees);
     for (const emp of employees) {
       if (this.active.size >= BACKGROUND_CAPACITY) {
@@ -360,12 +353,7 @@ class Scheduler {
     if (allocation.kind === "propose") {
       const product = allocation.productId === null ? null : store.getProduct(allocation.productId);
       const assignment: Assignment = { kind: "propose", product, widen: allocation.widen };
-      this.brief(
-        company,
-        emp,
-        heartbeatBrief(company, emp, employees, assignment),
-        product?.id ?? null,
-      );
+      this.brief(emp, heartbeatBrief(company, emp, employees, assignment), product?.id ?? null);
       return;
     }
     // a settle run carries its bet too: the call it makes is that bet's cost, and one
@@ -373,7 +361,7 @@ class Scheduler {
     const bet = store.getBet(allocation.betId);
     if (bet) {
       const brief = heartbeatBrief(company, emp, employees, { bet, kind: allocation.kind });
-      this.brief(company, emp, brief, bet.productId, "medium", bet.id);
+      this.brief(emp, brief, bet.productId, "medium", bet.id);
     }
   }
 
@@ -401,9 +389,9 @@ class Scheduler {
   }
 
   /** Whole-token @slug or @first-name mentions wake the addressed employees. */
-  founderMessage(companyId: string, text: string): void {
-    say(companyId, text, null);
-    for (const employeeId of resolveMentions(text, store.listEmployees(companyId))) {
+  founderMessage(text: string): void {
+    say(text, null);
+    for (const employeeId of resolveMentions(text, store.listEmployees())) {
       this.wakeEmployee(employeeId, founderPing(text));
     }
   }
@@ -414,7 +402,7 @@ class Scheduler {
     if (!emp) {
       throw new Error(`no employee ${employeeId}`);
     }
-    say(emp.companyId, `@${emp.id} ${instruction}`, emp.id);
+    say(`@${emp.id} ${instruction}`, emp.id);
     this.wakeEmployee(employeeId, founderPing(instruction));
   }
 
@@ -443,17 +431,17 @@ class Scheduler {
     // Record before the continuation can start: its retry hits the hook again,
     // and must find the sign-off already there.
     if (approved) {
-      store.grantApproval(task.companyId, continuation.id, command);
+      store.grantApproval(continuation.id, command);
     }
     return this.assign(continuation.id, continuation.assigneeId);
   }
 
   resumeIntegrationAsks(kind: IntegrationKind): void {
-    const company = store.getDefaultCompany();
+    const company = store.getCompany();
     if (!company) {
       return;
     }
-    for (const task of store.listOpenTasks(company.id)) {
+    for (const task of store.listOpenTasks()) {
       const st = task.state;
       if (st.kind !== "blocked" || st.ask.type !== "integration") {
         continue;
@@ -477,7 +465,7 @@ class Scheduler {
     if (!emp) {
       return null;
     }
-    const company = store.getCompany(emp.companyId);
+    const company = store.getCompany();
     if (!company || !admit(company)) {
       return null;
     }
@@ -488,10 +476,7 @@ class Scheduler {
           t.description === brief.description &&
           (t.state.kind === "queued" || t.state.kind === "todo"),
       );
-    return (
-      waiting ??
-      this.brief(company, emp, brief, store.productOfEmployee(emp.id)?.id ?? null, "high")
-    );
+    return waiting ?? this.brief(emp, brief, store.productOfEmployee(emp.id)?.id ?? null, "high");
   }
 
   /** Assign, tolerating a busy assignee — the queue picks it up next tick. */
@@ -546,7 +531,7 @@ class Scheduler {
       return;
     }
     const employee = store.getEmployee(employeeId);
-    const company = store.getCompany(task.companyId);
+    const company = store.getCompany();
     if (!employee || !company) {
       return;
     }

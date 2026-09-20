@@ -48,7 +48,7 @@ it("rejects an unknown product before replacing the founder's credential", () =>
 });
 
 it("unbinds the active product without removing the credential shared with older saves", () => {
-  const company = store.foundCompany({
+  store.foundCompany({
     budget: { mode: "infinite" },
     businessType: "software",
     founderName: "Kai",
@@ -57,7 +57,7 @@ it("unbinds the active product without removing the credential shared with older
     mission: "ship",
     name: "Acme",
   });
-  const [product] = store.listProducts(company.id);
+  const [product] = store.listProducts();
   if (!product) {
     throw new Error("missing founding product");
   }

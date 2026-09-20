@@ -22,17 +22,15 @@ const trayIcon = (): Electron.NativeImage => {
 };
 
 interface OfficeStatus {
-  company: ReturnType<typeof store.getDefaultCompany>;
+  company: ReturnType<typeof store.getCompany>;
   working: number;
   napUntil: number | undefined;
   active: boolean;
 }
 
 const officeStatus = (): OfficeStatus => {
-  const company = store.getDefaultCompany();
-  const working = company
-    ? store.listEmployees(company.id).filter((e) => e.status === "working").length
-    : 0;
+  const company = store.getCompany();
+  const working = company ? store.listEmployees().filter((e) => e.status === "working").length : 0;
   return {
     active: working > 0 || company?.autopilot === true,
     company,

@@ -74,13 +74,13 @@ const define =
 const nameOf = (id: string): string => store.getEmployee(id)?.name ?? "someone";
 
 const post = (ctx: RunContext, text: string, to: string | null = null): void => {
-  store.postTeamMessage(ctx.company.id, ctx.employee.id, text);
+  store.postTeamMessage(ctx.employee.id, text);
   publishActivity({ employeeId: ctx.employee.id, kind: "chat", message: text, payload: { to } });
 };
 
 /** The product a tool means: the one it names, else the run's own, else the one waited on longest. */
 const productFor = (ctx: RunContext, named: string | undefined): string | null =>
-  named ?? ctx.run.productId ?? store.attentionProduct(ctx.company.id)?.id ?? null;
+  named ?? ctx.run.productId ?? store.attentionProduct()?.id ?? null;
 
 // oxlint-disable-next-line sort-keys -- the order of TOOL_SPECS
 const TOOLS = {
@@ -92,8 +92,8 @@ const TOOLS = {
     post(ctx, text.slice(0, 400));
     return "Posted to the team room.";
   }),
-  read_team_chat: define(TOOL_SPECS.read_team_chat, (ctx) =>
-    roomTranscript(store.recentTeamMessages(ctx.company.id, 15), nameOf),
+  read_team_chat: define(TOOL_SPECS.read_team_chat, () =>
+    roomTranscript(store.recentTeamMessages(15), nameOf),
   ),
   delegate: define(TOOL_SPECS.delegate, (ctx, { role, title, description, product, bet }) => {
     const { company, employee, run } = ctx;
@@ -104,10 +104,10 @@ const TOOLS = {
     }
     const productId = funded?.productId ?? productFor(ctx, product);
     if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
-      return store.noSuchProduct(company.id, productId);
+      return store.noSuchProduct(productId);
     }
     const mate = store
-      .listEmployees(company.id)
+      .listEmployees()
       .filter((e) => e.id !== employee.id)
       .find(hasRole(role));
     if (!mate) {
@@ -117,7 +117,6 @@ const TOOLS = {
     const task = store.createTask({
       assigneeId: mate.id,
       betId: funded && isFundable(funded) ? funded.id : null,
-      companyId: company.id,
       description,
       priority: "medium",
       productId,
@@ -127,13 +126,13 @@ const TOOLS = {
     ctx.assign(task.id, mate.id);
     return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
   }),
-  read_bets: define(TOOL_SPECS.read_bets, (ctx) => betLedger(store.listBets(ctx.company.id))),
+  read_bets: define(TOOL_SPECS.read_bets, () => betLedger(store.listBets())),
   request_integration: define(TOOL_SPECS.request_integration, (ctx, { kind, reason }) => {
     ctx.asks.raise({ integration: kind, reason, type: "integration" });
     return `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`;
   }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
-    const product = startProduct({ companyId: ctx.company.id, description, name }, ctx.employee.id);
+    const product = startProduct({ description, name }, ctx.employee.id);
     post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
     return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Delegate work to it with "product":"${product.id}".`;
   }),
@@ -148,7 +147,6 @@ const TOOLS = {
     }
     const opened = store.openBet({
       ...bet,
-      companyId: ctx.company.id,
       landingPath: landingPath ?? null,
       productId,
     });
@@ -165,13 +163,12 @@ const TOOLS = {
     return `Killed "${killed.title}". Its remaining budget is free for the next bet.`;
   }),
   hire: define(TOOL_SPECS.hire, (ctx, { role, title, name, persona }) => {
-    const { company, employee } = ctx;
-    const all = store.listEmployees(company.id);
+    const { employee } = ctx;
+    const all = store.listEmployees();
     const hireName = name ?? `${title} ${all.length + 1}`;
     let hired: Employee;
     try {
       hired = store.createEmployee({
-        companyId: company.id,
         deskIndex: all.length,
         name: hireName,
         persona: persona ?? `A focused, pragmatic ${title} who ships.`,

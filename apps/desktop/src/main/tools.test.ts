@@ -84,15 +84,15 @@ describe("company tools", () => {
   });
 
   it("turns the lead's tools away from anyone else, before looking at the body", () => {
-    const { ctx, company } = runAs("priya");
+    const { ctx } = runAs("priya");
     expect(callTool(ctx, "POST /v1/open-bet", {})).toContain("Only the team lead");
-    expect(store.listBets(company.id)).toEqual([]);
+    expect(store.listBets()).toEqual([]);
   });
 
   it("opens a bet for the lead and says how it is counted", () => {
-    const { ctx, company } = runAs("mae");
+    const { ctx } = runAs("mae");
     const answer = callTool(ctx, "POST /v1/open-bet", BET);
-    const [bet] = store.listBets(company.id);
+    const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ landingPath: `/b/${bet?.id}`, metric: "users" });
     expect(answer).toContain(`/b/${bet?.id}`);
   });
@@ -120,9 +120,9 @@ describe("company tools", () => {
   });
 
   it("delegates to a teammate by role, against the run's bet", () => {
-    const { ctx, company, assigned } = runAs("mae");
+    const { ctx, assigned } = runAs("mae");
     callTool(ctx, "POST /v1/open-bet", BET);
-    const [bet] = store.listBets(company.id);
+    const [bet] = store.listBets();
     const working = { ...ctx, run: { ...ctx.run, betId: bet?.id ?? null } };
     const answer = callTool(working, "POST /v1/delegate", {
       description: "write it",
@@ -130,7 +130,7 @@ describe("company tools", () => {
       title: "Draft the post",
     });
     expect(answer).toContain("Delegated");
-    const [task] = store.listOpenTasks(company.id);
+    const [task] = store.listOpenTasks();
     expect(task).toMatchObject({ assigneeId: "priya", betId: bet?.id, productId: bet?.productId });
     expect(assigned).toEqual([task?.id]);
   });
