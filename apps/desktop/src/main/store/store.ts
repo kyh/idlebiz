@@ -68,6 +68,7 @@ import {
   DEFAULT_MAX_AGENTS,
   RunMetricsSchema,
   afterFailure,
+  leadOf,
 } from "@/shared/domain";
 import type { ActivityEvent, PersistedActivity } from "@/shared/activity";
 import type {
@@ -470,13 +471,6 @@ const loadPackages = <T extends { id: string }>(
     }
   }
   return rows;
-};
-
-const LEADER_RX = /(?:ceo|founder|chief|head|lead|manager|principal|director|\bpm\b|product)/iu;
-
-const leadOf = (emps: readonly Employee[]): string | null => {
-  const byRole = emps.find((e) => LEADER_RX.test(`${e.role} ${e.title}`));
-  return (byRole ?? emps[0])?.id ?? null;
 };
 
 const TEAM_CHAT_RING = 200;

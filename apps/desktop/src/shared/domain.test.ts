@@ -5,6 +5,7 @@ import {
   resolveMentions,
   afterFailure,
   isRoutineDue,
+  leadOf,
   MAX_TASK_ATTEMPTS,
   serializeBlockedAsk,
 } from "./domain";
@@ -86,5 +87,27 @@ describe("isRoutineDue", () => {
   it("counts from the last run once there is one", () => {
     expect(isRoutineDue({ ...routine, lastRunAt: DAY }, 0, DAY + 1)).toBe(false);
     expect(isRoutineDue({ ...routine, lastRunAt: DAY }, 0, 2 * DAY)).toBe(true);
+  });
+});
+
+const hire = (id: string, title: string) => ({ id, role: "staff", title });
+
+describe("leadOf", () => {
+  it("passes over craft titles that merely contain a leadership word", () => {
+    const team = [
+      hire("ngozi", "Founding Full-Stack Engineer"),
+      hire("mirae", "Product Designer"),
+      hire("desmond", "Growth & SEO Lead"),
+    ];
+    expect(leadOf(team)).toBe("ngozi");
+  });
+
+  it("prefers someone whose title runs a company", () => {
+    expect(leadOf([hire("sam", "Engineer"), hire("ana", "Head of Product")])).toBe("ana");
+    expect(leadOf([hire("sam", "Engineer"), hire("raj", "Product Manager")])).toBe("raj");
+  });
+
+  it("has nobody to pick from an empty roster", () => {
+    expect(leadOf([])).toBeNull();
   });
 });

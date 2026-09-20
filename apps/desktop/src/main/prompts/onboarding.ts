@@ -23,7 +23,7 @@ export const foundingTeamPrompt = (
 Company: ${companyName}
 Pitch: ${mission}${typeHint}
 
-Invent 5 distinct hires tailored to THIS pitch — whatever business it is. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; an investment firm needs sourcing + analysis + IR; a shop needs product + ops + marketing). Each person gets:
+Invent 5 distinct hires tailored to THIS pitch — whatever business it is. List first the one who runs the company day to day: they decide what the team bets its time and money on, hire and let go, and hand out the work, so give them a title that says so (General Manager, Head of Product, Studio Director…) and a persona that decides rather than builds. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; an investment firm needs sourcing + analysis + IR; a shop needs product + ops + marketing). Each person gets:
 - name: a memorable first name (diverse, varied)
 - role: a short lowercase role key like "engineer", "pixel-artist", "writer"
 - title: their job title

@@ -242,6 +242,18 @@ export interface Employee {
   createdAt: number;
 }
 
+// Whole words only, and only titles that run a company: "Product Designer" and
+// "Growth & SEO Lead" own a craft, not the portfolio.
+const RUNS_THE_COMPANY =
+  /\b(?:ceo|coo|founder|co-founder|chief|head|director|general manager|team lead|product manager|pm)\b/iu;
+
+/** Who coordinates: someone whose title runs a company, else the first hire — the cast lists its lead first. */
+export const leadOf = (
+  employees: readonly Pick<Employee, "id" | "role" | "title">[],
+): string | null =>
+  (employees.find((e) => RUNS_THE_COMPANY.test(`${e.role} ${e.title}`)) ?? employees[0])?.id ??
+  null;
+
 /** The Vercel project a product deploys to; the token is the founder's, one per company. */
 export interface VercelBinding {
   projectId: string;
