@@ -4,6 +4,8 @@ import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import { zeroUsage } from "./events";
+import { toolAskOf } from "./tool-ask";
+import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
 
 // One ACP turn. Owns subprocess teardown, watchdogs and usage accounting;
@@ -20,15 +22,7 @@ const fmtMs = (ms: number): string =>
 const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
-const ToolCallInput = z.object({
-  command: z.string().optional(),
-  description: z.string().optional(),
-  /** codex names the MCP server here when the approval stands alone */
-  serverName: z.string().optional(),
-});
-
-/** codex marks an MCP tool approval in the request's `_meta`; its tool call may carry no title at all. */
-const McpApprovalMeta = z.object({ is_mcp_tool_approval: z.literal(true) });
+const ToolCallDescription = z.object({ description: z.string().optional() });
 
 // Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
 const webReadable = (stream: Readable): ReadableStream<Uint8Array> =>
@@ -74,8 +68,7 @@ export interface AcpAgent {
 
 /** A tool call an agent wants to make, as the policy layer sees it. */
 export interface PermissionRequest {
-  /** The shell command, or the tool call's title when it isn't a command (`mcp__server__tool` from claude, `mcp.server.tool` from codex). */
-  command: string;
+  tool: ToolAsk;
   /** The agent's own one-line account of what it is doing, when it gives one. */
   description?: string;
   /** ACP tool kind — "execute", "edit", "read", … */
@@ -267,18 +260,16 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     const app = client({ name: "idlebiz" })
       .onRequest("session/request_permission", async (ctx) => {
         pokeIdle();
-        const tool = ToolCallInput.safeParse(ctx.params.toolCall.rawInput);
-        const input = tool.success ? tool.data : {};
         const { toolCall } = ctx.params;
-        // an approval may name only the id of a call announced earlier
-        const announced = toolCall.title ?? toolTitles.get(toolCall.toolCallId);
-        const mcpApproval = McpApprovalMeta.safeParse(ctx.params._meta).success;
-        const asMcp = input.serverName === undefined ? announced : `mcp.${input.serverName}.call`;
+        const described = ToolCallDescription.safeParse(toolCall.rawInput);
         const request: PermissionRequest = {
-          // an MCP approval nothing can name is still an MCP approval: held, not waved through
-          command: input.command ?? (mcpApproval ? (asMcp ?? "mcp.unknown.call") : announced) ?? "",
-          description: input.description,
-          kind: ctx.params.toolCall.kind ?? undefined,
+          description: described.success ? described.data.description : undefined,
+          kind: toolCall.kind ?? undefined,
+          tool: toolAskOf({
+            meta: ctx.params._meta,
+            rawInput: toolCall.rawInput,
+            title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
+          }),
         };
         const decision = opts.onPermission ? await opts.onPermission(request) : { allow: true };
         // Match protocol kinds, not adapter-specific ids. Prefer one-command approval.

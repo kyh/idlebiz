@@ -28,16 +28,7 @@ import type { RunToolHooks } from "@/main/control-plane";
 import type { RestingRunners } from "@/shared/ipc-registry";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
-import {
-  BROWSER_ACT,
-  BrowserWatch,
-  EXTERNAL_TOOL,
-  browserActCommand,
-  classifyCommand,
-  externalServer,
-  externalToolCommand,
-  normalizeCommand,
-} from "@/shared/command-policy";
+import { holdFor } from "@/shared/command-policy";
 import type { LiveUrl } from "@/shared/command-policy";
 import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
@@ -71,13 +62,6 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
   }
 };
 
-/** What one run has been signed off for beyond single commands. */
-interface RunLeases {
-  browser: BrowserWatch;
-  /** MCP servers the founder opened to this run. */
-  servers: Set<string>;
-}
-
 const execFileAsync = promisify(execFile);
 
 const LiveUrlOutput = z.object({ data: z.object({ url: z.string() }) });
@@ -96,60 +80,24 @@ const liveBrowserUrl: LiveUrl = async (session) => {
   }
 };
 
-/** What a held call needs signing, or null when it may run. A lease covers the rest of the run. */
-const heldLease = async (
-  command: string,
-  leases: RunLeases,
-): Promise<{ key: string; ask: BlockedAsk; grant: () => void } | null> => {
-  const host = await leases.browser.heldHost(command, liveBrowserUrl);
-  if (host !== null) {
-    const key = browserActCommand(host);
-    return {
-      ask: { command: key, rule: BROWSER_ACT.id, type: "approval" },
-      grant: () => leases.browser.lease(host),
-      key,
-    };
-  }
-  const server = externalServer(command);
-  if (server !== null && !leases.servers.has(server)) {
-    const key = externalToolCommand(server);
-    return {
-      ask: { command: key, rule: EXTERNAL_TOOL.id, type: "approval" },
-      grant: () => leases.servers.add(server),
-      key,
-    };
-  }
-  return null;
-};
-
-/** An approval permits one execution of the exact command, or one lease for the run. */
+/** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
 const decidePermission = async (
   companyId: string,
   request: PermissionRequest,
-  leases: RunLeases,
+  leases: Set<string>,
   block: (ask: BlockedAsk) => void,
 ): Promise<PermissionDecision> => {
-  const command = normalizeCommand(request.command);
-  if (!command) {
+  const hold = await holdFor(request.tool, leases, liveBrowserUrl);
+  if (hold === null) {
     return { allow: true };
   }
-  const verdict = classifyCommand(command);
-  if (verdict.decision === "allow") {
-    const held = await heldLease(command, leases);
-    if (held === null) {
-      return { allow: true };
+  if (store.consumeApproval(companyId, hold.key)) {
+    if (hold.leasable) {
+      leases.add(hold.key);
     }
-    if (store.consumeApproval(companyId, held.key)) {
-      held.grant();
-      return { allow: true };
-    }
-    block(held.ask);
-    return { allow: false };
-  }
-  if (store.consumeApproval(companyId, command)) {
     return { allow: true };
   }
-  block({ command, rule: verdict.rule.id, type: "approval" });
+  block({ command: hold.key, rule: hold.rule, type: "approval" });
   return { allow: false };
 };
 
@@ -311,7 +259,7 @@ class AgentDriver {
     sawOutput: boolean;
   }> {
     const handle = controlPlane.registerRun(hooks);
-    const leases: RunLeases = { browser: new BrowserWatch(), servers: new Set() };
+    const leases = new Set<string>();
     let sawOutput = false;
     try {
       // the product's workspace is the cwd; the company workspace stays reachable

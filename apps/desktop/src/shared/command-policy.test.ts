@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  BrowserWatch,
-  classifyCommand,
-  describeRule,
-  externalServer,
-  normalizeCommand,
-} from "./command-policy";
+import { classifyCommand, describeRule, holdFor, normalizeCommand } from "./command-policy";
 import type { LiveUrl, RuleId } from "./command-policy";
 
 const MUST_ASK = {
@@ -156,69 +150,80 @@ const at =
   (session) =>
     Promise.resolve(pages[session] ?? null);
 
-describe("BrowserWatch", () => {
+const shell = (command: string) => ({ command, kind: "shell" }) as const;
+const NONE: ReadonlySet<string> = new Set();
+
+describe("holdFor", () => {
+  it("holds an outward-facing command for one run of exactly it", async () => {
+    expect(await holdFor(shell("git push origin main"), NONE, at({}))).toEqual({
+      key: "git push origin main",
+      leasable: false,
+      rule: "git-push",
+    });
+  });
+
   it("lets a run act on its own localhost build", async () => {
-    const watch = new BrowserWatch();
     const live = at({ "": "http://localhost:5173/settings" });
-    expect(await watch.heldHost("agent-browser click @e3", live)).toBeNull();
+    expect(await holdFor(shell("agent-browser click @e3"), NONE, live)).toBeNull();
   });
 
   it("lets a run read anywhere", async () => {
-    const watch = new BrowserWatch();
     const live = at({ "": "https://news.example.com" });
-    expect(await watch.heldHost("agent-browser open https://news.example.com", live)).toBeNull();
-    expect(await watch.heldHost("agent-browser snapshot", live)).toBeNull();
-    expect(await watch.heldHost("agent-browser get text @e1", live)).toBeNull();
+    for (const command of [
+      "agent-browser open https://news.example.com",
+      "agent-browser snapshot",
+      "agent-browser get text @e1",
+    ]) {
+      expect(await holdFor(shell(command), NONE, live)).toBeNull();
+    }
   });
 
   it("holds an act on a remote site until the founder leases it", async () => {
-    const watch = new BrowserWatch();
     const live = at({ "": "https://news.example.com/submit" });
-    expect(await watch.heldHost('agent-browser fill @e2 "Show: our app"', live)).toBe(
-      "news.example.com",
-    );
-    watch.lease("news.example.com");
-    expect(await watch.heldHost("agent-browser click @e5", live)).toBeNull();
+    const hold = await holdFor(shell('agent-browser fill @e2 "Show: our app"'), NONE, live);
+    expect(hold).toEqual({
+      key: "agent-browser: act on news.example.com",
+      leasable: true,
+      rule: "browser-act",
+    });
+    const leased = new Set([hold?.key ?? ""]);
+    expect(await holdFor(shell("agent-browser click @e5"), leased, live)).toBeNull();
   });
 
   it("judges by where the browser is, not where the run last pointed it", async () => {
-    const watch = new BrowserWatch();
-    await watch.heldHost("agent-browser open http://localhost:3000", at({}));
     const wandered = at({ "": "https://forum.example.com/new" });
-    expect(await watch.heldHost("agent-browser type @e1 hello", wandered)).toBe(
-      "forum.example.com",
-    );
+    const hold = await holdFor(shell("agent-browser type @e1 hello"), NONE, wandered);
+    expect(hold?.key).toBe("agent-browser: act on forum.example.com");
+  });
+
+  it("does not take a lookalike host for the team's own", async () => {
+    const live = at({ "": "http://localhost.evil.example/" });
+    expect(await holdFor(shell("agent-browser click @e1"), NONE, live)).not.toBeNull();
   });
 
   it("tracks sessions apart and follows a chained command", async () => {
-    const watch = new BrowserWatch();
     const live = at({ mara: "http://127.0.0.1:3000" });
-    expect(
-      await watch.heldHost(
-        "agent-browser --session sam open https://forum.example.com && agent-browser --session sam click @e1",
-        live,
-      ),
-    ).toBe("forum.example.com");
-    expect(await watch.heldHost("agent-browser --session mara click @e1", live)).toBeNull();
+    const chained =
+      "agent-browser --session sam open https://forum.example.com && agent-browser --session sam click @e1";
+    const hold = await holdFor(shell(chained), NONE, live);
+    expect(hold?.key).toBe("agent-browser: act on forum.example.com");
+    expect(await holdFor(shell("agent-browser --session mara click @e1"), NONE, live)).toBeNull();
   });
 
   it("holds an act on a page nobody could read", async () => {
-    expect(await new BrowserWatch().heldHost("agent-browser press Enter", at({}))).toBe(
-      "a page nobody could read",
-    );
-  });
-});
-
-describe("externalServer", () => {
-  it("names the MCP server behind a tool call", () => {
-    expect(externalServer("mcp__claude-in-chrome__computer")).toBe("claude-in-chrome");
-    expect(externalServer("mcp__plugin_gmail_mail__send_message")).toBe("plugin_gmail_mail");
-    expect(externalServer("mcp.slack.post_message")).toBe("slack");
-    expect(externalServer("mcp.unknown.call")).toBe("unknown");
+    const hold = await holdFor(shell("agent-browser press Enter"), NONE, at({}));
+    expect(hold?.key).toBe("agent-browser: act on a page nobody could read");
   });
 
-  it("leaves built-in tools and shell commands alone", () => {
-    expect(externalServer("Load skill: deploy")).toBeNull();
-    expect(externalServer("ls mcp__notes__")).toBeNull();
+  it("leases the founder's own MCP server to the run once signed", async () => {
+    const tool = { kind: "mcp", server: "gmail" } as const;
+    const hold = await holdFor(tool, NONE, at({}));
+    expect(hold).toEqual({ key: "mcp: use gmail", leasable: true, rule: "external-tool" });
+    expect(await holdFor(tool, new Set(["mcp: use gmail"]), at({}))).toBeNull();
+  });
+
+  it("never leases a server nothing could name", async () => {
+    const hold = await holdFor({ kind: "mcp", server: null }, NONE, at({}));
+    expect(hold?.leasable).toBe(false);
   });
 });

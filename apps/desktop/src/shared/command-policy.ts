@@ -1,3 +1,5 @@
+import type { ToolAsk } from "@repo/agent-driver/tool-ask";
+
 // Applied to ACP permission requests from both runners. Unmatched commands run;
 // the CLIs' own safeguards still apply. Persist rule ids so approval cards can explain them.
 const RULE_IDS = [
@@ -16,7 +18,6 @@ const RULE_IDS = [
 export type RuleId = (typeof RULE_IDS)[number];
 
 interface CommandRule {
-  /** `browser-act` and `external-tool` are leased per run, not judged from a shell command alone. */
   id: RuleId | "browser-act" | "external-tool";
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
@@ -129,35 +130,25 @@ const RULES: readonly Rule[] = [
   },
 ];
 
-/** What the founder signs for a browser session: acting on one site, for the rest of the run. */
-export const BROWSER_ACT: CommandRule = {
-  describe:
-    "Act in a real browser on this site — log in, type, click, submit — for the rest of this run.",
-  id: "browser-act",
-};
+/** Approvals that cover the rest of a run rather than one command: what the founder signs is the site or the server, not the keystroke. */
+const LEASE_RULES = [
+  {
+    describe:
+      "Act in a real browser on this site — log in, type, click, submit — for the rest of this run.",
+    id: "browser-act",
+  },
+  // Employee sessions load the founder's own CLI settings, so every MCP server
+  // the founder connected for themselves — a browser, a mailbox, a chat
+  // workspace — is in the employee's hands too, already signed in.
+  {
+    describe:
+      "Use a tool connected in your own CLI settings (an MCP server, signed in as you) for the rest of this run.",
+    id: "external-tool",
+  },
+] as const satisfies readonly CommandRule[];
 
-/**
- * Employee sessions load the founder's own CLI settings, so every MCP server the
- * founder connected for themselves — a browser, a mailbox, a chat workspace — is
- * in the employee's hands too, already signed in. None of it is a shell command,
- * so no rule above can see it.
- */
-export const EXTERNAL_TOOL: CommandRule = {
-  describe:
-    "Use a tool connected in your own CLI settings (an MCP server, signed in as you) for the rest of this run.",
-  id: "external-tool",
-};
-
-/** The MCP server behind a tool call, as claude (`mcp__<server>__<tool>`) or codex (`mcp.<server>.<tool>`) titles it; null for anything else. */
-export const externalServer = (title: string): string | null => {
-  const named = /^mcp(?:__(?<claude>.+?)__|\.(?<codex>[^.\s]+)\.)/u.exec(title)?.groups;
-  return named?.claude ?? named?.codex ?? null;
-};
-
-/** The approval key and card text for using `server`. */
-export const externalToolCommand = (server: string): string => `mcp: use ${server}`;
-
-const LOOPBACK_URL = /^(?:https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)|file:|about:)/u;
+const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
+const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
 
 const BROWSER_CALL = new RegExp(
   AT_COMMAND + program("agent-browser") + String.raw`(?<args>[^\n;&|]*)`,
@@ -179,50 +170,43 @@ const hostOf = (url: string): string | null => {
 /** Where a browser session is right now; null when nothing could say. "" is the default session. */
 export type LiveUrl = (session: string) => Promise<string | null>;
 
-const UNREADABLE_PAGE = "a page nobody could read";
+const browserActKey = (host: string | null): string =>
+  `agent-browser: act on ${host ?? "a page nobody could read"}`;
 
 /**
- * One run's leases on the browser. A command names a verb, never a site, so the
- * site comes from the browser itself: a click on the team's own localhost build
- * can land anywhere, and only the live URL knows. An `open` earlier in the same
- * chained command wins, since the browser is not there yet when the ask arrives.
+ * The lease a browser command needs and does not have, or null when it may run.
+ * A command names a verb, never a site, so the site comes from the browser
+ * itself: a click on the team's own localhost build can land anywhere, and only
+ * the live URL knows. An `open` earlier in the same chained command wins, since
+ * the browser is not there yet when the ask arrives.
  */
-export class BrowserWatch {
-  private leased = new Set<string>();
-
-  /** The host a command would act on without a lease, or null when it may run. */
-  async heldHost(command: string, liveUrl: LiveUrl): Promise<string | null> {
-    const opening = new Map<string, string>();
-    for (const call of command.matchAll(BROWSER_CALL)) {
-      const args = call.groups?.args ?? "";
-      const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
-      const opened = /(?:^|\s)open\s+["']?(?<url>[^\s"']+)/u.exec(args)?.groups?.url;
-      if (opened !== undefined) {
-        opening.set(session, opened);
-      } else if (BROWSER_WRITES.test(args)) {
-        const url = opening.get(session) ?? (await liveUrl(session));
-        const host = url === null ? UNREADABLE_PAGE : hostOf(url);
-        const local = url !== null && LOOPBACK_URL.test(url);
-        if (!local && !this.leased.has(host ?? UNREADABLE_PAGE)) {
-          return host ?? UNREADABLE_PAGE;
-        }
+const heldBrowserAct = async (
+  command: string,
+  leases: ReadonlySet<string>,
+  liveUrl: LiveUrl,
+): Promise<string | null> => {
+  const opening = new Map<string, string>();
+  for (const call of command.matchAll(BROWSER_CALL)) {
+    const args = call.groups?.args ?? "";
+    const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
+    const opened = /(?:^|\s)open\s+["']?(?<url>[^\s"']+)/u.exec(args)?.groups?.url;
+    if (opened !== undefined) {
+      opening.set(session, opened);
+    } else if (BROWSER_WRITES.test(args)) {
+      const url = opening.get(session) ?? (await liveUrl(session));
+      const key = browserActKey(url === null ? null : hostOf(url));
+      if (!(url !== null && LOOPBACK_URL.test(url)) && !leases.has(key)) {
+        return key;
       }
     }
-    return null;
   }
-
-  lease(host: string): void {
-    this.leased.add(host);
-  }
-}
-
-/** The approval key and card text for acting on `host`. */
-export const browserActCommand = (host: string): string => `agent-browser: act on ${host}`;
+  return null;
+};
 
 /** True when every internet target named is the game's own loopback API. */
 const onlyLoopbackTargets = (command: string): boolean => {
   const urls = command.match(/https?:\/\/[^\s"'`)]+/gu) ?? [];
-  const remote = urls.filter((u) => !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])/u.test(u));
+  const remote = urls.filter((u) => !LOOPBACK_URL.test(u));
   if (remote.length > 0) {
     return false;
   }
@@ -233,7 +217,7 @@ export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Co
 
 /** What the approval card says about a held command, by the rule that held it. */
 export const describeRule = (id: string): string =>
-  [...RULES, BROWSER_ACT, EXTERNAL_TOOL].find((rule) => rule.id === id)?.describe ??
+  [...RULES, ...LEASE_RULES].find((rule) => rule.id === id)?.describe ??
   `Saved rule "${id}" is unavailable in this version.`;
 
 export const classifyCommand = (command: string): CommandVerdict => {
@@ -256,3 +240,31 @@ export const normalizeCommand = (command: string): string =>
     .replace(/\s*;\s*echo\s+["']?exit=\$\?["']?\s*$/u, "")
     .trim()
     .replaceAll(/\s+/gu, " ");
+
+/** What a tool call waits on: the approval the founder signs, and whether signing covers the rest of the run. */
+export interface Hold {
+  /** The approval key, and the text on the founder's card. */
+  key: string;
+  rule: CommandRule["id"];
+  leasable: boolean;
+}
+
+/** The one judgement every tool call passes through; null lets it run. `leases` is what this run was already signed for. */
+export const holdFor = async (
+  tool: ToolAsk,
+  leases: ReadonlySet<string>,
+  liveUrl: LiveUrl,
+): Promise<Hold | null> => {
+  if (tool.kind === "mcp") {
+    // a server nothing can name is signed for call by call: a lease on "unknown" would cover every such server
+    const key = `mcp: use ${tool.server ?? "a tool nothing could name"}`;
+    return leases.has(key) ? null : { key, leasable: tool.server !== null, rule: "external-tool" };
+  }
+  const command = normalizeCommand(tool.command);
+  const verdict = classifyCommand(command);
+  if (verdict.decision === "ask") {
+    return { key: command, leasable: false, rule: verdict.rule.id };
+  }
+  const key = await heldBrowserAct(command, leases, liveUrl);
+  return key === null ? null : { key, leasable: true, rule: "browser-act" };
+};
