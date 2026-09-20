@@ -111,7 +111,7 @@ describe("Stripe flow ownership", () => {
   it("does not reconnect when cancelled during callback decryption", async () => {
     await stripe.beginConnect(company.id);
     const url = new URL(await callbackUrl(latestState(), "token-cancelled"));
-    const cancelled = Promise.withResolvers<{ ok: boolean }>();
+    const cancelled = Promise.withResolvers<null>();
     const requests = channel("http.server.request.start");
     const onRequest: Parameters<typeof requests.subscribe>[0] = (message) => {
       const event = z.object({ request: z.instanceof(IncomingMessage) }).safeParse(message);
@@ -121,7 +121,9 @@ describe("Stripe flow ownership", () => {
       requests.unsubscribe(onRequest);
       // Run after the HTTP handler reaches its first WebCrypto await, before decryption resumes.
       queueMicrotask(() => {
-        void stripe.disconnectStripe(company.id).then(cancelled.resolve, cancelled.reject);
+        void stripe
+          .disconnectStripe(company.id)
+          .then(() => cancelled.resolve(null), cancelled.reject);
       });
     };
     requests.subscribe(onRequest);

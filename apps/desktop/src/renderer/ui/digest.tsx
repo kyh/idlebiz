@@ -3,7 +3,7 @@ import { useNow } from "@/renderer/hooks/use-now";
 import { useStore, digest } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { formatAway, formatNames, formatUsd, plural } from "@/shared/format";
-import type { Digest as DigestSummary } from "@/shared/ipc-registry";
+import type { Digest as DigestSummary } from "@/shared/digest";
 
 /** Shorter absences read as a glance away, not a return. */
 const AWAY_MS = 10 * 60_000;

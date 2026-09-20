@@ -1,7 +1,6 @@
 import type { ActivityEvent } from "@/shared/activity";
 import { employeeStatusOf } from "@/shared/domain";
-import type { Employee } from "@/shared/domain";
-import type { RestingRunners } from "@/shared/ipc-registry";
+import type { Employee, RestingRunners } from "@/shared/domain";
 
 // What an event from main means for the renderer's copy of main's state, with
 // no bridge and no Phaser in sight: a patch it can apply at once, and the

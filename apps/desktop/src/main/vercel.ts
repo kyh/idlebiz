@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getJson } from "@/main/lib/http";
 import type { JsonValue } from "@/shared/json";
 import { getSecret } from "@/main/secrets";
-import type { VercelDeployment, VercelProject } from "@/shared/ipc-registry";
+import type { VercelDeployment, VercelProject } from "@/shared/integrations";
 
 const API = "https://api.vercel.com";
 

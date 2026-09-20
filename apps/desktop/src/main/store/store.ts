@@ -68,8 +68,26 @@ import {
 import type { Bet, BetMetric, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
-import { DigestSchema } from "@/shared/ipc-registry";
-import type { Digest, LoadReport, LoadSkip } from "@/shared/ipc-registry";
+import { DigestSchema } from "@/shared/digest";
+import type { Digest } from "@/shared/digest";
+import type {
+  AgentRunner,
+  Budget,
+  BusinessTypeId,
+  Company,
+  Employee,
+  FailureVerdict,
+  LoadReport,
+  LoadSkip,
+  Product,
+  Routine,
+  Task,
+  TaskPriority,
+  TaskState,
+  TaskStatus,
+  TeamMessage,
+  VercelBinding,
+} from "@/shared/domain";
 import { isRunnerId } from "@repo/agent-driver/runner";
 import {
   BUSINESS_TYPES,
@@ -80,21 +98,6 @@ import {
   leadOf,
 } from "@/shared/domain";
 import type { ActivityEvent, PersistedActivity } from "@/shared/activity";
-import type {
-  AgentRunner,
-  FailureVerdict,
-  Product,
-  TaskState,
-  VercelBinding,
-  Budget,
-  BusinessTypeId,
-  Company,
-  Employee,
-  Routine,
-  Task,
-  TaskPriority,
-  TeamMessage,
-} from "@/shared/domain";
 
 // Synchronous cache mutations make check-and-set atomic in the main process.
 // Markdown writes use tmp+rename; activity and chat use append-only JSONL logs.
@@ -1126,6 +1129,21 @@ const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
 
 /** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
+/** Tasks by assignee and status, newest first. The shipping log is thousands of briefs, so it is only read when `done` is asked for. */
+export const queryTasks = (query: {
+  assigneeId?: string;
+  status?: readonly TaskStatus[];
+}): Task[] => {
+  const { assigneeId, status } = query;
+  const wantsShipped = status === undefined || status.includes("done");
+  // oxlint-disable-next-line no-use-before-define -- a const arrow, resolved when called
+  const pool = wantsShipped ? [...listOpenTasks(), ...listShippedTasks()] : listOpenTasks();
+  return pool
+    .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
+    .filter((t) => status === undefined || status.includes(t.state.kind))
+    .toSorted(newestFirst);
+};
+
 export const listShippedTasks = (): Task[] => {
   const active = current();
   const companyId = active.company.id;
@@ -1607,7 +1625,7 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
 };
 
 /** The digest, and the look itself: reading it starts the next one. Null before a first look. */
-export const digest = (): Digest | null => {
+export const takeDigest = (): Digest | null => {
   const since = current().sinceLastLook;
   markSeen(Date.now());
   return since;

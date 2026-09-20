@@ -7,18 +7,15 @@ import type {
   Budget,
   Company,
   Employee,
+  LoadSkip,
   Product,
+  RestingRunners,
   Task,
   TaskIn,
   TeamMessage,
 } from "@/shared/domain";
-import type {
-  Digest,
-  LoadSkip,
-  ProductStatus,
-  RestingRunners,
-  StripeStatus,
-} from "@/shared/ipc-registry";
+import type { Digest } from "@/shared/digest";
+import type { ProductStatus, StripeStatus } from "@/shared/integrations";
 import { BUNDLED_LAYOUT, parseOfficeLayout } from "@/renderer/game/office-layout";
 import type { OfficeLayoutData } from "@/renderer/game/office-layout";
 import { bridge } from "@/renderer/bridge";
@@ -355,7 +352,7 @@ export const resetSpend = (): Promise<void> => updateCompany(() => bridge().rese
 
 /** What happened since the founder last looked; asking is the look. */
 export const digest = (): Promise<Digest | null> =>
-  state.company ? bridge().getDigest() : Promise.resolve(null);
+  state.company ? bridge().takeDigest() : Promise.resolve(null);
 
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
   updateCompany(() => bridge().setMaxAgents({ maxAgents }));

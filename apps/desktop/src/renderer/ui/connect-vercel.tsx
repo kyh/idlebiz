@@ -4,7 +4,7 @@ import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/stor
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
-import type { VercelProject } from "@/shared/ipc-registry";
+import type { VercelProject } from "@/shared/integrations";
 
 type Lookup =
   | { state: "idle" }

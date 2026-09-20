@@ -1,4 +1,4 @@
-import type { ProductStatus } from "@/shared/ipc-registry";
+import type { ProductStatus } from "@/shared/integrations";
 
 export const productStateOf = (status: ProductStatus | undefined): string => {
   const deploy = status?.deploy ?? null;

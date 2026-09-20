@@ -1,15 +1,16 @@
 import path from "node:path";
-import { existsSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, session, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
-import { atomicWrite, readJsonFile, suspendWrites } from "@/main/lib/fs";
+import { suspendWrites } from "@/main/lib/fs";
 import * as store from "@/main/store/store";
-import { activityEvents, publishActivity } from "@/main/activity";
+import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { controlPlane } from "@/main/control-plane";
-import { openProduct, openWorkspacePath, productEntry } from "@/main/product";
+import { loadOfficeDesign, saveOfficeDesign } from "@/main/office-design";
+import { openProduct, openWorkspacePath, productStatus } from "@/main/product";
 import { chatOptions } from "@/main/prompts/chat-options";
 import {
   haltForBudget,
@@ -21,9 +22,7 @@ import {
 import { scheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
-import { fetchRealMetrics, PULSE_MS } from "@/main/metrics";
-import { readMetricsConfig } from "@/main/store/metrics-config";
-import { latestDeployment } from "@/main/vercel";
+import { metricsPulse } from "@/main/metrics-pulse";
 import {
   connectVercel,
   disconnectVercel,
@@ -37,68 +36,19 @@ import {
   beginConnect,
   disconnectStripe,
   getStripeStatus,
-  markAuthError,
 } from "@/main/stripe-connect";
-import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
-import { isClosed } from "@/shared/bets";
+import { ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 import type { Task } from "@/shared/domain";
-import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
-import { layoutIssues } from "@/shared/office-grid";
-import { jsonValueSchema, parseJson } from "@/shared/json";
 
 const moduleDir = import.meta.dirname;
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
-let metricsTimer: ReturnType<typeof setInterval> | null = null;
-let pulseInFlight = false;
-
-const runMetricsPulse = (): void => {
-  const company = store.getCompany();
-  if (!company) {
-    return;
-  }
-  const products = store.listProducts();
-  const cfg = readMetricsConfig(company.id);
-  if (!cfg?.stripe && !cfg?.plausible && !cfg?.custom && products.every((p) => p.vercel === null)) {
-    return;
-  }
-  // a slow provider must not let pulses stack: a late one would overwrite a newer reading
-  if (pulseInFlight) {
-    return;
-  }
-  pulseInFlight = true;
-  void (async () => {
-    const bets = store.listBets().filter((b) => !isClosed(b));
-    const snap = await fetchRealMetrics(cfg, products, bets).finally(() => {
-      pulseInFlight = false;
-    });
-    store.setRealMetrics(snap);
-    for (const product of products) {
-      store.setProductMetrics(product.id, {
-        revenue: snap.productRevenue.get(product.id) ?? null,
-        users: snap.productUsers.get(product.id) ?? null,
-      });
-    }
-    for (const [betId, reading] of snap.betReadings) {
-      store.setBetReading(betId, reading);
-    }
-    if (snap.authError) {
-      markAuthError("Stripe access was revoked — reconnect in the HUD.");
-    }
-    publishActivity(
-      { kind: "metrics.pulse", payload: { revenue: snap.revenue, users: snap.users } },
-      { persist: false },
-    );
-  })();
-};
 
 // Suspend writes before aborting runs so their completion cannot resurrect the save.
 const resetGame = () => {
   scheduler.stop();
-  if (metricsTimer) {
-    clearInterval(metricsTimer);
-  }
+  metricsPulse.stop();
   suspendWrites();
   agentDriver.disposeAll();
   rmSync(ROOT_DIR, { force: true, recursive: true });
@@ -106,7 +56,6 @@ const resetGame = () => {
     app.relaunch();
     app.exit(0);
   });
-  return { ok: true };
 };
 
 const registerIpcHandlers = (): void => {
@@ -152,7 +101,6 @@ const registerIpcHandlers = (): void => {
     if (err) {
       throw new Error(err);
     }
-    return { ok: true };
   });
 
   handle("setAutopilot", ({ running }) => setAutopilot(running));
@@ -166,32 +114,12 @@ const registerIpcHandlers = (): void => {
   });
 
   handle("resetSpend", store.resetSpend);
-  handle("getDigest", store.digest);
+  handle("takeDigest", store.takeDigest);
 
   handle("resetGame", resetGame);
 
-  // Validate reachability as well as shape before replacing the saved office.
-  handle("saveOfficeDesign", ({ json }) => {
-    const layout = parseOfficeLayout(parseJson(json));
-    const issues = layoutIssues(layout);
-    if (issues.length > 0) {
-      throw new Error(`office layout rejected:\n${issues.join("\n")}`);
-    }
-    const body = `${JSON.stringify(canonicalOfficeLayout(layout), null, 2)}\n`;
-    atomicWrite(OFFICE_DESIGN_PATH, body);
-    // dev: mirror into the repo source so edited maps ship as the bundled
-    // default (main runs from .output/app/main — three levels up = app root)
-    if (!app.isPackaged) {
-      const repoDesign = path.resolve(moduleDir, "../../../src/renderer/game/office-design.json");
-      if (existsSync(path.dirname(repoDesign))) {
-        atomicWrite(repoDesign, body);
-      }
-    }
-    return { ok: true };
-  });
-  handle("loadOfficeDesign", () => ({
-    layout: readJsonFile(OFFICE_DESIGN_PATH, jsonValueSchema),
-  }));
+  handle("saveOfficeDesign", ({ json }) => saveOfficeDesign(json));
+  handle("loadOfficeDesign", () => ({ layout: loadOfficeDesign() }));
 
   handle("stripeStatus", () => {
     const company = store.getCompany();
@@ -201,27 +129,15 @@ const registerIpcHandlers = (): void => {
   handle("stripeDisconnect", () => disconnectStripe(store.requireCompany().id));
 
   handle("vercelListProjects", ({ token }) => listVercelProjects(token));
-  handle("vercelConnect", (input) => {
-    connectVercel(input);
-    return { ok: true };
-  });
-  handle("vercelDisconnect", ({ productId }) => {
-    disconnectVercel(productId);
-    return { ok: true };
-  });
+  handle("vercelConnect", connectVercel);
+  handle("vercelDisconnect", ({ productId }) => disconnectVercel(productId));
 
   handle("listProducts", store.listProducts);
   handle("createProduct", (input) => startProduct(input, null));
   handle("killProduct", ({ productId, reason }) => retireProduct(productId, reason, null));
   handle("listBets", store.listBets);
   handle("killBet", ({ betId, reason }) => killBet(betId, reason));
-  handle("productStatus", async ({ productId }) => {
-    const { vercel } = store.requireProduct(productId);
-    const deploy = vercel
-      ? await latestDeployment(vercel.projectId, vercel.teamId ?? undefined)
-      : null;
-    return { deploy, entry: productEntry(productId) };
-  });
+  handle("productStatus", ({ productId }) => productStatus(productId));
 
   handle("listEmployees", store.listEmployees);
   handle("restingRunners", () => agentDriver.restingRunners());
@@ -237,43 +153,22 @@ const registerIpcHandlers = (): void => {
 
   handle("teamMessages", ({ limit }) => store.recentTeamMessages(limit ?? 30));
 
-  handle("postTeamChat", ({ text }) => {
-    scheduler.founderMessage(text.trim());
-    return { ok: true };
-  });
-
-  handle("directEmployee", ({ employeeId, instruction }) => {
-    scheduler.directEmployee(employeeId, instruction.trim());
-    return { ok: true };
-  });
+  handle("postTeamChat", ({ text }) => scheduler.founderMessage(text.trim()));
+  handle("directEmployee", ({ employeeId, instruction }) =>
+    scheduler.directEmployee(employeeId, instruction.trim()),
+  );
 
   handle("setMaxAgents", ({ maxAgents }) => store.setMaxAgents(maxAgents));
 
-  // filtered in main: the shipping log is thousands of briefs, read only when asked for
-  handle("listTasks", ({ assigneeId, status }) => {
-    const wantsShipped = status === undefined || status.includes("done");
-    const pool = wantsShipped
-      ? [...store.listOpenTasks(), ...store.listShippedTasks()]
-      : store.listOpenTasks();
-    return pool
-      .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
-      .filter((t) => status === undefined || status.includes(t.state.kind))
-      .toSorted((a, b) => b.createdAt - a.createdAt);
-  });
+  handle("listTasks", store.queryTasks);
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 
   handle("answerQuestion", ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer));
   handle("resolveApproval", ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved));
 
-  handle("openCompanyPath", async ({ rel }) => {
-    await openWorkspacePath(rel);
-    return { ok: true };
-  });
-  handle("openProduct", async ({ productId }) => ({
-    ok: true,
-    opened: await openProduct(productId),
-  }));
+  handle("openCompanyPath", ({ rel }) => openWorkspacePath(rel));
+  handle("openProduct", async ({ productId }) => ({ opened: await openProduct(productId) }));
 };
 
 const appUrl = (): string => {
@@ -407,19 +302,19 @@ void (async () => {
   activityEvents.on("activity", (e) => broadcast("onActivity", e));
   scheduler.start();
 
-  metricsTimer = setInterval(runMetricsPulse, PULSE_MS);
+  metricsPulse.start();
 
   initStripeConnect({
     notify: (status) => broadcast("onStripeStatus", status),
     onConnected: () => {
-      runMetricsPulse();
+      metricsPulse.now();
       scheduler.resumeIntegrationAsks("stripe");
     },
     openExternal: shell.openExternal,
   });
   initVercelConnect({
     onConnected: () => {
-      runMetricsPulse();
+      metricsPulse.now();
       scheduler.resumeIntegrationAsks("vercel");
     },
   });

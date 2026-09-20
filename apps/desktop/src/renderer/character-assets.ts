@@ -1,5 +1,5 @@
 import { bridge } from "@/renderer/bridge";
-import type { CharacterAssets } from "@/shared/ipc-registry";
+import type { CharacterAssets } from "@/shared/domain";
 
 // One request per seed for the whole renderer: the scene, the busts and the
 // onboarding all draw from the same promise, and main caches by sheet behind it.

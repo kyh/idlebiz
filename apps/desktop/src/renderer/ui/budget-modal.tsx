@@ -14,7 +14,7 @@ import type { PickerOption } from "@/renderer/ui/picker";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Budget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
-import type { StripeStatus } from "@/shared/ipc-registry";
+import type { StripeStatus } from "@/shared/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },

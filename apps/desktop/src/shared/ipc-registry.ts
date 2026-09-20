@@ -3,111 +3,27 @@ import type { IpcMethod, IpcKind, InvokeMethod } from "@/shared/ipc-channels";
 import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
-import { BUSINESS_TYPE_IDS, BudgetSchema, TASK_STATUSES } from "@/shared/domain";
-import type { AgentRunner, Company, Employee, Product, Task, TeamMessage } from "@/shared/domain";
+import type { Digest } from "@/shared/digest";
+import { BudgetSchema, TASK_STATUSES } from "@/shared/domain";
+import type {
+  AuthFlowEvent,
+  CharacterAssets,
+  ChatOption,
+  Company,
+  Employee,
+  LoadReport,
+  Product,
+  RestingRunners,
+  Task,
+  TeamMessage,
+} from "@/shared/domain";
+import { BusinessTypeSchema, HireProposalSchema } from "@/shared/hire";
+import type { HireProposal } from "@/shared/hire";
+import type { ProductStatus, StripeStatus, VercelProject } from "@/shared/integrations";
 
-/** Streamed steps of the workforce setup flow (CLI detect/install/login). */
-export type AuthFlowEvent =
-  | { type: "url"; url: string }
-  | { type: "progress"; message: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
-
-/** runner → epoch its usage limit lifts, for every runner currently parked. */
-export type RestingRunners = Partial<Record<AgentRunner, number>>;
-
-/** A package on disk the store could not read at boot, and why. */
-export interface LoadSkip {
-  kind: "company" | "employee" | "task" | "routine" | "product" | "bet" | "team";
-  path: string;
-  error: string;
-}
-/** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
-export interface LoadReport {
-  companies: number;
-  skipped: LoadSkip[];
-}
-
-/** How many ship lines the digest keeps and its window lists. */
-export const DIGEST_SHIPS_SHOWN = 5;
-
-/** What happened while the founder was away: folded from each event as it
- *  is published, so an absence of any length is counted in full. */
-export const DigestSchema = z.object({
-  /** Tasks that gave up while they were away. */
-  dead: z.number(),
-  hired: z.array(z.string()),
-  released: z.array(z.string()),
-  runs: z.number(),
-  /** How many shipped; `ships` holds only the latest few of them. */
-  shipped: z.number(),
-  /** The latest ship summaries, oldest first: at most DIGEST_SHIPS_SHOWN. */
-  ships: z.array(z.string()),
-  since: z.number(),
-  spentUsd: z.number(),
-});
-export type Digest = z.infer<typeof DigestSchema>;
-
-/** Stripe Connect link state, streamed to the renderer. */
-export type StripeStatus =
-  | { state: "disconnected" }
-  | { state: "connecting" }
-  | { state: "connected"; accountId: string; livemode: boolean }
-  | { state: "error"; message: string };
-
-/** A Vercel project the founder can bind the company to. */
-export interface VercelProject {
-  id: string;
-  name: string;
-  teamId?: string;
-}
-
-/** The latest production deployment of the bound Vercel project. */
-export interface VercelDeployment {
-  url: string;
-  state: string;
-  createdAt: number;
-}
-
-export interface ProductStatus {
-  /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
-  entry: string | null;
-  /** Latest production deployment when Vercel is connected. */
-  deploy: VercelDeployment | null;
-}
-
-/** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
-export interface ChatOption {
-  label: string;
-  instruction: string;
-}
-
-/** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
-export interface CharacterAssets {
-  /** 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right */
-  walkSheetDataUrl: string;
-  /** 44x44 PNG: the drawn head-and-shoulders bust */
-  bustDataUrl: string;
-}
-
-const BusinessTypeSchema = z.enum(BUSINESS_TYPE_IDS);
-
-/** An LLM-proposed hire, as cast: the shape the roster generator must produce. */
-export const HireCandidateSchema = z.object({
-  blurb: z.string().min(2).max(120),
-  name: z.string().min(1).max(40),
-  persona: z.string().min(10).max(600),
-  role: z
-    .string()
-    .min(2)
-    .max(32)
-    .transform((s) => s.toLowerCase().replaceAll(/[^a-z0-9]+/gu, "-")),
-  title: z.string().min(2).max(60),
-});
-export type HireCandidate = z.infer<typeof HireCandidateSchema>;
-/** A candidate the founder can hire: main has given them a look. */
-const HireProposalSchema = HireCandidateSchema.extend({ spriteSeed: z.string() });
-export type HireProposal = z.infer<typeof HireProposalSchema>;
+/** A call that answers nothing: it worked, or it threw. */
+// oxlint-disable-next-line typescript/no-invalid-void-type -- the values of Results are handler return types, which the rule cannot see through the map
+type Done = void;
 
 export const SCHEMAS = {
   answerQuestion: z.object({ answer: z.string(), taskId: z.string() }),
@@ -135,7 +51,6 @@ export const SCHEMAS = {
     mission: z.string(),
   }),
   getCompany: z.void(),
-  getDigest: z.void(),
   getFounderChoices: z.void(),
   hasAuth: z.void(),
   killBet: z.object({ betId: z.string(), reason: z.string().trim().min(1).max(200) }),
@@ -166,6 +81,7 @@ export const SCHEMAS = {
   stripeConnect: z.void(),
   stripeDisconnect: z.void(),
   stripeStatus: z.void(),
+  takeDigest: z.void(),
   teamMessages: z.object({ limit: z.number().int().optional() }),
   vercelConnect: z.object({
     productId: z.string(),
@@ -194,23 +110,23 @@ interface Results {
 
   getCompany: Company | null;
   /** Null before the founder's first look, or without a company. */
-  getDigest: Digest | null;
   loadReport: LoadReport;
-  openSaveFolder: { ok: boolean };
+  openSaveFolder: Done;
   setAutopilot: Company;
   setBudget: Company;
   resetSpend: Company;
 
-  resetGame: { ok: boolean };
+  resetGame: Done;
 
   stripeStatus: StripeStatus;
   stripeConnect: { started: boolean };
-  stripeDisconnect: { ok: boolean };
+  stripeDisconnect: Done;
   onStripeStatus: StripeStatus;
 
+  takeDigest: Digest | null;
   vercelListProjects: { ok: boolean; account?: string; projects: VercelProject[] };
-  vercelConnect: { ok: boolean };
-  vercelDisconnect: { ok: boolean };
+  vercelConnect: Done;
+  vercelDisconnect: Done;
   listProducts: Product[];
   createProduct: Product;
   productStatus: ProductStatus;
@@ -223,20 +139,20 @@ interface Results {
 
   teamMessages: TeamMessage[];
   employeeOptions: ChatOption[];
-  postTeamChat: { ok: boolean };
-  directEmployee: { ok: boolean };
+  postTeamChat: Done;
+  directEmployee: Done;
   setMaxAgents: Company;
 
   listTasks: Task[];
   assignTask: Task;
   answerQuestion: Task;
   resolveApproval: Task;
-  openCompanyPath: { ok: boolean };
-  openProduct: { ok: boolean; opened: string };
+  openCompanyPath: Done;
+  openProduct: { opened: string };
 
   onActivity: ActivityEvent;
 
-  saveOfficeDesign: { ok: boolean };
+  saveOfficeDesign: Done;
   loadOfficeDesign: { layout: JsonValue | null };
 }
 

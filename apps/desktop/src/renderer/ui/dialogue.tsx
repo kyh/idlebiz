@@ -18,8 +18,7 @@ import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { TypeCursor } from "@/renderer/ui/type-cursor";
 import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import { taskIn } from "@/shared/domain";
-import type { Employee } from "@/shared/domain";
-import type { ChatOption } from "@/shared/ipc-registry";
+import type { ChatOption, Employee } from "@/shared/domain";
 import { cn } from "cn";
 
 const NOTE_MS = 1800;

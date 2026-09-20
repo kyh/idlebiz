@@ -464,7 +464,7 @@ describe("active company ownership", () => {
 describe("the digest", () => {
   it("folds what happens after a look, and reading it is the next look", () => {
     found();
-    expect(store.digest()).toBeNull();
+    expect(store.takeDigest()).toBeNull();
     store.logActivity({ createdAt: 1, kind: "ship", message: "v0 shipped" }, true);
     store.logActivity(
       {
@@ -484,7 +484,7 @@ describe("the digest", () => {
     );
     store.logActivity({ createdAt: 5, kind: "message", message: "not counted" }, true);
 
-    expect(store.digest()).toMatchObject({
+    expect(store.takeDigest()).toMatchObject({
       dead: 1,
       hired: ["Mira"],
       released: [],
@@ -493,7 +493,7 @@ describe("the digest", () => {
       ships: ["v0 shipped"],
       spentUsd: 0.25,
     });
-    expect(store.digest()).toMatchObject({ runs: 0, shipped: 0, ships: [] });
+    expect(store.takeDigest()).toMatchObject({ runs: 0, shipped: 0, ships: [] });
   });
 
   it("survives a restart mid-absence", () => {
@@ -501,7 +501,7 @@ describe("the digest", () => {
     store.markSeen(1234);
     store.logActivity({ createdAt: 2000, kind: "ship", message: "while closed" }, true);
     store.initStore();
-    expect(store.digest()).toMatchObject({ ships: ["while closed"], since: 1234 });
+    expect(store.takeDigest()).toMatchObject({ ships: ["while closed"], since: 1234 });
   });
 });
 

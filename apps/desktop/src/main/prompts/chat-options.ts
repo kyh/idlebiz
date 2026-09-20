@@ -1,6 +1,5 @@
-import type { Employee, Task } from "@/shared/domain";
+import type { ChatOption, Employee, Task } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
-import type { ChatOption } from "@/shared/ipc-registry";
 
 const short = (s: string, n = 18): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 

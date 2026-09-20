@@ -26,12 +26,18 @@ import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import type { ToolCaller } from "@/main/control-plane";
 import type { AskBox } from "@/main/tools";
-import type { RestingRunners } from "@/shared/ipc-registry";
+import type {
+  AgentRunner,
+  BlockedAsk,
+  Company,
+  Employee,
+  RestingRunners,
+  RunOutcome,
+} from "@/shared/domain";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
 import type { LiveUrl } from "@/shared/command-policy";
-import type { AgentRunner, BlockedAsk, Company, Employee, RunOutcome } from "@/shared/domain";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);

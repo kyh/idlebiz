@@ -1,4 +1,4 @@
-import type { LoadSkip } from "@/shared/ipc-registry";
+import type { LoadSkip } from "@/shared/domain";
 
 export const SaveIssues = ({ issues }: { issues: readonly LoadSkip[] }) => (
   <ul className="space-y-2">

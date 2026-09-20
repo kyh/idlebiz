@@ -10,9 +10,9 @@ import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { foundingTeamPrompt } from "@/main/prompts/onboarding";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
-import type { AgentRunner, BusinessTypeId } from "@/shared/domain";
-import { HireCandidateSchema } from "@/shared/ipc-registry";
-import type { AuthFlowEvent, HireCandidate } from "@/shared/ipc-registry";
+import type { AgentRunner, AuthFlowEvent, BusinessTypeId } from "@/shared/domain";
+import { HireCandidateSchema } from "@/shared/hire";
+import type { HireCandidate } from "@/shared/hire";
 
 let setupRunning = false;
 

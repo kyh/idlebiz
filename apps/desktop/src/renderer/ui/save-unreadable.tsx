@@ -1,7 +1,7 @@
 import { bridge } from "@/renderer/bridge";
 import { Curtain } from "@/renderer/ui/curtain";
 import { SaveIssues } from "@/renderer/ui/save-issues";
-import type { LoadSkip } from "@/shared/ipc-registry";
+import type { LoadSkip } from "@/shared/domain";
 
 // Offering onboarding here would create a second company over an unreadable save.
 export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => (

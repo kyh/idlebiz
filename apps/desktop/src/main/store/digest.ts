@@ -1,6 +1,6 @@
 import type { PersistedActivity } from "@/shared/activity";
-import { DIGEST_SHIPS_SHOWN } from "@/shared/ipc-registry";
-import type { Digest } from "@/shared/ipc-registry";
+import { DIGEST_SHIPS_SHOWN } from "@/shared/digest";
+import type { Digest } from "@/shared/digest";
 
 /** Nothing has happened yet since the founder looked at `since`. */
 export const emptyDigest = (since: number): Digest => ({

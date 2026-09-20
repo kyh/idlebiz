@@ -16,7 +16,7 @@ import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import { requireCompany } from "@/main/store/store";
 import { errorMessage } from "@/shared/errors";
-import type { StripeStatus } from "@/shared/ipc-registry";
+import type { StripeStatus } from "@/shared/integrations";
 
 // The web callback exchanges the OAuth code and seals the read-only token for
 // this loopback flow. The platform secret stays on the web server.
@@ -254,7 +254,7 @@ const revoke = async (body: DeauthorizeBody): Promise<void> => {
 };
 
 /** Deauthorize on Stripe's side (best effort) and clean up local state. */
-export const disconnectStripe = async (companyId: string): Promise<{ ok: boolean }> => {
+export const disconnectStripe = async (companyId: string): Promise<void> => {
   requireCompany();
   cancelPending();
   const token = getSecret(STRIPE_TOKEN_KEY);
@@ -273,5 +273,4 @@ export const disconnectStripe = async (companyId: string): Promise<{ ok: boolean
       revoking = null;
     }
   }
-  return { ok: true };
 };

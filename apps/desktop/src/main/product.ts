@@ -2,13 +2,15 @@ import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { shell } from "electron";
 import * as store from "@/main/store/store";
+import { latestDeployment } from "@/main/vercel";
+import type { ProductStatus } from "@/shared/integrations";
 
 // Where a product is, as the team points at it: PRODUCT.md at the product's
 // workspace root carries an `entry:` line naming a path there or a URL. Nothing
 // in the app writes it; the agents' standing instructions ask them to.
 
 /** What the product's PRODUCT.md `entry:` names, if the team wrote one. */
-export const productEntry = (productId: string): string | null => {
+const productEntry = (productId: string): string | null => {
   const { workspaceDir } = store.requireProduct(productId);
   try {
     const text = readFileSync(path.join(workspaceDir, "PRODUCT.md"), "utf-8");
@@ -89,6 +91,15 @@ export const openWorkspacePath = async (rel: string): Promise<void> => {
     throw new Error("path escapes the workspace");
   }
   await openTarget(target);
+};
+
+/** Where a product really is: its entry, and the latest deploy when it is bound to one. */
+export const productStatus = async (productId: string): Promise<ProductStatus> => {
+  const { vercel } = store.requireProduct(productId);
+  const deploy = vercel
+    ? await latestDeployment(vercel.projectId, vercel.teamId ?? undefined)
+    : null;
+  return { deploy, entry: productEntry(productId) };
 };
 
 /** Open the product where it lives: a URL in the browser, a path in its workspace with its app. */

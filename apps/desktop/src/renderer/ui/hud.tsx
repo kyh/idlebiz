@@ -8,7 +8,7 @@ import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee, Product } from "@/shared/domain";
 import { productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { ProductStatus } from "@/shared/ipc-registry";
+import type { ProductStatus } from "@/shared/integrations";
 import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
 import { cn } from "cn";
 

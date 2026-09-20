@@ -14,7 +14,7 @@ import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
 import { taskIn } from "@/shared/domain";
 import type { Employee, Product, TaskIn } from "@/shared/domain";
-import type { ProductStatus } from "@/shared/ipc-registry";
+import type { ProductStatus } from "@/shared/integrations";
 import { errorMessage } from "@/shared/errors";
 import { formatDate, formatUsd } from "@/shared/format";
 import { cn } from "cn";

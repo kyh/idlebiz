@@ -24,7 +24,7 @@ import { TypeCursor } from "@/renderer/ui/type-cursor";
 import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
-import type { HireProposal } from "@/shared/ipc-registry";
+import type { HireProposal } from "@/shared/hire";
 
 const STEP_ORDER = [
   "title",

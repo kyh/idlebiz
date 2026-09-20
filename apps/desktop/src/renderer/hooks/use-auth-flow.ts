@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { bridge } from "@/renderer/bridge";
-import type { AuthFlowEvent } from "@/shared/ipc-registry";
+import type { AuthFlowEvent } from "@/shared/domain";
 
 export type Auth =
   | { phase: "checking" }

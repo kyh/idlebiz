@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
-import type { CharacterAssets } from "@/shared/ipc-registry";
+import type { CharacterAssets } from "@/shared/domain";
 import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 
 // sharp needs real files: packaged sheets live in electron-builder's extraResources.

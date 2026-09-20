@@ -372,3 +372,40 @@ export interface Routine {
  */
 export const isRoutineDue = (routine: Routine, foundedAt: number, now: number): boolean =>
   now - (routine.lastRunAt ?? foundedAt) >= routine.intervalHours * 3_600_000;
+
+/** Streamed steps of the workforce setup flow (CLI detect/install/login). */
+export type AuthFlowEvent =
+  | { type: "url"; url: string }
+  | { type: "progress"; message: string }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+/** runner → epoch its usage limit lifts, for every runner currently parked. */
+export type RestingRunners = Partial<Record<AgentRunner, number>>;
+
+/** A package on disk the store could not read at boot, and why. */
+export interface LoadSkip {
+  kind: "company" | "employee" | "task" | "routine" | "product" | "bet" | "team";
+  path: string;
+  error: string;
+}
+
+/** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
+export interface LoadReport {
+  companies: number;
+  skipped: LoadSkip[];
+}
+
+/** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
+export interface ChatOption {
+  label: string;
+  instruction: string;
+}
+
+/** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
+export interface CharacterAssets {
+  /** 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right */
+  walkSheetDataUrl: string;
+  /** 44x44 PNG: the drawn head-and-shoulders bust */
+  bustDataUrl: string;
+}
