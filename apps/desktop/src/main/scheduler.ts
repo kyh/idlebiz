@@ -23,6 +23,7 @@ import {
 import type { Assignment, TaskBrief } from "@/main/prompts/briefs";
 import {
   MAX_TASK_ATTEMPTS,
+  hasRole,
   isLead,
   isOutOfBudget,
   isRoutineDue,
@@ -302,10 +303,21 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   });
 };
 
+/** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
+export type EmployeeRunner = Pick<
+  typeof agentDriver,
+  "runTask" | "restingRunner" | "pickRunner" | "disposeEmployee"
+>;
+
 class Scheduler {
   private active = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
+  private readonly driver: EmployeeRunner;
+
+  constructor(driver: EmployeeRunner) {
+    this.driver = driver;
+  }
 
   start(): void {
     if (this.timer) {
@@ -353,10 +365,7 @@ class Scheduler {
         continue;
       }
       const idle = employees.filter((e) => e.status === "idle");
-      const assignee =
-        (r.role !== null &&
-          idle.find((e) => `${e.role} ${e.title}`.toLowerCase().includes(r.role ?? ""))) ||
-        idle[0];
+      const assignee = (r.role === null ? undefined : idle.find(hasRole(r.role))) ?? idle[0];
       if (!assignee) {
         continue;
       }
@@ -409,7 +418,7 @@ class Scheduler {
       if (emp.status !== "idle") {
         continue;
       }
-      if (agentDriver.restingRunner(emp.runner) !== null) {
+      if (this.driver.restingRunner(emp.runner) !== null) {
         continue;
       }
       const open = store
@@ -495,11 +504,10 @@ class Scheduler {
         if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
           return store.noSuchProduct(company.id, productId);
         }
-        const want = role.toLowerCase();
-        const pool = store.listEmployees(company.id).filter((e) => e.id !== emp.id);
-        const matches = (e: Employee): boolean =>
-          e.role.toLowerCase() === want || e.title.toLowerCase().includes(want);
-        const mate = pool.find(matches);
+        const mate = store
+          .listEmployees(company.id)
+          .filter((e) => e.id !== emp.id)
+          .find(hasRole(role));
         if (!mate) {
           post(`(no "${role}" to delegate "${title}" to)`);
           return `No teammate matches the role "${role}" — do it yourself or pick another role.`;
@@ -530,7 +538,7 @@ class Scheduler {
               name: hireName,
               persona: persona ?? `A focused, pragmatic ${title} who ships.`,
               role,
-              runner: agentDriver.pickRunner(all.length),
+              runner: this.driver.pickRunner(all.length),
               spriteSeed: spriteSeedFor(role, hireName),
               title,
             });
@@ -612,7 +620,7 @@ class Scheduler {
           if (isWorking(slug)) {
             return `${target.name} is mid-task right now — try again when they're idle.`;
           }
-          agentDriver.disposeEmployee(slug);
+          this.driver.disposeEmployee(slug);
           store.archiveEmployee(slug);
           post(`👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
           publishActivity({
@@ -756,7 +764,7 @@ class Scheduler {
         continue;
       }
       const employee = store.getEmployee(task.assigneeId);
-      if (!employee || agentDriver.restingRunner(employee.runner) !== null) {
+      if (!employee || this.driver.restingRunner(employee.runner) !== null) {
         continue;
       }
       this.startRun(task);
@@ -820,7 +828,7 @@ class Scheduler {
 
   private async execute(runId: string, task: Task, emp: Employee, company: Company): Promise<void> {
     const product = task.productId === null ? null : store.getProduct(task.productId);
-    const result = await agentDriver.runTask(
+    const result = await this.driver.runTask(
       emp,
       company,
       {
@@ -841,4 +849,7 @@ class Scheduler {
   }
 }
 
-export const scheduler = new Scheduler();
+/** A scheduler over any runner: tests script the runs, the app hands it the CLIs. */
+export const createScheduler = (driver: EmployeeRunner): Scheduler => new Scheduler(driver);
+
+export const scheduler = createScheduler(agentDriver);

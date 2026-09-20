@@ -252,6 +252,12 @@ export interface Employee {
 export const leadOf = (employees: readonly Pick<Employee, "id">[]): string | null =>
   employees[0]?.id ?? null;
 
+/** Whether someone answers to a role named loosely: "market" finds the Growth & Marketing Lead, "engineer" the Founding Engineer. */
+export const hasRole =
+  (want: string) =>
+  (employee: Pick<Employee, "role" | "title">): boolean =>
+    `${employee.role} ${employee.title}`.toLowerCase().includes(want.trim().toLowerCase());
+
 export const isLead = (
   company: Pick<Company, "leaderId">,
   employee: Pick<Employee, "id">,

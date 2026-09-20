@@ -1,0 +1,20 @@
+import { describe, expect, it } from "vitest";
+import { outcomeOf } from "./agent-driver";
+
+const failed = { error: "usage limit reached", kind: "failed" } as const;
+
+describe("outcomeOf", () => {
+  it("is done when the turn completed with nothing asked", () => {
+    expect(outcomeOf({ kind: "completed" }, null, null)).toEqual({ kind: "done" });
+  });
+
+  it("waits on the founder whenever something was asked, however the turn ended", () => {
+    const ask = { question: "Ship it?", type: "question" } as const;
+    expect(outcomeOf(failed, ask, 99)).toEqual({ ask, kind: "blocked" });
+  });
+
+  it("rests on a usage limit and fails on anything else", () => {
+    expect(outcomeOf(failed, null, 99)).toMatchObject({ kind: "resting", until: 99 });
+    expect(outcomeOf(failed, null, null)).toMatchObject({ kind: "failed" });
+  });
+});

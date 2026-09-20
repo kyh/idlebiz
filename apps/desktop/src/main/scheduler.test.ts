@@ -1,13 +1,22 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { zeroUsage } from "@repo/agent-driver/events";
+import type { Budget, Task } from "@/shared/domain";
+import type { RunResult } from "./agents/agent-driver";
+import type { EmployeeRunner } from "./scheduler";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
-const { scheduler } = await import("./scheduler");
+const { createScheduler, scheduler } = await import("./scheduler");
+
+beforeEach(() => {
+  rmSync(root, { force: true, recursive: true });
+  store.initStore();
+});
 
 afterAll(() => {
   scheduler.stop();
@@ -19,38 +28,214 @@ afterAll(() => {
   }
 });
 
-it("ignores queue drains after stop and resumes admission only after start", () => {
-  store.initStore();
-  const company = store.foundCompany({
-    budget: { capUsd: 0, mode: "capped" },
+const NAMES = ["Priya", "Mae", "Sam", "Ana"];
+
+const UNCAPPED: Budget = { mode: "infinite" };
+
+const found = (budget: Budget = UNCAPPED) =>
+  store.foundCompany({
+    budget,
     businessType: "software",
     founderName: "Kai",
     founderSpriteSeed: "seed",
-    hires: [
-      {
-        name: "Priya",
-        persona: "ships",
-        role: "engineer",
-        runner: "claude",
-        spriteSeed: "priya",
-        title: "Engineer",
-      },
-    ],
+    hires: NAMES.map((name) => ({
+      name,
+      persona: "ships",
+      role: "engineer",
+      runner: name === "Ana" ? "codex" : "claude",
+      spriteSeed: name,
+      title: "Engineer",
+    })),
     mission: "ship",
     name: "Acme",
   });
-  const task = store.createTask({ companyId: company.id, title: "Waiting" });
-  store.claimTask(task.id, "priya");
+
+const done = (costUsd = 0): RunResult => ({
+  outcome: { kind: "done" },
+  session: null,
+  summary: "shipped it",
+  usage: { ...zeroUsage(), costUsd },
+});
+
+/** A runner whose runs end when the test says so. */
+const scripted = () => {
+  const running = new Map<string, (result: RunResult) => void>();
+  const resting = new Set<string>();
+  const driver: EmployeeRunner = {
+    disposeEmployee: () => {
+      /* nothing to dispose */
+    },
+    pickRunner: () => "claude",
+    restingRunner: (runner) => (resting.has(runner) ? Date.now() + 60_000 : null),
+    runTask: (emp) =>
+      // oxlint-disable-next-line promise/avoid-new -- the test resolves it by hand
+      new Promise<RunResult>((resolve) => {
+        running.set(emp.id, resolve);
+      }),
+  };
+  return { driver, resting, running };
+};
+
+const queue = (companyId: string, employeeId: string, priority: Task["priority"] = "medium") => {
+  const task = store.createTask({
+    assigneeId: employeeId,
+    companyId,
+    priority,
+    title: `Work for ${employeeId}`,
+  });
+  store.claimTask(task.id, employeeId);
+  return task;
+};
+
+const kindOf = (task: Task): string | undefined => store.getTask(task.id)?.state.kind;
+
+it("ignores queue drains after stop and resumes admission only after start", () => {
+  const company = found({ capUsd: 0, mode: "capped" });
+  const task = queue(company.id, "priya");
 
   scheduler.stop();
   scheduler.tick();
 
   expect(store.getCompany(company.id)?.autopilot).toBe(true);
-  expect(store.getTask(task.id)?.state.kind).toBe("queued");
+  expect(kindOf(task)).toBe("queued");
 
   scheduler.start();
 
   expect(store.getCompany(company.id)?.autopilot).toBe(false);
-  expect(store.getTask(task.id)?.state.kind).toBe("queued");
+  expect(kindOf(task)).toBe("queued");
   expect(store.getEmployee("priya")?.status).toBe("idle");
+  scheduler.stop();
+});
+
+describe("draining the queue", () => {
+  it("keeps a slot back for the founder", () => {
+    const company = found();
+    const { driver, running } = scripted();
+    const drain = createScheduler(driver);
+    const background = ["priya", "mae", "sam"].map((id) => queue(company.id, id));
+
+    drain.tick();
+    drain.tick();
+
+    expect(background.map(kindOf)).toEqual(["running", "running", "queued"]);
+    expect(running.size).toBe(2);
+  });
+
+  it("gives the reserved slot to the founder's request", () => {
+    const company = found();
+    const { driver } = scripted();
+    const drain = createScheduler(driver);
+    queue(company.id, "priya");
+    queue(company.id, "mae");
+    const urgent = queue(company.id, "ana", "high");
+    const waiting = queue(company.id, "sam");
+
+    drain.tick();
+
+    expect(kindOf(urgent)).toBe("running");
+    expect(kindOf(waiting)).toBe("queued");
+  });
+
+  it("starts nothing on a runner that is resting", () => {
+    const company = found();
+    const { driver, resting } = scripted();
+    resting.add("codex");
+    const parked = queue(company.id, "ana");
+    const free = queue(company.id, "priya");
+
+    createScheduler(driver).tick();
+
+    expect(kindOf(parked)).toBe("queued");
+    expect(kindOf(free)).toBe("running");
+  });
+});
+
+describe("settling a run", () => {
+  const runOne = async (result: RunResult, betId: string | null = null) => {
+    const company = found();
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId,
+      companyId: company.id,
+      title: "Work",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver).tick();
+    running.get("priya")?.(result);
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    return { company, task };
+  };
+
+  it("ships finished work and frees the employee", async () => {
+    const { company, task } = await runOne(done(0.5));
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.getCompany(company.id)).toMatchObject({ ships: 1, spentUsd: 0.5 });
+  });
+
+  it("bills the run to the bet it worked for", async () => {
+    const company = found();
+    const [product] = store.listProducts(company.id);
+    const bet = store.openBet({
+      budgetUsd: 5,
+      companyId: company.id,
+      hypothesis: "a post brings visitors",
+      landingPath: null,
+      metric: "users",
+      productId: product?.id ?? "",
+      target: 50,
+      title: "Launch post",
+      windowHours: 24,
+    });
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      companyId: company.id,
+      title: "Post it",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver).tick();
+    running.get("priya")?.(done(1.25));
+    await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
+  });
+
+  it("holds a task that asked the founder something", async () => {
+    const { task } = await runOne({
+      ...done(),
+      outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
+    });
+    expect(store.getTask(task.id)?.state).toMatchObject({ kind: "blocked" });
+  });
+
+  it("queues a failed run to retry, one attempt spent", async () => {
+    const { task } = await runOne({ ...done(), outcome: { error: "boom", kind: "failed" } });
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 1,
+      state: { kind: "queued", lastError: "boom" },
+    });
+  });
+
+  it("parks a rate-limited run without spending an attempt", async () => {
+    const until = Date.now() + 60_000;
+    const { task } = await runOne({
+      ...done(),
+      outcome: { error: "usage limit", kind: "resting", until },
+    });
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 0,
+      state: { kind: "queued", nextAttemptAt: until },
+    });
+  });
+
+  it("takes an unused sign-off away with the task", async () => {
+    const company = found();
+    const { driver, running } = scripted();
+    const task = queue(company.id, "priya");
+    store.grantApproval(company.id, task.id, "git push");
+    createScheduler(driver).tick();
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    expect(store.consumeApproval(company.id, task.id, "git push")).toBe(false);
+  });
 });

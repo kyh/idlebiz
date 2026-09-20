@@ -120,6 +120,23 @@ const TOOL_CACHE_ENV = {
   npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
 };
 
+/** How a turn ended, as the scheduler settles it. An ask outranks everything: the founder's answer is what the task waits on. */
+export const outcomeOf = (
+  end: AcpTurnResult["end"],
+  ask: BlockedAsk | null,
+  restingUntil: number | null,
+): RunOutcome => {
+  if (ask) {
+    return { ask, kind: "blocked" };
+  }
+  if (end.kind === "completed") {
+    return { kind: "done" };
+  }
+  return restingUntil === null
+    ? { error: end.error, kind: "failed" }
+    : { error: end.error, kind: "resting", until: restingUntil };
+};
+
 export interface RunResult {
   outcome: RunOutcome;
   summary: string;
@@ -230,20 +247,6 @@ class AgentDriver {
   }
 
   /** A pending founder ask takes precedence over the runner's exit status. */
-  private outcomeOf(runner: AgentRunner, turn: AcpTurnResult, ask: BlockedAsk | null): RunOutcome {
-    if (ask) {
-      return { ask, kind: "blocked" };
-    }
-    if (turn.end.kind === "completed") {
-      return { kind: "done" };
-    }
-    const limit = parseRateLimit(turn.end.error);
-    if (!limit) {
-      return { error: turn.end.error, kind: "failed" };
-    }
-    this.restingUntil.set(runner, limit.resetsAt);
-    return { error: turn.end.error, kind: "resting", until: limit.resetsAt };
-  }
 
   private async invoke(
     emp: Employee,
@@ -293,7 +296,12 @@ class AgentDriver {
         systemPrompt: store.employeeInstructions(emp.id),
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
-      const outcome = this.outcomeOf(emp.runner, res, handle.outcome().blocked);
+      const limit = res.end.kind === "failed" ? parseRateLimit(res.end.error) : null;
+      // parked whatever else the run says: an ask raised before the limit hit must not hide it
+      if (limit) {
+        this.restingUntil.set(emp.runner, limit.resetsAt);
+      }
+      const outcome = outcomeOf(res.end, handle.outcome().blocked, limit?.resetsAt ?? null);
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();
