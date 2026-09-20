@@ -368,7 +368,7 @@ describe("active company ownership", () => {
 
   it("keeps inactive company reads and explicit-company writes outside the cache", () => {
     const older = found();
-    store.grantApproval(older.id, "old command");
+    store.grantApproval(older.id, "some-task", "old command");
     copyCompany(older.id, "newer", older.createdAt + 1);
     const before = saveSnapshot(older.id);
     store.initStore();
@@ -389,8 +389,8 @@ describe("active company ownership", () => {
     ).toThrow("not active");
     expect(() => store.createTask({ companyId: older.id, title: "No" })).toThrow("not active");
     expect(() => store.postTeamMessage(older.id, null, "No")).toThrow("not active");
-    expect(() => store.grantApproval(older.id, "new command")).toThrow("not active");
-    expect(() => store.consumeApproval(older.id, "old command")).toThrow("not active");
+    expect(() => store.grantApproval(older.id, "some-task", "new command")).toThrow("not active");
+    expect(() => store.consumeApproval(older.id, "some-task", "old command")).toThrow("not active");
     expect(store.recordSpend(older.id, 10)).toBeNull();
     expect(store.setRealMetrics(older.id, { revenue: 10, users: 10 })).toBeNull();
     store.recordShip(older.id, "acme", "shipped");
@@ -672,5 +672,29 @@ describe("retired routines", () => {
 
     expect(store.listRoutines(co.id).map((r) => r.id)).toEqual(["weekly-backup"]);
     expect(existsSync(path.join(root, co.id, "routines", "business-review"))).toBe(false);
+  });
+});
+
+describe("founder approvals", () => {
+  it("belong to the task they were given for, once", () => {
+    const co = found();
+    store.grantApproval(co.id, "continue-deploy", "vercel deploy --prod");
+    expect(store.consumeApproval(co.id, "someone-elses-task", "vercel deploy --prod")).toBe(false);
+    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy")).toBe(false);
+    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy --prod")).toBe(true);
+    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy --prod")).toBe(false);
+  });
+
+  it("leave with a task that ended without using them", () => {
+    const co = found();
+    store.grantApproval(co.id, "continue-deploy", "vercel deploy --prod");
+    store.revokeApprovals(co.id, "continue-deploy");
+    expect(store.consumeApproval(co.id, "continue-deploy", "vercel deploy --prod")).toBe(false);
+  });
+
+  it("ignore the company-wide grants older saves kept", () => {
+    const co = found();
+    writeFileSync(path.join(root, co.id, "approvals.json"), JSON.stringify(["git push"]));
+    expect(store.consumeApproval(co.id, "any-task", "git push")).toBe(false);
   });
 });

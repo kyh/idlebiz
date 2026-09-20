@@ -82,7 +82,7 @@ const liveBrowserUrl: LiveUrl = async (session) => {
 
 /** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
 const decidePermission = async (
-  companyId: string,
+  task: { companyId: string; id: string },
   request: PermissionRequest,
   leases: Set<string>,
   block: (ask: BlockedAsk) => void,
@@ -91,7 +91,7 @@ const decidePermission = async (
   if (hold === null) {
     return { allow: true };
   }
-  if (store.consumeApproval(companyId, hold.key)) {
+  if (store.consumeApproval(task.companyId, task.id, hold.key)) {
     if (hold.leasable) {
       leases.add(hold.key);
     }
@@ -201,7 +201,7 @@ class AgentDriver {
   async runTask(
     emp: Employee,
     company: Company,
-    task: { title: string; description: string; workspace: string },
+    task: { id: string; title: string; description: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
   ): Promise<RunResult> {
@@ -213,7 +213,7 @@ class AgentDriver {
     try {
       const prompt = `${task.title}\n\n${task.description}`.trim();
       const resumeId = emp.sessionId ?? undefined;
-      const run = { prompt, workspace: task.workspace };
+      const run = { prompt, taskId: task.id, workspace: task.workspace };
       const first = await this.invoke(emp, company, run, onEvent, hooks, resumeId, abort);
       // A resumed session that dies without producing any output is almost
       // always stale on the agent's side — retry once fresh before failing.
@@ -248,7 +248,7 @@ class AgentDriver {
   private async invoke(
     emp: Employee,
     company: Company,
-    run: { prompt: string; workspace: string },
+    run: { prompt: string; taskId: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
     hooks: RunToolHooks,
     resumeSessionId: string | undefined,
@@ -280,7 +280,13 @@ class AgentDriver {
             /* a listener must never break the run */
           }
         },
-        onPermission: (request) => decidePermission(company.id, request, leases, handle.block),
+        onPermission: (request) =>
+          decidePermission(
+            { companyId: company.id, id: run.taskId },
+            request,
+            leases,
+            handle.block,
+          ),
         prompt: run.prompt,
         resumeSessionId,
         signal: abort.signal,

@@ -573,33 +573,51 @@ export const setAutopilot = (id: string, on: boolean): Company =>
 
 // ---- founder approvals -------------------------------------------------------
 // Exact-command approvals survive restart and are consumed once.
-const readApprovals = (companyId: string): string[] => {
+// A sign-off belongs to the task it was given for: the continuation that will
+// run the command. Company-wide, a grant the agent never used (it reworded the
+// command) would wait for anyone who later ran that exact string.
+const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
+type Grant = z.infer<typeof GrantSchema>;
+
+const readGrants = (companyId: string): Grant[] => {
   requireActiveCompany(companyId);
-  return readJsonFile(approvalsFile(companyId), z.array(z.string())) ?? [];
+  return readJsonFile(approvalsFile(companyId), z.array(GrantSchema)) ?? [];
 };
 
-export const grantApproval = (companyId: string, key: string): void => {
-  const keys = readApprovals(companyId);
-  if (keys.includes(key)) {
-    return;
+const writeGrants = (companyId: string, grants: readonly Grant[]): void => {
+  atomicWrite(approvalsFile(companyId), JSON.stringify(grants, null, 2));
+};
+
+export const grantApproval = (companyId: string, taskId: string, key: string): void => {
+  const grants = readGrants(companyId);
+  if (!grants.some((g) => g.taskId === taskId && g.key === key)) {
+    writeGrants(companyId, [...grants, { grantedAt: Date.now(), key, taskId }]);
   }
-  atomicWrite(approvalsFile(companyId), JSON.stringify([...keys, key], null, 2));
 };
 
-export const consumeApproval = (companyId: string, key: string): boolean => {
-  const keys = readApprovals(companyId);
-  if (!keys.includes(key)) {
+/** Spend the sign-off, if this task holds one for exactly this. */
+export const consumeApproval = (companyId: string, taskId: string, key: string): boolean => {
+  const grants = readGrants(companyId);
+  const held = grants.find((g) => g.taskId === taskId && g.key === key);
+  if (!held) {
     return false;
   }
-  atomicWrite(
-    approvalsFile(companyId),
-    JSON.stringify(
-      keys.filter((k) => k !== key),
-      null,
-      2,
-    ),
+  writeGrants(
+    companyId,
+    grants.filter((g) => g !== held),
   );
   return true;
+};
+
+/** A task that has ended takes its unused sign-offs with it. */
+export const revokeApprovals = (companyId: string, taskId: string): void => {
+  const grants = readGrants(companyId);
+  if (grants.some((g) => g.taskId === taskId)) {
+    writeGrants(
+      companyId,
+      grants.filter((g) => g.taskId !== taskId),
+    );
+  }
 };
 
 /** A running spend total, kept to a hundredth of a cent so many small runs do not drift. */

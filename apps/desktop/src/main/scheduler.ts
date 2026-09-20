@@ -276,6 +276,10 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
     // no default
   }
 
+  // a run that was only parked or will retry keeps its sign-off; one that ended does not
+  if (status !== "queued") {
+    store.revokeApprovals(task.companyId, task.id);
+  }
   store.setEmployeeStatus(emp.id, "idle");
   store.noteRunEnd(emp.id, r.session);
 
@@ -657,12 +661,17 @@ class Scheduler {
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval") {
       throw new Error("task is not awaiting an approval");
     }
-    // Record before resuming: the agent's retry hits the hook again, and it
-    // must find the sign-off already there.
-    if (approved) {
-      store.grantApproval(task.companyId, task.state.ask.command);
+    const { command } = task.state.ask;
+    const continuation = store.resolveBlockedWithAnswer(taskId, approvalAnswer(approved, command));
+    if (!continuation?.assigneeId) {
+      throw new Error("could not resume the task");
     }
-    return this.resumeBlocked(taskId, approvalAnswer(approved), "could not resume the task");
+    // Record before the continuation can start: its retry hits the hook again,
+    // and must find the sign-off already there.
+    if (approved) {
+      store.grantApproval(task.companyId, continuation.id, command);
+    }
+    return this.assign(continuation.id, continuation.assigneeId);
   }
 
   resumeIntegrationAsks(kind: IntegrationKind): void {
@@ -816,6 +825,7 @@ class Scheduler {
       company,
       {
         description: `${runPreamble(product, company)}\n\n${task.description ?? ""}`.trim(),
+        id: task.id,
         title: task.title,
         workspace: product?.workspaceDir ?? company.workspaceDir,
       },

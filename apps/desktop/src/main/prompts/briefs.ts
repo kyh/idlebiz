@@ -325,9 +325,9 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
 export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
   `${INTEGRATION_LABELS[kind]} is now connected — the credentials are in your environment. Continue where you left off.`;
 
-export const approvalAnswer = (approved: boolean): string =>
+export const approvalAnswer = (approved: boolean, command: string): string =>
   approved
-    ? "Approved — run it once. The sign-off covers this one command this one time, so running it again, or anything else outward-facing, needs a fresh approval."
+    ? `Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:\n\n\`\`\`\n${command}\n\`\`\`\n\nIt covers one run of it (or, for a site or a connected tool, the rest of this run). Anything else outward-facing needs a fresh approval.`
     : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
 
 export const answeredSummary = (answer: string): string => `Founder answered: ${answer}`;
