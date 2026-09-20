@@ -80,11 +80,59 @@ const stripeGet = async (endpoint: string, key: string): Promise<JsonValue> => {
   }
 };
 
-const StripeChargesSchema = z.object({
+const StripeChargePageSchema = z.object({
   data: z
-    .array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() }))
+    .array(
+      z.object({
+        amount: z.number().optional(),
+        amount_refunded: z.number().optional(),
+        id: z.string().optional(),
+        paid: z.boolean().optional(),
+      }),
+    )
     .default([]),
+  has_more: z.boolean().default(false),
+  // the search API pages by token, the list API by the last id
+  next_page: z.string().nullish(),
 });
+type StripeChargePage = z.infer<typeof StripeChargePageSchema>;
+
+/** Where the next page starts, or null at the end. */
+type NextPage = (page: StripeChargePage) => string | null;
+
+const MAX_CHARGE_PAGES = 100;
+
+/**
+ * Money kept, in dollars, across every page: paid charges less what was refunded.
+ * Null when a page cannot be read, so a half-read total never overwrites the last good one.
+ */
+export const sumCharges = async (
+  fetchPage: (cursor: string | null) => Promise<JsonValue>,
+  cursorAfter: NextPage,
+): Promise<number | null> => {
+  let cents = 0;
+  let cursor: string | null = null;
+  for (let i = 0; i < MAX_CHARGE_PAGES; i += 1) {
+    const page = StripeChargePageSchema.safeParse(await fetchPage(cursor));
+    if (!page.success) {
+      return null;
+    }
+    for (const ch of page.data.data) {
+      if (ch.paid === true) {
+        cents += (ch.amount ?? 0) - (ch.amount_refunded ?? 0);
+      }
+    }
+    cursor = page.data.has_more ? cursorAfter(page.data) : null;
+    if (cursor === null) {
+      break;
+    }
+  }
+  return Math.round(cents) / 100;
+};
+
+export const afterLastId: NextPage = (page) => page.data.at(-1)?.id ?? null;
+export const byPageToken: NextPage = (page) => page.next_page ?? null;
+
 const StripeListSchema = z.object({
   data: z.array(z.object({ id: z.string().optional() })).default([]),
   has_more: z.boolean().default(false),
@@ -98,55 +146,26 @@ const CustomSnapshotSchema = z.object({
   users: jsonValueSchema.optional(),
 });
 
-const stripeRevenue = async (key: string): Promise<number | null> => {
-  const res = StripeChargesSchema.safeParse(await stripeGet("/v1/charges?limit=100", key));
-  if (!res.success) {
-    return null;
-  }
-  let cents = 0;
-  for (const ch of res.data.data) {
-    if (ch.paid === true && ch.amount !== undefined) {
-      cents += ch.amount;
-    }
-  }
-  return Math.round(cents) / 100;
-};
-
-const StripeChargeSearchSchema = z.object({
-  data: z
-    .array(z.object({ amount: z.number().optional(), paid: z.boolean().optional() }))
-    .default([]),
-  has_more: z.boolean().default(false),
-  next_page: z.string().nullish(),
-});
+const stripeRevenue = (key: string): Promise<number | null> =>
+  sumCharges(
+    (after) => stripeGet(`/v1/charges?limit=100${after ? `&starting_after=${after}` : ""}`, key),
+    afterLastId,
+  );
 
 /**
- * What one product earned: paid charges the team tagged `metadata[product]=<id>`.
+ * What one product earned: charges the team tagged `metadata[product]=<id>`.
  * Untagged revenue still counts for the company, but no product and no bet can claim it.
  */
-const stripeProductRevenue = async (key: string, productId: string): Promise<number | null> => {
+const stripeProductRevenue = (key: string, productId: string): Promise<number | null> => {
   const query = encodeURIComponent(`metadata['product']:'${productId}' AND status:'succeeded'`);
-  let cents = 0;
-  let page: string | null = null;
-  for (let i = 0; i < 50; i += 1) {
-    const qs = `query=${query}&limit=100${page ? `&page=${encodeURIComponent(page)}` : ""}`;
-    const parsed = StripeChargeSearchSchema.safeParse(
-      await stripeGet(`/v1/charges/search?${qs}`, key),
-    );
-    if (!parsed.success) {
-      return null;
-    }
-    for (const ch of parsed.data.data) {
-      if (ch.paid === true && ch.amount !== undefined) {
-        cents += ch.amount;
-      }
-    }
-    if (!parsed.data.has_more || !parsed.data.next_page) {
-      break;
-    }
-    page = parsed.data.next_page;
-  }
-  return Math.round(cents) / 100;
+  return sumCharges(
+    (page) =>
+      stripeGet(
+        `/v1/charges/search?query=${query}&limit=100${page ? `&page=${encodeURIComponent(page)}` : ""}`,
+        key,
+      ),
+    byPageToken,
+  );
 };
 
 /** Exact customer count via the search API; paginate fallback if search is unavailable. */
