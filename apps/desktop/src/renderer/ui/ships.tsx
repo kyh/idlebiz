@@ -239,7 +239,7 @@ export const Ships = ({
     }
     const done = await bridge().listTasks({ status: ["done"] });
     return done.filter(taskIn("done")).filter((t) => t.state.summary);
-  }, [company]);
+  }, [company?.id, company?.ships]);
 
   if (!company) {
     return null;

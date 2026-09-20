@@ -108,6 +108,15 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 
 ## UI conventions
 
+- **The renderer mirrors main's state by asking again.** An activity event says which slice
+  moved; `renderer/state/activity-reducer.ts` (pure, exhaustive over the event kinds — a new
+  kind is a compile error, not a silent default) turns it into a patch and the slices to
+  refetch. Answers can land out of order, so every fetch takes a ticket and a slice keeps
+  only an answer at least as new as its last (`ordering.ts`). Don't put entities in events.
+- **React and the office scene talk through `renderer/game/office-port.ts`**, a typed
+  vocabulary over Phaser's emitter. The scene still fetches its own roster when it boots: it
+  restarts the moment a company is founded, before the store has refreshed.
+
 - **Headless interactions come from Base UI** (`@base-ui/react`, per-part imports like
   `@base-ui/react/dialog`), skinned with px-kit classes. Dialogs, choice windows (Toolbar),
   toggles and the like are never hand-rolled: `renderer/ui/modal.tsx` and

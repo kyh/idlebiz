@@ -27,6 +27,7 @@ import { FRAME_H, FRAME_W } from "@/shared/character-frame";
 import { hiddenNodes } from "@/shared/office-sight";
 import type { PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
+import { hear, tell } from "@/renderer/game/office-port";
 import { DEFAULT_FOUNDER_SEED, employeeStatusOf } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
 import { bodyBlockedAt, solidAt, withoutNodes } from "@/shared/office-grid";
@@ -172,11 +173,13 @@ export class OfficeScene extends Scene {
       this.claimKeyboard();
     };
     const onCompanyReady = () => this.scene.restart();
-    this.game.events.on("spawn-employee", onSpawn);
-    this.game.events.on("despawn-employee", onDespawn);
-    this.game.events.on("ui-modal", onModal);
-    this.game.events.emit("office-input-ready");
-    this.game.events.on("company-ready", onCompanyReady);
+    const stopHearing = [
+      hear(this.game, "spawn-employee", onSpawn),
+      hear(this.game, "despawn-employee", onDespawn),
+      hear(this.game, "ui-modal", onModal),
+      hear(this.game, "company-ready", onCompanyReady),
+    ];
+    tell(this.game, "office-input-ready", null);
     // Phaser captures its keys on window and cancels their default whoever has
     // focus — a space typed into the team room would never land. The keyboard
     // is the game's only while no text field is being typed into.
@@ -192,10 +195,9 @@ export class OfficeScene extends Scene {
       this.activityUnsub?.();
       document.removeEventListener("focusin", onFocusChange);
       document.removeEventListener("focusout", onFocusChange);
-      this.game.events.off("spawn-employee", onSpawn);
-      this.game.events.off("despawn-employee", onDespawn);
-      this.game.events.off("ui-modal", onModal);
-      this.game.events.off("company-ready", onCompanyReady);
+      for (const stop of stopHearing) {
+        stop();
+      }
       this.npcs?.destroy();
       this.debugGfx?.destroy();
       this.debugGfx = undefined;
@@ -433,7 +435,7 @@ export class OfficeScene extends Scene {
   }
 
   private talkTo(employeeId: string): void {
-    this.game.events.emit("npc-interact", { employeeId });
+    tell(this.game, "npc-interact", { employeeId });
   }
 
   /** SPACE / E: talk to whoever is right in front of the founder. */

@@ -6,7 +6,7 @@ import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useKeyedState } from "@/renderer/hooks/use-keyed-state";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { bridge } from "@/renderer/bridge";
-import { refresh } from "@/renderer/state/store";
+import { officeReady, refresh } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { useModal } from "@/renderer/ui/modal";
@@ -587,7 +587,7 @@ export const Onboarding = () => {
         name: companyName.trim(),
       });
       await refresh();
-      window.dispatchEvent(new CustomEvent("idlebiz:onboarded"));
+      officeReady();
     } catch (error) {
       setFailure(errorMessage(error));
       setStep("budget");

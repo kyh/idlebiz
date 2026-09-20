@@ -102,23 +102,12 @@ const Screen = ({
 export const App = () => {
   const boot = useStore((s) => s.boot);
   const layout = useStore((s) => s.layout);
-  const game = useStore((s) => s.game);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
 
   useEffect(() => {
     initStore();
   }, []);
-
-  // when onboarding finishes, the office scene re-boots with the new team
-  useEffect(() => {
-    if (!game) {
-      return;
-    }
-    const onDone = () => game.events.emit("company-ready");
-    window.addEventListener("idlebiz:onboarded", onDone);
-    return () => window.removeEventListener("idlebiz:onboarded", onDone);
-  }, [game]);
 
   if (route === "#/office-assets") {
     return <OfficeObjectCatalog />;

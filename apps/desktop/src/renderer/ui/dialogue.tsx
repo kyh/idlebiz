@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { bridge } from "@/renderer/bridge";
+import { hear } from "@/renderer/game/office-port";
 import { useStore, directEmployee, listTasksFor, setTalkingTo } from "@/renderer/state/store";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
@@ -368,11 +369,7 @@ export const Dialogue = () => {
     if (!game) {
       return;
     }
-    const onInteract = (p: { employeeId: string }) => setTalkingTo(p.employeeId);
-    game.events.on("npc-interact", onInteract);
-    return () => {
-      game.events.off("npc-interact", onInteract);
-    };
+    return hear(game, "npc-interact", ({ employeeId }) => setTalkingTo(employeeId));
   }, [game]);
 
   const emp = employees.find((e) => e.id === talkingTo);

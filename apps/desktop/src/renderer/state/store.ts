@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
-import { employeeStatusOf, taskIn } from "@/shared/domain";
+import { taskIn } from "@/shared/domain";
 import type {
   Budget,
   Company,
@@ -22,6 +22,10 @@ import type {
 import { BUNDLED_LAYOUT, parseOfficeLayout } from "@/renderer/game/office-layout";
 import type { OfficeLayoutData } from "@/renderer/game/office-layout";
 import { bridge } from "@/renderer/bridge";
+import { hear, tell } from "@/renderer/game/office-port";
+import { reduceActivity } from "@/renderer/state/activity-reducer";
+import type { Slice } from "@/renderer/state/activity-reducer";
+import { Coalesced, latestWins } from "@/renderer/state/ordering";
 
 interface State {
   /** The first refresh finished: company, roster and tasks are known (or known absent). */
@@ -135,14 +139,25 @@ export const setAuthed = (ok: boolean): void => {
 
 // Scene startup can finish after an overlay mounted; replay the current keyboard state.
 const syncModal = (): void => {
-  state.game?.events.emit("ui-modal", state.modalOpen);
+  if (state.game) {
+    tell(state.game, "ui-modal", state.modalOpen);
+  }
 };
 
+let stopHearingInputReady: (() => void) | null = null;
+
 export const setGame = (game: Phaser.Game | null): void => {
-  state.game?.events.off("office-input-ready", syncModal);
+  stopHearingInputReady?.();
   set({ game });
-  game?.events.on("office-input-ready", syncModal);
+  stopHearingInputReady = game ? hear(game, "office-input-ready", syncModal) : null;
   syncModal();
+};
+
+/** A company was just founded: the office rebuilds around its team. */
+export const officeReady = (): void => {
+  if (state.game) {
+    tell(state.game, "company-ready", null);
+  }
 };
 
 export const setTalkingTo = (employeeId: string | null): void => {
@@ -198,8 +213,16 @@ const refreshProductStatus = async (products: readonly Product[]): Promise<void>
   set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
 };
 
-export const refresh = async (): Promise<void> => {
+const order = latestWins();
+
+const splitTasks = (tasks: readonly Task[]): Pick<State, "pendingAsks" | "stuckTasks"> => ({
+  pendingAsks: tasks.filter(taskIn("blocked")),
+  stuckTasks: tasks.filter(taskIn("dead")),
+});
+
+const refreshOnce = async (): Promise<void> => {
   await settleLayout();
+  const ticket = order.ticket();
   const [company, resting, load] = await Promise.all([
     bridge().getCompany(),
     bridge().restingRunners(),
@@ -213,38 +236,84 @@ export const refresh = async (): Promise<void> => {
         bridge().listBets(),
       ])
     : [[], [], [], []];
-  const pendingAsks = tasks.filter(taskIn("blocked"));
-  const stuckTasks = tasks.filter(taskIn("dead"));
-  set({
-    bets,
-    booted: true,
-    company,
-    employees,
-    pendingAsks,
-    products,
-    resting,
-    saveIssues: load.skipped,
-    stuckTasks,
-  });
-  void refreshProductStatus(products);
+  // a slice a newer request already answered keeps the newer answer
+  const patch: Partial<Omit<State, "boot">> = { booted: true, resting, saveIssues: load.skipped };
+  if (order.accepts("company", ticket)) {
+    patch.company = company;
+  }
+  if (order.accepts("employees", ticket)) {
+    patch.employees = employees;
+  }
+  if (order.accepts("tasks", ticket)) {
+    Object.assign(patch, splitTasks(tasks));
+  }
+  if (order.accepts("bets", ticket)) {
+    patch.bets = bets;
+  }
+  const freshProducts = order.accepts("products", ticket);
+  if (freshProducts) {
+    patch.products = products;
+  }
+  set(patch);
+  if (freshProducts) {
+    void refreshProductStatus(products);
+  }
 };
 
-const reloadProducts = async (): Promise<void> => {
-  const { company } = state;
-  if (!company) {
+const refreshing = new Coalesced(refreshOnce);
+
+export const refresh = (): Promise<void> => refreshing.call();
+
+/** Fetch one slice again, keeping the answer only if nothing newer has landed. */
+const reloadSlice = async <T>(
+  slice: string,
+  load: () => Promise<T>,
+  apply: (value: T) => void,
+): Promise<void> => {
+  if (!state.company) {
     return;
   }
-  const products = await bridge().listProducts();
-  set({ products });
-  await refreshProductStatus(products);
-};
-
-const reloadBets = async (): Promise<void> => {
-  const { company } = state;
-  if (company) {
-    set({ bets: await bridge().listBets() });
+  const ticket = order.ticket();
+  try {
+    const value = await load();
+    if (order.accepts(slice, ticket)) {
+      apply(value);
+    }
+  } catch {
+    // the next refresh catches up
   }
 };
+
+const reloadProducts = (): Promise<void> =>
+  reloadSlice(
+    "products",
+    () => bridge().listProducts(),
+    (products) => {
+      set({ products });
+      void refreshProductStatus(products);
+    },
+  );
+
+const reloadBets = (): Promise<void> =>
+  reloadSlice(
+    "bets",
+    () => bridge().listBets(),
+    (bets) => set({ bets }),
+  );
+
+const reloadTasks = (): Promise<void> =>
+  reloadSlice(
+    "tasks",
+    () => bridge().listTasks({ status: ["blocked", "dead"] }),
+    (tasks) => set(splitTasks(tasks)),
+  );
+
+const reloadCompany = (): Promise<void> =>
+  reloadSlice(
+    "company",
+    () => bridge().getCompany(),
+    (company) => set({ company }),
+  );
 
 // ---- actions ---------------------------------------------------------------
 
@@ -374,93 +443,36 @@ export const answerQuestion = async (taskId: string, answer: string): Promise<vo
 
 // ---- activity --------------------------------------------------------------
 
-const ACTIVITY_RING = 300;
+const RELOAD = {
+  all: refresh,
+  bets: reloadBets,
+  company: reloadCompany,
+  products: reloadProducts,
+  tasks: reloadTasks,
+} satisfies Record<Slice, () => Promise<void>>;
 
-const reloadCompany = async (): Promise<void> => {
-  try {
-    set({ company: await bridge().getCompany() });
-  } catch {
-    // the next refresh catches up
+// Surgical: the one employee walks in or out, no scene rebuild.
+const walkThroughDoor = (roster: { employeeId: string; hired: boolean }): void => {
+  const { game } = state;
+  if (!game) {
+    return;
+  }
+  if (!roster.hired) {
+    tell(game, "despawn-employee", roster.employeeId);
+    return;
+  }
+  const hire = state.employees.find((emp) => emp.id === roster.employeeId);
+  if (hire) {
+    tell(game, "spawn-employee", hire);
   }
 };
 
-// Surgical: spawn or despawn the one employee, no scene rebuild.
-const syncOfficeRoster = async (
-  hired: boolean,
-  employeeId: string | null | undefined,
-): Promise<void> => {
-  await refresh();
-  if (hired && employeeId) {
-    const emp = state.employees.find((x) => x.id === employeeId);
-    if (emp) {
-      state.game?.events.emit("spawn-employee", emp);
-    }
-  } else if (employeeId) {
-    state.game?.events.emit("despawn-employee", employeeId);
-  }
-};
-
-const onActivity = (e: ActivityEvent): void => {
-  const ring = state.activity;
-  const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
-  switch (e.kind) {
-    // live-patch employee status from run status events (keeps HUD + dialogue badge live)
-    case "status": {
-      const { employeeId } = e;
-      const status = employeeStatusOf(e.message);
-      set({
-        activity,
-        employees: employeeId
-          ? state.employees.map((emp) => (emp.id === employeeId ? { ...emp, status } : emp))
-          : state.employees,
-      });
-      return;
-    }
-    // a CLI hit its usage limit — remember until when, so the HUD can say why
-    case "runner.resting": {
-      set({ activity, resting: { ...state.resting, [e.payload.runner]: e.payload.until } });
-      return;
-    }
-    // both only move company fields — refetch just the company, not the world
-    case "metrics.pulse":
-    case "autopilot.changed":
-    case "budget.exhausted": {
-      set({ activity });
-      void reloadCompany();
-      return;
-    }
-    // the team self-sizes: reflect hires/releases in the office immediately
-    // the lead started a product: the roster's next runs know it; the panels do now
-    case "product.created": {
-      set({ activity });
-      void reloadProducts();
-      return;
-    }
-    case "product.killed": {
-      set({ activity });
-      void reloadProducts();
-      void reloadBets();
-      return;
-    }
-    case "bet.changed": {
-      set({ activity });
-      void reloadBets();
-      return;
-    }
-    case "org.hired":
-    case "org.released": {
-      set({ activity });
-      void syncOfficeRoster(e.kind === "org.hired", e.employeeId);
-      return;
-    }
-    case "run.end": {
-      set({ activity });
-      void refresh();
-      return;
-    }
-    default: {
-      set({ activity });
-    }
+const onActivity = async (e: ActivityEvent): Promise<void> => {
+  const { patch, reload, roster } = reduceActivity(state, e);
+  set(patch);
+  await Promise.all(reload.map((slice) => RELOAD[slice]()));
+  if (roster) {
+    walkThroughDoor(roster);
   }
 };
 
