@@ -87,51 +87,58 @@ const StripeChargePageSchema = z.object({
         amount: z.number().optional(),
         amount_refunded: z.number().optional(),
         id: z.string().optional(),
+        metadata: z.record(z.string(), z.string()).optional(),
         paid: z.boolean().optional(),
       }),
     )
     .default([]),
   has_more: z.boolean().default(false),
-  // the search API pages by token, the list API by the last id
-  next_page: z.string().nullish(),
 });
-type StripeChargePage = z.infer<typeof StripeChargePageSchema>;
-
-/** Where the next page starts, or null at the end. */
-type NextPage = (page: StripeChargePage) => string | null;
 
 const MAX_CHARGE_PAGES = 100;
 
+export interface Revenue {
+  /** Dollars kept across every charge. */
+  total: number;
+  /** The share of it tagged `metadata[product]=<id>`; untagged money belongs to the company alone. */
+  byProduct: ReadonlyMap<string, number>;
+}
+
 /**
- * Money kept, in dollars, across every page: paid charges less what was refunded.
- * Null when a page cannot be read, so a half-read total never overwrites the last good one.
+ * Money kept, in dollars, from one read of every charge: paid less refunded,
+ * bucketed by product tag in the same pass so the company's total and its
+ * products' can never disagree. Null when the read is incomplete — a page
+ * that cannot be parsed, or more pages than the cap — so half a total never
+ * overwrites the last good one.
  */
 export const sumCharges = async (
-  fetchPage: (cursor: string | null) => Promise<JsonValue>,
-  cursorAfter: NextPage,
-): Promise<number | null> => {
+  fetchPage: (after: string | null) => Promise<JsonValue>,
+): Promise<Revenue | null> => {
   let cents = 0;
-  let cursor: string | null = null;
+  const byProduct = new Map<string, number>();
+  let after: string | null = null;
   for (let i = 0; i < MAX_CHARGE_PAGES; i += 1) {
-    const page = StripeChargePageSchema.safeParse(await fetchPage(cursor));
+    const page = StripeChargePageSchema.safeParse(await fetchPage(after));
     if (!page.success) {
       return null;
     }
     for (const ch of page.data.data) {
       if (ch.paid === true) {
-        cents += (ch.amount ?? 0) - (ch.amount_refunded ?? 0);
+        const kept = (ch.amount ?? 0) - (ch.amount_refunded ?? 0);
+        cents += kept;
+        const product = ch.metadata?.["product"];
+        if (product !== undefined) {
+          byProduct.set(product, (byProduct.get(product) ?? 0) + kept / 100);
+        }
       }
     }
-    cursor = page.data.has_more ? cursorAfter(page.data) : null;
-    if (cursor === null) {
-      break;
+    after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
+    if (after === null) {
+      return { byProduct, total: cents / 100 };
     }
   }
-  return Math.round(cents) / 100;
+  return null;
 };
-
-export const afterLastId: NextPage = (page) => page.data.at(-1)?.id ?? null;
-export const byPageToken: NextPage = (page) => page.next_page ?? null;
 
 const StripeListSchema = z.object({
   data: z.array(z.object({ id: z.string().optional() })).default([]),
@@ -146,26 +153,22 @@ const CustomSnapshotSchema = z.object({
   users: jsonValueSchema.optional(),
 });
 
-const stripeRevenue = (key: string): Promise<number | null> =>
-  sumCharges(
-    (after) => stripeGet(`/v1/charges?limit=100${after ? `&starting_after=${after}` : ""}`, key),
-    afterLastId,
-  );
+// Every charge is re-read to catch refunds on old ones, which is a page per
+// hundred charges; the numbers move in hours, so the read is kept this long.
+const REVENUE_TTL_MS = 10 * 60_000;
+let revenueRead: { at: number; key: string; revenue: Revenue } | null = null;
 
-/**
- * What one product earned: charges the team tagged `metadata[product]=<id>`.
- * Untagged revenue still counts for the company, but no product and no bet can claim it.
- */
-const stripeProductRevenue = (key: string, productId: string): Promise<number | null> => {
-  const query = encodeURIComponent(`metadata['product']:'${productId}' AND status:'succeeded'`);
-  return sumCharges(
-    (page) =>
-      stripeGet(
-        `/v1/charges/search?query=${query}&limit=100${page ? `&page=${encodeURIComponent(page)}` : ""}`,
-        key,
-      ),
-    byPageToken,
+const stripeRevenue = async (key: string, now: number): Promise<Revenue | null> => {
+  if (revenueRead && revenueRead.key === key && now - revenueRead.at < REVENUE_TTL_MS) {
+    return revenueRead.revenue;
+  }
+  const revenue = await sumCharges((after) =>
+    stripeGet(`/v1/charges?limit=100${after ? `&starting_after=${after}` : ""}`, key),
   );
+  if (revenue) {
+    revenueRead = { at: now, key, revenue };
+  }
+  return revenue;
 };
 
 /** Exact customer count via the search API; paginate fallback if search is unavailable. */
@@ -222,13 +225,14 @@ const stripeSnapshot = async (products: readonly Product[]): Promise<StripeSnaps
     return NO_STRIPE;
   }
   try {
-    const [revenue, customers, each] = await Promise.all([
-      stripeRevenue(key),
+    const [revenue, customers] = await Promise.all([
+      stripeRevenue(key, Date.now()),
       stripeCustomers(key),
-      Promise.all(products.map((p) => stripeProductRevenue(key, p.id))),
     ]);
-    const perProduct = new Map(products.map((p, i) => [p.id, each[i] ?? null]));
-    return { authError: false, customers, perProduct, revenue };
+    const perProduct = new Map(
+      products.map((p) => [p.id, revenue ? (revenue.byProduct.get(p.id) ?? 0) : null]),
+    );
+    return { authError: false, customers, perProduct, revenue: revenue?.total ?? null };
   } catch (error) {
     return error instanceof StripeAuthError ? { ...NO_STRIPE, authError: true } : NO_STRIPE;
   }

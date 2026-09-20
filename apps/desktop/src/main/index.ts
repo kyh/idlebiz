@@ -42,6 +42,7 @@ const moduleDir = import.meta.dirname;
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let metricsTimer: ReturnType<typeof setInterval> | null = null;
+let pulseInFlight = false;
 
 const runMetricsPulse = (): void => {
   const company = store.getDefaultCompany();
@@ -53,8 +54,15 @@ const runMetricsPulse = (): void => {
   if (!cfg?.stripe && !cfg?.plausible && !cfg?.custom && products.every((p) => p.vercel === null)) {
     return;
   }
+  // a slow provider must not let pulses stack: a late one would overwrite a newer reading
+  if (pulseInFlight) {
+    return;
+  }
+  pulseInFlight = true;
   void (async () => {
-    const snap = await fetchRealMetrics(cfg, products);
+    const snap = await fetchRealMetrics(cfg, products).finally(() => {
+      pulseInFlight = false;
+    });
     store.setRealMetrics(company.id, snap);
     for (const product of products) {
       store.setProductMetrics(product.id, {

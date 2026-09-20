@@ -606,26 +606,44 @@ export const setBudget = (id: string, budget: Budget): Company => patchCompany(i
 
 export const resetSpend = (id: string): Company => patchCompany(id, { spentUsd: 0 });
 
-/** Null metrics keep the last reported value through provider failures. */
-export const setRealMetrics = (
-  id: string,
-  snapshot: { users: number | null; revenue: number | null },
-): Company | null => {
+interface MetricsSnapshot {
+  users: number | null;
+  revenue: number | null;
+}
+
+interface MetricsPatch {
+  users?: number;
+  revenueUsd?: number;
+}
+
+/** What a snapshot changes. A null keeps the last reported value through provider failures, and a number that did not move writes nothing. */
+const metricsPatch = (
+  current: { users: number | null; revenueUsd: number | null },
+  snapshot: MetricsSnapshot,
+): MetricsPatch => {
+  const patch: MetricsPatch = {};
+  if (snapshot.users !== null) {
+    const users = Math.max(0, Math.round(snapshot.users));
+    if (users !== current.users) {
+      patch.users = users;
+    }
+  }
+  if (snapshot.revenue !== null) {
+    const revenueUsd = Math.round(snapshot.revenue * 100) / 100;
+    if (revenueUsd !== current.revenueUsd) {
+      patch.revenueUsd = revenueUsd;
+    }
+  }
+  return patch;
+};
+
+export const setRealMetrics = (id: string, snapshot: MetricsSnapshot): Company | null => {
   const co = getCompany(id);
   if (!co) {
     return null;
   }
-  const patch: Partial<Company> = {};
-  if (snapshot.users !== null) {
-    patch.users = Math.max(0, Math.round(snapshot.users));
-  }
-  if (snapshot.revenue !== null) {
-    patch.revenueUsd = Math.round(snapshot.revenue * 100) / 100;
-  }
-  if (Object.keys(patch).length === 0) {
-    return co;
-  }
-  return patchCompany(id, patch);
+  const patch = metricsPatch(co, snapshot);
+  return Object.keys(patch).length === 0 ? co : patchCompany(id, patch);
 };
 
 // ---- routines --------------------------------------------------------------
@@ -867,18 +885,10 @@ export const createProduct = (input: {
 export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product | null =>
   patchProduct(productId, { vercel });
 
-/** Real numbers per product, from the pulse; a null keeps the last-known value. */
-export const setProductMetrics = (
-  productId: string,
-  snapshot: { users: number | null; revenue: number | null },
-): void => {
-  const patch: Partial<Product> = {};
-  if (snapshot.users !== null) {
-    patch.users = Math.max(0, Math.round(snapshot.users));
-  }
-  if (snapshot.revenue !== null) {
-    patch.revenueUsd = Math.round(snapshot.revenue * 100) / 100;
-  }
+/** Real numbers per product, from the pulse. */
+export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot): void => {
+  const product = getProduct(productId);
+  const patch = product ? metricsPatch(product, snapshot) : {};
   if (Object.keys(patch).length > 0) {
     patchProduct(productId, patch);
   }

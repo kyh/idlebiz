@@ -1,64 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { afterLastId, byPageToken, sumCharges } from "./metrics";
+import { sumCharges } from "./metrics";
 
-const charge = (id: string, amount: number, extra: Record<string, number | boolean> = {}) => ({
-  amount,
-  id,
-  paid: true,
-  ...extra,
-});
+const charge = (id: string, amount: number, product?: string) => {
+  const metadata: Record<string, string> = product === undefined ? {} : { product };
+  return { amount, amount_refunded: 0, id, metadata, paid: true };
+};
 
 describe("sumCharges", () => {
-  it("follows the list API past its first hundred", async () => {
+  it("follows the list past its first hundred", async () => {
     const asked: (string | null)[] = [];
-    const total = await sumCharges((cursor) => {
-      asked.push(cursor);
+    const revenue = await sumCharges((after) => {
+      asked.push(after);
       return Promise.resolve(
-        cursor === null
+        after === null
           ? { data: [charge("ch_1", 1000), charge("ch_2", 500)], has_more: true }
           : { data: [charge("ch_3", 250)], has_more: false },
       );
-    }, afterLastId);
-    expect(total).toBe(17.5);
+    });
+    expect(revenue?.total).toBe(17.5);
     expect(asked).toEqual([null, "ch_2"]);
   });
 
-  it("follows the search API by its page token", async () => {
-    const total = await sumCharges(
-      (cursor) =>
-        Promise.resolve(
-          cursor === null
-            ? { data: [charge("ch_1", 1000)], has_more: true, next_page: "tok" }
-            : { data: [charge("ch_2", 1000)], has_more: false, next_page: null },
-        ),
-      byPageToken,
+  it("credits a product with what its tag claims, in the same read", async () => {
+    const revenue = await sumCharges(() =>
+      Promise.resolve({
+        data: [charge("ch_1", 1000, "app"), charge("ch_2", 500, "app"), charge("ch_3", 250)],
+      }),
     );
-    expect(total).toBe(20);
+    expect(revenue?.total).toBe(17.5);
+    expect([...(revenue?.byProduct ?? [])]).toEqual([["app", 15]]);
   });
 
   it("counts what was kept: not unpaid charges, not refunds", async () => {
-    const total = await sumCharges(
-      () =>
-        Promise.resolve({
-          data: [
-            charge("ch_1", 1000, { amount_refunded: 1000 }),
-            charge("ch_2", 1000, { amount_refunded: 300 }),
-            charge("ch_3", 900, { paid: false }),
-          ],
-        }),
-      afterLastId,
+    const revenue = await sumCharges(() =>
+      Promise.resolve({
+        data: [
+          { ...charge("ch_1", 1000), amount_refunded: 1000 },
+          { ...charge("ch_2", 1000), amount_refunded: 300 },
+          { ...charge("ch_3", 900), paid: false },
+        ],
+      }),
     );
-    expect(total).toBe(7);
+    expect(revenue?.total).toBe(7);
   });
 
   it("reports nothing rather than half a total", async () => {
-    const total = await sumCharges(
-      (cursor) =>
-        Promise.resolve(
-          cursor === null ? { data: [charge("ch_1", 1000)], has_more: true } : "rate limited",
-        ),
-      afterLastId,
+    const revenue = await sumCharges((after) =>
+      Promise.resolve(
+        after === null ? { data: [charge("ch_1", 1000)], has_more: true } : "rate limited",
+      ),
     );
-    expect(total).toBeNull();
+    expect(revenue).toBeNull();
   });
 });
