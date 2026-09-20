@@ -1,6 +1,6 @@
 import { killBet } from "@/renderer/state/store";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
-import { betGoal, betMoney, isClosed, isSpentOut, ledgerOrder } from "@/shared/bets";
+import { betGoal, betMoney, betProgress, isClosed, isSpentOut, ledgerOrder } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { formatDate, formatTime, formatUsd } from "@/shared/format";
 import { cn } from "cn";
@@ -18,7 +18,7 @@ const verdictOf = (bet: Bet): string => {
       return `til ${formatDate(st.until)} ${formatTime(st.until)}`;
     }
     case "won": {
-      return `moved ${st.moved}`;
+      return "target reached";
     }
     case "killed": {
       return st.reason;
@@ -43,9 +43,14 @@ const BetRow = ({ bet, onNote }: { bet: Bet; onNote: (note: string) => void }) =
         </span>
       </div>
       <p className="mt-1 text-xs leading-relaxed text-fg-dim">{bet.hypothesis}</p>
+      <p className="mt-1 text-xs text-fg-dim">
+        {bet.claim.metric === "users"
+          ? `counts visitors landing on ${bet.claim.landingPath}`
+          : `counts Stripe money tagged bet=${bet.id}`}
+      </p>
       <div className="mt-1 flex items-baseline justify-between gap-2 text-xs text-fg-dim">
         <span className="min-w-0 truncate" title={verdictOf(bet)}>
-          {betGoal(bet)} · {betMoney(bet)} · {verdictOf(bet)}
+          {betGoal(bet)} ({betProgress(bet)}) · {betMoney(bet)} · {verdictOf(bet)}
         </span>
         {live ? (
           <ConfirmLink

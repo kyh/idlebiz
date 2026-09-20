@@ -567,6 +567,7 @@ describe("bets", () => {
       budgetUsd: 2,
       companyId,
       hypothesis: "a launch post brings visitors",
+      landingPath: null,
       metric: "users",
       productId,
       target: 50,
@@ -582,28 +583,48 @@ describe("bets", () => {
     return product;
   };
 
-  it("opens from the live number and refuses a second bet on it", () => {
+  it("gives a users bet a path of its own and refuses one another bet already covers", () => {
     const co = found();
     const product = firstProductOf(co.id);
-    store.setProductMetrics(product.id, { revenue: null, users: 10 });
     const bet = launch(co.id, product.id);
-    expect(bet).toMatchObject({ baseline: 10, state: { kind: "open" } });
-    expect(() => launch(co.id, product.id)).toThrow("two bets on one number");
+    expect(bet).toMatchObject({
+      claim: { landingPath: `/b/${bet.id}`, metric: "users" },
+      reading: null,
+      state: { kind: "open" },
+    });
+    expect(launch(co.id, product.id).id).not.toBe(bet.id);
+    expect(() =>
+      store.openBet({
+        budgetUsd: 2,
+        companyId: co.id,
+        hypothesis: "the whole site grows",
+        landingPath: "/",
+        metric: "users",
+        productId: product.id,
+        target: 50,
+        title: "Everything",
+        windowHours: 24,
+      }),
+    ).toThrow("could not be told apart");
   });
 
-  it("is judged by the real number, and the verdict survives a restart", () => {
+  it("is judged by what it brought in, and the verdict survives a restart", () => {
     const co = found();
-    const product = firstProductOf(co.id);
-    const bet = launch(co.id, product.id);
+    const bet = launch(co.id, firstProductOf(co.id).id);
     store.recordBetSpend(bet.id, 2);
     expect(store.judgeBets(co.id, 0)).toEqual([]);
     expect(store.measureBet(bet.id, 0).state.kind).toBe("measuring");
-    store.setProductMetrics(product.id, { revenue: null, users: 60 });
+    store.setBetReading(bet.id, 60);
+    store.setBetReading(bet.id, null);
     expect(store.judgeBets(co.id, 1).map((b) => b.state.kind)).toEqual(["won"]);
     expect(store.judgeBets(co.id, 2)).toEqual([]);
     expect(existsSync(betFile(co.id, bet.id))).toBe(true);
     store.initStore();
-    expect(store.getBet(bet.id)).toMatchObject({ spentUsd: 2, state: { kind: "won", moved: 60 } });
+    expect(store.getBet(bet.id)).toMatchObject({
+      reading: 60,
+      spentUsd: 2,
+      state: { kind: "won", moved: 60 },
+    });
   });
 
   it("retires a product with its bets and open work, but never the last one", () => {

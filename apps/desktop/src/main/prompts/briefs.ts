@@ -1,4 +1,4 @@
-import { betGoal, betMoney, ledgerOrder } from "@/shared/bets";
+import { betGoal, betMoney, betProgress, ledgerOrder } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { INTEGRATION_LABELS, businessTypeById, isLead, serializeBlockedAsk } from "@/shared/domain";
 import type {
@@ -84,7 +84,7 @@ export type Assignment =
 
 const betLine = (bet: Bet): string => {
   const st = bet.state;
-  const head = `- ${bet.title} (${bet.id}) on ${bet.productId}: ${betGoal(bet)}, ${betMoney(bet)} spent`;
+  const head = `- ${bet.title} (${bet.id}) on ${bet.productId}: ${betGoal(bet)} (${betProgress(bet)}), ${betMoney(bet)} spent`;
   switch (st.kind) {
     case "open": {
       return `${head} — open`;
@@ -102,6 +102,12 @@ const betLine = (bet: Bet): string => {
   }
 };
 
+/** How a bet's result gets counted: the one thing its work must never skip. */
+export const betMark = (bet: Bet): string =>
+  bet.claim.metric === "users"
+    ? `It counts only visitors who land on ${bet.claim.landingPath} (or a page under it) of ${bet.productId}'s deploy: every link this bet places anywhere must point there, and the path must serve a real page — see "Marking a bet's traffic" in your instructions.`
+    : `It counts only Stripe money tagged metadata[bet]=${bet.id}: every payment link, checkout session or payment intent made for it must carry that tag on the payment itself.`;
+
 /** What the team room hears when a bet opens or changes state. */
 export const betNews = (bet: Bet): string => {
   const st = bet.state;
@@ -113,7 +119,7 @@ export const betNews = (bet: Bet): string => {
       return `⏳ ${bet.title}: spending stopped — the number has ${bet.windowHours}h to answer.`;
     }
     case "won": {
-      return `🏆 Bet won: ${bet.title} — ${bet.metric} moved ${st.moved}.`;
+      return `🏆 Bet won: ${bet.title} — it brought in ${betProgress(bet)} ${bet.claim.metric}.`;
     }
     case "killed": {
       return `🪦 Bet killed: ${bet.title} — ${st.reason}.`;
@@ -152,7 +158,8 @@ const assignmentBrief = (
         lines: [
           `THIS RUN SPENDS AGAINST A BET: "${bet.title}" (${bet.id}).`,
           `Hypothesis: ${bet.hypothesis}`,
-          `It wins only if ${bet.productId}'s real ${bet.metric} move by ${betGoal(bet)} — the app judges that from the live number, not from what anyone reports. ${betMoney(bet)} of its budget is spent; when the budget runs out the work stops. Once the lead calls the work live, the number gets ${bet.windowHours}h to answer.`,
+          `It wins only if it brings in ${betGoal(bet)} (so far: ${betProgress(bet)}) — the app judges that from the live number, not from what anyone reports. ${betMark(bet)}`,
+          `${betMoney(bet)} of its budget is spent; when the budget runs out the work stops. Once the lead calls the work live, the number gets ${bet.windowHours}h to answer.`,
           `If the next step is waiting on the founder (a connection, an approval) and a teammate has already asked, do not ask again: do what can be done without it, or stop.`,
           `Do the one thing most likely to move that number. Shipping is not the goal; the number is.`,
           isLeader
@@ -167,8 +174,8 @@ const assignmentBrief = (
       return {
         focus: products.find((p) => p.id === bet.productId) ?? null,
         lines: [
-          `A BET IS OUT OF BUDGET AND NEEDS YOUR CALL: "${bet.title}" (${bet.id}) has spent ${betMoney(bet)}. Nobody works on it until you decide, and nothing new opens on ${bet.productId}'s ${bet.metric} while it is live.`,
-          `If the work that could move the number is really out the door — deployed, posted, reachable — call measure_bet: ${bet.metric} then has ${bet.windowHours}h to move by ${betGoal(bet)}.`,
+          `A BET IS OUT OF BUDGET AND NEEDS YOUR CALL: "${bet.title}" (${bet.id}) has spent ${betMoney(bet)} and brought in ${betProgress(bet)}. Nobody works on it until you decide.`,
+          `If the work that could move the number is really out the door — deployed, posted, reachable — call measure_bet: it then has ${bet.windowHours}h to bring in ${betGoal(bet)}.`,
           `If it is not, a clock would only produce a false verdict: kill_bet with the honest reason, and if the hypothesis still deserves a test, open it again with a budget that covers the work.`,
           `Decide this run. Do not do the work yourself here.`,
         ],
@@ -179,7 +186,7 @@ const assignmentBrief = (
       const { product, widen } = assignment;
       const where = product
         ? `${product.name} (${product.id}) has room for one`
-        : "every product already has its numbers bet on";
+        : "every product already carries all the live bets it can";
       return {
         focus: product,
         lines: [
@@ -187,7 +194,7 @@ const assignmentBrief = (
           widen
             ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
             : `${where}.`,
-          `Call open_bet with a falsifiable hypothesis, the metric it should move ("users" or "revenue"), by how much, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about $1, so a budget under $3 buys almost nothing; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
+          `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about $1, so a budget under $3 buys almost nothing; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
         ],
         title: `Open the next bet for ${product?.name ?? company.name}`,

@@ -2,8 +2,11 @@ import { z } from "zod";
 import { formatUsd } from "@/shared/format";
 
 // A bet is the unit the company is steered by: a hypothesis about one real
-// number of one product, a spend cap, and a window to be proven in. Everything
-// here is pure so the scheduler, the evaluator and the replay judge one way.
+// number of one product, a spend cap, and a window to be proven in. It counts
+// only what carries its mark — visitors who landed on its path, money tagged
+// with its id — so any number of bets can run at once and none can claim
+// another's result. Everything here is pure so the scheduler, the evaluator
+// and the replay judge one way.
 
 export const BET_METRICS = ["users", "revenue"] as const;
 export type BetMetric = (typeof BET_METRICS)[number];
@@ -22,17 +25,50 @@ export const BetStateSchema = z.discriminatedUnion("kind", [
 ]);
 export type BetState = z.infer<typeof BetStateSchema>;
 
+/** A path a users-bet may own: absolute, plain segments, no query. */
+export const LandingPathSchema = z
+  .string()
+  .regex(/^\/[\w\-./]*$/u)
+  .max(120);
+
+/** What the bet counts. */
+export const BetClaimSchema = z.discriminatedUnion("metric", [
+  /** Visitors who landed under `landingPath` since the bet opened: every link the bet places points there. */
+  z.object({ landingPath: LandingPathSchema, metric: z.literal("users") }),
+  /** Money kept from Stripe charges tagged `metadata[bet]=<id>`. */
+  z.object({ metric: z.literal("revenue") }),
+]);
+export type BetClaim = z.infer<typeof BetClaimSchema>;
+
+/** Where a users-bet lands unless it names somewhere else: one rewrite rule on the product serves every bet. */
+export const defaultLandingPath = (betId: string): string => `/b/${betId}`;
+
+const segments = (path: string): string[] => path.split("/").filter((part) => part !== "");
+
+/** One path sits under the other, so a visitor to the deeper one would count for both. */
+const pathsOverlap = (a: string, b: string): boolean => {
+  const [x, y] = [segments(a), segments(b)];
+  return x.slice(0, y.length).join("/") === y.slice(0, x.length).join("/");
+};
+
+/** Two bets that would count the same visitors. Money is tagged per bet, so revenue claims never collide. */
+export const claimsCollide = (a: Bet, b: Bet): boolean =>
+  a.productId === b.productId &&
+  a.claim.metric === "users" &&
+  b.claim.metric === "users" &&
+  pathsOverlap(a.claim.landingPath, b.claim.landingPath);
+
 export interface Bet {
   id: string;
   companyId: string;
   productId: string;
   title: string;
   hypothesis: string;
-  metric: BetMetric;
-  /** How far the metric must move from `baseline` for the bet to win. */
+  claim: BetClaim;
+  /** How much of what it claims the bet must bring in to win. */
   target: number;
-  /** Where the metric stood when the bet opened; an unconnected source reads as zero. */
-  baseline: number;
+  /** What it has brought in so far, as the last pulse read it; null while no source reports it. */
+  reading: number | null;
   budgetUsd: number;
   spentUsd: number;
   /** How long the metric gets to respond once the work stops. */
@@ -56,16 +92,22 @@ export const isSpentOut = (bet: Bet): boolean =>
 
 const HOUR_MS = 3_600_000;
 
-/** How far the metric has moved since the bet opened; null while no source reports it. */
-export const movedOf = (bet: Bet, reading: number | null): number | null =>
-  reading === null ? null : reading - bet.baseline;
-
 /** When a window started now would close. */
 export const windowEnd = (bet: Bet, now: number): number => now + bet.windowHours * HOUR_MS;
 
 /** "+50 users" / "+$20.00 revenue": what the bet has to move. */
 export const betGoal = (bet: Bet): string =>
-  bet.metric === "revenue" ? `+${formatUsd(bet.target)} revenue` : `+${bet.target} users`;
+  bet.claim.metric === "revenue" ? `+${formatUsd(bet.target)} revenue` : `+${bet.target} users`;
+
+/** "12 of 50" / "$4.00 of $20.00": how far along it is, or that nothing can say. */
+export const betProgress = (bet: Bet): string => {
+  if (bet.reading === null) {
+    return "no reading yet";
+  }
+  return bet.claim.metric === "revenue"
+    ? `${formatUsd(bet.reading)} of ${formatUsd(bet.target)}`
+    : `${bet.reading} of ${bet.target}`;
+};
 
 /** "$1.42 of $3.00": what it has burned of what it may. */
 export const betMoney = (bet: Bet): string =>
@@ -81,17 +123,15 @@ export const ledgerOrder = (bets: readonly Bet[], verdicts = Infinity): Bet[] =>
 ];
 
 /**
- * The verdict is the evaluator's, never the team's: a bet wins when the real
- * number moved by its target, and dies when its window closes short of it.
+ * The verdict is the evaluator's, never the team's: a bet wins when what it
+ * claims reached its target, and dies when its window closes short of it.
  * Only the lead starts a window, by saying the work is out the door.
- * `reading` is null while no source reports the metric.
  */
-export const judge = (bet: Bet, reading: number | null, now: number): BetState => {
-  const { state } = bet;
+export const judge = (bet: Bet, now: number): BetState => {
+  const { state, reading: moved } = bet;
   if (state.kind === "won" || state.kind === "killed") {
     return state;
   }
-  const moved = movedOf(bet, reading);
   if (moved !== null && moved >= bet.target) {
     return { closedAt: now, kind: "won", moved };
   }
@@ -107,8 +147,8 @@ export const judge = (bet: Bet, reading: number | null, now: number): BetState =
     moved,
     reason:
       moved === null
-        ? `no source ever reported ${bet.metric}`
-        : `${bet.metric} moved ${moved} of the ${bet.target} it needed`,
+        ? `no source ever reported its ${bet.claim.metric}`
+        : `it brought ${betProgress(bet)} ${bet.claim.metric}`,
   };
 };
 
@@ -132,11 +172,13 @@ export type Allocation =
   | { kind: "settle"; betId: string }
   /** Nothing fundable: the lead opens a bet. `widen` asks for new ground, `productId` names the best proven one. */
   | { kind: "propose"; productId: string | null; widen: boolean }
-  /** Nothing to spend on until a verdict or the founder: every number is bet on and the portfolio is full, or the lead's last proposal is waiting on them. */
+  /** Nothing to spend on until a verdict or the founder: every product has all the live bets it can carry and the portfolio is full, or the lead's last proposal is waiting on them. */
   | { kind: "wait" };
 
 /** Past this many live products a new one has to replace a killed one. */
 const MAX_LIVE_PRODUCTS = 5;
+/** Past this many live bets a product waits for a verdict: each one is a window the lead has to watch. */
+const MAX_LIVE_BETS_PER_PRODUCT = 3;
 
 export interface Ledger {
   bets: readonly Bet[];
@@ -191,9 +233,8 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   const recent = closed.slice(-params.plateau);
   const widen = recent.length >= params.plateau && recent.every((b) => b.state.kind === "killed");
   const liveBets = ledger.bets.filter((b) => !isClosed(b));
-  // a product has room while one of its numbers has no live bet on it
   const [proven] = ledger.products
-    .filter((id) => liveBets.filter((b) => b.productId === id).length < BET_METRICS.length)
+    .filter((id) => liveBets.filter((b) => b.productId === id).length < MAX_LIVE_BETS_PER_PRODUCT)
     .toSorted((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
   if (proven === undefined && ledger.products.length >= MAX_LIVE_PRODUCTS) {
     return { kind: "wait" };

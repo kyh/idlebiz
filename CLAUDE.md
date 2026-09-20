@@ -31,9 +31,15 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   on the founder and a window over nothing shipped is a false verdict. A spent-out bet gets
   the lead a "settle" run: measure or kill. No tool
   lets an agent declare a win.
-- **One live bet per product per metric** (`store.openBet` refuses the second), so two bets
-  never claim the same movement. Per-product revenue is Stripe charges tagged
-  `metadata[product]=<slug>`; untagged revenue counts for the company only.
+- **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
+  (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
+  bet reads Stripe money tagged `metadata[bet]=<slug>`. So any number of bets run on one
+  product and none can claim another's result; `claimsCollide` refuses only a path another
+  live bet already covers. Readings arrive with the metrics pulse and live on the bet
+  (`reading`), so `judge` needs nothing but the bet. Vercel's analytics API wants `since`
+  and `until` together and filters in OData; path filters are free, utm ones are a paid
+  add-on — which is why the mark is a path. Per-product revenue is the same read, tagged
+  `metadata[product]`; untagged money counts for the company only.
 - **Idle hands only spend against a fundable bet.** `allocate` decides everything about
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget

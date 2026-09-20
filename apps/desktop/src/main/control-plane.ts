@@ -3,7 +3,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { listenLoopback } from "@/main/lib/http";
-import { BET_METRICS } from "@/shared/bets";
+import { BET_METRICS, LandingPathSchema } from "@/shared/bets";
 import type { BetMetric } from "@/shared/bets";
 import { INTEGRATION_KINDS } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
@@ -42,6 +42,8 @@ export interface OpenBetInput {
   title: string;
   hypothesis: string;
   metric: BetMetric;
+  /** Where a users bet's links land; null takes a path of its own. */
+  landingPath: string | null;
   target: number;
   budgetUsd: number;
   windowHours: number;
@@ -97,6 +99,7 @@ const SlugReasonBody = z.object({ reason: z.string().trim().min(1), slug: z.stri
 const OpenBetBody = z.object({
   budgetUsd: z.number().positive().max(1000),
   hypothesis: z.string().trim().min(1).max(600),
+  landingPath: LandingPathSchema.optional(),
   metric: z.enum(BET_METRICS),
   product: z.string().min(1).optional(),
   target: z.number().positive(),
@@ -196,7 +199,13 @@ const TOOLS = {
   },
   "POST /v1/open-bet": (run, raw) => {
     const body = parseBody(raw, OpenBetBody);
-    return { message: run.hooks.openBet({ ...body, product: body.product ?? null }) };
+    return {
+      message: run.hooks.openBet({
+        ...body,
+        landingPath: body.landingPath ?? null,
+        product: body.product ?? null,
+      }),
+    };
   },
   "POST /v1/release": (run, raw) => {
     const body = parseBody(raw, ReleaseBody);

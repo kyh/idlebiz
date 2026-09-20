@@ -9,9 +9,12 @@ const API = "https://api.vercel.com";
 const apiGet = (
   path: string,
   token: string,
-  params: Record<string, string> = {},
+  params: Readonly<Record<string, string | undefined>> = {},
 ): Promise<JsonValue> => {
-  const qs = new URLSearchParams(params).toString();
+  const given = Object.entries(params).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  const qs = new URLSearchParams(given).toString();
   return getJson(
     `${API}${path}${qs ? `?${qs}` : ""}`,
     { Authorization: `Bearer ${token}` },
@@ -75,30 +78,67 @@ const VisitsCountSchema = z.object({
   data: z.object({ pageviews: z.number().optional(), visitors: z.number().optional() }),
 });
 
-/** Prefer 30-day visitors; fall back to the production total if the dated query fails. */
+/** Which visits to count. Left empty, it is every visit the project has ever had. */
+export interface VisitWindow {
+  /** Only visits from this moment on. */
+  since?: number;
+  /** Only visits to this path or anything under it. */
+  under?: string;
+}
+
+/**
+ * The query for a count of visitors. The API wants `since` and `until` together
+ * or neither, and filters in OData; path filters are on every plan, the utm ones
+ * are a paid add-on, which is why a bet marks its traffic with a path.
+ */
+export interface VisitQuery {
+  projectId: string;
+  teamId?: string;
+  since?: string;
+  until?: string;
+  filter?: string;
+}
+
+export const visitQuery = (
+  project: { projectId: string; teamId: string | null },
+  window: VisitWindow,
+  now: number,
+): VisitQuery => {
+  const params: VisitQuery = { projectId: project.projectId };
+  if (project.teamId !== null) {
+    params.teamId = project.teamId;
+  }
+  if (window.since !== undefined) {
+    params.since = new Date(window.since).toISOString();
+    params.until = new Date(now).toISOString();
+  }
+  if (window.under !== undefined) {
+    const path = window.under.replaceAll("'", "''");
+    const below = path.endsWith("/") ? path : `${path}/`;
+    params.filter = `requestPath eq '${path}' or startswith(requestPath, '${below}')`;
+  }
+  return params;
+};
+
+/** Visitors to a product's deploy, from the Web Analytics the dashboard reads. */
 export const webAnalyticsVisitors = async (
-  projectId: string,
-  teamId?: string,
+  project: { projectId: string; teamId: string | null },
+  window: VisitWindow = {},
 ): Promise<number | null> => {
   const token = getSecret("VERCEL_TOKEN");
   if (!token) {
     return null;
   }
-  const base: Record<string, string> = teamId ? { projectId, teamId } : { projectId };
-  const since = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString().slice(0, 10);
-  for (const params of [{ ...base, since }, base]) {
-    try {
-      const parsed = VisitsCountSchema.safeParse(
-        await apiGet("/v1/query/web-analytics/visits/count", token, params),
-      );
-      if (parsed.success && parsed.data.data.visitors !== undefined) {
-        return parsed.data.data.visitors;
-      }
-    } catch {
-      /* try the next parameter shape */
-    }
+  try {
+    const parsed = VisitsCountSchema.safeParse(
+      await apiGet("/v1/query/web-analytics/visits/count", token, {
+        ...visitQuery(project, window, Date.now()),
+      }),
+    );
+    return parsed.success ? (parsed.data.data.visitors ?? null) : null;
+  } catch {
+    return null;
   }
-  return null;
 };
 
 const DeploymentsSchema = z.object({

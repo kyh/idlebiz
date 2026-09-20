@@ -32,6 +32,7 @@ import {
   markAuthError,
 } from "@/main/stripe-connect";
 import { ROOT_DIR, OFFICE_DESIGN_PATH } from "@/main/paths";
+import { isClosed } from "@/shared/bets";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 import type { Task } from "@/shared/domain";
 import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
@@ -60,7 +61,8 @@ const runMetricsPulse = (): void => {
   }
   pulseInFlight = true;
   void (async () => {
-    const snap = await fetchRealMetrics(cfg, products).finally(() => {
+    const bets = store.listBets(company.id).filter((b) => !isClosed(b));
+    const snap = await fetchRealMetrics(cfg, products, bets).finally(() => {
       pulseInFlight = false;
     });
     store.setRealMetrics(company.id, snap);
@@ -69,6 +71,9 @@ const runMetricsPulse = (): void => {
         revenue: snap.productRevenue.get(product.id) ?? null,
         users: snap.productUsers.get(product.id) ?? null,
       });
+    }
+    for (const [betId, reading] of snap.betReadings) {
+      store.setBetReading(betId, reading);
     }
     if (snap.authError) {
       markAuthError("Stripe access was revoked — reconnect in the HUD.");

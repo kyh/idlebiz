@@ -12,6 +12,7 @@ import {
   approvalAnswer,
   autonomousBrief,
   betLedger,
+  betMark,
   betNews,
   founderPing,
   integrationConnectedAnswer,
@@ -563,7 +564,7 @@ class Scheduler {
           orWhyNot(() => {
             const bet = store.measureBet(slug, Date.now());
             announceBet(bet);
-            return `"${bet.title}" is measuring: no more work is spent on it, and ${bet.metric} has ${bet.windowHours}h to move by ${betGoal(bet)}.`;
+            return `"${bet.title}" is measuring: no more work is spent on it, and it has ${bet.windowHours}h to bring in ${betGoal(bet)}.`;
           }),
       ),
       messageTeam: (text: string): void => post(text.slice(0, 400)),
@@ -577,7 +578,7 @@ class Scheduler {
           return orWhyNot(() => {
             const opened = store.openBet({ ...input, companyId: company.id, productId });
             announceBet(opened);
-            return `Opened "${opened.title}" (${opened.id}) from a baseline of ${opened.baseline}. Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
+            return `Opened "${opened.title}" (${opened.id}). ${betMark(opened)} Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
           });
         },
       ),

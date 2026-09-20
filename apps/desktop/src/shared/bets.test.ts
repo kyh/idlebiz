@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POLICY, allocate, dream, judge } from "@/shared/bets";
+import { DEFAULT_POLICY, allocate, claimsCollide, dream, judge } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 
 const HOUR = 3_600_000;
 
 const bet = (patch: Partial<Bet> = {}): Bet => ({
-  baseline: 10,
   budgetUsd: 5,
+  claim: { landingPath: "/b/bet", metric: "users" },
   companyId: "co",
   createdAt: 0,
   hypothesis: "a launch post brings visitors",
   id: "bet",
-  metric: "users",
   productId: "app",
+  reading: null,
   spentUsd: 0,
   state: { kind: "open" },
   target: 50,
@@ -38,32 +38,58 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
   stalled: new Set<string>(),
 });
 
+const measuring: BetState = { kind: "measuring", until: 10 };
+
 describe("judge", () => {
   it("leaves an open bet alone while it has budget and no result", () => {
-    expect(judge(bet(), 20, 0)).toEqual({ kind: "open" });
+    expect(judge(bet({ reading: 20 }), 0)).toEqual({ kind: "open" });
   });
 
-  it("wins the moment the real number has moved by the target", () => {
-    expect(judge(bet(), 60, 7)).toEqual({ closedAt: 7, kind: "won", moved: 50 });
+  it("wins the moment what it claims reaches the target", () => {
+    expect(judge(bet({ reading: 50 }), 7)).toEqual({ closedAt: 7, kind: "won", moved: 50 });
   });
 
   it("does not start the clock just because the budget is spent", () => {
-    expect(judge(bet({ spentUsd: 5 }), 20, 0)).toEqual({ kind: "open" });
+    expect(judge(bet({ reading: 20, spentUsd: 5 }), 0)).toEqual({ kind: "open" });
   });
 
   it("kills a bet whose window closed short", () => {
-    const state = judge(bet({ state: { kind: "measuring", until: 10 } }), 30, 10);
-    expect(state).toMatchObject({ kind: "killed", moved: 20 });
+    expect(judge(bet({ reading: 20, state: measuring }), 10)).toMatchObject({
+      kind: "killed",
+      moved: 20,
+      reason: "it brought 20 of 50 users",
+    });
   });
 
   it("kills a bet nothing could ever measure", () => {
-    const state = judge(bet({ state: { kind: "measuring", until: 10 } }), null, 10);
-    expect(state).toMatchObject({ kind: "killed", moved: null });
+    expect(judge(bet({ state: measuring }), 10)).toMatchObject({ kind: "killed", moved: null });
   });
 
   it("never reopens a verdict", () => {
     const won: BetState = { closedAt: 1, kind: "won", moved: 50 };
-    expect(judge(bet({ state: won }), 0, 99)).toBe(won);
+    expect(judge(bet({ state: won }), 99)).toBe(won);
+  });
+});
+
+describe("claimsCollide", () => {
+  const landing = (id: string, landingPath: string, productId = "app") =>
+    bet({ claim: { landingPath, metric: "users" }, id, productId });
+
+  it("lets bets with paths of their own run side by side", () => {
+    expect(claimsCollide(landing("a", "/b/a"), landing("b", "/b/ab"))).toBe(false);
+  });
+
+  it("refuses a path another bet already covers, from above or below", () => {
+    expect(claimsCollide(landing("a", "/guides"), landing("b", "/guides/late-fees"))).toBe(true);
+    expect(claimsCollide(landing("a", "/guides/late-fees/"), landing("b", "/guides"))).toBe(true);
+    expect(claimsCollide(landing("a", "/"), landing("b", "/b/b"))).toBe(true);
+  });
+
+  it("never collides across products, or over money, which is tagged per bet", () => {
+    expect(claimsCollide(landing("a", "/"), landing("b", "/", "site"))).toBe(false);
+    const revenue = bet({ claim: { metric: "revenue" }, id: "r" });
+    expect(claimsCollide(revenue, bet({ claim: { metric: "revenue" }, id: "r2" }))).toBe(false);
+    expect(claimsCollide(revenue, landing("a", "/"))).toBe(false);
   });
 });
 
@@ -149,11 +175,8 @@ describe("allocate", () => {
     });
   });
 
-  it("asks for a new product when every number is already bet on", () => {
-    const full = [
-      bet({ id: "u", state: { kind: "measuring", until: 9 } }),
-      bet({ id: "r", metric: "revenue", state: { kind: "measuring", until: 9 } }),
-    ];
+  it("asks for a new product when the only one carries all the live bets it can", () => {
+    const full = ["one", "two", "three"].map((id) => bet({ id, state: measuring }));
     expect(allocate(ledger(full, ["app"]), DEFAULT_POLICY)).toEqual({
       kind: "propose",
       productId: null,
@@ -161,17 +184,13 @@ describe("allocate", () => {
     });
   });
 
-  it("waits when the portfolio is full and every number is bet on", () => {
+  it("waits when the portfolio is full and every product carries all it can", () => {
     const products = ["a", "b", "c", "d", "e"];
-    const full = products.flatMap((productId) => [
-      bet({ id: `${productId}-u`, productId, state: { kind: "measuring", until: 9 } }),
-      bet({
-        id: `${productId}-r`,
-        metric: "revenue",
-        productId,
-        state: { kind: "measuring", until: 9 },
-      }),
-    ]);
+    const full = products.flatMap((productId) =>
+      ["one", "two", "three"].map((n) =>
+        bet({ id: `${productId}-${n}`, productId, state: measuring }),
+      ),
+    );
     expect(allocate(ledger(full, products), DEFAULT_POLICY)).toEqual({ kind: "wait" });
   });
 });

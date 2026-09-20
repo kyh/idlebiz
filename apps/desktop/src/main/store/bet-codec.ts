@@ -1,4 +1,4 @@
-import { BET_METRICS, BetStateSchema } from "@/shared/bets";
+import { BetClaimSchema, BetStateSchema } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 import { nullableNum, optNum, optStr, reqNum, reqStr } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
@@ -6,16 +6,21 @@ import type { FrontmatterDoc } from "@/main/store/frontmatter";
 // State-specific fields sit flat in the metadata block, like TASK.md, so a BET.md stays hand-editable.
 export const betToDoc = (b: Bet): FrontmatterDoc => {
   const metadata: FrontmatterDoc["metadata"] = {
-    baseline: b.baseline,
     budgetUsd: b.budgetUsd,
     createdAt: b.createdAt,
-    metric: b.metric,
+    metric: b.claim.metric,
     productId: b.productId,
     spentUsd: b.spentUsd,
     status: b.state.kind,
     target: b.target,
     windowHours: b.windowHours,
   };
+  if (b.claim.metric === "users") {
+    metadata.landingPath = b.claim.landingPath;
+  }
+  if (b.reading !== null) {
+    metadata.reading = b.reading;
+  }
   const st = b.state;
   switch (st.kind) {
     case "open": {
@@ -61,20 +66,22 @@ const parseState = (m: FrontmatterDoc["metadata"]): BetState => {
 
 export const docToBet = (doc: FrontmatterDoc, companyId: string): Bet => {
   const m = doc.metadata;
-  const metricRaw = optStr(m, "metric");
-  const metric = BET_METRICS.find((k) => k === metricRaw);
-  if (!metric) {
-    throw new Error(`expected metric to be one of ${BET_METRICS.join(", ")}`);
+  const claim = BetClaimSchema.safeParse({
+    landingPath: optStr(m, "landingPath") ?? undefined,
+    metric: optStr(m, "metric"),
+  });
+  if (!claim.success) {
+    throw new Error("expected a claim: metric users with a landingPath, or metric revenue");
   }
   return {
-    baseline: optNum(m, "baseline", 0),
     budgetUsd: reqNum(m, "budgetUsd"),
+    claim: claim.data,
     companyId,
     createdAt: reqNum(m, "createdAt"),
     hypothesis: doc.body.trim(),
     id: reqStr(doc.fields, "slug"),
-    metric,
     productId: reqStr(m, "productId"),
+    reading: nullableNum(m, "reading"),
     spentUsd: optNum(m, "spentUsd", 0),
     state: parseState(m),
     target: reqNum(m, "target"),

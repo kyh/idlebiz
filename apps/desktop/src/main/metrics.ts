@@ -4,6 +4,7 @@ import { atomicWrite, readJsonFile } from "@/main/lib/fs";
 import { HttpError, getJson } from "@/main/lib/http";
 import { companyDir } from "@/main/paths";
 import { getSecret } from "@/main/secrets";
+import type { Bet } from "@/shared/bets";
 import type { Product } from "@/shared/domain";
 import { jsonValueSchema } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
@@ -40,6 +41,8 @@ export interface RealSnapshot {
   productUsers: ReadonlyMap<string, number | null>;
   /** Revenue from charges tagged with the product; empty while Stripe is not connected. */
   productRevenue: ReadonlyMap<string, number | null>;
+  /** What each live bet's claim has brought in; null where no source can say. */
+  betReadings: ReadonlyMap<string, number | null>;
   /** A provider's credentials were rejected (e.g. Stripe token revoked). */
   authError?: boolean;
 }
@@ -102,7 +105,16 @@ export interface Revenue {
   total: number;
   /** The share of it tagged `metadata[product]=<id>`; untagged money belongs to the company alone. */
   byProduct: ReadonlyMap<string, number>;
+  /** The share of it tagged `metadata[bet]=<id>`: what a revenue bet may claim. */
+  byBet: ReadonlyMap<string, number>;
 }
+
+/** Add a charge's kept cents, as dollars, to whatever its tag names. */
+const credit = (bucket: Map<string, number>, tag: string | undefined, kept: number): void => {
+  if (tag !== undefined) {
+    bucket.set(tag, (bucket.get(tag) ?? 0) + kept / 100);
+  }
+};
 
 /**
  * Money kept, in dollars, from one read of every charge: paid less refunded,
@@ -116,6 +128,7 @@ export const sumCharges = async (
 ): Promise<Revenue | null> => {
   let cents = 0;
   const byProduct = new Map<string, number>();
+  const byBet = new Map<string, number>();
   let after: string | null = null;
   for (let i = 0; i < MAX_CHARGE_PAGES; i += 1) {
     const page = StripeChargePageSchema.safeParse(await fetchPage(after));
@@ -126,15 +139,13 @@ export const sumCharges = async (
       if (ch.paid === true) {
         const kept = (ch.amount ?? 0) - (ch.amount_refunded ?? 0);
         cents += kept;
-        const product = ch.metadata?.["product"];
-        if (product !== undefined) {
-          byProduct.set(product, (byProduct.get(product) ?? 0) + kept / 100);
-        }
+        credit(byProduct, ch.metadata?.["product"], kept);
+        credit(byBet, ch.metadata?.["bet"], kept);
       }
     }
     after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
     if (after === null) {
-      return { byProduct, total: cents / 100 };
+      return { byBet, byProduct, total: cents / 100 };
     }
   }
   return null;
@@ -206,33 +217,24 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
 };
 
 interface StripeSnapshot {
-  revenue: number | null;
+  charges: Revenue | null;
   customers: number | null;
-  perProduct: Map<string, number | null>;
   authError: boolean;
 }
 
-const NO_STRIPE: StripeSnapshot = {
-  authError: false,
-  customers: null,
-  perProduct: new Map(),
-  revenue: null,
-};
+const NO_STRIPE: StripeSnapshot = { authError: false, charges: null, customers: null };
 
-const stripeSnapshot = async (products: readonly Product[]): Promise<StripeSnapshot> => {
+const stripeSnapshot = async (): Promise<StripeSnapshot> => {
   const key = getSecret("STRIPE_CONNECT_TOKEN") ?? getSecret("STRIPE_SECRET_KEY");
   if (!key) {
     return NO_STRIPE;
   }
   try {
-    const [revenue, customers] = await Promise.all([
+    const [charges, customers] = await Promise.all([
       stripeRevenue(key, Date.now()),
       stripeCustomers(key),
     ]);
-    const perProduct = new Map(
-      products.map((p) => [p.id, revenue ? (revenue.byProduct.get(p.id) ?? 0) : null]),
-    );
-    return { authError: false, customers, perProduct, revenue: revenue?.total ?? null };
+    return { authError: false, charges, customers };
   } catch (error) {
     return error instanceof StripeAuthError ? { ...NO_STRIPE, authError: true } : NO_STRIPE;
   }
@@ -275,30 +277,50 @@ const productVisitors = async (
 ): Promise<{ each: Map<string, number | null>; total: number | null }> => {
   const bound = products.filter((p) => p.vercel !== null);
   const counts = await Promise.all(
-    bound.map((p) =>
-      p.vercel ? webAnalyticsVisitors(p.vercel.projectId, p.vercel.teamId ?? undefined) : null,
-    ),
+    bound.map((p) => (p.vercel ? webAnalyticsVisitors(p.vercel) : null)),
   );
   const each = new Map(bound.map((p, i) => [p.id, counts[i] ?? null]));
   const known = counts.filter((n): n is number => n !== null);
   return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
 };
 
+/** What one bet's claim has brought in: visitors who landed on its path since it opened, or money carrying its tag. */
+const betReading = (
+  bet: Bet,
+  products: readonly Product[],
+  charges: Revenue | null,
+): Promise<number | null> => {
+  if (bet.claim.metric === "revenue") {
+    return Promise.resolve(charges ? (charges.byBet.get(bet.id) ?? 0) : null);
+  }
+  const deploy = products.find((p) => p.id === bet.productId)?.vercel;
+  return deploy
+    ? webAnalyticsVisitors(deploy, { since: bet.createdAt, under: bet.claim.landingPath })
+    : Promise.resolve(null);
+};
+
+/** `bets` are the live ones: a closed bet's number is settled. */
 export const fetchRealMetrics = async (
   cfg: MetricsConfig | null,
   products: readonly Product[],
+  bets: readonly Bet[],
 ): Promise<RealSnapshot> => {
   const [stripe, vercel, visitors, custom] = await Promise.all([
-    cfg?.stripe ? stripeSnapshot(products) : Promise.resolve(NO_STRIPE),
+    cfg?.stripe ? stripeSnapshot() : Promise.resolve(NO_STRIPE),
     productVisitors(products),
     cfg?.plausible ? plausibleVisitors(cfg.plausible.domain) : Promise.resolve(null),
     cfg?.custom ? customSnapshot(cfg.custom.url) : Promise.resolve({ revenue: null, users: null }),
   ]);
+  const { charges } = stripe;
+  const readings = await Promise.all(bets.map((bet) => betReading(bet, products, charges)));
   return {
     authError: stripe.authError,
-    productRevenue: stripe.perProduct,
+    betReadings: new Map(bets.map((bet, i) => [bet.id, readings[i] ?? null])),
+    productRevenue: new Map(
+      products.map((p) => [p.id, charges ? (charges.byProduct.get(p.id) ?? 0) : null]),
+    ),
     productUsers: vercel.each,
-    revenue: stripe.revenue ?? custom.revenue,
+    revenue: charges?.total ?? custom.revenue,
     // real traffic first; paying customers as the fallback "users" signal
     users: vercel.total ?? stripe.customers ?? visitors ?? custom.users,
   };

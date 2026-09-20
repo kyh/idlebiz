@@ -58,10 +58,11 @@ import { readMetricsConfig, writeMetricsConfig } from "@/main/metrics";
 import {
   DEFAULT_POLICY,
   PolicyParamsSchema,
+  claimsCollide,
+  defaultLandingPath,
   dream,
   isClosed,
   judge,
-  movedOf,
   windowEnd,
 } from "@/shared/bets";
 import type { Bet, BetMetric, PolicyParams } from "@/shared/bets";
@@ -920,27 +921,24 @@ export const allocationPolicy = (companyId: string): PolicyParams =>
 const patchBet = (id: string, patch: Partial<Bet>): Bet | null =>
   patchIn(c().active?.bets ?? [], id, patch, saveBet);
 
-/** What a product's metric reads now; null while no source reports it. */
-const readingOf = (product: Product | null, metric: BetMetric): number | null => {
-  if (!product) {
-    return null;
-  }
-  return metric === "users" ? product.users : product.revenueUsd;
-};
-
 /** What a tool is told when it names a product the company does not have. */
 export const noSuchProduct = (companyId: string, productId: string): string =>
   `No product "${productId}" here — the products are ${listProducts(companyId)
     .map((p) => p.id)
     .join(", ")}.`;
 
-/** Two live bets on one number of one product could not be told apart, so the second is refused. */
+/**
+ * Open a bet. A users bet lands on its own path unless it names one; a path
+ * another live bet already covers is refused, since both would count the same
+ * visitors.
+ */
 export const openBet = (input: {
   companyId: string;
   productId: string;
   title: string;
   hypothesis: string;
   metric: BetMetric;
+  landingPath: string | null;
   target: number;
   budgetUsd: number;
   windowHours: number;
@@ -950,37 +948,46 @@ export const openBet = (input: {
   if (!product) {
     throw new Error(noSuchProduct(input.companyId, input.productId));
   }
-  const rival = active.bets.find(
-    (b) => b.productId === product.id && b.metric === input.metric && !isClosed(b),
-  );
-  if (rival) {
-    throw new Error(
-      `"${rival.title}" (${rival.id}) is already betting on ${product.name}'s ${input.metric}, and two bets on one number cannot be told apart. Work that one, bet on the other metric, or bet on another product.`,
-    );
-  }
   const id = uniqueSlug(
     input.title,
     active.bets.map((b) => b.id),
     (s) => existsSync(path.join(betsDir(input.companyId), s)),
   );
   const bet: Bet = {
-    baseline: readingOf(product, input.metric) ?? 0,
     budgetUsd: input.budgetUsd,
+    claim:
+      input.metric === "users"
+        ? { landingPath: input.landingPath ?? defaultLandingPath(id), metric: "users" }
+        : { metric: "revenue" },
     companyId: input.companyId,
     createdAt: Date.now(),
     hypothesis: input.hypothesis.trim(),
     id,
-    metric: input.metric,
     productId: product.id,
+    reading: null,
     spentUsd: 0,
     state: { kind: "open" },
     target: input.target,
     title: input.title.trim(),
     windowHours: input.windowHours,
   };
+  const rival = active.bets.find((b) => !isClosed(b) && claimsCollide(b, bet));
+  if (rival?.claim.metric === "users") {
+    throw new Error(
+      `"${rival.title}" (${rival.id}) already counts visitors under ${rival.claim.landingPath} on ${product.name}; a bet landing there too could not be told apart from it. Leave landingPath out to get a path of its own.`,
+    );
+  }
   saveBet(bet);
   active.bets.push(bet);
   return bet;
+};
+
+/** What the pulse read for a live bet; a null keeps the last reading through a provider failure. */
+export const setBetReading = (betId: string, reading: number | null): void => {
+  const bet = getBet(betId);
+  if (bet && !isClosed(bet) && reading !== null && reading !== bet.reading) {
+    patchBet(betId, { reading });
+  }
 };
 
 export const recordBetSpend = (betId: string, costUsd: number): void => {
@@ -1007,10 +1014,8 @@ export const measureBet = (betId: string, now: number): Bet => {
   return patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } }) ?? bet;
 };
 
-const closeAsKilled = (bet: Bet, reason: string, now: number): Bet => {
-  const moved = movedOf(bet, readingOf(getProduct(bet.productId), bet.metric));
-  return patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved, reason } }) ?? bet;
-};
+const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
+  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } }) ?? bet;
 
 /** Someone gives up on a bet before its window does. */
 export const killBet = (betId: string, reason: string, now: number): Bet => {
@@ -1031,7 +1036,7 @@ export const judgeBets = (companyId: string, now: number): Bet[] => {
   }
   const changed: Bet[] = [];
   for (const bet of active.bets) {
-    const state = judge(bet, readingOf(getProduct(bet.productId), bet.metric), now);
+    const state = judge(bet, now);
     if (state !== bet.state) {
       const next = patchBet(bet.id, { state });
       if (next) {
