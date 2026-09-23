@@ -235,10 +235,7 @@ export const Ships = ({
   if (!company) {
     return null;
   }
-  // work shipped before products existed names none; it was the first product's
-  const firstId = products[0]?.id;
-  const ofSelected = (t: TaskIn<"done">): boolean =>
-    selected === null || t.productId === selected || (t.productId === null && selected === firstId);
+  const ofSelected = (t: TaskIn<"done">): boolean => selected === null || t.productId === selected;
   const shown = ships?.filter(ofSelected) ?? null;
 
   const selectedName =
