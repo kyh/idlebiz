@@ -140,6 +140,7 @@ describe("describeRule", () => {
   it("describes current rules and identifies unavailable saved rules", () => {
     expect(describeRule("git-push")).toBe("Push commits to a remote repository.");
     expect(describeRule("browser-unseen")).toContain("one run of exactly this command");
+    expect(describeRule("sandbox-widen")).toContain("until the run ends");
     expect(describeRule("retired-rule")).toBe(
       'Saved rule "retired-rule" is unavailable in this version.',
     );
@@ -307,5 +308,21 @@ describe("holdFor", () => {
   it("never leases a server nothing could name", async () => {
     const hold = await holdFor({ kind: "mcp", server: null }, NONE, at({}));
     expect(hold?.leasable).toBe(false);
+  });
+
+  it("holds every widening of codex's sandbox, even one signed before", async () => {
+    const tool = { kind: "sandbox", network: true, paths: ["/Users/me/.npm"] } as const;
+    const hold = {
+      key: "sandbox: widen to network, /Users/me/.npm",
+      leasable: false,
+      rule: "sandbox-widen",
+    };
+    expect(await holdFor(tool, NONE, at({}))).toEqual(hold);
+    expect(await holdFor(tool, new Set([hold.key]), at({}))).toEqual(hold);
+  });
+
+  it("names a widening it cannot itemise", async () => {
+    const hold = await holdFor({ kind: "sandbox", network: false, paths: [] }, NONE, at({}));
+    expect(hold?.key).toBe("sandbox: widen to more access");
   });
 });

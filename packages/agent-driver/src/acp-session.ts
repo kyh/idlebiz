@@ -316,11 +316,12 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         const decision = opts.onPermission
           ? await opts.onPermission(request, ended.signal)
           : { allow: true };
-        // Match protocol kinds, not adapter-specific ids. Prefer one-command approval.
+        // Match protocol kinds, not adapter-specific ids. Only one-command approval:
+        // an allow_always would outlive the founder's signature.
         const pick = (kind: string): string | undefined =>
           ctx.params.options.find((o) => o.kind === kind)?.optionId;
         const optionId = decision.allow
-          ? (pick("allow_once") ?? pick("allow_always"))
+          ? pick("allow_once")
           : (pick("reject_once") ?? pick("reject_always"));
         if (optionId === undefined) {
           return { outcome: { outcome: "cancelled" } };

@@ -18,7 +18,7 @@ const RULE_IDS = [
 export type RuleId = (typeof RULE_IDS)[number];
 
 interface CommandRule {
-  id: RuleId | "browser-act" | "browser-unseen" | "external-tool";
+  id: RuleId | "browser-act" | "browser-unseen" | "external-tool" | "sandbox-widen";
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
 }
@@ -152,6 +152,13 @@ const BROWSER_UNSEEN_RULE = {
   describe:
     "Act in a real browser on a page nobody could check first — one run of exactly this command.",
   id: "browser-unseen",
+} as const satisfies CommandRule;
+
+/** Signed for once and exactly, never leased: a widened sandbox already lets every later command in the run skip asking. */
+const SANDBOX_RULE = {
+  describe:
+    "Let this run reach the internet or write outside its workspace without asking again, for every command until the run ends.",
+  id: "sandbox-widen",
 } as const satisfies CommandRule;
 
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
@@ -294,8 +301,8 @@ export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Co
 
 /** What the approval card says about a held command, by the rule that held it. */
 export const describeRule = (id: string): string =>
-  [...RULES, ...LEASE_RULES, BROWSER_UNSEEN_RULE].find((rule) => rule.id === id)?.describe ??
-  `Saved rule "${id}" is unavailable in this version.`;
+  [...RULES, ...LEASE_RULES, BROWSER_UNSEEN_RULE, SANDBOX_RULE].find((rule) => rule.id === id)
+    ?.describe ?? `Saved rule "${id}" is unavailable in this version.`;
 
 export const classifyCommand = (command: string): CommandVerdict => {
   for (const rule of RULES) {
@@ -336,6 +343,14 @@ export const holdFor = async (
     // a server nothing can name is signed for call by call: a lease on "unknown" would cover every such server
     const key = `mcp: use ${tool.server ?? "a tool nothing could name"}`;
     return leases.has(key) ? null : { key, leasable: tool.server !== null, rule: "external-tool" };
+  }
+  if (tool.kind === "sandbox") {
+    const reach = [...(tool.network ? ["network"] : []), ...tool.paths].join(", ");
+    return {
+      key: `sandbox: widen to ${reach || "more access"}`,
+      leasable: false,
+      rule: SANDBOX_RULE.id,
+    };
   }
   const command = normalizeCommand(tool.command);
   const verdict = classifyCommand(command);
