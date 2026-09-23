@@ -637,10 +637,6 @@ button:disabled {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ob-scene .px-blink,
-  .ob-scene .px-menu-cursor {
-    animation: none;
-  }
   .ob-meter-fill {
     transition: none;
   }

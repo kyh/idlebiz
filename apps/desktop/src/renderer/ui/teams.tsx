@@ -19,7 +19,7 @@ const RosterCard = ({
     type="button"
     onClick={onTalk}
     title={`Talk to ${emp.name}`}
-    className="px-inset flex items-center gap-3 p-2 text-left hover:bg-[#fbf9f2]"
+    className="px-inset px-inset-hover flex items-center gap-3 p-2 text-left"
   >
     <Bust seed={emp.spriteSeed} size="md" alt="" />
     <EmployeeTag name={emp.name} title={jobTitle(emp)} lead={lead} status={emp.status} />

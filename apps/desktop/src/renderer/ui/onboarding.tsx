@@ -267,7 +267,7 @@ const Textbox = ({
       <TypeCursor done={done} more={!last} />
     </button>
     {children}
-    {problem ? <div className="px-hint text-danger">{problem}</div> : null}
+    {problem ? <div className="px-hint px-hint-danger">{problem}</div> : null}
     {hint && !problem ? <div className="px-hint">{hint}</div> : null}
   </div>
 );

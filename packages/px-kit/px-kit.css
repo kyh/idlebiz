@@ -90,6 +90,9 @@
     inset 2px 2px 0 0 var(--face-lo),
     inset -1px -1px 0 0 var(--face-hi);
 }
+.px-inset-hover:hover {
+  background: var(--face-hi);
+}
 
 .px-btn {
   font-family: inherit;
@@ -241,6 +244,9 @@
   font-size: 11px;
   color: var(--fg-dim);
 }
+.px-hint-danger {
+  color: var(--danger);
+}
 
 /* a dialog over the office: the backdrop dims, the window centres itself */
 .px-backdrop {
@@ -284,7 +290,8 @@
   text-align: left;
   white-space: nowrap;
 }
-.px-menu-item:disabled {
+/* Base UI's Toolbar.Button keeps a disabled item focusable, so it never sets native `disabled` */
+.px-menu-item[data-disabled] {
   opacity: 0.5;
 }
 /* the ▶ is the focus ring */
@@ -395,11 +402,6 @@
     opacity: 0;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .px-pop {
-    animation: none;
-  }
-}
 
 .px-more {
   display: inline-block;
@@ -418,6 +420,17 @@
 @keyframes px-pulse {
   50% {
     opacity: 0.35;
+  }
+}
+
+/* the cursor's selector matches the specificity of the rule that animates it */
+@media (prefers-reduced-motion: reduce) {
+  .px-pop,
+  .px-blink,
+  .px-more,
+  .px-live-dot,
+  .px-menu-item[data-cur="true"] .px-menu-cursor {
+    animation: none;
   }
 }
 
