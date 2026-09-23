@@ -299,7 +299,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6">
       <div className="dlg">
         {mode === "menu" && fetched.kind !== "loading" ? (
-          <ChoiceMenu menu={menu} className="dlg-menu" />
+          <ChoiceMenu menu={menu} className="dlg-menu" refocusKey={asked?.id ?? null} />
         ) : null}
         <div className="px-battle px-pop dlg-box">
           <div className="dlg-bust">

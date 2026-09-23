@@ -26,8 +26,18 @@ const isTextField = (el: Element | null): boolean =>
  *  focused item, and the pointer moves it by hovering. The focused item answers
  *  Enter and Space itself, so the page's own Enter handler must not also fire.
  *  `data-composite-item-active` is read once, when the toolbar first registers
- *  its items: it makes the cursor's item the default tab stop, not the first. */
-export const ChoiceMenu = ({ menu, className }: { menu: Menu; className?: string }) => {
+ *  its items: it makes the cursor's item the default tab stop, not the first.
+ *  `refocusKey` names whatever beside the menu can hold focus (an answer box):
+ *  when it changes and that left focus on the body, the cursor's row takes it. */
+export const ChoiceMenu = ({
+  menu,
+  className,
+  refocusKey = null,
+}: {
+  menu: Menu;
+  className?: string;
+  refocusKey?: string | null;
+}) => {
   const items = useRef<(HTMLButtonElement | null)[]>([]);
   const { cursor } = menu;
   // the toolbar registers its items in the render after mount, so a focus set
@@ -63,8 +73,8 @@ export const ChoiceMenu = ({ menu, className }: { menu: Menu; className?: string
   useEffect(() => {
     const timer = window.setTimeout(() => reconcile(), 0);
     return () => window.clearTimeout(timer);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the rows' labels are the trigger; what runs reads the DOM they rendered
-  }, [labels]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the rows' labels and refocusKey are the trigger; what runs reads the DOM they rendered
+  }, [labels, refocusKey]);
 
   return (
     <Toolbar.Root
