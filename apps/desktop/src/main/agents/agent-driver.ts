@@ -27,7 +27,6 @@ import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import type { ToolCaller } from "@/main/control-plane";
-import type { AskBox } from "@/main/tools";
 import type {
   AgentRunner,
   BlockedAsk,
@@ -159,6 +158,25 @@ export const outcomeOf = (
   return end.kind === "limited"
     ? { error: end.error, kind: "resting", until: end.resetsAt }
     : { error: end.error, kind: "failed" };
+};
+
+/** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
+export interface AskBox {
+  raise: (ask: BlockedAsk) => void;
+  current: () => BlockedAsk | null;
+}
+
+export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
+  let first: BlockedAsk | null = null;
+  return {
+    current: () => first,
+    raise: (ask) => {
+      if (first === null) {
+        first = ask;
+        onFirst(ask);
+      }
+    },
+  };
 };
 
 /** What a run can reach of the company: its tools over the loopback API, and the one ask it may leave the founder. */

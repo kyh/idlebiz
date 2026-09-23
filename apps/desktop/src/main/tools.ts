@@ -1,37 +1,18 @@
 import { z } from "zod";
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
-import type { agentDriver } from "@/main/agents/agent-driver";
+import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
 import { announceBet, killBet, retireProduct, startProduct } from "@/main/company-actions";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
-import type { BlockedAsk, Company, Employee, TaskOrigin } from "@/shared/domain";
+import type { Company, Employee, TaskOrigin } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { plural } from "@/shared/format";
 import type { JsonValue } from "@/shared/json";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
-
-/** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
-export interface AskBox {
-  raise: (ask: BlockedAsk) => void;
-  current: () => BlockedAsk | null;
-}
-
-export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
-  let first: BlockedAsk | null = null;
-  return {
-    current: () => first,
-    raise: (ask) => {
-      if (first === null) {
-        first = ask;
-        onFirst(ask);
-      }
-    },
-  };
-};
 
 /** What a tool call acts on behalf of: who is running, for what, and the two things only the scheduler can do. */
 export interface RunContext {
