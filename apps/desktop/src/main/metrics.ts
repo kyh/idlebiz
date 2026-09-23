@@ -117,29 +117,41 @@ const StripeListSchema = z.object({
 });
 const StripeCountSchema = z.object({ total_count: z.number() });
 
-// Every charge is re-read to catch refunds on old ones, which is a page per
-// hundred charges; the numbers move in hours, so the read is kept this long.
-const REVENUE_TTL_MS = 10 * 60_000;
-let revenueRead: { at: number; key: string; revenue: Revenue } | null = null;
+const MAX_CUSTOMER_PAGES = 50;
 
-const stripeRevenue = async (key: string, now: number): Promise<Revenue | null> => {
-  if (revenueRead && revenueRead.key === key && now - revenueRead.at < REVENUE_TTL_MS) {
-    return revenueRead.revenue;
+/** Rows across a list, or null when the read is incomplete, by the same rule as `sumCharges`. */
+export const countPages = async (
+  fetchPage: (after: string | null) => Promise<JsonValue>,
+): Promise<number | null> => {
+  let count = 0;
+  let after: string | null = null;
+  for (let i = 0; i < MAX_CUSTOMER_PAGES; i += 1) {
+    const page = StripeListSchema.safeParse(await fetchPage(after));
+    if (!page.success) {
+      return null;
+    }
+    count += page.data.data.length;
+    after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
+    if (after === null) {
+      return count;
+    }
   }
-  const revenue = await sumCharges((after) =>
-    stripeGet(`/v1/charges?limit=100${after ? `&starting_after=${after}` : ""}`, key),
+  return null;
+};
+
+/** Every charge on the account, or only those created since `since` (ms). */
+const stripeCharges = (key: string, since: number | null): Promise<Revenue | null> => {
+  const created = since === null ? "" : `&created[gte]=${Math.floor(since / 1000)}`;
+  return sumCharges((after) =>
+    stripeGet(`/v1/charges?limit=100${created}${after ? `&starting_after=${after}` : ""}`, key),
   );
-  if (revenue) {
-    revenueRead = { at: now, key, revenue };
-  }
-  return revenue;
 };
 
 /** Exact customer count via the search API; paginate fallback if search is unavailable. */
 const stripeCustomers = async (key: string): Promise<number | null> => {
   try {
     const counted = StripeCountSchema.safeParse(
-      await stripeGet("/v1/customers/search?query=created%3E0&limit=1&include[]=total_count", key),
+      await stripeGet("/v1/customers/search?query=created%3E0&limit=1&expand[]=total_count", key),
     );
     if (counted.success) {
       return counted.data.total_count;
@@ -150,33 +162,22 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
     }
     /* search unsupported on this account — paginate below */
   }
-  let count = 0;
-  let startingAfter: string | null = null;
-  for (let page = 0; page < 50; page += 1) {
-    const qs = `limit=100${startingAfter ? `&starting_after=${startingAfter}` : ""}`;
-    const parsed = StripeListSchema.safeParse(await stripeGet(`/v1/customers?${qs}`, key));
-    if (!parsed.success) {
-      break;
-    }
-    const rows = parsed.data.data;
-    count += rows.length;
-    const lastId = rows.at(-1)?.id;
-    if (!parsed.data.has_more || lastId === undefined) {
-      break;
-    }
-    startingAfter = lastId;
-  }
-  return count;
+  return countPages((after) =>
+    stripeGet(`/v1/customers?limit=100${after ? `&starting_after=${after}` : ""}`, key),
+  );
 };
 
 interface StripeSnapshot {
+  /** Every charge the account has taken: the company's money and its products'. */
   charges: Revenue | null;
+  /** Charges since the oldest live revenue bet opened: all a bet can claim, whatever the account's size. */
+  bets: Revenue | null;
   customers: number | null;
   /** Stripe answered 401/403 to this key. */
   refused: boolean;
 }
 
-const NO_STRIPE: StripeSnapshot = { charges: null, customers: null, refused: false };
+const NO_STRIPE: StripeSnapshot = { bets: null, charges: null, customers: null, refused: false };
 
 /** The key a company reads Stripe with, and whose it is: only a refused Connect token means the connection was revoked. */
 export interface StripeCredential {
@@ -199,20 +200,54 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
   return own ? { key: own, via: "own" } : null;
 };
 
-const stripeSnapshot = async (credential: StripeCredential | null): Promise<StripeSnapshot> => {
+// Every charge is re-read, since a refund can land on any old one, and
+// customers are paged when search is unavailable. The numbers move in hours, so
+// one read of the account is kept this long, even one that came back short: a
+// null only holds the last value, and re-asking would page a capped account
+// through again every pulse.
+const STRIPE_TTL_MS = 10 * 60_000;
+let stripeRead: { at: number; key: string; since: number | null; snapshot: StripeSnapshot } | null =
+  null;
+
+const settled = <T>(read: PromiseSettledResult<T | null>): T | null =>
+  read.status === "fulfilled" ? read.value : null;
+
+/** Kept per key and `since` (when the oldest live revenue bet opened): a bet that moves `since` reads again at once. */
+const stripeSnapshot = async (
+  credential: StripeCredential | null,
+  since: number | null,
+): Promise<StripeSnapshot> => {
   if (credential === null) {
     return NO_STRIPE;
   }
   const { key } = credential;
-  try {
-    const [charges, customers] = await Promise.all([
-      stripeRevenue(key, Date.now()),
-      stripeCustomers(key),
-    ]);
-    return { charges, customers, refused: false };
-  } catch (error) {
-    return error instanceof StripeAuthError ? { ...NO_STRIPE, refused: true } : NO_STRIPE;
+  const now = Date.now();
+  if (
+    stripeRead?.key === key &&
+    stripeRead.since === since &&
+    now - stripeRead.at < STRIPE_TTL_MS
+  ) {
+    return stripeRead.snapshot;
   }
+  // Settled one by one, so a scan that times out never throws away the reads that answered.
+  const reads = await Promise.allSettled([
+    stripeCharges(key, null),
+    since === null ? null : stripeCharges(key, since),
+    stripeCustomers(key),
+  ]);
+  const [charges, bets, customers] = reads;
+  const snapshot: StripeSnapshot = {
+    bets: settled(bets),
+    charges: settled(charges),
+    customers: settled(customers),
+    refused: reads.some(
+      (read) => read.status === "rejected" && read.reason instanceof StripeAuthError,
+    ),
+  };
+  if (reads.every((read) => read.status === "fulfilled")) {
+    stripeRead = { at: now, key, since, snapshot };
+  }
+  return snapshot;
 };
 
 /** Visitors of every product's deploy, and their sum when any product reports. */
@@ -232,15 +267,21 @@ const productVisitors = async (
 const betReading = (
   bet: Bet,
   products: readonly Product[],
-  charges: Revenue | null,
+  betCharges: Revenue | null,
 ): Promise<number | null> => {
   if (bet.claim.metric === "revenue") {
-    return Promise.resolve(charges ? (charges.byBet.get(bet.id) ?? 0) : null);
+    return Promise.resolve(betCharges ? (betCharges.byBet.get(bet.id) ?? 0) : null);
   }
   const deploy = products.find((p) => p.id === bet.productId)?.vercel;
   return deploy
     ? webAnalyticsVisitors(deploy, { since: bet.createdAt, under: bet.claim.landingPath })
     : Promise.resolve(null);
+};
+
+/** When the oldest of these bets that claims money opened: no charge before it can carry a live bet's tag. */
+const revenueSince = (bets: readonly Bet[]): number | null => {
+  const opened = bets.filter((bet) => bet.claim.metric === "revenue").map((bet) => bet.createdAt);
+  return opened.length > 0 ? Math.min(...opened) : null;
 };
 
 /** `credential` is the company's `stripeCredential`; `bets` are the live ones: a closed bet's number is settled. */
@@ -250,11 +291,11 @@ export const fetchRealMetrics = async (
   bets: readonly Bet[],
 ): Promise<RealSnapshot> => {
   const [stripe, vercel] = await Promise.all([
-    stripeSnapshot(credential),
+    stripeSnapshot(credential, revenueSince(bets)),
     productVisitors(products),
   ]);
   const { charges } = stripe;
-  const readings = await Promise.all(bets.map((bet) => betReading(bet, products, charges)));
+  const readings = await Promise.all(bets.map((bet) => betReading(bet, products, stripe.bets)));
   return {
     betReadings: new Map(bets.map((bet, i) => [bet.id, readings[i] ?? null])),
     connectRevoked: stripe.refused && credential?.via === "connect",
