@@ -173,6 +173,7 @@ const read = (store: Store, select: (s: Seen) => string): string =>
   renderToStaticMarkup(createElement(Probe, { select, store }));
 
 const roster = (s: Seen): string => s.employees.map((e) => `${e.id}:${e.status}`).join(" ");
+const boot = (s: Seen): string => `${s.booted} ${s.bootFailure ?? "-"}`;
 const resting = (s: Seen): string =>
   Object.entries(s.resting)
     .map(([runner, until]) => `${runner}:${until}`)
@@ -241,5 +242,20 @@ describe("store", () => {
     await answer("listEmployees");
     expect(walkedIn()).toEqual([employee("mae")]);
     expect(read(store, roster)).toBe("lead:working mae:idle");
+  });
+
+  it("says why the first refresh failed until a retry lands", async () => {
+    const { bridge } = fakeMain([]);
+    let asked = 0;
+    const store = await freshStore({
+      ...bridge,
+      getCompany: () => {
+        asked += 1;
+        return asked === 1 ? Promise.reject(new Error("main went away")) : bridge.getCompany();
+      },
+    });
+    expect(read(store, boot)).toBe("false main went away");
+    await store.refresh();
+    expect(read(store, boot)).toBe("true -");
   });
 });

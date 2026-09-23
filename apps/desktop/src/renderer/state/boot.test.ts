@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LoadSkip } from "@/shared/domain";
 import { bootOf } from "./boot";
 
-const known = { authed: true, booted: true, hasCompany: true, saveIssues: [] };
+const known = { authed: true, bootFailure: null, booted: true, hasCompany: true, saveIssues: [] };
 
 const skip = (kind: LoadSkip["kind"]): LoadSkip => ({ error: "bad yaml", kind, path: `/${kind}` });
 
@@ -19,6 +19,17 @@ describe("bootOf", () => {
 
   it("shows nothing until the first refresh lands", () => {
     expect(bootOf({ ...known, booted: false })).toEqual({ kind: "loading" });
+  });
+
+  it("says why when the first refresh failed, and not onboarding", () => {
+    expect(bootOf({ ...known, bootFailure: "main went away", booted: false })).toEqual({
+      kind: "unreachable",
+      message: "main went away",
+    });
+  });
+
+  it("opens past a failure once a refresh lands", () => {
+    expect(bootOf({ ...known, bootFailure: "main went away" })).toEqual({ kind: "office" });
   });
 
   it("onboards without waiting on the CLI probe", () => {

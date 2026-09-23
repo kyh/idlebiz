@@ -3,12 +3,14 @@ import type { LoadSkip } from "@/shared/domain";
 /**
  * What the window shows: exactly one of these. A company boot could not read
  * stops everything (a fresh start here would stack a second company on it);
- * no company means onboarding; a company means the office, or the sign-in gate
- * when no CLI is signed in.
+ * so does a first refresh that failed, until a retry lands; no company means
+ * onboarding; a company means the office, or the sign-in gate when no CLI is
+ * signed in.
  */
 export type Boot =
   | { kind: "loading" }
   | { kind: "unreadable"; issues: LoadSkip[] }
+  | { kind: "unreachable"; message: string }
   | { kind: "onboarding" }
   | { kind: "signed-out" }
   | { kind: "office" };
@@ -16,12 +18,15 @@ export type Boot =
 export const bootOf = ({
   saveIssues,
   booted,
+  bootFailure,
   hasCompany,
   authed,
 }: {
   saveIssues: readonly LoadSkip[];
   /** The first refresh finished. */
   booted: boolean;
+  /** Why the last refresh before boot failed; null while none has. */
+  bootFailure: string | null;
   hasCompany: boolean;
   /** Null until main's CLI probe answers. */
   authed: boolean | null;
@@ -31,7 +36,9 @@ export const bootOf = ({
     return { issues, kind: "unreadable" };
   }
   if (!booted) {
-    return { kind: "loading" };
+    return bootFailure === null
+      ? { kind: "loading" }
+      : { kind: "unreachable", message: bootFailure };
   }
   if (!hasCompany) {
     return { kind: "onboarding" };

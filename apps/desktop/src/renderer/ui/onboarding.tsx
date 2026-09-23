@@ -110,6 +110,7 @@ const FAILED_ITEMS: readonly MenuItem[] = [
   { label: "Search again" },
   { label: "Rewrite the pitch" },
 ];
+const OPEN_FAILED_ITEMS: readonly MenuItem[] = [{ label: "Try again" }];
 
 const teamScript = (team: Team): readonly string[] => {
   switch (team.kind) {
@@ -575,6 +576,16 @@ export const Onboarding = () => {
     void cast();
   };
 
+  /** The company is on disk; the office opens once the copy here has it. */
+  const openOffice = async () => {
+    setFailure(null);
+    try {
+      await refresh();
+    } catch (error) {
+      setFailure(errorMessage(error));
+    }
+  };
+
   const finalize = async () => {
     if (team.kind !== "cast" || team.hires.length === 0 || step === "finalize") {
       return;
@@ -592,12 +603,13 @@ export const Onboarding = () => {
         mission: pitch.trim(),
         name: companyName.trim(),
       });
-      await refresh();
-      officeReady();
     } catch (error) {
       setFailure(errorMessage(error));
       setStep("budget");
+      return;
     }
+    officeReady();
+    await openOffice();
   };
 
   const looks = choices.length;
@@ -667,13 +679,26 @@ export const Onboarding = () => {
           setCursor: setCapIndex,
         };
       }
+      case "finalize": {
+        // founded already, and main refuses a second founding: only the refresh is retried
+        if (failure === null) {
+          return null;
+        }
+        return {
+          cursor,
+          items: OPEN_FAILED_ITEMS,
+          pick: () => {
+            void openOffice();
+          },
+          setCursor,
+        };
+      }
       case "title":
       case "intro":
       case "auth":
       case "founder":
       case "company":
-      case "pitch":
-      case "finalize": {
+      case "pitch": {
         return null;
       }
       // no default

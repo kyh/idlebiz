@@ -47,7 +47,10 @@ export class Coalesced {
     this.run = run;
   }
 
-  /** Resolves once a run that started after this call has finished. */
+  /**
+   * Settles as the last run of this burst settles, and that run started after
+   * this call: a failed run is not the answer when another was asked for.
+   */
   call(): Promise<void> {
     if (this.inFlight) {
       this.again = true;
@@ -59,10 +62,19 @@ export class Coalesced {
 
   private async drain(): Promise<void> {
     try {
+      let failure: { error: unknown } | null = null;
       do {
         this.again = false;
-        await this.run();
+        failure = null;
+        try {
+          await this.run();
+        } catch (error) {
+          failure = { error };
+        }
       } while (this.again);
+      if (failure) {
+        throw failure.error;
+      }
     } finally {
       this.inFlight = null;
     }

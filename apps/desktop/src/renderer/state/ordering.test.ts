@@ -85,4 +85,29 @@ describe("Coalesced", () => {
     await gate.call();
     expect(runs).toBe(2);
   });
+
+  it("still runs the rerun asked for while a run failed, and answers with it", async () => {
+    const failing = Promise.withResolvers<never>();
+    let runs = 0;
+    const gate = new Coalesced(() => {
+      runs += 1;
+      return runs === 1 ? failing.promise : Promise.resolve();
+    });
+    const burst = [gate.call(), gate.call()];
+    failing.reject(new Error("main went away"));
+    await expect(Promise.all(burst)).resolves.toEqual([undefined, undefined]);
+    expect(runs).toBe(2);
+  });
+
+  it("rejects every waiting call when the last run fails", async () => {
+    let runs = 0;
+    const gate = new Coalesced(() => {
+      runs += 1;
+      return runs === 2 ? Promise.reject(new Error("main went away")) : Promise.resolve();
+    });
+    const burst = [gate.call(), gate.call()];
+    await expect(burst[0]).rejects.toThrow("main went away");
+    await expect(burst[1]).rejects.toThrow("main went away");
+    expect(runs).toBe(2);
+  });
 });

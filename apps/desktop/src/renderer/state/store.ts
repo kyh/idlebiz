@@ -29,6 +29,8 @@ import { Coalesced, latestWins } from "@/renderer/state/ordering";
 interface State {
   /** The first refresh finished: company, roster and tasks are known (or known absent). */
   booted: boolean;
+  /** Why the last refresh before boot failed; null once one lands. */
+  bootFailure: string | null;
   /**
    * The founder's saved office as main found it; null until that is known, and
    * the scene mounts on nothing earlier. Settled before the bridge calls that
@@ -64,6 +66,7 @@ let state: State = {
   activity: [],
   authed: null,
   bets: [],
+  bootFailure: null,
   booted: false,
   company: null,
   design: null,
@@ -105,9 +108,10 @@ export const useStore = <T>(selector: (s: State) => T): T => {
 export const useBoot = (): Boot => {
   const saveIssues = useStore((s) => s.saveIssues);
   const booted = useStore((s) => s.booted);
+  const bootFailure = useStore((s) => s.bootFailure);
   const hasCompany = useStore((s) => s.company !== null);
   const authed = useStore((s) => s.authed);
-  return bootOf({ authed, booted, hasCompany, saveIssues });
+  return bootOf({ authed, bootFailure, booted, hasCompany, saveIssues });
 };
 
 export const setAuthed = (ok: boolean): void => {
@@ -244,7 +248,7 @@ const refreshOnce = async (): Promise<void> => {
       ])
     : [[], [], [], []];
   // a slice a newer request or event already answered keeps the newer answer
-  const patch: Partial<State> = { booted: true, saveIssues: load.skipped };
+  const patch: Partial<State> = { bootFailure: null, booted: true, saveIssues: load.skipped };
   if (order.accepts("company", ticket)) {
     patch.company = company;
   }
@@ -272,7 +276,17 @@ const refreshOnce = async (): Promise<void> => {
 
 const refreshing = new Coalesced(refreshOnce);
 
-export const refresh = (): Promise<void> => refreshing.call();
+/** Ask main for everything again. Until one lands, a failure is what the window shows (see Boot). */
+export const refresh = async (): Promise<void> => {
+  try {
+    await refreshing.call();
+  } catch (error) {
+    if (!state.booted) {
+      set({ bootFailure: errorMessage(error) });
+    }
+    throw error;
+  }
+};
 
 /** For a refresh nobody awaits: a failure is logged, and the next refresh catches up. */
 const refreshInBackground = async (): Promise<void> => {

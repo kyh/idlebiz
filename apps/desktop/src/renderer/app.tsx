@@ -5,6 +5,7 @@ import { initStore, setGame, useBoot, useStore } from "@/renderer/state/store";
 import type { Boot } from "@/renderer/state/boot";
 import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
+import { Unreachable } from "@/renderer/ui/unreachable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
 import { CrashScreen } from "@/renderer/ui/crash-screen";
 import { Hud } from "@/renderer/ui/hud";
@@ -80,6 +81,9 @@ const Screen = ({
     }
     case "unreadable": {
       return <SaveUnreadable issues={boot.issues} />;
+    }
+    case "unreachable": {
+      return <Unreachable message={boot.message} />;
     }
     case "onboarding": {
       return <Onboarding />;
