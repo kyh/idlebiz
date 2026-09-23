@@ -4,10 +4,10 @@ import "@/app/globals.css";
 import { ErrorStatus } from "@/app/error-status";
 
 // This boundary replaces the root layout, including its document shell and stylesheet.
-const GlobalError = ({ error, reset }: { error: Error; reset: () => void }) => (
+const GlobalError = ({ error, retry }: { error: Error; retry: () => void }) => (
   <html lang="en">
     <body>
-      <ErrorStatus error={error} description="The application failed to load." reset={reset} />
+      <ErrorStatus error={error} description="The application failed to load." retry={retry} />
     </body>
   </html>
 );

@@ -7,11 +7,11 @@ import { StatusPage } from "@/app/status-page";
 export const ErrorStatus = ({
   error,
   description,
-  reset,
+  retry,
 }: {
   error: Error;
   description: string;
-  reset: () => void;
+  retry: () => void;
 }) => {
   useEffect(() => {
     console.error(error);
@@ -20,7 +20,7 @@ export const ErrorStatus = ({
     <StatusPage
       title="Something went wrong"
       description={description}
-      action={<Cta onClick={reset}>Try again</Cta>}
+      action={<Cta onClick={retry}>Try again</Cta>}
     />
   );
 };
