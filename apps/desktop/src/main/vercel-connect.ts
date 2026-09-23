@@ -1,4 +1,4 @@
-import { setSecret } from "@/main/secrets";
+import { getSecret, setSecret } from "@/main/secrets";
 import * as store from "@/main/store/store";
 import { listProjects, validateToken } from "@/main/vercel";
 import type { Contract } from "@/shared/ipc-registry";
@@ -15,21 +15,28 @@ export const initVercelConnect = (hooks: { onConnected: () => void }): void => {
   ({ onConnected } = hooks);
 };
 
+/** The projects `token` can see, or the saved token's when none is given. */
 export const listVercelProjects = async (
-  token: string,
+  token?: string,
 ): Promise<Contract["vercelListProjects"]["result"]> => {
-  const check = await validateToken(token.trim());
+  const key = token ?? getSecret(VERCEL_TOKEN_KEY);
+  if (!key) {
+    return { ok: false, projects: [] };
+  }
+  const check = await validateToken(key);
   if (!check.ok) {
     return { ok: false, projects: [] };
   }
-  const projects = await listProjects(token.trim());
+  const projects = await listProjects(key);
   return { account: check.account, ok: true, projects };
 };
 
 export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void => {
   const { productId, token, projectId, projectName, teamId } = input;
   store.requireProduct(productId);
-  setSecret(VERCEL_TOKEN_KEY, token.trim());
+  if (token !== undefined) {
+    setSecret(VERCEL_TOKEN_KEY, token);
+  }
   store.setProductVercel(productId, { projectId, projectName, teamId: teamId ?? null });
   onConnected();
 };

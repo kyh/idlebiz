@@ -373,7 +373,8 @@ export const disconnectStripe = (): Promise<void> =>
 
 export const connectVercel = async (input: {
   productId: string;
-  token: string;
+  /** Absent: keep the saved token. */
+  token?: string;
   projectId: string;
   projectName: string;
   teamId?: string;

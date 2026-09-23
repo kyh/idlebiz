@@ -19,9 +19,19 @@ export interface VercelDeployment {
   createdAt: number;
 }
 
+/**
+ * What asking Vercel for a bound project's latest deploy found. A refused token
+ * is told apart from "nothing deployed": it silently stops every read of the
+ * product, so the founder has to see it to reconnect.
+ */
+export type DeployRead =
+  | { kind: "deployed"; deployment: VercelDeployment }
+  | { kind: "none" }
+  | { kind: "refused" };
+
 export interface ProductStatus {
   /** PRODUCT.md `entry:` value (path or URL), if the team wrote one. */
   entry: string | null;
-  /** Latest production deployment when Vercel is connected. */
-  deploy: VercelDeployment | null;
+  /** Null when the product is bound to no Vercel project. */
+  deploy: DeployRead | null;
 }

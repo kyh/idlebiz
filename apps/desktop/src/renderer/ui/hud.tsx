@@ -6,7 +6,7 @@ import { Bust } from "@/renderer/ui/bust";
 import { useStore, setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Company, Employee, Product } from "@/shared/domain";
-import { productStateOf } from "@/renderer/ui/product-state";
+import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { ProductStatus } from "@/shared/integrations";
 import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
@@ -128,7 +128,7 @@ const CompanyPlates = ({
   // the plate shows the company's first product; the panel behind it shows them all
   const [lead] = products;
   const status = lead ? productStatus.get(lead.id) : undefined;
-  const deploy = status?.deploy ?? null;
+  const deploy = deploymentOf(status);
   const productState = productStateOf(status);
   const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
   const working = employees.filter((e) => e.status === "working").length;

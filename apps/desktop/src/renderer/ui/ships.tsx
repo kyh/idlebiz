@@ -9,7 +9,7 @@ import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { Failure } from "@/renderer/ui/failure";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { RichText } from "@/renderer/ui/linkify";
-import { productStateOf } from "@/renderer/ui/product-state";
+import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
 import type { Employee, Product, ShipLine } from "@/shared/domain";
@@ -81,6 +81,7 @@ const ProductCard = ({
   onNote: (note: string) => void;
 }) => {
   const state = productStateOf(status);
+  const deploy = deploymentOf(status);
   const open = async () => {
     try {
       await bridge().openProduct({ productId: product.id });
@@ -107,7 +108,7 @@ const ProductCard = ({
           {product.ships} shipped
           {product.users === null ? "" : ` · ${product.users} users`}
           {product.revenueUsd === null ? "" : ` · ${formatUsd(product.revenueUsd)}`}
-          {status?.deploy ? ` · ${status.deploy.url}` : ""}
+          {deploy ? ` · ${deploy.url}` : ""}
         </div>
       </button>
       <div className="flex gap-1.5">

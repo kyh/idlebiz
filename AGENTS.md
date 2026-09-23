@@ -146,7 +146,9 @@ rather than crashing boot.
   `VERCEL_TOKEN`. `STRIPE_SECRET_KEY` always feeds revenue; `STRIPE_CONNECT_TOKEN` only for
   the company whose `metrics.json` holds the connected account (`stripeCredential` in
   `main/metrics.ts`), and only a refused Connect token shows Stripe as revoked in the HUD; a
-  refused own key just leaves revenue unread. One that fails to parse is listed in Settings and never rewritten
+  refused own key just leaves revenue unread. One `VERCEL_TOKEN` serves every product:
+  binding another reuses it unless the founder pastes a new one, and a refused one shows on
+  each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths

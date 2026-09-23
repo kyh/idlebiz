@@ -32,6 +32,12 @@ import type { ProductStatus, StripeStatus, VercelProject } from "@/shared/integr
 // oxlint-disable-next-line typescript/no-invalid-void-type -- the values of Results are handler return types, which the rule cannot see through the map
 type Done = void;
 
+/**
+ * A Vercel token the founder pasted. Left out, the saved one is used: it serves
+ * every product, so replacing it for one could cut another off.
+ */
+const VercelTokenSchema = z.string().trim().min(1);
+
 export const SCHEMAS = {
   answerQuestion: z.object({ answer: z.string(), taskId: z.string() }),
   assignTask: z.object({ employeeId: z.string(), taskId: z.string() }),
@@ -93,10 +99,10 @@ export const SCHEMAS = {
     projectId: z.string(),
     projectName: z.string(),
     teamId: z.string().optional(),
-    token: z.string(),
+    token: VercelTokenSchema.optional(),
   }),
   vercelDisconnect: z.object({ productId: z.string() }),
-  vercelListProjects: z.object({ token: z.string() }),
+  vercelListProjects: z.object({ token: VercelTokenSchema.optional() }),
 } satisfies {
   [M in InvokeMethod]: IpcKind<M> extends "invoke-void" ? z.ZodType<void> : z.ZodType;
 };

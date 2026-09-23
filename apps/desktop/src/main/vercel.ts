@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { getJson } from "@/main/lib/http";
+import { getJson, HttpError } from "@/main/lib/http";
 import type { JsonValue } from "@/shared/json";
 import { getSecret } from "@/main/secrets";
-import type { VercelDeployment, VercelProject } from "@/shared/integrations";
+import type { DeployRead, VercelProject } from "@/shared/integrations";
 
 const API = "https://api.vercel.com";
 
@@ -156,40 +156,45 @@ const DeploymentsSchema = z.object({
 });
 
 // Deploy state changes rarely but is asked for on every renderer refresh
-// (each run end) — cache per project so bursts don't hammer the API.
+// (each run end) — cache per project so bursts don't hammer the API. An entry
+// holds only for the token that read it, so a reconnect is seen at once.
 const DEPLOY_CACHE_TTL_MS = 60_000;
-const deployCache = new Map<string, { at: number; value: VercelDeployment | null }>();
+const deployCache = new Map<string, { at: number; token: string; read: DeployRead }>();
 
 /** The latest production deployment — the product panel's "LIVE" state. */
-export const latestDeployment = async (
-  projectId: string,
-  teamId?: string,
-): Promise<VercelDeployment | null> => {
+export const latestDeployment = async (projectId: string, teamId?: string): Promise<DeployRead> => {
   const token = getSecret("VERCEL_TOKEN");
   if (!token) {
-    return null;
+    return { kind: "none" };
   }
   const cached = deployCache.get(projectId);
-  if (cached && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) {
-    return cached.value;
+  if (cached && cached.token === token && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) {
+    return cached.read;
   }
   const params: Record<string, string> = teamId
     ? { limit: "1", projectId, target: "production", teamId }
     : { limit: "1", projectId, target: "production" };
-  let value: VercelDeployment | null = null;
+  let read: DeployRead = { kind: "none" };
   try {
     const parsed = DeploymentsSchema.safeParse(await apiGet("/v6/deployments", token, params));
     const d = parsed.success ? parsed.data.deployments[0] : undefined;
     if (d?.url) {
-      value = {
-        createdAt: d.createdAt ?? d.created ?? 0,
-        state: d.state ?? d.readyState ?? "UNKNOWN",
-        url: `https://${d.url}`,
+      read = {
+        deployment: {
+          createdAt: d.createdAt ?? d.created ?? 0,
+          state: d.state ?? d.readyState ?? "UNKNOWN",
+          url: `https://${d.url}`,
+        },
+        kind: "deployed",
       };
     }
-  } catch {
-    /* unreachable — treat as no deployment, retry after the TTL */
+  } catch (error) {
+    // Unreachable reads as no deployment, retried after the TTL; only a refusal
+    // needs the founder.
+    if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
+      read = { kind: "refused" };
+    }
   }
-  deployCache.set(projectId, { at: Date.now(), value });
-  return value;
+  deployCache.set(projectId, { at: Date.now(), read, token });
+  return read;
 };
