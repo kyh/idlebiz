@@ -207,6 +207,11 @@ rather than crashing boot.
   so there is nothing to keep in sync.
 - **Prose an employee reads lives in `main/prompts/`.** The store persists it and the
   scheduler gathers what it is grounded in; neither authors text.
+- **`apps/desktop` `dependencies` is exactly what the app ships.** electron-builder unpacks
+  it into node_modules: the ACP adapters main spawns, sharp (native, kept out of the bundle
+  in `electron.vite.config.ts`), and zod and the ACP sdk main imports. Everything Vite
+  bundles — renderer libs, `@repo/*` — goes in `devDependencies`, or the app ships it
+  unpacked for nothing. `pnpm add` defaults to `dependencies`.
 
 ## Map
 

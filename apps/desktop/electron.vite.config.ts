@@ -8,11 +8,11 @@ const configDir = import.meta.dirname;
 export default defineConfig({
   main: {
     build: {
-      // bundle the workspace packages' source (raw .ts — must be inlined)
-      externalizeDeps: { exclude: ["@repo/agent-driver", "@repo/stripe-connect-protocol"] },
       outDir: ".output/app/main",
       rollupOptions: {
-        // sharp is native: keep it external so it loads from node_modules at runtime
+        // On Vite 8, electron-vite's own externals (electron, `dependencies`) never
+        // apply, so main bundles whatever is not named here: electron would become
+        // its npm path stub, and sharp is native and must load from node_modules.
         external: ["electron", "sharp"],
         input: { index: path.resolve(configDir, "src/main/index.ts") },
       },
