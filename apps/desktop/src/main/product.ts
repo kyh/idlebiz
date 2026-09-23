@@ -1,8 +1,10 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { shell } from "electron";
 import * as store from "@/main/store/store";
 import { latestDeployment } from "@/main/vercel";
+import { judgeOpening } from "@/main/workspace-open";
+import type { Opening } from "@/main/workspace-open";
 import type { ProductStatus } from "@/shared/integrations";
 
 // Where a product is, as the team points at it: PRODUCT.md at the product's
@@ -21,54 +23,12 @@ const productEntry = (productId: string): string | null => {
   }
 };
 
-/**
- * What the OS may open outright from an agent-written workspace: folders and
- * things you read. Anything else — a .command, a binary, an installer — is
- * revealed in Finder instead, so a one-click execute can never be authored
- * into the team room.
- */
-const READABLE = new Set([
-  ".md",
-  ".txt",
-  ".log",
-  ".csv",
-  ".json",
-  ".yml",
-  ".yaml",
-  ".html",
-  ".htm",
-  ".css",
-  ".pdf",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".svg",
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-]);
-
-/** `rel` resolved under `root`, or null when it would escape it. */
-const inside = (root: string, rel: string): string | null => {
-  const base = path.resolve(root);
-  const target = path.resolve(base, rel === "" ? "." : rel);
-  return target === base || target.startsWith(base + path.sep) ? target : null;
-};
-
-const openTarget = async (target: string): Promise<void> => {
-  const opens =
-    statSync(target, { throwIfNoEntry: false })?.isDirectory() ||
-    READABLE.has(path.extname(target).toLowerCase());
-  if (!opens) {
-    shell.showItemInFolder(target);
+const openTarget = async (opening: Opening): Promise<void> => {
+  if (opening.kind === "reveal") {
+    shell.showItemInFolder(opening.path);
     return;
   }
-  const err = await shell.openPath(target);
+  const err = await shell.openPath(opening.path);
   if (err) {
     throw new Error(err);
   }
@@ -81,16 +41,14 @@ const openTarget = async (target: string): Promise<void> => {
  * first that has it wins.
  */
 export const openWorkspacePath = async (rel: string): Promise<void> => {
-  const roots = [
-    store.requireCompany().workspaceDir,
-    ...store.listProducts().map((p) => p.workspaceDir),
-  ];
-  const targets = roots.map((root) => inside(root, rel)).filter((t): t is string => t !== null);
-  const target = targets.find((t) => statSync(t, { throwIfNoEntry: false })) ?? targets[0];
-  if (target === undefined) {
-    throw new Error("path escapes the workspace");
+  const opening = judgeOpening(
+    [store.requireCompany().workspaceDir, ...store.listProducts().map((p) => p.workspaceDir)],
+    rel,
+  );
+  if (opening === null) {
+    throw new Error("no such path in the workspace");
   }
-  await openTarget(target);
+  await openTarget(opening);
 };
 
 /** Where a product really is: its entry, and the latest deploy when it is bound to one. */
@@ -110,10 +68,10 @@ export const openProduct = async (productId: string): Promise<string> => {
     await shell.openExternal(entry);
     return entry;
   }
-  const target = inside(product.workspaceDir, entry);
-  if (target === null) {
-    throw new Error("entry escapes the product's workspace");
+  const opening = judgeOpening([product.workspaceDir], entry);
+  if (opening === null) {
+    throw new Error("entry is not in the product's workspace");
   }
-  await openTarget(target);
+  await openTarget(opening);
   return entry;
 };
