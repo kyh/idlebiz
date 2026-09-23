@@ -263,7 +263,13 @@ const cloneObject = (o: EditableObject): EditableObject => ({
 export const withLayout = (d: BuilderDoc, layout: EditableLayout): BuilderDoc =>
   layout === d.layout ? d : { ...d, layout };
 
-/** Shift the named objects together; each keeps its floor line in step. */
+/** The doc with this selection; the same doc when it already selects exactly these, in order. */
+export const withSelection = (d: BuilderDoc, selection: readonly string[]): BuilderDoc =>
+  selection.length === d.selection.length && selection.every((uid, i) => uid === d.selection[i])
+    ? d
+    : { ...d, selection };
+
+/** Shift the named objects together; each keeps its floor line in step. The same layout when none moves. */
 export const moveObjects = (
   L: EditableLayout,
   uids: readonly string[],
@@ -271,6 +277,9 @@ export const moveObjects = (
   dy: number,
 ): EditableLayout => {
   const moving = new Set(uids);
+  if ((dx === 0 && dy === 0) || !L.objects.some((o) => moving.has(o.uid))) {
+    return L;
+  }
   return {
     ...L,
     objects: L.objects.map((o) => (moving.has(o.uid) ? moveObject(o, o.x + dx, o.y + dy) : o)),

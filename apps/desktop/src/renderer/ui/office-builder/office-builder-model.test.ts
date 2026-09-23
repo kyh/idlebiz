@@ -20,6 +20,7 @@ import {
   srcForObject,
   toLayoutData,
   withLayout,
+  withSelection,
   worldRect,
 } from "./office-builder-model";
 import type { BuilderDoc, EditableLayout, EditableObject } from "./office-builder-model";
@@ -179,6 +180,22 @@ describe("editing several objects at once", () => {
   it("hands back the same doc when the layout did not change, so nothing is recorded", () => {
     expect(withLayout(doc, layout)).toBe(doc);
     expect(withLayout(doc, moveObjects(layout, ["desk"], 1, 0)).selection).toBe(doc.selection);
+  });
+
+  it("hands back the same layout when nothing moves", () => {
+    expect(moveObjects(layout, ["desk"], 0, 0)).toBe(layout);
+    expect(moveObjects(layout, [], 8, 8)).toBe(layout);
+    expect(moveObjects(layout, ["gone"], 8, 8)).toBe(layout);
+  });
+
+  it("hands back the same doc when the selection is unchanged", () => {
+    expect(withSelection(doc, ["rug"])).toBe(doc);
+    expect(withSelection(doc, [])).toEqual({ layout, selection: [] });
+    expect(withSelection(doc, ["desk"]).layout).toBe(layout);
+    expect(withSelection({ layout, selection: ["desk", "rug"] }, ["rug", "desk"])).toEqual({
+      layout,
+      selection: ["rug", "desk"],
+    });
   });
 });
 

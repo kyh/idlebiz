@@ -14,6 +14,7 @@ import {
   paintOrder,
   srcForObject,
   withLayout,
+  withSelection,
 } from "@/renderer/ui/office-builder/office-builder-model";
 import type {
   BuilderDoc,
@@ -29,7 +30,7 @@ export interface Placing {
   layer?: OfficeLayer;
 }
 
-type Edit = Pick<History<BuilderDoc>, "live" | "mark" | "commit">;
+type Edit = Pick<History<BuilderDoc>, "live" | "begin" | "end" | "commit">;
 
 /** How close a click must land to an existing marker to mean that marker. */
 const MARKER_HIT_PX = 12;
@@ -80,11 +81,6 @@ const togglePoi = (pois: OfficePoi[], at: PixelPoint, turn: boolean): OfficePoi[
   return pois.map((p, j) => (j === i ? { ...hit, face: NEXT_FACING[hit.face] } : p));
 };
 
-const withSelection = (d: BuilderDoc, selection: readonly string[]): BuilderDoc => ({
-  ...d,
-  selection,
-});
-
 interface Marquee {
   x0: number;
   y0: number;
@@ -98,8 +94,6 @@ interface Drag {
   uids: readonly string[];
   dx: number;
   dy: number;
-  /** An ⌥drag already put its clones down, so the stroke is on record. */
-  marked: boolean;
 }
 
 /** The selection rides the stage's --drag-x/--drag-y during a drag; nothing else moves. */
@@ -295,7 +289,7 @@ export const Stage = ({
       const val: 0 | 1 = tool === "block" ? 1 : 0;
       paintRef.current = val;
       // the whole paint stroke is one undo step
-      edit.mark();
+      edit.begin();
       const c = Math.floor(p.x / layout.cell);
       const r = Math.floor(p.y / layout.cell);
       edit.live((d) => paintCell(d, c, r, val));
@@ -351,22 +345,15 @@ export const Stage = ({
       // Figma-style alt-drag: duplicate the selection and drag the copies
       const clones = duplicates(layout, group, 0, 0);
       // the whole gesture (clone included) is one undo step
-      edit.mark();
+      edit.begin();
       edit.live((d) => addSelected(d, clones));
-      dragRef.current = {
-        dx: 0,
-        dy: 0,
-        marked: true,
-        sx: p.x,
-        sy: p.y,
-        uids: clones.map((o) => o.uid),
-      };
+      dragRef.current = { dx: 0, dy: 0, sx: p.x, sy: p.y, uids: clones.map((o) => o.uid) };
       return;
     }
     if (group !== selection) {
       edit.live((d) => withSelection(d, group));
     }
-    dragRef.current = { dx: 0, dy: 0, marked: false, sx: p.x, sy: p.y, uids: group };
+    dragRef.current = { dx: 0, dy: 0, sx: p.x, sy: p.y, uids: group };
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -397,17 +384,9 @@ export const Stage = ({
     if (drag) {
       dragRef.current = null;
       setDragOffset(0, 0);
-      const { dx, dy } = drag;
-      if (dx !== 0 || dy !== 0) {
-        const moved = (d: BuilderDoc): BuilderDoc =>
-          withLayout(d, moveObjects(d.layout, drag.uids, dx, dy));
-        if (drag.marked) {
-          edit.live(moved);
-        } else {
-          edit.commit(moved);
-        }
-      }
+      edit.commit((d) => withLayout(d, moveObjects(d.layout, drag.uids, drag.dx, drag.dy)));
     }
+    edit.end();
     if (marquee) {
       const x0 = Math.min(marquee.x0, marquee.x1);
       const x1 = Math.max(marquee.x0, marquee.x1);

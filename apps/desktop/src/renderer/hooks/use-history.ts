@@ -1,85 +1,48 @@
 import { useCallback, useRef, useState } from "react";
+import * as timeline from "@/renderer/state/history";
+import type { Timeline } from "@/renderer/state/history";
 
 export interface History<T> {
   present: T;
-  /**
-   * Replace without recording — the frames inside a drag or a paint stroke; a no-op when
-   * the updater returns the same value.
-   */
+  /** Replace without recording: the frames of a gesture, or a selection. */
   live: (updater: (t: T) => T) => void;
-  /** Record the present as an undo step; the `live` frames that follow belong to it. */
-  mark: () => void;
-  /** One undoable change; a no-op when the updater returns the same value. */
+  /** Open a gesture: every edit until `end` is one undo step, and undo/redo do nothing meanwhile. */
+  begin: () => void;
+  /** Close the gesture, recording it only if it changed the present. */
+  end: () => void;
+  /** One undoable change; inside an open gesture it joins that gesture's step. */
   commit: (updater: (t: T) => T) => void;
   undo: () => void;
   redo: () => void;
 }
 
 /**
- * Snapshot undo/redo over one immutable value. The present is mirrored in a
- * ref so successive edits inside one event handler compose instead of each
- * reading the render's stale value.
+ * Undo/redo over one immutable value, on the pure timeline in `state/history.ts`.
+ * The timeline lives in a ref so successive edits inside one event handler
+ * compose instead of each reading the render's stale value; state holds only
+ * its present, so only a new present renders.
  */
 export const useHistory = <T extends object>(init: () => T, cap = 100): History<T> => {
   const [present, setPresent] = useState(init);
-  const presentRef = useRef(present);
-  const stack = useRef<{ past: T[]; future: T[] }>({ future: [], past: [] });
+  const timelineRef = useRef(timeline.start(present));
 
-  const replace = useCallback((next: T) => {
-    presentRef.current = next;
-    setPresent(next);
+  const apply = useCallback((step: (t: Timeline<T>) => Timeline<T>) => {
+    timelineRef.current = step(timelineRef.current);
+    setPresent(timelineRef.current.present);
   }, []);
 
   const live = useCallback(
-    (updater: (t: T) => T) => {
-      const next = updater(presentRef.current);
-      if (next !== presentRef.current) {
-        replace(next);
-      }
-    },
-    [replace],
+    (updater: (t: T) => T) => apply((t) => timeline.live(t, updater)),
+    [apply],
   );
-
-  const mark = useCallback(() => {
-    const s = stack.current;
-    s.past.push(presentRef.current);
-    if (s.past.length > cap) {
-      s.past.shift();
-    }
-    s.future = [];
-  }, [cap]);
-
+  const begin = useCallback(() => apply(timeline.begin), [apply]);
+  const end = useCallback(() => apply((t) => timeline.end(t, cap)), [apply, cap]);
   const commit = useCallback(
-    (updater: (t: T) => T) => {
-      const next = updater(presentRef.current);
-      if (next === presentRef.current) {
-        return;
-      }
-      mark();
-      replace(next);
-    },
-    [mark, replace],
+    (updater: (t: T) => T) => apply((t) => timeline.commit(t, updater, cap)),
+    [apply, cap],
   );
+  const undo = useCallback(() => apply(timeline.undo), [apply]);
+  const redo = useCallback(() => apply(timeline.redo), [apply]);
 
-  const undo = useCallback(() => {
-    const s = stack.current;
-    const prev = s.past.pop();
-    if (prev === undefined) {
-      return;
-    }
-    s.future.push(presentRef.current);
-    replace(prev);
-  }, [replace]);
-
-  const redo = useCallback(() => {
-    const s = stack.current;
-    const next = s.future.pop();
-    if (next === undefined) {
-      return;
-    }
-    s.past.push(presentRef.current);
-    replace(next);
-  }, [replace]);
-
-  return { commit, live, mark, present, redo, undo };
+  return { begin, commit, end, live, present, redo, undo };
 };
