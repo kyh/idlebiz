@@ -856,11 +856,11 @@ export const noteRunEnd = (id: string, sessionId: string | null): void => {
  * founder's Inbox instead of running on the lead unasked. A run in flight settles on its
  * own; null leaves it be.
  */
-const rehomed = (t: Task, leaver: Employee, lead: string | null, now: number): Task | null => {
+const rehomed = (t: Task, leaverName: string, lead: string | null, now: number): Task | null => {
   const deadOnLead = (): Task => ({
     ...t,
     assigneeId: lead,
-    ...entering({ kind: "dead", lastError: `${leaver.name} was released` }, now),
+    ...entering({ kind: "dead", lastError: `${leaverName} was released` }, now),
   });
   switch (t.state.kind) {
     case "todo":
@@ -881,6 +881,22 @@ const rehomed = (t: Task, leaver: Employee, lead: string | null, now: number): T
     }
     // no default
   }
+};
+
+/** Hand every open task the leaver holds to the lead, as `rehomed` places it; returns how many moved. */
+const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): number => {
+  const lead = active.company.leaderId;
+  const now = Date.now();
+  let moved = 0;
+  for (const [i, t] of active.tasks.entries()) {
+    const next = t.assigneeId === leaverId ? rehomed(t, leaverName, lead, now) : null;
+    if (next) {
+      active.tasks[i] = next;
+      saveTask(next);
+      moved += 1;
+    }
+  }
+  return moved;
 };
 
 /** Archive the employee package and hand their open work to the lead; `rehomed` counts it. */
@@ -904,18 +920,7 @@ export const archiveEmployee = (
   if (active.company.leaderId === employeeId) {
     patchCompany({ leaderId: leadOf(listEmployees()) });
   }
-  const lead = active.company.leaderId;
-  const now = Date.now();
-  let moved = 0;
-  for (const [i, t] of active.tasks.entries()) {
-    const next = t.assigneeId === employeeId ? rehomed(t, emp, lead, now) : null;
-    if (next) {
-      active.tasks[i] = next;
-      saveTask(next);
-      moved += 1;
-    }
-  }
-  return { employee: emp, rehomed: moved };
+  return { employee: emp, rehomed: handOver(active, employeeId, emp.name) };
 };
 
 // ---- products --------------------------------------------------------------
@@ -1794,6 +1799,23 @@ const adoptProductWorkspaces = (active: ActiveCompany): void => {
 };
 
 /**
+ * An older build's release left the leaver's asks and dead letters on their id, which no
+ * claim reaches: an answer queued a continuation nobody runs. Whoever an open task still
+ * names off the roster is released now, known only by that id.
+ */
+const adoptOrphanedTasks = (active: ActiveCompany): void => {
+  const roster = new Set(active.employees.map((e) => e.id));
+  const leavers = new Set(
+    active.tasks.flatMap((t) =>
+      t.assigneeId === null || roster.has(t.assigneeId) ? [] : [t.assigneeId],
+    ),
+  );
+  for (const leaver of leavers) {
+    handOver(active, leaver, leaver);
+  }
+};
+
+/**
  * Bring a save written in format `from` up to this one, once: saveCompany
  * then stamps it, and none of this runs for it again. A step written for
  * format N runs only for saves stamped below it. Everything that reads an
@@ -1825,6 +1847,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 3) {
     adoptProductWorkspaces(active);
+    adoptOrphanedTasks(active);
   }
   saveCompany(active.company);
 };

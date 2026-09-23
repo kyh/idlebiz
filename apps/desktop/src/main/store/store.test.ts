@@ -28,6 +28,7 @@ const {
   betFile,
   companySharedDir,
   companyWorkspace,
+  employeeAgentDir,
   employeeRunStateFile,
   productWorkspace,
   productsDir,
@@ -1281,6 +1282,24 @@ describe("the save format", () => {
     expect(store.getProduct(gadget.id)?.workspaceDir).toBe(productWorkspace(co.id, gadget.id));
     expect(store.employeeInstructions(emp.id)).toContain(productWorkspace(co.id, gadget.id));
     expect(store.employeeInstructions(emp.id)).not.toContain(elsewhere);
+  });
+
+  it("hands a format 2 leaver's funded ask to the lead, and the answer runs on them", () => {
+    const co = foundTeam();
+    const bet = launch(firstProduct().id);
+    const ask = store.createTask({ betId: bet.id, title: "Post it" });
+    block(ask.id, "priya");
+    rmSync(employeeAgentDir(co.id, "priya"), { recursive: true });
+    restamp(co.id, 2);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(3);
+
+    store.initStore();
+    expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
+    const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+    expect(next?.assigneeId).toBe("mae");
+    expect(next && store.claimTask(next.id, "mae")?.state.kind).toBe("queued");
   });
 
   it("leaves alone a package written in a schema it does not read", () => {
