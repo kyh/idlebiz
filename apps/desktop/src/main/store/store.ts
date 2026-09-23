@@ -461,6 +461,16 @@ const uniqueSlug = (
   return candidate;
 };
 
+/** A slug stays taken while any package, live or archived, holds its directory. */
+const heldIn =
+  (...dirs: string[]) =>
+  (slug: string): boolean =>
+    dirs.some((dir) => existsSync(path.join(dir, slug)));
+
+/** A namesake retired earlier keeps its folder; the newcomer takes the next free name. */
+const archiveTo = (dir: string, slug: string): string =>
+  path.join(dir, uniqueSlug(slug, [], heldIn(dir)));
+
 // ---- loading ----------------------------------------------------------------
 /** Oldest first; ties (same millisecond) by id, so boot order is stable. */
 const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
@@ -761,7 +771,7 @@ export const createEmployee = (hire: FoundingHire & { deskIndex: number }): Empl
   const id = uniqueSlug(
     input.name,
     list.map((e) => e.id),
-    (s) => existsSync(employeeAgentDir(input.companyId, s)),
+    heldIn(agentsDir(input.companyId), alumniDir(input.companyId)),
   );
   const employee = employeeRecord(input, id);
   mkdirSync(employeeMemoryDir(input.companyId, id), { recursive: true });
@@ -810,6 +820,10 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
   if (!emp) {
     return null;
   }
+  moveDir(
+    employeeAgentDir(emp.companyId, employeeId),
+    archiveTo(alumniDir(emp.companyId), employeeId),
+  );
   const active = current();
   const companyTasks = active.tasks;
   for (const t of companyTasks) {
@@ -822,14 +836,6 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
   const idx = active.employees.findIndex((e) => e.id === employeeId);
   if (idx !== -1) {
     active.employees.splice(idx, 1);
-  }
-  try {
-    moveDir(
-      employeeAgentDir(emp.companyId, employeeId),
-      path.join(alumniDir(emp.companyId), employeeId),
-    );
-  } catch {
-    /* archive is best-effort — the roster removal is what matters */
   }
   // the lead left: whoever remains elects one, so the tools keep an owner
   const company = getCompany();
@@ -845,7 +851,7 @@ const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   companyId: co.id,
   createdAt: co.createdAt,
   description: co.mission,
-  id: uniqueSlug(co.name, [], (s) => existsSync(path.join(productsDir(co.id), s))),
+  id: uniqueSlug(co.name, [], heldIn(productsDir(co.id), retiredDir(co.id))),
   lastShipAt: null,
   name: co.name,
   revenueUsd: null,
@@ -877,7 +883,7 @@ export const createProduct = (named: { name: string; description: string }): Pro
   const id = uniqueSlug(
     input.name,
     list.map((p) => p.id),
-    (s) => existsSync(path.join(productsDir(input.companyId), s)),
+    heldIn(productsDir(input.companyId), retiredDir(input.companyId)),
   );
   const product: Product = {
     companyId: input.companyId,
@@ -960,7 +966,7 @@ export const openBet = (wager: {
   const id = uniqueSlug(
     input.title,
     active.bets.map((b) => b.id),
-    (s) => existsSync(path.join(betsDir(input.companyId), s)),
+    heldIn(betsDir(input.companyId)),
   );
   const bet: Bet = {
     budgetUsd: input.budgetUsd,
@@ -1110,9 +1116,7 @@ export const createTask = (brief: {
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
-    (s) =>
-      existsSync(path.join(tasksDir(t.companyId), s)) ||
-      existsSync(path.join(shippedDir(t.companyId), s)),
+    heldIn(tasksDir(t.companyId), shippedDir(t.companyId)),
   );
   const task: Task = {
     artifacts: [],
@@ -1337,6 +1341,10 @@ export const killProduct = (productId: string, reason: string): Bet[] => {
       `${product.name} is the only product — start its successor with create_product first.`,
     );
   }
+  moveDir(
+    path.join(productsDir(product.companyId), productId),
+    archiveTo(retiredDir(product.companyId), productId),
+  );
   const now = Date.now();
   const killed = active.bets
     .filter((b) => b.productId === productId && !isClosed(b))
@@ -1350,14 +1358,6 @@ export const killProduct = (productId: string, reason: string): Bet[] => {
     }
   }
   active.products.splice(active.products.indexOf(product), 1);
-  try {
-    moveDir(
-      path.join(productsDir(product.companyId), productId),
-      path.join(retiredDir(product.companyId), productId),
-    );
-  } catch {
-    /* archive is best-effort — leaving the portfolio is what matters */
-  }
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
   }

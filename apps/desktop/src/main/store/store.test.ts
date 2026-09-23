@@ -20,7 +20,7 @@ const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store");
 const { scheduler } = await import("@/main/scheduler");
-const { betFile, productWorkspace, productsDir, retiredDir, shippedDir, tasksDir } =
+const { alumniDir, betFile, productWorkspace, productsDir, retiredDir, shippedDir, tasksDir } =
   await import("@/main/paths");
 
 beforeEach(() => {
@@ -643,6 +643,74 @@ describe("bets", () => {
     expect(existsSync(path.join(productsDir(co.id), side.id))).toBe(false);
     store.initStore();
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
+  });
+});
+
+describe("archives", () => {
+  it("keep a released employee's slug, so a namesake's release sticks across a restart", () => {
+    const co = found();
+    const first = store.createEmployee({ ...hire("Priya") });
+    store.archiveEmployee(first.id);
+    const second = store.createEmployee({ ...hire("Priya") });
+    expect(second.id).toBe(`${first.id}-2`);
+    store.archiveEmployee(second.id);
+    store.initStore();
+    expect(store.listEmployees()).toEqual([]);
+    expect(existsSync(path.join(alumniDir(co.id), first.id, "AGENTS.md"))).toBe(true);
+    expect(existsSync(path.join(alumniDir(co.id), second.id, "AGENTS.md"))).toBe(true);
+  });
+
+  it("keep a retired product's slug, so a namesake's retirement sticks across a restart", () => {
+    const co = found();
+    const first = firstProduct();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    store.killProduct(side.id, "dud");
+    const again = store.createProduct({ description: "a second try", name: "Side" });
+    expect(again.id).toBe(`${side.id}-2`);
+    store.killProduct(again.id, "dud again");
+    store.initStore();
+    expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
+    expect(existsSync(path.join(retiredDir(co.id), side.id, "PRODUCT.md"))).toBe(true);
+    expect(existsSync(path.join(retiredDir(co.id), again.id, "PRODUCT.md"))).toBe(true);
+  });
+
+  it("archive beside a namesake a save already holds, so the release sticks across a restart", () => {
+    const co = found();
+    const first = firstProduct();
+    const emp = store.createEmployee({ ...hire("Priya") });
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const earlier = [path.join(alumniDir(co.id), emp.id), path.join(retiredDir(co.id), side.id)];
+    for (const taken of earlier) {
+      mkdirSync(taken, { recursive: true });
+      writeFileSync(path.join(taken, "README.md"), "someone else's");
+    }
+    store.archiveEmployee(emp.id);
+    store.killProduct(side.id, "dud");
+    store.initStore();
+    expect(store.listEmployees()).toEqual([]);
+    expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
+    expect(existsSync(path.join(alumniDir(co.id), `${emp.id}-2`, "AGENTS.md"))).toBe(true);
+    expect(existsSync(path.join(retiredDir(co.id), `${side.id}-2`, "PRODUCT.md"))).toBe(true);
+    for (const taken of earlier) {
+      expect(readFileSync(path.join(taken, "README.md"), "utf-8")).toBe("someone else's");
+    }
+  });
+
+  it("refuse a release or a retirement the move cannot make, and nothing leaves", () => {
+    const co = found();
+    const emp = store.createEmployee({ ...hire("Priya") });
+    const task = store.createTask({ assigneeId: emp.id, title: "Ship it" });
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const bet = launch(side.id);
+    for (const archive of [alumniDir(co.id), retiredDir(co.id)]) {
+      writeFileSync(archive, "not a directory");
+    }
+    expect(() => store.archiveEmployee(emp.id)).toThrow();
+    expect(() => store.killProduct(side.id, "dud")).toThrow();
+    expect(store.listEmployees().map((e) => e.id)).toEqual([emp.id]);
+    expect(store.getTask(task.id)?.assigneeId).toBe(emp.id);
+    expect(store.getProduct(side.id)).not.toBeNull();
+    expect(store.getBet(bet.id)?.state.kind).toBe("open");
   });
 });
 
