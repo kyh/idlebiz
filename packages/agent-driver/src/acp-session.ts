@@ -18,6 +18,9 @@ const STDERR_TAIL_MAX = 16_000;
 const fmtMs = (ms: number): string =>
   ms >= 60_000 ? `${Math.round(ms / 60_000)}m` : `${Math.round(ms / 1000)}s`;
 
+/** Longer than the 2s both adapters give their CLI after stdin closes before signalling it. */
+const TEARDOWN_GRACE_MS = 5000;
+
 // Claude's cost extension reports this process's running total, including on resume.
 const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 
@@ -94,14 +97,19 @@ export interface AcpTurnOptions {
   addDirs?: string[];
   /** Run-scoped env additions (control-plane URL + token, secrets). */
   env?: Record<string, string>;
-  /** Decides tool permissions. Omission allows everything; the caller must provide confinement. */
-  onPermission?: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /**
+   * Decides tool permissions. Omission allows everything; the caller must provide confinement.
+   * `signal` aborts when the turn ends, so an answer that comes too late acts on nothing.
+   */
+  onPermission?: (request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
   idleTimeoutMs: number;
   /** Absolute ceiling on one turn regardless of activity. 0 disables. */
   maxSessionMs: number;
   /** Aborts the underlying process. */
   signal?: AbortSignal;
+  /** How long an ended turn's agent gets to shut down before its process group is killed. */
+  teardownGraceMs?: number;
   /** Receives normalized events as the turn streams. */
   onEvent: (e: AgentEvent) => void;
 }
@@ -125,11 +133,25 @@ export interface AcpTurnResult {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+// Even once the leader is gone: codex-acp dies on SIGTERM without stopping its app-server,
+// and a group's id cannot be reused while any member of it lives.
+const killGroup = (child: ChildProcess): void => {
+  if (child.pid === undefined) {
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    /* group already gone */
+  }
+};
+
 export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process and ACP client events)
   new Promise((resolve) => {
     let child: ChildProcess | undefined;
     let settled = false;
+    const ended = new AbortController();
     // stderr is read only when the run fails: kept as chunks, bounded, joined then
     const stderrChunks: Buffer[] = [];
     let stderrBytes = 0;
@@ -166,21 +188,34 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         return;
       }
       settled = true;
+      ended.abort();
       if (idleTimer) {
         clearTimeout(idleTimer);
       }
       if (sessionTimer) {
         clearTimeout(sessionTimer);
       }
-      // Orphaned grandchildren can keep pipes open after their parent dies.
-      try {
-        child?.stdin?.destroy();
-        child?.stdout?.destroy();
-        child?.stderr?.destroy();
-        child?.kill("SIGKILL");
-        child?.unref();
-      } catch {
-        /* already gone */
+      // Both adapters tear down their CLI and its tools on stdin EOF or SIGTERM; an
+      // immediate SIGKILL would skip the CLI's cleanup of its own detached tool groups.
+      // The group kill is only for an agent that is still wedged after the grace period.
+      if (child) {
+        const ending = child;
+        try {
+          ending.stdin?.destroy();
+          ending.stdout?.destroy();
+          ending.stderr?.destroy();
+          if (!ending.killed) {
+            ending.kill("SIGTERM");
+          }
+          ending.unref();
+        } catch {
+          /* already gone */
+        }
+        const backstop = setTimeout(
+          () => killGroup(ending),
+          opts.teardownGraceMs ?? TEARDOWN_GRACE_MS,
+        );
+        backstop.unref();
       }
       resolve(res);
     };
@@ -217,6 +252,8 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     try {
       child = spawn(bin, args, {
         cwd: opts.cwd,
+        // its own process group, so the backstop can reach the CLI it runs
+        detached: true,
         env: { ...process.env, ...opts.agent.env, ...opts.env },
         signal: opts.signal,
         stdio: ["pipe", "pipe", "pipe"],
@@ -259,6 +296,9 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     const toolTitles = new Map<string, string>();
     const app = client({ name: "idlebiz" })
       .onRequest("session/request_permission", async (ctx) => {
+        if (settled) {
+          return { outcome: { outcome: "cancelled" } };
+        }
         pokeIdle();
         const { toolCall } = ctx.params;
         const described = ToolCallDescription.safeParse(toolCall.rawInput);
@@ -271,7 +311,9 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
           }),
         };
-        const decision = opts.onPermission ? await opts.onPermission(request) : { allow: true };
+        const decision = opts.onPermission
+          ? await opts.onPermission(request, ended.signal)
+          : { allow: true };
         // Match protocol kinds, not adapter-specific ids. Prefer one-command approval.
         const pick = (kind: string): string | undefined =>
           ctx.params.options.find((o) => o.kind === kind)?.optionId;

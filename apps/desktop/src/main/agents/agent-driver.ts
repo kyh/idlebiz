@@ -88,13 +88,18 @@ const liveBrowserUrl: LiveUrl = async (session) => {
 };
 
 /** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
-const decidePermission = async (
+export const decidePermission = async (
   task: { companyId: string; id: string },
   request: PermissionRequest,
   leases: Set<string>,
   hold: (ask: BlockedAsk) => void,
+  signal: AbortSignal,
 ): Promise<PermissionDecision> => {
   const held = await holdFor(request.tool, leases, liveBrowserUrl);
+  // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
+  if (signal.aborted) {
+    return { allow: false };
+  }
   if (held === null) {
     return { allow: true };
   }
@@ -294,12 +299,13 @@ class AgentDriver {
             /* a listener must never break the run */
           }
         },
-        onPermission: (request) =>
+        onPermission: (request, turnEnded) =>
           decidePermission(
             { companyId: company.id, id: run.taskId },
             request,
             leases,
             tools.asks.raise,
+            turnEnded,
           ),
         prompt: run.prompt,
         resumeSessionId,
