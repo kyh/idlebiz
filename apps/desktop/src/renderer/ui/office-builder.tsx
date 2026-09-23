@@ -10,14 +10,16 @@ import { setLayout } from "@/renderer/state/store";
 import { Inspector } from "@/renderer/ui/office-builder/inspector";
 import {
   ALL_OBJECT_IDS,
+  addSelected,
   assetSrc,
-  cloneObject,
+  duplicates,
   flipObject,
   loadLayout,
-  moveObject,
+  moveObjects,
   ROOM_TILES,
   sealPockets,
   toLayoutData,
+  withLayout,
 } from "@/renderer/ui/office-builder/office-builder-model";
 import type {
   BuilderDoc,
@@ -306,10 +308,7 @@ export const OfficeBuilder = () => {
     selection.length === 1 ? (layout.objects.find((o) => o.uid === selection[0]) ?? null) : null;
 
   const commitLayout = (updater: (L: EditableLayout) => EditableLayout) =>
-    history.commit((d) => {
-      const next = updater(d.layout);
-      return next === d.layout ? d : { ...d, layout: next };
-    });
+    history.commit((d) => withLayout(d, updater(d.layout)));
   const select = (uids: readonly string[]) => history.live((d) => ({ ...d, selection: uids }));
   const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP));
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP));
@@ -357,16 +356,7 @@ export const OfficeBuilder = () => {
     if (uids.length === 0) {
       return;
     }
-    const src = new Set(uids);
-    history.commit((d) => {
-      const clones = d.layout.objects
-        .filter((o) => src.has(o.uid))
-        .map((o) => moveObject(cloneObject(o), o.x + 8, o.y + 8));
-      return {
-        layout: { ...d.layout, objects: [...d.layout.objects, ...clones] },
-        selection: clones.map((o) => o.uid),
-      };
-    });
+    history.commit((d) => addSelected(d, duplicates(d.layout, uids, 8, 8)));
   };
 
   const flipSelection = (axis: "x" | "y") => {
@@ -380,13 +370,8 @@ export const OfficeBuilder = () => {
     }));
   };
 
-  const nudgeSelection = (d: PixelPoint) => {
-    const sel = new Set(selection);
-    commitLayout((L) => ({
-      ...L,
-      objects: L.objects.map((o) => (sel.has(o.uid) ? moveObject(o, o.x + d.x, o.y + d.y) : o)),
-    }));
-  };
+  const nudgeSelection = (d: PixelPoint) =>
+    commitLayout((L) => moveObjects(L, selection, d.x, d.y));
 
   const save = async () => {
     // The same judges main applies before writing, run here first so the reasons

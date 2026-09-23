@@ -4,14 +4,16 @@ import type { History } from "@/renderer/hooks/use-history";
 import type { OfficeLayer, OfficePoi, OfficeSeat, PixelPoint } from "@/renderer/game/office-layout";
 import type { Facing } from "@/shared/office-layout-schema";
 import {
-  cloneObject,
+  addSelected,
+  duplicates,
   worldRect,
   flipTransform,
   makeObject,
-  moveObject,
+  moveObjects,
   paintOrder,
   setCollisionCell,
   srcForObject,
+  withLayout,
 } from "@/renderer/ui/office-builder/office-builder-model";
 import type {
   BuilderDoc,
@@ -77,9 +79,6 @@ const togglePoi = (pois: OfficePoi[], at: PixelPoint, turn: boolean): OfficePoi[
   }
   return pois.map((p, j) => (j === i ? { ...hit, face: NEXT_FACING[hit.face] } : p));
 };
-
-const withLayout = (d: BuilderDoc, layout: EditableLayout): BuilderDoc =>
-  layout === d.layout ? d : { ...d, layout };
 
 const withSelection = (d: BuilderDoc, selection: readonly string[]): BuilderDoc => ({
   ...d,
@@ -314,10 +313,7 @@ export const Stage = ({
       }
       const obj = makeObject(placing.id, sx, sy, { layer: placing.layer, path: placing.path });
       // stay in Place mode so you can keep placing
-      edit.commit((d) => ({
-        layout: { ...d.layout, objects: [...d.layout.objects, obj] },
-        selection: [obj.uid],
-      }));
+      edit.commit((d) => addSelected(d, [obj]));
       return;
     }
     if (tool === "spawn") {
@@ -358,14 +354,10 @@ export const Stage = ({
     const group = selection.includes(hit.uid) ? selection : [hit.uid];
     if (e.altKey) {
       // Figma-style alt-drag: duplicate the selection and drag the copies
-      const groupSet = new Set(group);
-      const clones = layout.objects.filter((o) => groupSet.has(o.uid)).map((o) => cloneObject(o));
+      const clones = duplicates(layout, group, 0, 0);
       // the whole gesture (clone included) is one undo step
       edit.mark();
-      edit.live((d) => ({
-        layout: { ...d.layout, objects: [...d.layout.objects, ...clones] },
-        selection: clones.map((o) => o.uid),
-      }));
+      edit.live((d) => addSelected(d, clones));
       dragRef.current = {
         dx: 0,
         dy: 0,
@@ -414,14 +406,8 @@ export const Stage = ({
       setDragOffset(0, 0);
       const { dx, dy } = drag;
       if (dx !== 0 || dy !== 0) {
-        const moving = new Set(drag.uids);
         const moved = (d: BuilderDoc): BuilderDoc =>
-          withLayout(d, {
-            ...d.layout,
-            objects: d.layout.objects.map((o) =>
-              moving.has(o.uid) ? moveObject(o, o.x + dx, o.y + dy) : o,
-            ),
-          });
+          withLayout(d, moveObjects(d.layout, drag.uids, dx, dy));
         if (drag.marked) {
           edit.live(moved);
         } else {

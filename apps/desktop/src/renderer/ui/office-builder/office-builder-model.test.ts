@@ -5,19 +5,23 @@ import { SPRITE_BOUNDS } from "@/renderer/game/sprite-bounds.generated";
 import {
   ALL_OBJECT_IDS,
   ROOM_TILES,
+  addSelected,
   assetSrc,
   autoAnchor,
+  duplicates,
   flipObject,
   loadLayout,
   makeObject,
   moveObject,
+  moveObjects,
   sealPockets,
   setCollisionCell,
   srcForObject,
   toLayoutData,
+  withLayout,
   worldRect,
 } from "./office-builder-model";
-import type { EditableLayout, EditableObject } from "./office-builder-model";
+import type { BuilderDoc, EditableLayout, EditableObject } from "./office-builder-model";
 
 // The packaged app loads the renderer over file://, where a root-absolute src lands at
 // the filesystem root instead of beside index.html.
@@ -125,6 +129,55 @@ describe("a y-sorted object's floor line", () => {
   it("snaps to the content bottom only when asked", () => {
     expect(autoAnchor(desk).anchorY).toBe(60 + 96);
     expect(autoAnchor({ ...desk, flipY: true }).anchorY).toBe(60 + 14);
+  });
+});
+
+const rug = {
+  flipX: false,
+  flipY: false,
+  id: "office-object-001",
+  layer: "floor",
+  uid: "rug",
+  x: 0,
+  y: 0,
+} satisfies EditableObject;
+
+describe("editing several objects at once", () => {
+  const layout: EditableLayout = { ...loadLayout(), objects: [desk, rug] };
+  const doc: BuilderDoc = { layout, selection: ["rug"] };
+
+  it("moves exactly the named objects, floor lines with them", () => {
+    const moved = moveObjects(layout, ["desk"], 8, -4);
+    expect(moved.objects).toEqual([{ ...desk, anchorY: desk.anchorY - 4, x: 48, y: 56 }, rug]);
+    expect(moved.objects[1]).toBe(rug);
+  });
+
+  it("copies the named objects in layout order under fresh uids, offset", () => {
+    const copies = duplicates(layout, ["rug", "desk", "gone"], 8, 8);
+    const [deskCopy, rugCopy, ...rest] = copies;
+    expect(rest).toEqual([]);
+    expect(deskCopy).toEqual({
+      ...desk,
+      anchorY: desk.anchorY + 8,
+      uid: deskCopy?.uid,
+      x: 48,
+      y: 68,
+    });
+    expect(rugCopy).toEqual({ ...rug, uid: rugCopy?.uid, x: 8, y: 8 });
+    expect(copies.filter((o) => o.uid === desk.uid || o.uid === rug.uid)).toEqual([]);
+    expect(layout.objects).toEqual([desk, rug]);
+  });
+
+  it("puts objects down on top and selects exactly them", () => {
+    const copies = duplicates(layout, ["desk"], 0, 0);
+    const next = addSelected(doc, copies);
+    expect(next.layout.objects).toEqual([desk, rug, ...copies]);
+    expect(next.selection).toEqual(copies.map((o) => o.uid));
+  });
+
+  it("hands back the same doc when the layout did not change, so nothing is recorded", () => {
+    expect(withLayout(doc, layout)).toBe(doc);
+    expect(withLayout(doc, moveObjects(layout, ["desk"], 1, 0)).selection).toBe(doc.selection);
   });
 });
 

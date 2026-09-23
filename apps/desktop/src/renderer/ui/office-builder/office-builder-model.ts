@@ -254,9 +254,46 @@ export const makeObject = (
     : { ...base, layer };
 };
 
-export const cloneObject = (o: EditableObject): EditableObject => ({
+const cloneObject = (o: EditableObject): EditableObject => ({
   ...o,
   uid: crypto.randomUUID(),
+});
+
+/** The doc with this layout; the same doc when nothing changed, so a no-op commit records nothing. */
+export const withLayout = (d: BuilderDoc, layout: EditableLayout): BuilderDoc =>
+  layout === d.layout ? d : { ...d, layout };
+
+/** Shift the named objects together; each keeps its floor line in step. */
+export const moveObjects = (
+  L: EditableLayout,
+  uids: readonly string[],
+  dx: number,
+  dy: number,
+): EditableLayout => {
+  const moving = new Set(uids);
+  return {
+    ...L,
+    objects: L.objects.map((o) => (moving.has(o.uid) ? moveObject(o, o.x + dx, o.y + dy) : o)),
+  };
+};
+
+/** Fresh copies of the named objects, offset by (dx, dy): what ⌘D and ⌥drag put down. */
+export const duplicates = (
+  L: EditableLayout,
+  uids: readonly string[],
+  dx: number,
+  dy: number,
+): EditableObject[] => {
+  const src = new Set(uids);
+  return L.objects
+    .filter((o) => src.has(o.uid))
+    .map((o) => moveObject(cloneObject(o), o.x + dx, o.y + dy));
+};
+
+/** Put objects down and select exactly them: a placement, a duplicate, an ⌥drag. */
+export const addSelected = (d: BuilderDoc, objects: readonly EditableObject[]): BuilderDoc => ({
+  layout: { ...d.layout, objects: [...d.layout.objects, ...objects] },
+  selection: objects.map((o) => o.uid),
 });
 
 /** Set one collision cell (1 = solid, 0 = walkable); returns a new collision array. */
