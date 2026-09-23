@@ -98,7 +98,7 @@ const TalkInput = ({
       disabled={sending}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
           e.preventDefault();
           onSubmit();
         }
@@ -256,7 +256,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
 
   // the choice window walks and picks itself; Escape backs out of Talk, then leaves
   const onKey = useEffectEvent((e: KeyboardEvent) => {
-    if (e.key !== "Escape") {
+    if (e.key !== "Escape" || e.isComposing) {
       return;
     }
     e.preventDefault();

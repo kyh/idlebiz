@@ -716,6 +716,9 @@ export const Onboarding = () => {
   // Enter is the A button: it skips the typing, turns the page, then confirms.
   // The arrows move the menu cursor or cycle the looks; Escape rewinds.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.isComposing) {
+      return;
+    }
     if (e.key === "Escape") {
       back();
       return;
