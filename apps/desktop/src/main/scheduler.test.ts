@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
+import type { ActivityEvent } from "@/shared/activity";
 import type { Budget, Task, TaskOrigin } from "@/shared/domain";
 import type { RunResult, RunTools } from "./agents/agent-driver";
 import type { EmployeeRunner } from "./scheduler";
@@ -13,6 +14,7 @@ process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
 const { companyDir, tasksDir } = await import("./paths");
 const { createScheduler, scheduler } = await import("./scheduler");
+const { activityEvents } = await import("./activity");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -427,6 +429,41 @@ describe("asking the lead for the next bet", () => {
     drain.stop();
 
     expect(proposing()).toEqual([]);
+  });
+});
+
+describe("a bet that stops taking work mid-run", () => {
+  it("ends the task of a run that parks, rather than queue it again", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver).tick();
+    store.measureBet(bet.id, Date.now());
+    const heard: ActivityEvent[] = [];
+    const listen = (e: ActivityEvent) => heard.push(e);
+    activityEvents.on("activity", listen);
+    try {
+      running.get("priya")?.({
+        ...done(),
+        outcome: { error: "usage limit", kind: "resting", until: Date.now() + 60_000 },
+      });
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+
+    expect(store.getTask(task.id)?.state).toEqual({ kind: "dead", lastError: "bet is measuring" });
+    expect(heard.filter((e) => e.kind === "task.dead")).toMatchObject([
+      { payload: { attempts: 0, error: "usage limit" }, taskId: task.id },
+    ]);
+    expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dead" });
   });
 });
 

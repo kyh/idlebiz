@@ -1115,8 +1115,9 @@ export const runsInFlight = (): ReadonlyMap<string, number> => {
 
 /**
  * Dead-letter the matching work that has not started; the founder can still
- * revive it from the Inbox. A running task finishes its run, and dead work
- * keeps the error it died of.
+ * revive it from the Inbox. A running task finishes its run, and dies if that
+ * run fails, parks (`failTask`, `parkTask`) or never settles before the app
+ * restarts (`recoverInterrupted`). Dead work keeps the error it died of.
  */
 const deadLetter = (match: (t: Task) => boolean, reason: string, now: number): void => {
   const { tasks } = current();
@@ -1126,6 +1127,17 @@ const deadLetter = (match: (t: Task) => boolean, reason: string, now: number): v
       patchIn(tasks, t.id, entering({ kind: "dead", lastError: reason }, now), saveTask);
     }
   }
+};
+
+const BET_MEASURING = "bet is measuring";
+const BET_CLOSED = "bet closed";
+
+/** Why the bet takes no more runs, as its dead letters say; null while it is open, or for work on none. */
+const stoppedBetReason = (bet: Bet | null): string | null => {
+  if (!bet || bet.state.kind === "open") {
+    return null;
+  }
+  return bet.state.kind === "measuring" ? BET_MEASURING : BET_CLOSED;
 };
 
 const retune = (active: ActiveCompany): void => {
@@ -1144,7 +1156,7 @@ export const measureBet = (betId: string, now: number): Bet => {
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
   // work waiting on the founder stays: that step may be the one that moves the number
-  deadLetter((t) => t.betId === betId && t.state.kind !== "blocked", "bet is measuring", now);
+  deadLetter((t) => t.betId === betId && t.state.kind !== "blocked", BET_MEASURING, now);
   return measuring;
 };
 
@@ -1175,7 +1187,7 @@ export const judgeBets = (now: number): Bet[] => {
   }
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));
   if (closed.size > 0) {
-    deadLetter((t) => t.betId !== null && closed.has(t.betId), "bet closed", now);
+    deadLetter((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
     retune(active);
   }
   return changed;
@@ -1462,6 +1474,18 @@ const failed = (t: Task, lastError: string) => {
   return { task, verdict };
 };
 
+type Died = Extract<FailureVerdict, { kind: "dead" }>;
+
+/** A run whose bet stopped taking work while it ran ends its task instead of requeueing it; null while the bet is open. */
+const diedWithBet = (t: Task, attempts: number): Died | null => {
+  const reason = stoppedBetReason(t.betId === null ? null : getBet(t.betId));
+  if (reason === null) {
+    return null;
+  }
+  recordTask(t.id, { attempts, ...entering({ kind: "dead", lastError: reason }, Date.now()) });
+  return { attempts, kind: "dead" };
+};
+
 /** A run failed: the task takes its next verdict. Only the owning run may; null when it no longer holds the lock. */
 export const failTask = (taskId: string, runId: string, error: string): FailureVerdict | null => {
   const t = heldBy(getTask(taskId), runId);
@@ -1469,16 +1493,35 @@ export const failTask = (taskId: string, runId: string, error: string): FailureV
     return null;
   }
   const next = failed(t, error);
+  const died = diedWithBet(t, next.verdict.attempts);
+  if (died) {
+    return died;
+  }
   recordTask(taskId, next.task);
   return next.verdict;
 };
 
-/** A run parked through no fault of the task — a usage limit, the app quitting: back on the queue from `until`, no attempt burned. Only the owning run may. */
-export const parkTask = (taskId: string, runId: string, until: number, lastError: string): void => {
-  if (!heldBy(getTask(taskId), runId)) {
-    return;
+/**
+ * A run parked through no fault of the task — a usage limit, the app quitting: back on
+ * the queue from `until`, no attempt burned. Only the owning run may; null when it no
+ * longer holds the lock.
+ */
+export const parkTask = (
+  taskId: string,
+  runId: string,
+  until: number,
+  lastError: string,
+): { kind: "parked" } | Died | null => {
+  const t = heldBy(getTask(taskId), runId);
+  if (!t) {
+    return null;
+  }
+  const died = diedWithBet(t, t.attempts);
+  if (died) {
+    return died;
   }
   recordTask(taskId, { state: { kind: "queued", lastError, nextAttemptAt: until } });
+  return { kind: "parked" };
 };
 
 /**
@@ -1691,15 +1734,25 @@ const readCompanies = (): FoundSave[] => {
   return companies;
 };
 
+/** A run the last launch never saw settle: it dies with a bet that stopped taking work, else counts as failed. */
+const recoverInterrupted = (task: Task, bets: readonly Bet[], now: number): Task => {
+  const stopped = stoppedBetReason(bets.find((bet) => bet.id === task.betId) ?? null);
+  if (stopped !== null) {
+    return { ...task, ...entering({ kind: "dead", lastError: stopped }, now) };
+  }
+  return task.assigneeId
+    ? failed(task, "Interrupted by app restart").task
+    : { ...task, state: { kind: "todo" } };
+};
+
 /** Recover the active company's interrupted runs and shelve its unshelved work. */
-const settleLoadedTasks = (company: Company, tasks: Task[]): Task[] => {
+const settleLoadedTasks = (company: Company, tasks: Task[], bets: readonly Bet[]): Task[] => {
+  const now = Date.now();
   for (const [i, task] of tasks.entries()) {
     if (task.state.kind !== "running") {
       continue;
     }
-    const recovered: Task = task.assigneeId
-      ? failed(task, "Interrupted by app restart").task
-      : { ...task, state: { kind: "todo" } };
+    const recovered = recoverInterrupted(task, bets, now);
     tasks[i] = recovered;
     saveTask(recovered);
   }
@@ -1723,24 +1776,24 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   )
     .map(withRunState)
     .toSorted(byAge);
+  active.bets = loadPackages(
+    "bet",
+    betsDir(company.id),
+    (slug) => betFile(company.id, slug),
+    (doc) => docToBet(doc, company.id),
+  ).toSorted(byAge);
   const tasks = loadPackages(
     "task",
     tasksDir(company.id),
     (slug) => taskFile(company.id, slug),
     (doc) => docToTask(doc, company.id),
   ).toSorted(byAge);
-  active.tasks = settleLoadedTasks(company, tasks);
+  active.tasks = settleLoadedTasks(company, tasks, active.bets);
   active.products = loadPackages(
     "product",
     productsDir(company.id),
     (slug) => productFile(company.id, slug),
     (doc) => docToProduct(doc, company.id),
-  ).toSorted(byAge);
-  active.bets = loadPackages(
-    "bet",
-    betsDir(company.id),
-    (slug) => betFile(company.id, slug),
-    (doc) => docToBet(doc, company.id),
   ).toSorted(byAge);
   active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
   active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];

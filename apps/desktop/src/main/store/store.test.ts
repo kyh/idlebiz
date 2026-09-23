@@ -718,6 +718,14 @@ const workOn = (betId: string) => {
   return () => ids.map((id) => store.getTask(id)?.state.kind);
 };
 
+/** A task on the bet whose run "run-1" is in flight. */
+const running = (betId: string, employeeId: string): string => {
+  const t = store.createTask({ assigneeId: employeeId, betId, origin: "work", title: "Post it" });
+  store.claimTask(t.id, employeeId);
+  store.lockTaskForRun(t.id, "run-1");
+  return t.id;
+};
+
 describe("bets", () => {
   it("gives a users bet a path of its own and refuses one another bet already covers", () => {
     found();
@@ -816,6 +824,86 @@ describe("bets", () => {
     expect(store.judgeBets(1).map((b) => b.state.kind)).toEqual(["won"]);
     expect(states()).toEqual(["dead", "dead", "running", "dead"]);
     expect(store.getTask(untouched.id)?.state.kind).toBe("todo");
+  });
+
+  it("ends a run's task when its bet stops taking work while it runs", () => {
+    found();
+    const product = firstProduct();
+    const killed = launch(product.id);
+    const measured = launch(product.id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const failing = running(killed.id, priya.id);
+    const parking = running(measured.id, priya.id);
+    store.killBet(killed.id, "dud", 0);
+    store.measureBet(measured.id, 0);
+
+    expect(store.failTask(failing, "run-1", "boom")).toEqual({ attempts: 1, kind: "dead" });
+    expect(store.parkTask(parking, "run-1", 0, "usage limit")).toEqual({
+      attempts: 0,
+      kind: "dead",
+    });
+    expect(store.getTask(failing)?.state).toEqual({ kind: "dead", lastError: "bet closed" });
+    expect(store.getTask(parking)?.state).toEqual({ kind: "dead", lastError: "bet is measuring" });
+  });
+
+  it("puts a failed or parked run's task back on the queue while its bet is open", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const failing = running(bet.id, priya.id);
+    const parking = running(bet.id, priya.id);
+
+    expect(store.failTask(failing, "run-1", "boom")).toMatchObject({ attempts: 1, kind: "retry" });
+    expect(store.parkTask(parking, "run-1", 0, "usage limit")).toEqual({ kind: "parked" });
+    expect(store.getTask(failing)?.state).toMatchObject({ kind: "queued", lastError: "boom" });
+    expect(store.getTask(parking)?.state).toMatchObject({ kind: "queued", nextAttemptAt: 0 });
+  });
+
+  it("ends a run cut off by a restart once its bet stops taking work, and re-queues one on an open bet", () => {
+    found();
+    const product = firstProduct();
+    const measured = launch(product.id);
+    const open = launch(product.id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const stopped = running(measured.id, priya.id);
+    const live = running(open.id, priya.id);
+    store.measureBet(measured.id, 0);
+
+    store.initStore();
+
+    expect(store.getTask(stopped)).toMatchObject({
+      attempts: 0,
+      state: { kind: "dead", lastError: "bet is measuring" },
+    });
+    expect(store.getTask(live)).toMatchObject({
+      attempts: 1,
+      state: { kind: "queued", lastError: "Interrupted by app restart" },
+    });
+  });
+
+  it("ends the founder's answered step on a measuring bet when it fails; the Inbox can retry it", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const ask = running(bet.id, priya.id);
+    store.settleTask(ask, "run-1", {
+      ask: { question: "Ship it?", type: "question" },
+      kind: "blocked",
+      summary: null,
+    });
+    store.measureBet(bet.id, 0);
+    const next = store.resolveBlockedWithAnswer(ask, "yes");
+    if (!next) {
+      throw new Error("the answer went nowhere");
+    }
+    store.claimTask(next.id, priya.id);
+    store.lockTaskForRun(next.id, "run-2");
+
+    expect(store.failTask(next.id, "run-2", "boom")?.kind).toBe("dead");
+    expect(store.claimTask(next.id, priya.id)).toMatchObject({
+      attempts: 0,
+      state: { kind: "queued" },
+    });
   });
 
   it("retires a product with its bets and open work, but never the last one", () => {

@@ -133,10 +133,17 @@ const book = (task: Task, costUsd: number): void => {
   }
 };
 
-/** Usage limits and the app quitting park the task without consuming a retry. */
+/**
+ * Usage limits and the app quitting park the task without consuming a retry. A task whose
+ * bet stopped taking work while it ran is neither retried nor parked: it dies.
+ */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
   const o = r.outcome;
+  const die = (attempts: number, error: string): TaskStatus => {
+    publishActivity({ ...at, kind: "task.dead", payload: { attempts, error } });
+    return "dead";
+  };
   let status: TaskStatus;
   switch (o.kind) {
     case "blocked": {
@@ -155,8 +162,8 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
       break;
     }
     case "resting": {
-      status = "queued";
-      store.parkTask(task.id, runId, o.until, o.error);
+      const parked = store.parkTask(task.id, runId, o.until, o.error);
+      status = parked?.kind === "dead" ? die(parked.attempts, o.error) : "queued";
       publishActivity({
         ...at,
         kind: "runner.resting",
@@ -165,19 +172,15 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
       break;
     }
     case "interrupted": {
-      status = "queued";
-      store.parkTask(task.id, runId, Date.now(), "Interrupted by app quit");
+      const error = "Interrupted by app quit";
+      const parked = store.parkTask(task.id, runId, Date.now(), error);
+      status = parked?.kind === "dead" ? die(parked.attempts, error) : "queued";
       break;
     }
     case "failed": {
       const verdict = store.failTask(task.id, runId, o.error);
       if (verdict?.kind === "dead") {
-        status = "dead";
-        publishActivity({
-          ...at,
-          kind: "task.dead",
-          payload: { attempts: verdict.attempts, error: o.error },
-        });
+        status = die(verdict.attempts, o.error);
       } else {
         status = "queued";
         if (verdict) {
