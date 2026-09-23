@@ -442,6 +442,7 @@ export class OfficeScene extends Scene {
           this.npcEvents.run((npcs) => npcs.setState(e.employeeId, "working"));
           return;
         }
+        // sent by the run itself, so it frees them even when the settle threw
         case "run.end": {
           const state = e.payload.outcome.kind === "blocked" ? "blocked" : "idle";
           this.npcEvents.run((npcs) => npcs.setState(e.employeeId, state));
@@ -452,14 +453,6 @@ export class OfficeScene extends Scene {
           if (e.message === "queued") {
             this.npcEvents.run((npcs) => npcs.unblock(e.employeeId));
           }
-          break;
-        }
-        // repeats the settle's status, and stands in for it when the settle threw
-        case "run.end": {
-          this.npcs?.setState(
-            employeeId,
-            e.payload.outcome.kind === "blocked" ? "blocked" : "idle",
-          );
           break;
         }
         default: {

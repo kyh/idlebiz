@@ -31,6 +31,7 @@ const employee = (id: string, status: Employee["status"] = "idle"): Employee => 
   createdAt: 0,
   deskIndex: 0,
   id,
+  instructionsDigest: null,
   lastRunMetrics: null,
   lastShip: null,
   name: id,
@@ -109,7 +110,7 @@ const fakeMain = (late: readonly Late[]) => {
     listEmployees: () => answerOf("listEmployees", main.employees),
     listProducts: () => Promise.resolve([]),
     listTasks: () => Promise.resolve([]),
-    loadOfficeDesign: () => Promise.resolve({ layout: null }),
+    loadOfficeDesign: () => Promise.resolve({ kind: "absent" }),
     loadReport: () => Promise.resolve({ companies: 1, skipped: [] }),
     onActivity: (listener) => {
       listeners.add(listener);
