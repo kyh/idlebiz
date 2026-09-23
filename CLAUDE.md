@@ -147,8 +147,9 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   onboard, hire or run anything. There is no seeded save.
 - **CLI-free surfaces**: `apps/web`, the onboarding modal, and the two hash routes `#/ui`
   (office builder) and `#/office-assets` — all reachable with no company.
-- **`pnpm dev:desktop` stops this checkout's dev processes first**. Unrelated processes on
-  TCP 9222 survive; startup fails while that port is occupied.
+- **`pnpm dev:desktop` stops this checkout's desktop dev session first**; `dev:web`,
+  `verify` and unrelated processes on TCP 9222 survive, and startup fails while that port is
+  occupied. It runs Turbo in loose env mode, so shell env reaches Electron.
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 

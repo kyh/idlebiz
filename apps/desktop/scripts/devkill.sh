@@ -4,20 +4,22 @@
 # Order matters: the supervisors (turbo watch, electron-vite) go FIRST. Kill the app on
 # its own and electron-vite just restarts it.
 #
-# Every pattern is anchored to this repo's absolute path, so a dev server in another
-# checkout — or any other Electron app you have open — survives.
+# Every pattern is anchored to this repo's absolute path and to the desktop session, so
+# `pnpm dev:web`, `pnpm verify` and tests here, a dev server in another checkout — or any
+# other Electron app you have open — survive.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SELF=$$
 
-# outermost to innermost; pgrep -f matches against the whole command line
+# outermost to innermost; pgrep -f matches the whole command line as an extended regex.
+# No esbuild pattern: its service exits when electron-vite's stdin pipe closes, and a
+# path match would also take the one vitest or a build is using.
 PATTERNS=(
-  "$ROOT/node_modules/.bin/../turbo"    # turbo shim
-  "$ROOT/node_modules/.pnpm/@turbo"     # turbo watch dev
-  "$ROOT/apps/desktop/node_modules"     # electron-vite dev server
-  "$ROOT/node_modules/.pnpm/electron@"  # the Electron app + its helper processes
-  "$ROOT/node_modules/.pnpm/@esbuild"   # esbuild service
+  "$ROOT/node_modules/\.bin/\.\./turbo/bin/turbo watch dev .*@repo/desktop"  # turbo shim
+  "$ROOT/node_modules/\.pnpm/@turbo.*/bin/turbo watch dev .*@repo/desktop"   # turbo watch dev
+  "$ROOT/apps/desktop/node_modules/.*/electron-vite\.js dev"                 # electron-vite dev server
+  "$ROOT/node_modules/\.pnpm/electron@"                                      # the Electron app + its helper processes
 )
 
 # TERM first so Electron can finish the write it is in the middle of (the save is

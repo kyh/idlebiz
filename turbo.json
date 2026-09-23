@@ -11,7 +11,6 @@
     },
     "dev": {
       "dependsOn": ["^dev"],
-      "passThroughEnv": ["IDLEBIZ_ROOT_DIR"],
       "cache": false,
       "persistent": false
     },

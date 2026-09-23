@@ -24,9 +24,10 @@ No database, no Docker, no server to provision — `pnpm install` really is the 
 There is no bootstrap script and nothing to seed.
 
 **`pnpm dev:desktop` is not a plain dev server.** It runs `pnpm dev:kill` first
-(`apps/desktop/scripts/devkill.sh`), which terminates this checkout's turbo / electron-vite /
-Electron / esbuild processes, then kills any that remain after three seconds. It leaves
-unrelated processes on TCP **9222** alone and refuses to start while that port is occupied.
+(`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session — its
+turbo watch, electron-vite and Electron — then kills any that remain after three seconds.
+`pnpm dev:web`, `pnpm verify` and tests survive it. It leaves unrelated processes on TCP
+**9222** alone and refuses to start while that port is occupied.
 
 ## The one hard prerequisite
 
@@ -72,8 +73,9 @@ Runtime, desktop — attach to the Electron renderer over CDP.
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
-> (`main/paths.ts`); the dev task passes it through Turbo. Isolation protects the real save,
-> but onboarding and employee runs still bill the signed-in CLI.
+> (`main/paths.ts`). `dev:desktop` runs Turbo in loose env mode, so the whole shell env
+> reaches Electron and the employees' CLIs, as in a terminal launch. Isolation protects the
+> real save, but onboarding and employee runs still bill the signed-in CLI.
 
 **(a) CLI-free routes** — the office builder and the object catalog render with no company,
 so no scheduler work is required to see them. They contain no Phaser; skip the block below.
@@ -144,7 +146,7 @@ rather than crashing boot.
   `PLAUSIBLE_API_KEY`, `VERCEL_TOKEN`.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
-  (`packages/agent-driver/src/registry.ts`).
+  (`packages/agent-driver/src/detect.ts`).
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
