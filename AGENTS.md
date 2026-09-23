@@ -50,8 +50,8 @@ CLI-free surfaces below; it cannot reach a populated office.
 
 ## Verify a change end-to-end
 
-Static gate (there is no GitHub Actions here — Vercel's build of `apps/web` on push is the
-only remote check, and `pnpm verify` runs the same `next build`):
+Static gate (`.github/workflows/ci.yml` runs the same steps on every push to main and every
+PR, as named steps; Vercel's build of `apps/web` is a second remote check):
 
 ```sh
 pnpm verify

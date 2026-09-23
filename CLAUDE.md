@@ -140,8 +140,9 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 
 `AGENTS.md` is the full workflow — read it before driving this repo. The essentials:
 
-- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · test · build). There is no
-  GitHub Actions; Vercel's build of `apps/web` is the only remote gate and `verify` runs it.
+- **Verify**: `pnpm verify` (typecheck · lint · format · check:office · test · build). CI
+  (`.github/workflows/ci.yml`) runs the same six steps on every push to main and every PR;
+  keep the two lists in step.
 - **`pnpm lint` is a clean gate.** `oxlint.config.ts` extends the ultracite presets (core, react, anti-slop; next for `apps/web`); every rule is an error. Fix the code, don't add config overrides; a `// oxlint-disable-next-line rule -- why` needs a stated reason.
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.

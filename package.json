@@ -16,7 +16,7 @@
     "knip": "knip",
     "typecheck": "turbo run typecheck",
     "test": "pnpm -r test",
-    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm -r test && pnpm build"
+    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm -F @repo/desktop check:office && pnpm test && pnpm build"
   },
   "devDependencies": {
     "knip": "^6.37.0",
