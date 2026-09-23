@@ -451,10 +451,16 @@ const hintFor = (step: Step, look: number, looks: number, capUsd: number | null)
   }
 };
 
+/**
+ * Pointer-only: a focused button answers Enter itself, so an arrow that kept
+ * focus after a click would turn Enter into "next look". ← → browse instead.
+ */
 const LookArrow = ({ side, onClick }: { side: "l" | "r"; onClick: () => void }) => (
   <button
     type="button"
     className={`ob-arrow ob-arrow-${side}`}
+    tabIndex={-1}
+    onMouseDown={(e) => e.preventDefault()}
     onClick={onClick}
     aria-label={side === "l" ? "previous look" : "next look"}
   >

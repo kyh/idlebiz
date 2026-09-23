@@ -108,7 +108,6 @@ button:disabled {
   min-width: 210px;
 }
 .ob-start:focus-visible,
-.ob-arrow:focus-visible,
 .ob-box-text:focus-visible {
   outline: 2px solid #f2cf7b;
   outline-offset: 5px;
