@@ -45,9 +45,12 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
   bet reads captured USD charges tagged `metadata[bet]=<slug>`. So any number of bets run on one
-  product and none can claim another's result; `claimsCollide` refuses only a path another
-  live bet already covers. Readings arrive with the metrics pulse and live on the bet
-  (`reading`, taken at `readAt`), so `judge` needs only the bet and the pulse's clock.
+  product and none can claim another's result. A named path over the whole site or `/b` is
+  refused (`namedPathRefusal`), and so is one overlapping a path a live bet covers or a closed
+  one named (`holdsItsPath`): each counts visitors the bet did not bring. The team's own
+  visits never count; the standing instructions say how to check a path without recording
+  one. Readings arrive with the metrics pulse and live on the bet (`reading`, taken at
+  `readAt`), so `judge` needs only the bet and the pulse's clock.
   Vercel's analytics API wants `since` and `until` together and filters in OData; path
   filters are free, utm ones are a paid add-on — which is why the mark is a path.
   Per-product revenue reads the same charges over the account's whole history, tagged

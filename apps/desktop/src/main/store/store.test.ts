@@ -670,11 +670,11 @@ describe("recently shipped", () => {
   });
 });
 
-const launch = (productId: string) =>
+const launch = (productId: string, landingPath: string | null = null) =>
   store.openBet({
     budgetUsd: 2,
     hypothesis: "a launch post brings visitors",
-    landingPath: null,
+    landingPath,
     metric: "users",
     productId,
     target: 50,
@@ -738,18 +738,26 @@ describe("bets", () => {
       state: { kind: "open" },
     });
     expect(launch(product.id).id).not.toBe(bet.id);
-    expect(() =>
-      store.openBet({
-        budgetUsd: 2,
-        hypothesis: "the whole site grows",
-        landingPath: "/",
-        metric: "users",
-        productId: product.id,
-        target: 50,
-        title: "Everything",
-        windowHours: 24,
-      }),
-    ).toThrow("could not be told apart");
+    launch(product.id, "/guides");
+    expect(() => launch(product.id, "/guides/late-fees")).toThrow("already counts visitors");
+  });
+
+  it.each(["/", "/b", "/b/launch-post"])(
+    "refuses a named %s, which counts visitors no new bet brought",
+    (landingPath) => {
+      found();
+      const product = firstProduct();
+      launch(product.id);
+      expect(() => launch(product.id, landingPath)).toThrow("did not bring");
+    },
+  );
+
+  it("keeps a section a closed bet named, since its links still send visitors there", () => {
+    found();
+    const product = firstProduct();
+    store.killBet(launch(product.id, "/guides").id, "dud", 0);
+    expect(() => launch(product.id, "/guides")).toThrow("is closed, but its links still send");
+    expect(launch(product.id, "/tools").claim).toEqual({ landingPath: "/tools", metric: "users" });
   });
 
   it("is judged by what it brought in, and the verdict survives a restart", () => {

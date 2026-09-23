@@ -6,7 +6,9 @@ import {
   claimsCollide,
   dream,
   hasRoomFor,
+  holdsItsPath,
   judge,
+  namedPathRefusal,
 } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 
@@ -141,6 +143,35 @@ describe("claimsCollide", () => {
     const revenue = bet({ claim: { metric: "revenue" }, id: "r" });
     expect(claimsCollide(revenue, bet({ claim: { metric: "revenue" }, id: "r2" }))).toBe(false);
     expect(claimsCollide(revenue, landing("a", "/"))).toBe(false);
+  });
+});
+
+describe("namedPathRefusal", () => {
+  it("refuses the whole site and every /b/ path, which get visitors no new bet brought", () => {
+    for (const path of ["/", "//", "/b", "/b/", "/b/launch", "/b/launch/deep"]) {
+      expect(namedPathRefusal(path)).toContain(`${path} would count visitors`);
+    }
+  });
+
+  it("lets a bet name a section of its own", () => {
+    expect(namedPathRefusal("/guides")).toBeNull();
+    expect(namedPathRefusal("/blog")).toBeNull();
+  });
+});
+
+describe("holdsItsPath", () => {
+  const killed: BetState = { closedAt: 1, kind: "killed", moved: 0, reason: "dud" };
+
+  it("holds every live bet's path, and a section a closed bet named", () => {
+    expect(holdsItsPath(landing("a", "/"))).toBe(true);
+    expect(holdsItsPath(landing("a", "/b/a"))).toBe(true);
+    expect(holdsItsPath({ ...landing("a", "/guides"), state: killed })).toBe(true);
+  });
+
+  it("frees a closed bet's /b/ path, and a whole-site claim from before bets owned paths", () => {
+    expect(holdsItsPath({ ...landing("a", "/b/a"), state: killed })).toBe(false);
+    expect(holdsItsPath({ ...landing("a", "/"), state: killed })).toBe(false);
+    expect(holdsItsPath(bet({ claim: { metric: "revenue" }, state: killed }))).toBe(false);
   });
 });
 

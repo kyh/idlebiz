@@ -63,8 +63,10 @@ import {
   claimsCollide,
   defaultLandingPath,
   dream,
+  holdsItsPath,
   isClosed,
   judge,
+  namedPathRefusal,
   windowEnd,
 } from "@/shared/bets";
 import type { Bet, PolicyParams } from "@/shared/bets";
@@ -1033,9 +1035,9 @@ export const noSuchProduct = (productId: string): string =>
     .join(", ")}.`;
 
 /**
- * Open a bet. A users bet lands on its own path unless it names one; a path
- * another live bet already covers is refused, since both would count the same
- * visitors.
+ * Open a bet. A users bet lands on its own path unless it names one; a named
+ * path over the whole site or /b, or one another bet holds, is refused, since
+ * it would count visitors this bet did not bring.
  */
 export const openBet = (
   wager: {
@@ -1052,6 +1054,13 @@ export const openBet = (
   const product = active.products.find((p) => p.id === input.productId);
   if (!product) {
     throw new RefusalError(noSuchProduct(input.productId));
+  }
+  const refusal =
+    input.metric === "users" && input.landingPath !== null
+      ? namedPathRefusal(input.landingPath)
+      : null;
+  if (refusal !== null) {
+    throw new RefusalError(refusal);
   }
   const id = uniqueSlug(
     input.title,
@@ -1077,10 +1086,13 @@ export const openBet = (
     title: input.title.trim(),
     windowHours: input.windowHours,
   };
-  const rival = active.bets.find((b) => !isClosed(b) && claimsCollide(b, bet));
+  const rival = active.bets.find((b) => holdsItsPath(b) && claimsCollide(b, bet));
   if (rival?.claim.metric === "users") {
+    const holds = isClosed(rival)
+      ? "is closed, but its links still send visitors"
+      : "already counts visitors";
     throw new RefusalError(
-      `"${rival.title}" (${rival.id}) already counts visitors under ${rival.claim.landingPath} on ${product.name}; a bet landing there too could not be told apart from it. Leave landingPath out to get a path of its own.`,
+      `"${rival.title}" (${rival.id}) ${holds} under ${rival.claim.landingPath} on ${product.name}; a bet landing there too could not be told apart from it. Leave landingPath out to get a path of its own.`,
     );
   }
   saveBet(bet);

@@ -48,6 +48,12 @@ const pathsOverlap = (a: string, b: string): boolean => {
   return x.slice(0, y.length).join("/") === y.slice(0, x.length).join("/");
 };
 
+/** Why a users bet may not name `path`, or null when it may: the whole site and the /b/ paths get visitors no new bet brought. */
+export const namedPathRefusal = (path: string): string | null =>
+  pathsOverlap(path, "/b")
+    ? `${path} would count visitors this bet did not bring (the whole site, or another bet's /b/ path). Name a new section, or leave landingPath out to get /b/<slug>.`
+    : null;
+
 /** Two bets that would count the same visitors. Money is tagged per bet, so revenue claims never collide. */
 export const claimsCollide = (a: Bet, b: Bet): boolean =>
   a.productId === b.productId &&
@@ -80,6 +86,16 @@ export type ClosedBet = Bet & { state: Extract<BetState, { kind: "won" | "killed
 
 export const isClosed = (bet: Bet): bet is ClosedBet =>
   bet.state.kind === "won" || bet.state.kind === "killed";
+
+/**
+ * Whether a new bet must keep off this one's path. A live bet holds it; so does
+ * a closed one that named a section, since its links keep sending visitors
+ * there. A closed /b/ path is never handed out again, and a whole-site claim
+ * from before bets owned paths would bar every section.
+ */
+export const holdsItsPath = (bet: Bet): boolean =>
+  !isClosed(bet) ||
+  (bet.claim.metric === "users" && namedPathRefusal(bet.claim.landingPath) === null);
 
 /** Open, with budget left once the runs already in flight bill: the only bets one more run may be spent on. */
 export const hasRoomFor = (bet: Bet, inFlight: number, runCostUsd: number): boolean =>
