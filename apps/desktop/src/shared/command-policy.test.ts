@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyCommand, describeRule, holdFor, normalizeCommand } from "./command-policy";
-import type { Confinement, LiveUrl, RuleId } from "./command-policy";
+import type { Confinement, LivePage, RuleId } from "./command-policy";
 
 const MUST_ASK = {
   deploy: [
@@ -464,9 +464,11 @@ describe("describeRule", () => {
 });
 
 const at =
-  (pages: Record<string, string>): LiveUrl =>
-  (session) =>
-    Promise.resolve(pages[session] ?? null);
+  (pages: Record<string, string>, frames: readonly (string | null)[] = []): LivePage =>
+  (session) => {
+    const url = pages[session];
+    return Promise.resolve(url === undefined ? null : { frames, url });
+  };
 
 const shell = (command: string) => ({ command, kind: "shell" }) as const;
 const NONE: ReadonlySet<string> = new Set();
@@ -589,11 +591,26 @@ describe("holdFor", () => {
     });
   });
 
-  it("knows the page again once the chain opens one", async () => {
+  it("knows the site again once the chain opens one", async () => {
     const live = at({ "": "http://localhost:3000" });
     const chain =
-      "agent-browser click @e1 && agent-browser open http://localhost:3000/x && agent-browser fill @e2 y";
-    expect(await holdFor(shell(chain), NONE, live, ROOM)).toBeNull();
+      "agent-browser click @e1 && agent-browser open https://forum.example.com && agent-browser fill @e2 y";
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toEqual({
+      key: "agent-browser: act on forum.example.com",
+      leasable: true,
+      rule: "browser-act",
+    });
+  });
+
+  it("never takes the team's build as read when the chain opens it: its frames are not", async () => {
+    const checkout = at({ "": "http://localhost:3000/checkout" }, [null]);
+    const chain =
+      "agent-browser open http://localhost:3000/checkout && agent-browser snapshot && agent-browser click @e6";
+    expect(await holdFor(shell(chain), NONE, checkout, ROOM)).toEqual({
+      key: chain,
+      leasable: false,
+      rule: "browser-unseen",
+    });
   });
 
   it.each([
@@ -722,6 +739,49 @@ describe("holdFor", () => {
     const chain =
       "agent-browser --namespace n open http://localhost:3000 && agent-browser click @e1";
     expect(await holdFor(shell(chain), NONE, live, ROOM)).toMatchObject({ rule: "browser-unseen" });
+  });
+
+  it.each([
+    "agent-browser click @e5",
+    'agent-browser fill @e6 "4242 4242 4242 4242"',
+    "agent-browser webmcp invoke pay --frame F2",
+  ])(
+    "reads nothing into the team's build while it frames a page from anywhere else: %s",
+    async (command) => {
+      const checkout = at({ "": "http://localhost:3000/checkout" }, [
+        "http://localhost:3000/nav",
+        null,
+      ]);
+      expect(await holdFor(shell(command), NONE, checkout, ROOM)).toEqual({
+        key: command,
+        leasable: false,
+        rule: "browser-unseen",
+      });
+    },
+  );
+
+  it("lets a run act on its own build whose every frame is of its own origin", async () => {
+    const own = at({ "": "http://localhost:3000" }, [
+      "http://localhost:3000/embed",
+      "about:srcdoc",
+    ]);
+    expect(await holdFor(shell("agent-browser click @e5"), NONE, own, ROOM)).toBeNull();
+  });
+
+  it("reads a frame from another of the team's ports as nobody's", async () => {
+    const framing = at({ "": "http://localhost:3000" }, [null]);
+    expect(await holdFor(shell("agent-browser click @e5"), NONE, framing, ROOM)).toMatchObject({
+      rule: "browser-unseen",
+    });
+  });
+
+  it("judges a remote page by its site, whatever it frames", async () => {
+    const live = at({ "": "https://news.example.com/submit" }, [null]);
+    expect(await holdFor(shell("agent-browser click @e5"), NONE, live, ROOM)).toEqual({
+      key: "agent-browser: act on news.example.com",
+      leasable: true,
+      rule: "browser-act",
+    });
   });
 
   it("keeps the browser it has when auto-connect is switched off", async () => {

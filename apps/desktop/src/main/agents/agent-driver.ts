@@ -39,7 +39,7 @@ import type {
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeMemoryDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
-import type { Confinement, LiveUrl } from "@/shared/command-policy";
+import type { Confinement, LivePage } from "@/shared/command-policy";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
@@ -76,17 +76,34 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
 
 const execFileAsync = promisify(execFile);
 
-const LiveUrlOutput = z.object({ data: z.object({ url: z.string() }) });
+/**
+ * The URL of the top page, then of every frame under it; null where the reading
+ * frame's origin may not look. `get url` names only the top page, while a ref act
+ * can land in any frame. The walk starts at `top`, wherever the session is switched.
+ */
+const PAGE_URLS = `(() => {
+  const urls = [];
+  const walk = (w) => {
+    let url = null;
+    try { url = w.location.href; } catch {}
+    urls.push(url);
+    for (let i = 0; i < w.length; i += 1) walk(w[i]);
+  };
+  walk(window.top);
+  return urls;
+})()`;
+
+const LivePageOutput = z.object({ data: z.object({ result: z.array(z.string().nullable()) }) });
 
 /** Ask the browser itself: the session is the agent's, but any process of this user can read it. */
-const liveBrowserUrl: LiveUrl = async (session) => {
+const liveBrowserPage: LivePage = async (session) => {
   const scope = session === "" ? [] : ["--session", session];
+  const args = [...scope, "eval", PAGE_URLS, "--json"];
   try {
-    const { stdout } = await execFileAsync("agent-browser", [...scope, "get", "url", "--json"], {
-      timeout: 8000,
-    });
-    const parsed = LiveUrlOutput.safeParse(parseJson(stdout));
-    return parsed.success ? parsed.data.data.url : null;
+    const { stdout } = await execFileAsync("agent-browser", args, { timeout: 8000 });
+    const parsed = LivePageOutput.safeParse(parseJson(stdout));
+    const [url = null, ...frames] = parsed.success ? parsed.data.data.result : [];
+    return url === null ? null : { frames, url };
   } catch {
     return null;
   }
@@ -101,7 +118,7 @@ export const decidePermission = async (
   hold: (ask: BlockedAsk) => void,
   signal: AbortSignal,
 ): Promise<PermissionDecision> => {
-  const held = await holdFor(request.tool, leases, liveBrowserUrl, confinement);
+  const held = await holdFor(request.tool, leases, liveBrowserPage, confinement);
   // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
   if (signal.aborted) {
     return { allow: false };

@@ -1066,6 +1066,7 @@ const UNKNOWN_RULE = {
 
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
 const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
+const onLoopback = (url: string | null): boolean => url !== null && LOOPBACK_URL.test(url);
 
 /**
  * agent-browser's global options that take a value. It drops these and its
@@ -1246,8 +1247,28 @@ const hostOf = (url: string): string | null => {
   }
 };
 
+/** A browser session's page as the browser shows it: the top page's URL, and every frame's under it, null for one another origin keeps from it. */
+interface BrowserPage {
+  url: string;
+  frames: readonly (string | null)[];
+}
+
 /** Where a browser session is right now; null when nothing could say. "" is the default session. */
-export type LiveUrl = (session: string) => Promise<string | null>;
+export type LivePage = (session: string) => Promise<BrowserPage | null>;
+
+/**
+ * Where an act on a live page lands, or null when nobody could say. A ref from
+ * `snapshot`, a `frame` switch or `webmcp --frame` acts inside a frame while the
+ * URL stays the top page's, so the team's own build holding a frame of any other
+ * origin, another localhost port included, is a page nobody could read. Elsewhere
+ * the act waits on the site anyway.
+ */
+const landing = (page: BrowserPage | null): string | null => {
+  if (page === null) {
+    return null;
+  }
+  return onLoopback(page.url) && !page.frames.every(onLoopback) ? null : page.url;
+};
 
 const unseen = (command: string): Hold => ({
   key: command,
@@ -1257,7 +1278,7 @@ const unseen = (command: string): Hold => ({
 
 /** What acting on the page at `url` waits on, or null when it may run. A null `url` is a page nobody knows. */
 const actHold = (url: string | null, leases: ReadonlySet<string>, command: string): Hold | null => {
-  if (url !== null && LOOPBACK_URL.test(url)) {
+  if (onLoopback(url)) {
     return null;
   }
   const host = url === null ? null : hostOf(url);
@@ -1273,17 +1294,18 @@ const actHold = (url: string | null, leases: ReadonlySet<string>, command: strin
  * Each step's verb is read where agent-browser reads it, and only a listed read
  * goes free. A command names a verb, never a site, so the site comes from the
  * browser itself: a click on the team's own localhost build can land anywhere,
- * and only the live URL knows. That URL is read before the command runs, so an
- * `open` earlier in the same chained command wins, and any act after a step that
- * may have moved the page lands somewhere nobody could read.
+ * and only the live page knows. That page is read before the command runs, so any
+ * act after a step that may have moved the page lands somewhere nobody could read.
+ * An `open` earlier in the same chained command names the site a remote act waits
+ * on, but opening the team's build names only its top page: its frames are unread.
  */
 const heldBrowserAct = async (
   line: string,
   key: string,
   leases: ReadonlySet<string>,
-  liveUrl: LiveUrl,
+  livePage: LivePage,
 ): Promise<Hold | null> => {
-  // Per session, where the page will be when the next step runs: absent is where the live URL says, null is anywhere.
+  // Per session, where the page will be when the next step runs: absent is where the live page says, null is anywhere.
   const pages = new Map<string, string | null>();
   const land = (session: string, url: string | null): void => {
     pages.set(session, url);
@@ -1304,7 +1326,7 @@ const heldBrowserAct = async (
         break;
       }
       case "open": {
-        land(step.session, step.url);
+        land(step.session, onLoopback(step.url) ? null : step.url);
         break;
       }
       case "move": {
@@ -1313,7 +1335,7 @@ const heldBrowserAct = async (
       }
       case "act": {
         const known = pages.get(step.session);
-        const url = known === undefined ? await liveUrl(step.session) : known;
+        const url = known === undefined ? landing(await livePage(step.session)) : known;
         const held = actHold(url, leases, key);
         if (held !== null) {
           return held;
@@ -1435,7 +1457,7 @@ const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
 export const holdFor = async (
   tool: ToolAsk,
   leases: ReadonlySet<string>,
-  liveUrl: LiveUrl,
+  livePage: LivePage,
   confinement: Confinement,
 ): Promise<Hold | null> => {
   if (tool.kind === "mcp") {
@@ -1473,5 +1495,5 @@ export const holdFor = async (
   if (verdict.decision === "ask") {
     return { key, leasable: false, rule: verdict.rule.id };
   }
-  return await heldBrowserAct(tool.command, key, leases, liveUrl);
+  return await heldBrowserAct(tool.command, key, leases, livePage);
 };
