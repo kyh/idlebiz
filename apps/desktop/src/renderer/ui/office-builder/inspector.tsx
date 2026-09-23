@@ -1,6 +1,7 @@
 import { Toggle } from "@base-ui/react/toggle";
 import type { OfficeLayer } from "@/renderer/game/office-layout";
 import {
+  autoAnchor,
   flipObject,
   flipTransform,
   moveObject,
@@ -37,7 +38,7 @@ const AnchorFields = ({
     <div className="flex gap-1">
       <button
         type="button"
-        onClick={() => onChange(moveObject(obj, obj.x, obj.y))}
+        onClick={() => onChange(autoAnchor(obj))}
         className="px-btn flex-1 py-1.5"
         title="Snap the anchor back to the sprite's floor line"
       >

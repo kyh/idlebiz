@@ -59,6 +59,7 @@ interface EditableBase {
 }
 export type EditableObject = EditableBase &
   ({ layer: "floor" } | { layer: "overhead" } | { layer: "object"; anchorY: number });
+type YSorted = Extract<EditableObject, { layer: "object" }>;
 
 /** The document under edit: the layout and which of its objects are selected. */
 export interface BuilderDoc {
@@ -148,18 +149,25 @@ export const moveObject = (o: EditableObject, x: number, y: number): EditableObj
   if (o.layer !== "object") {
     return { ...o, x, y };
   }
-  return { ...o, anchorY: anchorFor(o, y), x, y };
+  return { ...o, anchorY: o.anchorY + (y - o.y), x, y };
 };
 
-/** Flip an object; a vertical flip moves its content bottom, so the anchor follows. */
+/** Flip an object; a vertical flip moves its content bottom, so the anchor moves by as much. */
 export const flipObject = (o: EditableObject, axis: "x" | "y"): EditableObject => {
   const flipped: EditableObject =
     axis === "x" ? { ...o, flipX: !o.flipX } : { ...o, flipY: !o.flipY };
   if (axis === "x" || flipped.layer !== "object") {
     return flipped;
   }
-  return { ...flipped, anchorY: anchorFor(flipped, flipped.y) };
+  const shift = anchorFor(flipped, flipped.y) - anchorFor(o, o.y);
+  return { ...flipped, anchorY: flipped.anchorY + shift };
 };
+
+/**
+ * Snap the floor line back to the bottom of the sprite's content. The one explicit
+ * recompute: moves and flips carry an authored anchor along instead.
+ */
+export const autoAnchor = (o: YSorted): YSorted => ({ ...o, anchorY: anchorFor(o, o.y) });
 
 /** Move an object to another band, giving it an anchor exactly when it needs one. */
 export const setLayer = (o: EditableObject, layer: OfficeLayer): EditableObject => {
