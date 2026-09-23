@@ -138,7 +138,7 @@ const completeOneShot = async (prompt: string): Promise<string> => {
     prompt,
     systemPrompt: "",
   });
-  if (res.end.kind === "failed") {
+  if (res.end.kind !== "completed") {
     throw new Error(res.end.error);
   }
   return res.summary;

@@ -5,8 +5,7 @@
       "project": ["src/**", "scripts/**"],
       "ignoreDependencies": [
         "@agentclientprotocol/claude-agent-acp",
-        "@agentclientprotocol/codex-acp",
-        "@agentclientprotocol/sdk"
+        "@agentclientprotocol/codex-acp"
       ]
     }
   }

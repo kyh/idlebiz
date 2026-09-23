@@ -1,7 +1,6 @@
 import { isReady, probeRunners, runnerBin } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
-import { parseRateLimit } from "@repo/agent-driver/rate-limit";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import type { RunnerAdapter } from "@repo/agent-driver/registry";
 import {
@@ -140,7 +139,6 @@ const TOOL_CACHE_ENV = {
 export const outcomeOf = (
   end: AcpTurnResult["end"],
   ask: BlockedAsk | null,
-  restingUntil: number | null,
   interrupted: boolean,
 ): RunOutcome => {
   if (ask) {
@@ -152,9 +150,9 @@ export const outcomeOf = (
   if (interrupted) {
     return { kind: "interrupted" };
   }
-  return restingUntil === null
-    ? { error: end.error, kind: "failed" }
-    : { error: end.error, kind: "resting", until: restingUntil };
+  return end.kind === "limited"
+    ? { error: end.error, kind: "resting", until: end.resetsAt }
+    : { error: end.error, kind: "failed" };
 };
 
 /** What a run can reach of the company: its tools over the loopback API, and the one ask it may leave the founder. */
@@ -313,17 +311,11 @@ class AgentDriver {
         systemPrompt: store.employeeInstructions(emp.id),
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
-      const limit = res.end.kind === "failed" ? parseRateLimit(res.end.error) : null;
       // parked whatever else the run says: an ask raised before the limit hit must not hide it
-      if (limit) {
-        this.restingUntil.set(emp.runner, limit.resetsAt);
+      if (res.end.kind === "limited") {
+        this.restingUntil.set(emp.runner, res.end.resetsAt);
       }
-      const outcome = outcomeOf(
-        res.end,
-        tools.asks.current(),
-        limit?.resetsAt ?? null,
-        signal.aborted,
-      );
+      const outcome = outcomeOf(res.end, tools.asks.current(), signal.aborted);
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();

@@ -4,6 +4,7 @@ import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import { zeroUsage } from "./events";
+import { limitOf } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
@@ -114,9 +115,10 @@ export interface AcpTurnOptions {
   onEvent: (e: AgentEvent) => void;
 }
 
-/** How a turn ended: the agent finished its turn, or something stopped it. */
+/** How a turn ended: the agent finished it, refused it for a usage limit, or something stopped it. */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
+  | { readonly kind: "limited"; readonly resetsAt: number; readonly error: string }
   | { readonly kind: "failed"; readonly error: string };
 
 export interface AcpTurnResult {
@@ -423,18 +425,25 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         }
         return res.stopReason;
       });
-      const completed = stopReason === "end_turn" || stopReason === "max_tokens";
+      if (stopReason === "end_turn" || stopReason === "max_tokens") {
+        settle(result({ kind: "completed" }));
+        return;
+      }
+      const tail = stderrTail();
       settle(
-        completed
-          ? result({ kind: "completed" })
-          : failed(stderrTail() || `agent stopped: ${stopReason}`),
+        failed(tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`),
       );
     };
     void (async () => {
       try {
         await turn();
       } catch (error) {
-        settle(failed(errorMessage(error)));
+        const limit = limitOf(error);
+        settle(
+          limit
+            ? result({ error: errorMessage(error), kind: "limited", resetsAt: limit.resetsAt })
+            : failed(errorMessage(error)),
+        );
       }
     })();
   });
