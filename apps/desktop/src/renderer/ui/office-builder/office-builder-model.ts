@@ -122,12 +122,12 @@ const anchorFor = (o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number)
 };
 export const assetSrc = (id: string): string | null => {
   const v = CATALOG.get(id);
-  return v ? `/${v.path}` : null;
+  return v ? v.path : null;
 };
 /** Image src for a placed object — its explicit path (tiles) or its catalog sprite. */
 export const srcForObject = (o: { id: string; path?: string }): string | null => {
   if (o.path) {
-    return `/${o.path}`;
+    return o.path;
   }
   return assetSrc(o.id);
 };

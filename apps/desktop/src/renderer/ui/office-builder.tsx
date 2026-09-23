@@ -526,7 +526,7 @@ export const OfficeBuilder = () => {
     const q = query.trim().toLowerCase();
     if (paletteMode === "tiles") {
       const tiles = q ? ROOM_TILES.filter((t) => t.id.includes(q)) : ROOM_TILES;
-      return tiles.map((t) => ({ id: t.id, src: `/${t.path}` }));
+      return tiles.map((t) => ({ id: t.id, src: t.path }));
     }
     const ids = q ? ALL_OBJECT_IDS.filter((id) => id.includes(q)) : ALL_OBJECT_IDS;
     return ids.map((id) => ({ id, src: assetSrc(id) }));

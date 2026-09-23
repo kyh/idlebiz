@@ -36,7 +36,7 @@ const ObjectCard = ({
         }}
       >
         <img
-          src={`/${asset.path}`}
+          src={asset.path}
           alt={asset.id}
           className="max-w-none shrink-0 [image-rendering:pixelated]"
         />
