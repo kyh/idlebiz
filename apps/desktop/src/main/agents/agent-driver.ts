@@ -127,17 +127,25 @@ const TOOL_CACHE_ENV = {
   npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
 };
 
-/** How a turn ended, as the scheduler settles it. An ask outranks everything: the founder's answer is what the task waits on. */
+/**
+ * How a turn ended, as the scheduler settles it. An ask outranks everything: the
+ * founder's answer is what the task waits on. A turn the app stopped failed only
+ * because it was stopped, so it is not the task's failure.
+ */
 export const outcomeOf = (
   end: AcpTurnResult["end"],
   ask: BlockedAsk | null,
   restingUntil: number | null,
+  interrupted: boolean,
 ): RunOutcome => {
   if (ask) {
     return { ask, kind: "blocked" };
   }
   if (end.kind === "completed") {
     return { kind: "done" };
+  }
+  if (interrupted) {
+    return { kind: "interrupted" };
   }
   return restingUntil === null
     ? { error: end.error, kind: "failed" }
@@ -162,8 +170,6 @@ class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
-  // employeeId -> abort
-  private active = new Map<string, AbortController>();
   // runner -> epoch its limit lifts
   private restingUntil = new Map<AgentRunner, number>();
 
@@ -234,29 +240,21 @@ class AgentDriver {
     task: { id: string; title: string; description: string; workspace: string },
     onEvent: (e: AgentEvent) => void,
     tools: RunTools,
+    signal: AbortSignal,
   ): Promise<RunResult> {
-    if (this.active.has(emp.id)) {
-      throw new Error(`employee ${emp.id} already running a task`);
+    const prompt = `${task.title}\n\n${task.description}`.trim();
+    const resumeId = emp.sessionId ?? undefined;
+    const run = { prompt, taskId: task.id, workspace: task.workspace };
+    const first = await this.invoke(emp, company, run, onEvent, tools, resumeId, signal);
+    // A resumed session that dies without producing any output is almost
+    // always stale on the agent's side — retry once fresh before failing.
+    const retryFresh =
+      first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
+    if (!retryFresh) {
+      return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
     }
-    const abort = new AbortController();
-    this.active.set(emp.id, abort);
-    try {
-      const prompt = `${task.title}\n\n${task.description}`.trim();
-      const resumeId = emp.sessionId ?? undefined;
-      const run = { prompt, taskId: task.id, workspace: task.workspace };
-      const first = await this.invoke(emp, company, run, onEvent, tools, resumeId, abort);
-      // A resumed session that dies without producing any output is almost
-      // always stale on the agent's side — retry once fresh before failing.
-      const retryFresh =
-        first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
-      if (!retryFresh) {
-        return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
-      }
-      const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, abort);
-      return { ...retry.result, session: retry.turn.sessionId ?? null };
-    } finally {
-      this.active.delete(emp.id);
-    }
+    const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, signal);
+    return { ...retry.result, session: retry.turn.sessionId ?? null };
   }
 
   /** A pending founder ask takes precedence over the runner's exit status. */
@@ -268,7 +266,7 @@ class AgentDriver {
     onEvent: (e: AgentEvent) => void,
     tools: RunTools,
     resumeSessionId: string | undefined,
-    abort: AbortController,
+    signal: AbortSignal,
   ): Promise<{
     result: Omit<RunResult, "session">;
     turn: AcpTurnResult;
@@ -305,7 +303,7 @@ class AgentDriver {
           ),
         prompt: run.prompt,
         resumeSessionId,
-        signal: abort.signal,
+        signal,
         systemPrompt: store.employeeInstructions(emp.id),
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
@@ -314,23 +312,16 @@ class AgentDriver {
       if (limit) {
         this.restingUntil.set(emp.runner, limit.resetsAt);
       }
-      const outcome = outcomeOf(res.end, tools.asks.current(), limit?.resetsAt ?? null);
+      const outcome = outcomeOf(
+        res.end,
+        tools.asks.current(),
+        limit?.resetsAt ?? null,
+        signal.aborted,
+      );
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();
     }
-  }
-
-  disposeEmployee(employeeId: string): void {
-    this.active.get(employeeId)?.abort();
-    this.active.delete(employeeId);
-  }
-
-  disposeAll(): void {
-    for (const abort of this.active.values()) {
-      abort.abort();
-    }
-    this.active.clear();
   }
 }
 

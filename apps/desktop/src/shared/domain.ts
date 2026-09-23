@@ -116,6 +116,8 @@ export const RunOutcomeSchema = z.discriminatedUnion("kind", [
   // the CLI hit its usage limit: park until `until` without burning an attempt
   z.object({ error: z.string(), kind: z.literal("resting"), until: z.number() }),
   z.object({ error: z.string(), kind: z.literal("failed") }),
+  // the app stopped the run: requeue without burning an attempt
+  z.object({ kind: z.literal("interrupted") }),
 ]);
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 

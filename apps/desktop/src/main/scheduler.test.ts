@@ -57,23 +57,25 @@ const done = (costUsd = 0): RunResult => ({
   usage: { ...zeroUsage(), costUsd },
 });
 
-/** A runner whose runs end when the test says so. */
+const interrupted: RunResult = { ...done(), outcome: { kind: "interrupted" } };
+
+/** A runner whose runs end when the test says so, or as interrupted the moment they are aborted. */
 const scripted = () => {
   const running = new Map<string, (result: RunResult) => void>();
   const resting = new Set<string>();
+  let started = 0;
   const driver: EmployeeRunner = {
-    disposeEmployee: () => {
-      /* nothing to dispose */
-    },
     pickRunner: () => "claude",
     restingRunner: (runner) => (resting.has(runner) ? Date.now() + 60_000 : null),
-    runTask: (emp) =>
+    runTask: (emp, _company, _task, _onEvent, _tools, signal) =>
       // oxlint-disable-next-line promise/avoid-new -- the test resolves it by hand
       new Promise<RunResult>((resolve) => {
+        started += 1;
         running.set(emp.id, resolve);
+        signal.addEventListener("abort", () => resolve(interrupted), { once: true });
       }),
   };
-  return { driver, resting, running };
+  return { driver, resting, running, started: () => started };
 };
 
 const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
@@ -222,6 +224,29 @@ describe("settling a run", () => {
       attempts: 0,
       state: { kind: "queued", nextAttemptAt: until },
     });
+  });
+
+  it("requeues runs cut short by a quit, no attempt spent, and starts nothing after them", async () => {
+    found();
+    const { driver, started } = scripted();
+    const drain = createScheduler(driver);
+    const cut = [queue("priya"), queue("mae")];
+    const waiting = queue("sam");
+    drain.tick();
+    expect(started()).toBe(2);
+
+    drain.shutdown();
+
+    await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+    for (const task of cut) {
+      expect(store.getTask(task.id)).toMatchObject({
+        attempts: 0,
+        state: { kind: "queued", lastError: "Interrupted by app quit" },
+      });
+    }
+    expect(store.getEmployee("priya")?.status).toBe("idle");
+    expect(kindOf(waiting)).toBe("queued");
+    expect(started()).toBe(2);
   });
 
   it("takes an unused sign-off away with the task", async () => {

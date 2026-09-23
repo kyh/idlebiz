@@ -1410,7 +1410,7 @@ export const failTask = (taskId: string, runId: string, error: string): FailureV
   return next.verdict;
 };
 
-/** A run parked on a usage limit: back on the queue until it lifts, no attempt burned. Only the owning run may. */
+/** A run parked through no fault of the task — a usage limit, the app quitting: back on the queue from `until`, no attempt burned. Only the owning run may. */
 export const parkTask = (taskId: string, runId: string, until: number, lastError: string): void => {
   if (!heldBy(getTask(taskId), runId)) {
     return;

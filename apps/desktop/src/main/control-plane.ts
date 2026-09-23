@@ -69,6 +69,7 @@ class ControlPlane {
   stop(): void {
     this.server?.close();
     this.server = null;
+    this.port = 0;
     this.runs.clear();
   }
 
@@ -80,10 +81,11 @@ class ControlPlane {
   }
 
   registerRun(caller: ToolCaller): RunHandle {
+    const url = this.baseUrl();
     const token = randomBytes(24).toString("base64url");
     this.runs.set(token, caller);
     return {
-      env: { IDLEBIZ_API_URL: this.baseUrl(), IDLEBIZ_RUN_TOKEN: token },
+      env: { IDLEBIZ_API_URL: url, IDLEBIZ_RUN_TOKEN: token },
       release: () => {
         this.runs.delete(token);
       },

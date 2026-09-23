@@ -70,4 +70,13 @@ describe("run-scoped control-plane requests", () => {
       }
     },
   );
+
+  it("hands a run no address once stopped, and a fresh one after a restart", async () => {
+    controlPlane.stop();
+    expect(() => controlPlane.registerRun(() => null)).toThrow("control plane not started");
+    await controlPlane.start();
+    const handle = controlPlane.registerRun(() => null);
+    expect(handle.env["IDLEBIZ_API_URL"]).toBe(controlPlane.baseUrl());
+    handle.release();
+  });
 });

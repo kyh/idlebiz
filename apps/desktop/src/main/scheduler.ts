@@ -126,7 +126,7 @@ const admit = (company: Company): boolean => {
   return false;
 };
 
-/** Usage limits park the runner without consuming a task retry. */
+/** Usage limits and the app quitting park the task without consuming a retry. */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
   const o = r.outcome;
@@ -155,6 +155,11 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
         kind: "runner.resting",
         payload: { runner: emp.runner, until: o.until },
       });
+      break;
+    }
+    case "interrupted": {
+      status = "queued";
+      store.parkTask(task.id, runId, Date.now(), "Interrupted by app quit");
       break;
     }
     case "failed": {
@@ -213,13 +218,11 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
 };
 
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
-export type EmployeeRunner = Pick<
-  typeof agentDriver,
-  "runTask" | "restingRunner" | "pickRunner" | "disposeEmployee"
->;
+export type EmployeeRunner = Pick<typeof agentDriver, "runTask" | "restingRunner" | "pickRunner">;
 
 class Scheduler {
-  private active = new Set<string>();
+  // runId -> abort
+  private runs = new Map<string, AbortController>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly driver: EmployeeRunner;
@@ -264,10 +267,18 @@ class Scheduler {
     this.timer = null;
   }
 
+  /** Stop scheduling, then abort what is in flight: each run settles as interrupted, and nothing starts after it. */
+  shutdown(): void {
+    this.stop();
+    for (const abort of this.runs.values()) {
+      abort.abort();
+    }
+  }
+
   private fireDueRoutines(company: Company, employees: Employee[]): void {
     const now = Date.now();
     for (const r of store.listRoutines()) {
-      if (this.active.size >= BACKGROUND_CAPACITY) {
+      if (this.runs.size >= BACKGROUND_CAPACITY) {
         break;
       }
       if (!isRoutineDue(r, company.createdAt, now)) {
@@ -314,7 +325,7 @@ class Scheduler {
     const employees = store.listEmployees();
     this.fireDueRoutines(company, employees);
     for (const emp of employees) {
-      if (this.active.size >= BACKGROUND_CAPACITY) {
+      if (this.runs.size >= BACKGROUND_CAPACITY) {
         break;
       }
       if (emp.status !== "idle") {
@@ -494,10 +505,10 @@ class Scheduler {
     }
     // Visit each candidate once: a rejected start must not spin on the same task.
     for (const task of store.listQueuedTasks()) {
-      if (this.active.size >= GLOBAL_CONCURRENCY_CAP) {
+      if (this.runs.size >= GLOBAL_CONCURRENCY_CAP) {
         break;
       }
-      if (this.active.size >= BACKGROUND_CAPACITY && task.priority !== "high") {
+      if (this.runs.size >= BACKGROUND_CAPACITY && task.priority !== "high") {
         continue;
       }
       if (task.assigneeId === null || isWorking(task.assigneeId)) {
@@ -537,12 +548,13 @@ class Scheduler {
     }
 
     store.setEmployeeStatus(employeeId, "working");
-    this.active.add(runId);
+    const abort = new AbortController();
+    this.runs.set(runId, abort);
     const at = { employeeId, runId, taskId: task.id };
     publishActivity({ ...at, kind: "run.start" });
     publishActivity({ ...at, kind: "status", message: "running" });
 
-    void this.run(runId, task, employee, company);
+    void this.run(runId, task, employee, company, abort.signal);
   }
 
   private async run(
@@ -550,9 +562,10 @@ class Scheduler {
     task: Task,
     employee: Employee,
     company: Company,
+    signal: AbortSignal,
   ): Promise<void> {
     try {
-      await this.execute(runId, task, employee, company);
+      await this.execute(runId, task, employee, company, signal);
     } catch (error) {
       finish(runId, task, employee, {
         outcome: { error: errorMessage(error), kind: "failed" },
@@ -561,12 +574,18 @@ class Scheduler {
         usage: zeroUsage(),
       });
     } finally {
-      this.active.delete(runId);
+      this.runs.delete(runId);
       this.tick();
     }
   }
 
-  private async execute(runId: string, task: Task, emp: Employee, company: Company): Promise<void> {
+  private async execute(
+    runId: string,
+    task: Task,
+    emp: Employee,
+    company: Company,
+    signal: AbortSignal,
+  ): Promise<void> {
     const product = task.productId === null ? null : store.getProduct(task.productId);
     const result = await this.driver.runTask(
       emp,
@@ -584,6 +603,7 @@ class Scheduler {
         runId,
         taskId: task.id,
       }),
+      signal,
     );
     finish(runId, task, emp, result);
   }

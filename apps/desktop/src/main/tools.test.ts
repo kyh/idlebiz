@@ -61,12 +61,7 @@ const runAs = (employeeId: string) => {
       store.claimTask(taskId, assigneeId);
     },
     company,
-    driver: {
-      disposeEmployee: () => {
-        /* nothing to dispose */
-      },
-      pickRunner: () => "claude",
-    },
+    driver: { pickRunner: () => "claude" },
     employee,
     run: { betId: null, productId: null, runId: "run", taskId: "task" },
   };

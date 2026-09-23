@@ -46,10 +46,9 @@ let mainWindow: BrowserWindow | null = null;
 
 // Suspend writes before aborting runs so their completion cannot resurrect the save.
 const resetGame = () => {
-  scheduler.stop();
   metricsPulse.stop();
   suspendWrites();
-  agentDriver.disposeAll();
+  scheduler.shutdown();
   rmSync(ROOT_DIR, { force: true, recursive: true });
   setImmediate(() => {
     app.relaunch();
@@ -340,6 +339,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  agentDriver.disposeAll();
+  scheduler.shutdown();
+  metricsPulse.stop();
   controlPlane.stop();
 });

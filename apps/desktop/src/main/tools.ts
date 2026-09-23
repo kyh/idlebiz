@@ -38,7 +38,7 @@ export interface RunContext {
   company: Company;
   run: { runId: string; taskId: string; productId: string | null; betId: string | null };
   asks: AskBox;
-  driver: Pick<typeof agentDriver, "pickRunner" | "disposeEmployee">;
+  driver: Pick<typeof agentDriver, "pickRunner">;
   /** Queue a task for a teammate; a busy one picks it up on a later tick. */
   assign: (taskId: string, employeeId: string) => void;
 }
@@ -243,7 +243,6 @@ const TOOLS = {
     if (target.status === "working") {
       return `${target.name} is mid-task right now — try again when they're idle.`;
     }
-    ctx.driver.disposeEmployee(slug);
     store.archiveEmployee(slug);
     post(ctx, `👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
     publishActivity({
