@@ -3,7 +3,6 @@ import { RUNNERS } from "./registry";
 import { RUNNER_IDS } from "./runner";
 import type { RunnerId } from "./runner";
 
-// Probe the player's CLI login, which the ACP adapter inherits.
 export const runnerBin = (id: RunnerId): string => {
   const { command, override } = RUNNERS[id].cli;
   return process.env[override] ?? command;
@@ -58,6 +57,7 @@ const run = (bin: string, args: string[]): Promise<{ ok: boolean; output: string
     });
   });
 
+// Probe the player's CLI login, which the ACP adapter inherits.
 const probeRunner = async (id: RunnerId): Promise<RunnerProbe> => {
   const bin = runnerBin(id);
   const version = await run(bin, ["--version"]);

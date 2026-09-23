@@ -331,8 +331,6 @@ class AgentDriver {
     };
   }
 
-  /** A pending founder ask takes precedence over the runner's exit status. */
-
   private async invoke(
     emp: Employee,
     company: Company,
