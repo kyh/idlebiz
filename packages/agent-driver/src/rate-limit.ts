@@ -64,18 +64,16 @@ const nextWallClock = (targetMinutes: number, zone: string, now: Date): number |
   return now.getTime() + (deltaMin === 0 ? 24 * 60 : deltaMin) * 60_000;
 };
 
-/** "in 2 hours 15 minutes" / "in 45 minutes" / "in 1 hour" — ms from now, or null. */
+/** "in 4 days 21 hours 29 minutes" / "in 2 hours 15 minutes" / "in 45 minutes" — ms from now, or null. */
 const relativeResetMs = (text: string): number | null => {
   const rel =
-    /\bin\s+(?:(?<hours>\d+)\s*h(?:ours?|rs?)?)?\s*(?:(?<minutes>\d+)\s*m(?:in(?:ute)?s?)?)?/iu.exec(
+    /\bin\s+(?=\d)(?:(?<days>\d+)\s*d(?:ays?)?)?\s*(?:(?<hours>\d+)\s*h(?:ours?|rs?)?)?\s*(?:(?<minutes>\d+)\s*m(?:in(?:ute)?s?)?)?/iu.exec(
       text,
     );
-  const hours = rel?.groups?.hours;
-  const minutes = rel?.groups?.minutes;
-  if (!hours && !minutes) {
-    return null;
-  }
-  const ms = (Number(hours ?? 0) * 60 + Number(minutes ?? 0)) * 60_000;
+  const days = Number(rel?.groups?.days ?? 0);
+  const hours = Number(rel?.groups?.hours ?? 0);
+  const minutes = Number(rel?.groups?.minutes ?? 0);
+  const ms = ((days * 24 + hours) * 60 + minutes) * 60_000;
   return ms > 0 ? ms : null;
 };
 

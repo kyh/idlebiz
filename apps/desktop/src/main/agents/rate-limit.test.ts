@@ -47,4 +47,15 @@ describe("liftsAt", () => {
     );
     expect(liftsAt("Server overloaded", now)).toBe(minutes(30));
   });
+
+  it("reads the reset past an earlier 'in' that names no time", () => {
+    expect(liftsAt("Please sign in to continue. Usage limit hit; try again in 2 hours.", now)).toBe(
+      minutes(120),
+    );
+  });
+
+  it("counts days toward the cap", () => {
+    expect(liftsAt("Usage limit hit; try again in 3 days.", now)).toBe(minutes(12 * 60));
+    expect(liftsAt("Usage limit hit; try again in 1 day 2 hours.", now)).toBe(minutes(12 * 60));
+  });
 });
