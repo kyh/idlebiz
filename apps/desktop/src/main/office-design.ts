@@ -1,23 +1,51 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
-import { atomicWrite, readJsonFile } from "@/main/lib/fs";
+import { z } from "zod";
+import { atomicWrite } from "@/main/lib/fs";
 import { OFFICE_DESIGN_PATH } from "@/main/paths";
-import { jsonValueSchema, parseJson } from "@/shared/json";
+import { errorMessage } from "@/shared/errors";
+import { parseJson } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
 import { layoutIssues } from "@/shared/office-grid";
-import { canonicalOfficeLayout, parseOfficeLayout } from "@/shared/office-layout-schema";
+import {
+  OFFICE_LAYOUT_VERSION,
+  canonicalOfficeLayout,
+  parseOfficeLayout,
+} from "@/shared/office-layout-schema";
+import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
 
 // The founder's saved office. A layout main refuses here is exactly one
 // `check:office` would fail: both judge with shared/office-grid.
 
-/** The saved layout as it sits on disk; the renderer parses it, and falls back to the bundled one. */
-export const loadOfficeDesign = (): JsonValue | null =>
-  readJsonFile(OFFICE_DESIGN_PATH, jsonValueSchema);
+const newerStamp = z.object({ version: z.number().gt(OFFICE_LAYOUT_VERSION) });
 
-/** Validate reachability as well as shape before replacing the saved office. */
-export const saveOfficeDesign = (json: string): void => {
-  const layout = parseOfficeLayout(parseJson(json));
+/** The saved office, parsed; a file this build cannot read says so rather than passing for absent. */
+export const loadOfficeDesign = (): OfficeDesign => {
+  if (!existsSync(OFFICE_DESIGN_PATH)) {
+    return { kind: "absent" };
+  }
+  let raw: JsonValue;
+  try {
+    raw = parseJson(readFileSync(OFFICE_DESIGN_PATH, "utf-8"));
+  } catch (error) {
+    return { kind: "unreadable", reason: errorMessage(error) };
+  }
+  if (newerStamp.safeParse(raw).success) {
+    return { kind: "newer" };
+  }
+  try {
+    return { kind: "saved", layout: parseOfficeLayout(raw) };
+  } catch (error) {
+    return { kind: "unreadable", reason: errorMessage(error) };
+  }
+};
+
+/** Validate reachability before replacing the saved office; a newer build's file is never replaced. */
+export const saveOfficeDesign = (layout: OfficeLayoutData): void => {
+  if (loadOfficeDesign().kind === "newer") {
+    throw new Error("This office was saved by a newer IdleBiz; update to edit it.");
+  }
   const issues = layoutIssues(layout);
   if (issues.length > 0) {
     throw new Error(`office layout rejected:\n${issues.join("\n")}`);

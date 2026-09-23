@@ -130,8 +130,8 @@ const registerIpcHandlers = (): void => {
 
   handle("resetGame", resetGame);
 
-  handle("saveOfficeDesign", ({ json }) => saveOfficeDesign(json));
-  handle("loadOfficeDesign", () => ({ layout: loadOfficeDesign() }));
+  handle("saveOfficeDesign", ({ layout }) => saveOfficeDesign(layout));
+  handle("loadOfficeDesign", loadOfficeDesign);
 
   handle("stripeStatus", () => {
     const company = store.getCompany();

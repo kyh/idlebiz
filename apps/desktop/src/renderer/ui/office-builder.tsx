@@ -2,11 +2,13 @@ import { Toggle } from "@base-ui/react/toggle";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 import { memo, useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
-import { parseOfficeLayout } from "@/renderer/game/office-layout";
+import { layoutOf } from "@/renderer/game/office-layout";
 import type { PixelPoint } from "@/renderer/game/office-layout";
 import { useHistory } from "@/renderer/hooks/use-history";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { bridge } from "@/renderer/bridge";
 import { setLayout } from "@/renderer/state/store";
+import { Failure } from "@/renderer/ui/failure";
 import { Inspector } from "@/renderer/ui/office-builder/inspector";
 import {
   ALL_OBJECT_IDS,
@@ -29,9 +31,9 @@ import type {
 } from "@/renderer/ui/office-builder/office-builder-model";
 import { Stage } from "@/renderer/ui/office-builder/stage";
 import type { Placing } from "@/renderer/ui/office-builder/stage";
-import { errorMessage } from "@/shared/errors";
 import { layoutIssues } from "@/shared/office-grid";
 import { schemaIssues } from "@/shared/office-layout-schema";
+import type { OfficeDesign } from "@/shared/office-layout-schema";
 
 type PaletteMode = "objects" | "tiles";
 
@@ -150,6 +152,7 @@ const Toolbar = ({
   onToggleCollision,
   onSealPockets,
   onSave,
+  saving,
 }: {
   tool: Tool;
   onTool: (tool: Tool) => void;
@@ -162,6 +165,7 @@ const Toolbar = ({
   onToggleCollision: (pinned: boolean) => void;
   onSealPockets: () => void;
   onSave: () => void;
+  saving: boolean;
 }) => (
   <header className="px-window m-2 mb-0 shrink-0">
     <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
@@ -213,7 +217,12 @@ const Toolbar = ({
         <a href="#/" className="px-btn px-2.5 py-1.5">
           Game
         </a>
-        <button type="button" onClick={onSave} className="px-btn-accent px-3 py-1.5">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="px-btn-accent px-3 py-1.5"
+        >
           Save
         </button>
       </span>
@@ -279,6 +288,25 @@ const SelectionSummary = ({
   return <Hints tool={tool} placing={placing} />;
 };
 
+/** What the builder opened on, and what Save will do to the file on disk. */
+const openingStatus = (design: OfficeDesign): string => {
+  switch (design.kind) {
+    case "absent": {
+      return "Loaded the default office. Place assets, then Save.";
+    }
+    case "saved": {
+      return "Loaded your saved office. Place assets, then Save.";
+    }
+    case "unreadable": {
+      return `Couldn't read your saved office (${design.reason}). Showing the default; Save replaces that file.`;
+    }
+    case "newer": {
+      return "Your saved office is from a newer IdleBiz. Showing the default; Save can't replace it — update IdleBiz to edit it.";
+    }
+    // no default
+  }
+};
+
 const nudgeStep = (e: KeyboardEvent, snap: number): number => {
   if (!e.shiftKey) {
     return 1;
@@ -286,8 +314,11 @@ const nudgeStep = (e: KeyboardEvent, snap: number): number => {
   return snap > 1 ? snap : 10;
 };
 
-export const OfficeBuilder = () => {
-  const history = useHistory<BuilderDoc>(() => ({ layout: loadLayout(), selection: [] }));
+export const OfficeBuilder = ({ design }: { design: OfficeDesign }) => {
+  const history = useHistory<BuilderDoc>(() => ({
+    layout: loadLayout(layoutOf(design)),
+    selection: [],
+  }));
   const { layout, selection } = history.present;
   const [tool, setTool] = useState<Tool>("select");
   const [paletteId, setPaletteId] = useState<string | null>(null);
@@ -302,7 +333,7 @@ export const OfficeBuilder = () => {
   // editing collision always shows it; the toggle is for the other tools
   const showCollision = collisionPinned || tool === "block" || tool === "clear";
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("Loaded current office. Place assets, then Save.");
+  const [status, setStatus] = useState(() => openingStatus(design));
 
   const selected =
     selection.length === 1 ? (layout.objects.find((o) => o.uid === selection[0]) ?? null) : null;
@@ -373,22 +404,22 @@ export const OfficeBuilder = () => {
   const nudgeSelection = (d: PixelPoint) =>
     commitLayout((L) => moveObjects(L, selection, d.x, d.y));
 
-  const save = async () => {
-    // The same judges main applies before writing, run here first so the reasons
-    // land in the status line instead of an IPC error.
+  const saving = useSubmission(async () => {
+    // The same judges main applies, run here first so every reason reads plainly
+    // rather than as IPC's payload validation error.
     const data = toLayoutData(layout);
     const issues = [...schemaIssues(data), ...layoutIssues(data)];
     if (issues.length > 0) {
-      setStatus(`Not saved — ${issues.join("; ")}`);
-      return;
+      throw new Error(issues.join("; "));
     }
-    try {
-      await bridge().saveOfficeDesign({ json: JSON.stringify(data) });
-      // the layout in force: the scene rebuilds from it when you switch back
-      setLayout(data);
-      setStatus("Saved ✓ — switch to Game to see it.");
-    } catch (error) {
-      setStatus(`Save failed: ${errorMessage(error)}`);
+    await bridge().saveOfficeDesign({ layout: data });
+    // the layout in force: the scene rebuilds from it when you switch back
+    setLayout(data);
+    setStatus("Saved ✓ — switch to Game to see it.");
+  });
+  const save = () => {
+    if (saving.submission.kind !== "sending") {
+      saving.submit();
     }
   };
 
@@ -405,7 +436,7 @@ export const OfficeBuilder = () => {
     }
     if (key === "s") {
       e.preventDefault();
-      void save();
+      save();
       return;
     }
     if (key === "d") {
@@ -479,29 +510,6 @@ export const OfficeBuilder = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // load the player's saved office from disk (falls back to the bundled default)
-  const loadSaved = useEffectEvent((saved: EditableLayout) => {
-    history.reset({ layout: saved, selection: [] });
-    setStatus("Loaded your saved office from disk.");
-  });
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const res = await bridge().loadOfficeDesign();
-      if (cancelled || !res.layout) {
-        return;
-      }
-      try {
-        loadSaved(loadLayout(parseOfficeLayout(res.layout)));
-      } catch {
-        // keep the bundled default if the saved file is from an older schema
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const paletteItems = useMemo<PaletteItem[]>(() => {
     const q = query.trim().toLowerCase();
     if (paletteMode === "tiles") {
@@ -548,11 +556,13 @@ export const OfficeBuilder = () => {
             setStatus("Sealed open floor no body can reach.");
             setCollisionPinned(true);
           }}
-          onSave={() => {
-            void save();
-          }}
+          onSave={save}
+          saving={saving.submission.kind === "sending"}
         />
-        <div className="px-3 py-1 text-xs text-fg-dim">{status}</div>
+        <div className="px-3 py-1 text-xs text-fg-dim">
+          {status}
+          <Failure submission={saving.submission} doing="save" />
+        </div>
         <div className="px-scroll m-2 mt-0 min-h-0 flex-1 overflow-auto bg-[#14161f] p-4">
           <Stage
             doc={history.present}

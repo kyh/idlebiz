@@ -6,6 +6,7 @@ import { walkGridOf } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";
 import { officeLayoutSchema } from "@/shared/office-layout-schema";
 import type {
+  OfficeDesign,
   OfficeLayoutData,
   OfficeObjectDef,
   OfficePoi,
@@ -14,7 +15,6 @@ import type {
 } from "@/shared/office-layout-schema";
 
 export { comparePaintOrder } from "@/shared/office-depth";
-export { parseOfficeLayout } from "@/shared/office-layout-schema";
 export {
   type OfficeLayer,
   type OfficeLayoutData,
@@ -55,6 +55,10 @@ export interface Office {
 // before it writes it. The bundled default is always the current version (the
 // migrating parser is for files from disk), so it parses strictly, at module load.
 export const BUNDLED_LAYOUT: OfficeLayoutData = officeLayoutSchema.parse(rawLayout);
+
+/** The office in force: the saved one, else the bundled one. */
+export const layoutOf = (design: OfficeDesign): OfficeLayoutData =>
+  design.kind === "saved" ? design.layout : BUNDLED_LAYOUT;
 
 /**
  * Spacing between two neighbours in a flat stack. Small enough that a band of

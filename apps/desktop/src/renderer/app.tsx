@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { layoutOf } from "@/renderer/game/office-layout";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { initStore, setGame, useBoot, useStore } from "@/renderer/state/store";
 import type { Boot } from "@/renderer/state/boot";
@@ -103,7 +104,7 @@ const Screen = ({
 
 export const App = () => {
   const boot = useBoot();
-  const layout = useStore((s) => s.layout);
+  const design = useStore((s) => s.design);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
 
@@ -116,12 +117,12 @@ export const App = () => {
   }
 
   if (route === "#/ui") {
-    return <OfficeBuilder />;
+    return design ? <OfficeBuilder design={design} /> : null;
   }
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {layout ? <PhaserGame key="office-game" layout={layout} onGame={setGame} /> : null}
+      {design ? <PhaserGame key="office-game" layout={layoutOf(design)} onGame={setGame} /> : null}
 
       <div className="pointer-events-none absolute inset-0">
         <CrashScreen>

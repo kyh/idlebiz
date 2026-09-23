@@ -146,7 +146,10 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   face. The schema (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`,
   `door`), the walk grid (`shared/office-grid.ts`) and the sight judgement
   (`shared/office-sight.ts`) are shared by the scene, the save handler and that script —
-  a layout main refuses to save is exactly one the check would fail.
+  a layout main refuses to save is exactly one the check would fail. Main parses the
+  saved file (`main/office-design.ts`): one it can't read opens as the bundled office
+  and the builder says Save will replace it; one stamped with a newer `version` is never
+  replaced.
 - **A sprite is its resolved path, never its id.** `objectSpritePath` picks the PNG; the
   scene keys its texture by that path, and the builder sizes, hits and anchors the object
   by that path's entry in `sprite-bounds.generated.ts`, one scan of the shipped art. Run

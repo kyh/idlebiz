@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OfficeObjectDef } from "@/shared/office-layout-schema";
-import { BUNDLED_LAYOUT, officeOf } from "./office-layout";
+import { BUNDLED_LAYOUT, layoutOf, officeOf } from "./office-layout";
 
 const catalogChair = {
   anchorY: 96,
@@ -25,5 +25,15 @@ describe("office placements", () => {
     expect(faceless?.path).toBe(facelessChair.path);
     expect(faceless?.key).not.toBe(catalog?.key);
     expect(again?.key).toBe(catalog?.key);
+  });
+});
+
+describe("the office in force", () => {
+  it("is the saved one, and the bundled one for a file this build could not read", () => {
+    const saved = { ...BUNDLED_LAYOUT, spawn: { x: 1, y: 1 } };
+    expect(layoutOf({ kind: "saved", layout: saved })).toBe(saved);
+    expect(layoutOf({ kind: "absent" })).toBe(BUNDLED_LAYOUT);
+    expect(layoutOf({ kind: "unreadable", reason: "bad" })).toBe(BUNDLED_LAYOUT);
+    expect(layoutOf({ kind: "newer" })).toBe(BUNDLED_LAYOUT);
   });
 });

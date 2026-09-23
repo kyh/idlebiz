@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { IpcMethod, IpcKind, InvokeMethod } from "@/shared/ipc-channels";
-import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import type { Digest } from "@/shared/digest";
@@ -27,6 +26,8 @@ import type {
 import { BusinessTypeSchema, HireProposalSchema } from "@/shared/hire";
 import type { HireProposal } from "@/shared/hire";
 import type { ProductStatus, StripeStatus, VercelListing } from "@/shared/integrations";
+import { officeLayoutSchema } from "@/shared/office-layout-schema";
+import type { OfficeDesign } from "@/shared/office-layout-schema";
 
 /** A call that answers nothing: it worked, or it threw. */
 // oxlint-disable-next-line typescript/no-invalid-void-type -- the values of Results are handler return types, which the rule cannot see through the map
@@ -83,7 +84,7 @@ export const SCHEMAS = {
   resetSpend: z.void(),
   resolveApproval: z.object({ approved: z.boolean(), taskId: z.string() }),
   restingRunners: z.void(),
-  saveOfficeDesign: z.object({ json: z.string() }),
+  saveOfficeDesign: z.object({ layout: officeLayoutSchema }),
   setAutopilot: z.object({ running: z.boolean() }),
   setBudget: z.object({ budget: BudgetSchema }),
   setMaxAgents: z.object({ maxAgents: MaxAgentsSchema }),
@@ -165,7 +166,7 @@ interface Results {
   onActivity: ActivityEvent;
 
   saveOfficeDesign: Done;
-  loadOfficeDesign: { layout: JsonValue | null };
+  loadOfficeDesign: OfficeDesign;
 }
 
 type Payload<M extends IpcMethod> = M extends keyof typeof SCHEMAS

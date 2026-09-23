@@ -15,9 +15,9 @@ import type {
   TeamMessage,
 } from "@/shared/domain";
 import type { Digest } from "@/shared/digest";
+import { errorMessage } from "@/shared/errors";
 import type { ProductStatus, StripeStatus } from "@/shared/integrations";
-import { BUNDLED_LAYOUT, parseOfficeLayout } from "@/renderer/game/office-layout";
-import type { OfficeLayoutData } from "@/renderer/game/office-layout";
+import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
 import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
 import { reduceActivity } from "@/renderer/state/activity-reducer";
@@ -30,12 +30,11 @@ interface State {
   /** The first refresh finished: company, roster and tasks are known (or known absent). */
   booted: boolean;
   /**
-   * The office layout in force: the saved office from disk, else the bundled
-   * default; null until that is known, and the scene mounts on nothing earlier.
-   * Settled before the bridge calls that can fail, so the room opens even when
-   * they do.
+   * The founder's saved office as main found it; null until that is known, and
+   * the scene mounts on nothing earlier. Settled before the bridge calls that
+   * can fail, so the room opens even when they do.
    */
-  layout: OfficeLayoutData | null;
+  design: OfficeDesign | null;
   /** A coding CLI is signed in; null until main's probe answers. */
   authed: boolean | null;
   stripeStatus: StripeStatus;
@@ -67,9 +66,9 @@ let state: State = {
   bets: [],
   booted: false,
   company: null,
+  design: null,
   employees: [],
   game: null,
-  layout: null,
   modalOpen: false,
   pendingAsks: [],
   productStatus: new Map(),
@@ -149,32 +148,28 @@ export const setModalOpen = (open: boolean): void => {
 };
 
 /**
- * Recover the player's saved office from disk before the Phaser scene boots; a
- * malformed file falls back to the bundled default. Once: the scene has built
- * the room by the time anything refreshes again.
+ * Ask main for the player's saved office before the Phaser scene boots. Once:
+ * the scene has built the room by the time anything refreshes again.
  */
-const settleLayout = async (): Promise<void> => {
-  if (state.layout) {
+const settleDesign = async (): Promise<void> => {
+  if (state.design) {
     return;
   }
-  let layout = BUNDLED_LAYOUT;
+  let design: OfficeDesign;
   try {
-    const office = await bridge().loadOfficeDesign();
-    if (office.layout) {
-      layout = parseOfficeLayout(office.layout);
-    }
-  } catch {
-    // keep the bundled default layout
+    design = await bridge().loadOfficeDesign();
+  } catch (error) {
+    design = { kind: "unreadable", reason: errorMessage(error) };
   }
   // The scene may mount now. Not `booted`: that also opens the HUD and the
   // onboarding modal, and a founder shown onboarding because the bridge is down
   // would create a second company on top of the one they have.
-  set({ layout });
+  set({ design });
 };
 
 /** The builder saved an office: the scene rebuilds from it when it next mounts. */
 export const setLayout = (layout: OfficeLayoutData): void => {
-  set({ layout });
+  set({ design: { kind: "saved", layout } });
 };
 
 /** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
@@ -233,7 +228,7 @@ const splitTasks = (tasks: readonly Task[]): Pick<State, "pendingAsks" | "stuckT
 });
 
 const refreshOnce = async (): Promise<void> => {
-  await settleLayout();
+  await settleDesign();
   const ticket = order.ticket();
   const [company, resting, load] = await Promise.all([
     bridge().getCompany(),

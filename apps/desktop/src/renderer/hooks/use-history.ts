@@ -13,8 +13,6 @@ export interface History<T> {
   commit: (updater: (t: T) => T) => void;
   undo: () => void;
   redo: () => void;
-  /** Replace the present and forget the past — a document loaded from elsewhere. */
-  reset: (next: T) => void;
 }
 
 /**
@@ -83,13 +81,5 @@ export const useHistory = <T extends object>(init: () => T, cap = 100): History<
     replace(next);
   }, [replace]);
 
-  const reset = useCallback(
-    (next: T) => {
-      stack.current = { future: [], past: [] };
-      replace(next);
-    },
-    [replace],
-  );
-
-  return { commit, live, mark, present, redo, reset, undo };
+  return { commit, live, mark, present, redo, undo };
 };

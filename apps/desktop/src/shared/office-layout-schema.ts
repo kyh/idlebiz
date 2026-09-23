@@ -92,6 +92,17 @@ const legacyLayoutSchema = z.object({
 });
 
 export type OfficeLayoutData = z.infer<typeof officeLayoutSchema>;
+
+/**
+ * The founder's saved office as main found it. A newer build's file is its own
+ * case: rewriting it would drop what that build added, so it is never replaced.
+ */
+export type OfficeDesign =
+  | { kind: "absent" }
+  | { kind: "saved"; layout: OfficeLayoutData }
+  | { kind: "unreadable"; reason: string }
+  | { kind: "newer" };
+
 /** One placed sprite. Carries an anchorY only on the layer that y-sorts. */
 export type OfficeObjectDef = z.infer<typeof objectSchema>;
 
