@@ -560,27 +560,27 @@ describe("recently shipped", () => {
   });
 });
 
+const launch = (productId: string) =>
+  store.openBet({
+    budgetUsd: 2,
+    hypothesis: "a launch post brings visitors",
+    landingPath: null,
+    metric: "users",
+    productId,
+    target: 50,
+    title: "Launch post",
+    windowHours: 24,
+  });
+
+const firstProduct = () => {
+  const [product] = store.listProducts();
+  if (!product) {
+    throw new Error("no first product");
+  }
+  return product;
+};
+
 describe("bets", () => {
-  const launch = (productId: string) =>
-    store.openBet({
-      budgetUsd: 2,
-      hypothesis: "a launch post brings visitors",
-      landingPath: null,
-      metric: "users",
-      productId,
-      target: 50,
-      title: "Launch post",
-      windowHours: 24,
-    });
-
-  const firstProduct = () => {
-    const [product] = store.listProducts();
-    if (!product) {
-      throw new Error("no first product");
-    }
-    return product;
-  };
-
   it("gives a users bet a path of its own and refuses one another bet already covers", () => {
     found();
     const product = firstProduct();
@@ -697,13 +697,13 @@ describe("founder approvals", () => {
   });
 });
 
-describe("the save format", () => {
-  const stampOf = (companyId: string): number =>
-    reqNum(
-      parseDoc(readFileSync(path.join(root, companyId, "COMPANY.md"), "utf-8")).metadata,
-      "format",
-    );
+const stampOf = (companyId: string): number =>
+  reqNum(
+    parseDoc(readFileSync(path.join(root, companyId, "COMPANY.md"), "utf-8")).metadata,
+    "format",
+  );
 
+describe("the save format", () => {
   it("stamps what it writes", () => {
     expect(stampOf(found().id)).toBe(1);
   });

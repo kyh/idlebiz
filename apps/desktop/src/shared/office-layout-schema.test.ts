@@ -30,6 +30,11 @@ const legacy: JsonValue = {
   workSeats: [{ x: 24, y: 40 }],
 };
 
+const withAnchor = (anchorY: number): JsonValue => ({
+  ...legacy,
+  objects: [{ anchorY, id: "x", layer: "object", x: 0, y: 0 }],
+});
+
 describe("parseOfficeLayout", () => {
   it("upgrades a v1 layout: seats become work seats, the door is the spawn, no POIs", () => {
     const out = parseOfficeLayout(legacy);
@@ -51,10 +56,6 @@ describe("parseOfficeLayout", () => {
   });
 
   it("holds a floor line at the top of the entity band and rejects the next one", () => {
-    const withAnchor = (anchorY: number): JsonValue => ({
-      ...legacy,
-      objects: [{ anchorY, id: "x", layer: "object", x: 0, y: 0 }],
-    });
     expect(parseOfficeLayout(withAnchor(MAX_FLOOR_LINE)).objects).toHaveLength(1);
     expect(() => parseOfficeLayout(withAnchor(MAX_FLOOR_LINE + 1))).toThrow(/anchorY/u);
   });

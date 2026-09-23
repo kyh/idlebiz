@@ -18,6 +18,21 @@ let setupRunning = false;
 
 const CLAUDE_INSTALL_CMD = "curl -fsSL https://claude.ai/install.sh | bash";
 
+const reportLine =
+  (emit: (e: AuthFlowEvent) => void) =>
+  (line: string): void => {
+    const text = line.trim();
+    if (!text) {
+      return;
+    }
+    const url = /https?:\/\/\S+/u.exec(text)?.[0];
+    if (url) {
+      emit({ type: "url", url });
+    } else {
+      emit({ message: text.slice(0, 200), type: "progress" });
+    }
+  };
+
 /** Spawn a command, streaming its output lines as progress (URLs get their own event). */
 const streamCommand = (
   cmd: string,
@@ -27,18 +42,7 @@ const streamCommand = (
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
   new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    const onLine = (line: string): void => {
-      const text = line.trim();
-      if (!text) {
-        return;
-      }
-      const url = /https?:\/\/\S+/u.exec(text)?.[0];
-      if (url) {
-        emit({ type: "url", url });
-      } else {
-        emit({ message: text.slice(0, 200), type: "progress" });
-      }
-    };
+    const onLine = reportLine(emit);
     if (child.stdout) {
       createInterface({ input: child.stdout }).on("line", onLine);
     }

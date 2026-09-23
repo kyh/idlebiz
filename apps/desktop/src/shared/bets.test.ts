@@ -71,10 +71,10 @@ describe("judge", () => {
   });
 });
 
-describe("claimsCollide", () => {
-  const landing = (id: string, landingPath: string, productId = "app") =>
-    bet({ claim: { landingPath, metric: "users" }, id, productId });
+const landing = (id: string, landingPath: string, productId = "app") =>
+  bet({ claim: { landingPath, metric: "users" }, id, productId });
 
+describe("claimsCollide", () => {
   it("lets bets with paths of their own run side by side", () => {
     expect(claimsCollide(landing("a", "/b/a"), landing("b", "/b/ab"))).toBe(false);
   });

@@ -149,22 +149,22 @@ describe("draining the queue", () => {
   });
 });
 
-describe("settling a run", () => {
-  const runOne = async (result: RunResult, betId: string | null = null) => {
-    const company = found();
-    const { driver, running } = scripted();
-    const task = store.createTask({
-      assigneeId: "priya",
-      betId,
-      title: "Work",
-    });
-    store.claimTask(task.id, "priya");
-    createScheduler(driver).tick();
-    running.get("priya")?.(result);
-    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
-    return { company, task };
-  };
+const runOne = async (result: RunResult, betId: string | null = null) => {
+  const company = found();
+  const { driver, running } = scripted();
+  const task = store.createTask({
+    assigneeId: "priya",
+    betId,
+    title: "Work",
+  });
+  store.claimTask(task.id, "priya");
+  createScheduler(driver).tick();
+  running.get("priya")?.(result);
+  await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+  return { company, task };
+};
 
+describe("settling a run", () => {
   it("ships finished work and frees the employee", async () => {
     const { task } = await runOne(done(0.5));
     expect(store.getTask(task.id)).toBeNull();
