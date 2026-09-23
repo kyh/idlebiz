@@ -21,13 +21,13 @@ const bet = (patch: Partial<Bet> = {}): Bet => ({
   ...patch,
 });
 
-const closed = (id: string, productId: string, at: number, moved: number, spentUsd = 1): Bet => {
-  const state: BetState =
-    moved >= 50
-      ? { closedAt: at + HOUR, kind: "won", moved }
-      : { closedAt: at + HOUR, kind: "killed", moved, reason: "short" };
-  return bet({ createdAt: at, id, productId, spentUsd, state });
-};
+const verdict = (moved: number, closedAt: number): BetState =>
+  moved >= 50
+    ? { closedAt, kind: "won", moved }
+    : { closedAt, kind: "killed", moved, reason: "short" };
+
+const closed = (id: string, productId: string, at: number, moved: number, spentUsd = 1): Bet =>
+  bet({ createdAt: at, id, productId, spentUsd, state: verdict(moved, at + HOUR) });
 
 const ledger = (bets: Bet[], products = ["app", "site"]) => ({
   bets,
@@ -206,5 +206,46 @@ describe("dream", () => {
     );
     const next = dream(DEFAULT_POLICY, history);
     expect(next.explore).toBeLessThanOrEqual(DEFAULT_POLICY.explore);
+  });
+
+  it("keeps the incumbent plateau", () => {
+    const early = ["e0", "e1", "e2", "e3"].map((id, i) => closed(id, "app", i * HOUR, 40));
+    const late = ["app", "app", "app", "site", "site", "site"].map((productId, i) =>
+      bet({
+        createdAt: 10 * HOUR + i,
+        id: `l${i}`,
+        productId,
+        spentUsd: 1,
+        state: verdict(productId === "site" ? 100 : 10, 20 * HOUR),
+      }),
+    );
+    expect(dream({ explore: 1, plateau: 5 }, [...early, ...late])).toEqual({
+      explore: 2,
+      plateau: 5,
+    });
+  });
+
+  it("a free win cannot pick the policy", () => {
+    const history: [productId: string, closesAtHour: number, moved: number][] = [
+      ["site", 2, 0],
+      ["site", 4, 100],
+      ["site", 4, 0],
+      ["app", 6, 100],
+      ["site", 6, 0],
+      ["site", 7, 0],
+      ["app", 7, 100],
+      ["site", 8, 0],
+    ];
+    const withB1At = (spentUsd: number): Bet[] =>
+      history.map(([productId, closesAtHour, moved], i) =>
+        bet({
+          createdAt: i * HOUR,
+          id: `b${i}`,
+          productId,
+          spentUsd: i === 1 ? spentUsd : 2,
+          state: verdict(moved, closesAtHour * HOUR),
+        }),
+      );
+    expect(dream(DEFAULT_POLICY, withB1At(0))).toEqual(dream(DEFAULT_POLICY, withB1At(1)));
   });
 });

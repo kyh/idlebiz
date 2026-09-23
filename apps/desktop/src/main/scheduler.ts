@@ -7,7 +7,7 @@ import type { RunResult, RunTools } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, say, ship } from "@/main/company-actions";
 import { askBox, callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
-import { allocate } from "@/shared/bets";
+import { RUN_COST_ESTIMATE_USD, allocate } from "@/shared/bets";
 import type { Allocation } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import {
@@ -95,10 +95,6 @@ const heartbeatBrief = (
     room: store.recentTeamMessages(12),
     ships: store.recentShips(),
   });
-
-// A run bills only when it ends, so runs in flight are counted at what one has
-// typically cost; without it three hands start on a $2 bet and land it at $5.
-const RUN_COST_ESTIMATE_USD = 1;
 
 /** Where the next idle employee goes, by the company's current policy. */
 const nextAllocation = (company: Company): Allocation => {

@@ -68,10 +68,12 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   binds each implementation to its spec, and `control-plane.ts` is only transport. A change
   everyone should hear about (a bet, a product, autopilot) goes through
   `main/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's IPC.
-- **The policy is data, retuned by replay.** `dream` replays a fixed grid of `PolicyParams`
-  against the closed bets and swaps only to a strictly better scorer, so the incumbent never
-  loses to a tie. It stays on the defaults below eight closed bets. Steering changes go in
-  the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
+- **The policy is data, retuned by replay.** `dream` replays a fixed set of `explore`
+  weights against the closed bets and swaps only to a strictly better scorer, so the
+  incumbent never loses to a tie. The replay scores only work picks, so it never touches
+  `plateau`, and it floors a pick's cost at one run's so a win nothing paid for cannot
+  price itself at zero. It stays on the defaults below eight closed bets. Steering changes go
+  in the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
   single-player: the replay only ever sees this company's bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, through one judgement: `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly. A

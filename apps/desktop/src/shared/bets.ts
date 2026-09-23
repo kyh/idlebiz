@@ -180,6 +180,9 @@ const MAX_LIVE_PRODUCTS = 5;
 /** Past this many live bets a product waits for a verdict: each one is a window the lead has to watch. */
 const MAX_LIVE_BETS_PER_PRODUCT = 3;
 
+/** A run bills only when it ends, so runs in flight are counted at what one has typically cost; without it three hands start on a $2 bet and land it at $5. */
+export const RUN_COST_ESTIMATE_USD = 1;
+
 export interface Ledger {
   bets: readonly Bet[];
   /** Products still alive, by id. */
@@ -247,15 +250,16 @@ const MIN_BETS_TO_DREAM = 8;
 /** The replay is quadratic in bets and runs on the main process; the latest verdicts are also the ones the policy should fit. */
 const MAX_BETS_TO_DREAM = 100;
 
-const CANDIDATES: readonly PolicyParams[] = [0, 0.5, 1, 2].flatMap((explore) =>
-  [2, 3, 5].map((plateau) => ({ explore, plateau })),
-);
+/** Replay only scores work picks, which plateau never touches, so dream tunes explore alone. */
+const EXPLORE_CANDIDATES: readonly number[] = [0, 0.5, 1, 2];
 
 /**
  * Replay a policy against the company's closed bets: at each moment a bet opened,
  * the policy picks among the bets that really were open then, knowing only what
  * had closed by then, and earns the yield per dollar its pick really returned.
- * Exact over what happened, silent about what did not.
+ * Exact over what happened, silent about what did not. Per-dollar yield is
+ * floored at one run's cost, because no run is cheaper than that: a win the
+ * pulse credited before any run billed cannot price itself at zero.
  */
 const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number => {
   let earned = 0;
@@ -282,7 +286,7 @@ const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number =
     const picked =
       choice.kind === "work" ? available.find((b) => b.id === choice.betId) : undefined;
     if (picked) {
-      earned += yieldOf(picked) / Math.max(picked.spentUsd, 0.01);
+      earned += yieldOf(picked) / Math.max(picked.spentUsd, RUN_COST_ESTIMATE_USD);
       picks += 1;
     }
   }
@@ -300,7 +304,8 @@ export const dream = (incumbent: PolicyParams, bets: readonly Bet[]): PolicyPara
   }
   let best = incumbent;
   let bestScore = replayScore(incumbent, closed);
-  for (const candidate of CANDIDATES) {
+  for (const explore of EXPLORE_CANDIDATES) {
+    const candidate = { ...incumbent, explore };
     const candidateScore = replayScore(candidate, closed);
     if (candidateScore > bestScore) {
       best = candidate;
