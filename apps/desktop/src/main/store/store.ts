@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "@/main/lib/fs";
+import { report } from "@/main/lib/report";
 import {
   ROOT_DIR,
   ensureAppDirs,
@@ -68,6 +69,7 @@ import {
 } from "@/shared/bets";
 import type { Bet, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
+import { RefusalError } from "@/shared/refusal";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
 import { DigestSchema } from "@/shared/digest";
 import type { Digest } from "@/shared/digest";
@@ -807,7 +809,7 @@ export const createEmployee = (hire: FoundingHire & { deskIndex: number }): Empl
   const { company, employees: list } = current();
   const input: EmployeeInput = { ...hire, companyId: company.id };
   if (list.length >= company.maxAgents) {
-    throw new Error(`the office is at its ${company.maxAgents}-seat cap`);
+    throw new RefusalError(`the office is at its ${company.maxAgents}-seat cap`);
   }
   const id = uniqueSlug(
     input.name,
@@ -827,7 +829,7 @@ export const getEmployee = (id: string): Employee | null =>
 export const employeeInstructions = (employeeId: string): string => {
   const e = getEmployee(employeeId);
   if (!e) {
-    throw new Error(`employee ${employeeId} not found`);
+    throw new RefusalError(`employee ${employeeId} not found`);
   }
   const { company, products } = current();
   return employeeBody(e, company, products);
@@ -955,7 +957,7 @@ export const getProduct = (id: string): Product | null =>
 export const requireProduct = (id: string): Product => {
   const p = getProduct(id);
   if (!p) {
-    throw new Error(`no product ${id}`);
+    throw new RefusalError(`no product ${id}`);
   }
   return p;
 };
@@ -1049,7 +1051,7 @@ export const openBet = (
   const input = { ...wager, companyId: active.company.id };
   const product = active.products.find((p) => p.id === input.productId);
   if (!product) {
-    throw new Error(noSuchProduct(input.productId));
+    throw new RefusalError(noSuchProduct(input.productId));
   }
   const id = uniqueSlug(
     input.title,
@@ -1076,7 +1078,7 @@ export const openBet = (
   };
   const rival = active.bets.find((b) => !isClosed(b) && claimsCollide(b, bet));
   if (rival?.claim.metric === "users") {
-    throw new Error(
+    throw new RefusalError(
       `"${rival.title}" (${rival.id}) already counts visitors under ${rival.claim.landingPath} on ${product.name}; a bet landing there too could not be told apart from it. Leave landingPath out to get a path of its own.`,
     );
   }
@@ -1150,7 +1152,7 @@ const retune = (active: ActiveCompany): void => {
 export const measureBet = (betId: string, now: number): Bet => {
   const bet = getBet(betId);
   if (!bet || bet.state.kind !== "open") {
-    throw new Error(`no open bet "${betId}"`);
+    throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
   // work waiting on the founder stays: that step may be the one that moves the number
@@ -1165,7 +1167,7 @@ const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
 export const killBet = (betId: string, reason: string, now: number): Bet => {
   const bet = getBet(betId);
   if (!bet || isClosed(bet)) {
-    throw new Error(`no live bet "${betId}"`);
+    throw new RefusalError(`no live bet "${betId}"`);
   }
   const killed = closeAsKilled(bet, reason, now);
   deadLetter((t) => t.betId === betId, "bet killed", now);
@@ -1402,7 +1404,7 @@ const close = (
   try {
     shelve(t);
   } catch (error) {
-    console.error(`could not shelve ${t.id}: ${errorMessage(error)}`);
+    report(`shelve ${t.id}`, error);
     return;
   }
   const active = current();
@@ -1569,7 +1571,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   const product = requireProduct(productId);
   const active = current();
   if (active.products.length === 1) {
-    throw new Error(
+    throw new RefusalError(
       `${product.name} is the only product — start its successor with create_product first.`,
     );
   }
@@ -1621,12 +1623,12 @@ export const foundCompany = (input: {
   hires: readonly FoundingHire[];
 }): Company => {
   if (c().active) {
-    throw new Error("a company is already active");
+    throw new RefusalError("a company is already active");
   }
   if (
     safeReaddir(ROOT_DIR).some((entry) => !entry.startsWith(".") && existsSync(companyFile(entry)))
   ) {
-    throw new Error("an existing company save must be loaded or repaired before founding");
+    throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
   const id = uniqueSlug(input.name, [], (s) => existsSync(companyDir(s)));
   const co: Company = {
@@ -1650,7 +1652,7 @@ export const foundCompany = (input: {
   const active = emptyCompany(co);
   active.shipped = [];
   if (input.hires.length > co.maxAgents) {
-    throw new Error(`the office is at its ${co.maxAgents}-seat cap`);
+    throw new RefusalError(`the office is at its ${co.maxAgents}-seat cap`);
   }
   active.products.push(firstProduct(co, null));
   for (const [deskIndex, hire] of input.hires.entries()) {

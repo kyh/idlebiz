@@ -3,6 +3,7 @@ import { zeroUsage } from "@repo/agent-driver/events";
 import type { AgentEvent } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
+import { report } from "@/main/lib/report";
 import { agentDriver, askBox } from "@/main/agents/agent-driver";
 import type { RunResult, RunTools } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, say, ship } from "@/main/company-actions";
@@ -11,6 +12,7 @@ import type { RunContext } from "@/main/tools";
 import { RUN_COST_ESTIMATE_USD, allocate } from "@/shared/bets";
 import type { Allocation } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
+import { RefusalError } from "@/shared/refusal";
 import {
   approvalAnswer,
   autonomousBrief,
@@ -317,7 +319,7 @@ class Scheduler {
     filed: Pick<Task, "origin" | "productId"> & Partial<Pick<Task, "betId" | "priority">>,
   ): Task {
     const task = store.createTask({ ...filed, ...brief, assigneeId: emp.id });
-    this.tryAssign(task.id, emp.id);
+    this.queue(task.id, emp.id);
     return task;
   }
 
@@ -389,7 +391,9 @@ class Scheduler {
     });
     const ctx: RunContext = {
       asks,
-      assign: (taskId, employeeId) => this.tryAssign(taskId, employeeId),
+      assign: (taskId, employeeId) => {
+        this.queue(taskId, employeeId);
+      },
       company,
       driver: this.driver,
       employee,
@@ -410,7 +414,7 @@ class Scheduler {
   directEmployee(employeeId: string, instruction: string): void {
     const emp = store.getEmployee(employeeId);
     if (!emp) {
-      throw new Error(`no employee ${employeeId}`);
+      throw new RefusalError(`no employee ${employeeId}`);
     }
     say(`@${emp.id} ${instruction}`, emp.id);
     this.wakeEmployee(employeeId, founderPing(instruction));
@@ -419,7 +423,7 @@ class Scheduler {
   private resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
     const continuation = store.resolveBlockedWithAnswer(taskId, answer);
     if (!continuation || !continuation.assigneeId) {
-      throw new Error(whenNotBlocked);
+      throw new RefusalError(whenNotBlocked);
     }
     return this.assign(continuation.id, continuation.assigneeId);
   }
@@ -431,12 +435,12 @@ class Scheduler {
   resolveApproval(taskId: string, approved: boolean): Task {
     const task = store.getTask(taskId);
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval") {
-      throw new Error("task is not awaiting an approval");
+      throw new RefusalError("task is not awaiting an approval");
     }
     const { command } = task.state.ask;
     const continuation = store.resolveBlockedWithAnswer(taskId, approvalAnswer(approved, command));
     if (!continuation?.assigneeId) {
-      throw new Error("could not resume the task");
+      throw new RefusalError("could not resume the task");
     }
     // Record before the continuation can start: its retry hits the hook again,
     // and must find the sign-off already there.
@@ -464,7 +468,7 @@ class Scheduler {
         integrationConnectedAnswer(kind),
       );
       if (continuation?.assigneeId) {
-        this.tryAssign(continuation.id, continuation.assigneeId);
+        this.queue(continuation.id, continuation.assigneeId);
       }
     }
   }
@@ -496,24 +500,26 @@ class Scheduler {
     );
   }
 
-  /** Assign, tolerating a busy assignee — the queue picks it up next tick. */
-  private tryAssign(taskId: string, employeeId: string): void {
-    try {
-      this.assign(taskId, employeeId);
-    } catch {
-      /* claim race or busy — retried on a later tick */
-    }
-  }
-
-  /** Claim even at the budget cap so answered continuations remain queued. */
-  assign(taskId: string, employeeId: string): Task {
+  /**
+   * Claim even at the budget cap so answered continuations remain queued; a
+   * busy assignee picks it up on a later tick. Null only when the claim was lost.
+   */
+  private queue(taskId: string, employeeId: string): Task | null {
     const claimed = store.claimTask(taskId, employeeId);
     if (!claimed) {
-      throw new Error("task is not assignable");
+      return null;
     }
     publishActivity({ employeeId, kind: "status", message: "queued", taskId });
     this.tick();
     return store.getTask(taskId) ?? claimed;
+  }
+
+  assign(taskId: string, employeeId: string): Task {
+    const queued = this.queue(taskId, employeeId);
+    if (!queued) {
+      throw new RefusalError("task is not assignable");
+    }
+    return queued;
   }
 
   tick(): void {
@@ -610,12 +616,12 @@ class Scheduler {
     try {
       book(task, result.usage.costUsd);
     } catch (error) {
-      console.error(`could not book run ${runId}: ${errorMessage(error)}`);
+      report(`book run ${runId}`, error);
     }
     try {
       finish(runId, task, employee, result);
     } catch (error) {
-      console.error(`could not settle run ${runId}: ${errorMessage(error)}`);
+      report(`settle run ${runId}`, error);
     } finally {
       store.setEmployeeStatus(employee.id, "idle");
       this.runs.delete(runId);

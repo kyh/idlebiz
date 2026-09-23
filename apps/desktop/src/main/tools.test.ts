@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
 import type { RunContext } from "./tools";
@@ -16,6 +16,10 @@ const { callTool } = await import("./tools");
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
   store.initStore();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 afterAll(() => {
@@ -117,10 +121,37 @@ describe("company tools", () => {
   });
 
   it("answers with the store's refusal rather than failing the call", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     expect(callTool(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" })).toContain(
       "no live bet",
     );
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("answers a fault too, so the run goes on, and reports it", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = runAs("mae");
+    const fault = new TypeError("cannot read the queue");
+    const broken: RunContext = {
+      ...ctx,
+      assign: () => {
+        throw fault;
+      },
+    };
+    expect(callTool(broken, "POST /v1/delegate", HANDOFF)).toBe(fault.message);
+    expect(logged).toHaveBeenCalledExactlyOnceWith("[tool /v1/delegate]", fault);
+  });
+
+  it("turns a hire away at the seat cap as an answer, not a fault", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = runAs("mae");
+    store.setMaxAgents(2);
+    expect(callTool(ctx, "POST /v1/hire", { role: "engineer", title: "Engineer" })).toContain(
+      "Couldn't hire: the office is at its 2-seat cap",
+    );
+    expect(store.listEmployees()).toHaveLength(2);
+    expect(logged).not.toHaveBeenCalled();
   });
 
   it("calls a body that does not parse the caller's error", () => {

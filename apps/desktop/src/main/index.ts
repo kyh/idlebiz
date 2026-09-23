@@ -31,6 +31,7 @@ import {
   listVercelProjects,
 } from "@/main/vercel-connect";
 import { adoptShellPath } from "@/main/lib/shell-path";
+import { bootFailed, initLog } from "@/main/lib/log";
 import { exportSecretsToEnv } from "@/main/secrets";
 import {
   initStripeConnect,
@@ -287,6 +288,7 @@ const ensureWindow = (): void => {
 if (isDev) {
   app.setPath("userData", path.join(app.getPath("appData"), `${app.name} (dev)`));
 }
+initLog();
 
 // one office per machine: a second instance would run a second scheduler
 // against the same save, spending twice and racing every write
@@ -295,7 +297,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 app.on("second-instance", ensureWindow);
 
-void (async () => {
+const boot = async (): Promise<void> => {
   await app.whenReady();
   // the renderer asks for nothing a game needs: no camera, mic, location, notifications
   // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Electron callback API
@@ -345,6 +347,14 @@ void (async () => {
   });
 
   app.on("activate", ensureWindow);
+};
+
+void (async () => {
+  try {
+    await boot();
+  } catch (error) {
+    bootFailed(error);
+  }
 })();
 
 app.on("window-all-closed", () => {

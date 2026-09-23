@@ -27,6 +27,7 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
+import { report } from "@/main/lib/report";
 import type { ToolCaller } from "@/main/control-plane";
 import type {
   AgentRunner,
@@ -412,10 +413,11 @@ class AgentDriver {
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         onEvent: (e) => {
           sawOutput = true;
+          // a listener must never break the run
           try {
             onEvent(e);
-          } catch {
-            /* a listener must never break the run */
+          } catch (error) {
+            report("run.onEvent", error);
           }
         },
         onPermission: (request, turnEnded) =>

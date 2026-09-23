@@ -7,6 +7,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Budget, Task, TaskOrigin } from "@/shared/domain";
+import { RefusalError } from "@/shared/refusal";
 import type { RunResult, RunTools } from "./agents/agent-driver";
 import type { EmployeeRunner } from "./scheduler";
 
@@ -184,6 +185,30 @@ describe("draining the queue", () => {
   });
 });
 
+describe("assigning", () => {
+  it("refuses a task that cannot be claimed", () => {
+    found();
+    const task = queue("priya");
+    const drain = createScheduler(scripted().driver);
+
+    expect(() => drain.assign(task.id, "mae")).toThrow(RefusalError);
+    expect(store.getTask(task.id)?.assigneeId).toBe("priya");
+  });
+
+  it("lets a fault while queuing reach the caller", () => {
+    found();
+    const { driver } = scripted();
+    const drain = createScheduler({
+      ...driver,
+      restingRunner: () => {
+        throw new Error("disk full");
+      },
+    });
+
+    expect(() => drain.directEmployee("priya", "ship it")).toThrow("disk full");
+  });
+});
+
 const runOne = async (result: RunResult, betId: string | null = null) => {
   const company = found();
   const { driver, running } = scripted();
@@ -264,7 +289,7 @@ describe("settling a run", () => {
     try {
       running.get("priya")?.(done(0.5));
       await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
-      expect(logged).toHaveBeenCalledWith(expect.stringContaining("could not book run"));
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("book run"), expect.anything());
     } finally {
       chmodSync(dir, 0o755);
       logged.mockRestore();

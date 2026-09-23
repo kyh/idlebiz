@@ -66,9 +66,11 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   company id: `getCompany()` is null before one is founded, and everything else throws "no
   company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
   Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only
-  that a claim or lock race was lost. It refuses with the sentence the agent should read; a
-  tool turns that into its answer, IPC into the founder's note. Don't split it by entity or
-  make it async: its synchronous check-and-set is what makes the task lock correct.
+  that a claim or lock race was lost. It refuses with a `RefusalError` (`shared/refusal.ts`)
+  worded as the sentence the agent should read; a tool turns that into its answer, IPC into
+  the founder's note. Anything else thrown is a fault: answered the same way, but reported to
+  main's log. Don't split it by entity or make it async: its synchronous check-and-set is
+  what makes the task lock correct.
 - **A company tool is described once**, in `shared/tool-specs.ts`: route, body, lead-only
   refusal, doc and example. The agents' instructions are rendered from it, `main/tools.ts`
   binds each implementation to its spec, and `control-plane.ts` is only transport. A change

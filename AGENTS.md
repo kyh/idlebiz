@@ -197,6 +197,12 @@ rather than crashing boot.
   schema's output — declare the schema, never a parallel type. A handler's throw crosses as
   an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the preload rethrows bare, so the founder
   reads the store's sentence, not Electron's wrapper; frame and payload checks still throw.
+  A throw that is not a `RefusalError` (`shared/refusal.ts`) is a fault and is reported too.
+- **Main keeps a log file.** `main/lib/log.ts` sends main's console, uncaught errors and
+  crashed renderer or child processes to `main.log` under `app.getPath("logs")`
+  (`~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)` userData), never under the
+  save root, which a reset deletes. A catch that carries on past an unexpected error calls
+  `report` (`main/lib/report.ts`); a boot that throws says where the log is and exits.
 - **Everything main says happened goes through `main/activity.ts`.** `publishActivity`
   stamps, persists and fans out one `ActivityEvent` (`shared/activity.ts`, a discriminated
   union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a

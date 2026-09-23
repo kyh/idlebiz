@@ -1,5 +1,6 @@
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
+import { report } from "@/main/lib/report";
 import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
 import { readMetricsConfig } from "@/main/store/metrics-config";
 import { markAuthError } from "@/main/stripe-connect";
@@ -51,6 +52,8 @@ const now = async (): Promise<void> => {
   inFlight = true;
   try {
     await read();
+  } catch (error) {
+    report("pulse", error);
   } finally {
     inFlight = false;
   }

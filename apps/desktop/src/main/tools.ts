@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
+import { report } from "@/main/lib/report";
 import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
 import { announceBet, killBet, retireProduct, startProduct } from "@/main/company-actions";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
@@ -10,6 +11,7 @@ import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
 import type { Company, Employee, TaskOrigin } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { plural } from "@/shared/format";
+import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
@@ -38,7 +40,8 @@ type Tool = (ctx: RunContext, raw: JsonValue) => string;
  * An implementation bound to its spec, so the body it receives is the one the
  * spec parses: the lead's tools turn anyone else away, a body that does not
  * parse is the caller's error, and the store's refusals — written as the
- * sentence the agent should read — become the answer.
+ * sentence the agent should read — become the answer. A fault answers too, so
+ * the run can go on, but is reported.
  */
 const define =
   <B extends z.ZodType>(
@@ -56,6 +59,9 @@ const define =
     try {
       return run(ctx, body.data);
     } catch (error) {
+      if (!(error instanceof RefusalError)) {
+        report(`tool ${spec.path}`, error);
+      }
       return errorMessage(error);
     }
   };
@@ -113,16 +119,18 @@ const fundingFor = (
   }
   const bet = store.getBet(id);
   if (!bet || bet.companyId !== ctx.company.id) {
-    throw new Error(`No fundable bet "${id}" — read_bets lists what is open with budget left.`);
+    throw new RefusalError(
+      `No fundable bet "${id}" — read_bets lists what is open with budget left.`,
+    );
   }
   if (named === undefined && product !== undefined && product !== bet.productId) {
-    throw new Error(
+    throw new RefusalError(
       `Name a bet on ${product} with "bet":"<slug>" — read_bets lists what has room.`,
     );
   }
   const inFlight = store.runsInFlight().get(id) ?? 0;
   if (!hasRoomFor(bet, inFlight, RUN_COST_ESTIMATE_USD)) {
-    throw new Error(noRoomIn(bet, inFlight));
+    throw new RefusalError(noRoomIn(bet, inFlight));
   }
   return bet;
 };
@@ -217,7 +225,10 @@ const TOOLS = {
         title,
       });
     } catch (error) {
-      return `Couldn't hire: ${errorMessage(error)}. Release someone first or work with the team you have.`;
+      if (!(error instanceof RefusalError)) {
+        throw error;
+      }
+      return `Couldn't hire: ${error.message}. Release someone first or work with the team you have.`;
     }
     post(ctx, `🤝 hired ${hired.name} (${title})`);
     publishActivity({
