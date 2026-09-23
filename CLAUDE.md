@@ -118,7 +118,7 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 - **The walker has two rules the authored collision does not.** A seat's cell is solid
   (sitters are placed on the chair; walkers never stand in it) and open floor no body can
   probe is sealed — both in `walkGridOf`, so the scene, the gate and the builder's
-  Rebuild collision agree. At boot the scene additionally closes every reachable node
+  Seal pockets agree. At boot the scene additionally closes every reachable node
   where the founder's face would be painted over, judged from the real textures, so a
   saved layout the gate never saw still cannot hide them.
 

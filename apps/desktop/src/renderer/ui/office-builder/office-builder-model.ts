@@ -41,7 +41,7 @@ interface Rect {
 }
 
 /**
- * A placed prop being edited. `uid`/`solid` are builder-only (not serialized).
+ * A placed prop being edited. `uid` is builder-only (not serialized).
  *
  * Mirrors the game's model: the flat bands stack in list order, so only an
  * `object` carries the floor line that walkers y-sort against.
@@ -51,7 +51,6 @@ interface EditableBase {
   id: string;
   x: number;
   y: number;
-  solid: boolean;
   flipX: boolean;
   flipY: boolean;
   /** Explicit asset path (room-builder tiles); else resolved from id via the catalog. */
@@ -80,12 +79,9 @@ export interface EditableLayout {
   seats: OfficeSeat[];
   pois: OfficePoi[];
   objects: EditableObject[];
-  /** Authored grid; preserved on save, re-derived on demand. */
+  /** Authored grid, painted with the block/clear brushes: the only source of walkability. */
   collision: string[];
 }
-
-// collision footprint band (matches the layout generator)
-const FOOT = 24;
 
 const CATALOG = new Map<string, OfficeObjectAsset>(OFFICE_OBJECT_ASSETS.map((a) => [a.id, a]));
 export const ALL_OBJECT_IDS: readonly string[] = OFFICE_OBJECT_ASSETS.map((a) => a.id);
@@ -174,86 +170,20 @@ export const setLayer = (o: EditableObject, layer: OfficeLayer): EditableObject 
   if (o.layer === layer) {
     return o;
   }
-  const { uid, id, x, y, solid, flipX, flipY, path } = o;
-  const base = { flipX, flipY, id, path, solid, uid, x, y };
+  const { uid, id, x, y, flipX, flipY, path } = o;
+  const base = { flipX, flipY, id, path, uid, x, y };
   return layer === "object" ? { ...base, anchorY: anchorFor(o, y), layer } : { ...base, layer };
-};
-/** The bottom `h` pixels of the object's content: the band it stands on. */
-const baseBand = (o: Placed, h: number): Rect => {
-  const r = worldRect(o);
-  const fh = Math.min(h, r.h);
-  return { h: fh, w: r.w, x: r.x, y: r.y + r.h - fh };
-};
-/**
- * What a solid object blocks: nearly its whole content (a desk blocks its whole
- * base), with very tall sprites trimmed so a wall-mounted item mis-flagged solid
- * doesn't paint a huge column.
- */
-const footprintRect = (o: Placed): Rect =>
-  baseBand(o, Math.max(FOOT, Math.round(worldRect(o).h * 0.85)));
-
-// --- grid helpers -----------------------------------------------------------
-const paint = (
-  grid: number[][],
-  cell: number,
-  cols: number,
-  rows: number,
-  r: Rect,
-  v: number,
-): void => {
-  const c0 = Math.max(0, Math.floor(r.x / cell));
-  const r0 = Math.max(0, Math.floor(r.y / cell));
-  const c1 = Math.min(cols, Math.ceil((r.x + r.w) / cell));
-  const r1 = Math.min(rows, Math.ceil((r.y + r.h) / cell));
-  for (let rr = r0; rr < r1; rr += 1) {
-    const row = grid[rr];
-    if (!row) {
-      continue;
-    }
-    for (let cc = c0; cc < c1; cc += 1) {
-      row[cc] = v;
-    }
-  }
 };
 
 // --- load -------------------------------------------------------------------
-/**
- * An object loaded from disk is "solid" if the cells under its base are mostly
- * solid. Judged on the base alone, not the painted footprint: a hand-authored
- * grid blocks only where a tall object meets the floor.
- */
-const inferSolid = (o: OfficeObjectDef, grid: number[][], cell: number): boolean => {
-  if (o.layer !== "object" || !CATALOG.has(o.id)) {
-    return false;
-  }
-  const fp = baseBand({ ...o, flipX: o.flipX ?? false, flipY: o.flipY ?? false }, FOOT);
-  let solidCells = 0;
-  let total = 0;
-  const c0 = Math.floor(fp.x / cell);
-  const r0 = Math.floor(fp.y / cell);
-  const c1 = Math.ceil((fp.x + fp.w) / cell);
-  const r1 = Math.ceil((fp.y + fp.h) / cell);
-  for (let rr = r0; rr < r1; rr += 1) {
-    for (let cc = c0; cc < c1; cc += 1) {
-      total += 1;
-      if (grid[rr]?.[cc] === 1) {
-        solidCells += 1;
-      }
-    }
-  }
-  return total > 0 && solidCells * 2 >= total;
-};
-
 /** Build an editable layout from a parsed layout (the saved office, or the bundled default). */
 export const loadLayout = (raw: OfficeLayoutData = BUNDLED_LAYOUT): EditableLayout => {
-  const grid = raw.collision.map((row) => Array.from(row, (ch) => (ch === "1" ? 1 : 0)));
   const objects: EditableObject[] = raw.objects.map((o) => {
     const base = {
       flipX: o.flipX ?? false,
       flipY: o.flipY ?? false,
       id: o.id,
       path: o.path,
-      solid: inferSolid(o, grid, raw.cell),
       uid: crypto.randomUUID(),
       x: o.x,
       y: o.y,
@@ -279,36 +209,6 @@ export const loadLayout = (raw: OfficeLayoutData = BUNDLED_LAYOUT): EditableLayo
 };
 
 // --- serialize --------------------------------------------------------------
-/**
- * Re-derive the collision grid from the placed pieces: floor-layer tiles carve
- * walkable space, solid furniture paints back solid, and the spots the layout
- * sends someone to stand at (points of interest, the door) are carved back open.
- * Seats stay furniture — sitters are placed on the chair, walkers never stand in
- * it — and floor no body could ever probe is sealed, exactly as the walker
- * would seal it at load, so what the builder shows is what the office walks.
- */
-export const deriveCollision = (L: EditableLayout): string[] => {
-  const grid = Array.from({ length: L.rows }, () => Array.from({ length: L.cols }, () => 1));
-  for (const o of L.objects) {
-    if (o.layer === "floor") {
-      paint(grid, L.cell, L.cols, L.rows, worldRect(o), 0);
-    }
-  }
-  for (const o of L.objects) {
-    if (o.solid) {
-      paint(grid, L.cell, L.cols, L.rows, footprintRect(o), 1);
-    }
-  }
-  for (const s of [...L.pois, L.door]) {
-    const row = grid[Math.floor(s.y / L.cell)];
-    const c = Math.floor(s.x / L.cell);
-    if (row && c >= 0 && c < L.cols) {
-      row[c] = 0;
-    }
-  }
-  return sealedCollision({ ...L, collision: grid.map((row) => row.join("")) });
-};
-
 /** One object row as the game reads it, builder-only fields dropped; the canonicaliser tidies the keys. */
 const toObjectDef = (o: EditableObject): OfficeObjectDef => {
   const placed = { flipX: o.flipX, flipY: o.flipY, id: o.id, path: o.path, x: o.x, y: o.y };
@@ -357,7 +257,6 @@ export const makeObject = (
     flipY: false,
     id,
     path: opts.path,
-    solid: layer === "object" && !opts.path,
     uid: crypto.randomUUID(),
     x,
     y,
@@ -389,3 +288,10 @@ export const setCollisionCell = (
   out[r] = next;
   return out;
 };
+
+/**
+ * The authored grid with the walker's own rules written in: seat cells and open floor
+ * no body can stand on close, exactly as `walkGridOf` closes them at load. It only
+ * ever closes cells, so painted collision survives and a second run changes nothing.
+ */
+export const sealPockets = (L: EditableLayout): string[] => sealedCollision(L);

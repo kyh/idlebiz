@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { layoutIssues } from "@/shared/office-grid";
 import {
   ALL_OBJECT_IDS,
   ROOM_TILES,
   assetSrc,
   autoAnchor,
   flipObject,
+  loadLayout,
   moveObject,
+  sealPockets,
+  setCollisionCell,
   srcForObject,
+  toLayoutData,
 } from "./office-builder-model";
-import type { EditableObject } from "./office-builder-model";
+import type { EditableLayout, EditableObject } from "./office-builder-model";
 
 // The packaged app loads the renderer over file://, where a root-absolute src lands at
 // the filesystem root instead of beside index.html.
@@ -43,7 +48,6 @@ const desk = {
   flipY: false,
   id: "office-object-001",
   layer: "object",
-  solid: true,
   uid: "desk",
   x: 40,
   y: 60,
@@ -74,5 +78,37 @@ describe("a y-sorted object's floor line", () => {
   it("snaps to the content bottom only when asked", () => {
     expect(autoAnchor(desk).anchorY).toBe(60 + 96);
     expect(autoAnchor({ ...desk, flipY: true }).anchorY).toBe(60 + 14);
+  });
+});
+
+const openedCells = (before: readonly string[], after: readonly string[]): string[] =>
+  before.flatMap((row, r) =>
+    [...row].flatMap((cell, c) => (cell === "1" && after[r]?.[c] === "0" ? [`${r},${c}`] : [])),
+  );
+const paint = (L: EditableLayout, c: number, r: number, val: 0 | 1): EditableLayout => ({
+  ...L,
+  collision: setCollisionCell(L.collision, L.cols, c, r, val),
+});
+
+describe("sealing pockets", () => {
+  const shipped = loadLayout();
+
+  it("leaves the shipped office as authored, and saveable", () => {
+    const sealed = sealPockets(shipped);
+    expect(sealed).toEqual(shipped.collision);
+    expect(layoutIssues(toLayoutData({ ...shipped, collision: sealed }))).toEqual([]);
+  });
+
+  it("closes open floor walled in where no body can reach it", () => {
+    const pocketed = paint(shipped, 1, 1, 0);
+    expect(sealPockets(pocketed)).toEqual(shipped.collision);
+  });
+
+  it("keeps painted collision, never opens a cell, and settles in one pass", () => {
+    const blocked = paint(shipped, 10, 10, 1);
+    const sealed = sealPockets(blocked);
+    expect(sealed[10]?.[10]).toBe("1");
+    expect(openedCells(blocked.collision, sealed)).toEqual([]);
+    expect(sealPockets({ ...blocked, collision: sealed })).toEqual(sealed);
   });
 });

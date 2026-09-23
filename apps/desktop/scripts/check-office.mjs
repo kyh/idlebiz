@@ -146,7 +146,7 @@ const checkPockets = (layout) => {
     at,
     "Open floor nobody can reach reads as a place to go, and the nodes beside it stand\n" +
       "half inside furniture. Widen the lane to the body's 16x12, connect the room, or\n" +
-      "mark the cell solid (Rebuild collision in the builder does this).",
+      "mark the cell solid (Seal pockets in the builder does this).",
   );
 };
 

@@ -155,14 +155,6 @@ export const Inspector = ({
           Flip V
         </Toggle>
       </div>
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={obj.solid}
-          onChange={(e) => onChange({ ...obj, solid: e.currentTarget.checked })}
-        />
-        solid (blocks walking)
-      </label>
       <button type="button" onClick={onDelete} className="px-btn px-btn-danger py-1.5">
         Delete
       </button>

@@ -12,11 +12,11 @@ import {
   ALL_OBJECT_IDS,
   assetSrc,
   cloneObject,
-  deriveCollision,
   flipObject,
   loadLayout,
   moveObject,
   ROOM_TILES,
+  sealPockets,
   toLayoutData,
 } from "@/renderer/ui/office-builder/office-builder-model";
 import type {
@@ -151,7 +151,7 @@ const Toolbar = ({
   onZoomOut,
   showCollision,
   onToggleCollision,
-  onRebuildCollision,
+  onSealPockets,
   onSave,
 }: {
   tool: Tool;
@@ -163,7 +163,7 @@ const Toolbar = ({
   onZoomOut: () => void;
   showCollision: boolean;
   onToggleCollision: (pinned: boolean) => void;
-  onRebuildCollision: () => void;
+  onSealPockets: () => void;
   onSave: () => void;
 }) => (
   <header className="px-window m-2 mb-0 shrink-0">
@@ -203,11 +203,11 @@ const Toolbar = ({
       </Toggle>
       <button
         type="button"
-        onClick={onRebuildCollision}
+        onClick={onSealPockets}
         className="px-btn px-2.5 py-1.5"
-        title="Re-derive walkability from solid furniture (then Save)"
+        title="Close open floor no body can stand on (then Save)"
       >
-        Rebuild collision
+        Seal pockets
       </button>
       <span className="ml-auto flex items-center gap-2">
         <a href="#/office-assets" className="px-btn px-2.5 py-1.5">
@@ -563,9 +563,9 @@ export const OfficeBuilder = () => {
           onZoomOut={zoomOut}
           showCollision={showCollision}
           onToggleCollision={setCollisionPinned}
-          onRebuildCollision={() => {
-            commitLayout((L) => ({ ...L, collision: deriveCollision(L) }));
-            setStatus("Rebuilt collision from floor tiles + solid furniture.");
+          onSealPockets={() => {
+            commitLayout((L) => ({ ...L, collision: sealPockets(L) }));
+            setStatus("Sealed open floor no body can reach.");
             setCollisionPinned(true);
           }}
           onSave={() => {
