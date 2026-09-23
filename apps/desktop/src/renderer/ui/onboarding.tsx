@@ -558,6 +558,9 @@ export const Onboarding = () => {
   /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
   const castTeam = () => {
     setFailure(null);
+    // a retry keeps the step, so the new team's menu would open on "Search
+    // again", one Enter from another paid search
+    setCursor(0);
     setTeam({ kind: "casting" });
     setStep("team");
     const cast = async () => {

@@ -4,6 +4,9 @@ import { useCallback, useState } from "react";
  * State that starts over whenever `key` changes, without an effect: the value
  * is stored beside the key it belongs to, so a new key reads as `initial` on
  * the very first render. Setting the value it already has is a no-op.
+ *
+ * Only a set records the key, so going A → B → A with no set during B reads
+ * A's old value back. Set the value yourself where a return to A must start over.
  */
 export const useKeyedState = <K, T>(key: K, initial: T): [T, (v: T) => void] => {
   const [s, setS] = useState({ key, value: initial });
