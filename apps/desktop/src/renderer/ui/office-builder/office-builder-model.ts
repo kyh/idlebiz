@@ -314,6 +314,12 @@ export const setCollisionCell = (
   return out;
 };
 
+/** One brush step; the same doc when the cell already holds `val` or lies off the grid. */
+export const paintCell = (d: BuilderDoc, c: number, r: number, val: 0 | 1): BuilderDoc => {
+  const collision = setCollisionCell(d.layout.collision, d.layout.cols, c, r, val);
+  return collision === d.layout.collision ? d : withLayout(d, { ...d.layout, collision });
+};
+
 /**
  * The authored grid with the walker's own rules written in: seat cells and open floor
  * no body can stand on close, exactly as `walkGridOf` closes them at load. It only

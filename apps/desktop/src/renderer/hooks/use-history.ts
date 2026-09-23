@@ -2,7 +2,10 @@ import { useCallback, useRef, useState } from "react";
 
 export interface History<T> {
   present: T;
-  /** Replace without recording — the frames inside a drag or a paint stroke. */
+  /**
+   * Replace without recording — the frames inside a drag or a paint stroke; a no-op when
+   * the updater returns the same value.
+   */
   live: (updater: (t: T) => T) => void;
   /** Record the present as an undo step; the `live` frames that follow belong to it. */
   mark: () => void;
@@ -30,7 +33,12 @@ export const useHistory = <T extends object>(init: () => T, cap = 100): History<
   }, []);
 
   const live = useCallback(
-    (updater: (t: T) => T) => replace(updater(presentRef.current)),
+    (updater: (t: T) => T) => {
+      const next = updater(presentRef.current);
+      if (next !== presentRef.current) {
+        replace(next);
+      }
+    },
     [replace],
   );
 

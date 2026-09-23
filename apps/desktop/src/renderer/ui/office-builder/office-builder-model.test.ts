@@ -14,6 +14,7 @@ import {
   makeObject,
   moveObject,
   moveObjects,
+  paintCell,
   sealPockets,
   setCollisionCell,
   srcForObject,
@@ -188,6 +189,26 @@ const openedCells = (before: readonly string[], after: readonly string[]): strin
 const paint = (L: EditableLayout, c: number, r: number, val: 0 | 1): EditableLayout => ({
   ...L,
   collision: setCollisionCell(L.collision, L.cols, c, r, val),
+});
+
+describe("painting collision", () => {
+  const doc: BuilderDoc = { layout: loadLayout(), selection: ["rug"] };
+
+  it("changes the one cell and keeps the selection", () => {
+    expect(doc.layout.collision[5]?.[5]).toBe("0");
+    const painted = paintCell(doc, 5, 5, 1);
+    expect(painted.layout.collision[5]?.[5]).toBe("1");
+    expect(paintCell(painted, 5, 5, 0).layout.collision).toEqual(doc.layout.collision);
+    expect(painted.selection).toBe(doc.selection);
+  });
+
+  it("hands back the same doc over a cell that already holds the value, or off the grid", () => {
+    expect(doc.layout.collision[0]?.[0]).toBe("1");
+    expect(paintCell(doc, 0, 0, 1)).toBe(doc);
+    expect(paintCell(doc, -1, 0, 1)).toBe(doc);
+    expect(paintCell(doc, doc.layout.cols, 0, 1)).toBe(doc);
+    expect(paintCell(doc, 0, doc.layout.collision.length, 1)).toBe(doc);
+  });
 });
 
 describe("sealing pockets", () => {

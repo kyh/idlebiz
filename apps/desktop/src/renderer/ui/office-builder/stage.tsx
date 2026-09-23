@@ -10,8 +10,8 @@ import {
   flipTransform,
   makeObject,
   moveObjects,
+  paintCell,
   paintOrder,
-  setCollisionCell,
   srcForObject,
   withLayout,
 } from "@/renderer/ui/office-builder/office-builder-model";
@@ -298,12 +298,7 @@ export const Stage = ({
       edit.mark();
       const c = Math.floor(p.x / layout.cell);
       const r = Math.floor(p.y / layout.cell);
-      edit.live((d) =>
-        withLayout(d, {
-          ...d.layout,
-          collision: setCollisionCell(d.layout.collision, d.layout.cols, c, r, val),
-        }),
-      );
+      edit.live((d) => paintCell(d, c, r, val));
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
@@ -380,12 +375,7 @@ export const Stage = ({
     if (val !== null) {
       const c = Math.floor(p.x / layout.cell);
       const r = Math.floor(p.y / layout.cell);
-      edit.live((d) =>
-        withLayout(d, {
-          ...d.layout,
-          collision: setCollisionCell(d.layout.collision, d.layout.cols, c, r, val),
-        }),
-      );
+      edit.live((d) => paintCell(d, c, r, val));
       return;
     }
     const drag = dragRef.current;
@@ -398,7 +388,10 @@ export const Stage = ({
     setMarquee((m) => (m ? { ...m, x1: p.x, y1: p.y } : m));
   };
 
-  const onPointerUp = () => {
+  // pointerup too, not just lost capture: React renders pointerup at discrete priority, so a drop
+  // lands in the same frame as the --drag-x/y reset instead of flashing back for one frame.
+  // Lost capture still ends a cancel; after a pointerup it finds nothing left to end.
+  const endGesture = () => {
     paintRef.current = null;
     const drag = dragRef.current;
     if (drag) {
@@ -440,7 +433,8 @@ export const Stage = ({
       ref={stageRef}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
+      onPointerUp={endGesture}
+      onLostPointerCapture={endGesture}
       style={{
         cursor: tool === "select" ? "default" : "crosshair",
         height: layout.height,
