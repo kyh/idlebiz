@@ -411,7 +411,6 @@ export const sendFounderChat = (text: string): Promise<void> =>
 /** Founder decides on a held outward-facing command; the task resumes either way. */
 export const resolveApproval = async (taskId: string, approved: boolean): Promise<void> => {
   await bridge().resolveApproval({ approved, taskId });
-  await refresh();
 };
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
@@ -420,7 +419,6 @@ export const retryTask = async (task: Task): Promise<void> => {
     return;
   }
   await bridge().assignTask({ employeeId: task.assigneeId, taskId: task.id });
-  await refresh();
 };
 
 export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
@@ -436,7 +434,6 @@ export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
 
 export const answerQuestion = async (taskId: string, answer: string): Promise<void> => {
   await bridge().answerQuestion({ answer, taskId });
-  void refreshInBackground();
 };
 
 // ---- activity --------------------------------------------------------------

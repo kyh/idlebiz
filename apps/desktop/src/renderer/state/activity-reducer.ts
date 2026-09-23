@@ -27,25 +27,32 @@ export interface ActivityStep {
 
 const reloadFor = (e: ActivityEvent): readonly Slice[] => {
   switch (e.kind) {
-    case "metrics.pulse":
     case "autopilot.changed":
     case "budget.exhausted": {
       return ["company"];
     }
+    // the pulse writes each product's numbers and each live bet's reading too
+    case "metrics.pulse": {
+      return ["company", "products", "bets"];
+    }
     case "product.created": {
       return ["products"];
     }
+    // retiring a product dead-letters its open work
     case "product.killed": {
-      return ["products", "bets"];
+      return ["products", "bets", "tasks"];
     }
     // a bet that stops taking work dead-letters the work it had waiting
     case "bet.changed": {
       return ["bets", "tasks"];
     }
-    // an ask exists the moment it is raised, and a dead letter the moment it dies:
-    // the inbox must not wait for the run to end to agree with the office
+    // An ask exists the moment it is raised, and a dead letter the moment it dies.
+    // Every way back out (answered, approved, retried, resumed on connect) goes
+    // through the scheduler's assign, which says `status: queued`. The inbox must
+    // not wait for the run to end to agree with the office.
     case "run.ask":
-    case "task.dead": {
+    case "task.dead":
+    case "status": {
       return ["tasks"];
     }
     case "org.hired":
@@ -57,7 +64,6 @@ const reloadFor = (e: ActivityEvent): readonly Slice[] => {
     case "message":
     case "chat":
     case "ship":
-    case "status":
     case "run.start":
     case "task.retry":
     case "runner.resting": {

@@ -35,6 +35,17 @@ describe("reduceActivity", () => {
     expect(reduceActivity(held, ask).reload).toEqual(["tasks"]);
   });
 
+  it("clears a resolved ask from the inbox the moment it resumes", () => {
+    const resumed: ActivityEvent = {
+      ...stamp,
+      employeeId: "priya",
+      kind: "status",
+      message: "queued",
+      taskId: "t1",
+    };
+    expect(reduceActivity(held, resumed).reload).toEqual(["tasks"]);
+  });
+
   it("refetches only what an event moved", () => {
     const pulse: ActivityEvent = {
       ...stamp,
@@ -47,8 +58,8 @@ describe("reduceActivity", () => {
       message: "Side",
       payload: { productId: "side", reason: "dud" },
     };
-    expect(reduceActivity(held, pulse).reload).toEqual(["company"]);
-    expect(reduceActivity(held, killed).reload).toEqual(["products", "bets"]);
+    expect(reduceActivity(held, pulse).reload).toEqual(["company", "products", "bets"]);
+    expect(reduceActivity(held, killed).reload).toEqual(["products", "bets", "tasks"]);
     expect(reduceActivity(held, { ...stamp, kind: "run.start" }).reload).toEqual([]);
   });
 
