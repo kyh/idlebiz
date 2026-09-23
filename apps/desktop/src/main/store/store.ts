@@ -18,7 +18,6 @@ import {
   employeeFile,
   employeeRunStateFile,
   employeeMemoryDir,
-  employeeSessionDir,
   tasksDir,
   taskFile,
   shippedDir,
@@ -817,7 +816,6 @@ export const createEmployee = (hire: FoundingHire & { deskIndex: number }): Empl
   );
   const employee = employeeRecord(input, id);
   mkdirSync(employeeMemoryDir(input.companyId, id), { recursive: true });
-  mkdirSync(employeeSessionDir(input.companyId, id), { recursive: true });
   saveEmployee(employee);
   list.push(employee);
   return employee;
@@ -1685,7 +1683,6 @@ export const foundCompany = (input: {
     }
     for (const employee of active.employees) {
       mkdirSync(staged(employeeMemoryDir(id, employee.id)), { recursive: true });
-      mkdirSync(staged(employeeSessionDir(id, employee.id)), { recursive: true });
       atomicWrite(
         staged(employeeFile(id, employee.id)),
         serializeDoc(employeeToDoc(employee, co, active.products)),

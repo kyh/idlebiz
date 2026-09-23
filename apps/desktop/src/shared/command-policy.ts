@@ -2,8 +2,9 @@ import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { lexFlat, lexLine } from "./shell-lexer";
 import type { Command, Words } from "./shell-lexer";
 
-// Applied to ACP permission requests from both runners. Unmatched commands run;
-// the CLIs' own safeguards still apply. Persist rule ids so approval cards can explain them.
+// IdleBiz answers every permission ask both runners raise, so an unmatched command runs
+// with the founder's privileges: the CLIs' own sandboxes do not stand behind it. Persist
+// rule ids so approval cards can explain them.
 // A command line is split as bash would split it and seen through every wrapper that
 // runs another command, so a rule reads a program's own words and never the text of
 // a quoted argument. Heredoc text is data unless a shell or `source` reads it, or a
@@ -25,7 +26,14 @@ const RULE_IDS = [
 export type RuleId = (typeof RULE_IDS)[number];
 
 interface CommandRule {
-  id: RuleId | "browser-act" | "browser-unseen" | "external-tool" | "sandbox-widen";
+  id:
+    | RuleId
+    | "browser-act"
+    | "browser-unseen"
+    | "external-tool"
+    | "sandbox-widen"
+    | "save-edit"
+    | "unknown-ask";
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
 }
@@ -1044,6 +1052,18 @@ const SANDBOX_RULE = {
   id: "sandbox-widen",
 } as const satisfies CommandRule;
 
+/** Never leased: the save is what IdleBiz reads back as the company's truth. */
+const SAVE_EDIT_RULE = {
+  describe:
+    "Edit the company's save files directly — tasks, bets, approvals, teammates' instructions.",
+  id: "save-edit",
+} as const satisfies CommandRule;
+
+const UNKNOWN_RULE = {
+  describe: "A tool call IdleBiz could not recognise — one run of exactly this.",
+  id: "unknown-ask",
+} as const satisfies CommandRule;
+
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
 const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
 
@@ -1325,8 +1345,9 @@ export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Co
 
 /** What the approval card says about a held command, by the rule that held it. */
 export const describeRule = (id: string): string =>
-  [...RULES, ...LEASE_RULES, BROWSER_UNSEEN_RULE, SANDBOX_RULE].find((rule) => rule.id === id)
-    ?.describe ?? `Saved rule "${id}" is unavailable in this version.`;
+  [...RULES, ...LEASE_RULES, BROWSER_UNSEEN_RULE, SANDBOX_RULE, SAVE_EDIT_RULE, UNKNOWN_RULE].find(
+    (rule) => rule.id === id,
+  )?.describe ?? `Saved rule "${id}" is unavailable in this version.`;
 
 export const classifyCommand = (command: string): CommandVerdict => {
   const { pipelines } = pipelinesOf(command);
@@ -1358,11 +1379,64 @@ export interface Hold {
   leasable: boolean;
 }
 
-/** The one judgement every tool call passes through; null lets it run. `leases` is what this run was already signed for. */
+/** Where a run may write without asking. Absolute paths. */
+export interface Confinement {
+  /** The run's working directory: a relative path is read from here. */
+  cwd: string;
+  /** Its cwd and every directory the run was granted. */
+  writable: readonly string[];
+  /** The save root: tasks, bets, approvals and instructions IdleBiz reads back as the company's truth. */
+  save: string;
+}
+
+/** A path as the OS reads it from `cwd`, POSIX since the app ships for macOS only. `~` stays as named: no root is under a home this cannot see. */
+const resolvePath = (cwd: string, file: string): string => {
+  if (file === "~" || file.startsWith("~/")) {
+    return file;
+  }
+  const parts: string[] = [];
+  for (const part of (file.startsWith("/") ? file : `${cwd}/${file}`).split("/")) {
+    if (part === "..") {
+      parts.pop();
+    } else if (part !== "" && part !== ".") {
+      parts.push(part);
+    }
+  }
+  return `/${parts.join("/")}`;
+};
+
+const within = (file: string, root: string): boolean =>
+  file === root || file.startsWith(`${root}/`);
+
+/** One line, so the key reads back the same from the task's saved ask. */
+const oneLine = (text: string): string => text.replaceAll(/\s+/gu, " ").trim();
+
+const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
+  if (paths.length === 0) {
+    // codex asks for a patch only when it leaves its writable roots, so one that names no file is outside
+    return { key: "edit: files nothing named", leasable: false, rule: "write-outside" };
+  }
+  const files = paths.map((file) => resolvePath(room.cwd, file));
+  const loose = files.filter((file) => !room.writable.some((root) => within(file, root)));
+  if (loose.length === 0) {
+    return null;
+  }
+  return {
+    key: oneLine(`edit: ${files.join(", ")}`),
+    leasable: false,
+    rule: loose.some((file) => within(file, room.save)) ? SAVE_EDIT_RULE.id : "write-outside",
+  };
+};
+
+/**
+ * The one judgement every tool call passes through; null lets it run. `leases` is
+ * what this run was already signed for, `confinement` where it may write.
+ */
 export const holdFor = async (
   tool: ToolAsk,
   leases: ReadonlySet<string>,
   liveUrl: LiveUrl,
+  confinement: Confinement,
 ): Promise<Hold | null> => {
   if (tool.kind === "mcp") {
     // a server nothing can name is signed for call by call: a lease on "unknown" would cover every such server
@@ -1376,6 +1450,22 @@ export const holdFor = async (
       leasable: false,
       rule: SANDBOX_RULE.id,
     };
+  }
+  if (tool.kind === "edit") {
+    return editHold(tool.paths, confinement);
+  }
+  if (tool.kind === "network") {
+    // the command behind it goes unseen, so nothing tells a read from a send
+    const key = `network: reach ${tool.host ?? "a host nobody named"}`;
+    return { key, leasable: false, rule: "http-write" };
+  }
+  if (tool.kind === "fetch") {
+    // a read, as a bare `curl <url>` is: the shell rules hold only what sends
+    return null;
+  }
+  if (tool.kind === "unknown") {
+    const key = oneLine(`ask: ${tool.title || "a tool call nothing named"}`);
+    return { key, leasable: false, rule: UNKNOWN_RULE.id };
   }
   // Judged as sent: normalizing folds the newlines that separate commands into spaces.
   const key = normalizeCommand(tool.command);

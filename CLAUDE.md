@@ -101,8 +101,13 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   leased for the rest of the run; a page or a server nothing can name never is. codex asking
   to widen its own sandbox is held every time, never leased: once widened, nothing else in
   the run asks. A signature only ever picks the runner's one-time option, never an "always"
-  one. Both runners' wire formats end in `packages/agent-driver/src/tool-ask.ts`; the policy
-  only ever sees a `ToolAsk`.
+  one. An edit by the agent's own edit tool (claude's Write/Edit, codex's patch) outside a
+  run's own dirs (its working directory, memory folder, the shared workspace, the tool cache)
+  is held, under `save-edit` when it lands in the save; a shell write is not judged by path,
+  so `cp x ../approvals.json` still runs. A web read by the agent's own tool runs, as a bare
+  `curl` does; an ask IdleBiz cannot recognise is held once, exactly, and so is a codex
+  `execute` approval that names no command. Both runners' wire formats end in
+  `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
 
 ## Two traps that fail silently
 

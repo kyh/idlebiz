@@ -9,7 +9,6 @@ import { mkdirSync } from "node:fs";
 //     agents/<slug>/        one folder per employee
 //       AGENTS.md           the agent's canonical definition, injected into every run
 //       memory/             the agent's own scratch memory
-//       sessions/           the agent's own session continuity
 //       run-state.json      what a run leaves for the next: session to resume and what it was told, the real numbers as it ended, the last ship
 //     tasks/<slug>/TASK.md  open work
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log), and asks the founder answered
@@ -60,7 +59,7 @@ export const agentsDir = (companySlug: string): string =>
 /** Released employees are archived here (package preserved, never deleted). */
 export const alumniDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "alumni");
-/** Per-employee package dir (AGENTS.md lives here); granted to the agent as a writable root. */
+/** Per-employee package dir (AGENTS.md lives here). */
 export const employeeAgentDir = (companySlug: string, employeeSlug: string): string =>
   path.join(agentsDir(companySlug), employeeSlug);
 export const employeeFile = (companySlug: string, employeeSlug: string): string =>
@@ -69,10 +68,9 @@ export const employeeFile = (companySlug: string, employeeSlug: string): string 
  *  Beside AGENTS.md, not in it, so the instructions only change when the instructions do. */
 export const employeeRunStateFile = (companySlug: string, employeeSlug: string): string =>
   path.join(employeeAgentDir(companySlug, employeeSlug), "run-state.json");
+/** The agent's own notes; granted to it as a writable root. */
 export const employeeMemoryDir = (companySlug: string, employeeSlug: string): string =>
   path.join(employeeAgentDir(companySlug, employeeSlug), "memory");
-export const employeeSessionDir = (companySlug: string, employeeSlug: string): string =>
-  path.join(employeeAgentDir(companySlug, employeeSlug), "sessions");
 
 export const tasksDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "tasks");

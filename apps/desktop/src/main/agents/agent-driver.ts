@@ -19,6 +19,7 @@ import { addUsage } from "@repo/agent-driver/events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -36,9 +37,9 @@ import type {
   RunOutcome,
 } from "@/shared/domain";
 import * as store from "@/main/store/store";
-import { ROOT_DIR, employeeAgentDir } from "@/main/paths";
+import { ROOT_DIR, employeeMemoryDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
-import type { LiveUrl } from "@/shared/command-policy";
+import type { Confinement, LiveUrl } from "@/shared/command-policy";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
@@ -96,10 +97,11 @@ export const decidePermission = async (
   task: { companyId: string; id: string },
   request: PermissionRequest,
   leases: Set<string>,
+  confinement: Confinement,
   hold: (ask: BlockedAsk) => void,
   signal: AbortSignal,
 ): Promise<PermissionDecision> => {
-  const held = await holdFor(request.tool, leases, liveBrowserUrl);
+  const held = await holdFor(request.tool, leases, liveBrowserUrl, confinement);
   // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
   if (signal.aborted) {
     return { allow: false };
@@ -375,8 +377,16 @@ class AgentDriver {
       // the product's workspace is the cwd; the company workspace stays reachable
       // for what is shared across products
       const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
+      const memory = employeeMemoryDir(company.id, emp.id);
+      mkdirSync(memory, { recursive: true });
+      const addDirs = [...shared, memory, TOOL_CACHE_DIR];
+      const confinement = {
+        cwd: run.workspace,
+        save: ROOT_DIR,
+        writable: [run.workspace, ...addDirs],
+      };
       const res = await runAcpTurn({
-        addDirs: [...shared, employeeAgentDir(company.id, emp.id), TOOL_CACHE_DIR],
+        addDirs,
         agent: acpAgentFor(emp.runner),
         cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV },
@@ -396,6 +406,7 @@ class AgentDriver {
             { companyId: company.id, id: run.taskId },
             request,
             leases,
+            confinement,
             tools.asks.raise,
             turnEnded,
           ),

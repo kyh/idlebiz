@@ -135,7 +135,7 @@ export interface AcpTurnOptions {
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
   resumeSessionId?: string;
-  /** Extra dirs the agent may read/write (e.g. its own agent package dir). */
+  /** Extra dirs the agent may read/write (e.g. its own memory folder). */
   addDirs?: string[];
   /** Run-scoped env additions (control-plane URL + token, secrets). */
   env?: Record<string, string>;
@@ -434,6 +434,8 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           description: described.success ? described.data.description : undefined,
           kind: toolCall.kind ?? undefined,
           tool: toolAskOf({
+            kind: toolCall.kind,
+            locations: toolCall.locations,
             meta: ctx.params._meta,
             rawInput: toolCall.rawInput,
             title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),

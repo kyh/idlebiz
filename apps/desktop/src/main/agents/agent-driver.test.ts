@@ -111,29 +111,34 @@ describe("memoryAfter", () => {
   });
 });
 
+const found = () =>
+  store.foundCompany({
+    budget: { mode: "infinite" },
+    businessType: "software",
+    founderName: "Kai",
+    founderSpriteSeed: "seed",
+    hires: [
+      {
+        name: "Mae",
+        persona: "ships",
+        role: "engineer",
+        runner: "claude",
+        spriteSeed: "Mae",
+        title: "General Manager",
+      },
+    ],
+    mission: "ship",
+    name: "Acme",
+  });
+
 describe("decidePermission", () => {
   const push = { tool: { command: "git push", kind: "shell" } } as const;
+  const workspace = path.join(root, "acme", "workspace");
+  const room = { cwd: workspace, save: root, writable: [workspace] };
 
   /** A company whose founder signed for one `git push` on task "deploy". */
   const signedFor = () => {
-    const company = store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "software",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [
-        {
-          name: "Mae",
-          persona: "ships",
-          role: "engineer",
-          runner: "claude",
-          spriteSeed: "Mae",
-          title: "General Manager",
-        },
-      ],
-      mission: "ship",
-      name: "Acme",
-    });
+    const company = found();
     store.grantApproval("deploy", "git push");
     const asked: BlockedAsk[] = [];
     const decide = (signal: AbortSignal) =>
@@ -141,6 +146,7 @@ describe("decidePermission", () => {
         { companyId: company.id, id: "deploy" },
         push,
         new Set(),
+        room,
         (ask) => asked.push(ask),
         signal,
       );
@@ -152,6 +158,28 @@ describe("decidePermission", () => {
     expect(await decide(new AbortController().signal)).toEqual({ allow: true });
     expect(store.consumeApproval("deploy", "git push")).toBe(false);
     expect(asked).toEqual([]);
+  });
+
+  it("asks the founder before a run edits the save behind the store", async () => {
+    const company = found();
+    const asked: BlockedAsk[] = [];
+    const request = { tool: { kind: "edit", paths: ["../approvals.json"] } } as const;
+    const decision = await decidePermission(
+      { companyId: company.id, id: "deploy" },
+      request,
+      new Set(),
+      room,
+      (ask) => asked.push(ask),
+      new AbortController().signal,
+    );
+    expect(decision).toEqual({ allow: false });
+    expect(asked).toEqual([
+      {
+        command: `edit: ${path.join(root, "acme", "approvals.json")}`,
+        rule: "save-edit",
+        type: "approval",
+      },
+    ]);
   });
 
   it("neither spends the sign-off nor asks the founder for a turn that has ended", async () => {

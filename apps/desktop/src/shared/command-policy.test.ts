@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyCommand, describeRule, holdFor, normalizeCommand } from "./command-policy";
-import type { LiveUrl, RuleId } from "./command-policy";
+import type { Confinement, LiveUrl, RuleId } from "./command-policy";
 
 const MUST_ASK = {
   deploy: [
@@ -455,6 +455,8 @@ describe("describeRule", () => {
     expect(describeRule("git-push")).toBe("Push commits to a remote repository.");
     expect(describeRule("browser-unseen")).toContain("one run of exactly this command");
     expect(describeRule("sandbox-widen")).toContain("until the run ends");
+    expect(describeRule("save-edit")).toContain("save files");
+    expect(describeRule("unknown-ask")).toContain("one run of exactly this");
     expect(describeRule("retired-rule")).toBe(
       'Saved rule "retired-rule" is unavailable in this version.',
     );
@@ -469,9 +471,19 @@ const at =
 const shell = (command: string) => ({ command, kind: "shell" }) as const;
 const NONE: ReadonlySet<string> = new Set();
 
+const SAVE = "/Users/me/.idlebiz";
+const WORKSPACE = `${SAVE}/acme/workspace`;
+const MEMORY = `${SAVE}/acme/agents/mae/memory`;
+const ROOM: Confinement = {
+  cwd: WORKSPACE,
+  save: SAVE,
+  writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],
+};
+const edit = (...paths: string[]) => ({ kind: "edit", paths }) as const;
+
 describe("holdFor", () => {
   it("holds an outward-facing command for one run of exactly it", async () => {
-    expect(await holdFor(shell("git push origin main"), NONE, at({}))).toEqual({
+    expect(await holdFor(shell("git push origin main"), NONE, at({}), ROOM)).toEqual({
       key: "git push origin main",
       leasable: false,
       rule: "git-push",
@@ -479,7 +491,7 @@ describe("holdFor", () => {
   });
 
   it("judges every line of a multi-line command, keyed as the founder reads it", async () => {
-    expect(await holdFor(shell("npm test\ngit push origin main"), NONE, at({}))).toEqual({
+    expect(await holdFor(shell("npm test\ngit push origin main"), NONE, at({}), ROOM)).toEqual({
       key: "npm test git push origin main",
       leasable: false,
       rule: "git-push",
@@ -488,14 +500,14 @@ describe("holdFor", () => {
 
   it("finds a browser act behind a wrapper", async () => {
     const live = at({ "": "https://news.example.com/submit" });
-    expect(await holdFor(shell("npx agent-browser click @e5"), NONE, live)).toMatchObject({
+    expect(await holdFor(shell("npx agent-browser click @e5"), NONE, live, ROOM)).toMatchObject({
       key: "agent-browser: act on news.example.com",
     });
   });
 
   it("lets a run act on its own localhost build", async () => {
     const live = at({ "": "http://localhost:5173/settings" });
-    expect(await holdFor(shell("agent-browser click @e3"), NONE, live)).toBeNull();
+    expect(await holdFor(shell("agent-browser click @e3"), NONE, live, ROOM)).toBeNull();
   });
 
   it("lets a run read anywhere", async () => {
@@ -505,44 +517,46 @@ describe("holdFor", () => {
       "agent-browser snapshot",
       "agent-browser get text @e1",
     ]) {
-      expect(await holdFor(shell(command), NONE, live)).toBeNull();
+      expect(await holdFor(shell(command), NONE, live, ROOM)).toBeNull();
     }
   });
 
   it("holds an act on a remote site until the founder leases it", async () => {
     const live = at({ "": "https://news.example.com/submit" });
-    const hold = await holdFor(shell('agent-browser fill @e2 "Show: our app"'), NONE, live);
+    const hold = await holdFor(shell('agent-browser fill @e2 "Show: our app"'), NONE, live, ROOM);
     expect(hold).toEqual({
       key: "agent-browser: act on news.example.com",
       leasable: true,
       rule: "browser-act",
     });
     const leased = new Set([hold?.key ?? ""]);
-    expect(await holdFor(shell("agent-browser click @e5"), leased, live)).toBeNull();
+    expect(await holdFor(shell("agent-browser click @e5"), leased, live, ROOM)).toBeNull();
   });
 
   it("judges by where the browser is, not where the run last pointed it", async () => {
     const wandered = at({ "": "https://forum.example.com/new" });
-    const hold = await holdFor(shell("agent-browser type @e1 hello"), NONE, wandered);
+    const hold = await holdFor(shell("agent-browser type @e1 hello"), NONE, wandered, ROOM);
     expect(hold?.key).toBe("agent-browser: act on forum.example.com");
   });
 
   it("does not take a lookalike host for the team's own", async () => {
     const live = at({ "": "http://localhost.evil.example/" });
-    expect(await holdFor(shell("agent-browser click @e1"), NONE, live)).not.toBeNull();
+    expect(await holdFor(shell("agent-browser click @e1"), NONE, live, ROOM)).not.toBeNull();
   });
 
   it("tracks sessions apart and follows a chained command", async () => {
     const live = at({ mara: "http://127.0.0.1:3000" });
     const chained =
       "agent-browser --session sam open https://forum.example.com && agent-browser --session sam click @e1";
-    const hold = await holdFor(shell(chained), NONE, live);
+    const hold = await holdFor(shell(chained), NONE, live, ROOM);
     expect(hold?.key).toBe("agent-browser: act on forum.example.com");
-    expect(await holdFor(shell("agent-browser --session mara click @e1"), NONE, live)).toBeNull();
+    expect(
+      await holdFor(shell("agent-browser --session mara click @e1"), NONE, live, ROOM),
+    ).toBeNull();
   });
 
   it("holds an act on a page nobody could read for exactly that command", async () => {
-    const hold = await holdFor(shell("agent-browser press Enter"), NONE, at({}));
+    const hold = await holdFor(shell("agent-browser press Enter"), NONE, at({}), ROOM);
     expect(hold).toEqual({
       key: "agent-browser press Enter",
       leasable: false,
@@ -553,13 +567,13 @@ describe("holdFor", () => {
   it("lets the documented fill-then-submit chain run on the team's own build", async () => {
     const live = at({ "": "http://localhost:5173/signup" });
     const chain = "agent-browser fill @e1 a && agent-browser fill @e2 b && agent-browser click @e3";
-    expect(await holdFor(shell(chain), NONE, live)).toBeNull();
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toBeNull();
   });
 
   it("holds an act chained after a step that can navigate, for exactly that command", async () => {
     const chain =
       "agent-browser open http://localhost:3000 && agent-browser click @e1 && agent-browser fill @e2 x";
-    expect(await holdFor(shell(chain), NONE, at({}))).toEqual({
+    expect(await holdFor(shell(chain), NONE, at({}), ROOM)).toEqual({
       key: chain,
       leasable: false,
       rule: "browser-unseen",
@@ -570,14 +584,16 @@ describe("holdFor", () => {
     const live = at({ "": "https://news.example.com/submit" });
     const leased = new Set(["agent-browser: act on news.example.com"]);
     const chain = "agent-browser click @e5 && agent-browser fill @e6 x";
-    expect(await holdFor(shell(chain), leased, live)).toMatchObject({ rule: "browser-unseen" });
+    expect(await holdFor(shell(chain), leased, live, ROOM)).toMatchObject({
+      rule: "browser-unseen",
+    });
   });
 
   it("knows the page again once the chain opens one", async () => {
     const live = at({ "": "http://localhost:3000" });
     const chain =
       "agent-browser click @e1 && agent-browser open http://localhost:3000/x && agent-browser fill @e2 y";
-    expect(await holdFor(shell(chain), NONE, live)).toBeNull();
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toBeNull();
   });
 
   it.each([
@@ -589,19 +605,19 @@ describe("holdFor", () => {
     `agent-browser wait --fn '(location.assign("/next"), true)' && agent-browser fill @e1 x`,
   ])("loses the page after a step that moves it: %s", async (chain) => {
     const live = at({ "": "http://localhost:3000" });
-    expect(await holdFor(shell(chain), NONE, live)).toMatchObject({ rule: "browser-unseen" });
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toMatchObject({ rule: "browser-unseen" });
   });
 
   it("reads a quoted argument as text, never as a verb", async () => {
     const live = at({ "": "http://localhost:3000" });
     const chain = 'agent-browser fill @e2 "please click here" && agent-browser fill @e3 x';
-    expect(await holdFor(shell(chain), NONE, live)).toBeNull();
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toBeNull();
   });
 
   it("follows an open by any of its names", async () => {
     const live = at({ "": "http://localhost:3000" });
     const chain = "agent-browser goto https://forum.example.com && agent-browser click @e1";
-    expect(await holdFor(shell(chain), NONE, live)).toMatchObject({
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toMatchObject({
       key: "agent-browser: act on forum.example.com",
     });
   });
@@ -614,7 +630,7 @@ describe("holdFor", () => {
     "agent-browser auth login github",
   ])("holds steps the command does not show, even at home: %s", async (command) => {
     const live = at({ "": "http://localhost:3000" });
-    expect(await holdFor(shell(command), NONE, live)).toEqual({
+    expect(await holdFor(shell(command), NONE, live, ROOM)).toEqual({
       key: command,
       leasable: false,
       rule: "browser-unseen",
@@ -629,7 +645,7 @@ describe("holdFor", () => {
     'agent-browser fill @e2 "we open sourced it"',
   ])("holds every act on a remote page: %s", async (command) => {
     const live = at({ "": "https://news.example.com/submit" });
-    expect(await holdFor(shell(command), NONE, live)).toMatchObject({
+    expect(await holdFor(shell(command), NONE, live, ROOM)).toMatchObject({
       key: "agent-browser: act on news.example.com",
     });
   });
@@ -649,7 +665,7 @@ describe("holdFor", () => {
     "agent-browser click @e1 --session=home",
   ])("holds any verb but a page read where agent-browser reads it: %s", async (command) => {
     const live = at({ "": "https://example.com", home: "http://localhost:3000" });
-    expect(await holdFor(shell(command), NONE, live)).toEqual({
+    expect(await holdFor(shell(command), NONE, live, ROOM)).toEqual({
       key: "agent-browser: act on example.com",
       leasable: true,
       rule: "browser-act",
@@ -669,7 +685,7 @@ describe("holdFor", () => {
     "agent-browser --namespace n snapshot",
   ])("lets page reads through on a remote page: %s", async (command) => {
     const live = at({ "": "https://example.com", a: "https://example.com" });
-    expect(await holdFor(shell(command), NONE, live)).toBeNull();
+    expect(await holdFor(shell(command), NONE, live, ROOM)).toBeNull();
   });
 
   it.each([
@@ -694,7 +710,7 @@ describe("holdFor", () => {
     "agent-browser --namespace n open http://localhost:3000 && agent-browser --namespace n click @e1",
   ])("holds a step nobody can read first, even at home: %s", async (command) => {
     const live = at({ "": "http://localhost:3000", default: "http://localhost:3000" });
-    expect(await holdFor(shell(command), NONE, live)).toEqual({
+    expect(await holdFor(shell(command), NONE, live, ROOM)).toEqual({
       key: command,
       leasable: false,
       rule: "browser-unseen",
@@ -705,24 +721,24 @@ describe("holdFor", () => {
     const live = at({ "": "https://example.com" });
     const chain =
       "agent-browser --namespace n open http://localhost:3000 && agent-browser click @e1";
-    expect(await holdFor(shell(chain), NONE, live)).toMatchObject({ rule: "browser-unseen" });
+    expect(await holdFor(shell(chain), NONE, live, ROOM)).toMatchObject({ rule: "browser-unseen" });
   });
 
   it("keeps the browser it has when auto-connect is switched off", async () => {
     const live = at({ "": "http://localhost:3000" });
     const command = "agent-browser --auto-connect false click @e1";
-    expect(await holdFor(shell(command), NONE, live)).toBeNull();
+    expect(await holdFor(shell(command), NONE, live, ROOM)).toBeNull();
   });
 
   it("leases the founder's own MCP server to the run once signed", async () => {
     const tool = { kind: "mcp", server: "gmail" } as const;
-    const hold = await holdFor(tool, NONE, at({}));
+    const hold = await holdFor(tool, NONE, at({}), ROOM);
     expect(hold).toEqual({ key: "mcp: use gmail", leasable: true, rule: "external-tool" });
-    expect(await holdFor(tool, new Set(["mcp: use gmail"]), at({}))).toBeNull();
+    expect(await holdFor(tool, new Set(["mcp: use gmail"]), at({}), ROOM)).toBeNull();
   });
 
   it("never leases a server nothing could name", async () => {
-    const hold = await holdFor({ kind: "mcp", server: null }, NONE, at({}));
+    const hold = await holdFor({ kind: "mcp", server: null }, NONE, at({}), ROOM);
     expect(hold?.leasable).toBe(false);
   });
 
@@ -733,12 +749,79 @@ describe("holdFor", () => {
       leasable: false,
       rule: "sandbox-widen",
     };
-    expect(await holdFor(tool, NONE, at({}))).toEqual(hold);
-    expect(await holdFor(tool, new Set([hold.key]), at({}))).toEqual(hold);
+    expect(await holdFor(tool, NONE, at({}), ROOM)).toEqual(hold);
+    expect(await holdFor(tool, new Set([hold.key]), at({}), ROOM)).toEqual(hold);
+  });
+
+  it.each([
+    "../approvals.json",
+    "../bets/b/BET.md",
+    "../agents/x/AGENTS.md",
+    "../agents/mae/AGENTS.md",
+  ])("holds an edit to the save the run was not granted: %s", async (file) => {
+    expect(await holdFor(edit("src/app.ts", file), NONE, at({}), ROOM)).toEqual({
+      key: `edit: ${WORKSPACE}/src/app.ts, ${SAVE}/acme/${file.slice(3)}`,
+      leasable: false,
+      rule: "save-edit",
+    });
+  });
+
+  it("holds an edit outside the save and the run's dirs as a write outside", async () => {
+    expect(await holdFor(edit("~/.zshrc"), NONE, at({}), ROOM)).toEqual({
+      key: "edit: ~/.zshrc",
+      leasable: false,
+      rule: "write-outside",
+    });
+    expect(await holdFor(edit("../../../../Library/x.plist"), NONE, at({}), ROOM)).toMatchObject({
+      key: "edit: /Users/Library/x.plist",
+      rule: "write-outside",
+    });
+  });
+
+  it("lets an edit inside the run's own dirs through", async () => {
+    const tool = edit("src/app.ts", `${MEMORY}/notes.md`, `${WORKSPACE}/./docs/../README.md`);
+    expect(await holdFor(tool, NONE, at({}), ROOM)).toBeNull();
+  });
+
+  it("does not take a sibling that shares a root's prefix for the root", async () => {
+    const hold = await holdFor(edit(`${WORKSPACE}-old/x.ts`), NONE, at({}), ROOM);
+    expect(hold?.rule).toBe("save-edit");
+  });
+
+  it("holds an edit that names no file: codex asks only past its roots", async () => {
+    expect(await holdFor(edit(), NONE, at({}), ROOM)).toEqual({
+      key: "edit: files nothing named",
+      leasable: false,
+      rule: "write-outside",
+    });
+  });
+
+  it("holds a host reached by a command nobody saw, naming the host", async () => {
+    const hold = { key: "network: reach x.com", leasable: false, rule: "http-write" };
+    const tool = { host: "x.com", kind: "network" } as const;
+    expect(await holdFor(tool, NONE, at({}), ROOM)).toEqual(hold);
+    expect(await holdFor(tool, new Set([hold.key]), at({}), ROOM)).toEqual(hold);
+    expect(await holdFor({ host: null, kind: "network" }, NONE, at({}), ROOM)).toMatchObject({
+      key: "network: reach a host nobody named",
+    });
+  });
+
+  it("lets the agent's own tool read the web, as a bare curl may", async () => {
+    expect(await holdFor({ kind: "fetch" }, NONE, at({}), ROOM)).toBeNull();
+  });
+
+  it("holds an ask it cannot recognise for one run of exactly it", async () => {
+    const hold = { key: "ask: NotebookEdit a.ipynb", leasable: false, rule: "unknown-ask" };
+    const tool = { kind: "unknown", title: " NotebookEdit\n a.ipynb " } as const;
+    expect(await holdFor(tool, NONE, at({}), ROOM)).toEqual(hold);
+    expect(await holdFor(tool, new Set([hold.key]), at({}), ROOM)).toEqual(hold);
+    expect(await holdFor({ kind: "unknown", title: "" }, NONE, at({}), ROOM)).toMatchObject({
+      key: "ask: a tool call nothing named",
+    });
   });
 
   it("names a widening it cannot itemise", async () => {
-    const hold = await holdFor({ kind: "sandbox", network: false, paths: [] }, NONE, at({}));
+    const hold = await holdFor({ kind: "sandbox", network: false, paths: [] }, NONE, at({}), ROOM);
     expect(hold?.key).toBe("sandbox: widen to more access");
   });
 });
