@@ -139,6 +139,7 @@ describe("normalizeCommand", () => {
 describe("describeRule", () => {
   it("describes current rules and identifies unavailable saved rules", () => {
     expect(describeRule("git-push")).toBe("Push commits to a remote repository.");
+    expect(describeRule("browser-unseen")).toContain("one run of exactly this command");
     expect(describeRule("retired-rule")).toBe(
       'Saved rule "retired-rule" is unavailable in this version.',
     );
@@ -210,9 +211,90 @@ describe("holdFor", () => {
     expect(await holdFor(shell("agent-browser --session mara click @e1"), NONE, live)).toBeNull();
   });
 
-  it("holds an act on a page nobody could read", async () => {
+  it("holds an act on a page nobody could read for exactly that command", async () => {
     const hold = await holdFor(shell("agent-browser press Enter"), NONE, at({}));
-    expect(hold?.key).toBe("agent-browser: act on a page nobody could read");
+    expect(hold).toEqual({
+      key: "agent-browser press Enter",
+      leasable: false,
+      rule: "browser-unseen",
+    });
+  });
+
+  it("lets the documented fill-then-submit chain run on the team's own build", async () => {
+    const live = at({ "": "http://localhost:5173/signup" });
+    const chain = "agent-browser fill @e1 a && agent-browser fill @e2 b && agent-browser click @e3";
+    expect(await holdFor(shell(chain), NONE, live)).toBeNull();
+  });
+
+  it("holds an act chained after a step that can navigate, for exactly that command", async () => {
+    const chain =
+      "agent-browser open http://localhost:3000 && agent-browser click @e1 && agent-browser fill @e2 x";
+    expect(await holdFor(shell(chain), NONE, at({}))).toEqual({
+      key: chain,
+      leasable: false,
+      rule: "browser-unseen",
+    });
+  });
+
+  it("does not stretch a site's lease to wherever a click lands", async () => {
+    const live = at({ "": "https://news.example.com/submit" });
+    const leased = new Set(["agent-browser: act on news.example.com"]);
+    const chain = "agent-browser click @e5 && agent-browser fill @e6 x";
+    expect(await holdFor(shell(chain), leased, live)).toMatchObject({ rule: "browser-unseen" });
+  });
+
+  it("knows the page again once the chain opens one", async () => {
+    const live = at({ "": "http://localhost:3000" });
+    const chain =
+      "agent-browser click @e1 && agent-browser open http://localhost:3000/x && agent-browser fill @e2 y";
+    expect(await holdFor(shell(chain), NONE, live)).toBeNull();
+  });
+
+  it.each([
+    "agent-browser back && agent-browser click @e1",
+    "agent-browser tab 2 && agent-browser fill @e1 x",
+    "agent-browser frame @e3 && agent-browser fill @e1 x",
+    "agent-browser press Enter && agent-browser type @e1 x",
+    'agent-browser fill @e2 "please click here" && agent-browser click @e3',
+  ])("loses the page after a step that moves it: %s", async (chain) => {
+    const live = at({ "": "http://localhost:3000" });
+    expect(await holdFor(shell(chain), NONE, live)).toMatchObject({ rule: "browser-unseen" });
+  });
+
+  it("follows an open by any of its names", async () => {
+    const live = at({ "": "http://localhost:3000" });
+    const chain = "agent-browser goto https://forum.example.com && agent-browser click @e1";
+    expect(await holdFor(shell(chain), NONE, live)).toMatchObject({
+      key: "agent-browser: act on forum.example.com",
+    });
+  });
+
+  it.each([
+    'agent-browser batch "click @e3"',
+    'agent-browser batch "open https://example.com" "snapshot"',
+    "printf 'click @e3' | agent-browser batch",
+    'agent-browser chat "submit the form"',
+    "agent-browser auth login github",
+  ])("holds steps the command does not show, even at home: %s", async (command) => {
+    const live = at({ "": "http://localhost:3000" });
+    expect(await holdFor(shell(command), NONE, live)).toEqual({
+      key: command,
+      leasable: false,
+      rule: "browser-unseen",
+    });
+  });
+
+  it.each([
+    "agent-browser download @e3 ./report.csv",
+    "agent-browser key Enter",
+    "agent-browser dialog accept",
+    "agent-browser webmcp invoke submit_post",
+    'agent-browser fill @e2 "we open sourced it"',
+  ])("holds every act on a remote page: %s", async (command) => {
+    const live = at({ "": "https://news.example.com/submit" });
+    expect(await holdFor(shell(command), NONE, live)).toMatchObject({
+      key: "agent-browser: act on news.example.com",
+    });
   });
 
   it("leases the founder's own MCP server to the run once signed", async () => {

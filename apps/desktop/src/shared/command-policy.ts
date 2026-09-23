@@ -18,7 +18,7 @@ const RULE_IDS = [
 export type RuleId = (typeof RULE_IDS)[number];
 
 interface CommandRule {
-  id: RuleId | "browser-act" | "external-tool";
+  id: RuleId | "browser-act" | "browser-unseen" | "external-tool";
   /** Shown on the approval card — what the founder is being asked to allow. */
   describe: string;
 }
@@ -147,6 +147,13 @@ const LEASE_RULES = [
   },
 ] as const satisfies readonly CommandRule[];
 
+/** Signed for like a shell command, once and exactly: no site can be named, so there is nothing to lease. */
+const BROWSER_UNSEEN_RULE = {
+  describe:
+    "Act in a real browser on a page nobody could check first — one run of exactly this command.",
+  id: "browser-unseen",
+} as const satisfies CommandRule;
+
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
 const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
 
@@ -155,9 +162,51 @@ const BROWSER_CALL = new RegExp(
   "gu",
 );
 
+const verbs = (names: readonly string[]): RegExp =>
+  new RegExp(String.raw`(?:^|\s)(?:${names.join("|")})(?:\s|$)`, "u");
+
+/** Acts that set a value and leave the page where it was. */
+const SETS = ["fill", "type", "check", "uncheck", "upload"];
+/** Acts that can take the page anywhere: a click or a key press goes wherever the site sends it. */
+const LEAVES = [
+  "click",
+  "dblclick",
+  "press",
+  "key",
+  "keydown",
+  "keyup",
+  "keyboard",
+  "select",
+  "drag",
+  "eval",
+  "find",
+  "mouse",
+  "download",
+  String.raw`dialog\s+accept`,
+  String.raw`webmcp\s+invoke`,
+];
+/** Reads that change which page the next step acts on. */
+const NAVIGATES = [
+  "back",
+  "forward",
+  "tab",
+  "window",
+  "frame",
+  "pushstate",
+  "connect",
+  "a11y",
+  "vitals",
+  "record",
+  "diff",
+];
+
 /** Verbs that change a page. Reading — open, read, snapshot, get, screenshot, scroll, wait — stays free. */
-const BROWSER_WRITES =
-  /(?:^|\s)(?:click|dblclick|type|fill|press|keyboard|check|uncheck|select|drag|upload|eval|find|mouse)(?:\s|$)/u;
+const BROWSER_WRITES = verbs([...SETS, ...LEAVES]);
+/** Verbs after which nothing in the command says where the page is. */
+const BROWSER_MOVES = verbs([...LEAVES, ...NAVIGATES]);
+/** Verbs whose steps the command does not show: an AI at the wheel, a batch (its steps can be strings, JSON or stdin), a saved login's own page. */
+const BROWSER_BLIND = verbs(["batch", "chat", "mcp", String.raw`auth\s+login`]);
+const BROWSER_OPEN = /(?:^|\s)(?:open|goto|navigate)\s+["']?(?<url>[^\s"']+)/u;
 
 const hostOf = (url: string): string | null => {
   try {
@@ -170,35 +219,63 @@ const hostOf = (url: string): string | null => {
 /** Where a browser session is right now; null when nothing could say. "" is the default session. */
 export type LiveUrl = (session: string) => Promise<string | null>;
 
-const browserActKey = (host: string | null): string =>
-  `agent-browser: act on ${host ?? "a page nobody could read"}`;
+const unseen = (command: string): Hold => ({
+  key: command,
+  leasable: false,
+  rule: BROWSER_UNSEEN_RULE.id,
+});
+
+/** What acting on the page at `url` waits on, or null when it may run. A null `url` is a page nobody knows. */
+const actHold = (url: string | null, leases: ReadonlySet<string>, command: string): Hold | null => {
+  if (url !== null && LOOPBACK_URL.test(url)) {
+    return null;
+  }
+  const host = url === null ? null : hostOf(url);
+  if (host === null) {
+    return unseen(command);
+  }
+  const key = `agent-browser: act on ${host}`;
+  return leases.has(key) ? null : { key, leasable: true, rule: "browser-act" };
+};
 
 /**
- * The lease a browser command needs and does not have, or null when it may run.
+ * The approval a browser command needs and does not have, or null when it may run.
  * A command names a verb, never a site, so the site comes from the browser
  * itself: a click on the team's own localhost build can land anywhere, and only
- * the live URL knows. An `open` earlier in the same chained command wins, since
- * the browser is not there yet when the ask arrives.
+ * the live URL knows. That URL is read before the command runs, so an `open`
+ * earlier in the same chained command wins, and any act after a step that may
+ * have moved the page lands somewhere nobody could read.
  */
 const heldBrowserAct = async (
   command: string,
   leases: ReadonlySet<string>,
   liveUrl: LiveUrl,
-): Promise<string | null> => {
-  const opening = new Map<string, string>();
+): Promise<Hold | null> => {
+  // Per session, where the page will be when the next step runs: absent is where the live URL says, null is anywhere.
+  const pages = new Map<string, string | null>();
   for (const call of command.matchAll(BROWSER_CALL)) {
     const args = call.groups?.args ?? "";
-    const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
-    const opened = /(?:^|\s)open\s+["']?(?<url>[^\s"']+)/u.exec(args)?.groups?.url;
-    if (opened !== undefined) {
-      opening.set(session, opened);
-    } else if (BROWSER_WRITES.test(args)) {
-      const url = opening.get(session) ?? (await liveUrl(session));
-      const key = browserActKey(url === null ? null : hostOf(url));
-      if (!(url !== null && LOOPBACK_URL.test(url)) && !leases.has(key)) {
-        return key;
-      }
+    if (BROWSER_BLIND.test(args)) {
+      return unseen(command);
     }
+    const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
+    const opened = BROWSER_OPEN.exec(args)?.groups?.url;
+    if (!BROWSER_WRITES.test(args)) {
+      if (opened !== undefined) {
+        pages.set(session, opened);
+      } else if (BROWSER_MOVES.test(args)) {
+        pages.set(session, null);
+      }
+      continue;
+    }
+    const known = pages.get(session);
+    const url = known === undefined ? await liveUrl(session) : known;
+    const held = actHold(url, leases, command);
+    if (held !== null) {
+      return held;
+    }
+    // A write whose text also names a verb that moves or opens is read as having moved.
+    pages.set(session, opened === undefined && !BROWSER_MOVES.test(args) ? url : null);
   }
   return null;
 };
@@ -217,7 +294,7 @@ export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Co
 
 /** What the approval card says about a held command, by the rule that held it. */
 export const describeRule = (id: string): string =>
-  [...RULES, ...LEASE_RULES].find((rule) => rule.id === id)?.describe ??
+  [...RULES, ...LEASE_RULES, BROWSER_UNSEEN_RULE].find((rule) => rule.id === id)?.describe ??
   `Saved rule "${id}" is unavailable in this version.`;
 
 export const classifyCommand = (command: string): CommandVerdict => {
@@ -265,6 +342,5 @@ export const holdFor = async (
   if (verdict.decision === "ask") {
     return { key: command, leasable: false, rule: verdict.rule.id };
   }
-  const key = await heldBrowserAct(command, leases, liveUrl);
-  return key === null ? null : { key, leasable: true, rule: "browser-act" };
+  return await heldBrowserAct(command, leases, liveUrl);
 };

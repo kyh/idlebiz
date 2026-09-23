@@ -82,11 +82,13 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
 - **Outward-facing stays founder-gated**, through one judgement: `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly. A
   page-changing `agent-browser` verb is held unless the session's live URL (read from the
-  browser, since a click can land anywhere) is loopback. Employee sessions also load the
-  founder's own CLI settings, so their MCP servers, signed in as the founder, are held too.
-  A site or a server is leased for the rest of the run; a server nothing can name never is.
-  Both runners' wire formats end in `packages/agent-driver/src/tool-ask.ts`; the policy only
-  ever sees a `ToolAsk`.
+  browser, since a click can land anywhere) is loopback. That URL is read before the command
+  runs, so an act chained after a step that may move the page, or inside one whose steps the
+  command does not show (`batch`, `chat`), is signed for once, exactly, like a shell rule.
+  Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
+  as the founder, are held too. A site or a server is leased for the rest of the run; a page
+  or a server nothing can name never is. Both runners' wire formats end in
+  `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
 
 ## Two traps that fail silently
 
