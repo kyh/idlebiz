@@ -12,7 +12,7 @@ export type AgentEvent =
   | { type: "message_end"; text: string }
   | {
       type: "tool_start";
-      /** The agent's title for the call ("Read src/app.ts") — prose, differs per CLI. */
+      /** The first line of the agent's title for the call ("Read src/app.ts"), capped — prose, differs per CLI. */
       toolName: string;
       /** ACP's own discriminant for what the call does. The stable key to react on. */
       kind?: ToolKind;

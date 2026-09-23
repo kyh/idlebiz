@@ -10,12 +10,15 @@ import { jsonRecordSchema, parseJson } from "@/shared/json";
 /**
  * An ACP agent that can resume, logs each request it is sent to `requests.jsonl`, and
  * answers session/set_mode with `setMode` (JSON). Given `options` (JSON), it asks
- * mid-prompt to run `git push` and replies with the outcome it was answered.
+ * mid-prompt to run `git push` and replies with the outcome it was answered. Given
+ * `announced`, it first announces the call under that title and asks by its id alone, as codex does.
  */
 const scriptedAgent = ({
+  announced = null,
   options = null,
   setMode = JSON.stringify({ result: {} }),
 }: {
+  announced?: string | null;
   options?: string | null;
   setMode?: string;
 }): string => `
@@ -32,8 +35,11 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   if (method === "session/prompt") {
     prompt = { id, sessionId: params.sessionId };
     const options = ${options ?? "null"};
+    const announced = ${JSON.stringify(announced)};
+    if (announced !== null) send({ method: "session/update", params: { sessionId: params.sessionId, update: { kind: "execute", sessionUpdate: "tool_call", title: announced, toolCallId: "t1" } } });
+    const toolCall = announced === null ? { rawInput: { command: "git push" }, title: "git push", toolCallId: "t1" } : { toolCallId: "t1" };
     if (options === null) send({ id, result: { stopReason: "end_turn" } });
-    else send({ id: "ask", method: "session/request_permission", params: { options, sessionId: params.sessionId, toolCall: { rawInput: { command: "git push" }, title: "git push", toolCallId: "t1" } } });
+    else send({ id: "ask", method: "session/request_permission", params: { options, sessionId: params.sessionId, toolCall } });
   }
   if (id === "ask" && method === undefined) {
     const content = { text: JSON.stringify(message.result.outcome), type: "text" };
@@ -57,7 +63,9 @@ afterEach(() => {
 
 const turn = (
   agentScript: string,
-  more: Partial<Pick<AcpTurnOptions, "maxSessionMs" | "onPermission" | "resumeSessionId">> & {
+  more: Partial<
+    Pick<AcpTurnOptions, "maxSessionMs" | "onEvent" | "onPermission" | "resumeSessionId">
+  > & {
     sessionMeta?: AcpAgent["sessionMeta"];
   } = {},
 ) =>
@@ -70,7 +78,7 @@ const turn = (
     cwd,
     idleTimeoutMs: 0,
     maxSessionMs: more.maxSessionMs ?? 0,
-    onEvent: () => {},
+    onEvent: more.onEvent ?? (() => {}),
     onPermission: more.onPermission,
     prompt: "work",
     resumeSessionId: more.resumeSessionId,
@@ -195,4 +203,48 @@ describe("answering a permission ask", () => {
     expect(end).toMatchObject({ error: expect.stringContaining("session limit"), kind: "failed" });
     expect(toldOver).toBe(true);
   });
+});
+
+describe("a tool call the agent announces", () => {
+  const body = `${"API_TOKEN=hunter2\n".repeat(300)}EOF`;
+  const longLine = `printf '%s' ${"x".repeat(200)} > big.txt && cat > notes.md <<'EOF'`;
+
+  it.each([
+    {
+      name: `${longLine.slice(0, 160)}…`,
+      title: `${longLine}\n${body}`,
+      what: "capped at 160 chars",
+    },
+    {
+      name: "cat > .env <<'EOF'",
+      title: `cat > .env <<'EOF'\n${body}`,
+      what: "the heredoc body left out",
+    },
+  ])(
+    "is named by its title's first line ($what), yet judged by the whole title",
+    async ({ name, title }) => {
+      const names: string[] = [];
+      const asks: PermissionRequest[] = [];
+      const { end } = await turn(
+        scriptedAgent({
+          announced: title,
+          options: JSON.stringify([option("allow_once", "once")]),
+        }),
+        {
+          onEvent: (event) => {
+            if (event.type === "tool_start") {
+              names.push(event.toolName);
+            }
+          },
+          onPermission: (request) => {
+            asks.push(request);
+            return Promise.resolve({ allow: true });
+          },
+        },
+      );
+      expect(end.kind).toBe("completed");
+      expect(names).toEqual([name]);
+      expect(asks.map((ask) => ask.tool)).toEqual([{ command: title, kind: "shell" }]);
+    },
+  );
 });
