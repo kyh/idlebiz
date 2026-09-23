@@ -16,6 +16,13 @@ export interface Command {
   input: Words;
   /** What the commands in its substitutions were fed, which they may print into its words: `$(cat <<EOF … EOF)`. */
   printed: readonly Words[];
+  /**
+   * Whether the shell passes its words on exactly as read here: none holds an
+   * expansion, a substitution or a pattern bash or zsh fills in, and no `(`
+   * zsh would take into a pattern stands among them (`-f (q)uery=m*`). Any such
+   * word may become other words, or more of them, once the shell has run.
+   */
+  literal: boolean;
 }
 
 /** Simple commands joined by `|`, in the order data flows through them. */
@@ -39,6 +46,17 @@ const LINE_END = /\r$/u;
 const FUNCTION_PARENS = /\([ \t]*\)/uy;
 /** Text no reading treats specially, taken whole rather than a character at a time. */
 const PLAIN_RUN = /[^\s$`<>'"\\|&;()]+/uy;
+/**
+ * Bare text the shell passes on as written: no glob, brace, tilde or history
+ * character, nor one zsh's extended globs read. zsh also expands an `=` that
+ * opens a word into a path (`=ls`), and a lone `{` or `}` is a reserved word.
+ */
+const VERBATIM = /^[\w%+,./:=@-]*$/u;
+
+const verbatim = (run: string, opens: boolean): boolean =>
+  opens
+    ? run === "{" || run === "}" || (VERBATIM.test(run) && !run.startsWith("="))
+    : VERBATIM.test(run);
 
 /**
  * Shells disagree on where a substitution ends. Where a `case` opens decides
@@ -177,6 +195,12 @@ const ansiNumber = (code: string): string => {
   return value > LAST_CODE_POINT ? "\uFFFD" : String.fromCodePoint(value);
 };
 
+/** A quoted string's text, and whether the shell still fills some of it in: `"$x"`. */
+interface Quoted {
+  text: string;
+  expands: boolean;
+}
+
 /** What the word being read is for. */
 type Target = "argument" | "redirect" | "here-string" | "heredoc" | "indented-heredoc";
 
@@ -222,6 +246,10 @@ interface Frame {
   /** null between words, so `''` still makes a word. */
   word: string | null;
   quoted: boolean;
+  /** Whether the word holds text the shell still fills in: `$x`, `*`, `"$(…)"`. */
+  expands: boolean;
+  /** Whether every word of the command so far reaches it as read. */
+  literal: boolean;
   target: Target;
   /** Whether the command has a redirection, which makes it one even with no words: `(cat) <<EOF | sh`. */
   redirected: boolean;
@@ -374,9 +402,11 @@ class Scanner {
     const frame: Frame = {
       cases: 0,
       clause: "commands",
+      expands: false,
       fed: [],
       group: [],
       input: [],
+      literal: true,
       opens: [],
       piped: false,
       pipeline: [],
@@ -448,9 +478,12 @@ class Scanner {
     const doubled = frame.word === null && this.text.charAt(this.at + 1) === "(";
     const arithmetic = doubled ? this.arithmetic(2) : null;
     if (arithmetic !== null) {
+      frame.expands = true;
       append(frame, arithmetic);
       return;
     }
+    // Where bash reads no subshell, zsh reads a pattern: `query=m(u)tation*`, `-f (q)uery=m*`.
+    const pattern = frame.word !== null || frame.place === "argument";
     this.endWord(frame);
     FUNCTION_PARENS.lastIndex = this.at;
     const [parens] = FUNCTION_PARENS.exec(this.text) ?? [];
@@ -461,6 +494,7 @@ class Scanner {
       this.at += parens.length;
       return;
     }
+    frame.literal &&= !pattern;
     // What follows a subshell is a command of its own: `case a in (a) git push;; esac`.
     this.endCommand(frame);
     const before = this.pipelines.length;
@@ -529,6 +563,7 @@ class Scanner {
     PLAIN_RUN.lastIndex = this.at;
     const [run] = PLAIN_RUN.exec(this.text) ?? [];
     if (run !== undefined) {
+      frame.expands ||= !verbatim(run, frame.word === null);
       append(frame, run);
       this.at += run.length;
       return;
@@ -536,37 +571,41 @@ class Scanner {
     const substituted =
       this.expansion() ?? this.substitution(char) ?? this.processSubstitution(char);
     if (substituted !== null) {
+      frame.expands = true;
       append(frame, substituted);
       return;
     }
     const quoted = this.quoted(char);
     if (quoted !== null) {
       frame.quoted = true;
-      append(frame, quoted);
+      frame.expands ||= quoted.expands;
+      append(frame, quoted.text);
     } else if (char === "\\") {
       this.escape(frame);
     } else {
+      // A `$` that opens no quote or substitution (`$x`), or text no reading above took.
+      frame.expands = true;
       append(frame, char);
       this.at += 1;
     }
   }
 
   /** A quoted string that starts here, with its quotes and escapes resolved. */
-  private quoted(char: string): string | null {
+  private quoted(char: string): Quoted | null {
     const next = this.text.charAt(this.at + 1);
     if (char === "'") {
-      return this.singleQuoted();
+      return { expands: false, text: this.singleQuoted() };
     }
     if (char === '"') {
       return this.doubleQuoted();
     }
     if (char === "$" && next === "'") {
-      return this.ansiQuoted();
+      return { expands: false, text: this.ansiQuoted() };
     }
     if (char === "$" && next === '"') {
-      // A string for translation, which bash reads as double quotes.
+      // A string for translation, which bash reads as double quotes and may swap for another.
       this.at += 1;
-      return this.doubleQuoted();
+      return { expands: true, text: this.doubleQuoted().text };
     }
     return null;
   }
@@ -747,19 +786,22 @@ class Scanner {
     return text;
   }
 
-  private doubleQuoted(): string {
+  private doubleQuoted(): Quoted {
     let text = "";
+    let expands = false;
     this.at += 1;
     while (this.at < this.text.length) {
       const char = this.text.charAt(this.at);
       if (char === '"') {
         this.at += 1;
-        return text;
+        return { expands, text };
       }
+      // quotedPart takes an escaped one with its backslash, so each seen here is live.
+      expands ||= char === "$" || char === "`";
       text += this.quotedPart(char);
     }
     this.unreadable = true;
-    return text;
+    return { expands, text };
   }
 
   /** Substitutions still run inside double quotes. */
@@ -863,6 +905,7 @@ class Scanner {
       return;
     }
     if (frame.target === "argument") {
+      frame.literal &&= !frame.expands;
       const bare = !frame.quoted;
       this.divergent ||= bare && frame.word === "case";
       const { reading } = this;
@@ -884,6 +927,7 @@ class Scanner {
     }
     frame.word = null;
     frame.quoted = false;
+    frame.expands = false;
     frame.target = "argument";
   }
 
@@ -892,6 +936,8 @@ class Scanner {
     if (frame.words.length > 0 || frame.redirected) {
       frame.pipeline.push({
         input: frame.input,
+        // A flat reading splits words at every quote, so none of its commands is read as it runs.
+        literal: frame.literal && this.strict,
         printed: frame.printed,
         redirects: frame.redirects,
         words: frame.words,
@@ -904,6 +950,7 @@ class Scanner {
     frame.redirects = [];
     frame.input = [];
     frame.printed = [];
+    frame.literal = true;
     frame.place = "name";
     frame.redirected = false;
     frame.target = "argument";

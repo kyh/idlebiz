@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { lexFlat, lexLine } from "./shell-lexer";
-import type { Pipeline } from "./shell-lexer";
+import type { Command, Pipeline } from "./shell-lexer";
 
 const wordsOf = (pipelines: readonly Pipeline[]): string[][][] =>
   pipelines.map((pipeline) => pipeline.map((command) => [...command.words]));
 
 const words = (line: string): string[][][] => wordsOf(lexLine(line));
+
+const commandWith = (word: string, line: string): Command | undefined =>
+  lexLine(line)
+    .flat()
+    .find((command) => command.words.includes(word));
 
 describe("lexLine", () => {
   it("splits pipelines on separators and keeps a pipe's commands together", () => {
@@ -74,6 +79,7 @@ describe("lexLine", () => {
       [
         {
           input: [],
+          literal: true,
           printed: [],
           redirects: ["/dev/null", "1", "log", "in", "all", "-"],
           words: ["git", "push"],
@@ -88,14 +94,22 @@ describe("lexLine", () => {
 
   it("reads a heredoc's body as its command's input, not as commands", () => {
     expect(lexLine("cat <<'EOF'\ngit push; vercel deploy\nEOF\nls")).toEqual([
-      [{ input: ["git push; vercel deploy\n"], printed: [], redirects: [], words: ["cat"] }],
-      [{ input: [], printed: [], redirects: [], words: ["ls"] }],
+      [
+        {
+          input: ["git push; vercel deploy\n"],
+          literal: true,
+          printed: [],
+          redirects: [],
+          words: ["cat"],
+        },
+      ],
+      [{ input: [], literal: true, printed: [], redirects: [], words: ["ls"] }],
     ]);
   });
 
   it("gives a here-string's text to its command as input", () => {
     expect(lexLine("bash <<< 'git push'")).toEqual([
-      [{ input: ["git push"], printed: [], redirects: [], words: ["bash"] }],
+      [{ input: ["git push"], literal: true, printed: [], redirects: [], words: ["bash"] }],
     ]);
   });
 
@@ -235,6 +249,61 @@ describe("lexLine", () => {
     expect(words("git \\\npush # ; vercel deploy\nls a#b")).toEqual([
       [["git", "push"]],
       [["ls", "a#b"]],
+    ]);
+  });
+
+  it.each([
+    "gh api graphql -f query='query { viewer { login } }'",
+    `echo "a b" $'c' d\\* e,f=g:h@i/j.k%l+m-n '$x' "\\$y" { }`,
+    'echo a > "$out" 2>&1 <<< "$in"',
+  ])("reads a command the shell passes on as written as literal: %s", (line) => {
+    expect(
+      lexLine(line)
+        .flat()
+        .map((command) => command.literal),
+    ).toEqual([true]);
+  });
+
+  it.each([
+    'echo "$q"',
+    `echo \${q}`,
+    "echo $q",
+    "echo `q`",
+    'echo "$(q)"',
+    "echo <(q)",
+    "echo $((1))",
+    'echo $"q"',
+    "echo ?q",
+    "echo *",
+    "echo [q]",
+    "echo {a,b}",
+    "echo a{b..c}",
+    "echo ~",
+    "echo ~q",
+    "echo q^r",
+    "echo q#r",
+    "echo !q",
+    "echo =q",
+  ])("reads a command with a word the shell fills in as not literal: %s", (line) => {
+    expect(lexLine(line).at(-1)?.[0]?.literal).toBe(false);
+  });
+
+  it("reads a command a zsh pattern cuts short as not literal", () => {
+    expect(commandWith("gh", "gh -f query=m(u)tation*")).toMatchObject({
+      literal: false,
+      words: ["gh", "-f", "query=m"],
+    });
+    expect(commandWith("gh", "gh -f (q)uery=m*")).toMatchObject({
+      literal: false,
+      words: ["gh", "-f"],
+    });
+    expect(commandWith("gh", "if (true) then gh x; fi")).toMatchObject({ literal: true });
+  });
+
+  it("reads no command of a flat reading as literal", () => {
+    expect(lexFlat("gh -f query='x'").map((pipeline) => pipeline[0]?.literal)).toEqual([
+      false,
+      false,
     ]);
   });
 

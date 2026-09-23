@@ -35,6 +35,8 @@ interface Call {
   program: string;
   args: Words;
   redirects: Words;
+  /** Whether the shell hands it these words exactly: its command was read literal, from text no shell filled in first. */
+  literal: boolean;
 }
 
 interface Rule extends CommandRule {
@@ -50,14 +52,30 @@ interface Grammar {
   valued: ReadonlySet<string>;
   /** getopt_long also takes any unambiguous prefix of a long option (`--sig` for `--signal`). */
   abbreviates: boolean;
+  /** pflag reads `-X=GET` as `-X GET`, where getopt gives `-X` the value `=GET`. */
+  shortEquals: boolean;
 }
 
 /** A vocabulary written as words separated by whitespace, as a man page lists them. */
 const wordsOf = (text: string): ReadonlySet<string> =>
   new Set(text.split(/\s+/u).filter((word) => word !== ""));
 
-const gnu = (valued: string): Grammar => ({ abbreviates: true, valued: wordsOf(valued) });
-const exact = (valued = ""): Grammar => ({ abbreviates: false, valued: wordsOf(valued) });
+const gnu = (valued: string): Grammar => ({
+  abbreviates: true,
+  shortEquals: false,
+  valued: wordsOf(valued),
+});
+const exact = (valued = ""): Grammar => ({
+  abbreviates: false,
+  shortEquals: false,
+  valued: wordsOf(valued),
+});
+/** Go's pflag, which cobra CLIs like gh parse with. */
+const pflag = (valued = ""): Grammar => ({
+  abbreviates: false,
+  shortEquals: true,
+  valued: wordsOf(valued),
+});
 
 interface Flag {
   name: string;
@@ -78,7 +96,7 @@ const longName = (name: string, grammar: Grammar): string => {
   return only !== undefined && others.length === 0 ? only : name;
 };
 
-/** A short cluster ends at its first option that takes a value (`-sXPOST`); `--name=value` carries its own. */
+/** A short cluster ends at its first option that takes a value (`-sXPOST`), or pflag's `-x=value`; `--name=value` carries its own. */
 const optionsIn = (word: string, grammar: Grammar, next: string | undefined): Taken => {
   if (word.startsWith("--")) {
     const equals = word.indexOf("=");
@@ -93,8 +111,13 @@ const optionsIn = (word: string, grammar: Grammar, next: string | undefined): Ta
   const flags: Flag[] = [];
   for (let at = 1; at < word.length; at += 1) {
     const name = `-${word.charAt(at)}`;
+    const attached = word.slice(at + 1);
+    // pflag's `-x=value`, whatever the option takes; a lone `=` is the value itself.
+    if (grammar.shortEquals && attached.length > 1 && attached.startsWith("=")) {
+      flags.push({ name, value: attached.slice(1) });
+      return { flags, next: false };
+    }
     if (grammar.valued.has(name)) {
-      const attached = word.slice(at + 1);
       flags.push({ name, value: attached === "" ? next : attached });
       return { flags, next: attached === "" };
     }
@@ -130,17 +153,29 @@ const leadingOptions = (words: Words, from: number, grammar: Grammar): Options =
   return { end: at, flags };
 };
 
-/** Every option a program is given, wherever it sits among its operands, as pflag and curl read them (`gh api path -f x`). */
-const allOptions = (args: Words, grammar: Grammar): Flag[] => {
-  const flags: Flag[] = [];
+interface Arguments {
+  flags: Flag[];
+  operands: string[];
+}
+
+/** A program's words as pflag and curl read them: options wherever they sit among the operands (`gh api path -f x`). */
+const argumentsOf = (args: Words, grammar: Grammar): Arguments => {
+  const read: Arguments = { flags: [], operands: [] };
   let at = 0;
-  while (at < args.length && args[at] !== "--") {
+  while (at < args.length) {
     const word = args[at] ?? "";
+    if (word === "--") {
+      read.operands.push(...args.slice(at + 1));
+      break;
+    }
     const taken = isOption(word) ? optionsIn(word, grammar, args[at + 1]) : null;
-    flags.push(...(taken?.flags ?? []));
+    if (taken === null) {
+      read.operands.push(word);
+    }
+    read.flags.push(...(taken?.flags ?? []));
     at += taken?.next === true ? 2 : 1;
   }
-  return flags;
+  return read;
 };
 
 /** What a command runs besides itself: where each command it goes on to may start, and a script it hands a shell. */
@@ -256,7 +291,7 @@ const SCRIPT = gnu(`
 /** macOS `script` runs the command after its log file; util-linux's takes `-c SCRIPT`. */
 const scriptRuns = (words: Words, from: number): Runs => ({
   next: [leadingOptions(words, from, SCRIPT).end + 1],
-  script: lastValue(allOptions(words.slice(from), SCRIPT), COMMAND_SCRIPT),
+  script: lastValue(argumentsOf(words.slice(from), SCRIPT).flags, COMMAND_SCRIPT),
 });
 
 const SSH = exact("-B -b -c -D -E -e -F -I -i -J -L -l -m -O -o -P -p -Q -R -S -W -w");
@@ -276,7 +311,7 @@ const SU_SCRIPT = new Set(["-c", "--command", "--session-command"]);
 
 const suRuns = (words: Words, from: number): Runs => ({
   next: [],
-  script: lastValue(allOptions(words.slice(from), SU), SU_SCRIPT),
+  script: lastValue(argumentsOf(words.slice(from), SU).flags, SU_SCRIPT),
 });
 
 const WATCH = gnu("-n -q --equexit --interval");
@@ -493,17 +528,21 @@ const programOf = (word: string): string =>
 interface Stage {
   calls: Call[];
   scripts: string[];
+  /** Whether its words, and so its scripts, reach it as read. */
+  literal: boolean;
   /** A shell given no script reads one from its input: `bash <<EOF`, `cat <<EOF | sh`, and so does `source`. */
   readsInput: boolean;
   /** Its name comes from an expansion, so what its substitutions were fed may be what runs. */
   runsPrinted: boolean;
 }
 
-const stageOf = ({ words, redirects }: Command): Stage => {
-  const stage: Stage = { calls: [], readsInput: false, runsPrinted: false, scripts: [] };
+/** `verbatim` says whether the text the command was read from is what its shell runs: a script handed on in a word the outer shell expands is not. */
+const stageOf = ({ words, redirects, literal: read }: Command, verbatim: boolean): Stage => {
+  const literal = read && verbatim;
+  const stage: Stage = { calls: [], literal, readsInput: false, runsPrinted: false, scripts: [] };
   if (words.length === 0) {
     // Redirections alone still open their files for what runs there: `(cat) < ~/.ssh/id_rsa | …`.
-    stage.calls.push({ args: [], program: "", redirects });
+    stage.calls.push({ args: [], literal, program: "", redirects });
   }
   const plain = words.every((word) => PLAIN.test(word));
   // Every command a wrapper runs starts after it, so one pass in order meets each start after whatever named it.
@@ -528,7 +567,7 @@ const stageOf = ({ words, redirects }: Command): Stage => {
     // A package manager run by another is already among its words, which are all the publish rule reads.
     const repeated = managed && PACKAGE_MANAGERS.has(program);
     if (!PASS_THROUGH.has(program) && !repeated) {
-      stage.calls.push({ args: words.slice(start + 1), program, redirects });
+      stage.calls.push({ args: words.slice(start + 1), literal, program, redirects });
     }
     managed ||= PACKAGE_MANAGERS.has(program);
     const next = runs(words, start + 1, program, plain);
@@ -562,37 +601,48 @@ interface Reading {
  * input: substitutions nest, so one heredoc reaches a command at every level,
  * and a line with a `case` is read in every dialect, so one script reaches a
  * shell in each; reading it every time would multiply the work at every level.
+ * `verbatim` says whether the shell runs `line` as written; a fed or printed
+ * text never counts, since an unquoted heredoc's body is expanded first.
  */
-const pipelinesOf = (line: string, depth = 0, readTexts = new Map<string, boolean>()): Reading => {
+const pipelinesOf = (
+  line: string,
+  depth = 0,
+  readTexts = new Map<string, boolean>(),
+  verbatim = true,
+): Reading => {
   if (depth > MAX_SCRIPT_DEPTH) {
     return {
       pipelines: lexFlat(line).map((pipeline) =>
-        pipeline.flatMap((command) => stageOf(command).calls),
+        pipeline.flatMap((command) => stageOf(command, false).calls),
       ),
       reads: true,
     };
   }
-  const readOnce = (text: string): Reading => {
-    const known = readTexts.get(text);
+  const readOnce = (text: string, literal: boolean): Reading => {
+    // A text read as written is read again where the shell may have filled it in: only then are its calls not literal.
+    const key = JSON.stringify([text, literal]);
+    const known = readTexts.get(key);
     if (known !== undefined) {
       return { pipelines: [], reads: known };
     }
     // Until read, a text that meets itself again is taken to read its input.
-    readTexts.set(text, true);
-    const reading = pipelinesOf(text, depth + 1, readTexts);
-    readTexts.set(text, reading.reads);
+    readTexts.set(key, true);
+    const reading = pipelinesOf(text, depth + 1, readTexts, literal);
+    readTexts.set(key, reading.reads);
     return reading;
   };
   let reads = false;
   const pipelines = lexLine(line).flatMap((pipeline) => {
-    const stages = pipeline.map((command) => stageOf(command));
-    const scripts = stages.flatMap((stage) => stage.scripts).map(readOnce);
+    const stages = pipeline.map((command) => stageOf(command, verbatim));
+    const scripts = stages.flatMap((stage) =>
+      stage.scripts.map((script) => readOnce(script, stage.literal)),
+    );
     const fed = stages.some((stage) => stage.readsInput) || scripts.some((script) => script.reads);
     const texts = pipeline.flatMap((command, index) => [
       ...(fed ? command.input : []),
       ...(fed || stages[index]?.runsPrinted === true ? command.printed.flat() : []),
     ]);
-    const fedReadings = texts.map(readOnce);
+    const fedReadings = texts.map((text) => readOnce(text, false));
     reads ||=
       fed ||
       stages.some((stage) => stage.runsPrinted) ||
@@ -624,23 +674,80 @@ const PUBLISHES = new Set(["deprecate", "publish", "unpublish"]);
 /** git's own options that take a value, before its subcommand. */
 const GIT = exact("-C -c --config-env --git-dir --namespace --super-prefix --work-tree");
 
-/** gh verbs that only read — every other verb changes something on GitHub. */
+/** gh subcommands that change nothing on GitHub — every other one does. */
 const GITHUB_READS = wordsOf(
-  "--help -h checkout checks clone co diff download list ls status view watch",
+  "checkout checks clone co diff download get list ls set-default status view watch",
 );
 
-/** gh commands whose next word is no verb on GitHub; `api` is judged by its flags instead. */
+/** gh commands whose subcommand is no verb on GitHub; `api` is judged by its flags instead. */
 const GITHUB_ASIDE = wordsOf("api auth browse completion config help search status version");
 
-const GITHUB_API = exact(`
+/** A gh command, and where its name sits among gh's words. */
+interface GitHubCommand {
+  at: number;
+  name: string;
+  subcommand: string | undefined;
+}
+
+/**
+ * gh's command and subcommand, found among flags as cobra finds them: a bare
+ * `--name` or `-x` takes the next word unless it is `--help`, the only switch gh
+ * knows there. Reading an unknown flag as a switch would let
+ * `gh issue -c view close 3`, which closes issue 3, pass for a view.
+ */
+const githubCommand = (args: Words): GitHubCommand | null => {
+  const names: { at: number; word: string }[] = [];
+  let at = 0;
+  while (at < args.length && names.length < 2 && args[at] !== "--") {
+    const word = args[at] ?? "";
+    const valued =
+      word.startsWith("-") &&
+      !word.includes("=") &&
+      (word.startsWith("--") || word.length === 2) &&
+      word !== "--help";
+    if (word !== "" && !word.startsWith("-")) {
+      names.push({ at, word });
+    }
+    at += valued ? 2 : 1;
+  }
+  const [command, subcommand] = names;
+  return command === undefined
+    ? null
+    : { at: command.at, name: command.word, subcommand: subcommand?.word };
+};
+
+const GITHUB_API = pflag(`
   -f -F -H -p -q -t -X --cache --field --header --hostname --input --jq --method
   --preview --raw-field --template
 `);
 const GITHUB_API_FIELDS = wordsOf("-f -F --field --input --raw-field");
+/** Fields gh sends as written. It rewrites a typed one (`-F`): `@q.graphql` from a file, `@-` from stdin, `{owner}` or `{branch}` from the repository. */
+const GITHUB_API_RAW = wordsOf("-f --raw-field");
+const MUTATION = /\bmutation\b/u;
 
-/** `gh api` sends a POST once it has a field, so only an explicit GET keeps it a read; pflag keeps the last method given. */
-const apiWrites = (args: Words): boolean => {
-  const flags = allOptions(args, GITHUB_API);
+/** GraphQL always POSTs, so it writes when any query is a mutation or a text nobody here can read. gh sends other fields as variables. */
+const graphqlWrites = (flags: readonly Flag[]): boolean =>
+  flags.some((flag) => {
+    if (flag.name === "--input") {
+      return true;
+    }
+    const field = flag.value ?? "";
+    if (!GITHUB_API_FIELDS.has(flag.name) || !field.startsWith("query=")) {
+      return false;
+    }
+    return !GITHUB_API_RAW.has(flag.name) || MUTATION.test(field.slice("query=".length));
+  });
+
+/**
+ * `gh api` sends a POST once it has a field, so only an explicit GET keeps it a read; pflag keeps
+ * the last method given. A GraphQL query is judged by its text only when the shell passes every
+ * word as read: one it fills in (`"$Q"`, `query=?utation*`, `-F "$X"`) may carry another query.
+ */
+const apiWrites = (args: Words, literal: boolean): boolean => {
+  const { flags, operands } = argumentsOf(args, GITHUB_API);
+  if (literal && operands[0] === "graphql") {
+    return graphqlWrites(flags);
+  }
   const method = flags.findLast((flag) => flag.name === "-X" || flag.name === "--method")?.value;
   if (method === undefined) {
     return flags.some((flag) => GITHUB_API_FIELDS.has(flag.name));
@@ -648,17 +755,95 @@ const apiWrites = (args: Words): boolean => {
   return method.toUpperCase() !== "GET";
 };
 
-const changesGitHub = (args: Words): boolean => {
-  const [group, verb] = args;
-  if (group === "api") {
-    return apiWrites(args.slice(1));
+/** `gh alias` subcommands that give gh nothing new to run. */
+const ALIAS_READS = wordsOf("delete list ls");
+const ALIAS_SET = pflag();
+const ALIAS_SHELL = wordsOf("-s --shell");
+
+/**
+ * Whether `gh alias` leaves every later gh command as the policy reads it. `gh NAME …`
+ * passes when a read verb or nothing follows the name, and runs the alias's expansion
+ * with those words after it, so an alias passes only as a read subcommand of a GitHub
+ * command, which no word after it makes write. gh fills `$1` into the expansion's text
+ * before splitting it (`'$1' view`), runs a `--shell` or `!` alias in a shell, and reads
+ * `-` from stdin and `import` from a file nobody here read: all of those hold.
+ */
+const aliasReads = (call: Call, command: GitHubCommand): boolean => {
+  if (command.subcommand !== "set") {
+    return command.subcommand === undefined || ALIAS_READS.has(command.subcommand);
+  }
+  const { flags, operands } = argumentsOf(call.args.slice(command.at + 1), ALIAS_SET);
+  // After `set` and the alias's name.
+  const expansion = operands.at(2);
+  if (
+    !call.literal ||
+    expansion === undefined ||
+    expansion.includes("$") ||
+    flags.some((flag) => ALIAS_SHELL.has(flag.name))
+  ) {
+    return false;
+  }
+  const [pipeline, ...others] = lexLine(expansion);
+  const [expanded, ...piped] = pipeline ?? [];
+  if (
+    expanded === undefined ||
+    others.length > 0 ||
+    piped.length > 0 ||
+    !expanded.literal ||
+    expanded.redirects.length > 0 ||
+    expanded.input.length > 0
+  ) {
+    return false;
+  }
+  const aliased = githubCommand(expanded.words);
+  return (
+    aliased !== null &&
+    !GITHUB_ASIDE.has(aliased.name) &&
+    GITHUB_READS.has(aliased.subcommand ?? "")
+  );
+};
+
+const changesGitHub = (call: Call): boolean => {
+  const command = githubCommand(call.args);
+  if (command === null) {
+    return false;
+  }
+  if (command.name === "api") {
+    return apiWrites(call.args.toSpliced(command.at, 1), call.literal);
+  }
+  if (command.name === "alias") {
+    return !aliasReads(call, command);
   }
   return (
-    group !== undefined &&
-    !group.startsWith("-") &&
-    !GITHUB_ASIDE.has(group) &&
-    verb !== undefined &&
-    !GITHUB_READS.has(verb)
+    !GITHUB_ASIDE.has(command.name) &&
+    command.subcommand !== undefined &&
+    !GITHUB_READS.has(command.subcommand)
+  );
+};
+
+const GITHUB_AUTH_STATUS = pflag("-h --hostname --jq --json --template");
+const SHOWS_TOKEN = new Set(["-t", "--show-token"]);
+const GITHUB_CONFIG_GET = pflag("-h --host");
+
+/**
+ * `gh auth token` prints the founder's GitHub token, and so do gh's git credential
+ * helper, `auth status -t` and `config get -h <host> oauth_token`. Without a host
+ * `config get` only says the key is missing, so holding it costs nothing.
+ */
+const printsGitHubToken = (args: Words): boolean => {
+  const command = githubCommand(args);
+  if (command?.name === "config") {
+    return (
+      command.subcommand === "get" &&
+      argumentsOf(args, GITHUB_CONFIG_GET).operands.includes("oauth_token")
+    );
+  }
+  return (
+    command?.name === "auth" &&
+    (command.subcommand === "token" ||
+      command.subcommand === "git-credential" ||
+      (command.subcommand === "status" &&
+        argumentsOf(args, GITHUB_AUTH_STATUS).flags.some((flag) => SHOWS_TOKEN.has(flag.name))))
   );
 };
 
@@ -703,7 +888,7 @@ const WGET: Sending = {
 };
 
 const sends = (args: Words, sending: Sending): boolean =>
-  allOptions(args, sending.grammar).some(
+  argumentsOf(args, sending.grammar).flags.some(
     (flag) =>
       sending.bodies.has(flag.name) ||
       (sending.methods.has(flag.name) && WRITE_METHODS.has(flag.value?.toUpperCase() ?? "")),
@@ -756,7 +941,7 @@ const RULES: readonly Rule[] = [
   {
     describe: "Change something on GitHub — open, merge, comment on, edit or release.",
     // Exclude read-only verbs rather than listing writes.
-    holds: anyCall((call) => call.program === "gh" && changesGitHub(call.args)),
+    holds: anyCall((call) => call.program === "gh" && changesGitHub(call)),
     id: "github-create",
   },
   {
@@ -804,7 +989,8 @@ const RULES: readonly Rule[] = [
         (CREDENTIAL_READERS.has(call.program) && call.args.some((arg) => CREDENTIALS.test(arg))) ||
         // A redirection hands the file to whatever runs: `curl -d @- … < ~/.ssh/id_rsa`.
         call.redirects.some((target) => CREDENTIALS.test(target)) ||
-        (call.program === "security" && KEYCHAIN_READS.has(call.args[0] ?? "")),
+        (call.program === "security" && KEYCHAIN_READS.has(call.args[0] ?? "")) ||
+        (call.program === "gh" && printsGitHubToken(call.args)),
     ),
     id: "read-credentials",
   },
