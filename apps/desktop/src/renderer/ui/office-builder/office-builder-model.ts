@@ -12,8 +12,8 @@ import {
   clonePoi,
 } from "@/shared/office-layout-schema";
 import type { OfficeObjectDef } from "@/shared/office-layout-schema";
-import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
-import { objectSpritePath, spriteBounds } from "@/renderer/game/office-object-sprite";
+import { OFFICE_OBJECT_ASSETS } from "@/shared/office-object-catalog.generated";
+import { objectSpritePath, spriteBounds } from "@/shared/office-object-sprite";
 import { ROOM_BUILDER_TILES } from "@/renderer/game/room-builder-tiles.generated";
 import type { RoomBuilderTile } from "@/renderer/game/room-builder-tiles.generated";
 import { sealedCollision } from "@/shared/office-grid";

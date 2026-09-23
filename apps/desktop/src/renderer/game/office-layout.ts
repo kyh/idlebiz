@@ -1,6 +1,6 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
-import { objectSpritePath } from "@/renderer/game/office-object-sprite";
+import { objectSpritePath } from "@/shared/office-object-sprite";
 import { objectDepth } from "@/shared/office-depth";
 import { walkGridOf } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";

@@ -1,6 +1,6 @@
-// Checks reachability, floor pockets, sprite measurements, sprite overhang and face
-// occlusion using the same geometry as the game. Art and collision are authored
-// independently.
+// Checks reachability, floor pockets, placed art, sprite measurements, sprite overhang
+// and face occlusion using the same geometry as the game. Art and collision are
+// authored independently.
 // Usage: node scripts/check-office.mjs [--layout path.json] [--sheet path.png]
 // Exit 0 = clean, 1 = invalid layout.
 import path from "node:path";
@@ -17,8 +17,8 @@ import {
 import { comparePaintOrder } from "../src/shared/office-depth.ts";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
 import { hiddenNodes, opaqueAt } from "../src/shared/office-sight.ts";
-import { objectSpritePath } from "../src/renderer/game/office-object-sprite.ts";
-import { SPRITE_BOUNDS } from "../src/renderer/game/sprite-bounds.generated.ts";
+import { objectSpritePath, unresolvedArt } from "../src/shared/office-object-sprite.ts";
+import { SPRITE_BOUNDS } from "../src/shared/sprite-bounds.generated.ts";
 import { loadRaw, opaqueBounds } from "./lib/pixels.cjs";
 
 const appRoot = path.resolve(import.meta.dirname, "..");
@@ -152,35 +152,40 @@ const checkPockets = (layout) => {
   );
 };
 
-/** Why the builder's box for a sprite is not the box of the pixels the scene draws, or null. */
-const measurementFault = async (sprite) => {
-  const measured = SPRITE_BOUNDS.get(sprite);
-  if (!measured) {
-    return "never measured";
-  }
-  const img = await loadRaw(path.join(appRoot, "public", sprite));
-  const actual = { bounds: opaqueBounds(img), h: img.h, w: img.w };
-  return isDeepStrictEqual(actual, measured) ? null : "measured from other pixels";
+/** Whether every placed object draws a sprite this build ships and has measured. */
+const checkArt = (layout) => {
+  const missing = unresolvedArt(layout);
+  console.log(`checked: ${layout.objects.length} placed objects`);
+  report(
+    "placed object id(s) naming art this build lacks",
+    "every placed object draws a shipped, measured sprite",
+    missing,
+    (id) => id,
+    "The app refuses a saved office like this and opens the bundled one. Place an object\n" +
+      "from the catalog, or add its PNG and run pnpm --filter @repo/desktop\n" +
+      "generate:sprite-bounds. The remaining passes need the art, so they were skipped.",
+  );
+  return missing.length === 0;
 };
 
 const checkMeasured = async (layout) => {
   const sprites = new Set(layout.objects.map((obj) => objectSpritePath(obj)));
   const offenders = [];
   for (const sprite of sprites) {
-    const fault = await measurementFault(sprite);
-    if (fault) {
-      offenders.push({ fault, sprite });
+    const img = await loadRaw(path.join(appRoot, "public", sprite));
+    const actual = { bounds: opaqueBounds(img), h: img.h, w: img.w };
+    if (!isDeepStrictEqual(actual, SPRITE_BOUNDS.get(sprite))) {
+      offenders.push(sprite);
     }
   }
   console.log(`checked: ${sprites.size} placed sprites`);
   report(
-    "placed sprite(s) the builder would size wrong",
+    "placed sprite(s) measured from other pixels",
     "every placed sprite is measured from the PNG the scene draws",
     offenders,
-    (o) => `${o.sprite}  ${o.fault}`,
-    "The builder hit-tests, flips and anchors an object by its sprite's measured box, and\n" +
-      "throws on one it has never measured. After adding or changing art run\n" +
-      "pnpm --filter @repo/desktop generate:sprite-bounds.",
+    (sprite) => sprite,
+    "The builder hit-tests, flips and anchors an object by its sprite's measured box.\n" +
+      "After changing art run pnpm --filter @repo/desktop generate:sprite-bounds.",
   );
 };
 
@@ -242,6 +247,9 @@ const main = async () => {
 
   checkReachability(layout);
   checkPockets(layout);
+  if (!checkArt(layout)) {
+    return;
+  }
   await checkMeasured(layout);
 
   const nodes = reachableNodes(walkGridOf(layout), layout.spawn);

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
-import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
-import { spriteBounds } from "@/renderer/game/office-object-sprite";
+import { OFFICE_OBJECT_ASSETS } from "@/shared/office-object-catalog.generated";
+import { spriteBounds } from "@/shared/office-object-sprite";
 
 const SIZED_ASSETS = OFFICE_OBJECT_ASSETS.map((asset) => {
   const { w, h } = spriteBounds(asset.path);

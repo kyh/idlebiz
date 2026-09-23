@@ -184,12 +184,14 @@ rather than crashing boot.
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
-  Five passes: every seat, point of interest and the door reachable from spawn; no open
+  Six passes: every seat, point of interest and the door reachable from spawn; no open
   floor cell no body can stand on; no reachable spot with the player's art over the void;
-  no reachable spot with the player's face painted over; every placed sprite measured from
-  its PNG (run `generate:sprite-bounds` after adding art). The walker seals the second and
-  the scene seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`),
-  so a saved layout is safe to walk even when its data would fail the gate.
+  no reachable spot with the player's face painted over; no placed object naming art this
+  build lacks; every placed sprite measured from its PNG (run `generate:sprite-bounds`
+  after adding art). The walker seals the second and the scene seals the fourth at boot
+  (`shared/office-grid.ts`, `shared/office-sight.ts`), so a saved layout is safe to walk
+  even when its data would fail the gate; main opens one failing the fifth as the bundled
+  office and refuses to save it.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
   requests. Command policy
@@ -248,8 +250,9 @@ rather than crashing boot.
   `activity.ts`, `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a
   line as bash would), `format.ts`, `errors.ts`, `character-frame.ts` (the
   sprite box every process slices by), `office-depth.ts` (draw bands + paint order),
-  `office-layout-schema.ts` (office-design.json, versioned and migrated) and `office-grid.ts`
-  (walking as pure math; the scene, the save handler and `check:office` all use it).
+  `office-layout-schema.ts` (office-design.json, versioned and migrated), `office-grid.ts`
+  (walking as pure math) and `office-object-sprite.ts` (the PNG each placed object draws);
+  the scene, the save handler and `check:office` all use the last three.
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
   prices usage, and tracks rate limits. Source-only, no build step.

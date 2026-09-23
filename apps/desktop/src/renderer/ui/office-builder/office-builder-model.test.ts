@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { layoutIssues } from "@/shared/office-grid";
-import { objectSpritePath } from "@/renderer/game/office-object-sprite";
-import { SPRITE_BOUNDS } from "@/renderer/game/sprite-bounds.generated";
+import { objectSpritePath } from "@/shared/office-object-sprite";
+import { SPRITE_BOUNDS } from "@/shared/sprite-bounds.generated";
 import {
   ALL_OBJECT_IDS,
   ROOM_TILES,

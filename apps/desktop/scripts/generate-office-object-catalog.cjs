@@ -9,7 +9,7 @@ const sourceDir = process.env.OFFICE_OBJECT_SOURCE || defaultSource;
 const publicDir = path.join(repoRoot, "apps/desktop/public/workspace-kit/office-objects");
 const generatedPath = path.join(
   repoRoot,
-  "apps/desktop/src/renderer/game/office-object-catalog.generated.ts",
+  "apps/desktop/src/shared/office-object-catalog.generated.ts",
 );
 
 // the game renders at 2x only; the 16/48 folders never ship

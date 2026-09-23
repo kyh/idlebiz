@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import bundled from "@/renderer/game/office-design.json";
 import { OFFICE_LAYOUT_VERSION, officeLayoutSchema } from "@/shared/office-layout-schema";
+import type { OfficeLayoutData } from "@/shared/office-layout-schema";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-office-"));
 const officeFile = path.join(root, "office-design.json");
@@ -12,6 +13,10 @@ process.env["IDLEBIZ_ROOT_DIR"] = root;
 const { loadOfficeDesign, saveOfficeDesign } = await import("./office-design");
 
 const layout = officeLayoutSchema.parse(bundled);
+const missingArt: OfficeLayoutData = {
+  ...layout,
+  objects: [...layout.objects, { id: "nonexistent-object", layer: "floor", x: 0, y: 0 }],
+};
 
 beforeEach(() => rmSync(officeFile, { force: true }));
 
@@ -45,6 +50,14 @@ describe("loading the saved office", () => {
     });
   });
 
+  it("refuses a file naming art this build lacks, so neither scene nor builder draws it", () => {
+    writeFileSync(officeFile, JSON.stringify(missingArt));
+    expect(loadOfficeDesign()).toEqual({
+      kind: "unreadable",
+      reason: "missing art: nonexistent-object",
+    });
+  });
+
   it("tells a newer build's file apart from a broken one", () => {
     writeFileSync(officeFile, JSON.stringify({ ...bundled, version: OFFICE_LAYOUT_VERSION + 1 }));
     expect(loadOfficeDesign()).toEqual({ kind: "newer" });
@@ -58,5 +71,10 @@ describe("saving the office", () => {
 
     expect(() => saveOfficeDesign(layout)).toThrow("saved by a newer IdleBiz");
     expect(readFileSync(officeFile, "utf-8")).toBe(newer);
+  });
+
+  it("refuses a layout naming art this build lacks", () => {
+    expect(() => saveOfficeDesign(missingArt)).toThrow("missing art: nonexistent-object");
+    expect(existsSync(officeFile)).toBe(false);
   });
 });

@@ -7,7 +7,7 @@ const { loadRaw, opaqueBounds } = require("./lib/pixels.cjs");
 
 const appRoot = path.resolve(__dirname, "..");
 const publicDir = path.join(appRoot, "public");
-const generatedPath = path.join(appRoot, "src/renderer/game/sprite-bounds.generated.ts");
+const generatedPath = path.join(appRoot, "src/shared/sprite-bounds.generated.ts");
 const SPRITE_DIRS = [
   "workspace-kit/office-objects/32",
   "workspace-kit/design2",

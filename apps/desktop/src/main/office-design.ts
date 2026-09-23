@@ -14,11 +14,22 @@ import {
   parseOfficeLayout,
 } from "@/shared/office-layout-schema";
 import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
+import { unresolvedArt } from "@/shared/office-object-sprite";
 
 // The founder's saved office. A layout main refuses here is exactly one
-// `check:office` would fail: both judge with shared/office-grid.
+// `check:office` would fail: both judge with shared/office-grid and
+// shared/office-object-sprite.
 
 const newerStamp = z.object({ version: z.number().gt(OFFICE_LAYOUT_VERSION) });
+
+/** A layout whose every object draws art this build ships; the scene and builder throw on any other. */
+const withShippedArt = (layout: OfficeLayoutData): OfficeLayoutData => {
+  const missing = unresolvedArt(layout);
+  if (missing.length > 0) {
+    throw new Error(`missing art: ${missing.join(", ")}`);
+  }
+  return layout;
+};
 
 /** The saved office, parsed; a file this build cannot read says so rather than passing for absent. */
 export const loadOfficeDesign = (): OfficeDesign => {
@@ -35,17 +46,18 @@ export const loadOfficeDesign = (): OfficeDesign => {
     return { kind: "newer" };
   }
   try {
-    return { kind: "saved", layout: parseOfficeLayout(raw) };
+    return { kind: "saved", layout: withShippedArt(parseOfficeLayout(raw)) };
   } catch (error) {
     return { kind: "unreadable", reason: errorMessage(error) };
   }
 };
 
-/** Validate reachability before replacing the saved office; a newer build's file is never replaced. */
+/** Validate art and reachability before replacing the saved office; a newer build's file is never replaced. */
 export const saveOfficeDesign = (layout: OfficeLayoutData): void => {
   if (loadOfficeDesign().kind === "newer") {
     throw new Error("This office was saved by a newer IdleBiz; update to edit it.");
   }
+  withShippedArt(layout);
   const issues = layoutIssues(layout);
   if (issues.length > 0) {
     throw new Error(`office layout rejected:\n${issues.join("\n")}`);

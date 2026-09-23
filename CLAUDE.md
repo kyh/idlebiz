@@ -142,20 +142,23 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
   it fails on any seat, point of interest or door unreachable from spawn, any open floor
   cell no body can ever stand on, any reachable spot where the player's art hangs over
-  nothing, and any reachable spot where something drawn above the player covers their
-  face. The schema (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`,
-  `door`), the walk grid (`shared/office-grid.ts`) and the sight judgement
-  (`shared/office-sight.ts`) are shared by the scene, the save handler and that script —
-  a layout main refuses to save is exactly one the check would fail. Main parses the
-  saved file (`main/office-design.ts`): one it can't read opens as the bundled office
-  and the builder says Save will replace it; one stamped with a newer `version` is never
-  replaced.
+  nothing, any reachable spot where something drawn above the player covers their
+  face, and any placed object naming art this build lacks. The schema
+  (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`, `door`), the walk
+  grid (`shared/office-grid.ts`), the art lookup (`shared/office-object-sprite.ts`) and
+  the sight judgement (`shared/office-sight.ts`) are shared by the scene, the save
+  handler and that script — a layout main refuses to save is exactly one the check would
+  fail. Main parses the saved file (`main/office-design.ts`): one it can't read opens as
+  the bundled office and the builder says Save will replace it; one stamped with a newer
+  `version` is never replaced.
 - **A sprite is its resolved path, never its id.** `objectSpritePath` picks the PNG; the
   scene keys its texture by that path, and the builder sizes, hits and anchors the object
   by that path's entry in `sprite-bounds.generated.ts`, one scan of the shipped art. Run
   `pnpm --filter @repo/desktop generate:sprite-bounds` after adding or changing a PNG:
-  the builder throws on a sprite it has not measured, and `check:office` fails on a placed
-  one that is missing or measured from other pixels.
+  the scene throws on an id with no sprite and the builder on a sprite never measured, so
+  main opens a saved office naming either (`unresolvedArt`) as the bundled office and
+  refuses to save one, and `check:office` fails on both and on a sprite measured from
+  other pixels.
 - **The walker has two rules the authored collision does not.** A seat's cell is solid
   (sitters are placed on the chair; walkers never stand in it) and open floor no body can
   probe is sealed — both in `walkGridOf`, so the scene, the gate and the builder's
