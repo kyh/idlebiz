@@ -11,8 +11,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Budget } from "@/shared/domain";
+import { taskIn } from "@/shared/domain";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
@@ -20,8 +21,16 @@ const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store");
 const { scheduler } = await import("@/main/scheduler");
-const { alumniDir, betFile, productWorkspace, productsDir, retiredDir, shippedDir, tasksDir } =
-  await import("@/main/paths");
+const {
+  alumniDir,
+  betFile,
+  employeeRunStateFile,
+  productWorkspace,
+  productsDir,
+  retiredDir,
+  shippedDir,
+  tasksDir,
+} = await import("@/main/paths");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -524,6 +533,48 @@ describe("what a run leaves behind", () => {
     expect(readFileSync(instructions, "utf-8")).not.toContain("legacy-session");
     expect(store.getEmployee(emp.id)?.sessionId).toBe("legacy-session");
   });
+
+  it("keeps their last ship, for a dialogue to build on without reading the log", () => {
+    found();
+    const emp = store.createEmployee(hire("Priya"));
+    const quiet = store.createTask({ title: "Quiet" });
+    finish(quiet.id, emp.id, "");
+    expect(store.getEmployee(emp.id)?.lastShip).toBeNull();
+
+    const task = store.createTask({ title: "Ship it" });
+    finish(task.id, emp.id, "x".repeat(600));
+    store.initStore();
+
+    expect(store.getEmployee(emp.id)?.lastShip).toEqual({
+      summary: "x".repeat(500),
+      taskId: task.id,
+      title: "Ship it",
+    });
+  });
+
+  it("still resumes the session of a run-state written before it kept the last ship", () => {
+    const company = found();
+    const emp = store.createEmployee(hire("Priya"));
+    writeFileSync(
+      employeeRunStateFile(company.id, emp.id),
+      JSON.stringify({ lastRunMetrics: null, sessionId: "session-1" }),
+    );
+    store.initStore();
+    expect(store.getEmployee(emp.id)).toMatchObject({ lastShip: null, sessionId: "session-1" });
+  });
+
+  it("ships the work of someone released mid-run", () => {
+    found();
+    const emp = store.createEmployee(hire("Priya"));
+    const task = store.createTask({ title: "Ship it" });
+    store.claimTask(task.id, emp.id);
+    store.lockTaskForRun(task.id, "run-1");
+    store.archiveEmployee(emp.id);
+
+    store.settleTask(task.id, "run-1", { kind: "done", summary: "shipped" });
+
+    expect(store.shippingLog().map((t) => t.id)).toEqual([task.id]);
+  });
 });
 
 describe("recently shipped", () => {
@@ -776,14 +827,57 @@ describe("an answered ask", () => {
     expect(next).toMatchObject({ assigneeId: "priya", priority: "high" });
     expect(store.getTask(ask.id)).toBeNull();
     expect(existsSync(path.join(shippedDir(co.id), ask.id, "TASK.md"))).toBe(true);
-    expect(store.queryTasks({ status: ["done"] })).toEqual([]);
+    expect(store.shippingLog()).toEqual([]);
     expect(store.getCompany()?.ships).toBe(0);
 
     store.initStore();
-    expect(store.queryTasks({ status: ["superseded"] })).toMatchObject([
+    expect(store.listShippedTasks()).toMatchObject([
       { id: ask.id, state: { by: next?.id, kind: "superseded" } },
     ]);
     expect(store.listOpenTasks().map((t) => t.id)).toEqual([next?.id]);
+  });
+});
+
+describe("the shipping log as served", () => {
+  it("is one line per ship, newest first, with neither its brief nor an answered ask", () => {
+    foundTeam();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1000);
+      const first = store.createTask({ description: "the brief it ran on", title: "First" });
+      finish(first.id, "priya", "one");
+      vi.setSystemTime(2000);
+      const quiet = store.createTask({ title: "Quiet" });
+      finish(quiet.id, "priya", "");
+      const ask = store.createTask({ title: "Ask" });
+      block(ask.id, "mae");
+      store.resolveBlockedWithAnswer(ask.id, "yes");
+      vi.setSystemTime(3000);
+      const second = store.createTask({ title: "Second" });
+      finish(second.id, "mae", "two");
+      store.initStore();
+
+      expect(store.shippingLog()).toEqual([
+        {
+          assigneeId: "mae",
+          completedAt: 3000,
+          id: second.id,
+          productId: null,
+          summary: "two",
+          title: "Second",
+        },
+        {
+          assigneeId: "priya",
+          completedAt: 1000,
+          id: first.id,
+          productId: null,
+          summary: "one",
+          title: "First",
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -908,8 +1002,8 @@ describe("the save format", () => {
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
-    expect(store.queryTasks({ status: ["done"] }).map((t) => t.id)).toEqual([shipped.id]);
-    expect(store.queryTasks({ status: ["superseded"] })).toMatchObject([
+    expect(store.shippingLog().map((t) => t.id)).toEqual([shipped.id]);
+    expect(store.listShippedTasks().filter(taskIn("superseded"))).toMatchObject([
       { id: answered.id, state: { by: null, kind: "superseded" } },
     ]);
   });

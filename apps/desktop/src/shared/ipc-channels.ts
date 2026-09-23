@@ -37,6 +37,7 @@ export const CHANNELS = {
   setAutopilot: { channel: "company:autopilot", kind: "invoke" },
   setBudget: { channel: "company:budget", kind: "invoke" },
   setMaxAgents: { channel: "company:max-agents", kind: "invoke" },
+  shippingLog: { channel: "task:shipped", kind: "invoke-void" },
   startLogin: { channel: "auth:start", kind: "invoke-void" },
   stripeConnect: { channel: "stripe:connect", kind: "invoke-void" },
   stripeDisconnect: { channel: "stripe:disconnect", kind: "invoke-void" },

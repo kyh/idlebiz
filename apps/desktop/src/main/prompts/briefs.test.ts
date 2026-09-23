@@ -26,6 +26,7 @@ const employee: Employee = {
   deskIndex: 0,
   id: "lead",
   lastRunMetrics: null,
+  lastShip: null,
   name: "Priya",
   persona: "",
   role: "engineer",

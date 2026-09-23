@@ -39,7 +39,6 @@ import {
 } from "@/main/stripe-connect";
 import { ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
-import type { Task } from "@/shared/domain";
 
 const moduleDir = import.meta.dirname;
 const isDev = !app.isPackaged;
@@ -147,8 +146,7 @@ const registerIpcHandlers = (): void => {
     if (!emp) {
       throw new Error(`no employee ${employeeId}`);
     }
-    const mine = (t: Task) => t.assigneeId === employeeId;
-    return chatOptions(emp, store.openTasksFor(employeeId), store.listShippedTasks().filter(mine));
+    return chatOptions(emp, store.openTasksFor(employeeId));
   });
 
   handle("teamMessages", ({ limit }) => store.recentTeamMessages(limit ?? 30));
@@ -161,6 +159,7 @@ const registerIpcHandlers = (): void => {
   handle("setMaxAgents", ({ maxAgents }) => store.setMaxAgents(maxAgents));
 
   handle("listTasks", store.queryTasks);
+  handle("shippingLog", store.shippingLog);
 
   handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
 

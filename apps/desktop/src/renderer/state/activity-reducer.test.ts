@@ -11,6 +11,7 @@ const employee = (id: string): Employee => ({
   deskIndex: 0,
   id,
   lastRunMetrics: null,
+  lastShip: null,
   name: id,
   persona: "",
   role: "engineer",

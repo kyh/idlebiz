@@ -12,17 +12,15 @@ import { RichText } from "@/renderer/ui/linkify";
 import { productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
-import { taskIn } from "@/shared/domain";
-import type { Employee, Product, TaskIn } from "@/shared/domain";
+import type { Employee, Product, ShipLine } from "@/shared/domain";
 import type { ProductStatus } from "@/shared/integrations";
 import { errorMessage } from "@/shared/errors";
 import { formatDate, formatUsd } from "@/shared/format";
 import { cn } from "cn";
 
-const ShipRowView = ({ t, by }: { t: TaskIn<"done">; by: string }) => {
+const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
   const [open, setOpen] = useState(false);
-  const summary = t.state.summary ?? "";
-  const firstLine = summary.split("\n").find((l) => l.trim() !== "") ?? "";
+  const firstLine = t.summary.split("\n").find((l) => l.trim() !== "") ?? "";
   return (
     <div className="px-inset p-2.5">
       <button
@@ -35,12 +33,12 @@ const ShipRowView = ({ t, by }: { t: TaskIn<"done">; by: string }) => {
           <span className="block truncate text-sm text-fg">📦 {firstLine || t.title}</span>
         </span>
         <span className="shrink-0 text-xs text-fg-dim">
-          {by} · {formatDate(t.completedAt ?? t.createdAt)}
+          {by} · {formatDate(t.completedAt)}
         </span>
       </button>
       {open ? (
         <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#4c5064]">
-          <RichText text={summary.slice(0, 1500)} />
+          <RichText text={t.summary} />
         </p>
       ) : null}
     </div>
@@ -48,13 +46,7 @@ const ShipRowView = ({ t, by }: { t: TaskIn<"done">; by: string }) => {
 };
 const ShipRow = memo(ShipRowView);
 
-const ShippingLog = ({
-  shown,
-  employees,
-}: {
-  shown: TaskIn<"done">[] | null;
-  employees: Employee[];
-}) => {
+const ShippingLog = ({ shown, employees }: { shown: ShipLine[] | null; employees: Employee[] }) => {
   if (shown === null) {
     return <div className="text-sm text-fg-dim">Loading…</div>;
   }
@@ -65,9 +57,9 @@ const ShippingLog = ({
       </div>
     );
   }
-  return shown
-    .toReversed()
-    .map((t) => <ShipRow key={t.id} t={t} by={employeeName(employees, t.assigneeId, "team")} />);
+  return shown.map((t) => (
+    <ShipRow key={t.id} t={t} by={employeeName(employees, t.assigneeId, "team")} />
+  ));
 };
 
 const ProductCard = ({
@@ -224,18 +216,15 @@ export const Ships = ({
   const [note, showNote] = useTransientNote(2500);
   // null: the whole company's log
   const [selected, setSelected] = useState<string | null>(null);
-  const ships = useAsync(async () => {
-    if (!company) {
-      return [];
-    }
-    const done = await bridge().listTasks({ status: ["done"] });
-    return done.filter(taskIn("done")).filter((t) => t.state.summary);
-  }, [company?.id, company?.ships]);
+  const ships = useAsync(
+    async () => (company ? await bridge().shippingLog() : []),
+    [company?.id, company?.ships],
+  );
 
   if (!company) {
     return null;
   }
-  const ofSelected = (t: TaskIn<"done">): boolean => selected === null || t.productId === selected;
+  const ofSelected = (t: ShipLine): boolean => selected === null || t.productId === selected;
   const shown = ships?.filter(ofSelected) ?? null;
 
   const selectedName =

@@ -80,8 +80,10 @@ import type {
   FailureVerdict,
   LoadReport,
   LoadSkip,
+  OpenTaskStatus,
   Product,
   Routine,
+  ShipLine,
   Task,
   TaskPriority,
   TaskState,
@@ -94,10 +96,12 @@ import {
   BUSINESS_TYPES,
   DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
+  LastShipSchema,
   RunMetricsSchema,
   afterFailure,
   entering,
   leadOf,
+  taskIn,
 } from "@/shared/domain";
 import type { ActivityEvent, PersistedActivity } from "@/shared/activity";
 
@@ -326,12 +330,15 @@ const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]): 
 /** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
 const RunStateSchema = z.object({
   lastRunMetrics: RunMetricsSchema.nullable(),
+  // defaulted: a file without it must still parse, or its session would be dropped with it
+  lastShip: LastShipSchema.nullable().default(null),
   sessionId: z.string().nullable(),
 });
 
 const saveRunState = (e: Employee): void => {
   const state: z.infer<typeof RunStateSchema> = {
     lastRunMetrics: e.lastRunMetrics,
+    lastShip: e.lastShip,
     sessionId: e.sessionId,
   };
   atomicWrite(employeeRunStateFile(e.companyId, e.id), JSON.stringify(state, null, 2));
@@ -351,6 +358,7 @@ const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
     deskIndex: optNum(m, "deskIndex", 0),
     id: reqStr(f, "slug"),
     lastRunMetrics: null,
+    lastShip: null,
     name: reqStr(f, "name"),
     persona: optStr(m, "persona") ?? "",
     role: optStr(m, "role") ?? "general",
@@ -751,6 +759,7 @@ const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
   deskIndex: input.deskIndex,
   id,
   lastRunMetrics: null,
+  lastShip: null,
   name: input.name,
   persona: input.persona,
   role: input.role,
@@ -1184,22 +1193,18 @@ const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
 /** The company's open queue: everything not yet history, newest first. */
 export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
 
-/** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
-/** Tasks by assignee and status, newest first. The shipping log is thousands of briefs, so it is only read when history is asked for. */
+/** Open tasks by assignee and status, newest first. History is the shipping log's. */
 export const queryTasks = (query: {
   assigneeId?: string;
-  status?: readonly TaskStatus[];
+  status?: readonly OpenTaskStatus[];
 }): Task[] => {
   const { assigneeId, status } = query;
-  const wantsShipped = status === undefined || status.some((s) => HISTORY.has(s));
-  // oxlint-disable-next-line no-use-before-define -- a const arrow, resolved when called
-  const pool = wantsShipped ? [...listOpenTasks(), ...listShippedTasks()] : listOpenTasks();
-  return pool
+  return listOpenTasks()
     .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
-    .filter((t) => status === undefined || status.includes(t.state.kind))
-    .toSorted(newestFirst);
+    .filter((t) => status === undefined || status.some((s) => s === t.state.kind));
 };
 
+/** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
 export const listShippedTasks = (): Task[] => {
   const active = current();
   const companyId = active.company.id;
@@ -1213,6 +1218,29 @@ export const listShippedTasks = (): Task[] => {
   }
   return active.shipped.toSorted(newestFirst);
 };
+
+/** A shipping log line's summary; the brief a task ran on stays on disk. */
+const SHIP_LINE_CHARS = 1500;
+
+/** Every ship with something to say, newest first: the Products panel's log. */
+export const shippingLog = (): ShipLine[] =>
+  listShippedTasks()
+    .filter(taskIn("done"))
+    .flatMap(({ assigneeId, completedAt, createdAt, id, productId, state, title }) =>
+      state.summary
+        ? [
+            {
+              assigneeId,
+              completedAt: completedAt ?? createdAt,
+              id,
+              productId,
+              summary: state.summary.slice(0, SHIP_LINE_CHARS),
+              title,
+            },
+          ]
+        : [],
+    )
+    .toSorted((a, b) => b.completedAt - a.completedAt);
 
 export const openTasksFor = (employeeId: string): Task[] =>
   maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
@@ -1239,6 +1267,23 @@ const patchTask = (id: string, patch: Partial<Task>): Task =>
 /** How a run can leave its task: shipped, or waiting on the founder. Only an answer supersedes one. */
 type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
 
+/** How much of a ship's summary a dialogue quotes back to its author. */
+const LAST_SHIP_CHARS = 500;
+
+/** Kept in run-state so a dialogue can offer to build on it without reading the shipping log. */
+const noteShip = (t: Task): void => {
+  // a run can settle after its employee was released
+  if (t.state.kind !== "done" || !t.state.summary || !t.assigneeId || !getEmployee(t.assigneeId)) {
+    return;
+  }
+  const lastShip = {
+    summary: t.state.summary.slice(0, LAST_SHIP_CHARS),
+    taskId: t.id,
+    title: t.title,
+  };
+  patchIn(current().employees, t.assigneeId, { lastShip }, saveRunState);
+};
+
 // Persist before shelving so boot can recover a crash between the two writes.
 const close = (
   taskId: string,
@@ -1260,6 +1305,7 @@ const close = (
     active.tasks.splice(idx, 1);
   }
   active.shipped?.push(t);
+  noteShip(t);
 };
 
 const heldBy = (t: Task | null, runId: string): Task | null =>

@@ -172,7 +172,8 @@ rather than crashing boot.
 - **Only finished work is history.** `done` tasks move to `shipped/` and load on demand;
   so does an ask the founder answered, `superseded` by its continuation and never a ship.
   `dead` tasks stay in the active queue because the Inbox can retry them and employees
-  use them to identify unresolved problems.
+  use them to identify unresolved problems. `listTasks` answers open work only; the one
+  reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
   Four passes: every seat, point of interest and the door reachable from spawn; no open
@@ -196,8 +197,9 @@ rather than crashing boot.
 - **The activity log is an audit trail, not a query store.** State that outlives a run is
   written where it is known: the founder's digest folds into `state/since-last-look.json` as
   each event publishes (`store.logActivity`, `main/store/digest.ts`), and what a run leaves
-  for the next — the session to resume, where the real numbers stood — sits in
-  `agents/<slug>/run-state.json`, so AGENTS.md changes only when the instructions do.
+  for the next — the session to resume, where the real numbers stood, what they last
+  shipped — sits in `agents/<slug>/run-state.json`, so AGENTS.md changes only when the
+  instructions do.
   The brief's "recently shipped" lines come from `state/recent-ships.json`, written with the
   ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
   the renderer, whose feed starts empty every launch. Company-level running state goes in

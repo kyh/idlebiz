@@ -4,7 +4,7 @@ import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import type { Digest } from "@/shared/digest";
-import { BudgetSchema, TASK_STATUSES } from "@/shared/domain";
+import { BudgetSchema, OPEN_TASK_STATUSES } from "@/shared/domain";
 import type {
   AuthFlowEvent,
   CharacterAssets,
@@ -14,6 +14,7 @@ import type {
   LoadReport,
   Product,
   RestingRunners,
+  ShipLine,
   Task,
   TeamMessage,
 } from "@/shared/domain";
@@ -60,7 +61,7 @@ export const SCHEMAS = {
   listProducts: z.void(),
   listTasks: z.object({
     assigneeId: z.string().optional(),
-    status: z.array(z.enum(TASK_STATUSES)).optional(),
+    status: z.array(z.enum(OPEN_TASK_STATUSES)).optional(),
   }),
   loadOfficeDesign: z.void(),
   loadReport: z.void(),
@@ -77,6 +78,7 @@ export const SCHEMAS = {
   setAutopilot: z.object({ running: z.boolean() }),
   setBudget: z.object({ budget: BudgetSchema }),
   setMaxAgents: z.object({ maxAgents: z.number().int().min(1).max(64) }),
+  shippingLog: z.void(),
   startLogin: z.void(),
   stripeConnect: z.void(),
   stripeDisconnect: z.void(),
@@ -144,6 +146,7 @@ interface Results {
   setMaxAgents: Company;
 
   listTasks: Task[];
+  shippingLog: ShipLine[];
   assignTask: Task;
   answerQuestion: Task;
   resolveApproval: Task;

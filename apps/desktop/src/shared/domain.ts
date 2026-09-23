@@ -98,16 +98,11 @@ export const resolveMentions = (
   return [...ids];
 };
 
-/** dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried. superseded: an ask the founder answered. */
-export const TASK_STATUSES = [
-  "todo",
-  "queued",
-  "running",
-  "blocked",
-  "done",
-  "superseded",
-  "dead",
-] as const;
+/** What stays in the queue. dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried, kept for the Inbox to retry. */
+export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead"] as const;
+export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
+/** The open ones plus history, shelved in shipped/. superseded: an ask the founder answered. */
+export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -236,6 +231,13 @@ export const RunMetricsSchema = z.object({
 });
 export type RunMetrics = z.infer<typeof RunMetricsSchema>;
 
+export const LastShipSchema = z.object({
+  summary: z.string(),
+  taskId: z.string(),
+  title: z.string(),
+});
+type LastShip = z.infer<typeof LastShipSchema>;
+
 export interface Employee {
   id: string;
   companyId: string;
@@ -252,6 +254,8 @@ export interface Employee {
   deskIndex: number;
   /** The numbers as their last run ended, so the next brief can say what moved. Null before a first run. */
   lastRunMetrics: RunMetrics | null;
+  /** What they last shipped, for a dialogue to offer building on. Null before a first ship. */
+  lastShip: LastShip | null;
   status: EmployeeStatus;
   createdAt: number;
 }
@@ -383,6 +387,16 @@ export interface Task {
   startedAt: number | null;
   /** When it last reached done, superseded, blocked or dead. */
   completedAt: number | null;
+}
+
+/** One line of the shipping log: a done task with its summary, and without the brief it ran on. */
+export interface ShipLine {
+  id: string;
+  title: string;
+  summary: string;
+  assigneeId: string | null;
+  productId: string | null;
+  completedAt: number;
 }
 
 /** A recurring instruction that creates a task at each interval. */

@@ -10,7 +10,7 @@ import { mkdirSync } from "node:fs";
 //       AGENTS.md           the agent's canonical definition, injected into every run
 //       memory/             the agent's own scratch memory
 //       sessions/           the agent's own session continuity
-//       run-state.json      what a run leaves for the next: session to resume, the real numbers as it ended
+//       run-state.json      what a run leaves for the next: session to resume, the real numbers as it ended, the last ship
 //     tasks/<slug>/TASK.md  open work
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log), and asks the founder answered
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys

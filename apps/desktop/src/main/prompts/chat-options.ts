@@ -1,5 +1,4 @@
 import type { ChatOption, Employee, Task } from "@/shared/domain";
-import { taskIn } from "@/shared/domain";
 
 const short = (s: string, n = 18): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -67,24 +66,20 @@ const FILLERS: readonly ChatOption[] = [
 
 const MENU_SIZE = 4;
 
-export const chatOptions = (
-  emp: Employee,
-  open: readonly Task[],
-  shipped: readonly Task[],
-): ChatOption[] => {
+export const chatOptions = (emp: Employee, open: readonly Task[]): ChatOption[] => {
   const out: ChatOption[] = [];
   const running = open.find((t) => t.state.kind === "running" || t.state.kind === "queued");
-  const lastDone = shipped.filter(taskIn("done")).find((t) => t.state.summary);
+  const { lastShip } = emp;
   if (running) {
     out.push({
       instruction: `Give a quick status update on "${running.title}": what's done, what's left, anything at risk. Keep it brief, then continue.`,
       label: `Check in: ${short(running.title)}`,
     });
   }
-  if (lastDone) {
+  if (lastShip) {
     out.push({
-      instruction: `Take the next step on what you last shipped ("${lastDone.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${(lastDone.state.summary ?? "").slice(0, 500)}`,
-      label: `Build on: ${short(lastDone.title)}`,
+      instruction: `Take the next step on what you last shipped ("${lastShip.title}"). Build on it: extend it, polish it, or fix its weakest part.\n\nYour summary of that work was:\n${lastShip.summary}`,
+      label: `Build on: ${short(lastShip.title)}`,
     });
   }
   out.push(roleOption(emp));
