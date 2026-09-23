@@ -195,4 +195,20 @@ describe("company tools", () => {
     expect(callTool(ctx, "POST /v1/delegate", elsewhere)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: null, productId: side.id }]);
   });
+
+  it("tells the lead how much of a released teammate's open work is now theirs", () => {
+    const { ctx } = runAs("mae");
+    callTool(ctx, "POST /v1/delegate", HANDOFF);
+    store.createTask({ assigneeId: "priya", title: "Answer the founder" });
+    const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
+    expect(answer).toContain("Their open work is yours now: 2 tasks");
+    expect(store.openTasksFor("mae")).toHaveLength(2);
+  });
+
+  it("names no inherited work when the teammate left none", () => {
+    const { ctx } = runAs("mae");
+    const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
+    expect(answer).not.toContain("open work");
+    expect(answer).toContain("Released Priya.");
+  });
 });

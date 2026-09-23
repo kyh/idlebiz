@@ -1010,16 +1010,25 @@ describe("a release", () => {
     expect(store.getTask(task.id)?.state.kind).toBe("todo");
   });
 
-  it("puts the leaver's queued work back in the pool, holding no bet's run", () => {
+  it("leaves the leaver's unstarted work dead on the lead, holding no bet's run", () => {
     foundTeam();
     const bet = launch(firstProduct().id);
-    const task = store.createTask({ assigneeId: "priya", betId: bet.id, title: "Post it" });
-    store.claimTask(task.id, "priya");
-    store.archiveEmployee("priya");
+    const queued = store.createTask({ assigneeId: "priya", betId: bet.id, title: "Post it" });
+    store.claimTask(queued.id, "priya");
+    const todo = store.createTask({ assigneeId: "priya", title: "Answer the founder" });
+
+    expect(store.archiveEmployee("priya")?.rehomed).toBe(2);
+
+    const released = {
+      assigneeId: "mae",
+      state: { kind: "dead", lastError: "Priya was released" },
+    };
     expect(store.listQueuedTasks()).toEqual([]);
-    expect(store.getTask(task.id)).toMatchObject({ assigneeId: null, state: { kind: "todo" } });
+    expect(store.runsInFlight().get(bet.id)).toBeUndefined();
     store.initStore();
-    expect(store.getTask(task.id)).toMatchObject({ assigneeId: null, state: { kind: "todo" } });
+    expect(store.getTask(queued.id)).toMatchObject(released);
+    expect(store.getTask(todo.id)).toMatchObject(released);
+    expect(store.claimTask(queued.id, "mae")?.state.kind).toBe("queued");
   });
 
   it("hands the leaver's asks and dead letters to the lead, and ends an ask no bet funds", () => {

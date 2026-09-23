@@ -851,25 +851,25 @@ export const noteRunEnd = (id: string, sessionId: string | null): void => {
 };
 
 /**
- * Where a released employee's open task goes: unstarted work back to the pool, so it
- * holds no bet's slot, and an ask or a dead letter to the lead, so an answer or a
- * retry still reaches someone. A run in flight settles on its own; null leaves it be.
+ * Where a released employee's open task goes: to the lead, so an answer or a retry still
+ * reaches someone. Unstarted work lands dead, so it holds no bet's slot and waits in the
+ * founder's Inbox instead of running on the lead unasked. A run in flight settles on its
+ * own; null leaves it be.
  */
 const rehomed = (t: Task, leaver: Employee, lead: string | null, now: number): Task | null => {
+  const deadOnLead = (): Task => ({
+    ...t,
+    assigneeId: lead,
+    ...entering({ kind: "dead", lastError: `${leaver.name} was released` }, now),
+  });
   switch (t.state.kind) {
     case "todo":
     case "queued": {
-      return { ...t, assigneeId: null, state: { kind: "todo" } };
+      return deadOnLead();
     }
     case "blocked": {
       // an unfunded ask on the lead reads as their pending proposal, and would hold every new bet
-      return t.betId === null
-        ? {
-            ...t,
-            assigneeId: lead,
-            ...entering({ kind: "dead", lastError: `${leaver.name} was released` }, now),
-          }
-        : { ...t, assigneeId: lead };
+      return t.betId === null ? deadOnLead() : { ...t, assigneeId: lead };
     }
     case "dead": {
       return { ...t, assigneeId: lead };
@@ -883,8 +883,10 @@ const rehomed = (t: Task, leaver: Employee, lead: string | null, now: number): T
   }
 };
 
-/** Archive the employee package; their queued work goes back to the pool, their open asks to the lead. */
-export const archiveEmployee = (employeeId: string): Employee | null => {
+/** Archive the employee package and hand their open work to the lead; `rehomed` counts it. */
+export const archiveEmployee = (
+  employeeId: string,
+): { employee: Employee; rehomed: number } | null => {
   const emp = getEmployee(employeeId);
   if (!emp) {
     return null;
@@ -904,14 +906,16 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
   }
   const lead = active.company.leaderId;
   const now = Date.now();
+  let moved = 0;
   for (const [i, t] of active.tasks.entries()) {
     const next = t.assigneeId === employeeId ? rehomed(t, emp, lead, now) : null;
     if (next) {
       active.tasks[i] = next;
       saveTask(next);
+      moved += 1;
     }
   }
-  return emp;
+  return { employee: emp, rehomed: moved };
 };
 
 // ---- products --------------------------------------------------------------

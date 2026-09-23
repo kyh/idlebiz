@@ -358,7 +358,10 @@ describe("a release", () => {
     drain.start();
     drain.stop();
 
-    expect(store.openTasksFor("priya")).toMatchObject([{ betId: bet.id }]);
+    expect(store.openTasksFor("priya")).toMatchObject([
+      { id: task.id, state: { kind: "dead" } },
+      { betId: bet.id, state: { kind: "running" } },
+    ]);
   });
 
   it("carries the founder's answer to a leaver's funded ask to the lead", async () => {

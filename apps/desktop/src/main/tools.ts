@@ -9,6 +9,7 @@ import type { Bet } from "@/shared/bets";
 import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
 import type { BlockedAsk, Company, Employee } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
+import { plural } from "@/shared/format";
 import type { JsonValue } from "@/shared/json";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
@@ -243,14 +244,18 @@ const TOOLS = {
     if (target.status === "working") {
       return `${target.name} is mid-task right now — try again when they're idle.`;
     }
-    store.archiveEmployee(slug);
+    const rehomed = store.archiveEmployee(slug)?.rehomed ?? 0;
     post(ctx, `👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
     publishActivity({
       employeeId: target.id,
       kind: "org.released",
       payload: { by: employee.id, name: target.name, reason },
     });
-    return `Released ${target.name}. Their workspace contributions and memory are archived under alumni/.`;
+    const inherited =
+      rehomed === 0
+        ? ""
+        : ` Their open work is yours now: ${plural(rehomed, "task")}, each waiting in the founder's Inbox for an answer or a retry.`;
+    return `Released ${target.name}.${inherited} Their workspace contributions and memory are archived under alumni/.`;
   }),
 } satisfies Record<ToolName, Tool>;
 
