@@ -25,3 +25,10 @@ export const zeroUsage = (): AgentUsage => ({
   inputTokens: 0,
   outputTokens: 0,
 });
+
+export const addUsage = (a: AgentUsage, b: AgentUsage): AgentUsage => ({
+  cachedTokens: a.cachedTokens + b.cachedTokens,
+  costUsd: a.costUsd + b.costUsd,
+  inputTokens: a.inputTokens + b.inputTokens,
+  outputTokens: a.outputTokens + b.outputTokens,
+});

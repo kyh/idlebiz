@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { BlockedAsk } from "@/shared/domain";
 
@@ -26,6 +27,20 @@ afterAll(() => {
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
 const limited = { error: "You've hit your session limit", kind: "limited", resetsAt: 99 } as const;
+
+describe("addUsage", () => {
+  it("counts both attempts of a retried turn, dollars as already priced", () => {
+    const stale = { cachedTokens: 1, costUsd: 0.02, inputTokens: 10, outputTokens: 0 };
+    const fresh = { cachedTokens: 5, costUsd: 0.5, inputTokens: 200, outputTokens: 40 };
+    expect(addUsage(stale, fresh)).toEqual({
+      cachedTokens: 6,
+      costUsd: 0.52,
+      inputTokens: 210,
+      outputTokens: 40,
+    });
+    expect(addUsage(zeroUsage(), fresh)).toEqual(fresh);
+  });
+});
 
 describe("outcomeOf", () => {
   it("is done when the turn completed with nothing asked", () => {

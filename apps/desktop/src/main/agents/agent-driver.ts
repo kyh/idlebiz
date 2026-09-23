@@ -15,6 +15,7 @@ import type {
   AcpTurnResult,
   PermissionRequest,
 } from "@repo/agent-driver/acp-session";
+import { addUsage } from "@repo/agent-driver/events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import path from "node:path";
@@ -257,7 +258,12 @@ class AgentDriver {
       return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
     }
     const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, signal);
-    return { ...retry.result, session: retry.turn.sessionId ?? null };
+    // the stale attempt was still billed; each attempt is already priced, so add, don't re-price
+    return {
+      ...retry.result,
+      session: retry.turn.sessionId ?? null,
+      usage: addUsage(first.result.usage, retry.result.usage),
+    };
   }
 
   /** A pending founder ask takes precedence over the runner's exit status. */
