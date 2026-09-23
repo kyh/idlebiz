@@ -164,7 +164,10 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   probe is sealed — both in `walkGridOf`, so the scene, the gate and the builder's
   Seal pockets agree. At boot the scene additionally closes every reachable node
   where the founder's face would be painted over, judged from the real textures, so a
-  saved layout the gate never saw still cannot hide them.
+  saved layout the gate never saw still cannot hide them. Main judges the same pose from
+  the PNGs, a bundled employee standing in for the founder, and refuses a save only when
+  closing them would cut a seat, POI or door off (`sightIssues`). On a source sheet that
+  pose is not the top-left frame but `SOURCE_STANDING_FRAME`.
 
 ## UI conventions
 

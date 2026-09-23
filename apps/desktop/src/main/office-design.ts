@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { z } from "zod";
 import { atomicWrite } from "@/main/lib/fs";
 import { OFFICE_DESIGN_PATH } from "@/main/paths";
+import { SOURCE_STANDING_FRAME } from "@/shared/character-frame";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
@@ -15,10 +17,20 @@ import {
 } from "@/shared/office-layout-schema";
 import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
 import { unresolvedArt } from "@/shared/office-object-sprite";
+import { opaqueMask, paintedSprites, sightIssues, standingSilhouette } from "@/shared/office-sight";
+import type { OpaqueMask } from "@/shared/office-sight";
 
 // The founder's saved office. A layout main refuses here is exactly one
-// `check:office` would fail: both judge with shared/office-grid and
-// shared/office-object-sprite.
+// `check:office` would fail: both judge with shared/office-grid,
+// shared/office-sight and shared/office-object-sprite, from the same PNGs.
+
+/** Where the pixels the scene paints live on disk. */
+export interface OfficeArt {
+  /** The renderer's public/, as the page is served from it. */
+  readonly publicDir: string;
+  /** A source employee sheet whose standing pose stands in for every character's, as in check:office. */
+  readonly sheet: string;
+}
 
 const newerStamp = z.object({ version: z.number().gt(OFFICE_LAYOUT_VERSION) });
 
@@ -52,13 +64,34 @@ export const loadOfficeDesign = (): OfficeDesign => {
   }
 };
 
-/** Validate art and reachability before replacing the saved office; a newer build's file is never replaced. */
-export const saveOfficeDesign = (layout: OfficeLayoutData): void => {
+/** Places the layout sends people that the scene's boot-time sight seal would cut off. */
+const sightIssuesOf = async (layout: OfficeLayoutData, art: OfficeArt): Promise<string[]> => {
+  // native, so loaded on a save rather than at boot
+  const { default: sharp } = await import("sharp");
+  const decode = async (file: string): Promise<OpaqueMask> => {
+    // sharp cannot read inside the asar a packaged renderer ships public/ in; Electron's fs can
+    const { data, info } = await sharp(await readFile(file))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    return opaqueMask({ data, h: info.height, w: info.width });
+  };
+  const [sprites, sheet] = await Promise.all([
+    paintedSprites(layout, (spritePath) => decode(path.join(art.publicDir, spritePath))),
+    decode(art.sheet),
+  ]);
+  return sightIssues(layout, sprites, standingSilhouette(sheet, SOURCE_STANDING_FRAME));
+};
+
+/** Validate art, reachability and sight before replacing the saved office; a newer build's file is never replaced. */
+export const saveOfficeDesign = async (layout: OfficeLayoutData, art: OfficeArt): Promise<void> => {
   if (loadOfficeDesign().kind === "newer") {
     throw new Error("This office was saved by a newer IdleBiz; update to edit it.");
   }
   withShippedArt(layout);
-  const issues = layoutIssues(layout);
+  const walkable = layoutIssues(layout);
+  // sight is judged on a grid that is already sound
+  const issues = walkable.length > 0 ? walkable : await sightIssuesOf(layout, art);
   if (issues.length > 0) {
     throw new Error(`office layout rejected:\n${issues.join("\n")}`);
   }

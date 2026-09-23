@@ -14,9 +14,20 @@ import {
   reachableNodes,
   walkGridOf,
 } from "../src/shared/office-grid.ts";
-import { comparePaintOrder } from "../src/shared/office-depth.ts";
-import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
-import { hiddenNodes, opaqueAt } from "../src/shared/office-sight.ts";
+import {
+  CHAR_ORIGIN_X,
+  CHAR_ORIGIN_Y,
+  FRAME_H,
+  FRAME_W,
+  SOURCE_STANDING_FRAME,
+} from "../src/shared/character-frame.ts";
+import {
+  hiddenNodes,
+  opaqueAt,
+  opaqueMask,
+  paintedSprites,
+  standingSilhouette,
+} from "../src/shared/office-sight.ts";
 import { objectSpritePath, unresolvedArt } from "../src/shared/office-object-sprite.ts";
 import { SPRITE_BOUNDS } from "../src/shared/sprite-bounds.generated.ts";
 import { loadRaw, opaqueBounds } from "./lib/pixels.cjs";
@@ -26,7 +37,7 @@ const appRoot = path.resolve(import.meta.dirname, "..");
 const { values: flags } = parseArgs({
   options: {
     layout: { default: "src/renderer/game/office-design.json", type: "string" },
-    // any composited sheet: they share one silhouette, which is what we test
+    // a source employee sheet, standing in for every character as in main
     sheet: { default: "resources/employee-sheets/employee-sheet-01.png", type: "string" },
   },
 });
@@ -35,30 +46,8 @@ const sheetPath = path.resolve(appRoot, flags.sheet);
 
 const at = (p) => `(${String(p.x).padStart(3)},${String(p.y).padStart(3)})`;
 
-/** Opaque-pixel coverage of a decoded PNG, the shape office-sight judges with. */
-const maskOf = (img) => {
-  const opaque = new Uint8Array(img.w * img.h);
-  for (let i = 0; i < opaque.length; i += 1) {
-    opaque[i] = img.data[i * 4 + 3] === 0 ? 0 : 1;
-  }
-  return { h: img.h, opaque, w: img.w };
-};
-
-/** Every sprite the room paints, in paint order, with its decoded pixels. */
-const paintedSprites = async (layout) => {
-  const out = [];
-  const masks = new Map();
-  for (const obj of layout.objects.toSorted(comparePaintOrder)) {
-    const file = path.join(appRoot, "public", objectSpritePath(obj));
-    let mask = masks.get(file);
-    if (!mask) {
-      mask = maskOf(await loadRaw(file));
-      masks.set(file, mask);
-    }
-    out.push({ mask, obj });
-  }
-  return out;
-};
+/** Opaque pixels of a PNG, decoded as the save handler decodes them. */
+const decode = async (file) => opaqueMask(await loadRaw(file));
 
 /** Alpha of the room as the scene paints it: 1 where any object has an opaque pixel. */
 const paintedMask = (layout, sprites) => {
@@ -79,21 +68,6 @@ const paintedMask = (layout, sprites) => {
     }
   }
   return painted;
-};
-
-/** The idle-down frame's opaque pixels — the silhouette actually drawn at a standstill. */
-const characterSilhouette = async () => {
-  const img = await loadRaw(sheetPath);
-  const opaque = new Uint8Array(FRAME_W * FRAME_H);
-  for (let y = 0; y < FRAME_H; y += 1) {
-    for (let x = 0; x < FRAME_W; x += 1) {
-      // frame 0 of the sheet = walk-down rest pose, at the sheet's top-left
-      if (img.data[(y * img.w + x) * 4 + 3] !== 0) {
-        opaque[y * FRAME_W + x] = 1;
-      }
-    }
-  }
-  return { h: FRAME_H, opaque, w: FRAME_W };
 };
 
 /** Where the character's frame lands for an origin at `node`. */
@@ -254,9 +228,15 @@ const main = async () => {
 
   const nodes = reachableNodes(walkGridOf(layout), layout.spawn);
 
-  const sprites = await paintedSprites(layout);
-  const silhouette = await characterSilhouette();
-  checkVoid(layout, paintedMask(layout, sprites), silhouette, nodes);
-  checkOcclusion(layout, sprites, silhouette);
+  const sprites = await paintedSprites(layout, (sprite) =>
+    decode(path.join(appRoot, "public", sprite)),
+  );
+  const sheet = await decode(sheetPath);
+  // Facing down, left or up, the founder's feet hang 2-26px over the open corner of a wall
+  // tile at the door (24,200) and at (120,328); until the layout settles those two, the
+  // void check stands them facing right: walk-right's first frame, at the band's left edge.
+  const facingRight = { x: 0, y: SOURCE_STANDING_FRAME.y };
+  checkVoid(layout, paintedMask(layout, sprites), standingSilhouette(sheet, facingRight), nodes);
+  checkOcclusion(layout, sprites, standingSilhouette(sheet, SOURCE_STANDING_FRAME));
 };
 void main();

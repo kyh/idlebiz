@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { opaqueMask } from "@/shared/office-sight";
 import type { OpaqueMask } from "@/shared/office-sight";
 
 export { type OpaqueMask } from "@/shared/office-sight";
@@ -17,12 +18,8 @@ const opaqueMaskOf = (
     return null;
   }
   ctx.drawImage(source, 0, 0);
-  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  const opaque = new Uint8Array(canvas.width * canvas.height);
-  for (let i = 0; i < opaque.length; i += 1) {
-    opaque[i] = (pixels[i * 4 + 3] ?? 0) > 0 ? 1 : 0;
-  }
-  return { h: canvas.height, opaque, w: canvas.width };
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return opaqueMask({ data, h: canvas.height, w: canvas.width });
 };
 
 /**
@@ -42,18 +39,4 @@ export const textureMasks = (
     masks.set(key, mask);
     return mask;
   };
-};
-
-/** One frame of a sheet as its own mask: the standing pose the sight pass judges by. */
-export const frameMask = (
-  sheet: OpaqueMask,
-  frame: { x: number; y: number; w: number; h: number },
-): OpaqueMask => {
-  const opaque = new Uint8Array(frame.w * frame.h);
-  for (let y = 0; y < frame.h; y += 1) {
-    for (let x = 0; x < frame.w; x += 1) {
-      opaque[y * frame.w + x] = sheet.opaque[(frame.y + y) * sheet.w + frame.x + x] ?? 0;
-    }
-  }
-  return { h: frame.h, opaque, w: frame.w };
 };

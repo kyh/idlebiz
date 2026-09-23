@@ -4,6 +4,12 @@
 export const FRAME_W = 32;
 export const FRAME_H = 64;
 
+// Sight is judged by the standing pose, walk-down's first frame. A source employee sheet
+// holds it in its walk band (y 128, down in columns 18-23); the compositor moves it to
+// the walk sheet's top-left, where the scene reads it.
+export const SOURCE_STANDING_FRAME = { x: 18 * FRAME_W, y: 128 } as const;
+export const WALK_STANDING_FRAME = { x: 0, y: 0 } as const;
+
 /** One origin for every character, so the player and NPCs sort on the same footing. */
 export const CHAR_ORIGIN_X = 0.5;
 export const CHAR_ORIGIN_Y = 0.86;

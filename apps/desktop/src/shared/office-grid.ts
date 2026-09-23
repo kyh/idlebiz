@@ -1,4 +1,4 @@
-import type { OfficeLayoutData, PixelPoint } from "./office-layout-schema.ts";
+import type { OfficeLayoutData, OfficeSeat, PixelPoint } from "./office-layout-schema.ts";
 
 // Shared by the scene, builder and save gate. BFS walks half-tile nodes where
 // a 16x12 body fits, probing its four corners. Type-only imports keep this Node-loadable.
@@ -273,16 +273,20 @@ export const walkGridOf = (layout: GridSource): WalkGrid => {
   return withSolid(seated, pocketCells(seated, layout.spawn));
 };
 
-/** Close hidden standing spots and seal resulting pockets. Nodes match cells on the 16px grid. */
+/** A copy of the grid with the cell under each node solid. Nodes match cells on the 16px grid. */
+export const closedAt = (grid: WalkGrid, nodes: readonly PixelPoint[]): WalkGrid =>
+  withSolid(
+    grid,
+    nodes.map((node) => cellOf(grid, node)),
+  );
+
+/** Close hidden standing spots and seal resulting pockets. */
 export const withoutNodes = (
   grid: WalkGrid,
   spawn: PixelPoint,
   nodes: readonly PixelPoint[],
 ): WalkGrid => {
-  const closed = withSolid(
-    grid,
-    nodes.map((node) => cellOf(grid, node)),
-  );
+  const closed = closedAt(grid, nodes);
   return withSolid(closed, pocketCells(closed, spawn));
 };
 
@@ -306,14 +310,36 @@ export const canReach = (
 
 const at = (p: PixelPoint): string => `${p.x},${p.y}`;
 
+const seatLabel = (seat: OfficeSeat, i: number): string =>
+  `seat ${i} (${seat.role} at ${at(seat)})`;
+
+/** Everywhere the layout sends people, each as an issue names it. */
+const destinations = (layout: OfficeLayoutData): { label: string; spot: PixelPoint }[] => [
+  { label: `door ${at(layout.door)}`, spot: layout.door },
+  ...layout.seats.map((seat, i) => ({ label: seatLabel(seat, i), spot: seat })),
+  ...layout.pois.map((poi, i) => ({
+    label: `poi ${i} (facing ${poi.face} at ${at(poi)})`,
+    spot: poi,
+  })),
+];
+
+const inWorld = (layout: OfficeLayoutData, p: PixelPoint): boolean =>
+  p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;
+
+/** Every place in the world the layout sends people that a walker from spawn cannot reach on `grid`. */
+export const unreachablePlaces = (layout: OfficeLayoutData, grid: WalkGrid): string[] => {
+  const reachable = reachableTiles(grid, layout.spawn);
+  return destinations(layout)
+    .filter(({ spot }) => inWorld(layout, spot) && !canReach(grid, reachable, spot))
+    .map(({ label }) => `${label} is unreachable from spawn`);
+};
+
 /** Check grid dimensions and reachability from the founder's spawn. */
 export const layoutIssues = (layout: OfficeLayoutData): string[] => {
   // judged on the layout as authored: sealing a pocket must not let a seat in a
   // sealed room pass by snapping to the nearest floor on the other side of its wall
   const grid = authoredGrid(layout);
   const issues: string[] = [];
-  const inWorld = (p: PixelPoint): boolean =>
-    p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;
 
   if (layout.collision.length !== layout.rows) {
     issues.push(`collision has ${layout.collision.length} rows, expected ${layout.rows}`);
@@ -330,7 +356,7 @@ export const layoutIssues = (layout: OfficeLayoutData): string[] => {
 
   // The founder is placed at the spawn exactly, never snapped: a body inside a
   // wall there can't take a single step.
-  if (!inWorld(layout.spawn)) {
+  if (!inWorld(layout, layout.spawn)) {
     issues.push(`spawn ${at(layout.spawn)} is outside the world`);
   } else if (bodyBlockedAt(grid, layout.spawn.x, layout.spawn.y)) {
     issues.push(`spawn ${at(layout.spawn)} is inside collision`);
@@ -340,35 +366,19 @@ export const layoutIssues = (layout: OfficeLayoutData): string[] => {
     return issues;
   }
 
-  const reachable = reachableTiles(grid, layout.spawn);
-  if (!inWorld(layout.door)) {
-    issues.push(`door ${at(layout.door)} is outside the world`);
-  } else if (!canReach(grid, reachable, layout.door)) {
-    issues.push(`door ${at(layout.door)} is unreachable from spawn`);
-  }
-
   const seen = new Map<string, number>();
   for (const [i, seat] of layout.seats.entries()) {
-    const label = `seat ${i} (${seat.role} at ${at(seat)})`;
     const prior = seen.get(at(seat));
     if (prior === undefined) {
       seen.set(at(seat), i);
     } else {
-      issues.push(`${label} duplicates seat ${prior}`);
-    }
-    if (!inWorld(seat)) {
-      issues.push(`${label} is outside the world`);
-    } else if (!canReach(grid, reachable, seat)) {
-      issues.push(`${label} is unreachable from spawn`);
+      issues.push(`${seatLabel(seat, i)} duplicates seat ${prior}`);
     }
   }
-  for (const [i, poi] of layout.pois.entries()) {
-    const label = `poi ${i} (facing ${poi.face} at ${at(poi)})`;
-    if (!inWorld(poi)) {
+  for (const { label, spot } of destinations(layout)) {
+    if (!inWorld(layout, spot)) {
       issues.push(`${label} is outside the world`);
-    } else if (!canReach(grid, reachable, poi)) {
-      issues.push(`${label} is unreachable from spawn`);
     }
   }
-  return issues;
+  return [...issues, ...unreachablePlaces(layout, grid)];
 };

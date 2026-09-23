@@ -1,24 +1,20 @@
 import sharp from "sharp";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { app } from "electron";
+import { employeeSheetDir } from "@/main/character/employee-sheets";
 import type { CharacterAssets } from "@/shared/domain";
-import { FRAME_H, FRAME_W } from "@/shared/character-frame";
+import { FRAME_H, FRAME_W, SOURCE_STANDING_FRAME } from "@/shared/character-frame";
 
-// sharp needs real files: packaged sheets live in electron-builder's extraResources.
-const EMPLOYEE_SHEET_DIR = app.isPackaged
-  ? path.join(process.resourcesPath, "employee-sheets")
-  : path.join(app.getAppPath(), "resources", "employee-sheets");
-
-// Source columns: 0-5 right, 6-11 up, 12-17 left, 18-23 down.
-const WALK_TOP = 128;
+// Source columns: 0-5 right, 6-11 up, 12-17 left, 18-23 down; the standing frame opens down.
+const WALK_TOP = SOURCE_STANDING_FRAME.y;
+const DOWN_COL = SOURCE_STANDING_FRAME.x / FRAME_W;
 // sitting band: 6 frames per facing, two facings
 const SIT_TOP = 256;
 const WALK_FRAMES = 6;
 // Output rows in order — walk down, left, right, up, then sit-left, sit-right
 // (the order characters.ts reads them in) — as [source band top, first column].
 const OUT_ROWS: readonly (readonly [top: number, startCol: number])[] = [
-  [WALK_TOP, 18],
+  [WALK_TOP, DOWN_COL],
   [WALK_TOP, 12],
   [WALK_TOP, 0],
   [WALK_TOP, 6],
@@ -29,14 +25,15 @@ const OUT_ROWS: readonly (readonly [top: number, startCol: number])[] = [
 let employeeSheetPaths: string[] | null = null;
 
 const listEmployeeSheets = async (): Promise<string[]> => {
-  const files = await readdir(EMPLOYEE_SHEET_DIR);
+  const dir = employeeSheetDir();
+  const files = await readdir(dir);
   const sheets = files
     .map((f) => f.trim())
     .filter((f) => /^employee-sheet-\d{2}\.png$/u.test(f))
     .toSorted()
-    .map((f) => path.join(EMPLOYEE_SHEET_DIR, f));
+    .map((f) => path.join(dir, f));
   if (sheets.length === 0) {
-    throw new Error(`no employee character sheets found in ${EMPLOYEE_SHEET_DIR}`);
+    throw new Error(`no employee character sheets found in ${dir}`);
   }
   return sheets;
 };
@@ -71,7 +68,7 @@ const OUT_W = FRAME_W * WALK_FRAMES;
 const OUT_H = FRAME_H * OUT_ROWS.length;
 
 /** Decode once, then copy walk and sit bands into the renderer's 192x384 layout. */
-const buildWalkSheet = async (sheetPath: string): Promise<Buffer> => {
+export const buildWalkSheet = async (sheetPath: string): Promise<Buffer> => {
   const { data, info } = await sharp(sheetPath)
     .ensureAlpha()
     .raw()

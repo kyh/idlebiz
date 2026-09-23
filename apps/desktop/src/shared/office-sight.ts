@@ -1,11 +1,20 @@
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW } from "./character-frame.ts";
 import { characterDepth, objectDepth } from "./office-depth.ts";
-import { reachableNodes } from "./office-grid.ts";
+import {
+  authoredGrid,
+  closedAt,
+  reachableNodes,
+  unreachablePlaces,
+  walkGridOf,
+  withoutNodes,
+} from "./office-grid.ts";
 import type { WalkGrid } from "./office-grid.ts";
-import type { OfficeObjectDef, PixelPoint } from "./office-layout-schema.ts";
+import type { OfficeLayoutData, OfficeObjectDef, PixelPoint } from "./office-layout-schema.ts";
+import { objectSpritePath } from "./office-object-sprite.ts";
 
-// The scene seals standing spots where furniture hides the founder's face.
-// check:office uses the same judgement with PNG masks instead of Phaser textures.
+// The scene seals standing spots where furniture hides the founder's face. The save
+// handler and check:office use the same judgement with PNG masks instead of Phaser
+// textures: main refuses a layout that seal cuts off, the gate any hidden spot at all.
 
 /** Opaque-pixel coverage of a sprite, in its own pixel space. */
 export interface OpaqueMask {
@@ -19,6 +28,55 @@ export interface PaintedSprite {
   readonly obj: OfficeObjectDef;
   readonly mask: OpaqueMask;
 }
+
+/** Decoded pixels, four bytes each with alpha last: sharp's raw RGBA and a canvas's ImageData alike. */
+export interface DecodedImage {
+  readonly data: ArrayLike<number>;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Opaque-pixel coverage of a decoded image: any alpha at all is paint. */
+export const opaqueMask = ({ data, w, h }: DecodedImage): OpaqueMask => {
+  const opaque = new Uint8Array(w * h);
+  for (let i = 0; i < opaque.length; i += 1) {
+    opaque[i] = (data[i * 4 + 3] ?? 0) > 0 ? 1 : 0;
+  }
+  return { h, opaque, w };
+};
+
+/**
+ * The standing pose's opaque pixels, cut from `sheet` at `frame`: WALK_STANDING_FRAME on
+ * the walk sheet the scene draws, SOURCE_STANDING_FRAME on a source employee sheet.
+ */
+export const standingSilhouette = (sheet: OpaqueMask, frame: PixelPoint): OpaqueMask => {
+  const opaque = new Uint8Array(FRAME_W * FRAME_H);
+  for (let y = 0; y < FRAME_H; y += 1) {
+    for (let x = 0; x < FRAME_W; x += 1) {
+      opaque[y * FRAME_W + x] = sheet.opaque[(frame.y + y) * sheet.w + frame.x + x] ?? 0;
+    }
+  }
+  return { h: FRAME_H, opaque, w: FRAME_W };
+};
+
+/** Each placed object with the mask of the PNG it draws; `decode` runs once per PNG. */
+export const paintedSprites = (
+  layout: Pick<OfficeLayoutData, "objects">,
+  decode: (spritePath: string) => Promise<OpaqueMask>,
+): Promise<PaintedSprite[]> => {
+  const masks = new Map<string, Promise<OpaqueMask>>();
+  const maskOf = (spritePath: string): Promise<OpaqueMask> => {
+    let mask = masks.get(spritePath);
+    if (!mask) {
+      mask = decode(spritePath);
+      masks.set(spritePath, mask);
+    }
+    return mask;
+  };
+  return Promise.all(
+    layout.objects.map(async (obj) => ({ mask: await maskOf(objectSpritePath(obj)), obj })),
+  );
+};
 
 /** The rows a founder recognises a character by. Hidden face = not seen. */
 const FACE_ROWS = 18;
@@ -105,4 +163,38 @@ export const hiddenNodes = (
     }
   }
   return hidden.toSorted((a, b) => b.covered - a.covered);
+};
+
+/** The walk grid with every reachable spot where the founder's face would be hidden closed. */
+export const sightSealedGrid = (
+  grid: WalkGrid,
+  spawn: PixelPoint,
+  sprites: readonly PaintedSprite[],
+  silhouette: OpaqueMask,
+): WalkGrid =>
+  withoutNodes(
+    grid,
+    spawn,
+    hiddenNodes(grid, spawn, sprites, silhouette).map((h) => h.node),
+  );
+
+/**
+ * Places the layout sends people that closing its hidden spots cuts off from spawn.
+ * A hidden spot alone is no issue: the scene closes it at boot and walks around it.
+ */
+export const sightIssues = (
+  layout: OfficeLayoutData,
+  sprites: readonly PaintedSprite[],
+  silhouette: OpaqueMask,
+): string[] => {
+  const hidden = hiddenNodes(walkGridOf(layout), layout.spawn, sprites, silhouette);
+  // judged unsealed, as layoutIssues is: once a cut-off room is sealed solid its seat
+  // snaps to floor on the reachable side of the closure and passes
+  const closed = closedAt(
+    authoredGrid(layout),
+    hidden.map((h) => h.node),
+  );
+  return unreachablePlaces(layout, closed).map(
+    (issue) => `${issue} once the spots where furniture hides a face are closed`,
+  );
 };

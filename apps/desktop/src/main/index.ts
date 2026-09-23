@@ -10,7 +10,9 @@ import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { controlPlane } from "@/main/control-plane";
+import { employeeSheetDir } from "@/main/character/employee-sheets";
 import { loadOfficeDesign, saveOfficeDesign } from "@/main/office-design";
+import type { OfficeArt } from "@/main/office-design";
 import { openProduct, openWorkspacePath, productStatus } from "@/main/product";
 import { chatOptions } from "@/main/prompts/chat-options";
 import {
@@ -69,6 +71,15 @@ const resetGame = async (): Promise<void> => {
     });
   }
 };
+
+/** The PNGs the save handler judges sight from: public/ as the page is served it, and check:office's sheet. */
+const officeArt = (): OfficeArt => ({
+  publicDir:
+    isDev && process.env["ELECTRON_RENDERER_URL"]
+      ? path.join(app.getAppPath(), "public")
+      : path.join(moduleDir, "../renderer"),
+  sheet: path.join(employeeSheetDir(), "employee-sheet-01.png"),
+});
 
 const registerIpcHandlers = (): void => {
   handle("hasAuth", async () => ({ ok: await agentDriver.hasAnyRunner() }));
@@ -130,7 +141,7 @@ const registerIpcHandlers = (): void => {
 
   handle("resetGame", resetGame);
 
-  handle("saveOfficeDesign", ({ layout }) => saveOfficeDesign(layout));
+  handle("saveOfficeDesign", ({ layout }) => saveOfficeDesign(layout, officeArt()));
   handle("loadOfficeDesign", loadOfficeDesign);
 
   handle("stripeStatus", () => {

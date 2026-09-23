@@ -20,17 +20,17 @@ import { BUNDLED_LAYOUT, officeOf } from "@/renderer/game/office-layout";
 import type { Office, OfficeLayoutData, PixelPoint } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import { seatDepth } from "@/renderer/game/seat-depth";
-import { frameMask, textureMasks } from "@/renderer/game/texture-masks";
+import { textureMasks } from "@/renderer/game/texture-masks";
 import type { OpaqueMask } from "@/renderer/game/texture-masks";
-import { FRAME_H, FRAME_W } from "@/shared/character-frame";
+import { WALK_STANDING_FRAME } from "@/shared/character-frame";
 import { characterDepth } from "@/shared/office-depth";
-import { hiddenNodes } from "@/shared/office-sight";
+import { sightSealedGrid, standingSilhouette } from "@/shared/office-sight";
 import type { PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
 import { hear, tell } from "@/renderer/game/office-port";
 import { DEFAULT_FOUNDER_SEED, employeeStatusOf } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
-import { bodyBlockedAt, solidAt, withoutNodes } from "@/shared/office-grid";
+import { bodyBlockedAt, solidAt } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
@@ -318,7 +318,7 @@ export class OfficeScene extends Scene {
     if (!sheet) {
       return this.office.grid;
     }
-    const silhouette = frameMask(sheet, { h: FRAME_H, w: FRAME_W, x: 0, y: 0 });
+    const silhouette = standingSilhouette(sheet, WALK_STANDING_FRAME);
     // reading a texture is a canvas round trip: only what can draw above a character
     const sprites: PaintedSprite[] = [];
     for (const placement of this.office.placements) {
@@ -330,12 +330,7 @@ export class OfficeScene extends Scene {
         sprites.push({ mask, obj: placement.def });
       }
     }
-    const hidden = hiddenNodes(this.office.grid, this.office.spawn, sprites, silhouette);
-    return withoutNodes(
-      this.office.grid,
-      this.office.spawn,
-      hidden.map((h) => h.node),
-    );
+    return sightSealedGrid(this.office.grid, this.office.spawn, sprites, silhouette);
   }
 
   /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */

@@ -13,10 +13,42 @@ process.env["IDLEBIZ_ROOT_DIR"] = root;
 const { loadOfficeDesign, saveOfficeDesign } = await import("./office-design");
 
 const layout = officeLayoutSchema.parse(bundled);
+const appRoot = path.resolve(import.meta.dirname, "../..");
+const art = {
+  publicDir: path.join(appRoot, "public"),
+  sheet: path.join(appRoot, "resources", "employee-sheets", "employee-sheet-01.png"),
+};
 const missingArt: OfficeLayoutData = {
   ...layout,
   objects: [...layout.objects, { id: "nonexistent-object", layer: "floor", x: 0, y: 0 }],
 };
+
+// a west and an east room joined by one corridor, the seat in the east one
+const corridor = (objects: OfficeLayoutData["objects"]): OfficeLayoutData => ({
+  ...layout,
+  cell: 16,
+  collision: [
+    "11111111111111111111",
+    "10000111111111100001",
+    "10000111111111100001",
+    "10000000000000000001",
+    "10000111111111100001",
+    "11111111111111111111",
+  ],
+  cols: 20,
+  door: { x: 24, y: 24 },
+  height: 96,
+  objects,
+  pois: [],
+  rows: 6,
+  seats: [{ role: "work", x: 280, y: 24 }],
+  spawn: { x: 24, y: 24 },
+  width: 320,
+});
+/** One design2 tile drawn over everyone. */
+const overhead = (tile: string, x: number, y: number): OfficeLayoutData["objects"] => [
+  { id: tile, layer: "overhead", path: `workspace-kit/design2/${tile}.png`, x, y },
+];
 
 beforeEach(() => rmSync(officeFile, { force: true }));
 
@@ -65,16 +97,37 @@ describe("loading the saved office", () => {
 });
 
 describe("saving the office", () => {
-  it("never replaces a newer build's file", () => {
+  it("never replaces a newer build's file", async () => {
     const newer = JSON.stringify({ ...bundled, version: OFFICE_LAYOUT_VERSION + 1 });
     writeFileSync(officeFile, newer);
 
-    expect(() => saveOfficeDesign(layout)).toThrow("saved by a newer IdleBiz");
+    await expect(saveOfficeDesign(layout, art)).rejects.toThrow("saved by a newer IdleBiz");
     expect(readFileSync(officeFile, "utf-8")).toBe(newer);
   });
 
-  it("refuses a layout naming art this build lacks", () => {
-    expect(() => saveOfficeDesign(missingArt)).toThrow("missing art: nonexistent-object");
+  it("refuses a layout naming art this build lacks", async () => {
+    await expect(saveOfficeDesign(missingArt, art)).rejects.toThrow(
+      "missing art: nonexistent-object",
+    );
+    expect(existsSync(officeFile)).toBe(false);
+  });
+
+  // mid-corridor, or at the seat's own doorway
+  it.each([144, 208])(
+    "refuses a layout whose seat the scene would cut off to keep a face in view (tile at x %i)",
+    async (x) => {
+      await expect(saveOfficeDesign(corridor(overhead("d2-ow-6-3", x, 16)), art)).rejects.toThrow(
+        "seat 0 (work at 280,24) is unreachable from spawn once the spots where furniture hides a face are closed",
+      );
+      expect(existsSync(officeFile)).toBe(false);
+    },
+  );
+
+  // a source sheet's top-left frame faces right; judged by it, this seat stays reachable
+  it("judges sight by the pose the scene stands the founder in", async () => {
+    await expect(saveOfficeDesign(corridor(overhead("d2-fix-117", 120, 14)), art)).rejects.toThrow(
+      "seat 0 (work at 280,24) is unreachable from spawn once the spots where furniture hides a face are closed",
+    );
     expect(existsSync(officeFile)).toBe(false);
   });
 });
