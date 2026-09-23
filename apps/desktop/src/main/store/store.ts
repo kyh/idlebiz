@@ -1580,7 +1580,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   );
   if (busy) {
     const runner = busy.assigneeId === null ? null : getEmployee(busy.assigneeId);
-    throw new Error(
+    throw new RefusalError(
       `${runner?.name ?? "A teammate"} is mid-run on ${product.name} — kill its bets so no new work lands there, then retire it once they're idle.`,
     );
   }

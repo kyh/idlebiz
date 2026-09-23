@@ -256,9 +256,11 @@ describe("company tools", () => {
   });
 
   it("makes a proposal delegate against the bet it opened, never unfunded", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     const proposing: RunContext = { ...ctx, run: { ...ctx.run, origin: "propose" } };
     expect(callTool(proposing, "POST /v1/delegate", HANDOFF)).toContain("open_bet first");
+    expect(logged).not.toHaveBeenCalled();
     expect(store.listOpenTasks()).toEqual([]);
     const bet = openBet(proposing);
     const named = { ...HANDOFF, bet: bet.id };

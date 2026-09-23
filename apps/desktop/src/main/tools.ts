@@ -111,7 +111,7 @@ const fundingFor = (
   const id = named ?? ctx.run.betId;
   if (id === null) {
     if (ctx.run.origin === "propose") {
-      throw new Error(
+      throw new RefusalError(
         'The team only spends against bets: open_bet first, then delegate with "bet":"<slug>".',
       );
     }
