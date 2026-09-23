@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { bridge } from "@/renderer/bridge";
+import { useStore } from "@/renderer/state/store";
 import type { AuthFlowEvent } from "@/shared/domain";
 
 export type Auth =
@@ -9,47 +10,52 @@ export type Auth =
   | { phase: "login-failed"; lines: readonly string[] }
   | { phase: "signed-in"; lines: readonly string[] };
 
+type Attempt = Extract<Auth, { lines: readonly string[] }>;
+
 export const linesOf = (a: Auth): readonly string[] => ("lines" in a ? a.lines : []);
-const withLine = (a: Auth, line: string): readonly string[] => [...linesOf(a).slice(-3), line];
+const withLine = (attempt: Attempt | null, line: string): readonly string[] => [
+  ...(attempt?.lines ?? []).slice(-3),
+  line,
+];
 
-/** Probe an existing CLI login, or start signed out when the caller already checked. */
-export const useAuthFlow = ({ probe, onSignedIn }: { probe: boolean; onSignedIn?: () => void }) => {
-  const [auth, setAuth] = useState<Auth>(probe ? { phase: "checking" } : { phase: "signed-out" });
+const probed = (authed: boolean | null): Auth => {
+  if (authed === null) {
+    return { phase: "checking" };
+  }
+  return authed ? { lines: [], phase: "signed-in" } : { phase: "signed-out" };
+};
+
+/** The store's CLI probe until a login starts here, then that login's progress. */
+export const useAuthFlow = (onSignedIn?: () => void) => {
+  const authed = useStore((s) => s.authed);
+  const [attempt, setAttempt] = useState<Attempt | null>(null);
   const signedIn = useEffectEvent(() => onSignedIn?.());
-
-  useEffect(() => {
-    if (!probe) {
-      return;
-    }
-    const check = async () => {
-      const r = await bridge().hasAuth();
-      setAuth(r.ok ? { lines: [], phase: "signed-in" } : { phase: "signed-out" });
-    };
-    void check();
-  }, [probe]);
 
   useEffect(
     () =>
       bridge().onAuthEvent((e: AuthFlowEvent) => {
         switch (e.type) {
           case "url": {
-            setAuth((a) => ({
+            setAttempt((a) => ({
               lines: withLine(a, "Your browser opened — authorize there, then come back."),
               phase: "logging-in",
             }));
             break;
           }
           case "progress": {
-            setAuth((a) => ({ lines: withLine(a, e.message), phase: "logging-in" }));
+            setAttempt((a) => ({ lines: withLine(a, e.message), phase: "logging-in" }));
             break;
           }
           case "done": {
-            setAuth((a) => ({ lines: withLine(a, "Connected ✓"), phase: "signed-in" }));
+            setAttempt((a) => ({ lines: withLine(a, "Connected ✓"), phase: "signed-in" }));
             signedIn();
             break;
           }
           case "error": {
-            setAuth((a) => ({ lines: withLine(a, `Hmm — ${e.message}`), phase: "login-failed" }));
+            setAttempt((a) => ({
+              lines: withLine(a, `Hmm — ${e.message}`),
+              phase: "login-failed",
+            }));
             break;
           }
           // no default
@@ -59,8 +65,8 @@ export const useAuthFlow = ({ probe, onSignedIn }: { probe: boolean; onSignedIn?
   );
 
   const login = () => {
-    setAuth({ lines: [], phase: "logging-in" });
+    setAttempt({ lines: [], phase: "logging-in" });
     void bridge().startLogin();
   };
-  return { auth, login };
+  return { auth: attempt ?? probed(authed), login };
 };

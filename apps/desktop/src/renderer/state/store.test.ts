@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
-import type { Company, Employee, RestingRunners } from "@/shared/domain";
+import type { AuthFlowEvent, Company, Employee, RestingRunners } from "@/shared/domain";
 import type { AppBridge } from "@/shared/ipc-registry";
 import type { Office } from "@/renderer/game/office-port";
 
@@ -75,10 +75,12 @@ type Used =
   | "loadOfficeDesign"
   | "loadReport"
   | "onActivity"
+  | "onAuthEvent"
   | "onStripeStatus"
   | "stripeStatus";
 
 interface MainHolds {
+  authed: boolean;
   employees: Employee[];
   resting: RestingRunners;
 }
@@ -88,9 +90,10 @@ interface MainHolds {
  * test says, with what main held when it was asked; the rest answer at once.
  */
 const fakeMain = (late: readonly Late[]) => {
-  const main: MainHolds = { employees: [employee("lead")], resting: {} };
+  const main: MainHolds = { authed: true, employees: [employee("lead")], resting: {} };
   const waiting: { method: Late; release: () => void }[] = [];
   const listeners = new Set<(e: ActivityEvent) => void>();
+  const loginListeners = new Set<(e: AuthFlowEvent) => void>();
   const answerOf = <T>(method: Late, value: T): Promise<T> => {
     if (!late.includes(method)) {
       return Promise.resolve(value);
@@ -101,7 +104,7 @@ const fakeMain = (late: readonly Late[]) => {
   };
   const bridge: Pick<AppBridge, Used> = {
     getCompany: () => Promise.resolve(company),
-    hasAuth: () => Promise.resolve({ ok: true }),
+    hasAuth: () => Promise.resolve({ ok: main.authed }),
     listBets: () => Promise.resolve([]),
     listEmployees: () => answerOf("listEmployees", main.employees),
     listProducts: () => Promise.resolve([]),
@@ -111,6 +114,10 @@ const fakeMain = (late: readonly Late[]) => {
     onActivity: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    onAuthEvent: (listener) => {
+      loginListeners.add(listener);
+      return () => loginListeners.delete(listener);
     },
     onStripeStatus: () => () => {},
     restingRunners: () => answerOf("restingRunners", main.resting),
@@ -130,6 +137,13 @@ const fakeMain = (late: readonly Late[]) => {
     bridge,
     emit: async (e: ActivityEvent): Promise<void> => {
       for (const listener of listeners) {
+        listener(e);
+      }
+      await settle();
+    },
+    /** A step of a login the founder started. */
+    login: async (e: AuthFlowEvent): Promise<void> => {
+      for (const listener of loginListeners) {
         listener(e);
       }
       await settle();
@@ -167,6 +181,9 @@ type Seen = Parameters<Parameters<Store["useStore"]>[0]>[0];
 
 const Probe = ({ select, store }: { select: (s: Seen) => string; store: Store }): string =>
   store.useStore(select);
+
+const Screen = ({ store }: { store: Store }): string => store.useBoot().kind;
+const screen = (store: Store): string => renderToStaticMarkup(createElement(Screen, { store }));
 
 /** What a component reading the store would show. */
 const read = (store: Store, select: (s: Seen) => string): string =>
@@ -242,6 +259,17 @@ describe("store", () => {
     await answer("listEmployees");
     expect(walkedIn()).toEqual([employee("mae")]);
     expect(read(store, roster)).toBe("lead:working mae:idle");
+  });
+
+  it("opens the office once a login finishes, though the launch probe found no CLI", async () => {
+    const { bridge, login, main } = fakeMain([]);
+    main.authed = false;
+    const store = await freshStore(bridge);
+    expect(screen(store)).toBe("signed-out");
+    await login({ message: "No signed-in coding CLI yet.", type: "error" });
+    expect(screen(store)).toBe("signed-out");
+    await login({ type: "done" });
+    expect(screen(store)).toBe("office");
   });
 
   it("says why the first refresh failed until a retry lands", async () => {

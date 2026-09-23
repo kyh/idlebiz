@@ -545,11 +545,8 @@ export const Onboarding = () => {
 
   useModal();
 
-  const { auth, login } = useAuthFlow({
-    // a beat on "Connected ✓" before the founder's own step
-    onSignedIn: () => window.setTimeout(() => setStep("founder"), 700),
-    probe: true,
-  });
+  // a beat on "Connected ✓" before the founder's own step
+  const { auth, login } = useAuthFlow(() => window.setTimeout(() => setStep("founder"), 700));
 
   const script = useScript(`${step}:${team.kind}`, scriptFor(step, founderName, companyName, team));
 

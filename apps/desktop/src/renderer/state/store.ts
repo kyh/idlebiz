@@ -3,6 +3,7 @@ import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import { taskIn } from "@/shared/domain";
 import type {
+  AuthFlowEvent,
   Budget,
   Company,
   Employee,
@@ -37,7 +38,7 @@ interface State {
    * can fail, so the room opens even when they do.
    */
   design: OfficeDesign | null;
-  /** A coding CLI is signed in; null until main's probe answers. */
+  /** A coding CLI is signed in, by main's probe or a login since; null until the probe answers. */
   authed: boolean | null;
   stripeStatus: StripeStatus;
   /** Everything the company builds, oldest first, and where each one really is. */
@@ -112,10 +113,6 @@ export const useBoot = (): Boot => {
   const hasCompany = useStore((s) => s.company !== null);
   const authed = useStore((s) => s.authed);
   return bootOf({ authed, bootFailure, booted, hasCompany, saveIssues });
-};
-
-export const setAuthed = (ok: boolean): void => {
-  set({ authed: ok });
 };
 
 // Scene startup can finish after an overlay mounted; replay the current keyboard state.
@@ -552,4 +549,9 @@ export const initStore = (): void => {
   void loadStripeStatus();
   bridge().onActivity(onActivity);
   bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
+  bridge().onAuthEvent((e: AuthFlowEvent) => {
+    if (e.type === "done") {
+      set({ authed: true });
+    }
+  });
 };
