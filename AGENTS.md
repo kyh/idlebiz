@@ -201,10 +201,12 @@ rather than crashing boot.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
   for channel names and must stay dependency-free (the sandboxed preload imports it);
   zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its
-  schema's output — declare the schema, never a parallel type. A handler's throw crosses as
-  an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the preload rethrows bare, so the founder
-  reads the store's sentence, not Electron's wrapper; frame and payload checks still throw.
-  A throw that is not a `RefusalError` (`shared/refusal.ts`) is a fault and is reported too.
+  schema's output — declare the schema, never a parallel type. Main registers every handler
+  from one `IpcHandlers` map (`main/lib/ipc-handler.ts`), so a channel without one fails to
+  compile. A handler's throw crosses as an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the
+  preload rethrows bare, so the founder reads the store's sentence, not Electron's wrapper;
+  frame and payload checks still throw. A throw that is not a `RefusalError`
+  (`shared/refusal.ts`) is a fault and is reported too.
 - **Main keeps a log file.** `main/lib/log.ts` sends main's console, uncaught errors and
   crashed renderer or child processes to `main.log` under `app.getPath("logs")`
   (`~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)` userData), never under the

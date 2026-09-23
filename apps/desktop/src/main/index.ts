@@ -2,7 +2,8 @@ import path from "node:path";
 import { rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, session, shell } from "electron";
-import { handle } from "@/main/lib/ipc-handler";
+import { registerIpcHandlers } from "@/main/lib/ipc-handler";
+import type { IpcHandlers } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
 import { suspendWrites } from "@/main/lib/fs";
 import * as store from "@/main/store/store";
@@ -81,118 +82,93 @@ const officeArt = (): OfficeArt => ({
   sheet: path.join(employeeSheetDir(), "employee-sheet-01.png"),
 });
 
-const registerIpcHandlers = (): void => {
-  handle("hasAuth", async () => ({ ok: await agentDriver.hasAnyRunner() }));
-
-  handle("startLogin", () => {
-    void startLogin((e) => broadcast("onAuthEvent", e));
-    return { started: true };
-  });
-
-  handle("composeCharacter", async ({ seed }) => {
+const ipcHandlers = {
+  answerQuestion: ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer),
+  assignTask: ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId),
+  composeCharacter: async ({ seed }) => {
     const { composeCharacter } = await import("@/main/character/compositor");
     return composeCharacter(seed);
-  });
-
-  handle("getFounderChoices", async () => {
-    const { listFounderChoices } = await import("@/main/character/compositor");
-    return listFounderChoices(6);
-  });
-
-  handle("generateHires", async ({ companyName, mission, businessType }) => {
+  },
+  createProduct: (input) => startProduct(input, null),
+  directEmployee: ({ employeeId, instruction }) =>
+    scheduler.directEmployee(employeeId, instruction.trim()),
+  employeeOptions: ({ employeeId }) => {
+    const emp = store.getEmployee(employeeId);
+    if (!emp) {
+      throw new Error(`no employee ${employeeId}`);
+    }
+    return chatOptions(emp, store.openTasksFor(employeeId));
+  },
+  // one call, whole or not at all: the roster's CLIs are chosen first, so a
+  // machine with nothing signed in fails before a folder exists
+  foundCompany: ({ hires, ...company }) =>
+    store.foundCompany({
+      ...company,
+      hires: hires.map((hire, i) => ({ runner: agentDriver.pickRunner(i), ...hire })),
+    }),
+  generateHires: async ({ companyName, mission, businessType }) => {
     const candidates = await generateCandidates({ businessType, companyName, mission });
     return candidates.map((candidate, i) =>
       Object.assign(candidate, {
         spriteSeed: spriteSeedFor(candidate.role, candidate.name, `-${i}`),
       }),
     );
-  });
-
-  // one call, whole or not at all: the roster's CLIs are chosen first, so a
-  // machine with nothing signed in fails before a folder exists
-  handle("foundCompany", ({ hires, ...company }) =>
-    store.foundCompany({
-      ...company,
-      hires: hires.map((hire, i) => ({ runner: agentDriver.pickRunner(i), ...hire })),
-    }),
-  );
-
-  handle("getCompany", store.getCompany);
-  handle("loadReport", store.loadReport);
-  handle("openSaveFolder", async () => {
+  },
+  getCompany: store.getCompany,
+  getFounderChoices: async () => {
+    const { listFounderChoices } = await import("@/main/character/compositor");
+    return listFounderChoices(6);
+  },
+  hasAuth: async () => ({ ok: await agentDriver.hasAnyRunner() }),
+  killBet: ({ betId, reason }) => killBet(betId, reason),
+  killProduct: ({ productId, reason }) => retireProduct(productId, reason, null),
+  listBets: store.listBets,
+  listEmployees: store.listEmployees,
+  listProducts: store.listProducts,
+  listTasks: store.queryTasks,
+  loadOfficeDesign,
+  loadReport: store.loadReport,
+  openCompanyPath: ({ rel }) => openWorkspacePath(rel),
+  openProduct: async ({ productId }) => ({ opened: await openProduct(productId) }),
+  openSaveFolder: async () => {
     const err = await shell.openPath(ROOT_DIR);
     if (err) {
       throw new Error(err);
     }
-  });
-
-  handle("setAutopilot", ({ running }) => setAutopilot(running));
-
-  handle("setBudget", ({ budget }) => {
+  },
+  postTeamChat: ({ text }) => scheduler.founderMessage(text.trim()),
+  productStatus: ({ productId }) => productStatus(productId),
+  resetGame,
+  resetSpend: store.resetSpend,
+  resolveApproval: ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved),
+  restingRunners: () => agentDriver.restingRunners(),
+  saveOfficeDesign: ({ layout }) => saveOfficeDesign(layout, officeArt()),
+  setAutopilot: ({ running }) => setAutopilot(running),
+  setBudget: ({ budget }) => {
     const company = store.setBudget(budget);
     if (isOutOfBudget(company)) {
       haltForBudget(company);
     }
     return store.requireCompany();
-  });
-
-  handle("resetSpend", store.resetSpend);
-  handle("takeDigest", store.takeDigest);
-
-  handle("resetGame", resetGame);
-
-  handle("saveOfficeDesign", ({ layout }) => saveOfficeDesign(layout, officeArt()));
-  handle("loadOfficeDesign", loadOfficeDesign);
-
-  handle("stripeStatus", () => {
+  },
+  setMaxAgents: ({ maxAgents }) => store.setMaxAgents(maxAgents),
+  shippingLog: store.shippingLog,
+  startLogin: () => {
+    void startLogin((e) => broadcast("onAuthEvent", e));
+    return { started: true };
+  },
+  stripeConnect: () => beginConnect(store.requireCompany().id),
+  stripeDisconnect: () => disconnectStripe(store.requireCompany().id),
+  stripeStatus: () => {
     const company = store.getCompany();
     return company ? getStripeStatus(company.id) : { state: "disconnected" };
-  });
-  handle("stripeConnect", () => beginConnect(store.requireCompany().id));
-  handle("stripeDisconnect", () => disconnectStripe(store.requireCompany().id));
-
-  handle("vercelListProjects", ({ token }) => listVercelProjects(token));
-  handle("vercelConnect", connectVercel);
-  handle("vercelDisconnect", ({ productId }) => disconnectVercel(productId));
-
-  handle("listProducts", store.listProducts);
-  handle("createProduct", (input) => startProduct(input, null));
-  handle("killProduct", ({ productId, reason }) => retireProduct(productId, reason, null));
-  handle("listBets", store.listBets);
-  handle("killBet", ({ betId, reason }) => killBet(betId, reason));
-  handle("productStatus", ({ productId }) => productStatus(productId));
-
-  handle("listEmployees", store.listEmployees);
-  handle("restingRunners", () => agentDriver.restingRunners());
-
-  handle("employeeOptions", ({ employeeId }) => {
-    const emp = store.getEmployee(employeeId);
-    if (!emp) {
-      throw new Error(`no employee ${employeeId}`);
-    }
-    return chatOptions(emp, store.openTasksFor(employeeId));
-  });
-
-  handle("teamMessages", ({ limit }) => store.recentTeamMessages(limit ?? 30));
-
-  handle("postTeamChat", ({ text }) => scheduler.founderMessage(text.trim()));
-  handle("directEmployee", ({ employeeId, instruction }) =>
-    scheduler.directEmployee(employeeId, instruction.trim()),
-  );
-
-  handle("setMaxAgents", ({ maxAgents }) => store.setMaxAgents(maxAgents));
-
-  handle("listTasks", store.queryTasks);
-  handle("shippingLog", store.shippingLog);
-
-  handle("assignTask", ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId));
-
-  handle("answerQuestion", ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer));
-  handle("resolveApproval", ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved));
-
-  handle("openCompanyPath", ({ rel }) => openWorkspacePath(rel));
-  handle("openProduct", async ({ productId }) => ({ opened: await openProduct(productId) }));
-};
+  },
+  takeDigest: store.takeDigest,
+  teamMessages: ({ limit }) => store.recentTeamMessages(limit ?? 30),
+  vercelConnect: connectVercel,
+  vercelDisconnect: ({ productId }) => disconnectVercel(productId),
+  vercelListProjects: ({ token }) => listVercelProjects(token),
+} satisfies IpcHandlers;
 
 const appUrl = (): string => {
   const dev = isDev ? process.env["ELECTRON_RENDERER_URL"] : undefined;
@@ -324,7 +300,7 @@ const boot = async (): Promise<void> => {
   await adoptShellPath();
   agentDriver.init();
   await controlPlane.start();
-  registerIpcHandlers();
+  registerIpcHandlers(ipcHandlers);
 
   activityEvents.on("activity", (e) => broadcast("onActivity", e));
   scheduler.start();

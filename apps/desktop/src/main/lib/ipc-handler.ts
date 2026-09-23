@@ -9,11 +9,18 @@ import type { Contract, IpcHandler } from "@/shared/ipc-registry";
 
 const SCHEMA_MAP: { [M in InvokeMethod]: z.ZodType<Contract[M]["payload"]> } = SCHEMAS;
 
+const INVOKE_METHODS = Object.keys(SCHEMAS).filter((m): m is InvokeMethod => m in SCHEMAS);
+
+/** One handler per invoke method: a channel without one fails to compile. */
+export type IpcHandlers = { [M in InvokeMethod]: IpcHandler<M> };
+
 /** Only the app's own window may call main: its top frame, never a frame something embedded. */
 const fromOurWindow = (frame: WebFrameMain | null): boolean =>
   frame !== null && frame.parent === null;
 
-export const handle = <M extends InvokeMethod>(method: M, fn: IpcHandler<M>): void => {
+// Generic so handlers[method] narrows to IpcHandler<M>; over the union it would not.
+const handle = <M extends InvokeMethod>(handlers: IpcHandlers, method: M): void => {
+  const fn = handlers[method];
   ipcMain.handle(CHANNELS[method].channel, (event, raw: WireValue) => {
     if (!fromOurWindow(event.senderFrame)) {
       throw new Error(`[ipc:${method}] refused: not the app's own window`);
@@ -24,4 +31,10 @@ export const handle = <M extends InvokeMethod>(method: M, fn: IpcHandler<M>): vo
     }
     return settle(fn, result.data);
   });
+};
+
+export const registerIpcHandlers = (handlers: IpcHandlers): void => {
+  for (const method of INVOKE_METHODS) {
+    handle(handlers, method);
+  }
 };
