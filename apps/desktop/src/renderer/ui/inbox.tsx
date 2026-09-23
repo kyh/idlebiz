@@ -145,7 +145,6 @@ export const Inbox = ({
 }) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
-  const products = useStore((s) => s.products);
   const pendingAsks = useStore((s) => s.pendingAsks);
   const stuckTasks = useStore((s) => s.stuckTasks);
 
@@ -153,16 +152,9 @@ export const Inbox = ({
     return null;
   }
   const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
-  // Stripe is the company's; Vercel binds the product the ask came from
+  // Stripe is the company's; Vercel binds the product the ask came from, or asks which
   const connect = (kind: IntegrationKind, t: Task): void => {
-    if (kind === "stripe") {
-      onOpen({ kind: "budget" });
-      return;
-    }
-    const productId = t.productId ?? products[0]?.id;
-    if (productId !== undefined) {
-      onOpen({ kind: "vercel", productId });
-    }
+    onOpen(kind === "stripe" ? { kind: "budget" } : { kind: "vercel", productId: t.productId });
   };
 
   return (

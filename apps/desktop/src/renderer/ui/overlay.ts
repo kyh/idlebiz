@@ -5,4 +5,4 @@ export type Overlay =
   | { kind: "teams" }
   | { kind: "budget" }
   | { kind: "settings" }
-  | { kind: "vercel"; productId: string };
+  | { kind: "vercel"; productId: string | null };

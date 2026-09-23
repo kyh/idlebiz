@@ -6,6 +6,7 @@ import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
+import type { Product } from "@/shared/domain";
 import type { VercelListing, VercelProject } from "@/shared/integrations";
 
 type Lookup =
@@ -166,17 +167,71 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
   );
 };
 
+/** The founder names the product an ask left unnamed: a guess would feed that
+ *  product's users bets another project's visitors. */
+const ChooseProduct = ({
+  products,
+  onChoose,
+}: {
+  products: readonly Product[];
+  onChoose: (productId: string) => void;
+}) => {
+  const [cursor, setCursor] = useState(0);
+  if (products.length === 0) {
+    return (
+      <div className="text-sm leading-snug text-fg">
+        There&apos;s no live product to bind yet — Vercel connects one product&apos;s project.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="text-sm leading-snug text-fg">
+        The team asked for Vercel without naming a product. Which one deploys to it?
+      </div>
+      <ChoiceMenu
+        menu={{
+          cursor,
+          items: products.map((p) => ({
+            id: p.id,
+            label: p.vercel ? `${p.name} · ${p.vercel.projectName}` : p.name,
+          })),
+          pick: (i) => {
+            const product = products[i];
+            if (product) {
+              onChoose(product.id);
+            }
+          },
+          setCursor,
+        }}
+        className="w-full"
+      />
+    </div>
+  );
+};
+
 // The token also powers product metrics and the team's deployments.
 export const ConnectVercel = ({
   productId,
   onClose,
 }: {
-  productId: string;
+  /** Null when the ask named no product: the founder picks one first. */
+  productId: string | null;
   onClose: () => void;
 }) => {
-  const product = useStore((s) => s.products).find((p) => p.id === productId);
-  const disconnecting = useSubmission(() => disconnectVercel(productId));
+  const products = useStore((s) => s.products);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const disconnecting = useSubmission(disconnectVercel);
+  const target = productId ?? chosen;
 
+  if (target === null) {
+    return (
+      <Modal title="Connect Vercel" subtitle="Pick a product" width="lg" onClose={onClose}>
+        <ChooseProduct products={products} onChoose={setChosen} />
+      </Modal>
+    );
+  }
+  const product = products.find((p) => p.id === target);
   if (!product) {
     return null;
   }
@@ -191,7 +246,7 @@ export const ConnectVercel = ({
             </div>
             <button
               type="button"
-              onClick={() => disconnecting.submit()}
+              onClick={() => disconnecting.submit(product.id)}
               disabled={disconnecting.submission.kind === "sending"}
               className="px-btn"
             >
@@ -200,7 +255,7 @@ export const ConnectVercel = ({
             <Failure submission={disconnecting.submission} doing="disconnect" />
           </div>
         ) : (
-          <PickProject productId={productId} onClose={onClose} />
+          <PickProject productId={product.id} onClose={onClose} />
         )}
       </div>
     </Modal>
