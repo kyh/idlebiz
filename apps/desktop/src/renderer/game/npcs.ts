@@ -438,6 +438,13 @@ export class NpcManager {
     }
   }
 
+  /** Work was queued for them: a blocked employee was answered, a working one carries on. */
+  unblock(id: string): void {
+    if (this.npcs.get(id)?.activity.kind === "blocked") {
+      this.setState(id, "idle");
+    }
+  }
+
   /** A tool call landed: hands on the keyboard, or eyes on the screen. */
   onTool(id: string, pose: WorkPose): void {
     const npc = this.npcs.get(id);

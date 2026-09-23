@@ -15,7 +15,7 @@ import type { Walker } from "@/renderer/game/click-walk";
 import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
 import { facingToward } from "@/renderer/game/movement";
 import { NpcManager } from "@/renderer/game/npcs";
-import type { NpcState, Seat, Poi } from "@/renderer/game/npcs";
+import type { Seat, Poi } from "@/renderer/game/npcs";
 import { BUNDLED_LAYOUT, officeOf } from "@/renderer/game/office-layout";
 import type { Office, OfficeLayoutData, PixelPoint } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
@@ -28,7 +28,7 @@ import { sightSealedGrid, standingSilhouette } from "@/shared/office-sight";
 import type { PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
 import { hear, tell } from "@/renderer/game/office-port";
-import { DEFAULT_FOUNDER_SEED, employeeStatusOf } from "@/shared/domain";
+import { DEFAULT_FOUNDER_SEED } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
 import { bodyBlockedAt, solidAt } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";
@@ -425,9 +425,22 @@ export class OfficeScene extends Scene {
           this.npcs?.onAsk(employeeId);
           return;
         }
+        case "run.start": {
+          this.npcs?.setState(employeeId, "working");
+          return;
+        }
+        case "run.end": {
+          this.npcs?.setState(
+            employeeId,
+            e.payload.outcome.kind === "blocked" ? "blocked" : "idle",
+          );
+          return;
+        }
+        // an answer requeues the task, but its run may not start at once: drop the "!" now
         case "status": {
-          const next: NpcState = e.message === "blocked" ? "blocked" : employeeStatusOf(e.message);
-          this.npcs?.setState(employeeId, next);
+          if (e.message === "queued") {
+            this.npcs?.unblock(employeeId);
+          }
           break;
         }
         // repeats the settle's status, and stands in for it when the settle threw

@@ -1,5 +1,4 @@
 import type { ActivityEvent } from "@/shared/activity";
-import { employeeStatusOf } from "@/shared/domain";
 import type { Employee, RestingRunners } from "@/shared/domain";
 
 // What an event from main means for the renderer's copy of main's state, with
@@ -77,8 +76,9 @@ export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
   const ring = held.activity;
   const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
   const step: ActivityStep = { patch: { activity }, reload: reloadFor(e), roster: null };
-  if (e.kind === "status" && e.employeeId) {
-    const status = employeeStatusOf(e.message);
+  // A status names a task, not its assignee: queueing work for someone mid-run must not idle them.
+  if ((e.kind === "run.start" || e.kind === "run.end") && e.employeeId) {
+    const status = e.kind === "run.start" ? "working" : "idle";
     step.patch.employees = held.employees.map((emp) =>
       emp.id === e.employeeId ? { ...emp, status } : emp,
     );

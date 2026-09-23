@@ -24,6 +24,8 @@ const employee = (id: string): Employee => ({
 });
 
 const held = { activity: [], employees: [employee("priya"), employee("mae")], resting: {} };
+const working: Employee = { ...employee("priya"), status: "working" };
+const busy = { ...held, employees: [working] };
 
 describe("reduceActivity", () => {
   it("raises an ask in the inbox the moment the office shows it", () => {
@@ -74,15 +76,31 @@ describe("reduceActivity", () => {
     expect(reduceActivity(held, measured).reload).toEqual(["bets", "tasks"]);
   });
 
-  it("patches the one employee a status names, and nobody else", () => {
-    const running: ActivityEvent = {
+  it("sets to work the one employee a run starts for, and nobody else", () => {
+    const started: ActivityEvent = { ...stamp, employeeId: "priya", kind: "run.start" };
+    const { patch } = reduceActivity(held, started);
+    expect(patch.employees?.map((e) => e.status)).toEqual(["working", "idle"]);
+  });
+
+  it("idles an employee whose run ended", () => {
+    const ended: ActivityEvent = {
+      ...stamp,
+      employeeId: "priya",
+      kind: "run.end",
+      payload: { outcome: { kind: "done" }, summary: "" },
+    };
+    expect(reduceActivity(busy, ended).patch.employees?.map((e) => e.status)).toEqual(["idle"]);
+  });
+
+  it("keeps working someone handed more work mid-run", () => {
+    const queued: ActivityEvent = {
       ...stamp,
       employeeId: "priya",
       kind: "status",
-      message: "running",
+      message: "queued",
+      taskId: "t2",
     };
-    const { patch } = reduceActivity(held, running);
-    expect(patch.employees?.map((e) => e.status)).toEqual(["working", "idle"]);
+    expect(reduceActivity(busy, queued).patch.employees).toBeUndefined();
   });
 
   it("walks a hire in only after the roster is fresh", () => {
