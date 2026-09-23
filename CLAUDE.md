@@ -45,8 +45,9 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   live bet already covers. Readings arrive with the metrics pulse and live on the bet
   (`reading`), so `judge` needs nothing but the bet. Vercel's analytics API wants `since`
   and `until` together and filters in OData; path filters are free, utm ones are a paid
-  add-on — which is why the mark is a path. Per-product revenue is the same read, tagged
-  `metadata[product]`; untagged money counts for the company only.
+  add-on — which is why the mark is a path. Per-product revenue reads the same charges over
+  the account's whole history, tagged `metadata[product]`, while bets read only charges since
+  the oldest live revenue bet opened; untagged money counts for the company only.
 - **Idle hands only spend against a fundable bet.** `allocate` decides everything about
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget

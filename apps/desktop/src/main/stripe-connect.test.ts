@@ -244,3 +244,45 @@ describe("Stripe disconnect", () => {
     ]);
   });
 });
+
+describe("Stripe read health", () => {
+  const ownKeyRefused =
+    "Stripe refused STRIPE_SECRET_KEY in ~/.idlebiz/secrets.json — revenue is unread until it is fixed.";
+
+  it("names a refused own key until Stripe takes one again", () => {
+    stripe.noteStripeRead(company.id, { answer: "refused", via: "own" });
+    stripe.noteStripeRead(company.id, { answer: "refused", via: "own" });
+    expect(stripe.getStripeStatus(company.id)).toEqual({ message: ownKeyRefused, state: "error" });
+    stripe.noteStripeRead(company.id, { answer: "unanswered", via: "own" });
+    expect(stripe.getStripeStatus(company.id).state).toBe("error");
+    stripe.noteStripeRead(company.id, { answer: "accepted", via: "own" });
+    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "disconnected" });
+    expect(notified).toEqual([
+      { message: ownKeyRefused, state: "error" },
+      { state: "disconnected" },
+    ]);
+  });
+
+  it("drops a refusal once no key is left to refuse", () => {
+    stripe.noteStripeRead(company.id, { answer: "refused", via: "connect" });
+    expect(stripe.getStripeStatus(company.id)).toEqual({
+      message: "Stripe access was revoked — reconnect in the HUD.",
+      state: "error",
+    });
+    stripe.noteStripeRead(company.id, null);
+    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "disconnected" });
+  });
+
+  it("keeps a connection flow's error through a read Stripe took", async () => {
+    await stripe.beginConnect(company.id);
+    const response = await fetch(
+      loopbackUrl(latestState(), { error: "access_denied", kind: "failed" }),
+    );
+    expect(await response.text()).toContain("Stripe connection failed");
+    stripe.noteStripeRead(company.id, { answer: "accepted", via: "own" });
+    expect(stripe.getStripeStatus(company.id)).toEqual({
+      message: "Stripe connection cancelled.",
+      state: "error",
+    });
+  });
+});

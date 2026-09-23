@@ -16,13 +16,16 @@ export interface RealSnapshot {
   users: number | null;
   revenue: number | null;
   productUsers: ReadonlyMap<string, number | null>;
-  /** Revenue from charges tagged with the product; empty while Stripe is not connected. */
+  /** Revenue from charges tagged with the product; null for every product while no full read of the charges has come back. */
   productRevenue: ReadonlyMap<string, number | null>;
   /** What each live bet's claim has brought in; null where no source can say. */
   betReadings: ReadonlyMap<string, number | null>;
-  /** Stripe refused the Connect token (401/403): the account revoked access. A refused own key only leaves revenue unread. */
-  connectRevoked: boolean;
+  /** How Stripe answered the company's key, and whose key it was; null when it has none. */
+  stripe: { via: StripeCredential["via"]; answer: StripeAnswer } | null;
 }
+
+/** Stripe took the key, turned it away (401/403), or never answered, which says nothing either way. */
+type StripeAnswer = "accepted" | "refused" | "unanswered";
 
 /** 401/403 from Stripe — credentials revoked or invalid. */
 class StripeAuthError extends Error {
@@ -185,11 +188,15 @@ interface StripeSnapshot {
   /** Charges since the oldest live revenue bet opened: all a bet can claim, whatever the account's size. */
   bets: Revenue | null;
   customers: number | null;
-  /** Stripe answered 401/403 to this key. */
-  refused: boolean;
+  answer: StripeAnswer;
 }
 
-const NO_STRIPE: StripeSnapshot = { bets: null, charges: null, customers: null, refused: false };
+const NO_STRIPE: StripeSnapshot = {
+  answer: "unanswered",
+  bets: null,
+  charges: null,
+  customers: null,
+};
 
 /** The key a company reads Stripe with, and whose it is: only a refused Connect token means the connection was revoked. */
 export interface StripeCredential {
@@ -224,6 +231,14 @@ let stripeRead: { at: number; key: string; since: number | null; snapshot: Strip
 const settled = <T>(read: PromiseSettledResult<T | null>): T | null =>
   read.status === "fulfilled" ? read.value : null;
 
+/** Any refusal refuses the key; any read that came back means Stripe took it. */
+const answerOf = (reads: readonly PromiseSettledResult<unknown>[]): StripeAnswer => {
+  if (reads.some((read) => read.status === "rejected" && read.reason instanceof StripeAuthError)) {
+    return "refused";
+  }
+  return reads.some((read) => read.status === "fulfilled") ? "accepted" : "unanswered";
+};
+
 /** Kept per key and `since` (when the oldest live revenue bet opened): a bet that moves `since` reads again at once. */
 const stripeSnapshot = async (
   credential: StripeCredential | null,
@@ -249,12 +264,11 @@ const stripeSnapshot = async (
   ]);
   const [charges, bets, customers] = reads;
   const snapshot: StripeSnapshot = {
+    // the bets read is a stand-in when no revenue bet is live, so it cannot say Stripe answered
+    answer: answerOf([charges, customers]),
     bets: settled(bets),
     charges: settled(charges),
     customers: settled(customers),
-    refused: reads.some(
-      (read) => read.status === "rejected" && read.reason instanceof StripeAuthError,
-    ),
   };
   if (reads.every((read) => read.status === "fulfilled")) {
     stripeRead = { at: now, key, since, snapshot };
@@ -310,12 +324,12 @@ export const fetchRealMetrics = async (
   const readings = await Promise.all(bets.map((bet) => betReading(bet, products, stripe.bets)));
   return {
     betReadings: new Map(bets.map((bet, i) => [bet.id, readings[i] ?? null])),
-    connectRevoked: stripe.refused && credential?.via === "connect",
     productRevenue: new Map(
       products.map((p) => [p.id, charges ? (charges.byProduct.get(p.id) ?? 0) : null]),
     ),
     productUsers: vercel.each,
     revenue: charges?.total ?? null,
+    stripe: credential ? { answer: stripe.answer, via: credential.via } : null,
     // real traffic first; paying customers as the fallback "users" signal
     users: vercel.total ?? stripe.customers,
   };

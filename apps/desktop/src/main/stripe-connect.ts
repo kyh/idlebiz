@@ -12,6 +12,7 @@ import type { ConnectedAccount, DeauthorizeBody } from "@repo/stripe-connect-pro
 import { newKeyring, open } from "@repo/stripe-connect-protocol/seal";
 import type { Keyring } from "@repo/stripe-connect-protocol/seal";
 import { listenLoopback } from "@/main/lib/http";
+import type { RealSnapshot, StripeCredential } from "@/main/metrics";
 import { STRIPE_CONNECT_TOKEN, getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import { requireCompany } from "@/main/store/store";
@@ -38,7 +39,8 @@ interface PendingFlow {
 let pending: PendingFlow | null = null;
 let generation = 0;
 let revoking: Promise<Revocation> | null = null;
-let lastError: string | null = null;
+/** A pulse's refusal clears once Stripe takes a key again or none is left; a flow's error waits for the founder's next move. */
+let lastError: { from: "pulse" | "flow"; message: string } | null = null;
 
 type Notify = (status: StripeStatus) => void;
 let notify: Notify = () => {
@@ -63,7 +65,7 @@ export const getStripeStatus = (companyId: string): StripeStatus => {
     return { state: "connecting" };
   }
   if (lastError) {
-    return { message: lastError, state: "error" };
+    return { message: lastError.message, state: "error" };
   }
   const account = readMetricsConfig(companyId)?.stripeAccount;
   if (account && getSecret(STRIPE_CONNECT_TOKEN)) {
@@ -73,14 +75,26 @@ export const getStripeStatus = (companyId: string): StripeStatus => {
 };
 
 const fail = (message: string): void => {
-  lastError = message;
+  lastError = { from: "flow", message };
   notify({ message, state: "error" });
 };
 
-/** The metrics pulse saw a 401 — surface it without deleting the token. */
-export const markAuthError = (message: string): void => {
-  if (lastError !== message) {
-    fail(message);
+const REFUSED: Record<StripeCredential["via"], string> = {
+  connect: "Stripe access was revoked — reconnect in the HUD.",
+  own: "Stripe refused STRIPE_SECRET_KEY in ~/.idlebiz/secrets.json — revenue is unread until it is fixed.",
+};
+
+/** What the metrics pulse's read says of the company's Stripe key; a refusal shows without deleting the key. */
+export const noteStripeRead = (companyId: string, read: RealSnapshot["stripe"]): void => {
+  if (read?.answer === "refused") {
+    const message = REFUSED[read.via];
+    if (lastError?.message !== message) {
+      lastError = { from: "pulse", message };
+      notify({ message, state: "error" });
+    }
+  } else if (read?.answer !== "unanswered" && lastError?.from === "pulse") {
+    lastError = null;
+    notify(getStripeStatus(companyId));
   }
 };
 

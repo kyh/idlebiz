@@ -3,7 +3,7 @@ import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
 import { readMetricsConfig } from "@/main/store/metrics-config";
-import { markAuthError } from "@/main/stripe-connect";
+import { noteStripeRead } from "@/main/stripe-connect";
 import { isClosed } from "@/shared/bets";
 
 // The real numbers, read on a beat and written where they belong: the company,
@@ -21,6 +21,7 @@ const read = async (): Promise<void> => {
   const products = store.listProducts();
   const credential = stripeCredential(readMetricsConfig(company.id));
   if (credential === null && products.every((p) => p.vercel === null)) {
+    noteStripeRead(company.id, null);
     return;
   }
   const bets = store.listBets().filter((b) => !isClosed(b));
@@ -35,9 +36,7 @@ const read = async (): Promise<void> => {
   for (const [betId, reading] of snap.betReadings) {
     store.setBetReading(betId, reading);
   }
-  if (snap.connectRevoked) {
-    markAuthError("Stripe access was revoked — reconnect in the HUD.");
-  }
+  noteStripeRead(company.id, snap.stripe);
   publishActivity(
     { kind: "metrics.pulse", payload: { revenue: snap.revenue, users: snap.users } },
     { persist: false },

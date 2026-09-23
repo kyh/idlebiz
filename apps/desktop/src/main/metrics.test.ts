@@ -213,18 +213,24 @@ describe("fetchRealMetrics", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("reports a refused Connect token as a revoked connection", async () => {
+  it("reports a refused Connect token", async () => {
     const snap = await fetchRealMetrics({ key: "revoked", via: "connect" }, [], []);
 
-    expect(snap.connectRevoked).toBe(true);
+    expect(snap.stripe).toEqual({ answer: "refused", via: "connect" });
     expect(snap.revenue).toBeNull();
   });
 
-  it("leaves the connection alone when the founder's own key is refused", async () => {
+  it("reports a refused own key as the founder's", async () => {
     const snap = await fetchRealMetrics({ key: "rolled", via: "own" }, [], []);
 
-    expect(snap.connectRevoked).toBe(false);
+    expect(snap.stripe).toEqual({ answer: "refused", via: "own" });
     expect(snap.revenue).toBeNull();
+  });
+
+  it("says nothing of Stripe when the company has no key", async () => {
+    const snap = await fetchRealMetrics(null, [], []);
+
+    expect(snap.stripe).toBeNull();
   });
 });
 
@@ -288,8 +294,16 @@ describe("fetchRealMetrics reading Stripe", () => {
 
     expect(snap.revenue).toBe(9);
     expect(snap.users).toBeNull();
-    expect(snap.connectRevoked).toBe(false);
+    expect(snap.stripe).toEqual({ answer: "accepted", via: "own" });
     expect(asked.length).toBe(first * 2);
+  });
+
+  it("takes a Stripe that never answered as neither taking nor refusing the key", async () => {
+    stripe(down);
+
+    const snap = await fetchRealMetrics({ key: "unreachable", via: "own" }, [], []);
+
+    expect(snap.stripe).toEqual({ answer: "unanswered", via: "own" });
   });
 
   it("keeps a read, even one that came back short, until a bet moves where it starts", async () => {

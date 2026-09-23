@@ -145,9 +145,10 @@ rather than crashing boot.
   and every employee's shell inherit them: `STRIPE_SECRET_KEY`, `VERCEL_TOKEN`. Employees
   charge with `STRIPE_SECRET_KEY`, and it always feeds revenue. `STRIPE_CONNECT_TOKEN` is
   read-only and stays out of the env: metrics reads it only for the company whose
-  `metrics.json` holds the connected account (`stripeCredential` in `main/metrics.ts`), and
-  only a refused Connect token shows Stripe as revoked in the HUD; a refused own key just
-  leaves revenue unread. One `VERCEL_TOKEN` serves every product:
+  `metrics.json` holds the connected account (`stripeCredential` in `main/metrics.ts`). A
+  key Stripe refuses shows in the HUD — a Connect token as revoked, the own key by name —
+  until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
+  `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).
