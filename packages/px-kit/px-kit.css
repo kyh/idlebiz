@@ -1,15 +1,16 @@
 /* Unlayered kit rules override Tailwind utilities. Keep kit sizing and colors here;
- * apps own cursors through element selectors and serve /fonts/vg5000.woff2. */
+ * apps own cursors through element selectors. */
 
 @font-face {
   font-family: "VG5000";
-  src: url("/fonts/vg5000.woff2") format("woff2");
+  src: url("./fonts/vg5000.woff2") format("woff2");
   font-weight: 400;
   font-display: block;
 }
 
 :root {
   /* ---- Modern-UI (Style 2) pixel palette ---- */
+  --void: #12141c; /* backdrop behind every surface */
   --ink: #1d2136; /* darkest outline */
   --edge: #525c84; /* mid border line */
   --chrome: #44507a; /* window title bar / chrome */

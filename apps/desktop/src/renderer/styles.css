@@ -9,7 +9,7 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #12141c;
+  background: var(--void);
   user-select: none;
 }
 
