@@ -26,7 +26,7 @@ import type {
 } from "@/shared/domain";
 import { BusinessTypeSchema, HireProposalSchema } from "@/shared/hire";
 import type { HireProposal } from "@/shared/hire";
-import type { ProductStatus, StripeStatus, VercelProject } from "@/shared/integrations";
+import type { ProductStatus, StripeStatus, VercelListing } from "@/shared/integrations";
 
 /** A call that answers nothing: it worked, or it threw. */
 // oxlint-disable-next-line typescript/no-invalid-void-type -- the values of Results are handler return types, which the rule cannot see through the map
@@ -135,7 +135,7 @@ interface Results {
   onStripeStatus: StripeStatus;
 
   takeDigest: Digest | null;
-  vercelListProjects: { ok: boolean; account?: string; projects: VercelProject[] };
+  vercelListProjects: VercelListing;
   vercelConnect: Done;
   vercelDisconnect: Done;
   listProducts: Product[];

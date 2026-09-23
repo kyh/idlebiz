@@ -1,6 +1,7 @@
 import { getSecret, setSecret } from "@/main/secrets";
 import * as store from "@/main/store/store";
 import { listProjects, validateToken } from "@/main/vercel";
+import { errorMessage } from "@/shared/errors";
 import type { Contract } from "@/shared/ipc-registry";
 
 // One token per founder; each product binds its own project.
@@ -21,14 +22,17 @@ export const listVercelProjects = async (
 ): Promise<Contract["vercelListProjects"]["result"]> => {
   const key = token ?? getSecret(VERCEL_TOKEN_KEY);
   if (!key) {
-    return { ok: false, projects: [] };
+    return { kind: "rejected" };
   }
-  const check = await validateToken(key);
-  if (!check.ok) {
-    return { ok: false, projects: [] };
+  try {
+    const check = await validateToken(key);
+    if (check.kind === "rejected") {
+      return check;
+    }
+    return { account: check.account, kind: "loaded", projects: await listProjects(key) };
+  } catch (error) {
+    return { kind: "unreachable", reason: errorMessage(error) };
   }
-  const projects = await listProjects(key);
-  return { account: check.account, ok: true, projects };
 };
 
 export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void => {

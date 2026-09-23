@@ -22,20 +22,44 @@ const apiGet = (
   );
 };
 
+/** 401/403: Vercel refused the token, as opposed to being down or out of reach. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
+const refused = (error: unknown): boolean =>
+  error instanceof HttpError && (error.status === 401 || error.status === 403);
+
+/** `apiGet`'s answer, or null when Vercel refuses the token this call; anything else still throws. */
+const apiGetUnlessRefused = async (
+  path: string,
+  token: string,
+  params: Readonly<Record<string, string | undefined>> = {},
+): Promise<JsonValue | null> => {
+  try {
+    return await apiGet(path, token, params);
+  } catch (error) {
+    if (refused(error)) {
+      return null;
+    }
+    throw error;
+  }
+};
+
 const UserSchema = z.object({
   user: z.object({ name: z.string().nullish(), username: z.string().optional() }),
 });
 
-export const validateToken = async (token: string): Promise<{ ok: boolean; account?: string }> => {
-  try {
-    const parsed = UserSchema.safeParse(await apiGet("/v2/user", token));
-    if (!parsed.success) {
-      return { ok: true };
-    }
-    return { account: parsed.data.user.name ?? parsed.data.user.username, ok: true };
-  } catch {
-    return { ok: false };
+/** Whether Vercel takes `token`; throws when Vercel cannot be asked. */
+export const validateToken = async (
+  token: string,
+): Promise<{ kind: "rejected" } | { kind: "valid"; account: string | undefined }> => {
+  const answer = await apiGetUnlessRefused("/v2/user", token);
+  if (answer === null) {
+    return { kind: "rejected" };
   }
+  const parsed = UserSchema.safeParse(answer);
+  return {
+    account: parsed.success ? (parsed.data.user.name ?? parsed.data.user.username) : undefined,
+    kind: "valid",
+  };
 };
 
 const ProjectsSchema = z.object({
@@ -45,31 +69,35 @@ const TeamsSchema = z.object({
   teams: z.array(z.object({ id: z.string(), name: z.string().nullish() })).default([]),
 });
 
-/** Projects across the personal account and every team the token can see. */
+/**
+ * Projects across the personal account and every team the token can see. A
+ * token scoped to some of them is refused the rest, which lists fewer projects;
+ * any other failure throws, so one team being down never shortens the list.
+ */
 export const listProjects = async (token: string): Promise<VercelProject[]> => {
   const out: VercelProject[] = [];
-  const personal = ProjectsSchema.safeParse(await apiGet("/v9/projects", token, { limit: "100" }));
+  const personal = ProjectsSchema.safeParse(
+    await apiGetUnlessRefused("/v9/projects", token, { limit: "100" }),
+  );
   if (personal.success) {
     out.push(...personal.data.projects.map((p) => ({ id: p.id, name: p.name })));
   }
-  try {
-    const teams = TeamsSchema.safeParse(await apiGet("/v2/teams", token, { limit: "20" }));
-    if (teams.success) {
-      const perTeam = await Promise.all(
-        teams.data.teams.map(async (team) => {
-          const projs = ProjectsSchema.safeParse(
-            await apiGet("/v9/projects", token, { limit: "100", teamId: team.id }),
-          );
-          if (!projs.success) {
-            return [];
-          }
-          return projs.data.projects.map((p) => ({ id: p.id, name: p.name, teamId: team.id }));
-        }),
-      );
-      out.push(...perTeam.flat());
-    }
-  } catch {
-    /* personal-only token */
+  const teams = TeamsSchema.safeParse(
+    await apiGetUnlessRefused("/v2/teams", token, { limit: "20" }),
+  );
+  if (teams.success) {
+    const perTeam = await Promise.all(
+      teams.data.teams.map(async (team) => {
+        const projs = ProjectsSchema.safeParse(
+          await apiGetUnlessRefused("/v9/projects", token, { limit: "100", teamId: team.id }),
+        );
+        if (!projs.success) {
+          return [];
+        }
+        return projs.data.projects.map((p) => ({ id: p.id, name: p.name, teamId: team.id }));
+      }),
+    );
+    out.push(...perTeam.flat());
   }
   return out;
 };
@@ -191,7 +219,7 @@ export const latestDeployment = async (projectId: string, teamId?: string): Prom
   } catch (error) {
     // Unreachable reads as no deployment, retried after the TTL; only a refusal
     // needs the founder.
-    if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
+    if (refused(error)) {
       read = { kind: "refused" };
     }
   }

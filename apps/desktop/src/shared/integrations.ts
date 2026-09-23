@@ -12,6 +12,16 @@ export interface VercelProject {
   teamId?: string;
 }
 
+/**
+ * What listing a token's Vercel projects found. A token Vercel refuses, or none
+ * at all, is told apart from Vercel being out of reach: only the first needs a
+ * new token.
+ */
+export type VercelListing =
+  | { kind: "loaded"; account: string | undefined; projects: VercelProject[] }
+  | { kind: "rejected" }
+  | { kind: "unreachable"; reason: string };
+
 /** The latest production deployment of the bound Vercel project. */
 export interface VercelDeployment {
   url: string;

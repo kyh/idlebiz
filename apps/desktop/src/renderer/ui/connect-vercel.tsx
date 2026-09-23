@@ -6,7 +6,7 @@ import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
-import type { VercelProject } from "@/shared/integrations";
+import type { VercelListing, VercelProject } from "@/shared/integrations";
 
 type Lookup =
   | { state: "idle" }
@@ -19,6 +19,31 @@ type Lookup =
       /** The token that listed them; absent when it is the saved one. */
       token?: string;
     };
+
+/** How the picker shows a listing; `token` is the one pasted, absent when the saved one was tried. */
+const lookupOf = (listing: VercelListing, token?: string): Lookup => {
+  switch (listing.kind) {
+    case "loaded": {
+      return { account: listing.account, projects: listing.projects, state: "loaded", token };
+    }
+    case "rejected": {
+      // A saved token that is refused, or missing, only means one has to be pasted.
+      return token === undefined
+        ? { state: "idle" }
+        : {
+            message: "That token was rejected — create one at vercel.com/account/tokens.",
+            state: "error",
+          };
+    }
+    case "unreachable": {
+      return {
+        message: `Couldn't reach Vercel — check your connection and try again. (${listing.reason})`,
+        state: "error",
+      };
+    }
+    // no default
+  }
+};
 
 const problemOf = (lookup: Lookup): string | null => {
   if (lookup.state === "error") {
@@ -57,11 +82,7 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
         .vercelListProjects({})
         .catch(() => null);
       if (current) {
-        setLookup(
-          res?.ok
-            ? { account: res.account, projects: res.projects, state: "loaded" }
-            : { state: "idle" },
-        );
+        setLookup(res ? lookupOf(res) : { state: "idle" });
       }
     };
     void trySaved();
@@ -75,14 +96,7 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
     setLookup({ state: "loading" });
     try {
       const res = await bridge().vercelListProjects({ token: given });
-      setLookup(
-        res.ok
-          ? { account: res.account, projects: res.projects, state: "loaded", token: given }
-          : {
-              message: "That token was rejected — create one at vercel.com/account/tokens.",
-              state: "error",
-            },
-      );
+      setLookup(lookupOf(res, given));
     } catch (error) {
       setLookup({ message: errorMessage(error), state: "error" });
     }
