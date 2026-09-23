@@ -524,7 +524,10 @@ describe("what a run leaves behind", () => {
       instructions,
       serializeDoc({ ...doc, metadata: { ...doc.metadata, sessionId: "legacy-session" } }),
     );
+    unstamp(company.id);
     store.initStore();
+    store.initStore();
+    expect(readFileSync(instructions, "utf-8")).not.toContain("legacy-session");
     expect(store.getEmployee(emp.id)?.sessionId).toBe("legacy-session");
   });
 });

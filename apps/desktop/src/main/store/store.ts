@@ -355,7 +355,7 @@ const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
     persona: optStr(m, "persona") ?? "",
     role: optStr(m, "role") ?? "general",
     runner: parseRunner(optStr(m, "runner")),
-    // saves from before run-state.json kept the session here; withRunState prefers the file
+    // saves from before run-state.json kept the session here; adoptOlderSave moves it into run-state.json
     sessionId: optStr(m, "sessionId"),
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     status: "idle",
@@ -568,7 +568,6 @@ const adoptLegacyTeam = (co: Company): void => {
         const lead = optStr(parseDoc(readFileSync(file, "utf-8")).metadata, "leaderId");
         if (lead !== null) {
           co.leaderId = lead;
-          saveCompany(co);
           return;
         }
       } catch {
@@ -1595,13 +1594,12 @@ const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null)
   }
 };
 
-/** The Vercel binding a save from before products kept on the company, taken off it for the first product to hold. */
-const liftLegacyVercel = (companyId: string): VercelBinding | null => {
+/** The Vercel binding a save from before products kept on the company, for the first product to hold. */
+const legacyVercel = (companyId: string): VercelBinding | null => {
   const legacy = readMetricsConfig(companyId)?.vercel;
   if (!legacy) {
     return null;
   }
-  writeMetricsConfig(companyId, { vercel: undefined });
   return {
     projectId: legacy.projectId,
     projectName: legacy.projectName ?? legacy.projectId,
@@ -1616,9 +1614,22 @@ const liftLegacyVercel = (companyId: string): VercelBinding | null => {
  * deleted on; tolerant field reads inside the codecs are not migrations.
  */
 const adoptOlderSave = (active: ActiveCompany): void => {
+  const { id } = active.company;
   adoptLegacyTeam(active.company);
   loadRecentChat(active);
-  ensureFirstProduct(active, liftLegacyVercel(active.company.id));
+  for (const e of active.employees) {
+    if (e.sessionId !== null) {
+      // AGENTS.md is rewritten without it at the end of this boot
+      saveRunState(e);
+    }
+  }
+  if (active.products.length === 0) {
+    const vercel = legacyVercel(id);
+    ensureFirstProduct(active, vercel);
+    if (vercel !== null) {
+      writeMetricsConfig(id, { vercel: undefined });
+    }
+  }
   dropRetiredRoutines(active);
   saveCompany(active.company);
 };
