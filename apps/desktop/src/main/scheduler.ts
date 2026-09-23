@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { AgentEvent } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
@@ -36,6 +37,9 @@ const FOUNDER_RESERVED_SLOTS = 1;
 const BACKGROUND_CAPACITY = GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
 
 const AUTOPILOT_TICK_MS = 10_000;
+
+/** An aborted turn settles at once; a shutdown must not hang on a run that never does. */
+const SHUTDOWN_GRACE_MS = 2000;
 
 const isWorking = (employeeId: string): boolean =>
   store.getEmployee(employeeId)?.status === "working";
@@ -218,9 +222,14 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
 export type EmployeeRunner = Pick<typeof agentDriver, "runTask" | "restingRunner" | "pickRunner">;
 
+interface InFlight {
+  readonly abort: AbortController;
+  /** Resolves once the run has settled and freed its employee. */
+  readonly settled: PromiseWithResolvers<void>;
+}
+
 class Scheduler {
-  // runId -> abort
-  private runs = new Map<string, AbortController>();
+  private runs = new Map<string, InFlight>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly driver: EmployeeRunner;
@@ -265,12 +274,17 @@ class Scheduler {
     this.timer = null;
   }
 
-  /** Stop scheduling, then abort what is in flight: each run settles as interrupted, and nothing starts after it. */
-  shutdown(): void {
+  /**
+   * Stop scheduling, then abort what is in flight: each run settles as interrupted, and nothing
+   * starts after it. Resolves once every run has settled, or at `graceMs` if one never does.
+   */
+  async shutdown(graceMs = SHUTDOWN_GRACE_MS): Promise<void> {
     this.stop();
-    for (const abort of this.runs.values()) {
+    const settling = [...this.runs.values()].map(({ abort, settled }) => {
       abort.abort();
-    }
+      return settled.promise;
+    });
+    await Promise.race([Promise.all(settling), delay(graceMs)]);
   }
 
   private fireDueRoutines(company: Company, employees: Employee[]): void {
@@ -559,13 +573,16 @@ class Scheduler {
     }
 
     store.setEmployeeStatus(employeeId, "working");
-    const abort = new AbortController();
-    this.runs.set(runId, abort);
+    const inFlight: InFlight = {
+      abort: new AbortController(),
+      settled: Promise.withResolvers(),
+    };
+    this.runs.set(runId, inFlight);
     const at = { employeeId, runId, taskId: task.id };
     publishActivity({ ...at, kind: "run.start" });
     publishActivity({ ...at, kind: "status", message: "running" });
 
-    void this.run(runId, task, employee, company, abort.signal);
+    void this.run(runId, task, employee, company, inFlight);
   }
 
   private async run(
@@ -573,11 +590,11 @@ class Scheduler {
     task: Task,
     employee: Employee,
     company: Company,
-    signal: AbortSignal,
+    { abort, settled }: InFlight,
   ): Promise<void> {
     let result: RunResult;
     try {
-      result = await this.execute(runId, task, employee, company, signal);
+      result = await this.execute(runId, task, employee, company, abort.signal);
     } catch (error) {
       result = {
         instructionsDigest: employee.instructionsDigest,
@@ -602,6 +619,7 @@ class Scheduler {
     } finally {
       store.setEmployeeStatus(employee.id, "idle");
       this.runs.delete(runId);
+      settled.resolve();
       this.tick();
     }
   }

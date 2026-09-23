@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import type { Readable, Writable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import { client, ndJsonStream, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import type {
   ClientCapabilities,
@@ -224,16 +226,47 @@ const failureEnd = (meta: PromptResponse["_meta"]): AcpTurnEnd | null => {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** Every agent spawned whose process group has not been killed yet, its leader alive or not. */
+const unkilled = new Set<ChildProcess>();
+
 // Even once the leader is gone: codex-acp dies on SIGTERM without stopping its app-server,
-// and a group's id cannot be reused while any member of it lives.
+// and a group's id cannot be reused while any member of it lives. Once only: after that it can.
 const killGroup = (child: ChildProcess): void => {
-  if (child.pid === undefined) {
+  if (!unkilled.delete(child) || child.pid === undefined) {
     return;
   }
   try {
     process.kill(-child.pid, "SIGKILL");
   } catch {
     /* group already gone */
+  }
+};
+
+const leaderExit = async (child: ChildProcess): Promise<void> => {
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  try {
+    await once(child, "exit");
+  } catch {
+    /* it reported an error instead: nothing left to wait for */
+  }
+};
+
+/**
+ * For a process about to exit, where no backstop will fire: asks every agent still working to
+ * stop, waits up to `graceMs` for them to shut down, then kills every agent's process group. A
+ * group whose leader has exited is not waited on, since nothing is left in it to stop the rest.
+ */
+export const endAllAgents = async (graceMs = TEARDOWN_GRACE_MS): Promise<void> => {
+  for (const child of unkilled) {
+    if (!child.killed) {
+      child.kill("SIGTERM");
+    }
+  }
+  await Promise.race([Promise.all([...unkilled].map(leaderExit)), delay(graceMs)]);
+  for (const child of unkilled) {
+    killGroup(child);
   }
 };
 
@@ -355,6 +388,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       settle(failed(`failed to spawn ${bin}: ${errorMessage(error)}`));
       return;
     }
+    unkilled.add(child);
 
     const { stdin, stdout, stderr } = child;
     if (!stdin || !stdout || !stderr) {

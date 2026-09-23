@@ -1,6 +1,8 @@
+import { once } from "node:events";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@/shared/activity";
@@ -313,9 +315,9 @@ describe("settling a run", () => {
     drain.tick();
     expect(started()).toBe(2);
 
-    drain.shutdown();
+    await drain.shutdown();
 
-    await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+    expect(store.getEmployee("mae")?.status).toBe("idle");
     for (const task of cut) {
       expect(store.getTask(task.id)).toMatchObject({
         attempts: 0,
@@ -325,6 +327,41 @@ describe("settling a run", () => {
     expect(store.getEmployee("priya")?.status).toBe("idle");
     expect(kindOf(waiting)).toBe("queued");
     expect(started()).toBe(2);
+  });
+
+  it("waits for an aborted run to settle before it resolves", async () => {
+    found();
+    const slow: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: async (_emp, _company, _task, _onEvent, _tools, signal) => {
+        await once(signal, "abort");
+        await delay(50);
+        return interrupted;
+      },
+    };
+    const drain = createScheduler(slow);
+    const task = queue("priya");
+    drain.tick();
+
+    await drain.shutdown();
+
+    expect(store.getEmployee("priya")?.status).toBe("idle");
+    expect(kindOf(task)).toBe("queued");
+  });
+
+  it("stops waiting on a run that never settles once the grace is up", async () => {
+    found();
+    const stuck: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: () => Promise.withResolvers<RunResult>().promise,
+    };
+    const drain = createScheduler(stuck);
+    const task = queue("priya");
+    drain.tick();
+
+    await drain.shutdown(10);
+
+    expect(kindOf(task)).toBe("running");
   });
 
   it("remembers the session and the instructions it now holds", async () => {

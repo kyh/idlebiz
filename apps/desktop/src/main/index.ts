@@ -8,6 +8,7 @@ import { suspendWrites } from "@/main/lib/fs";
 import * as store from "@/main/store/store";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
+import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { controlPlane } from "@/main/control-plane";
 import { loadOfficeDesign, saveOfficeDesign } from "@/main/office-design";
 import { openProduct, openWorkspacePath, productStatus } from "@/main/product";
@@ -44,14 +45,21 @@ const moduleDir = import.meta.dirname;
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 
+// An ended turn's agent is left to shut down, with a timer to kill its process group if it
+// does not; that timer never fires once the app exits, so every exit waits the agents out.
+const stopAgents = async (): Promise<void> => {
+  await scheduler.shutdown();
+  await endAllAgents();
+};
+
 // Suspend writes before aborting runs so their completion cannot resurrect the save.
-// Aborted children may still be writing, hence the retries. Relaunch even if the
-// delete fails: writes never resume, and boot reports what is left of the save.
+// The agents' own detached tools may still be writing, hence the retries. Relaunch even
+// if the delete fails: writes never resume, and boot reports what is left of the save.
 const resetGame = async (): Promise<void> => {
   metricsPulse.stop();
   suspendWrites();
-  scheduler.shutdown();
   try {
+    await stopAgents();
     await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
   } finally {
     setImmediate(() => {
@@ -346,8 +354,24 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  scheduler.shutdown();
+let quitStage: "running" | "stopping agents" | "agents stopped" = "running";
+app.on("before-quit", (event) => {
+  if (quitStage === "agents stopped") {
+    return;
+  }
+  event.preventDefault();
+  if (quitStage === "stopping agents") {
+    return;
+  }
+  quitStage = "stopping agents";
   metricsPulse.stop();
-  controlPlane.stop();
+  void (async () => {
+    try {
+      await stopAgents();
+      controlPlane.stop();
+    } finally {
+      quitStage = "agents stopped";
+      app.quit();
+    }
+  })();
 });
