@@ -142,9 +142,12 @@ rather than crashing boot.
   `src/lib/env.ts`). Missing ⇒ `/api/stripe/*` refuses the flow with a clear message.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`.
   `main/secrets.ts` exports them into the process env at boot so both the metrics providers
-  and every employee's shell inherit them: `STRIPE_SECRET_KEY` / `STRIPE_CONNECT_TOKEN`,
-  `PLAUSIBLE_API_KEY`, `VERCEL_TOKEN`. One that fails to parse is listed in Settings and
-  never rewritten (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).
+  and every employee's shell inherit them: `STRIPE_SECRET_KEY`, `STRIPE_CONNECT_TOKEN`,
+  `VERCEL_TOKEN`. `STRIPE_SECRET_KEY` always feeds revenue; `STRIPE_CONNECT_TOKEN` only for
+  the company whose `metrics.json` holds the connected account (`stripeCredential` in
+  `main/metrics.ts`), and only a refused Connect token shows Stripe as revoked in the HUD; a
+  refused own key just leaves revenue unread. One that fails to parse is listed in Settings and never rewritten
+  (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

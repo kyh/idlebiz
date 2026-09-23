@@ -35,7 +35,7 @@ export const exportSecretsToEnv = (): { file: string; cause: unknown } | null =>
     try {
       writeSecretsFile({
         _readme:
-          "Founder secrets. String values are exported as env vars to your employees and the metrics providers. e.g. STRIPE_SECRET_KEY, PLAUSIBLE_API_KEY.",
+          "Founder secrets. String values are exported as env vars to your employees and the metrics providers. e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN.",
       });
     } catch {
       /* best effort */

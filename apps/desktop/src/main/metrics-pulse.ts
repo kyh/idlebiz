@@ -1,6 +1,6 @@
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
-import { PULSE_MS, fetchRealMetrics } from "@/main/metrics";
+import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
 import { readMetricsConfig } from "@/main/store/metrics-config";
 import { markAuthError } from "@/main/stripe-connect";
 import { isClosed } from "@/shared/bets";
@@ -18,12 +18,12 @@ const read = async (): Promise<void> => {
     return;
   }
   const products = store.listProducts();
-  const cfg = readMetricsConfig(company.id);
-  if (!cfg?.stripe && !cfg?.plausible && !cfg?.custom && products.every((p) => p.vercel === null)) {
+  const credential = stripeCredential(readMetricsConfig(company.id));
+  if (credential === null && products.every((p) => p.vercel === null)) {
     return;
   }
   const bets = store.listBets().filter((b) => !isClosed(b));
-  const snap = await fetchRealMetrics(cfg, products, bets);
+  const snap = await fetchRealMetrics(credential, products, bets);
   store.setRealMetrics(snap);
   for (const product of products) {
     store.setProductMetrics(product.id, {
@@ -34,7 +34,7 @@ const read = async (): Promise<void> => {
   for (const [betId, reading] of snap.betReadings) {
     store.setBetReading(betId, reading);
   }
-  if (snap.authError) {
+  if (snap.connectRevoked) {
     markAuthError("Stripe access was revoked — reconnect in the HUD.");
   }
   publishActivity(

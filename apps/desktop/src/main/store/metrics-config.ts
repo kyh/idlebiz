@@ -3,13 +3,11 @@ import { z } from "zod";
 import { atomicWrite, readJsonFile, readJsonFileForUpdate } from "@/main/lib/fs";
 import { companyDir } from "@/main/paths";
 
-// Which providers a company reads its real numbers from. A leaf: the store
-// adopts a legacy binding out of it at boot, and must not pull in the network
-// layer that reads the numbers to do so.
+// The Stripe account a company connected. A leaf: the store adopts a legacy
+// binding out of it at boot, and must not pull in the network layer that reads
+// the numbers to do so.
 
-// oxlint-disable-next-line sort-keys -- order is written to metrics.json
 const MetricsConfigSchema = z.object({
-  stripe: z.boolean().optional(),
   stripeAccount: z
     .object({ accountId: z.string(), connectedAt: z.number(), livemode: z.boolean() })
     .optional(),
@@ -22,8 +20,6 @@ const MetricsConfigSchema = z.object({
       teamId: z.string().optional(),
     })
     .optional(),
-  plausible: z.object({ domain: z.string() }).optional(),
-  custom: z.object({ url: z.string() }).optional(),
 });
 export type MetricsConfig = z.infer<typeof MetricsConfigSchema>;
 

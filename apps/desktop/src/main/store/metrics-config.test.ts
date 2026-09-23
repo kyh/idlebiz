@@ -17,19 +17,32 @@ afterAll(() => {
   }
 });
 
+const stripeAccount = { accountId: "acct_1", connectedAt: 0, livemode: false };
+
 it("refuses to merge into a metrics.json it cannot read", () => {
   const file = path.join(root, "acme", "metrics.json");
   mkdirSync(path.dirname(file), { recursive: true });
-  const handTyped = '{"plausible":"x.com"}';
+  const handTyped = '{"vercel":"prj_1"}';
   writeFileSync(file, handTyped);
 
-  expect(() => writeMetricsConfig("acme", { stripe: true })).toThrow("it will not be overwritten");
+  expect(() => writeMetricsConfig("acme", { stripeAccount })).toThrow("it will not be overwritten");
   expect(readFileSync(file, "utf-8")).toBe(handTyped);
 });
 
 it("keeps the other providers when one is patched", () => {
-  writeMetricsConfig("beta", { plausible: { domain: "x.com" } });
-  writeMetricsConfig("beta", { stripe: true });
+  writeMetricsConfig("beta", { vercel: { projectId: "prj_1" } });
+  writeMetricsConfig("beta", { stripeAccount });
 
-  expect(readMetricsConfig("beta")).toEqual({ plausible: { domain: "x.com" }, stripe: true });
+  expect(readMetricsConfig("beta")).toEqual({ stripeAccount, vercel: { projectId: "prj_1" } });
+});
+
+it("reads a file with providers this build no longer has", () => {
+  const file = path.join(root, "gamma", "metrics.json");
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    JSON.stringify({ plausible: { domain: "x.com" }, stripe: true, stripeAccount }),
+  );
+
+  expect(readMetricsConfig("gamma")).toEqual({ stripeAccount });
 });

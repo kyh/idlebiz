@@ -111,7 +111,6 @@ const connect = (companyId: string, account: ConnectedAccount): void => {
   const { accessToken, stripeUserId: accountId, livemode } = account;
   setSecret(STRIPE_TOKEN_KEY, accessToken);
   writeMetricsConfig(companyId, {
-    stripe: true,
     stripeAccount: { accountId, connectedAt: Date.now(), livemode },
   });
   lastError = null;
@@ -261,7 +260,7 @@ export const disconnectStripe = async (companyId: string): Promise<void> => {
   const account = readMetricsConfig(companyId)?.stripeAccount;
   // Clear local credentials immediately; new authorization waits for remote revocation below.
   deleteSecret(STRIPE_TOKEN_KEY);
-  writeMetricsConfig(companyId, { stripe: undefined, stripeAccount: undefined });
+  writeMetricsConfig(companyId, { stripeAccount: undefined });
   lastError = null;
   notify({ state: "disconnected" });
   if (token && account) {

@@ -4,11 +4,10 @@ import { getSecret } from "@/main/secrets";
 import type { MetricsConfig } from "@/main/store/metrics-config";
 import type { Bet } from "@/shared/bets";
 import type { Product } from "@/shared/domain";
-import { jsonValueSchema } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
 import { webAnalyticsVisitors } from "@/main/vercel";
 
-// Which providers a company reads is in its metrics.json (main/store/metrics-config.ts); credentials live in secrets.json.
+// Credentials live in secrets.json; the Stripe account a company connected, in its metrics.json (main/store/metrics-config.ts).
 
 export const PULSE_MS = 30_000;
 
@@ -21,14 +20,9 @@ export interface RealSnapshot {
   productRevenue: ReadonlyMap<string, number | null>;
   /** What each live bet's claim has brought in; null where no source can say. */
   betReadings: ReadonlyMap<string, number | null>;
-  /** A provider's credentials were rejected (e.g. Stripe token revoked). */
-  authError?: boolean;
+  /** Stripe refused the Connect token (401/403): the account revoked access. A refused own key only leaves revenue unread. */
+  connectRevoked: boolean;
 }
-
-const num = (v: JsonValue | undefined): number | null => {
-  const parsed = z.number().safeParse(v);
-  return parsed.success && Number.isFinite(parsed.data) ? parsed.data : null;
-};
 
 /** 401/403 from Stripe — credentials revoked or invalid. */
 class StripeAuthError extends Error {
@@ -122,13 +116,6 @@ const StripeListSchema = z.object({
   has_more: z.boolean().default(false),
 });
 const StripeCountSchema = z.object({ total_count: z.number() });
-const PlausibleSchema = z.object({
-  results: z.object({ visitors: z.object({ value: jsonValueSchema }) }),
-});
-const CustomSnapshotSchema = z.object({
-  revenue: jsonValueSchema.optional(),
-  users: jsonValueSchema.optional(),
-});
 
 // Every charge is re-read to catch refunds on old ones, which is a page per
 // hundred charges; the numbers move in hours, so the read is kept this long.
@@ -185,56 +172,47 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
 interface StripeSnapshot {
   charges: Revenue | null;
   customers: number | null;
-  authError: boolean;
+  /** Stripe answered 401/403 to this key. */
+  refused: boolean;
 }
 
-const NO_STRIPE: StripeSnapshot = { authError: false, charges: null, customers: null };
+const NO_STRIPE: StripeSnapshot = { charges: null, customers: null, refused: false };
 
-const stripeSnapshot = async (): Promise<StripeSnapshot> => {
-  const key = getSecret("STRIPE_CONNECT_TOKEN") ?? getSecret("STRIPE_SECRET_KEY");
-  if (!key) {
+/** The key a company reads Stripe with, and whose it is: only a refused Connect token means the connection was revoked. */
+export interface StripeCredential {
+  via: "connect" | "own";
+  key: string;
+}
+
+/**
+ * secrets.json is shared by every company and a Connect token outlives the
+ * company that connected it, so only that company reads it; the founder's own
+ * key is the one employees charge with, so it always counts. A key left blank
+ * in the file is no key.
+ */
+export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | null => {
+  const token = cfg?.stripeAccount ? getSecret("STRIPE_CONNECT_TOKEN") : null;
+  if (token) {
+    return { key: token, via: "connect" };
+  }
+  const own = getSecret("STRIPE_SECRET_KEY");
+  return own ? { key: own, via: "own" } : null;
+};
+
+const stripeSnapshot = async (credential: StripeCredential | null): Promise<StripeSnapshot> => {
+  if (credential === null) {
     return NO_STRIPE;
   }
+  const { key } = credential;
   try {
     const [charges, customers] = await Promise.all([
       stripeRevenue(key, Date.now()),
       stripeCustomers(key),
     ]);
-    return { authError: false, charges, customers };
+    return { charges, customers, refused: false };
   } catch (error) {
-    return error instanceof StripeAuthError ? { ...NO_STRIPE, authError: true } : NO_STRIPE;
+    return error instanceof StripeAuthError ? { ...NO_STRIPE, refused: true } : NO_STRIPE;
   }
-};
-
-const plausibleVisitors = async (domain: string): Promise<number | null> => {
-  const key = getSecret("PLAUSIBLE_API_KEY");
-  if (!key) {
-    return null;
-  }
-  try {
-    const data = await getJson(
-      `https://plausible.io/api/v1/stats/aggregate?site_id=${encodeURIComponent(domain)}&period=30d&metrics=visitors`,
-      { Authorization: `Bearer ${key}` },
-    );
-    const parsed = PlausibleSchema.safeParse(data);
-    return parsed.success ? num(parsed.data.results.visitors.value) : null;
-  } catch {
-    return null;
-  }
-};
-
-const customSnapshot = async (
-  url: string,
-): Promise<{ users: number | null; revenue: number | null }> => {
-  try {
-    const parsed = CustomSnapshotSchema.safeParse(await getJson(url, {}));
-    if (parsed.success) {
-      return { revenue: num(parsed.data.revenue), users: num(parsed.data.users) };
-    }
-  } catch {
-    /* unreachable endpoint — report nothing */
-  }
-  return { revenue: null, users: null };
 };
 
 /** Visitors of every product's deploy, and their sum when any product reports. */
@@ -265,29 +243,27 @@ const betReading = (
     : Promise.resolve(null);
 };
 
-/** `bets` are the live ones: a closed bet's number is settled. */
+/** `credential` is the company's `stripeCredential`; `bets` are the live ones: a closed bet's number is settled. */
 export const fetchRealMetrics = async (
-  cfg: MetricsConfig | null,
+  credential: StripeCredential | null,
   products: readonly Product[],
   bets: readonly Bet[],
 ): Promise<RealSnapshot> => {
-  const [stripe, vercel, visitors, custom] = await Promise.all([
-    cfg?.stripe ? stripeSnapshot() : Promise.resolve(NO_STRIPE),
+  const [stripe, vercel] = await Promise.all([
+    stripeSnapshot(credential),
     productVisitors(products),
-    cfg?.plausible ? plausibleVisitors(cfg.plausible.domain) : Promise.resolve(null),
-    cfg?.custom ? customSnapshot(cfg.custom.url) : Promise.resolve({ revenue: null, users: null }),
   ]);
   const { charges } = stripe;
   const readings = await Promise.all(bets.map((bet) => betReading(bet, products, charges)));
   return {
-    authError: stripe.authError,
     betReadings: new Map(bets.map((bet, i) => [bet.id, readings[i] ?? null])),
+    connectRevoked: stripe.refused && credential?.via === "connect",
     productRevenue: new Map(
       products.map((p) => [p.id, charges ? (charges.byProduct.get(p.id) ?? 0) : null]),
     ),
     productUsers: vercel.each,
-    revenue: charges?.total ?? custom.revenue,
+    revenue: charges?.total ?? null,
     // real traffic first; paying customers as the fallback "users" signal
-    users: vercel.total ?? stripe.customers ?? visitors ?? custom.users,
+    users: vercel.total ?? stripe.customers,
   };
 };
