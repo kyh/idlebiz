@@ -105,9 +105,10 @@ describe("the brief's budget", () => {
     expect(text).not.toContain("critical work only");
   });
 
-  it("prices a run at the estimate the allocator counts runs in flight at", () => {
+  it("prices a run at the estimate the allocator counts runs in flight at, with no sizing advice", () => {
     const text = briefFor(company, [product]);
-    expect(text).toContain(`One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}`);
+    expect(text).toContain(`One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)};`);
+    expect(text).not.toContain("buys almost nothing");
   });
 });
 
