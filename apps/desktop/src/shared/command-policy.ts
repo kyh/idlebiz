@@ -2,6 +2,7 @@ import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 
 // Applied to ACP permission requests from both runners. Unmatched commands run;
 // the CLIs' own safeguards still apply. Persist rule ids so approval cards can explain them.
+// It judges the command's text, not what runs: `npm run deploy` or a script on disk goes unseen.
 const RULE_IDS = [
   "deploy",
   "publish-package",
@@ -32,13 +33,26 @@ interface Rule extends CommandRule {
 /** Subcommands of the deploy CLIs that only read — everything else ships. */
 const DEPLOY_TOOL_READS = String.raw`(?:--help|--version|-h|-v|help|ls|list|inspect|logs?|whoami|login|logout|link|unlink|env|teams|projects|domains|certs|secrets|dev|build|pull|open|switch)`;
 
+/** gh verbs that only read — every other verb changes something on GitHub. */
+const GITHUB_READS = String.raw`(?:view|list|ls|status|diff|checks|clone|checkout|co|download|watch|--help|-h)`;
+
+/** gh commands whose next word is no verb on GitHub; `api` is judged by its flags instead. */
+const GITHUB_ASIDE = String.raw`(?:api|auth|browse|completion|config|help|search|status|version)`;
+
 /** A path argument that leaves the workspace behind. */
-const ESCAPES = String.raw`(?:~|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
+const ESCAPES = String.raw`(?:~|\$(?:HOME\b|\{HOME\})|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
+
+/**
+ * Words that run the command after them, with the values they take: `timeout 60
+ * git push` pushes. pnpm and yarn run a local bin by its name. A shell counts only
+ * when a quote opens right after its flags, as in `bash -lc 'git push'`.
+ */
+const WRAPPER = String.raw`(?:(?:sudo|command|env|time|nohup|exec|xargs|npx|bunx|npm\s+exec|(?:pnpm|yarn)(?:\s+(?:exec|dlx))?|nice(?:\s+-n\s*[-+]?\d+)?|timeout(?:\s+(?:-[ks]\s*\S+|--?[\w-]+(?:=\S+)?))*\s+\d[\d.]*[smhd]?)\s+|(?:ba|z|da)?sh\s+(?:-\w+\s+)+["'])`;
 
 // Anchor at invocation sites so quoted reports of a blocked command do not block again.
 // This is a heuristic: separators inside quotes still count, while bare `(` and
 // backticks do not (common in prose). Command substitution via `$(` still counts.
-const AT_COMMAND = String.raw`(?:^|[\n;&|]|\$\()\s*(?:(?:sudo|command|env|time|nohup|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|npm\s+exec)\s+)*(?:--?[\w-]+\s+)*(?:[\w_]+=\S+\s+)*`;
+const AT_COMMAND = String.raw`(?:^|[\n;&|]|\$\()\s*(?:${WRAPPER}(?:--?[\w-]+\s+)*|\w+=\S+\s+)*(?:[\w.~-]*/)*`;
 
 const invocation = (program: string): RegExp => new RegExp(AT_COMMAND + program, "u");
 
@@ -60,7 +74,9 @@ const RULES: readonly Rule[] = [
   {
     describe: "Publish a package to a public registry.",
     id: "publish-package",
-    match: invocation(`${program("npm|pnpm|yarn|bun")}${String.raw`[^|;&]*\bpublish\b`}`),
+    match: invocation(
+      `${program("npm|pnpm|yarn|bun")}${String.raw`[^|;&]*\b(?:(?:un)?publish|deprecate)\b`}`,
+    ),
   },
   {
     describe: "Push commits to a remote repository.",
@@ -71,27 +87,30 @@ const RULES: readonly Rule[] = [
     ),
   },
   {
-    describe: "Create something public on GitHub (PR, release, repo, or issue).",
+    describe: "Change something on GitHub — open, merge, comment on, edit or release.",
     id: "github-create",
+    // Exclude read-only verbs rather than listing writes. `gh api` sends a POST once it has a field,
+    // so an explicit GET exempts only that; any other method is held wherever it appears (gh takes the last).
     match: invocation(
-      String.raw`gh\s+(?:(?:pr|release|repo|issue|gist)\s+create\b` +
-        String.raw`|api\b[^|;&]*(?:\s-X\s*|\s--method[=\s])(?:POST|PUT|PATCH|DELETE)\b)`,
+      String.raw`gh\s+(?:(?!${GITHUB_ASIDE}(?![\w-])|-)[\w-]+\s+(?!${GITHUB_READS}(?![\w-]))[\w-]` +
+        String.raw`|api\b[^|;&]*\s(?:-X|--method)(?![=\s]*GET\b)` +
+        String.raw`|api\b(?![^|;&]*\s(?:-X|--method)[=\s]*GET\b)[^|;&]*\s(?:-[fF]|--(?:field|raw-field|input)(?![\w-])))`,
     ),
   },
   {
-    describe: "Move real money through Stripe.",
+    describe: "Move real money or change records in your Stripe account.",
     id: "payments",
     match: invocation(
-      `${program("stripe")}${String.raw`[^|;&]*\b(?:create|charge|payouts?|refunds?|transfers?)\b`}`,
+      `${program("stripe")}${String.raw`[^|;&]*\b(?:create|charge|payouts?|refunds?|transfers?|post|delete|confirm|capture|update|cancel|pay)\b`}`,
     ),
   },
   {
     describe: "Send data to a service on the internet.",
     id: "http-write",
     match: invocation(
-      String.raw`(?:curl\b[^|;&]*(?:\s-X\s*(?:POST|PUT|PATCH|DELETE)\b` +
-        // --json is shorthand for --data-binary + headers; -F/-T upload files
-        String.raw`|\s(?:--data|--data-raw|--data-binary|--data-urlencode|--json|--form|--upload-file|-d|-F|-T)[\s=])` +
+      String.raw`(?:curl\b[^|;&]*(?:\s(?:-X|--request)[=\s]*(?:POST|PUT|PATCH|DELETE)\b` +
+        // --json is shorthand for --data-binary + headers; -F/-T upload files; a short flag may carry its value attached
+        String.raw`|\s(?:--data|--data-raw|--data-binary|--data-urlencode|--json|--form|--upload-file)[\s=]|\s-[dFT])` +
         String.raw`|wget\b[^|;&]*\s(?:--post-data|--post-file|--method[=\s]*(?:POST|PUT|PATCH|DELETE))\b)`,
     ),
     networked: true,
@@ -114,14 +133,14 @@ const RULES: readonly Rule[] = [
     describe: "Read your stored credentials.",
     id: "read-credentials",
     match: invocation(
-      String.raw`(?:(?:cat|less|more|head|tail|strings|grep|cp|base64|openssl)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh)\b` +
+      String.raw`(?:(?:cat|less|more|head|tail|strings|grep|cp|base64|openssl)\b[^|;&]*${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh|netrc)\b` +
         String.raw`|security\s+find-(?:generic|internet)-password\b)`,
     ),
   },
   {
     describe: "Irreversibly delete or overwrite files outside the workspace.",
     id: "destructive-outside",
-    match: invocation(String.raw`(?:rm|shred|truncate)\b[^|;&]*\s-?[\w-]*\s*${ESCAPES}`),
+    match: invocation(String.raw`(?:rm|shred|truncate)\b[^|;&]*\s-?[\w-]*\s*["']?${ESCAPES}`),
   },
   {
     describe: "Change files or permissions outside the workspace.",
