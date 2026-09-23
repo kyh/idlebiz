@@ -35,10 +35,10 @@ const openTarget = async (opening: Opening): Promise<void> => {
 };
 
 /**
- * Open a workspace-relative path with the OS default app ("" is the company
- * workspace itself). Agents write paths relative to the workspace they ran in,
- * so the path is tried against the company's and every product's, and the
- * first that has it wins.
+ * Open a path relative to a workspace, or an absolute path inside one, with the
+ * OS default app ("" is shared/ itself). Agents write paths relative to the
+ * workspace they ran in, so the path is tried against shared/ and every
+ * product's workspace, and the first that has it wins.
  */
 export const openWorkspacePath = async (rel: string): Promise<void> => {
   const opening = judgeOpening(

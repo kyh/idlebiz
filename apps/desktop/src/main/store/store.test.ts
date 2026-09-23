@@ -15,6 +15,7 @@ import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
+import { runPreamble } from "@/main/prompts/briefs";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
@@ -25,6 +26,8 @@ const { scheduler } = await import("@/main/scheduler");
 const {
   alumniDir,
   betFile,
+  companySharedDir,
+  companyWorkspace,
   employeeRunStateFile,
   productWorkspace,
   productsDir,
@@ -167,13 +170,24 @@ describe("the shipping log", () => {
 });
 
 describe("products", () => {
-  it("founds a company with its first product, born in the company workspace", () => {
+  it("founds a company with its first product in workspace/ and a shared/ beside it", () => {
     const co = found();
     const [first, ...rest] = store.listProducts();
     expect(rest).toEqual([]);
     expect(first?.name).toBe(co.name);
-    expect(first?.workspaceDir).toBe(co.workspaceDir);
+    expect(first?.workspaceDir).toBe(companyWorkspace(co.id));
+    expect(co.workspaceDir).toBe(companySharedDir(co.id));
+    expect(existsSync(first?.workspaceDir ?? "")).toBe(true);
+    expect(existsSync(co.workspaceDir)).toBe(true);
     expect(existsSync(path.join(productsDir(co.id), first?.id ?? "", "PRODUCT.md"))).toBe(true);
+  });
+
+  it("gives a save without a shared folder one at boot", () => {
+    const co = found();
+    rmSync(co.workspaceDir, { recursive: true });
+    store.initStore();
+    expect(store.getCompany()?.workspaceDir).toBe(companySharedDir(co.id));
+    expect(existsSync(co.workspaceDir)).toBe(true);
   });
 
   it("gives a later product its own workspace and tells every agent about it", () => {
@@ -216,7 +230,7 @@ describe("products", () => {
     unstamp(co.id);
     store.initStore();
     const [first] = store.listProducts();
-    expect(first?.workspaceDir).toBe(co.workspaceDir);
+    expect(first?.workspaceDir).toBe(companyWorkspace(co.id));
     expect(first?.vercel).toEqual({ projectId: "prj_old", projectName: "old", teamId: "team_9" });
     expect(readFileSync(path.join(root, co.id, "metrics.json"), "utf-8")).not.toContain("prj_old");
   });
@@ -805,6 +819,54 @@ describe("bets", () => {
     store.initStore();
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
   });
+
+  it("retires the first product with its code; its successor is still pointed at shared/", () => {
+    const co = found();
+    const first = firstProduct();
+    writeFileSync(path.join(first.workspaceDir, "index.html"), "the old app");
+    const next = store.createProduct({ description: "the pivot", name: "Next" });
+    store.killProduct(first.id, "no traction");
+    const archived = path.join(retiredDir(co.id), first.id);
+    expect(existsSync(path.join(archived, "PRODUCT.md"))).toBe(true);
+    expect(readFileSync(path.join(archived, "workspace", "index.html"), "utf-8")).toBe(
+      "the old app",
+    );
+    expect(existsSync(companyWorkspace(co.id))).toBe(false);
+    expect(existsSync(co.workspaceDir)).toBe(true);
+    store.initStore();
+    const company = store.requireCompany();
+    expect(store.listProducts().map((p) => p.id)).toEqual([next.id]);
+    expect(runPreamble(store.requireProduct(next.id), company)).toContain(companySharedDir(co.id));
+  });
+
+  it("hands a company left with no products a first one whose workspace/ is there again", () => {
+    const co = found();
+    const first = firstProduct();
+    const next = store.createProduct({ description: "the pivot", name: "Next" });
+    store.killProduct(first.id, "no traction");
+    rmSync(path.join(productsDir(co.id), next.id), { recursive: true });
+    store.initStore();
+    const [only, ...rest] = store.listProducts();
+    expect(rest).toEqual([]);
+    expect(only?.workspaceDir).toBe(companyWorkspace(co.id));
+    expect(existsSync(companyWorkspace(co.id))).toBe(true);
+  });
+
+  it("refuses to retire the first product when its code cannot follow, and nothing leaves", () => {
+    const co = found();
+    const first = firstProduct();
+    store.createProduct({ description: "the pivot", name: "Next" });
+    const inPackage = path.join(productsDir(co.id), first.id, "workspace");
+    mkdirSync(inPackage);
+    writeFileSync(path.join(inPackage, "notes.md"), "in the way");
+    const bet = launch(first.id);
+    expect(() => store.killProduct(first.id, "dud")).toThrow();
+    expect(store.getProduct(first.id)).not.toBeNull();
+    expect(store.getBet(bet.id)?.state.kind).toBe("open");
+    expect(existsSync(path.join(productsDir(co.id), first.id, "PRODUCT.md"))).toBe(true);
+    expect(existsSync(companyWorkspace(co.id))).toBe(true);
+    expect(existsSync(path.join(retiredDir(co.id), first.id))).toBe(false);
+  });
 });
 
 describe("archives", () => {
@@ -1185,7 +1247,7 @@ describe("the save format", () => {
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
-    expect(store.getProduct(first.id)?.workspaceDir).toBe(co.workspaceDir);
+    expect(store.getProduct(first.id)?.workspaceDir).toBe(companyWorkspace(co.id));
     expect(store.getProduct(gadget.id)?.workspaceDir).toBe(productWorkspace(co.id, gadget.id));
     expect(store.employeeInstructions(emp.id)).toContain(productWorkspace(co.id, gadget.id));
     expect(store.employeeInstructions(emp.id)).not.toContain(elsewhere);

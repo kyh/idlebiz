@@ -7,9 +7,10 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done or answered,
-  products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
-  get products/<slug>/workspace/), bets/<slug>/BET.md, retired/<slug>/ for killed
-  products, routines/, activity.jsonl).
+  products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
+  get products/<slug>/workspace/), shared/ for what teammates share across products,
+  bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
+  activity.jsonl).
 - COMPANY.md carries `format`. A save stamped higher than this build writes is refused
   (writers rebuild files from what they understand, so opening it would drop what a newer
   build added); one stamped lower is adopted once in `adoptOlderSave`, the only home for

@@ -230,9 +230,10 @@ export const Ships = ({
   const selectedName =
     selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`;
 
+  const selectedProduct = products.find((p) => p.id === selected);
   const openWorkspace = async () => {
     try {
-      await bridge().openCompanyPath({ rel: "" });
+      await bridge().openCompanyPath({ rel: selectedProduct?.workspaceDir ?? "" });
     } catch (error) {
       showNote(errorMessage(error));
     }
@@ -251,7 +252,11 @@ export const Ships = ({
             void openWorkspace();
           }}
           className="px-btn"
-          title="Reveal the real folder where the team works"
+          title={
+            selectedProduct
+              ? `Open the real folder where ${selectedProduct.name} is built`
+              : "Open the real folder the team shares across products"
+          }
         >
           📁 Workspace
         </button>

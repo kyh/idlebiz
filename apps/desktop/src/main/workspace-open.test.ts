@@ -66,12 +66,19 @@ describe("judgeOpening", () => {
     expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
   });
 
-  it.each(["out.md", "../x", `../${path.basename(outside)}/secret.md`, "missing.md"])(
-    "refuses %j",
-    (rel) => {
-      expect(judgeOpening([root], rel)).toBeNull();
-    },
-  );
+  it("opens an absolute path inside a root", () => {
+    expect(judgeOpening([root, product], product)).toEqual({ kind: "open", path: product });
+  });
+
+  it.each([
+    "out.md",
+    "../x",
+    `../${path.basename(outside)}/secret.md`,
+    "missing.md",
+    path.join(outside, "secret.md"),
+  ])("refuses %j", (rel) => {
+    expect(judgeOpening([root], rel)).toBeNull();
+  });
 
   it("tries every root and skips one that does not exist", () => {
     expect(judgeOpening([path.join(root, "gone"), root, product], "index.html")).toEqual({

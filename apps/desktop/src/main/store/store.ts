@@ -6,6 +6,7 @@ import {
   ensureAppDirs,
   companyDir,
   companyFile,
+  companySharedDir,
   companyWorkspace,
   activityFile,
   recentShipsFile,
@@ -315,7 +316,7 @@ const docToCompany = (doc: FrontmatterDoc): Company => {
     ships: optNum(m, "ships", 0),
     spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
     users: nullableNum(m, "users"),
-    workspaceDir: companyWorkspace(id),
+    workspaceDir: companySharedDir(id),
   };
 };
 
@@ -914,7 +915,7 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
 };
 
 // ---- products --------------------------------------------------------------
-/** The first product shares the company workspace and inherits its legacy metrics. */
+/** The first product's code is the company's workspace/; it inherits the legacy metrics. */
 const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   companyId: co.id,
   createdAt: co.createdAt,
@@ -926,7 +927,7 @@ const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   ships: co.ships,
   users: co.users,
   vercel,
-  workspaceDir: co.workspaceDir,
+  workspaceDir: companyWorkspace(co.id),
 });
 
 export const getProduct = (id: string): Product | null =>
@@ -1491,9 +1492,10 @@ export const productOfEmployee = (employeeId: string): Product | null => {
 
 /**
  * Retire a product: its live bets die with it, its open work is dead-lettered,
- * and its package moves to retired/ whole. The last product cannot go — a
- * company with none would be handed a fresh first product at the next boot.
- * Returns the bets it took down.
+ * and its package moves to retired/ whole, with its code beside PRODUCT.md even
+ * when that lived outside the package, as the first product's does. The last
+ * product cannot go — a company with none would be handed a fresh first product
+ * at the next boot. Returns the bets it took down.
  */
 export const killProduct = (productId: string, reason: string): Bet[] => {
   const product = requireProduct(productId);
@@ -1503,10 +1505,18 @@ export const killProduct = (productId: string, reason: string): Bet[] => {
       `${product.name} is the only product — start its successor with create_product first.`,
     );
   }
-  moveDir(
-    path.join(productsDir(product.companyId), productId),
-    archiveTo(retiredDir(product.companyId), productId),
-  );
+  const pkg = path.join(productsDir(product.companyId), productId);
+  const archive = archiveTo(retiredDir(product.companyId), productId);
+  moveDir(pkg, archive);
+  const outside = product.workspaceDir !== productWorkspace(product.companyId, productId);
+  if (outside && existsSync(product.workspaceDir)) {
+    try {
+      moveDir(product.workspaceDir, path.join(archive, "workspace"));
+    } catch (error) {
+      moveDir(archive, pkg);
+      throw error;
+    }
+  }
   const now = Date.now();
   const killed = active.bets
     .filter((b) => b.productId === productId && !isClosed(b))
@@ -1558,7 +1568,7 @@ export const foundCompany = (input: {
     ships: 0,
     spentUsd: 0,
     users: null,
-    workspaceDir: companyWorkspace(id),
+    workspaceDir: companySharedDir(id),
   };
   const active = emptyCompany(co);
   active.shipped = [];
@@ -1588,6 +1598,7 @@ export const foundCompany = (input: {
   const staged = (file: string): string => path.join(staging, path.relative(destination, file));
   try {
     mkdirSync(staged(companyWorkspace(id)), { recursive: true });
+    mkdirSync(staged(companySharedDir(id)), { recursive: true });
     mkdirSync(staged(tasksDir(id)), { recursive: true });
     mkdirSync(staged(agentsDir(id)), { recursive: true });
     for (const product of active.products) {
@@ -1713,6 +1724,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
 const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null): void => {
   if (active.products.length === 0) {
     const first = firstProduct(active.company, vercel);
+    mkdirSync(first.workspaceDir, { recursive: true });
     active.products.push(first);
     saveProduct(first);
   }
@@ -1747,7 +1759,7 @@ const adoptAnsweredAsks = (active: ActiveCompany): void => {
 /**
  * Format 2 kept each product's absolute workspace path, which a copied save
  * still pointed back through. The codec reads a product without the new key
- * as sharing the company workspace; the old path's tail says which had their own.
+ * as the first, coding in the company's workspace/; the old path's tail says which had their own.
  */
 const adoptProductWorkspaces = (active: ActiveCompany): void => {
   const { id } = active.company;
@@ -1826,6 +1838,7 @@ export const initStore = (): LoadReport => {
       adoptOlderSave(active, format);
     }
     ensureFirstProduct(active, null);
+    mkdirSync(company.workspaceDir, { recursive: true });
     if (active.employees.length > 0 && !active.employees.some((e) => e.id === company.leaderId)) {
       active.company = { ...company, leaderId: leadOf(active.employees) };
       saveCompany(active.company);

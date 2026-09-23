@@ -14,10 +14,11 @@ import { mkdirSync } from "node:fs";
 //     tasks/<slug>/TASK.md  open work
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log), and asks the founder answered
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
-//     products/<slug>/workspace/  its code (the first product uses workspace/)
-//     retired/<slug>/       a product the lead killed: its package, moved here whole
+//     products/<slug>/workspace/  its code (the first product's is workspace/)
+//     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
-//     workspace/            shared cwd where agents do real work
+//     workspace/            the first product's code
+//     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
 //     state/                running state main keeps for itself; deleting it loses nothing canonical
@@ -36,9 +37,12 @@ export const OFFICE_DESIGN_PATH = path.join(ROOT_DIR, "office-design.json");
 export const companyDir = (companySlug: string): string => path.join(ROOT_DIR, companySlug);
 export const companyFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "COMPANY.md");
-/** Shared workspace where all of a company's employees do real work together. */
+/** The first product's code; a later product keeps its own in its package (productWorkspace). */
 export const companyWorkspace = (companySlug: string): string =>
   path.join(companyDir(companySlug), "workspace");
+/** What teammates share across products, and the working directory of work no product owns. */
+export const companySharedDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "shared");
 /** Running state main keeps for itself: small JSON written as things happen, safe to delete.
  *  What the founder configured (metrics.json, approvals.json) is not state and stays beside COMPANY.md. */
 const stateDir = (companySlug: string): string => path.join(companyDir(companySlug), "state");
@@ -87,7 +91,7 @@ export const productsDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "products");
 export const productFile = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "PRODUCT.md");
-/** A later product's own workspace; the first product lives in the company workspace. */
+/** A later product's own workspace, moved with its package when it retires. */
 export const productWorkspace = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "workspace");
 

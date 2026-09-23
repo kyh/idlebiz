@@ -1,19 +1,10 @@
 import type { ReactNode } from "react";
 import { bridge } from "@/renderer/bridge";
+import { ASSET_TOKEN, relFromToken } from "@/renderer/ui/asset-token";
 
 // Renders agent text with clickable assets: URLs open in the browser, and
-// anything that looks like a workspace file path opens with the OS default app
-// (guarded server-side to stay inside the company workspace).
-
-// URLs · absolute paths inside the workspace · relative dir/file paths ·
-// bare root files with doc-ish extensions (curated so prose like "Node.js" stays text)
-const TOKEN =
-  /(?:https?:\/\/[^\s)>\]"'`]+|(?:\/[\w.-]+)*\/workspace\/[\w./-]+|(?:[\w-][\w.-]*\/)+[\w-][\w.-]*\.\w{1,5}|\b[\w-]+\.(?:html|md|json|csv|pdf|png|txt)\b)/gu;
-
-const relFromToken = (token: string): string => {
-  const i = token.indexOf("/workspace/");
-  return i === -1 ? token : token.slice(i + "/workspace/".length);
-};
+// anything that looks like a file path opens with the OS default app (guarded
+// server-side to stay inside shared/ or a product's workspace).
 
 const openAsset = async (token: string): Promise<void> => {
   if (/^https?:\/\//u.test(token)) {
@@ -31,9 +22,9 @@ const openAsset = async (token: string): Promise<void> => {
 export const RichText = ({ text }: { text: string }) => {
   const parts: ReactNode[] = [];
   let last = 0;
-  // matchAll, not exec: exec advances TOKEN.lastIndex, and mutating
+  // matchAll, not exec: exec advances ASSET_TOKEN.lastIndex, and mutating
   // module-level state during render breaks on a re-entrant render.
-  for (const m of text.matchAll(TOKEN)) {
+  for (const m of text.matchAll(ASSET_TOKEN)) {
     const [token] = m;
     if (m.index > last) {
       parts.push(text.slice(last, m.index));

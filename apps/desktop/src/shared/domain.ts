@@ -210,6 +210,7 @@ export interface Company {
   name: string;
   mission: string;
   businessType: BusinessTypeId;
+  /** What teammates share across products, and the working directory of work no product owns. */
   workspaceDir: string;
   founderName: string;
   founderSpriteSeed: string;
@@ -296,7 +297,7 @@ export interface VercelBinding {
   teamId: string | null;
 }
 
-/** The first product shares the company workspace; later products have their own. */
+/** The first product's code is the company's workspace/; later products have their own. */
 export interface Product {
   id: string;
   companyId: string;

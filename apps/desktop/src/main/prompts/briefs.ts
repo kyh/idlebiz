@@ -294,11 +294,7 @@ export const runPreamble = (product: Product | null, company: Company): string =
   if (!product) {
     return `COMPANY-LEVEL WORK (not for one product). Working directory: ${company.workspaceDir}.`;
   }
-  const shared =
-    product.workspaceDir === company.workspaceDir
-      ? ""
-      : `\nThe company workspace, shared across products, is at ${company.workspaceDir}.`;
-  return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}${shared}`;
+  return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}\nThe company workspace, shared across products, is at ${company.workspaceDir}.`;
 };
 
 export const routineBrief = (r: Routine): TaskBrief => ({
