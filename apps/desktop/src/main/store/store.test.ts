@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { KILL_GRACE_MS, windowEnd } from "@/shared/bets";
 import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
 import { runPreamble } from "@/main/prompts/briefs";
@@ -755,12 +756,12 @@ describe("bets", () => {
     const co = found();
     const bet = launch(firstProduct().id);
     store.recordBetSpend(bet.id, 2);
-    expect(store.judgeBets(0)).toEqual([]);
+    expect(store.judgeBets(0, 0)).toEqual([]);
     expect(store.measureBet(bet.id, 0).state.kind).toBe("measuring");
-    store.setBetReading(bet.id, 60);
-    store.setBetReading(bet.id, null);
-    expect(store.judgeBets(1).map((b) => b.state.kind)).toEqual(["won"]);
-    expect(store.judgeBets(2)).toEqual([]);
+    store.setBetReading(bet.id, 60, 1);
+    store.setBetReading(bet.id, null, 1);
+    expect(store.judgeBets(1, 0).map((b) => b.state.kind)).toEqual(["won"]);
+    expect(store.judgeBets(2, 0)).toEqual([]);
     expect(existsSync(betFile(co.id, bet.id))).toBe(true);
     store.initStore();
     expect(store.getBet(bet.id)).toMatchObject({
@@ -781,9 +782,27 @@ describe("bets", () => {
       chmodSync(dir, 0o755);
     }
     expect(store.getBet(bet.id)?.spentUsd).toBe(1.5);
-    store.setBetReading(bet.id, 10);
+    store.setBetReading(bet.id, 10, 1);
     store.initStore();
     expect(store.getBet(bet.id)).toMatchObject({ reading: 10, spentUsd: 1.5 });
+  });
+
+  it("kills a closed window only on a reading taken after it, and stamps a quiet bet once", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    store.setBetReading(bet.id, 20, 5);
+    store.measureBet(bet.id, 0);
+    const until = windowEnd(bet, 0);
+    store.setBetReading(bet.id, 20, until - 1);
+    expect(store.getBet(bet.id)?.readAt).toBe(5);
+    expect(store.judgeBets(until + 1, 0)).toEqual([]);
+    expect(store.judgeBets(until + KILL_GRACE_MS, null)).toEqual([]);
+    store.setBetReading(bet.id, 20, until + 1);
+    store.setBetReading(bet.id, 20, until + 2);
+    expect(store.getBet(bet.id)?.readAt).toBe(until + 1);
+    expect(store.judgeBets(until + 3, null)).toMatchObject([
+      { state: { kind: "killed", moved: 20 } },
+    ]);
   });
 
   it("counts a bet's queued and running work as in flight", () => {
@@ -820,8 +839,8 @@ describe("bets", () => {
     const other = launch(product.id);
     const states = workOn(bet.id);
     const untouched = store.createTask({ betId: other.id, origin: "work", title: "Elsewhere" });
-    store.setBetReading(bet.id, 60);
-    expect(store.judgeBets(1).map((b) => b.state.kind)).toEqual(["won"]);
+    store.setBetReading(bet.id, 60, 1);
+    expect(store.judgeBets(1, 0).map((b) => b.state.kind)).toEqual(["won"]);
     expect(states()).toEqual(["dead", "dead", "running", "dead"]);
     expect(store.getTask(untouched.id)?.state.kind).toBe("todo");
   });

@@ -1069,6 +1069,7 @@ export const openBet = (
     hypothesis: input.hypothesis.trim(),
     id,
     productId: product.id,
+    readAt: null,
     reading: null,
     spentUsd: 0,
     state: { kind: "open" },
@@ -1087,11 +1088,22 @@ export const openBet = (
   return bet;
 };
 
-/** What the pulse read for a live bet; a null keeps the last reading through a provider failure. */
-export const setBetReading = (betId: string, reading: number | null): void => {
+/**
+ * What the pulse read for a live bet at `at`; a null keeps the last reading
+ * through a provider failure. A quiet bet is not rewritten every pulse: the
+ * time is stamped when the reading moves, and by the first read after a
+ * measuring bet's window closed, which is the one the evaluator waits for.
+ */
+export const setBetReading = (betId: string, reading: number | null, at: number): void => {
   const bet = getBet(betId);
-  if (bet && !isClosed(bet) && reading !== null && reading !== bet.reading) {
-    patchBet(betId, { reading });
+  if (!bet || isClosed(bet) || reading === null) {
+    return;
+  }
+  const { state, readAt } = bet;
+  const firstSinceClose =
+    state.kind === "measuring" && at >= state.until && (readAt === null || readAt < state.until);
+  if (reading !== bet.reading || firstSinceClose) {
+    patchBet(betId, { readAt: at, reading });
   }
 };
 
@@ -1175,12 +1187,12 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
   return killed;
 };
 
-/** Judge every live bet against the real numbers; returns the ones whose state changed. */
-export const judgeBets = (now: number): Bet[] => {
+/** Judge every live bet against the real numbers (see `judge` for `pulsingSince`); returns the ones whose state changed. */
+export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   const active = current();
   const changed: Bet[] = [];
   for (const bet of active.bets) {
-    const state = judge(bet, now);
+    const state = judge(bet, now, pulsingSince);
     if (state !== bet.state) {
       changed.push(patchBet(bet.id, { state }));
     }

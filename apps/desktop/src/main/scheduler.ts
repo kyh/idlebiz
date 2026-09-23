@@ -7,6 +7,7 @@ import { report } from "@/main/lib/report";
 import { agentDriver, askBox } from "@/main/agents/agent-driver";
 import type { RunResult, RunTools } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, say, ship } from "@/main/company-actions";
+import { metricsPulse } from "@/main/metrics-pulse";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
 import { RUN_COST_ESTIMATE_USD, allocate } from "@/shared/bets";
@@ -267,7 +268,8 @@ class Scheduler {
     if (this.stopped || !company) {
       return;
     }
-    for (const bet of store.judgeBets(Date.now())) {
+    const now = Date.now();
+    for (const bet of store.judgeBets(now, metricsPulse.pulsingSince(now))) {
       announceBet(bet);
     }
   }

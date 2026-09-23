@@ -66,6 +66,8 @@ export interface Bet {
   target: number;
   /** What it has brought in so far, as the last pulse read it; null while no source reports it. */
   reading: number | null;
+  /** When `reading` was taken: stamped when it moves, and by the first read after its window closed. */
+  readAt: number | null;
   budgetUsd: number;
   spentUsd: number;
   /** How long the metric gets to respond once the work stops. */
@@ -119,12 +121,17 @@ export const ledgerOrder = (bets: readonly Bet[], verdicts = Infinity): Bet[] =>
     .slice(0, verdicts),
 ];
 
+/** How long the pulse asks for a reading taken after a window closed before the last one decides: a source down longer than this no longer holds the verdict. */
+export const KILL_GRACE_MS = 20 * 60_000;
+
 /**
  * The verdict is the evaluator's, never the team's: a bet wins when what it
  * claims reached its target, and dies when its window closes short of it.
  * Only the lead starts a window, by saying the work is out the door.
+ * `pulsingSince` is when the pulse began asking without a break, null while it
+ * is not asking.
  */
-export const judge = (bet: Bet, now: number): BetState => {
+export const judge = (bet: Bet, now: number, pulsingSince: number | null): BetState => {
   const { state, reading: moved } = bet;
   if (state.kind === "won" || state.kind === "killed") {
     return state;
@@ -136,6 +143,16 @@ export const judge = (bet: Bet, now: number): BetState => {
   // number may still be waiting on the founder, and a window that runs out before
   // anything shipped is a false verdict on the hypothesis.
   if (state.kind === "open" || now < state.until) {
+    return state;
+  }
+  // A reading taken before the window closed can miss the money that decides
+  // it: a Stripe read is kept for minutes, and a window can close while the app
+  // is quit or asleep. The grace runs on the pulse's clock, since the wall clock
+  // passing says nothing about whether anyone asked the source.
+  const readSinceClose = bet.readAt !== null && bet.readAt >= state.until;
+  const askedLongEnough =
+    pulsingSince !== null && now >= Math.max(state.until, pulsingSince) + KILL_GRACE_MS;
+  if (!readSinceClose && !askedLongEnough) {
     return state;
   }
   return {

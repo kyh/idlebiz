@@ -18,10 +18,16 @@ export interface RealSnapshot {
   productUsers: ReadonlyMap<string, number | null>;
   /** Revenue from charges tagged with the product; null for every product while no full read of the charges has come back. */
   productRevenue: ReadonlyMap<string, number | null>;
-  /** What each live bet's claim has brought in; null where no source can say. */
-  betReadings: ReadonlyMap<string, number | null>;
+  /** What each live bet's claim has brought in, and when it was read. */
+  betReadings: ReadonlyMap<string, BetRead>;
   /** How Stripe answered the company's key, and whose key it was; null when it has none. */
   stripe: { via: StripeCredential["via"]; answer: StripeAnswer } | null;
+}
+
+/** A bet's reading, null where no source can say, and when it was taken. */
+interface BetRead {
+  reading: number | null;
+  at: number;
 }
 
 /** Stripe took the key, turned it away (401/403), or never answered, which says nothing either way. */
@@ -183,6 +189,8 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
 };
 
 interface StripeSnapshot {
+  /** When it was read: a kept read is as old as the pulse that took it. */
+  at: number;
   /** Every charge the account has taken: the company's money and its products'. */
   charges: Revenue | null;
   /** Charges since the oldest live revenue bet opened: all a bet can claim, whatever the account's size. */
@@ -190,13 +198,6 @@ interface StripeSnapshot {
   customers: number | null;
   answer: StripeAnswer;
 }
-
-const NO_STRIPE: StripeSnapshot = {
-  answer: "unanswered",
-  bets: null,
-  charges: null,
-  customers: null,
-};
 
 /** The key a company reads Stripe with, and whose it is: only a refused Connect token means the connection was revoked. */
 export interface StripeCredential {
@@ -227,8 +228,7 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
 // every pulse. A new key reads at once, since the key is part of what is kept;
 // only a read Stripe never answered is asked again.
 const STRIPE_TTL_MS = 10 * 60_000;
-let stripeRead: { at: number; key: string; since: number | null; snapshot: StripeSnapshot } | null =
-  null;
+let stripeRead: { key: string; since: number | null; snapshot: StripeSnapshot } | null = null;
 
 const settled = <T>(read: PromiseSettledResult<T | null>): T | null =>
   read.status === "fulfilled" ? read.value : null;
@@ -241,22 +241,28 @@ const answerOf = (reads: readonly PromiseSettledResult<unknown>[]): StripeAnswer
   return reads.some((read) => read.status === "fulfilled") ? "accepted" : "unanswered";
 };
 
-/** Kept per key and `since` (when the oldest live revenue bet opened): a bet that moves `since` reads again at once. */
+/**
+ * Kept per key and `since` (when the oldest live revenue bet opened): a bet
+ * that moves `since` reads again at once, and so does a revenue bet's window
+ * (`closes`) that closed after the kept read, which its verdict waits on.
+ */
 const stripeSnapshot = async (
   credential: StripeCredential | null,
   since: number | null,
+  closes: readonly number[],
 ): Promise<StripeSnapshot> => {
+  const now = Date.now();
   if (credential === null) {
-    return NO_STRIPE;
+    return { answer: "unanswered", at: now, bets: null, charges: null, customers: null };
   }
   const { key } = credential;
-  const now = Date.now();
+  const kept = stripeRead?.key === key && stripeRead.since === since ? stripeRead.snapshot : null;
   if (
-    stripeRead?.key === key &&
-    stripeRead.since === since &&
-    now - stripeRead.at < STRIPE_TTL_MS
+    kept &&
+    now - kept.at < STRIPE_TTL_MS &&
+    !closes.some((until) => kept.at < until && until <= now)
   ) {
-    return stripeRead.snapshot;
+    return kept;
   }
   // Settled one by one, so a scan that times out never throws away the reads that answered.
   const reads = await Promise.allSettled([
@@ -268,6 +274,7 @@ const stripeSnapshot = async (
   const snapshot: StripeSnapshot = {
     // the bets read is a stand-in when no revenue bet is live, so it cannot say Stripe answered
     answer: answerOf([charges, customers]),
+    at: now,
     bets: settled(bets),
     charges: settled(charges),
     customers: settled(customers),
@@ -275,7 +282,7 @@ const stripeSnapshot = async (
   if (
     reads.every((read) => read.status === "fulfilled" || read.reason instanceof StripeAuthError)
   ) {
-    stripeRead = { at: now, key, since, snapshot };
+    stripeRead = { key, since, snapshot };
   }
   return snapshot;
 };
@@ -293,19 +300,23 @@ const productVisitors = async (
   return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
 };
 
-/** What one bet's claim has brought in: visitors who landed on its path since it opened, or money carrying its tag. */
-const betReading = (
+/** What one bet's claim has brought in, and when: visitors who landed on its path since it opened, as of `now`, or money carrying its tag, as of the Stripe read. */
+const betReading = async (
   bet: Bet,
   products: readonly Product[],
-  betCharges: Revenue | null,
-): Promise<number | null> => {
+  stripe: StripeSnapshot,
+  now: number,
+): Promise<BetRead> => {
   if (bet.claim.metric === "revenue") {
-    return Promise.resolve(betCharges ? (betCharges.byBet.get(bet.id) ?? 0) : null);
+    return { at: stripe.at, reading: stripe.bets ? (stripe.bets.byBet.get(bet.id) ?? 0) : null };
   }
   const deploy = products.find((p) => p.id === bet.productId)?.vercel;
-  return deploy
-    ? webAnalyticsVisitors(deploy, { since: bet.createdAt, under: bet.claim.landingPath })
-    : Promise.resolve(null);
+  return {
+    at: now,
+    reading: deploy
+      ? await webAnalyticsVisitors(deploy, { since: bet.createdAt, under: bet.claim.landingPath })
+      : null,
+  };
 };
 
 /** When the oldest of these bets that claims money opened: no charge before it can carry a live bet's tag. */
@@ -314,20 +325,32 @@ const revenueSince = (bets: readonly Bet[]): number | null => {
   return opened.length > 0 ? Math.min(...opened) : null;
 };
 
+/** When these bets that claim money close their windows. */
+const revenueCloses = (bets: readonly Bet[]): number[] =>
+  bets.flatMap((bet) =>
+    bet.claim.metric === "revenue" && bet.state.kind === "measuring" ? [bet.state.until] : [],
+  );
+
 /** `credential` is the company's `stripeCredential`; `bets` are the live ones: a closed bet's number is settled. */
 export const fetchRealMetrics = async (
   credential: StripeCredential | null,
   products: readonly Product[],
   bets: readonly Bet[],
 ): Promise<RealSnapshot> => {
+  const now = Date.now();
   const [stripe, vercel] = await Promise.all([
-    stripeSnapshot(credential, revenueSince(bets)),
+    stripeSnapshot(credential, revenueSince(bets), revenueCloses(bets)),
     productVisitors(products),
   ]);
   const { charges } = stripe;
-  const readings = await Promise.all(bets.map((bet) => betReading(bet, products, stripe.bets)));
+  const readings = await Promise.all(
+    bets.map(async (bet): Promise<[string, BetRead]> => [
+      bet.id,
+      await betReading(bet, products, stripe, now),
+    ]),
+  );
   return {
-    betReadings: new Map(bets.map((bet, i) => [bet.id, readings[i] ?? null])),
+    betReadings: new Map(readings),
     productRevenue: new Map(
       products.map((p) => [p.id, charges ? (charges.byProduct.get(p.id) ?? 0) : null]),
     ),

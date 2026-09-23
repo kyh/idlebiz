@@ -44,6 +44,7 @@ const revenueBet = (id: string, createdAt: number): Bet => ({
   hypothesis: "a paid tier sells",
   id,
   productId: "app",
+  readAt: null,
   reading: null,
   spentUsd: 0,
   state: { kind: "open" },
@@ -235,7 +236,10 @@ describe("fetchRealMetrics", () => {
 });
 
 describe("fetchRealMetrics reading Stripe", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it("reads every Stripe answer at the pinned API version", async () => {
     const versions: (string | null)[] = [];
@@ -278,8 +282,8 @@ describe("fetchRealMetrics reading Stripe", () => {
     expect(asked).toContain("/v1/charges?limit=100&created[gte]=1700000000");
     expect(snap.revenue).toBe(57);
     expect([...snap.betReadings]).toEqual([
-      ["pricing", 7],
-      ["later", 0],
+      ["pricing", { at: expect.any(Number), reading: 7 }],
+      ["later", { at: expect.any(Number), reading: 0 }],
     ]);
   });
 
@@ -341,5 +345,32 @@ describe("fetchRealMetrics reading Stripe", () => {
     expect(snap.users).toBe(3);
     expect(again).toBe(first);
     expect(asked.length).toBeGreaterThan(again);
+  });
+
+  it("reads again once a revenue bet's window closed after the kept read", async () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ["Date"] });
+    const asked = stripe((endpoint) =>
+      endpoint.startsWith("/v1/charges")
+        ? Response.json({ data: [charge("ch_1", 700, { bet: "pricing" })] })
+        : Response.json({ total_count: 1 }),
+    );
+    const credential: StripeCredential = { key: "closing", via: "own" };
+    const closing: Bet = {
+      ...revenueBet("pricing", 0),
+      state: { kind: "measuring", until: 1_060_000 },
+    };
+
+    await fetchRealMetrics(credential, [], [closing]);
+    const first = asked.length;
+    vi.setSystemTime(1_030_000);
+    const kept = await fetchRealMetrics(credential, [], [closing]);
+    const beforeClose = asked.length;
+    vi.setSystemTime(1_090_000);
+    const fresh = await fetchRealMetrics(credential, [], [closing]);
+
+    expect(beforeClose).toBe(first);
+    expect(kept.betReadings.get("pricing")).toEqual({ at: 1_000_000, reading: 7 });
+    expect(asked.length).toBe(first * 2);
+    expect(fresh.betReadings.get("pricing")).toEqual({ at: 1_090_000, reading: 7 });
   });
 });

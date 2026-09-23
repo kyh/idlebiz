@@ -13,6 +13,7 @@ const bet = (state: BetState, claim: BetClaim = LANDING): Bet => ({
   hypothesis: "a launch post brings visitors",
   id: "launch-post",
   productId: "app",
+  readAt: 7,
   reading: 12,
   spentUsd: 1.25,
   state,
@@ -45,6 +46,12 @@ describe("bet codec", () => {
     delete doc.metadata.landingPath;
     doc.metadata.baseline = 3;
     expect(docToBet(doc, "co").claim).toEqual({ landingPath: "/", metric: "users" });
+  });
+
+  it("reads a bet whose reading carries no time as never read", () => {
+    const doc = betToDoc(bet({ kind: "measuring", until: 99 }));
+    delete doc.metadata.readAt;
+    expect(docToBet(doc, "co").readAt).toBeNull();
   });
 
   it("refuses a bet on a number it does not know", () => {

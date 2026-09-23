@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POLICY, allocate, claimsCollide, dream, hasRoomFor, judge } from "@/shared/bets";
+import {
+  DEFAULT_POLICY,
+  KILL_GRACE_MS,
+  allocate,
+  claimsCollide,
+  dream,
+  hasRoomFor,
+  judge,
+} from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 
 const HOUR = 3_600_000;
@@ -12,6 +20,7 @@ const bet = (patch: Partial<Bet> = {}): Bet => ({
   hypothesis: "a launch post brings visitors",
   id: "bet",
   productId: "app",
+  readAt: null,
   reading: null,
   spentUsd: 0,
   state: { kind: "open" },
@@ -39,35 +48,77 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
 });
 
 const measuring: BetState = { kind: "measuring", until: 10 };
+const ASKING_ALL_ALONG = 0;
 
 describe("judge", () => {
   it("leaves an open bet alone while it has budget and no result", () => {
-    expect(judge(bet({ reading: 20 }), 0)).toEqual({ kind: "open" });
+    expect(judge(bet({ reading: 20 }), 0, ASKING_ALL_ALONG)).toEqual({ kind: "open" });
   });
 
   it("wins the moment what it claims reaches the target", () => {
-    expect(judge(bet({ reading: 50 }), 7)).toEqual({ closedAt: 7, kind: "won", moved: 50 });
+    expect(judge(bet({ reading: 50 }), 7, ASKING_ALL_ALONG)).toEqual({
+      closedAt: 7,
+      kind: "won",
+      moved: 50,
+    });
   });
 
   it("does not start the clock just because the budget is spent", () => {
-    expect(judge(bet({ reading: 20, spentUsd: 5 }), 0)).toEqual({ kind: "open" });
+    expect(judge(bet({ reading: 20, spentUsd: 5 }), 0, ASKING_ALL_ALONG)).toEqual({ kind: "open" });
   });
 
   it("kills a bet whose window closed short", () => {
-    expect(judge(bet({ reading: 20, state: measuring }), 10)).toMatchObject({
+    expect(judge(bet({ readAt: 10, reading: 20, state: measuring }), 10, null)).toMatchObject({
       kind: "killed",
       moved: 20,
       reason: "it brought 20 of 50 users",
     });
   });
 
+  it("kills nothing on a reading taken before its window closed", () => {
+    const stale = bet({ readAt: 9, reading: 20, state: measuring });
+    expect(judge(stale, 10, ASKING_ALL_ALONG)).toBe(measuring);
+    expect(judge(stale, 10 + KILL_GRACE_MS - 1, ASKING_ALL_ALONG)).toBe(measuring);
+  });
+
+  it("wins on the first reading after the window closed, if it reached the target", () => {
+    expect(judge(bet({ readAt: 12, reading: 50, state: measuring }), 13, null)).toEqual({
+      closedAt: 13,
+      kind: "won",
+      moved: 50,
+    });
+  });
+
+  it("kills on the last reading once the pulse asked through the grace without a fresh one", () => {
+    expect(
+      judge(
+        bet({ readAt: 9, reading: 20, state: measuring }),
+        10 + KILL_GRACE_MS,
+        ASKING_ALL_ALONG,
+      ),
+    ).toMatchObject({ kind: "killed", moved: 20 });
+  });
+
+  it("counts the grace from when the pulse began asking, not from the close", () => {
+    const stale = bet({ readAt: 9, reading: 20, state: measuring });
+    const wokeAt = 10 + 5 * KILL_GRACE_MS;
+    expect(judge(stale, wokeAt, null)).toBe(measuring);
+    expect(judge(stale, wokeAt, wokeAt)).toBe(measuring);
+    expect(judge(stale, wokeAt + KILL_GRACE_MS - 1, wokeAt)).toBe(measuring);
+    expect(judge(stale, wokeAt + KILL_GRACE_MS, wokeAt)).toMatchObject({ kind: "killed" });
+  });
+
   it("kills a bet nothing could ever measure", () => {
-    expect(judge(bet({ state: measuring }), 10)).toMatchObject({ kind: "killed", moved: null });
+    expect(judge(bet({ state: measuring }), 10, ASKING_ALL_ALONG)).toBe(measuring);
+    expect(judge(bet({ state: measuring }), 10 + KILL_GRACE_MS, ASKING_ALL_ALONG)).toMatchObject({
+      kind: "killed",
+      moved: null,
+    });
   });
 
   it("never reopens a verdict", () => {
     const won: BetState = { closedAt: 1, kind: "won", moved: 50 };
-    expect(judge(bet({ state: won }), 99)).toBe(won);
+    expect(judge(bet({ state: won }), 99, ASKING_ALL_ALONG)).toBe(won);
   });
 });
 

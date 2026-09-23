@@ -28,6 +28,9 @@ export const betToDoc = (b: Bet): FrontmatterDoc => {
   if (b.reading !== null) {
     metadata.reading = b.reading;
   }
+  if (b.readAt !== null) {
+    metadata.readAt = b.readAt;
+  }
   const st = b.state;
   switch (st.kind) {
     case "open": {
@@ -90,6 +93,7 @@ export const docToBet = (doc: FrontmatterDoc, companyId: string): Bet => {
     hypothesis: doc.body.trim(),
     id: reqStr(doc.fields, "slug"),
     productId: reqStr(m, "productId"),
+    readAt: nullableNum(m, "readAt"),
     reading: nullableNum(m, "reading"),
     spentUsd: optNum(m, "spentUsd", 0),
     state: parseState(m),

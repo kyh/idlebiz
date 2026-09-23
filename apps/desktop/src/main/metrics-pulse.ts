@@ -7,11 +7,23 @@ import { noteStripeRead } from "@/main/stripe-connect";
 import { isClosed } from "@/shared/bets";
 
 // The real numbers, read on a beat and written where they belong: the company,
-// each product, and each live bet's reading — which is all the evaluator ever
-// judges a bet by.
+// each product, and each live bet's reading — which, with how long the pulse
+// has been asking, is all the evaluator ever judges a bet by.
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
+
+// A beat later than this after the last one means the machine slept in
+// between, so nothing asked the sources: the streak starts again.
+const BREAK_MS = 2 * PULSE_MS;
+interface Streak {
+  since: number;
+  last: number;
+}
+let streak: Streak | null = null;
+
+const unbrokenAt = (at: number): Streak | null =>
+  streak !== null && at - streak.last <= BREAK_MS ? streak : null;
 
 const read = async (): Promise<void> => {
   const company = store.getCompany();
@@ -33,8 +45,8 @@ const read = async (): Promise<void> => {
       users: snap.productUsers.get(product.id) ?? null,
     });
   }
-  for (const [betId, reading] of snap.betReadings) {
-    store.setBetReading(betId, reading);
+  for (const [betId, { reading, at }] of snap.betReadings) {
+    store.setBetReading(betId, reading, at);
   }
   noteStripeRead(company.id, snap.stripe);
   publishActivity(
@@ -58,19 +70,31 @@ const now = async (): Promise<void> => {
   }
 };
 
+const beat = (): void => {
+  const at = Date.now();
+  streak = { last: at, since: unbrokenAt(at)?.since ?? at };
+  void now();
+};
+
 export const metricsPulse = {
   now: (): void => {
     void now();
   },
+  /** Since when the pulse has asked the sources without a break, or null if it is not asking now: what a closed window's grace is counted on. */
+  pulsingSince: (at: number): number | null => unbrokenAt(at)?.since ?? null,
+  /** Beat now and on every pulse: a window that closed while the app was off gets its fresh reading at once. */
   start: (): void => {
-    timer ??= setInterval(() => {
-      void now();
-    }, PULSE_MS);
+    if (timer) {
+      return;
+    }
+    timer = setInterval(beat, PULSE_MS);
+    beat();
   },
   stop: (): void => {
     if (timer) {
       clearInterval(timer);
     }
     timer = null;
+    streak = null;
   },
 };
