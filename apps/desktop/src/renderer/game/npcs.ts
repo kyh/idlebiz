@@ -189,6 +189,8 @@ export class NpcManager {
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private released = new Set<string>();
+  // a restart reuses this scene: a spawn still queued must not land in the next one's office
+  private disposed = false;
   private readonly scene: Phaser.Scene;
   private readonly seats: readonly Seat[];
   private readonly grid: WalkGrid;
@@ -228,12 +230,17 @@ export class NpcManager {
   }
 
   private async doSpawn(emp: Employee, passage: Passage): Promise<void> {
-    if (this.npcs.has(emp.id)) {
+    if (this.disposed || this.npcs.has(emp.id)) {
       return;
     }
     const key = `emp-${emp.id}`;
     await loadCharacter(this.scene, key, emp.spriteSeed);
+    // textures are game-wide: the next scene's manager may already be drawing this key
+    if (this.disposed) {
+      return;
+    }
     if (this.released.delete(emp.id)) {
+      unloadCharacter(this.scene, key);
       return;
     }
 
@@ -822,6 +829,7 @@ export class NpcManager {
   }
 
   destroy(): void {
+    this.disposed = true;
     // deleting the current entry mid-iteration is defined for Map
     for (const npc of this.npcs.values()) {
       this.destroyNpc(npc);
