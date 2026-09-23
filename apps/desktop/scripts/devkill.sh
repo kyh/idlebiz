@@ -69,6 +69,6 @@ done
 
 port=free
 lsof -ti tcp:9222 >/dev/null 2>&1 && port=BUSY
-left=$(pgrep -fc -- "$ROOT/node_modules/.pnpm/electron@" 2>/dev/null || true)
+left=$(pgrep -f -- "$ROOT/node_modules/\.pnpm/electron@" 2>/dev/null | wc -l | tr -d ' ')
 echo "devkill: killed $killed; port 9222 $port; electron left: ${left:-0}"
 [ "$port" = free ] && [ "${left:-0}" -eq 0 ]

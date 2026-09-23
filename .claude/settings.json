@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "prompt": "Read AGENTS.md first. IdleBiz is an Electron game whose employees are the player's own coding CLIs — nothing runs at runtime without a signed-in `claude` or `codex` on PATH. `pnpm install`, then `pnpm verify` for the static gate. `pnpm dev:desktop` exposes CDP on :9222 but first runs `pnpm dev:kill`, which SIGKILLs whatever holds that port — check it's free before starting. It is deliberately NOT allowlisted: booting starts the scheduler against the real `~/.idlebiz` save, which spends the founder's CLI quota and mutates their game. Run `ls ~/.idlebiz` and ask before launching it.",
+  "prompt": "Read AGENTS.md first. IdleBiz is an Electron game whose employees are the player's own coding CLIs — nothing runs at runtime without a signed-in `claude` or `codex` on PATH. `pnpm install`, then `pnpm verify` for the static gate. `pnpm dev:desktop` exposes CDP on :9222 but first runs `pnpm dev:kill`, which stops this checkout's desktop dev processes (TERM, then KILL); a 9222 holder from elsewhere is left alone, and startup fails while it holds the port. It is deliberately NOT allowlisted: booting starts the scheduler against the real `~/.idlebiz` save, which spends the founder's CLI quota and mutates their game. Run `ls ~/.idlebiz` and ask before launching it.",
   "permissions": {
     "allow": [
       "Bash(pnpm install:*)",
