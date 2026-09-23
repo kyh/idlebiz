@@ -3,7 +3,6 @@ import type Phaser from "phaser";
 import { DEPTH } from "@/renderer/game/config";
 import {
   characterAnims,
-  characterDepth,
   CHAR_ORIGIN_X,
   CHAR_ORIGIN_Y,
   idleFrame,
@@ -18,6 +17,7 @@ import type { SeatPlan } from "@/renderer/game/office-placement";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
 import type { Employee } from "@/shared/domain";
+import { characterDepth } from "@/shared/office-depth";
 import { findPath, nearestFloor } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";
 

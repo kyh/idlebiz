@@ -5,8 +5,9 @@
 // is always SOUTH of whoever sits in it, so y-sort buries the sitter behind the chair.
 // A seat is lifted just above the topmost thing its occupant's bust actually overlaps
 // and no further, so a colleague walking past the front of the desk still occludes them.
-import { BUST, characterDepth } from "@/renderer/game/character-sheet";
+import { BUST } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
+import { characterDepth } from "@/shared/office-depth";
 import type { PixelPoint } from "@/shared/office-layout-schema";
 import { opaqueAt } from "@/shared/office-sight";
 import type { OpaqueMask } from "@/shared/office-sight";

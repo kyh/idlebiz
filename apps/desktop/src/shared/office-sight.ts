@@ -1,11 +1,5 @@
-import {
-  CHAR_ORIGIN_X,
-  CHAR_ORIGIN_Y,
-  FRAME_H,
-  FRAME_W,
-  HEAD_ROW,
-  SOLE_OFFSET,
-} from "./character-frame.ts";
+import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW } from "./character-frame.ts";
+import { characterDepth, objectDepth } from "./office-depth.ts";
 import { reachableNodes } from "./office-grid.ts";
 import type { WalkGrid } from "./office-grid.ts";
 import type { OfficeObjectDef, PixelPoint } from "./office-layout-schema.ts";
@@ -31,9 +25,10 @@ const FACE_ROWS = 18;
 /** How much of the face may be covered before the spot counts as hidden. */
 const FACE_HIDDEN_AT = 0.5;
 
-/** Does the scene draw this sprite above a character whose soles are at `soles`? */
-const drawsAbove = (obj: OfficeObjectDef, soles: number): boolean =>
-  obj.layer === "overhead" || (obj.layer === "object" && obj.anchorY + 0.5 > soles);
+/** Does the scene draw this sprite above a character whose origin is at world `y`? */
+const drawsAbove = (obj: OfficeObjectDef, y: number): boolean =>
+  obj.layer === "overhead" ||
+  (obj.layer === "object" && objectDepth(obj.anchorY) > characterDepth(y));
 
 /** Probe sprite-local pixels. Flips mirror within the canvas; off-canvas is transparent. */
 export const opaqueAt = (
@@ -65,13 +60,12 @@ export const faceCovered = (
 ): number => {
   const left = Math.round(node.x - FRAME_W * CHAR_ORIGIN_X);
   const top = Math.round(node.y - FRAME_H * CHAR_ORIGIN_Y);
-  const soles = node.y + SOLE_OFFSET;
   const faceTop = top + HEAD_ROW;
   const faceBottom = faceTop + FACE_ROWS;
   // only sprites drawn above the character whose canvas reaches the face
   const above = sprites.filter(
     ({ obj, mask }) =>
-      drawsAbove(obj, soles) &&
+      drawsAbove(obj, node.y) &&
       obj.x < left + FRAME_W &&
       obj.x + mask.w > left &&
       obj.y < faceBottom &&

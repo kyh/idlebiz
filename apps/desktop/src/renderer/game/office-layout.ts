@@ -1,6 +1,7 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
 import { objectSpritePath } from "@/renderer/game/office-object-sprite";
+import { objectDepth } from "@/shared/office-depth";
 import { walkGridOf } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";
 import { officeLayoutSchema } from "@/shared/office-layout-schema";
@@ -67,8 +68,7 @@ const STACK_STEP = 1e-3;
  *
  * The ground and overhead bands are flat stacks: they have no floor line, so they
  * paint in authored order and `index` alone separates them. Only the entity band
- * y-sorts — furniture and actors share it, sorting on floor contact (the +0.5
- * biases furniture to win ties, so a character draws behind what they stand at).
+ * y-sorts — furniture and actors share it, sorting on floor contact.
  */
 const depthFor = (obj: OfficeObjectDef, index: number): number => {
   switch (obj.layer) {
@@ -79,7 +79,7 @@ const depthFor = (obj: OfficeObjectDef, index: number): number => {
       return DEPTH.overhead + STACK_STEP * (index + 1);
     }
     case "object": {
-      return DEPTH.entityBase + obj.anchorY + 0.5;
+      return objectDepth(obj.anchorY);
     }
     // no default
   }

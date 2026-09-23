@@ -2,8 +2,7 @@
 // origin and the soles sit, what a seated bust covers, and what its anims are
 // called. No Phaser here, so the seat oracle and the movement math can be
 // unit-tested; loading the sheet into a scene is characters.ts.
-import { DEPTH } from "@/renderer/game/config";
-import { CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW, SOLE_OFFSET } from "@/shared/character-frame";
+import { CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW } from "@/shared/character-frame";
 import type { Dir, SitSide } from "@/shared/character-frame";
 
 export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@/shared/character-frame";
@@ -12,9 +11,6 @@ export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@/shared/c
 // and sit-right (row 5).
 export const DIR_START = { down: 0, left: 6, right: 12, up: 18 } satisfies Record<Dir, number>;
 export const SIT_START = { left: 24, right: 30 } satisfies Record<SitSide, number>;
-
-/** Depth of a character whose origin sits at world `y`. */
-export const characterDepth = (y: number): number => DEPTH.entityBase + y + SOLE_OFFSET;
 
 /** Standing frame index for a direction (first frame of that direction's strip). */
 export const idleFrame = (dir: Dir): number => DIR_START[dir];

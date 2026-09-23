@@ -4,7 +4,6 @@ import { bridge } from "@/renderer/bridge";
 import { getCharacterAssets } from "@/renderer/character-assets";
 import {
   characterAnims,
-  characterDepth,
   CHAR_ORIGIN_X,
   CHAR_ORIGIN_Y,
   idleFrame,
@@ -24,6 +23,7 @@ import { seatDepth } from "@/renderer/game/seat-depth";
 import { frameMask, textureMasks } from "@/renderer/game/texture-masks";
 import type { OpaqueMask } from "@/renderer/game/texture-masks";
 import { FRAME_H, FRAME_W } from "@/shared/character-frame";
+import { characterDepth } from "@/shared/office-depth";
 import { hiddenNodes } from "@/shared/office-sight";
 import type { PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
