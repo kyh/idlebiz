@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Rates } from "./pricing";
 import type { RunnerId } from "./runner";
 
 export interface RunnerAdapter {
@@ -13,8 +14,13 @@ export interface RunnerAdapter {
   displayName: string;
   loginArgs: string[];
   authProbe: { args: string[]; loggedIn: (output: string) => boolean };
-  /** Pricing anchor when a run on the CLI's default model reports $0. */
-  fallbackPricingModel: string;
+  /** What the CLI's default model costs, for pricing a run that reports $0. */
+  fallbackRates: Rates;
+  /**
+   * The prompt response's usage covers only the turn's last model request, and one
+   * usage_update arrives per request (codex-acp), so the turn is counted from their sum.
+   */
+  usagePerRequest?: true;
 }
 
 const claudeAuthStatus = z.object({ loggedIn: z.boolean() });
@@ -42,7 +48,7 @@ export const RUNNERS = {
     binEnvVar: "CLAUDE_CODE_EXECUTABLE",
     cli: { command: "claude", override: "CLAUDE_BIN" },
     displayName: "Claude Code",
-    fallbackPricingModel: "claude-sonnet",
+    fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
   },
   codex: {
@@ -52,8 +58,9 @@ export const RUNNERS = {
     binEnvVar: "CODEX_PATH",
     cli: { command: "codex", override: "CODEX_BIN" },
     displayName: "Codex",
-    fallbackPricingModel: "gpt-5.5-codex",
+    fallbackRates: { cachedInput: 0.125, input: 1.25, output: 10 },
     loginArgs: ["login"],
     sessionModeId: "read-only",
+    usagePerRequest: true,
   },
 } satisfies Record<RunnerId, RunnerAdapter>;

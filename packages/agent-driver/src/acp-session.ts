@@ -66,6 +66,8 @@ export interface AcpAgent {
   command: readonly string[];
   /** Session mode to select once the session exists — see `RunnerAdapter`. */
   sessionModeId?: string;
+  /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
+  usagePerRequest?: true;
   /** Environment this agent needs to find its own CLI. */
   env?: Record<string, string>;
 }
@@ -184,6 +186,8 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     let lastMessage = "";
     let pending = "";
     let total = zeroUsage();
+    let requestTokens = 0;
+    let lastRequestTokens: number | undefined;
 
     // ACP has no message-end marker. Flush prose before a tool call or at turn end.
     const flushMessage = (): void => {
@@ -358,6 +362,11 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
           return;
         }
+        // codex re-sends a request's count unchanged; a repeat is not another request
+        if (update.sessionUpdate === "usage_update" && update.used !== lastRequestTokens) {
+          requestTokens += update.used;
+          lastRequestTokens = update.used;
+        }
         const cost = RunCost.safeParse(update);
         if (cost.success && cost.data.cost.amount > total.costUsd) {
           total = { ...total, costUsd: cost.data.cost.amount };
@@ -418,19 +427,28 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
         }
 
+        // a resume may replay what the session spent before
+        requestTokens = 0;
+        lastRequestTokens = undefined;
         const res = await agent.request("session/prompt", {
           prompt: [{ text: turnText(opts, resumed), type: "text" }],
           sessionId,
         });
         flushMessage();
-        // the turn's own token totals are authoritative; the cost is what the agent reported above
         const u = res.usage;
         if (u) {
+          // Updates carry only each request's total, so the whole turn takes the last
+          // request's split. For any other agent `used` is its context size, not a request.
+          const scale =
+            opts.agent.usagePerRequest && u.totalTokens > 0
+              ? Math.max(1, requestTokens / u.totalTokens)
+              : 1;
+          const scaled = (tokens: number): number => Math.round(tokens * scale);
           total = {
-            cachedTokens: u.cachedReadTokens ?? 0,
+            cachedTokens: scaled(u.cachedReadTokens ?? 0),
             costUsd: total.costUsd,
-            inputTokens: (u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0),
-            outputTokens: u.outputTokens ?? 0,
+            inputTokens: scaled((u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0)),
+            outputTokens: scaled(u.outputTokens ?? 0),
           };
         }
         return res.stopReason;

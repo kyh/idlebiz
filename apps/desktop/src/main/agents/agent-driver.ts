@@ -58,6 +58,7 @@ export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
     command: [process.execPath, unpacked(resolveFromApp.resolve(adapter.acpEntry))],
     env,
     sessionModeId: adapter.sessionModeId,
+    usagePerRequest: adapter.usagePerRequest,
   };
 };
 
@@ -122,7 +123,7 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
   if (usage.inputTokens + usage.outputTokens === 0) {
     return 0;
   }
-  return priceUsage(RUNNERS[emp.runner].fallbackPricingModel, usage);
+  return priceUsage(RUNNERS[emp.runner].fallbackRates, usage);
 };
 
 // Codex cannot write ~/.npm. Grant a shared cache outside the agents' working trees.
