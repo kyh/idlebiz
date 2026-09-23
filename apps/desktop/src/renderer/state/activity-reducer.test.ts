@@ -65,7 +65,23 @@ describe("reduceActivity", () => {
     };
     expect(reduceActivity(held, pulse).reload).toEqual(["company", "products", "bets"]);
     expect(reduceActivity(held, killed).reload).toEqual(["products", "bets", "tasks"]);
-    expect(reduceActivity(held, { ...stamp, ...inRun, kind: "run.start" }).reload).toEqual([]);
+    const said: ActivityEvent = { ...stamp, ...inRun, kind: "message", message: "On it" };
+    expect(reduceActivity(held, said).reload).toEqual([]);
+  });
+
+  it("fetches again what it patched, for what a refused refresh carried", () => {
+    const started: ActivityEvent = { ...stamp, ...inRun, kind: "run.start" };
+    const napping: ActivityEvent = {
+      ...stamp,
+      ...inRun,
+      kind: "runner.resting",
+      payload: { runner: "claude", until: 5 },
+    };
+    expect(reduceActivity(held, started).reload).toEqual(["employees"]);
+    expect(reduceActivity(held, napping)).toMatchObject({
+      patch: { resting: { claude: 5 } },
+      reload: ["resting"],
+    });
   });
 
   it("refetches the work a bet dropped when it stopped taking any", () => {

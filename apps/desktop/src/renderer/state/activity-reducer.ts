@@ -7,7 +7,7 @@ import type { Employee, RestingRunners } from "@/shared/domain";
 // which part of it moved.
 
 /** A part of main's state the renderer holds a copy of. */
-export type Slice = "company" | "products" | "bets" | "tasks" | "all";
+export type Slice = "company" | "employees" | "resting" | "products" | "bets" | "tasks" | "all";
 
 const ACTIVITY_RING = 300;
 
@@ -59,13 +59,19 @@ const reloadFor = (e: ActivityEvent): readonly Slice[] => {
     case "run.end": {
       return ["all"];
     }
+    // A patch outranks any answer for its slice still in flight, so the store
+    // refuses that answer, and whatever else it carried (a hire) with it.
+    case "run.start": {
+      return ["employees"];
+    }
+    case "runner.resting": {
+      return ["resting"];
+    }
     case "tool_call":
     case "message":
     case "chat":
     case "ship":
-    case "run.start":
-    case "task.retry":
-    case "runner.resting": {
+    case "task.retry": {
       return [];
     }
     // no default

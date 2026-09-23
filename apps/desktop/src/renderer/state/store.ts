@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react";
-import type Phaser from "phaser";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import { taskIn } from "@/shared/domain";
@@ -20,6 +19,7 @@ import type { ProductStatus, StripeStatus } from "@/shared/integrations";
 import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
 import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
+import type { Office } from "@/renderer/game/office-port";
 import { reduceActivity } from "@/renderer/state/activity-reducer";
 import type { Slice } from "@/renderer/state/activity-reducer";
 import { bootOf } from "@/renderer/state/boot";
@@ -53,7 +53,7 @@ interface State {
   pendingAsks: TaskIn<"blocked">[];
   /** Dead-lettered, needing a retry. */
   stuckTasks: TaskIn<"dead">[];
-  game: Phaser.Game | null;
+  game: Office | null;
   /** A dialogue/modal overlay is up (ambient HUD chrome hides). */
   modalOpen: boolean;
   /** The employee the founder is talking to, from the office or the roster. */
@@ -123,7 +123,7 @@ const syncModal = (): void => {
 
 let stopHearingInputReady: (() => void) | null = null;
 
-export const setGame = (game: Phaser.Game | null): void => {
+export const setGame = (game: Office | null): void => {
   stopHearingInputReady?.();
   set({ game });
   stopHearingInputReady = game ? hear(game, "office-input-ready", syncModal) : null;
@@ -189,7 +189,7 @@ const loadProductStatus = async (
 };
 
 /** What a fetch can answer. Not `Slice`, which is what an event can move, "all" included. */
-type Held = "company" | "employees" | "tasks" | "bets" | "products" | "productStatus";
+type Held = "company" | "employees" | "resting" | "tasks" | "bets" | "products" | "productStatus";
 
 const order = latestWins<Held>();
 
@@ -243,10 +243,13 @@ const refreshOnce = async (): Promise<void> => {
         bridge().listBets(),
       ])
     : [[], [], [], []];
-  // a slice a newer request already answered keeps the newer answer
-  const patch: Partial<State> = { booted: true, resting, saveIssues: load.skipped };
+  // a slice a newer request or event already answered keeps the newer answer
+  const patch: Partial<State> = { booted: true, saveIssues: load.skipped };
   if (order.accepts("company", ticket)) {
     patch.company = company;
+  }
+  if (order.accepts("resting", ticket)) {
+    patch.resting = resting;
   }
   if (order.accepts("employees", ticket)) {
     patch.employees = employees;
@@ -309,6 +312,20 @@ const reloadCompany = (): Promise<void> =>
     "company",
     () => bridge().getCompany(),
     (company) => set({ company }),
+  );
+
+const reloadEmployees = (): Promise<void> =>
+  reloadSlice(
+    "employees",
+    () => bridge().listEmployees(),
+    (employees) => set({ employees }),
+  );
+
+const reloadResting = (): Promise<void> =>
+  reloadSlice(
+    "resting",
+    () => bridge().restingRunners(),
+    (resting) => set({ resting }),
   );
 
 // ---- actions ---------------------------------------------------------------
@@ -433,32 +450,63 @@ const RELOAD = {
   all: refreshInBackground,
   bets: reloadBets,
   company: reloadCompany,
+  employees: reloadEmployees,
   products: reloadProducts,
+  resting: reloadResting,
   tasks: reloadTasks,
 } satisfies Record<Slice, () => Promise<void>>;
 
+// The copy can lack a hire even after the refresh their event asked for: a
+// patch that landed meanwhile refuses that refresh's roster.
+const findHire = async (employeeId: string): Promise<Employee | undefined> => {
+  const isHire = (emp: Employee): boolean => emp.id === employeeId;
+  const held = state.employees.find(isHire);
+  if (held) {
+    return held;
+  }
+  try {
+    const roster = await bridge().listEmployees();
+    return roster.find(isHire);
+  } catch {
+    // they appear in the office when it next boots
+    return undefined;
+  }
+};
+
 // Surgical: the one employee walks in or out, no scene rebuild.
-const walkThroughDoor = (roster: { employeeId: string; hired: boolean }): void => {
-  const { game } = state;
-  if (!game) {
+const walkThroughDoor = async (roster: { employeeId: string; hired: boolean }): Promise<void> => {
+  if (!state.game) {
     return;
   }
   if (!roster.hired) {
-    tell(game, "despawn-employee", roster.employeeId);
+    tell(state.game, "despawn-employee", roster.employeeId);
     return;
   }
-  const hire = state.employees.find((emp) => emp.id === roster.employeeId);
-  if (hire) {
+  const hire = await findHire(roster.employeeId);
+  // the office may have been torn down while main answered
+  const { game } = state;
+  if (hire && game) {
     tell(game, "spawn-employee", hire);
   }
 };
 
 const onActivity = async (e: ActivityEvent): Promise<void> => {
   const { patch, reload, roster } = reduceActivity(state, e);
+  // the event is newer than any answer still in flight, which must not undo it
+  if (patch.employees) {
+    order.patched("employees");
+  }
+  if (patch.resting) {
+    order.patched("resting");
+  }
   set(patch);
-  await Promise.all(reload.map((slice) => RELOAD[slice]()));
+  // With no company in the copy yet no slice is fetched alone, so only the
+  // refresh in flight, run once more, can replace the answer the patch refused.
+  const refetch: readonly Slice[] =
+    !state.company && (patch.employees || patch.resting) ? ["all"] : reload;
+  await Promise.all(refetch.map((slice) => RELOAD[slice]()));
   if (roster) {
-    walkThroughDoor(roster);
+    await walkThroughDoor(roster);
   }
 };
 

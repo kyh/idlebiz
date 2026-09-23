@@ -30,6 +30,26 @@ describe("latestWins", () => {
     await Promise.all(loads);
     expect(kept).toEqual(["ready"]);
   });
+
+  it("keeps an event's patch over a refresh asked for before it landed", async () => {
+    const order = latestWins<"employees">();
+    let status = "idle";
+    const refresh = async (answer: Promise<string>): Promise<void> => {
+      const ticket = order.ticket();
+      const value = await answer;
+      if (order.accepts("employees", ticket)) {
+        status = value;
+      }
+    };
+    const older = Promise.withResolvers<string>();
+    const inFlight = refresh(older.promise);
+    order.patched("employees");
+    status = "working";
+    older.resolve("idle");
+    await inFlight;
+    expect(status).toBe("working");
+    expect(order.accepts("employees", order.ticket())).toBe(true);
+  });
 });
 
 describe("Coalesced", () => {

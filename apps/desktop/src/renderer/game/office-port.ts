@@ -1,4 +1,3 @@
-import type Phaser from "phaser";
 import type { Employee } from "@/shared/domain";
 
 /**
@@ -23,8 +22,20 @@ export interface OfficeMessages {
 
 type Message = keyof OfficeMessages;
 
+/**
+ * All the port touches of a game: the emitter both sides share. A Phaser game
+ * is one; holding only this keeps Phaser out of the store.
+ */
+export interface Office {
+  readonly events: {
+    emit: <K extends Message>(message: K, payload: OfficeMessages[K]) => void;
+    on: <K extends Message>(message: K, heard: (payload: OfficeMessages[K]) => void) => void;
+    off: <K extends Message>(message: K, heard: (payload: OfficeMessages[K]) => void) => void;
+  };
+}
+
 export const tell = <K extends Message>(
-  game: Phaser.Game,
+  game: Office,
   message: K,
   payload: OfficeMessages[K],
 ): void => {
@@ -33,7 +44,7 @@ export const tell = <K extends Message>(
 
 /** Listen for a message; the returned function stops listening. */
 export const hear = <K extends Message>(
-  game: Phaser.Game,
+  game: Office,
   message: K,
   heard: (payload: OfficeMessages[K]) => void,
 ): (() => void) => {

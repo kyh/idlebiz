@@ -5,29 +5,35 @@ export interface Order<K extends string> {
   ticket: () => number;
   /** Whether `slice` should keep an answer asked for at `ticket`, recording it if so. */
   accepts: (slice: K, ticket: number) => boolean;
+  /** `slice` was just changed in place, so it is newer than any answer still in flight. */
+  patched: (slice: K) => void;
 }
 
 /**
  * Answers can land out of order: with several employees a refresh asked for
  * earlier may return after one asked for later. Each request takes a ticket
  * when it starts, and a slice only accepts an answer at least as new as the
- * last one it took.
+ * last one it took, or than the last patch an event made to it.
  */
 export const latestWins = <K extends string>(): Order<K> => {
   let issued = 0;
   const taken = new Map<K, number>();
+  const ticket = (): number => {
+    issued += 1;
+    return issued;
+  };
   return {
-    accepts: (slice, ticket) => {
-      if ((taken.get(slice) ?? 0) > ticket) {
+    accepts: (slice, asked) => {
+      if ((taken.get(slice) ?? 0) > asked) {
         return false;
       }
-      taken.set(slice, ticket);
+      taken.set(slice, asked);
       return true;
     },
-    ticket: () => {
-      issued += 1;
-      return issued;
+    patched: (slice) => {
+      taken.set(slice, ticket());
     },
+    ticket,
   };
 };
 
