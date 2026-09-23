@@ -178,7 +178,9 @@ export const setLayout = (layout: OfficeLayoutData): void => {
 };
 
 /** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
-const refreshProductStatus = async (products: readonly Product[]): Promise<void> => {
+const loadProductStatus = async (
+  products: readonly Product[],
+): Promise<Map<string, ProductStatus>> => {
   const entries = await Promise.all(
     products.map(async (p) => {
       try {
@@ -188,10 +190,42 @@ const refreshProductStatus = async (products: readonly Product[]): Promise<void>
       }
     }),
   );
-  set({ productStatus: new Map(entries.filter((entry) => entry !== null)) });
+  return new Map(entries.filter((entry) => entry !== null));
 };
 
-const order = latestWins();
+/** What a fetch can answer. Not `Slice`, which is what an event can move, "all" included. */
+type Held = "company" | "employees" | "tasks" | "bets" | "products" | "productStatus";
+
+const order = latestWins<Held>();
+
+/** Fetch one slice again, keeping the answer only if nothing newer has landed. */
+const reloadSlice = async <T>(
+  slice: Held,
+  load: () => Promise<T>,
+  apply: (value: T) => void,
+): Promise<void> => {
+  if (!state.company) {
+    return;
+  }
+  const ticket = order.ticket();
+  try {
+    const value = await load();
+    if (order.accepts(slice, ticket)) {
+      apply(value);
+    }
+  } catch {
+    // the next refresh catches up
+  }
+};
+
+// Ticketed when the fan-out starts, which is only after its product list was
+// accepted, so an older list's statuses never land over a newer one's.
+const reloadProductStatus = (products: readonly Product[]): Promise<void> =>
+  reloadSlice(
+    "productStatus",
+    () => loadProductStatus(products),
+    (productStatus) => set({ productStatus }),
+  );
 
 const splitTasks = (tasks: readonly Task[]): Pick<State, "pendingAsks" | "stuckTasks"> => ({
   pendingAsks: tasks.filter(taskIn("blocked")),
@@ -234,7 +268,7 @@ const refreshOnce = async (): Promise<void> => {
   }
   set(patch);
   if (freshProducts) {
-    void refreshProductStatus(products);
+    void reloadProductStatus(products);
   }
 };
 
@@ -251,33 +285,13 @@ const refreshInBackground = async (): Promise<void> => {
   }
 };
 
-/** Fetch one slice again, keeping the answer only if nothing newer has landed. */
-const reloadSlice = async <T>(
-  slice: string,
-  load: () => Promise<T>,
-  apply: (value: T) => void,
-): Promise<void> => {
-  if (!state.company) {
-    return;
-  }
-  const ticket = order.ticket();
-  try {
-    const value = await load();
-    if (order.accepts(slice, ticket)) {
-      apply(value);
-    }
-  } catch {
-    // the next refresh catches up
-  }
-};
-
 const reloadProducts = (): Promise<void> =>
   reloadSlice(
     "products",
     () => bridge().listProducts(),
     (products) => {
       set({ products });
-      void refreshProductStatus(products);
+      void reloadProductStatus(products);
     },
   );
 

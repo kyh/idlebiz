@@ -1,10 +1,10 @@
 // Two guards for a renderer that mirrors main's state by asking for it again.
 
-export interface Order {
+export interface Order<K extends string> {
   /** Taken when a request starts. */
   ticket: () => number;
   /** Whether `slice` should keep an answer asked for at `ticket`, recording it if so. */
-  accepts: (slice: string, ticket: number) => boolean;
+  accepts: (slice: K, ticket: number) => boolean;
 }
 
 /**
@@ -13,9 +13,9 @@ export interface Order {
  * when it starts, and a slice only accepts an answer at least as new as the
  * last one it took.
  */
-export const latestWins = (): Order => {
+export const latestWins = <K extends string>(): Order<K> => {
   let issued = 0;
-  const taken = new Map<string, number>();
+  const taken = new Map<K, number>();
   return {
     accepts: (slice, ticket) => {
       if ((taken.get(slice) ?? 0) > ticket) {

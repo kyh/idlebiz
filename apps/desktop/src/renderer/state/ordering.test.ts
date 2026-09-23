@@ -10,6 +10,26 @@ describe("latestWins", () => {
     expect(order.accepts("bets", early)).toBe(false);
     expect(order.accepts("products", early)).toBe(true);
   });
+
+  it("keeps the newer of two overlapping loads when the older lands last", async () => {
+    const order = latestWins<"productStatus">();
+    const kept: string[] = [];
+    const load = async (answer: Promise<string>): Promise<void> => {
+      const ticket = order.ticket();
+      const value = await answer;
+      if (order.accepts("productStatus", ticket)) {
+        kept.push(value);
+      }
+    };
+    const older = Promise.withResolvers<string>();
+    const newer = Promise.withResolvers<string>();
+    const loads = [load(older.promise), load(newer.promise)];
+    newer.resolve("ready");
+    await loads[1];
+    older.resolve("building");
+    await Promise.all(loads);
+    expect(kept).toEqual(["ready"]);
+  });
 });
 
 describe("Coalesced", () => {
