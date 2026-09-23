@@ -24,7 +24,11 @@ export const FounderSprite = ({ seed, facing }: { seed: string; facing: "front" 
       key={seed}
       className="ob-founder"
       data-facing={facing}
-      style={assets ? { backgroundImage: `url(${assets.walkSheetDataUrl})` } : undefined}
+      style={
+        assets.kind === "ready"
+          ? { backgroundImage: `url(${assets.value.walkSheetDataUrl})` }
+          : undefined
+      }
       aria-hidden
     />
   );

@@ -218,15 +218,11 @@ const useScript = (key: string, pages: readonly string[]) => {
 
 /** The looks on offer, warmed as soon as they are known so browsing them is instant. */
 const loadFounderChoices = async (): Promise<string[]> => {
-  try {
-    const seeds = await bridge().getFounderChoices();
-    for (const seed of seeds) {
-      void getCharacterAssets(seed);
-    }
-    return seeds;
-  } catch {
-    return [];
+  const seeds = await bridge().getFounderChoices();
+  for (const seed of seeds) {
+    void getCharacterAssets(seed);
   }
+  return seeds;
 };
 
 const TitleScreen = ({ onStart }: { onStart: () => void }) => (
@@ -533,7 +529,8 @@ const Encounter = ({
 export const Onboarding = () => {
   const [step, setStep] = useState<Step>("title");
   const [founderName, setFounderName] = useState("");
-  const choices = useAsync(loadFounderChoices, []) ?? [];
+  const founderChoices = useAsync(loadFounderChoices, []);
+  const choices = founderChoices.kind === "ready" ? founderChoices.value : [];
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);

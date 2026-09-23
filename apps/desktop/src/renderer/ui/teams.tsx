@@ -29,12 +29,14 @@ const RosterCard = ({
 export const Teams = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
-  const room = useAsync(() => teamMessages(30), []) ?? [];
+  const room = useAsync(() => teamMessages(30), []);
 
   if (!company) {
     return null;
   }
   const headcount = `${employees.length} ${employees.length === 1 ? "person" : "people"}`;
+  const messages = room.kind === "ready" ? room.value : [];
+  const quiet = room.kind === "failed" ? room.message : "Quiet so far.";
 
   return (
     <Modal title="Team" subtitle={headcount} width="2xl" onClose={onClose}>
@@ -54,10 +56,10 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
       <div className="px-inset mt-3 p-3">
         <div className="text-xs uppercase tracking-wide text-fg-dim">Team room</div>
         <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
-          {room.length === 0 ? (
-            <div className="text-xs text-fg-dim">Quiet so far.</div>
+          {messages.length === 0 ? (
+            <div className="text-xs text-fg-dim">{quiet}</div>
           ) : (
-            room.map((m) => (
+            messages.map((m) => (
               <div key={m.id} className="text-xs leading-snug">
                 <span className="text-[#3a76b8]">
                   {employeeName(employees, m.fromEmployeeId, "founder")}

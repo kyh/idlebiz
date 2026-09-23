@@ -161,6 +161,8 @@ const FeedLine = ({ e }: { e: ActivityEvent }) => {
   );
 };
 
+const NOTHING_FETCHED = { list: [], options: [] };
+
 const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void }) => {
   useModal();
   const company = useStore((s) => s.company);
@@ -174,33 +176,32 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
     () => activity.filter((a) => "employeeId" in a && a.employeeId === emp.id),
     [activity, emp.id],
   );
-  // Only a status event moves a task, so its id is what a task list is current
-  // "as of" — and what makes a refetch worth making. Not the feed length: the
-  // feed is a 300-event ring, and a length-keyed refetch stops once it fills.
+  // Only a status event moves a task, so a new one is what makes the task list
+  // stale — and a refetch worth making. Not the feed length: the feed is a
+  // 300-event ring, and a length-keyed refetch stops once it fills.
   const lastStatusId = mine.findLast((a) => a.kind === "status")?.id ?? null;
   const fetched = useAsync(
     async () => ({
-      asOf: lastStatusId,
       list: await listTasksFor(emp.id),
       options: await bridge().employeeOptions({ employeeId: emp.id }),
     }),
     [emp.id, lastStatusId],
   );
-  const tasks = fetched?.list ?? [];
+  const { list: tasks, options } = fetched.kind === "ready" ? fetched.value : NOTHING_FETCHED;
 
   // only free-text questions get the inline answer form; integration asks
   // live in the inbox where the [Connect] button is. Shown only for a current
   // list: the moment an answer lands, the status event makes this one stale,
   // and a form for a question already answered would send twice.
   const asked =
-    fetched?.asOf === lastStatusId
+    fetched.kind === "ready" && fetched.current
       ? tasks.filter(taskIn("blocked")).find((t) => t.state.ask.type === "question")
       : undefined;
   const question = asked && asked.state.ask.type === "question" ? asked.state.ask.question : null;
   // the menu: main's options for this employee, then Talk… for free text. It
   // waits for the options so it opens on the first one, not on Talk.
   const rows: Row[] = [
-    ...(fetched?.options ?? []).map((option): Row => ({ kind: "ask", option })),
+    ...options.map((option): Row => ({ kind: "ask", option })),
     { kind: "talk" },
     { kind: "leave" },
   ];
@@ -297,7 +298,9 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6">
       <div className="dlg">
-        {mode === "menu" && fetched ? <ChoiceMenu menu={menu} className="dlg-menu" /> : null}
+        {mode === "menu" && fetched.kind !== "loading" ? (
+          <ChoiceMenu menu={menu} className="dlg-menu" />
+        ) : null}
         <div className="px-battle px-pop dlg-box">
           <div className="dlg-bust">
             <Bust seed={emp.spriteSeed} size="lg" alt={emp.name} />

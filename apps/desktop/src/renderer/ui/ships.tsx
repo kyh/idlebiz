@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { useAsync } from "@/renderer/hooks/use-async";
+import type { Loaded } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { bridge } from "@/renderer/bridge";
@@ -46,10 +47,22 @@ const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
 };
 const ShipRow = memo(ShipRowView);
 
-const ShippingLog = ({ shown, employees }: { shown: ShipLine[] | null; employees: Employee[] }) => {
-  if (shown === null) {
+const ShippingLog = ({
+  log,
+  selected,
+  employees,
+}: {
+  log: Loaded<ShipLine[]>;
+  selected: string | null;
+  employees: Employee[];
+}) => {
+  if (log.kind === "loading") {
     return <div className="text-sm text-fg-dim">Loading…</div>;
   }
+  if (log.kind === "failed") {
+    return <div className="text-sm text-fg-dim">{log.message}</div>;
+  }
+  const shown = log.value.filter((t) => selected === null || t.productId === selected);
   if (shown.length === 0) {
     return (
       <div className="text-sm text-fg-dim">
@@ -217,7 +230,7 @@ export const Ships = ({
   const [note, showNote] = useTransientNote(2500);
   // null: the whole company's log
   const [selected, setSelected] = useState<string | null>(null);
-  const ships = useAsync(
+  const log = useAsync(
     async () => (company ? await bridge().shippingLog() : []),
     [company?.id, company?.ships],
   );
@@ -225,9 +238,6 @@ export const Ships = ({
   if (!company) {
     return null;
   }
-  const ofSelected = (t: ShipLine): boolean => selected === null || t.productId === selected;
-  const shown = ships?.filter(ofSelected) ?? null;
-
   const selectedName =
     selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`;
 
@@ -288,7 +298,7 @@ export const Ships = ({
           Shipping log{selectedName}
         </div>
         <div className="space-y-2">
-          <ShippingLog shown={shown} employees={employees} />
+          <ShippingLog log={log} selected={selected} employees={employees} />
         </div>
       </div>
     </Modal>
