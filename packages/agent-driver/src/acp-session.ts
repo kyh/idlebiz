@@ -340,7 +340,6 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           toolTitles.set(update.toolCallId, update.title);
           flushMessage();
           opts.onEvent({
-            args: update.rawInput,
             kind: update.kind ?? undefined,
             toolName: update.title || update.kind || "tool",
             type: "tool_start",

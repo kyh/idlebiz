@@ -57,7 +57,7 @@ const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent):
         ...at,
         kind: "tool_call",
         message: ev.toolName,
-        payload: { args: ev.args, kind: ev.kind },
+        payload: { kind: ev.kind },
       });
       break;
     }

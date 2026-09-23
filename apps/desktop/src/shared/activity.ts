@@ -16,10 +16,14 @@ const event = <K extends string, F extends Record<string, z.ZodType>>(kind: K, f
   subject.extend({ kind: z.literal(kind), ...fields });
 
 const ActivityInputSchema = z.discriminatedUnion("kind", [
-  /** ACP `kind` is what the call does (read, edit, execute…); the office poses on it. */
+  /**
+   * ACP `kind` is what the call does (read, edit, execute…); the office poses on it. The
+   * call's input stays out: it carries whole file bodies and inlined secrets, and each CLI
+   * keeps its own transcript.
+   */
   event("tool_call", {
     message: z.string(),
-    payload: z.object({ args: z.unknown(), kind: z.string().optional() }),
+    payload: z.object({ kind: z.string().optional() }),
   }),
   /** One assistant message, flushed at a tool call or the end of the turn. */
   event("message", { message: z.string() }),
