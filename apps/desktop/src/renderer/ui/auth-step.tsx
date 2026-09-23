@@ -28,13 +28,13 @@ export const AuthStep = ({
           {lines.join("\n")}
         </div>
       ) : null}
-      <div className="flex items-center">
+      <div className="flex items-center justify-end gap-3">
         {aside}
         <button
           type="button"
           onClick={onLogin}
           disabled={auth.phase === "logging-in"}
-          className="px-btn-accent px-btn ml-auto"
+          className="px-btn-accent px-btn"
         >
           {loginLabel(auth.phase)}
         </button>

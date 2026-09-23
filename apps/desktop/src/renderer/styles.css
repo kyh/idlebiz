@@ -410,13 +410,6 @@ button:disabled {
   width: 320px;
   max-width: 100%;
 }
-.ob-auth > div > div:last-child {
-  justify-content: flex-end;
-  gap: 12px;
-}
-.ob-auth .px-btn {
-  margin-left: 0;
-}
 .ob-actions > .px-link {
   flex-shrink: 0;
 }
