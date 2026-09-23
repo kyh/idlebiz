@@ -1047,51 +1047,176 @@ const SANDBOX_RULE = {
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
 const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
 
-const verbs = (names: readonly string[]): RegExp =>
-  new RegExp(String.raw`(?:^|\s)(?:${names.join("|")})(?:\s|$)`, "u");
+/**
+ * agent-browser's global options that take a value. It drops these and its
+ * switches from anywhere in its words, and the first word left is its verb, as
+ * its `clean_args` reads them. A valued option missing here would hand its value
+ * the verb's place (`--model snapshot click @e1` clicks), so this keeps every
+ * version's, 0.38's `--input-mode` too.
+ */
+const BROWSER_VALUED = wordsOf(`
+  -p --action-policy --allowed-domains --args --ca-cert --cdp --color-scheme --config
+  --confirm-actions --device --download-path --enable --engine --executable-path --extension
+  --headers --idle-timeout --init-script --input-mode --max-output --model --namespace
+  --profile --provider --proxy --proxy-bypass --restore-check-fn --restore-check-text
+  --restore-check-url --restore-save --screenshot-dir --screenshot-format --screenshot-quality
+  --session --session-name --state --user-agent
+`);
+/** Its switches, each of which also takes a `true` or `false` after it: `--headed false`. */
+const BROWSER_SWITCHES = wordsOf(`
+  -q -v --allow-file-access --annotate --auto-connect --confirm-interactive
+  --content-boundaries --debug --fix --headed --hide-scrollbars --ignore-https-errors --json
+  --no-auto-dialog --no-ca-cert --no-pin-tab --no-webmcp --offline --pin-tab --quick --quiet
+  --verbose --webgpu
+`);
 
-/** Acts that set a value and leave the page where it was. */
-const SETS = ["fill", "type", "check", "uncheck", "upload"];
-/** Acts that can take the page anywhere: a click or a key press goes wherever the site sends it. */
-const LEAVES = [
-  "click",
-  "dblclick",
-  "press",
-  "key",
-  "keydown",
-  "keyup",
-  "keyboard",
-  "select",
-  "drag",
-  "eval",
-  "find",
-  "mouse",
-  "download",
-  String.raw`dialog\s+accept`,
-  String.raw`webmcp\s+invoke`,
-];
+/** Verbs that neither change nor move a page, and the help and version it prints in a verb's place. */
+const PAGE_READS = wordsOf(`
+  --help --version -h -V console errors get is pdf read screenshot scroll scrollinto
+  scrollintoview session skills snapshot wait
+`);
+/**
+ * Reads that go to the first word after them without two leading dashes, as
+ * agent-browser picks it: `open -x` goes to `-x`. `open` alone only starts the browser.
+ */
+const OPENS = wordsOf("goto navigate open");
 /** Reads that change which page the next step acts on. */
-const NAVIGATES = [
-  "back",
-  "forward",
-  "tab",
-  "window",
-  "frame",
-  "pushstate",
-  "connect",
-  "a11y",
-  "vitals",
-  "record",
-  "diff",
-];
+const NAVIGATES = wordsOf(`
+  a11y back close connect diff exit forward frame pushstate quit record tab vitals web-vitals
+  window
+`);
+/** Acts that set a value and leave the page where it was: any other act can take it anywhere. */
+const SETS = wordsOf("check fill type uncheck upload");
+/** Steps the command does not show: an AI at the wheel, a batch (its steps can be strings, JSON or stdin), a saved login's own page. */
+const BROWSER_BLIND = new Set(["auth login", "batch", "chat", "mcp"]);
+/**
+ * Options that bring code no page read now can vouch for: scripts for pages the
+ * browser has yet to open, an extension whose content scripts run on every later
+ * page, the browser's own flags (`--load-extension`), a browser binary that may be
+ * a wrapper, and a config file that can set any of them.
+ */
+const BLIND_OPTIONS = wordsOf(
+  "--args --config --executable-path --extension --init-script --restore-check-fn",
+);
+/**
+ * agent-browser names the session a command without `--session` uses "default",
+ * unless AGENT_BROWSER_SESSION names another, so "" and "default" are one session
+ * or two and nothing here can tell. A step that may move either one's page leaves
+ * the other's unknown; reading one for the other would ask the wrong session.
+ */
+const SESSION_ALIASES = new Map([
+  ["", "default"],
+  ["default", ""],
+]);
 
-/** Verbs that change a page. Reading — open, read, snapshot, get, screenshot, scroll, wait — stays free. */
-const BROWSER_WRITES = verbs([...SETS, ...LEAVES]);
-/** Verbs after which nothing in the command says where the page is. */
-const BROWSER_MOVES = verbs([...LEAVES, ...NAVIGATES]);
-/** Verbs whose steps the command does not show: an AI at the wheel, a batch (its steps can be strings, JSON or stdin), a saved login's own page. */
-const BROWSER_BLIND = verbs(["batch", "chat", "mcp", String.raw`auth\s+login`]);
-const BROWSER_OPEN = /(?:^|\s)(?:open|goto|navigate)\s+(?<url>\S+)/u;
+/** What one agent-browser step does to its session's page. */
+type PageEffect =
+  | { does: "blind" }
+  | { does: "read" }
+  | { does: "open"; url: string }
+  | { does: "move" }
+  | { does: "act"; moves: boolean };
+/** A step and the session it runs in; "" is the one a command without `--session` uses. */
+type BrowserStep = PageEffect & { session: string };
+
+/** A command's words as agent-browser reads them. */
+interface BrowserWords {
+  /** Each global option given, by name: its value, or `true` or `false` for a switch. The last given wins, as there. */
+  options: Map<string, string>;
+  /** Its verb, then the verb's own words: the global options gone. */
+  words: string[];
+}
+
+const browserWords = (args: Words): BrowserWords => {
+  const options = new Map<string, string>();
+  const words: string[] = [];
+  let at = 0;
+  while (at < args.length) {
+    const word = args[at] ?? "";
+    const next = args[at + 1];
+    if (BROWSER_VALUED.has(word)) {
+      if (next !== undefined) {
+        options.set(word, next);
+      }
+      at += 2;
+    } else if (BROWSER_SWITCHES.has(word)) {
+      const given = next === "true" || next === "false";
+      options.set(word, given ? next : "true");
+      at += given ? 2 : 1;
+    } else {
+      words.push(word);
+      at += 1;
+    }
+  }
+  return { options, words };
+};
+
+/**
+ * Whether the command points its session at another browser: agent-browser sends
+ * a launch for these even to a running session, and reconnects when the target
+ * changes, so its verb acts on a page no read before the command saw.
+ */
+const reconnects = (options: ReadonlyMap<string, string>): boolean =>
+  options.has("--cdp") ||
+  options.has("--provider") ||
+  options.has("-p") ||
+  options.get("--auto-connect") === "true";
+
+/** Judged by its verb's place, from a list of reads: a verb nobody listed is an act. */
+const verbEffect = (call: Call, { options, words }: BrowserWords): PageEffect => {
+  const [verb] = words;
+  if (
+    // A word the shell fills in may become any verb, option or session: `wait $F "…"`.
+    !call.literal ||
+    // An empty `--session` is a session of its own, and the live read takes "" for none given.
+    options.get("--session") === "" ||
+    BROWSER_BLIND.has(verb ?? "") ||
+    BROWSER_BLIND.has(words.slice(0, 2).join(" ")) ||
+    [...options.keys()].some((name) => BLIND_OPTIONS.has(name))
+  ) {
+    return { does: "blind" };
+  }
+  if (verb === undefined) {
+    return { does: "read" };
+  }
+  // `wait --fn` runs its expression in the page, which can do anything a click can; `-f` is its short form only there.
+  if (words.includes("--fn") || (verb === "wait" && words.includes("-f"))) {
+    return { does: "act", moves: true };
+  }
+  if (OPENS.has(verb)) {
+    const url = words.slice(1).find((word) => !word.startsWith("--"));
+    return url === undefined ? { does: "read" } : { does: "open", url };
+  }
+  if (PAGE_READS.has(verb)) {
+    return { does: "read" };
+  }
+  if (NAVIGATES.has(verb)) {
+    return { does: "move" };
+  }
+  return { does: "act", moves: !SETS.has(verb) };
+};
+
+/**
+ * What one agent-browser command does to its session's page, in order: a reconnect is a move
+ * before its verb. `--namespace` runs it in another daemon's browser, which the live read never
+ * asks, under session names that may be this one's for all anyone here knows. So it meets a page
+ * nobody knows, and even its open leaves the name's page unknown: taking that URL as the name's
+ * would vouch for a page in another browser.
+ */
+const browserSteps = (call: Call): BrowserStep[] => {
+  const read = browserWords(call.args);
+  const session = read.options.get("--session") ?? "";
+  const effect = verbEffect(call, read);
+  if (read.options.has("--namespace")) {
+    const lands: PageEffect = effect.does === "open" ? { does: "move" } : effect;
+    return [
+      { does: "move", session },
+      { session, ...lands },
+    ];
+  }
+  const verb: BrowserStep = { session, ...effect };
+  return reconnects(read.options) ? [{ does: "move", session }, verb] : [verb];
+};
 
 const hostOf = (url: string): string | null => {
   try {
@@ -1125,11 +1250,12 @@ const actHold = (url: string | null, leases: ReadonlySet<string>, command: strin
 
 /**
  * The approval a browser command needs and does not have, or null when it may run.
- * A command names a verb, never a site, so the site comes from the browser
- * itself: a click on the team's own localhost build can land anywhere, and only
- * the live URL knows. That URL is read before the command runs, so an `open`
- * earlier in the same chained command wins, and any act after a step that may
- * have moved the page lands somewhere nobody could read.
+ * Each step's verb is read where agent-browser reads it, and only a listed read
+ * goes free. A command names a verb, never a site, so the site comes from the
+ * browser itself: a click on the team's own localhost build can land anywhere,
+ * and only the live URL knows. That URL is read before the command runs, so an
+ * `open` earlier in the same chained command wins, and any act after a step that
+ * may have moved the page lands somewhere nobody could read.
  */
 const heldBrowserAct = async (
   line: string,
@@ -1139,32 +1265,48 @@ const heldBrowserAct = async (
 ): Promise<Hold | null> => {
   // Per session, where the page will be when the next step runs: absent is where the live URL says, null is anywhere.
   const pages = new Map<string, string | null>();
-  for (const call of pipelinesOf(line).pipelines.flat()) {
-    if (call.program !== "agent-browser") {
-      continue;
+  const land = (session: string, url: string | null): void => {
+    pages.set(session, url);
+    const alias = SESSION_ALIASES.get(session);
+    if (alias !== undefined) {
+      pages.set(alias, null);
     }
-    const args = call.args.join(" ");
-    if (BROWSER_BLIND.test(args)) {
-      return unseen(key);
-    }
-    const session = /--session[=\s]+(?<name>\S+)/u.exec(args)?.groups?.name ?? "";
-    const opened = BROWSER_OPEN.exec(args)?.groups?.url;
-    if (!BROWSER_WRITES.test(args)) {
-      if (opened !== undefined) {
-        pages.set(session, opened);
-      } else if (BROWSER_MOVES.test(args)) {
-        pages.set(session, null);
+  };
+  const calls = pipelinesOf(line)
+    .pipelines.flat()
+    .filter((call) => call.program === "agent-browser");
+  for (const step of calls.flatMap(browserSteps)) {
+    switch (step.does) {
+      case "blind": {
+        return unseen(key);
       }
-      continue;
+      case "read": {
+        break;
+      }
+      case "open": {
+        land(step.session, step.url);
+        break;
+      }
+      case "move": {
+        land(step.session, null);
+        break;
+      }
+      case "act": {
+        const known = pages.get(step.session);
+        const url = known === undefined ? await liveUrl(step.session) : known;
+        const held = actHold(url, leases, key);
+        if (held !== null) {
+          return held;
+        }
+        if (step.moves) {
+          land(step.session, null);
+        } else {
+          pages.set(step.session, url);
+        }
+        break;
+      }
+      // no default
     }
-    const known = pages.get(session);
-    const url = known === undefined ? await liveUrl(session) : known;
-    const held = actHold(url, leases, key);
-    if (held !== null) {
-      return held;
-    }
-    // A write whose text also names a verb that moves or opens is read as having moved.
-    pages.set(session, opened === undefined && !BROWSER_MOVES.test(args) ? url : null);
   }
   return null;
 };

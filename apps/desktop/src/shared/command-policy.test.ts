@@ -585,10 +585,17 @@ describe("holdFor", () => {
     "agent-browser tab 2 && agent-browser fill @e1 x",
     "agent-browser frame @e3 && agent-browser fill @e1 x",
     "agent-browser press Enter && agent-browser type @e1 x",
-    'agent-browser fill @e2 "please click here" && agent-browser click @e3',
+    "agent-browser reload && agent-browser fill @e1 x",
+    `agent-browser wait --fn '(location.assign("/next"), true)' && agent-browser fill @e1 x`,
   ])("loses the page after a step that moves it: %s", async (chain) => {
     const live = at({ "": "http://localhost:3000" });
     expect(await holdFor(shell(chain), NONE, live)).toMatchObject({ rule: "browser-unseen" });
+  });
+
+  it("reads a quoted argument as text, never as a verb", async () => {
+    const live = at({ "": "http://localhost:3000" });
+    const chain = 'agent-browser fill @e2 "please click here" && agent-browser fill @e3 x';
+    expect(await holdFor(shell(chain), NONE, live)).toBeNull();
   });
 
   it("follows an open by any of its names", async () => {
@@ -625,6 +632,86 @@ describe("holdFor", () => {
     expect(await holdFor(shell(command), NONE, live)).toMatchObject({
       key: "agent-browser: act on news.example.com",
     });
+  });
+
+  it.each([
+    'agent-browser wait --fn "(document.forms[0].submit(), true)"',
+    'agent-browser wait -f "(document.forms[0].submit(), true)"',
+    "agent-browser cookies set session abc",
+    "agent-browser storage local set k v",
+    "agent-browser clipboard paste",
+    "agent-browser plugin run x y",
+    "agent-browser set credentials u p",
+    "agent-browser confirm 3",
+    "agent-browser open --headed && agent-browser click @e1",
+    "agent-browser --model snapshot click @e1",
+    "agent-browser --headed true click @e1",
+    "agent-browser click @e1 --session=home",
+  ])("holds any verb but a page read where agent-browser reads it: %s", async (command) => {
+    const live = at({ "": "https://example.com", home: "http://localhost:3000" });
+    expect(await holdFor(shell(command), NONE, live)).toEqual({
+      key: "agent-browser: act on example.com",
+      leasable: true,
+      rule: "browser-act",
+    });
+  });
+
+  it.each([
+    "agent-browser --session a snapshot",
+    "agent-browser wait 500",
+    "agent-browser --headed false snapshot -i",
+    "agent-browser screenshot -f ./page.png",
+    "agent-browser scrollinto @e4",
+    "agent-browser get text @e1 --json",
+    "agent-browser --help",
+    "agent-browser close",
+    "agent-browser --cdp 9222 snapshot",
+    "agent-browser --namespace n snapshot",
+  ])("lets page reads through on a remote page: %s", async (command) => {
+    const live = at({ "": "https://example.com", a: "https://example.com" });
+    expect(await holdFor(shell(command), NONE, live)).toBeNull();
+  });
+
+  it.each([
+    'agent-browser wait $F "(document.forms[0].submit(), true)"',
+    "agent-browser --session $ME click @e1",
+    "agent-browser --init-script ./hook.js open http://localhost:3000/next",
+    "agent-browser --restore-check-fn 'document.forms[0].submit()' snapshot",
+    "agent-browser --extension ./x open http://localhost:3000",
+    "agent-browser --args --load-extension=./x open http://localhost:3000",
+    "agent-browser --executable-path ./chrome-wrapper open http://localhost:3000",
+    "agent-browser --config ./agent-browser.json snapshot",
+    "agent-browser --cdp 9222 click @e1",
+    "agent-browser --cdp ws://127.0.0.1:9222/devtools/browser/x fill @e1 x",
+    "agent-browser --auto-connect click @e1",
+    "agent-browser --auto-connect true click @e1",
+    "agent-browser -p browserbase click @e1",
+    "agent-browser --provider browserbase click @e1",
+    "agent-browser open https://evil.example && agent-browser --session default click @e1",
+    "agent-browser --session default open https://evil.example && agent-browser click @e1",
+    "agent-browser --session '' click @e1",
+    "agent-browser --namespace n click @e1",
+    "agent-browser --namespace n open http://localhost:3000 && agent-browser --namespace n click @e1",
+  ])("holds a step nobody can read first, even at home: %s", async (command) => {
+    const live = at({ "": "http://localhost:3000", default: "http://localhost:3000" });
+    expect(await holdFor(shell(command), NONE, live)).toEqual({
+      key: command,
+      leasable: false,
+      rule: "browser-unseen",
+    });
+  });
+
+  it("never takes a namespace's page for the session's own", async () => {
+    const live = at({ "": "https://example.com" });
+    const chain =
+      "agent-browser --namespace n open http://localhost:3000 && agent-browser click @e1";
+    expect(await holdFor(shell(chain), NONE, live)).toMatchObject({ rule: "browser-unseen" });
+  });
+
+  it("keeps the browser it has when auto-connect is switched off", async () => {
+    const live = at({ "": "http://localhost:3000" });
+    const command = "agent-browser --auto-connect false click @e1";
+    expect(await holdFor(shell(command), NONE, live)).toBeNull();
   });
 
   it("leases the founder's own MCP server to the run once signed", async () => {

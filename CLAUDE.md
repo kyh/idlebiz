@@ -82,11 +82,17 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   in the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
   single-player: the replay only ever sees this company's bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, through one judgement: `holdFor` in
-  `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly. A
-  page-changing `agent-browser` verb is held unless the session's live URL (read from the
-  browser, since a click can land anywhere) is loopback. That URL is read before the command
-  runs, so an act chained after a step that may move the page, or inside one whose steps the
-  command does not show (`batch`, `chat`), is signed for once, exactly, like a shell rule.
+  `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly. An
+  `agent-browser` verb is read where agent-browser reads it, the first word its global options
+  leave, and any verb but a listed page read is held unless the session's live URL (read from
+  the browser, since a click can land anywhere) is loopback. That URL is read before the
+  command runs, so an act chained after a step that may move the page (pointing the session at
+  another browser or namespace, or moving it under its other name: "default" is the unnamed
+  session unless `AGENT_BROWSER_SESSION` says otherwise), or inside one whose page or steps no
+  read can see (`batch`, `chat`, an init script, an extension, an empty `--session`, a word the
+  shell fills in), is signed for once, exactly, like a shell rule. Only the command line's own
+  options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json` goes unread, so either
+  can still reroute or script a session unseen.
   Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
   as the founder, are held too. Every turn sets the runner's asking mode, and claude's
   session carries flag-tier ask rules (shell, edits, MCP) that outrank any allow rule in the
