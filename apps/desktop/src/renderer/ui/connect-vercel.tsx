@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { bridge } from "@/renderer/bridge";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
+import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { errorMessage } from "@/shared/errors";
 import type { VercelProject } from "@/shared/integrations";
@@ -12,14 +14,9 @@ type Lookup =
   | { state: "error"; message: string }
   | { state: "loaded"; account: string | undefined; projects: VercelProject[] };
 
-type Pick = { state: "idle" } | { state: "connecting" } | { state: "error"; message: string };
-
-const problemOf = (lookup: Lookup, pick: Pick): string | null => {
+const problemOf = (lookup: Lookup): string | null => {
   if (lookup.state === "error") {
     return lookup.message;
-  }
-  if (pick.state === "error") {
-    return pick.message;
   }
   if (lookup.state === "loaded" && lookup.projects.length === 0) {
     return "No projects on this account yet.";
@@ -39,12 +36,25 @@ export const ConnectVercel = ({
   const [token, setToken] = useState("");
   const [cursor, setCursor] = useState(0);
   const [lookup, setLookup] = useState<Lookup>({ state: "idle" });
-  const [pick, setPick] = useState<Pick>({ state: "idle" });
-  const busy = lookup.state === "loading" || pick.state === "connecting";
+  const connecting = useSubmission(async (p: VercelProject) => {
+    await connectVercel(
+      p.teamId
+        ? {
+            productId,
+            projectId: p.id,
+            projectName: p.name,
+            teamId: p.teamId,
+            token: token.trim(),
+          }
+        : { productId, projectId: p.id, projectName: p.name, token: token.trim() },
+    );
+    onClose();
+  });
+  const disconnecting = useSubmission(() => disconnectVercel(productId));
+  const busy = lookup.state === "loading" || connecting.submission.kind === "sending";
 
   const loadProjects = async () => {
     setLookup({ state: "loading" });
-    setPick({ state: "idle" });
     try {
       const res = await bridge().vercelListProjects({ token: token.trim() });
       setLookup(
@@ -60,27 +70,7 @@ export const ConnectVercel = ({
     }
   };
 
-  const choose = async (p: VercelProject) => {
-    setPick({ state: "connecting" });
-    try {
-      await connectVercel(
-        p.teamId
-          ? {
-              productId,
-              projectId: p.id,
-              projectName: p.name,
-              teamId: p.teamId,
-              token: token.trim(),
-            }
-          : { productId, projectId: p.id, projectName: p.name, token: token.trim() },
-      );
-      onClose();
-    } catch (error) {
-      setPick({ message: errorMessage(error), state: "error" });
-    }
-  };
-
-  const problem = problemOf(lookup, pick);
+  const problem = problemOf(lookup);
 
   if (!product) {
     return null;
@@ -96,13 +86,13 @@ export const ConnectVercel = ({
             </div>
             <button
               type="button"
-              onClick={() => {
-                void disconnectVercel(productId);
-              }}
+              onClick={() => disconnecting.submit()}
+              disabled={disconnecting.submission.kind === "sending"}
               className="px-btn"
             >
               Disconnect
             </button>
+            <Failure submission={disconnecting.submission} doing="disconnect" />
           </div>
         ) : (
           <>
@@ -150,7 +140,7 @@ export const ConnectVercel = ({
                     pick: (i) => {
                       const project = lookup.projects[i];
                       if (project) {
-                        void choose(project);
+                        connecting.submit(project);
                       }
                     },
                     setCursor,
@@ -159,6 +149,7 @@ export const ConnectVercel = ({
                 />
               </div>
             ) : null}
+            <Failure submission={connecting.submission} doing="connect" />
           </>
         )}
         {problem ? <div className="text-xs text-danger">{problem}</div> : null}

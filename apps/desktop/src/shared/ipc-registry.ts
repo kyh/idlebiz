@@ -7,6 +7,7 @@ import type { Digest } from "@/shared/digest";
 import {
   BudgetSchema,
   KillReasonSchema,
+  MaxAgentsSchema,
   OPEN_TASK_STATUSES,
   ProductDraftSchema,
 } from "@/shared/domain";
@@ -79,7 +80,7 @@ export const SCHEMAS = {
   saveOfficeDesign: z.object({ json: z.string() }),
   setAutopilot: z.object({ running: z.boolean() }),
   setBudget: z.object({ budget: BudgetSchema }),
-  setMaxAgents: z.object({ maxAgents: z.number().int().min(1).max(64) }),
+  setMaxAgents: z.object({ maxAgents: MaxAgentsSchema }),
   shippingLog: z.void(),
   startLogin: z.void(),
   stripeConnect: z.void(),

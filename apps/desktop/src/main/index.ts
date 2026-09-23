@@ -1,5 +1,5 @@
 import path from "node:path";
-import { rmSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, session, shell } from "electron";
 import { handle } from "@/main/lib/ipc-handler";
@@ -45,15 +45,20 @@ const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 
 // Suspend writes before aborting runs so their completion cannot resurrect the save.
-const resetGame = () => {
+// Aborted children may still be writing, hence the retries. Relaunch even if the
+// delete fails: writes never resume, and boot reports what is left of the save.
+const resetGame = async (): Promise<void> => {
   metricsPulse.stop();
   suspendWrites();
   scheduler.shutdown();
-  rmSync(ROOT_DIR, { force: true, recursive: true });
-  setImmediate(() => {
-    app.relaunch();
-    app.exit(0);
-  });
+  try {
+    await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
+  } finally {
+    setImmediate(() => {
+      app.relaunch();
+      app.exit(0);
+    });
+  }
 };
 
 const registerIpcHandlers = (): void => {

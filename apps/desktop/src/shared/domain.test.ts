@@ -7,7 +7,9 @@ import {
   entering,
   isRoutineDue,
   leadOf,
+  MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
+  MaxAgentsSchema,
   serializeBlockedAsk,
 } from "./domain";
 import type { BlockedAsk } from "./domain";
@@ -110,5 +112,15 @@ describe("entering", () => {
     expect(entering({ kind: "done", summary: null }, 7)).toMatchObject({ completedAt: 7 });
     expect(entering({ kind: "dead", lastError: "x" }, 8)).toMatchObject({ completedAt: 8 });
     expect(entering({ kind: "todo" }, 9)).toEqual({ state: { kind: "todo" } });
+  });
+});
+
+describe("MaxAgentsSchema", () => {
+  it.each(["1", "12", String(MAX_AGENTS)])("takes %j from the settings field", (typed) => {
+    expect(MaxAgentsSchema.safeParse(Number(typed)).success).toBe(true);
+  });
+
+  it.each(["", "0", "2.5", "twelve", String(MAX_AGENTS + 1)])("refuses %j", (typed) => {
+    expect(MaxAgentsSchema.safeParse(Number(typed)).success).toBe(false);
   });
 });

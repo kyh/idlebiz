@@ -20,6 +20,7 @@ import {
 } from "@/renderer/ui/onboarding-stage";
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import type { Menu, MenuItem } from "@/renderer/ui/choice-menu";
+import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { TypeCursor } from "@/renderer/ui/type-cursor";
 import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
@@ -297,16 +298,12 @@ const PromptField = ({
           auth={auth}
           onLogin={onLogin}
           aside={
-            <button
-              type="button"
-              onClick={() => {
-                void bridge().resetGame();
-              }}
-              className="px-link px-link-danger"
+            <ConfirmLink
+              label="↺ start over"
+              confirmLabel="delete saves"
               title="Delete saved companies and restart"
-            >
-              ↺ start over
-            </button>
+              onConfirm={() => bridge().resetGame()}
+            />
           }
         />
       );

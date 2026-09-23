@@ -1,30 +1,32 @@
 import { useState } from "react";
 import { bridge } from "@/renderer/bridge";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, setMaxAgents } from "@/renderer/state/store";
+import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { SaveIssues } from "@/renderer/ui/save-issues";
+import { MAX_AGENTS, MaxAgentsSchema } from "@/shared/domain";
 
 export const Settings = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const saveIssues = useStore((s) => s.saveIssues);
   const [confirm, setConfirm] = useState("");
-  const [resetting, setResetting] = useState(false);
   const [cap, setCap] = useState<string | null>(null);
+  const savingCap = useSubmission(async (n: number) => {
+    await setMaxAgents(n);
+    setCap(null);
+  });
+  const resetting = useSubmission(() => bridge().resetGame());
 
   if (!company) {
     return null;
   }
   const armed = confirm.trim() === company.name;
   const capValue = cap ?? String(company.maxAgents);
-
-  const saveCap = async () => {
-    const n = Number(capValue);
-    if (!Number.isFinite(n) || n < 1) {
-      return;
-    }
-    await setMaxAgents(Math.round(n));
-    setCap(null);
-  };
+  const parsedCap = MaxAgentsSchema.safeParse(Number(capValue));
+  const newCap = parsedCap.success && parsedCap.data !== company.maxAgents ? parsedCap.data : null;
+  const demolishing =
+    resetting.submission.kind === "sending" || resetting.submission.kind === "sent";
 
   return (
     <Modal title="Settings" onClose={onClose}>
@@ -51,7 +53,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         <div className="px-inset p-3 text-sm text-fg">
           <div className="text-xs uppercase tracking-wide text-fg-dim">Team size cap</div>
           <div className="mt-1 text-xs text-fg-dim">
-            The team lead hires and releases on their own — this is the hard ceiling.
+            The team lead hires and releases on their own — this is the hard ceiling, up to{" "}
+            {MAX_AGENTS}.
           </div>
           <div className="mt-2 flex gap-2">
             <input
@@ -64,14 +67,17 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
             <button
               type="button"
               onClick={() => {
-                void saveCap();
+                if (newCap !== null) {
+                  savingCap.submit(newCap);
+                }
               }}
-              disabled={cap === null || Number(capValue) === company.maxAgents}
+              disabled={newCap === null || savingCap.submission.kind === "sending"}
               className="px-btn"
             >
               Save
             </button>
           </div>
+          <Failure submission={savingCap.submission} doing="save the cap" />
         </div>
 
         <div className="px-inset p-3 text-sm text-fg">
@@ -105,34 +111,31 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
             Reset demolishes the office: every employee, task, and workspace file your team created,
             plus stored secrets and connections. The game restarts from scratch. There is no undo.
           </div>
-          {resetting ? (
+          {demolishing ? (
             <div className="px-live-dot mt-3 text-sm" style={{ color: "var(--danger)" }}>
               Demolishing the office…
             </div>
           ) : (
-            <div className="mt-3 flex gap-2">
-              <input
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                placeholder={`Type "${company.name}" to confirm`}
-                className="px-field min-w-0 flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!armed) {
-                    return;
-                  }
-                  setResetting(true);
-                  void bridge().resetGame();
-                }}
-                disabled={!armed}
-                className="px-btn"
-                style={armed ? { background: "var(--danger)", color: "var(--light)" } : undefined}
-              >
-                Reset everything
-              </button>
-            </div>
+            <>
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder={`Type "${company.name}" to confirm`}
+                  className="px-field min-w-0 flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => resetting.submit()}
+                  disabled={!armed}
+                  className="px-btn"
+                  style={armed ? { background: "var(--danger)", color: "var(--light)" } : undefined}
+                >
+                  Reset everything
+                </button>
+              </div>
+              <Failure submission={resetting.submission} doing="reset" />
+            </>
           )}
         </div>
       </div>
