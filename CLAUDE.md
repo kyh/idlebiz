@@ -6,7 +6,7 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
-  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done,
+  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done or answered,
   products/<slug>/PRODUCT.md for each product (the first shares workspace/, later ones
   get products/<slug>/workspace/), bets/<slug>/BET.md, retired/<slug>/ for killed
   products, routines/, activity.jsonl).

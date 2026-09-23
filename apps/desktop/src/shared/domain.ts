@@ -98,8 +98,16 @@ export const resolveMentions = (
   return [...ids];
 };
 
-/** dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried. */
-export const TASK_STATUSES = ["todo", "queued", "running", "blocked", "done", "dead"] as const;
+/** dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried. superseded: an ask the founder answered. */
+export const TASK_STATUSES = [
+  "todo",
+  "queued",
+  "running",
+  "blocked",
+  "done",
+  "superseded",
+  "dead",
+] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -319,6 +327,8 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
+  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for one an older save answered. */
+  | { kind: "superseded"; by: string | null }
   | { kind: "dead"; lastError: string };
 
 // the state kinds and the status vocabulary (TASK.md, the IPC filter, status events) are one set
@@ -335,7 +345,10 @@ export const entering = (
   if (state.kind === "running") {
     return { startedAt: now, state };
   }
-  return state.kind === "done" || state.kind === "blocked" || state.kind === "dead"
+  return state.kind === "done" ||
+    state.kind === "superseded" ||
+    state.kind === "blocked" ||
+    state.kind === "dead"
     ? { completedAt: now, state }
     : { state };
 };
@@ -368,7 +381,7 @@ export interface Task {
   createdAt: number;
   /** When its latest run began. */
   startedAt: number | null;
-  /** When it last reached done, blocked or dead. */
+  /** When it last reached done, superseded, blocked or dead. */
   completedAt: number | null;
 }
 

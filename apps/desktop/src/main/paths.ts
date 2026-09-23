@@ -12,7 +12,7 @@ import { mkdirSync } from "node:fs";
 //       sessions/           the agent's own session continuity
 //       run-state.json      what a run leaves for the next: session to resume, the real numbers as it ended
 //     tasks/<slug>/TASK.md  open work
-//     shipped/<slug>/TASK.md  work the team finished (the shipping log)
+//     shipped/<slug>/TASK.md  work the team finished (the shipping log), and asks the founder answered
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product uses workspace/)
 //     retired/<slug>/       a product the lead killed: its package, moved here whole

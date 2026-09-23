@@ -15,23 +15,8 @@ import {
 } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 
-// Keep status and state-specific fields flat for compatibility with existing TASK.md files.
-export const taskToDoc = (t: Task): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = {
-    createdAt: t.createdAt,
-    priority: t.priority,
-    status: t.state.kind,
-  };
-  if (t.assigneeId !== null) {
-    metadata.assigneeId = t.assigneeId;
-  }
-  if (t.productId !== null) {
-    metadata.productId = t.productId;
-  }
-  if (t.betId !== null) {
-    metadata.betId = t.betId;
-  }
-  const st = t.state;
+/** A state's own fields, written flat beside the status line. */
+const writeTaskState = (metadata: FrontmatterDoc["metadata"], st: TaskState): void => {
   switch (st.kind) {
     case "todo": {
       break;
@@ -62,6 +47,12 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
       }
       break;
     }
+    case "superseded": {
+      if (st.by !== null) {
+        metadata.supersededBy = st.by;
+      }
+      break;
+    }
     case "dead": {
       metadata.lastError = st.lastError;
       break;
@@ -70,6 +61,25 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
       break;
     }
   }
+};
+
+// Keep status and state-specific fields flat for compatibility with existing TASK.md files.
+export const taskToDoc = (t: Task): FrontmatterDoc => {
+  const metadata: FrontmatterDoc["metadata"] = {
+    createdAt: t.createdAt,
+    priority: t.priority,
+    status: t.state.kind,
+  };
+  if (t.assigneeId !== null) {
+    metadata.assigneeId = t.assigneeId;
+  }
+  if (t.productId !== null) {
+    metadata.productId = t.productId;
+  }
+  if (t.betId !== null) {
+    metadata.betId = t.betId;
+  }
+  writeTaskState(metadata, t.state);
   if (t.artifacts.length > 0) {
     metadata.artifacts = JSON.stringify(t.artifacts);
   }
@@ -129,6 +139,9 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
     }
     case "done": {
       return { kind: "done", summary };
+    }
+    case "superseded": {
+      return { by: optStr(m, "supersededBy"), kind: "superseded" };
     }
     case "dead": {
       return { kind: "dead", lastError: lastError ?? summary ?? "unknown failure" };

@@ -48,7 +48,7 @@ import {
 } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
-import { answeredSummary, continuationBrief } from "@/main/prompts/briefs";
+import { continuationBrief } from "@/main/prompts/briefs";
 import { standingInstructions } from "@/main/prompts/instructions";
 import { RETIRED_ROUTINES, defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
@@ -205,7 +205,7 @@ const patchIn = <T extends Owned>(
  * quietly drop whatever the newer build added. It is refused instead. A save
  * stamped lower is adopted once at boot, then carries this stamp.
  */
-const SAVE_FORMAT = 1;
+const SAVE_FORMAT = 2;
 
 const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
@@ -838,7 +838,8 @@ const rehomed = (t: Task, leaver: Employee, lead: string | null, now: number): T
       return { ...t, assigneeId: lead };
     }
     case "running":
-    case "done": {
+    case "done":
+    case "superseded": {
       return null;
     }
     // no default
@@ -1176,17 +1177,21 @@ export const getTask = (id: string): Task | null =>
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
-/** The company's open queue: everything not yet done, newest first. */
+/** Shipped work and answered asks: shelved in shipped/, never acted on again. */
+const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded"]);
+const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
+
+/** The company's open queue: everything not yet history, newest first. */
 export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
 
 /** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
-/** Tasks by assignee and status, newest first. The shipping log is thousands of briefs, so it is only read when `done` is asked for. */
+/** Tasks by assignee and status, newest first. The shipping log is thousands of briefs, so it is only read when history is asked for. */
 export const queryTasks = (query: {
   assigneeId?: string;
   status?: readonly TaskStatus[];
 }): Task[] => {
   const { assigneeId, status } = query;
-  const wantsShipped = status === undefined || status.includes("done");
+  const wantsShipped = status === undefined || status.some((s) => HISTORY.has(s));
   // oxlint-disable-next-line no-use-before-define -- a const arrow, resolved when called
   const pool = wantsShipped ? [...listOpenTasks(), ...listShippedTasks()] : listOpenTasks();
   return pool
@@ -1231,12 +1236,16 @@ export const listQueuedTasks = (): Task[] => {
 const patchTask = (id: string, patch: Partial<Task>): Task =>
   patchIn(current().tasks, id, patch, saveTask);
 
+/** How a run can leave its task: shipped, or waiting on the founder. Only an answer supersedes one. */
 type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
 
 // Persist before shelving so boot can recover a crash between the two writes.
-const close = (taskId: string, state: Settled): void => {
+const close = (
+  taskId: string,
+  state: Settled | Extract<TaskState, { kind: "superseded" }>,
+): void => {
   const t = patchTask(taskId, entering(state, Date.now()));
-  if (t.state.kind !== "done") {
+  if (!isHistory(t)) {
     return;
   }
   try {
@@ -1330,21 +1339,25 @@ export const parkTask = (taskId: string, runId: string, until: number, lastError
   patchTask(taskId, { state: { kind: "queued", lastError, nextAttemptAt: until } });
 };
 
-/** Close the blocked task and create a continuation on the same employee and session. */
+/**
+ * Hand the answer to a continuation on the same employee and session, then
+ * shelve the ask as superseded by it. In that order: a crash between the two
+ * writes leaves an ask to answer again, never an answer nobody carries.
+ */
 export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task | null => {
   const t = getTask(taskId);
   if (!t || t.state.kind !== "blocked" || !t.assigneeId) {
     return null;
   }
-  const { ask } = t.state;
-  close(taskId, { kind: "done", summary: answeredSummary(answer) });
-  return createTask({
+  const next = createTask({
     betId: t.betId,
     productId: t.productId,
-    ...continuationBrief(t, ask, answer),
+    ...continuationBrief(t, t.state.ask, answer),
     assigneeId: t.assigneeId,
     priority: "high",
   });
+  close(taskId, { by: next.id, kind: "superseded" });
+  return next;
 };
 
 /** The product an employee is on: their latest task's, else the company's first. */
@@ -1384,7 +1397,7 @@ export const killProduct = (productId: string, reason: string): Bet[] => {
     retune(active);
   }
   for (const t of active.tasks.filter((x) => x.productId === productId)) {
-    if (t.state.kind !== "running" && t.state.kind !== "done") {
+    if (t.state.kind !== "running" && !isHistory(t)) {
       patchTask(t.id, entering({ kind: "dead", lastError: "product retired" }, now));
     }
   }
@@ -1529,17 +1542,14 @@ const settleLoadedTasks = (company: Company, tasks: Task[]): Task[] => {
     tasks[i] = recovered;
     saveTask(recovered);
   }
-  for (const task of tasks) {
-    if (task.state.kind !== "done") {
-      continue;
-    }
+  for (const task of tasks.filter(isHistory)) {
     try {
       shelve(task);
     } catch (error) {
       skip("task", taskFile(company.id, task.id), error);
     }
   }
-  return tasks.filter((task) => task.state.kind !== "done");
+  return tasks.filter((task) => !isHistory(task));
 };
 
 const loadActiveCompany = (company: Company): ActiveCompany => {
@@ -1607,30 +1617,49 @@ const legacyVercel = (companyId: string): VercelBinding | null => {
   };
 };
 
+/** Format 1 shelved an answered ask as done, its summary the answer: relabel it as the history it is. */
+const adoptAnsweredAsks = (active: ActiveCompany): void => {
+  const companyId = active.company.id;
+  active.shipped = listShippedTasks().map((t) => {
+    if (t.state.kind !== "done" || !t.state.summary?.startsWith("Founder answered: ")) {
+      return t;
+    }
+    const answered: Task = { ...t, state: { by: null, kind: "superseded" } };
+    atomicWrite(shippedTaskFile(companyId, t.id), serializeDoc(taskToDoc(answered)));
+    return answered;
+  });
+};
+
 /**
- * Bring a save written in an older format up to this one, once: saveCompany
- * then stamps it, and none of this runs for it again. Everything that reads an
+ * Bring a save written in format `from` up to this one, once: saveCompany
+ * then stamps it, and none of this runs for it again. A step written for
+ * format N runs only for saves stamped below it. Everything that reads an
  * old shape of the company's files belongs here, so it has a date it can be
  * deleted on; tolerant field reads inside the codecs are not migrations.
  */
-const adoptOlderSave = (active: ActiveCompany): void => {
+const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   const { id } = active.company;
-  adoptLegacyTeam(active.company);
-  loadRecentChat(active);
-  for (const e of active.employees) {
-    if (e.sessionId !== null) {
-      // AGENTS.md is rewritten without it at the end of this boot
-      saveRunState(e);
+  if (from < 1) {
+    adoptLegacyTeam(active.company);
+    loadRecentChat(active);
+    for (const e of active.employees) {
+      if (e.sessionId !== null) {
+        // AGENTS.md is rewritten without it at the end of this boot
+        saveRunState(e);
+      }
     }
-  }
-  if (active.products.length === 0) {
-    const vercel = legacyVercel(id);
-    ensureFirstProduct(active, vercel);
-    if (vercel !== null) {
-      writeMetricsConfig(id, { vercel: undefined });
+    if (active.products.length === 0) {
+      const vercel = legacyVercel(id);
+      ensureFirstProduct(active, vercel);
+      if (vercel !== null) {
+        writeMetricsConfig(id, { vercel: undefined });
+      }
     }
+    dropRetiredRoutines(active);
   }
-  dropRetiredRoutines(active);
+  if (from < 2) {
+    adoptAnsweredAsks(active);
+  }
   saveCompany(active.company);
 };
 
@@ -1656,7 +1685,7 @@ export const initStore = (): LoadReport => {
     cache.active = active;
     // three different jobs, in this order: adopt an older format, repair what must always hold, then serve
     if (format < SAVE_FORMAT) {
-      adoptOlderSave(active);
+      adoptOlderSave(active, format);
     }
     ensureFirstProduct(active, null);
     if (active.employees.length > 0 && !active.employees.some((e) => e.id === company.leaderId)) {

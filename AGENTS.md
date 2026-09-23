@@ -169,7 +169,8 @@ rather than crashing boot.
 - **Some icons deliberately use OS fonts.** VG5000 lacks recognizable equivalents for
   ⚙ settings, 💼 company, and ☕ idle; ❗ attention and ⚠ warnings retain their color cues.
   These fallback glyphs are exceptions. Keep the vendored font unchanged.
-- **Only completed work is history.** `done` tasks move to `shipped/` and load on demand.
+- **Only finished work is history.** `done` tasks move to `shipped/` and load on demand;
+  so does an ask the founder answered, `superseded` by its continuation and never a ship.
   `dead` tasks stay in the active queue because the Inbox can retry them and employees
   use them to identify unresolved problems.
 - **Office art and collision are independent sections of `office-design.json`.** After any

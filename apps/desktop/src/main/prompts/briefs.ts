@@ -329,5 +329,3 @@ export const approvalAnswer = (approved: boolean, command: string): string =>
   approved
     ? `Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:\n\n\`\`\`\n${command}\n\`\`\`\n\nIt covers one run of it (or, for a site or a connected tool, the rest of this run). Anything else outward-facing needs a fresh approval.`
     : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
-
-export const answeredSummary = (answer: string): string => `Founder answered: ${answer}`;

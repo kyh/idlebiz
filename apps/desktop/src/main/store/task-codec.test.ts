@@ -35,6 +35,8 @@ describe("task codec", () => {
     },
     { kind: "done", summary: "shipped to https://x.y" },
     { kind: "done", summary: null },
+    { by: "continue-ship-the-thing", kind: "superseded" },
+    { by: null, kind: "superseded" },
     { kind: "dead", lastError: "five strikes" },
   ])("round-trips $kind", (state) => {
     const task: Task = { ...base, state };

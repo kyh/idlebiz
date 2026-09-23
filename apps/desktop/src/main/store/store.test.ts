@@ -54,6 +54,12 @@ const unstamp = (companyId: string): void => {
   writeFileSync(file, readFileSync(file, "utf-8").replace(/\n {2}format: \d+/u, ""));
 };
 
+/** Stamp the save as another build would have written it. */
+const restamp = (companyId: string, format: number): void => {
+  const file = path.join(root, companyId, "COMPANY.md");
+  writeFileSync(file, readFileSync(file, "utf-8").replace(/format: \d+/u, `format: ${format}`));
+};
+
 const found = (budget?: Budget) =>
   store.foundCompany({
     budget: budget ?? { mode: "infinite" },
@@ -771,6 +777,28 @@ describe("a release", () => {
   });
 });
 
+describe("an answered ask", () => {
+  it("is history superseded by its continuation, never a ship", () => {
+    const co = foundTeam();
+    const ask = store.createTask({ title: "Ship it" });
+    block(ask.id, "priya");
+
+    const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+
+    expect(next).toMatchObject({ assigneeId: "priya", priority: "high" });
+    expect(store.getTask(ask.id)).toBeNull();
+    expect(existsSync(path.join(shippedDir(co.id), ask.id, "TASK.md"))).toBe(true);
+    expect(store.queryTasks({ status: ["done"] })).toEqual([]);
+    expect(store.getCompany()?.ships).toBe(0);
+
+    store.initStore();
+    expect(store.queryTasks({ status: ["superseded"] })).toMatchObject([
+      { id: ask.id, state: { by: next?.id, kind: "superseded" } },
+    ]);
+    expect(store.listOpenTasks().map((t) => t.id)).toEqual([next?.id]);
+  });
+});
+
 describe("retired routines", () => {
   it("leaves a save at boot, and hand-written routines stay", () => {
     const co = found();
@@ -828,15 +856,30 @@ const stampOf = (companyId: string): number =>
     "format",
   );
 
+const retiredRoutine = (companyId: string): string =>
+  path.join(root, companyId, "routines", "business-review");
+
+const seedRetiredRoutine = (companyId: string): void => {
+  const dir = retiredRoutine(companyId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, "ROUTINE.md"),
+    serializeDoc({
+      body: "review\n",
+      fields: { kind: "routine", name: "Business review", slug: "business-review" },
+      metadata: { intervalHours: 24 },
+    }),
+  );
+};
+
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(1);
+    expect(stampOf(found().id)).toBe(2);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
     const co = found();
-    const file = path.join(root, co.id, "COMPANY.md");
-    writeFileSync(file, readFileSync(file, "utf-8").replace("format: 1", "format: 99"));
+    restamp(co.id, 99);
     const before = saveSnapshot(co.id);
 
     const report = store.initStore();
@@ -851,27 +894,36 @@ describe("the save format", () => {
   it("adopts an unstamped save once, and only once", () => {
     const co = found();
     unstamp(co.id);
-    const retired = path.join(root, co.id, "routines", "business-review");
-    const seed = (): void => {
-      mkdirSync(retired, { recursive: true });
-      writeFileSync(
-        path.join(retired, "ROUTINE.md"),
-        serializeDoc({
-          body: "review\n",
-          fields: { kind: "routine", name: "Business review", slug: "business-review" },
-          metadata: { intervalHours: 24 },
-        }),
-      );
-    };
-    seed();
+    seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(existsSync(retired)).toBe(false);
-    expect(stampOf(co.id)).toBe(1);
+    expect(existsSync(retiredRoutine(co.id))).toBe(false);
+    expect(stampOf(co.id)).toBe(2);
 
-    seed();
+    seedRetiredRoutine(co.id);
     store.initStore();
-    expect(existsSync(retired)).toBe(true);
+    expect(existsSync(retiredRoutine(co.id))).toBe(true);
+  });
+
+  it("relabels the answers a format 1 save shelved as ships, and runs only the steps after it", () => {
+    const co = found();
+    const emp = store.createEmployee({ ...hire("Priya") });
+    const answered = store.createTask({ title: "Ask" });
+    finish(answered.id, emp.id, "Founder answered: yes");
+    const shipped = store.createTask({ title: "Ship it" });
+    finish(shipped.id, emp.id, "shipped");
+    restamp(co.id, 1);
+    seedRetiredRoutine(co.id);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(2);
+    expect(existsSync(retiredRoutine(co.id))).toBe(true);
+
+    store.initStore();
+    expect(store.queryTasks({ status: ["done"] }).map((t) => t.id)).toEqual([shipped.id]);
+    expect(store.queryTasks({ status: ["superseded"] })).toMatchObject([
+      { id: answered.id, state: { by: null, kind: "superseded" } },
+    ]);
   });
 
   it("leaves alone a package written in a schema it does not read", () => {
