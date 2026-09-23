@@ -19,6 +19,7 @@ import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-sche
 import { unresolvedArt } from "@/shared/office-object-sprite";
 import { opaqueMask, paintedSprites, sightIssues, standingSilhouette } from "@/shared/office-sight";
 import type { OpaqueMask } from "@/shared/office-sight";
+import { RefusalError } from "@/shared/refusal";
 
 // The founder's saved office. A layout main refuses here is exactly one
 // `check:office` would fail: both judge with shared/office-grid,
@@ -38,7 +39,7 @@ const newerStamp = z.object({ version: z.number().gt(OFFICE_LAYOUT_VERSION) });
 const withShippedArt = (layout: OfficeLayoutData): OfficeLayoutData => {
   const missing = unresolvedArt(layout);
   if (missing.length > 0) {
-    throw new Error(`missing art: ${missing.join(", ")}`);
+    throw new RefusalError(`missing art: ${missing.join(", ")}`);
   }
   return layout;
 };
@@ -86,14 +87,14 @@ const sightIssuesOf = async (layout: OfficeLayoutData, art: OfficeArt): Promise<
 /** Validate art, reachability and sight before replacing the saved office; a newer build's file is never replaced. */
 export const saveOfficeDesign = async (layout: OfficeLayoutData, art: OfficeArt): Promise<void> => {
   if (loadOfficeDesign().kind === "newer") {
-    throw new Error("This office was saved by a newer IdleBiz; update to edit it.");
+    throw new RefusalError("This office was saved by a newer IdleBiz; update to edit it.");
   }
   withShippedArt(layout);
   const walkable = layoutIssues(layout);
   // sight is judged on a grid that is already sound
   const issues = walkable.length > 0 ? walkable : await sightIssuesOf(layout, art);
   if (issues.length > 0) {
-    throw new Error(`office layout rejected:\n${issues.join("\n")}`);
+    throw new RefusalError(`office layout rejected:\n${issues.join("\n")}`);
   }
   const body = `${JSON.stringify(canonicalOfficeLayout(layout), null, 2)}\n`;
   atomicWrite(OFFICE_DESIGN_PATH, body);

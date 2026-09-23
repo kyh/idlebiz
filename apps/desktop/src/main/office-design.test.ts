@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import bundled from "@/renderer/game/office-design.json";
 import { OFFICE_LAYOUT_VERSION, officeLayoutSchema } from "@/shared/office-layout-schema";
 import type { OfficeLayoutData } from "@/shared/office-layout-schema";
+import { RefusalError } from "@/shared/refusal";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-office-"));
 const officeFile = path.join(root, "office-design.json");
@@ -101,7 +102,9 @@ describe("saving the office", () => {
     const newer = JSON.stringify({ ...bundled, version: OFFICE_LAYOUT_VERSION + 1 });
     writeFileSync(officeFile, newer);
 
-    await expect(saveOfficeDesign(layout, art)).rejects.toThrow("saved by a newer IdleBiz");
+    const refused = saveOfficeDesign(layout, art);
+    await expect(refused).rejects.toThrow("saved by a newer IdleBiz");
+    await expect(refused).rejects.toBeInstanceOf(RefusalError);
     expect(readFileSync(officeFile, "utf-8")).toBe(newer);
   });
 
