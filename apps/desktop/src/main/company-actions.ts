@@ -34,7 +34,7 @@ export const killBet = (betId: string, reason: string): Bet => {
 /** Retire a product and everything riding on it. `by` is the lead who called it; null is the founder. */
 export const retireProduct = (productId: string, reason: string, by: string | null): Product => {
   const product = store.requireProduct(productId);
-  for (const bet of store.killProduct(productId, reason)) {
+  for (const bet of store.killProduct(productId, reason, by)) {
     announceBet(bet);
   }
   store.postTeamMessage(by, `🪦 Retired ${product.name} — ${reason}`);

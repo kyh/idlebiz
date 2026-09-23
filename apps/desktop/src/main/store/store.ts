@@ -1495,14 +1495,26 @@ export const productOfEmployee = (employeeId: string): Product | null => {
  * and its package moves to retired/ whole, with its code beside PRODUCT.md even
  * when that lived outside the package, as the first product's does. The last
  * product cannot go — a company with none would be handed a fresh first product
- * at the next boot. Returns the bets it took down.
+ * at the next boot. Nor can one a teammate's run is working in: the move would
+ * pull the tree out from under it, and a retry would land as company-level
+ * work. `by` is the employee retiring it, whose own run is exempt; null is the
+ * founder. Returns the bets it took down.
  */
-export const killProduct = (productId: string, reason: string): Bet[] => {
+export const killProduct = (productId: string, reason: string, by: string | null): Bet[] => {
   const product = requireProduct(productId);
   const active = current();
   if (active.products.length === 1) {
     throw new Error(
       `${product.name} is the only product — start its successor with create_product first.`,
+    );
+  }
+  const busy = active.tasks.find(
+    (t) => t.productId === productId && t.state.kind === "running" && t.assigneeId !== by,
+  );
+  if (busy) {
+    const runner = busy.assigneeId === null ? null : getEmployee(busy.assigneeId);
+    throw new Error(
+      `${runner?.name ?? "A teammate"} is mid-run on ${product.name} — kill its bets so no new work lands there, then retire it once they're idle.`,
     );
   }
   const pkg = path.join(productsDir(product.companyId), productId);

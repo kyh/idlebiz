@@ -84,6 +84,17 @@ const found = (budget?: Budget) =>
     name: "Acme",
   });
 
+const foundTeam = () =>
+  store.foundCompany({
+    budget: { mode: "infinite" },
+    businessType: "software",
+    founderName: "Kai",
+    founderSpriteSeed: "seed",
+    hires: [hire("Mae"), hire("Priya")],
+    mission: "ship",
+    name: "Acme",
+  });
+
 const finish = (taskId: string, employeeId: string, summary: string): void => {
   store.claimTask(taskId, employeeId);
   store.lockTaskForRun(taskId, "run-1");
@@ -802,7 +813,7 @@ describe("bets", () => {
   it("retires a product with its bets and open work, but never the last one", () => {
     const co = found();
     const first = firstProduct();
-    expect(() => store.killProduct(first.id, "dud")).toThrow("only product");
+    expect(() => store.killProduct(first.id, "dud", null)).toThrow("only product");
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
     const task = store.createTask({
@@ -810,7 +821,7 @@ describe("bets", () => {
       productId: side.id,
       title: "Post",
     });
-    expect(store.killProduct(side.id, "no traction").map((b) => b.id)).toEqual([bet.id]);
+    expect(store.killProduct(side.id, "no traction", null).map((b) => b.id)).toEqual([bet.id]);
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
     expect(store.getBet(bet.id)?.state).toMatchObject({ kind: "killed" });
     expect(store.getTask(task.id)?.state.kind).toBe("dead");
@@ -820,12 +831,33 @@ describe("bets", () => {
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
   });
 
+  it("refuses to retire a product a teammate's run is working in, but not the caller's own", () => {
+    const co = foundTeam();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const bet = launch(side.id);
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      productId: side.id,
+      title: "Post",
+    });
+    store.claimTask(task.id, "priya");
+    store.lockTaskForRun(task.id, "run-1");
+    for (const by of [null, "mae"]) {
+      expect(() => store.killProduct(side.id, "dud", by)).toThrow("Priya is mid-run on Side");
+    }
+    expect(store.getBet(bet.id)?.state.kind).toBe("open");
+    expect(existsSync(path.join(productsDir(co.id), side.id, "PRODUCT.md"))).toBe(true);
+    expect(store.killProduct(side.id, "dud", "priya").map((b) => b.id)).toEqual([bet.id]);
+    expect(store.getProduct(side.id)).toBeNull();
+  });
+
   it("retires the first product with its code; its successor is still pointed at shared/", () => {
     const co = found();
     const first = firstProduct();
     writeFileSync(path.join(first.workspaceDir, "index.html"), "the old app");
     const next = store.createProduct({ description: "the pivot", name: "Next" });
-    store.killProduct(first.id, "no traction");
+    store.killProduct(first.id, "no traction", null);
     const archived = path.join(retiredDir(co.id), first.id);
     expect(existsSync(path.join(archived, "PRODUCT.md"))).toBe(true);
     expect(readFileSync(path.join(archived, "workspace", "index.html"), "utf-8")).toBe(
@@ -843,7 +875,7 @@ describe("bets", () => {
     const co = found();
     const first = firstProduct();
     const next = store.createProduct({ description: "the pivot", name: "Next" });
-    store.killProduct(first.id, "no traction");
+    store.killProduct(first.id, "no traction", null);
     rmSync(path.join(productsDir(co.id), next.id), { recursive: true });
     store.initStore();
     const [only, ...rest] = store.listProducts();
@@ -860,7 +892,7 @@ describe("bets", () => {
     mkdirSync(inPackage);
     writeFileSync(path.join(inPackage, "notes.md"), "in the way");
     const bet = launch(first.id);
-    expect(() => store.killProduct(first.id, "dud")).toThrow();
+    expect(() => store.killProduct(first.id, "dud", null)).toThrow();
     expect(store.getProduct(first.id)).not.toBeNull();
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
     expect(existsSync(path.join(productsDir(co.id), first.id, "PRODUCT.md"))).toBe(true);
@@ -899,7 +931,7 @@ describe("archives", () => {
     const kept = store.createProduct({ description: "the first", name });
     const retired = store.createProduct({ description: "the second", name });
     expect(retired.id).toBe(`${kept.id}-2`);
-    store.killProduct(retired.id, "dud");
+    store.killProduct(retired.id, "dud", null);
     expect(existsSync(path.join(retiredDir(co.id), retired.id, "PRODUCT.md"))).toBe(true);
     expect(store.createProduct({ description: "the third", name }).id).toBe(`${kept.id}-3`);
   });
@@ -908,10 +940,10 @@ describe("archives", () => {
     const co = found();
     const first = firstProduct();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    store.killProduct(side.id, "dud");
+    store.killProduct(side.id, "dud", null);
     const again = store.createProduct({ description: "a second try", name: "Side" });
     expect(again.id).toBe(`${side.id}-2`);
-    store.killProduct(again.id, "dud again");
+    store.killProduct(again.id, "dud again", null);
     store.initStore();
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
     expect(existsSync(path.join(retiredDir(co.id), side.id, "PRODUCT.md"))).toBe(true);
@@ -929,7 +961,7 @@ describe("archives", () => {
       writeFileSync(path.join(taken, "README.md"), "someone else's");
     }
     store.archiveEmployee(emp.id);
-    store.killProduct(side.id, "dud");
+    store.killProduct(side.id, "dud", null);
     store.initStore();
     expect(store.listEmployees()).toEqual([]);
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
@@ -950,24 +982,13 @@ describe("archives", () => {
       writeFileSync(archive, "not a directory");
     }
     expect(() => store.archiveEmployee(emp.id)).toThrow();
-    expect(() => store.killProduct(side.id, "dud")).toThrow();
+    expect(() => store.killProduct(side.id, "dud", null)).toThrow();
     expect(store.listEmployees().map((e) => e.id)).toEqual([emp.id]);
     expect(store.getTask(task.id)?.assigneeId).toBe(emp.id);
     expect(store.getProduct(side.id)).not.toBeNull();
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
   });
 });
-
-const foundTeam = () =>
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [hire("Mae"), hire("Priya")],
-    mission: "ship",
-    name: "Acme",
-  });
 
 const block = (taskId: string, employeeId: string): void => {
   store.claimTask(taskId, employeeId);
@@ -1011,7 +1032,7 @@ describe("a release", () => {
     block(ping.id, "priya");
     const dead = store.createTask({ productId: side.id, title: "Side work" });
     store.claimTask(dead.id, "priya");
-    store.killProduct(side.id, "dud");
+    store.killProduct(side.id, "dud", null);
 
     store.archiveEmployee("priya");
 
