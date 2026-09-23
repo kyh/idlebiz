@@ -418,39 +418,39 @@ export class OfficeScene extends Scene {
 
   private subscribeActivity(): void {
     this.activityUnsub = bridge().onActivity((e: ActivityEvent) => {
-      const { employeeId } = e;
-      if (!employeeId) {
-        return;
-      }
       switch (e.kind) {
+        // a founder's line has nobody in the office to say it
         case "chat": {
-          this.npcEvents.run((npcs) => npcs.onChat(employeeId, e.message, e.payload.to));
+          const speaker = e.employeeId;
+          if (speaker !== null) {
+            this.npcEvents.run((npcs) => npcs.onChat(speaker, e.message, e.payload.to));
+          }
           return;
         }
         // what they are doing right now, as the sprite can show it
         case "tool_call": {
           const pose = poseForToolKind(e.payload.kind);
-          this.npcEvents.run((npcs) => npcs.onTool(employeeId, pose));
+          this.npcEvents.run((npcs) => npcs.onTool(e.employeeId, pose));
           return;
         }
         // an ask raised mid-run: the "!" goes up now, not when the run settles
         case "run.ask": {
-          this.npcEvents.run((npcs) => npcs.onAsk(employeeId));
+          this.npcEvents.run((npcs) => npcs.onAsk(e.employeeId));
           return;
         }
         case "run.start": {
-          this.npcEvents.run((npcs) => npcs.setState(employeeId, "working"));
+          this.npcEvents.run((npcs) => npcs.setState(e.employeeId, "working"));
           return;
         }
         case "run.end": {
           const state = e.payload.outcome.kind === "blocked" ? "blocked" : "idle";
-          this.npcEvents.run((npcs) => npcs.setState(employeeId, state));
+          this.npcEvents.run((npcs) => npcs.setState(e.employeeId, state));
           return;
         }
         // an answer requeues the task, but its run may not start at once: drop the "!" now
         case "status": {
           if (e.message === "queued") {
-            this.npcEvents.run((npcs) => npcs.unblock(employeeId));
+            this.npcEvents.run((npcs) => npcs.unblock(e.employeeId));
           }
           break;
         }

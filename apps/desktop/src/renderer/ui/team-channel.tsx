@@ -38,7 +38,7 @@ const FeedRow = ({ e, name }: { e: ActivityEvent; name: string }) => {
       return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
     }
     case "chat": {
-      const founder = e.employeeId === null || e.employeeId === undefined;
+      const founder = e.employeeId === null;
       return (
         <div>
           <span style={{ color: founder ? "var(--warn)" : "var(--accent-lo)" }}>{name}</span>{" "}
@@ -85,7 +85,7 @@ export const TeamChannel = () => {
     return null;
   }
 
-  const nameOf = (id?: string | null): string => (id ? employeeName(employees, id, "team") : "you");
+  const nameOf = (id: string | null): string => (id ? employeeName(employees, id, "team") : "you");
 
   const send = () => {
     const text = draft.trim();
@@ -109,7 +109,9 @@ export const TeamChannel = () => {
             {company.autopilot ? "The team is getting to work…" : "Autopilot paused."}
           </div>
         ) : (
-          feed.map((e) => <FeedRow key={e.id} e={e} name={nameOf(e.employeeId)} />)
+          feed.map((e) => (
+            <FeedRow key={e.id} e={e} name={nameOf("employeeId" in e ? e.employeeId : null)} />
+          ))
         )}
       </div>
       <div className="flex gap-1 p-1.5">

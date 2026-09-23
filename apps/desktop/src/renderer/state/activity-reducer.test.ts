@@ -4,6 +4,7 @@ import type { Employee } from "@/shared/domain";
 import { reduceActivity } from "./activity-reducer";
 
 const stamp = { createdAt: 0, id: 1 };
+const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
 
 const employee = (id: string): Employee => ({
   companyId: "co",
@@ -31,7 +32,7 @@ describe("reduceActivity", () => {
   it("raises an ask in the inbox the moment the office shows it", () => {
     const ask: ActivityEvent = {
       ...stamp,
-      employeeId: "priya",
+      ...inRun,
       kind: "run.ask",
       payload: { ask: { question: "Ship it?", type: "question" } },
     };
@@ -57,13 +58,14 @@ describe("reduceActivity", () => {
     };
     const killed: ActivityEvent = {
       ...stamp,
+      employeeId: null,
       kind: "product.killed",
       message: "Side",
       payload: { productId: "side", reason: "dud" },
     };
     expect(reduceActivity(held, pulse).reload).toEqual(["company", "products", "bets"]);
     expect(reduceActivity(held, killed).reload).toEqual(["products", "bets", "tasks"]);
-    expect(reduceActivity(held, { ...stamp, kind: "run.start" }).reload).toEqual([]);
+    expect(reduceActivity(held, { ...stamp, ...inRun, kind: "run.start" }).reload).toEqual([]);
   });
 
   it("refetches the work a bet dropped when it stopped taking any", () => {
@@ -77,7 +79,7 @@ describe("reduceActivity", () => {
   });
 
   it("sets to work the one employee a run starts for, and nobody else", () => {
-    const started: ActivityEvent = { ...stamp, employeeId: "priya", kind: "run.start" };
+    const started: ActivityEvent = { ...stamp, ...inRun, kind: "run.start" };
     const { patch } = reduceActivity(held, started);
     expect(patch.employees?.map((e) => e.status)).toEqual(["working", "idle"]);
   });
@@ -85,7 +87,7 @@ describe("reduceActivity", () => {
   it("idles an employee whose run ended", () => {
     const ended: ActivityEvent = {
       ...stamp,
-      employeeId: "priya",
+      ...inRun,
       kind: "run.end",
       payload: { outcome: { kind: "done" }, summary: "" },
     };
@@ -118,13 +120,14 @@ describe("reduceActivity", () => {
 
   it("keeps the feed to its last three hundred", () => {
     const full = Array.from({ length: 300 }, (_, id) => ({
+      ...inRun,
       createdAt: 0,
       id,
       kind: "run.start" as const,
     }));
     const { patch } = reduceActivity(
       { ...held, activity: full },
-      { ...stamp, id: 999, kind: "run.start" },
+      { ...stamp, ...inRun, id: 999, kind: "run.start" },
     );
     expect(patch.activity).toHaveLength(300);
     expect(patch.activity.at(-1)?.id).toBe(999);

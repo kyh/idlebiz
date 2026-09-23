@@ -12,7 +12,12 @@ import type { Company, Product, ProductDraft, Task } from "@/shared/domain";
 /** A system line in the team room. `to` names the teammate it is for, if any. */
 export const say = (line: string, to: string | null): void => {
   store.postTeamMessage(null, line);
-  publishActivity({ kind: "chat", message: line.slice(0, 400), payload: { to } });
+  publishActivity({
+    employeeId: null,
+    kind: "chat",
+    message: line.slice(0, 400),
+    payload: { to },
+  });
 };
 
 export const announceBet = (bet: Bet): void => {

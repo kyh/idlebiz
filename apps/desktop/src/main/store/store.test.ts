@@ -529,12 +529,15 @@ describe("active company ownership", () => {
 });
 
 describe("the digest", () => {
+  const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
+
   it("folds what happens after a look, and reading it is the next look", () => {
     found();
     expect(store.takeDigest()).toBeNull();
-    store.logActivity({ createdAt: 1, kind: "ship", message: "v0 shipped" }, true);
+    store.logActivity({ ...inRun, createdAt: 1, kind: "ship", message: "v0 shipped" }, true);
     store.logActivity(
       {
+        ...inRun,
         createdAt: 2,
         kind: "run.end",
         payload: { costUsd: 0.25, outcome: { kind: "done" }, summary: "done" },
@@ -542,14 +545,19 @@ describe("the digest", () => {
       true,
     );
     store.logActivity(
-      { createdAt: 3, kind: "org.hired", payload: { by: "lead", name: "Mira", title: "PM" } },
+      {
+        createdAt: 3,
+        employeeId: "mira",
+        kind: "org.hired",
+        payload: { by: "lead", name: "Mira", title: "PM" },
+      },
       true,
     );
     store.logActivity(
-      { createdAt: 4, kind: "task.dead", payload: { attempts: 3, error: "boom" } },
+      { ...inRun, createdAt: 4, kind: "task.dead", payload: { attempts: 3, error: "boom" } },
       true,
     );
-    store.logActivity({ createdAt: 5, kind: "message", message: "not counted" }, true);
+    store.logActivity({ ...inRun, createdAt: 5, kind: "message", message: "not counted" }, true);
 
     expect(store.takeDigest()).toMatchObject({
       dead: 1,
@@ -566,7 +574,7 @@ describe("the digest", () => {
   it("survives a restart mid-absence", () => {
     found();
     store.markSeen(1234);
-    store.logActivity({ createdAt: 2000, kind: "ship", message: "while closed" }, true);
+    store.logActivity({ ...inRun, createdAt: 2000, kind: "ship", message: "while closed" }, true);
     store.initStore();
     expect(store.takeDigest()).toMatchObject({ ships: ["while closed"], since: 1234 });
   });

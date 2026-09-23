@@ -170,7 +170,10 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const [input, setInput] = useState("");
   const [note, showNote] = useTransientNote(NOTE_MS);
 
-  const mine = useMemo(() => activity.filter((a) => a.employeeId === emp.id), [activity, emp.id]);
+  const mine = useMemo(
+    () => activity.filter((a) => "employeeId" in a && a.employeeId === emp.id),
+    [activity, emp.id],
+  );
   // Only a status event moves a task, so its id is what a task list is current
   // "as of" — and what makes a refetch worth making. Not the feed length: the
   // feed is a 300-event ring, and a length-keyed refetch stops once it fills.

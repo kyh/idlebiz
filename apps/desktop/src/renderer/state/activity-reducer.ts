@@ -77,7 +77,7 @@ export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
   const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
   const step: ActivityStep = { patch: { activity }, reload: reloadFor(e), roster: null };
   // A status names a task, not its assignee: queueing work for someone mid-run must not idle them.
-  if ((e.kind === "run.start" || e.kind === "run.end") && e.employeeId) {
+  if (e.kind === "run.start" || e.kind === "run.end") {
     const status = e.kind === "run.start" ? "working" : "idle";
     step.patch.employees = held.employees.map((emp) =>
       emp.id === e.employeeId ? { ...emp, status } : emp,
@@ -86,7 +86,7 @@ export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
   if (e.kind === "runner.resting") {
     step.patch.resting = { ...held.resting, [e.payload.runner]: e.payload.until };
   }
-  if ((e.kind === "org.hired" || e.kind === "org.released") && e.employeeId) {
+  if (e.kind === "org.hired" || e.kind === "org.released") {
     step.roster = { employeeId: e.employeeId, hired: e.kind === "org.hired" };
   }
   return step;
