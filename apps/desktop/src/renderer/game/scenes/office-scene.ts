@@ -98,7 +98,7 @@ export class OfficeScene extends Scene {
   private office: Office = officeOf(BUNDLED_LAYOUT);
   private grid: WalkGrid = this.office.grid;
   private modalOpen = false;
-  /** Bumped by every create(): an await in boot() that outlives its scene must not touch the next one. */
+  /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;
   private activityUnsub?: () => void;
 
@@ -189,8 +189,10 @@ export class OfficeScene extends Scene {
     this.claimKeyboard();
     this.subscribeActivity();
 
-    window.__game = this.game;
-    this.events.once(Scenes.Events.SHUTDOWN, () => {
+    const teardown = () => {
+      this.events.off(Scenes.Events.SHUTDOWN, teardown);
+      this.events.off(Scenes.Events.DESTROY, teardown);
+      this.generation += 1;
       this.events.off(Scenes.Events.ADDED_TO_SCENE, roundQuad);
       this.activityUnsub?.();
       document.removeEventListener("focusin", onFocusChange);
@@ -206,7 +208,10 @@ export class OfficeScene extends Scene {
       this.npcs = undefined;
       this.player = undefined;
       delete window.__officeDebug;
-    });
+    };
+    this.events.once(Scenes.Events.SHUTDOWN, teardown);
+    // game.destroy() emits only DESTROY, never SHUTDOWN
+    this.events.once(Scenes.Events.DESTROY, teardown);
   }
 
   /** The game owns the keys when nothing else is typing and no panel is up. */
@@ -247,14 +252,17 @@ export class OfficeScene extends Scene {
     }
     // the founder and the roster are independent fetches; the colleagues wait on both,
     // because Phaser's loader is single-batch and the founder's sheet must land first
-    const [player, employees, blocked] = await Promise.all([
-      this.spawnPlayer(company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED),
+    const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
+    const playerKey = `player-${seed}`;
+    const [, employees, blocked] = await Promise.all([
+      loadCharacter(this, playerKey, seed),
       company ? bridge().listEmployees() : [],
       company ? bridge().listTasks({ status: ["blocked"] }) : [],
     ]);
     if (generation !== this.generation) {
       return;
     }
+    const player = this.placePlayer(playerKey);
     const grid = this.sightSealed(masks, player);
     this.grid = grid;
     const npcs = new NpcManager(this, seats, grid, this.idlePois(), this.office.door);
@@ -463,9 +471,7 @@ export class OfficeScene extends Scene {
     };
   }
 
-  private async spawnPlayer(seed: string): Promise<Player> {
-    const key = `player-${seed}`;
-    await loadCharacter(this, key, seed);
+  private placePlayer(key: string): Player {
     const sprite = this.add
       .sprite(this.office.spawn.x, this.office.spawn.y, key, idleFrame("down"))
       .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
