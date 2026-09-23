@@ -7,7 +7,7 @@ import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
-import type { BlockedAsk, Company, Employee } from "@/shared/domain";
+import type { BlockedAsk, Company, Employee, TaskOrigin } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { plural } from "@/shared/format";
 import type { JsonValue } from "@/shared/json";
@@ -37,7 +37,13 @@ export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
 export interface RunContext {
   employee: Employee;
   company: Company;
-  run: { runId: string; taskId: string; productId: string | null; betId: string | null };
+  run: {
+    runId: string;
+    taskId: string;
+    productId: string | null;
+    betId: string | null;
+    origin: TaskOrigin;
+  };
   asks: AskBox;
   driver: Pick<typeof agentDriver, "pickRunner">;
   /** Queue a task for a teammate; a busy one picks it up on a later tick. */
@@ -105,8 +111,10 @@ const noRoomIn = (bet: Bet, inFlight: number): string => {
 
 /**
  * The bet delegated work spends against: the one named, else the run's own;
- * null only from a run no bet pays for. A bet that cannot take one more run is
- * refused, never swapped for null, so a bet's work never runs unfunded.
+ * null only from a founder ping, a routine or what they delegate. A proposal
+ * has no bet yet, but what it delegates is work for the bet it opens, so it
+ * must name that one. A bet that cannot take one more run is refused, never
+ * swapped for null, so a bet's work never runs unfunded.
  */
 const fundingFor = (
   ctx: RunContext,
@@ -115,6 +123,11 @@ const fundingFor = (
 ): Bet | null => {
   const id = named ?? ctx.run.betId;
   if (id === null) {
+    if (ctx.run.origin === "propose") {
+      throw new Error(
+        'The team only spends against bets: open_bet first, then delegate with "bet":"<slug>".',
+      );
+    }
     return null;
   }
   const bet = store.getBet(id);

@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { Budget, Task, TaskOrigin } from "@/shared/domain";
-import type { RunResult } from "./agents/agent-driver";
+import type { RunResult, RunTools } from "./agents/agent-driver";
 import type { EmployeeRunner } from "./scheduler";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
@@ -63,20 +63,22 @@ const interrupted: RunResult = { ...done(), outcome: { kind: "interrupted" } };
 /** A runner whose runs end when the test says so, or as interrupted the moment they are aborted. */
 const scripted = () => {
   const running = new Map<string, (result: RunResult) => void>();
+  const tools = new Map<string, RunTools>();
   const resting = new Set<string>();
   let started = 0;
   const driver: EmployeeRunner = {
     pickRunner: () => "claude",
     restingRunner: (runner) => (resting.has(runner) ? Date.now() + 60_000 : null),
-    runTask: (emp, _company, _task, _onEvent, _tools, signal) =>
+    runTask: (emp, _company, _task, _onEvent, runTools, signal) =>
       // oxlint-disable-next-line promise/avoid-new -- the test resolves it by hand
       new Promise<RunResult>((resolve) => {
         started += 1;
         running.set(emp.id, resolve);
+        tools.set(emp.id, runTools);
         signal.addEventListener("abort", () => resolve(interrupted), { once: true });
       }),
   };
-  return { driver, resting, running, started: () => started };
+  return { driver, resting, running, started: () => started, tools };
 };
 
 const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
@@ -377,6 +379,19 @@ describe("asking the lead for the next bet", () => {
       expect(proposing()).toHaveLength(1);
     },
   );
+
+  it("hands the proposal tools that fund nothing but the bet it opens", () => {
+    found();
+    const { driver, tools } = scripted();
+    const drain = createScheduler(driver);
+
+    drain.start();
+    drain.stop();
+
+    expect(proposing()).toHaveLength(1);
+    const handoff = { description: "write it", role: "engineer", title: "Draft the post" };
+    expect(tools.get("priya")?.call("POST /v1/delegate", handoff)).toContain("open_bet first");
+  });
 
   it("waits while the lead's last proposal does", () => {
     found();

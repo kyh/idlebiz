@@ -622,6 +622,7 @@ class Scheduler {
       (ev: AgentEvent) => onAgentEvent(runId, task, emp, ev),
       this.toolsFor(emp, company, {
         betId: task.betId,
+        origin: task.origin,
         productId: task.productId,
         runId,
         taskId: task.id,

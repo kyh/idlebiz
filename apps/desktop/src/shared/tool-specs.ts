@@ -70,7 +70,7 @@ export const TOOL_SPECS = {
       role: z.string().min(1),
       title: z.string().min(1),
     }),
-    doc: 'hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel. It spends against your current bet and lands on its product; name another bet with `"bet":"<slug>"` to fund work elsewhere. `"product":"<slug>"` alone picks the product only when your run has no bet. It is refused when the bet has no room for another run: runs already in flight count against its budget before they bill.',
+    doc: 'hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel. It spends against your current bet and lands on its product; name another bet with `"bet":"<slug>"` to fund work elsewhere. `"product":"<slug>"` alone picks the product only when your run has no bet. From a run that is opening a bet, name the bet it opened. It is refused when the bet has no room for another run: runs already in flight count against its budget before they bill.',
     example: { description: "...", role: "engineer", title: "..." },
     leadOnly: null,
     method: "POST",

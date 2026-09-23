@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { BlockedAsk } from "@/shared/domain";
+import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
 import type { RunContext } from "./tools";
 
@@ -63,7 +63,7 @@ const runAs = (employeeId: string) => {
     company,
     driver: { pickRunner: () => "claude" },
     employee,
-    run: { betId: null, productId: null, runId: "run", taskId: "task" },
+    run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
   };
   return { asked, assigned, company, ctx };
 };
@@ -200,6 +200,27 @@ describe("company tools", () => {
     expect(callTool(ctx, "POST /v1/delegate", elsewhere)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: null, productId: side.id }]);
   });
+
+  it("makes a proposal delegate against the bet it opened, never unfunded", () => {
+    const { ctx } = runAs("mae");
+    const proposing: RunContext = { ...ctx, run: { ...ctx.run, origin: "propose" } };
+    expect(callTool(proposing, "POST /v1/delegate", HANDOFF)).toContain("open_bet first");
+    expect(store.listOpenTasks()).toEqual([]);
+    const bet = openBet(proposing);
+    const named = { ...HANDOFF, bet: bet.id };
+    expect(callTool(proposing, "POST /v1/delegate", named)).toContain("Delegated");
+    expect(store.listOpenTasks()).toMatchObject([{ betId: bet.id, origin: "delegated" }]);
+  });
+
+  it.each<TaskOrigin>(["founder", "routine", "delegated"])(
+    "lets a %s run delegate work no bet pays for",
+    (origin) => {
+      const { ctx } = runAs("mae");
+      const unfunded: RunContext = { ...ctx, run: { ...ctx.run, origin } };
+      expect(callTool(unfunded, "POST /v1/delegate", HANDOFF)).toContain("Delegated");
+      expect(store.listOpenTasks()).toMatchObject([{ betId: null, origin: "delegated" }]);
+    },
+  );
 
   it("tells the lead how much of a released teammate's open work is now theirs", () => {
     const { ctx } = runAs("mae");
