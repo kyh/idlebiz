@@ -233,21 +233,6 @@ describe("scheduler queue admission", () => {
     expect(store.getEmployee(employee.id)?.status).toBe("idle");
     expect(store.getEmployee(teammate.id)?.status).toBe("idle");
   });
-
-  it("skips a missing assignee and still checks later work", () => {
-    found({ capUsd: 0, mode: "capped" });
-    const employee = store.createEmployee({ ...hire("Priya") });
-    const orphan = store.createTask({ priority: "high", title: "Orphan" });
-    const task = store.createTask({ title: "Waiting" });
-    store.claimTask(orphan.id, "missing-employee");
-    store.claimTask(task.id, employee.id);
-
-    scheduler.tick();
-
-    expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([orphan.id, task.id]);
-    expect(store.getCompany()?.autopilot).toBe(false);
-    expect(store.getEmployee(employee.id)?.status).toBe("idle");
-  });
 });
 
 describe("founding publication", () => {
@@ -711,6 +696,75 @@ describe("archives", () => {
     expect(store.getTask(task.id)?.assigneeId).toBe(emp.id);
     expect(store.getProduct(side.id)).not.toBeNull();
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
+  });
+});
+
+const foundTeam = () =>
+  store.foundCompany({
+    budget: { mode: "infinite" },
+    businessType: "software",
+    founderName: "Kai",
+    founderSpriteSeed: "seed",
+    hires: [hire("Mae"), hire("Priya")],
+    mission: "ship",
+    name: "Acme",
+  });
+
+const block = (taskId: string, employeeId: string): void => {
+  store.claimTask(taskId, employeeId);
+  store.lockTaskForRun(taskId, "run-1");
+  store.settleTask(taskId, "run-1", {
+    ask: { question: "Ship it?", type: "question" },
+    kind: "blocked",
+    summary: null,
+  });
+};
+
+describe("a release", () => {
+  it("refuses a claim for anyone off the roster", () => {
+    foundTeam();
+    const task = store.createTask({ title: "Ship it" });
+    store.archiveEmployee("priya");
+    expect(store.claimTask(task.id, "ghost")).toBeNull();
+    expect(store.claimTask(task.id, "priya")).toBeNull();
+    expect(store.getTask(task.id)?.state.kind).toBe("todo");
+  });
+
+  it("puts the leaver's queued work back in the pool, holding no bet's run", () => {
+    foundTeam();
+    const bet = launch(firstProduct().id);
+    const task = store.createTask({ assigneeId: "priya", betId: bet.id, title: "Post it" });
+    store.claimTask(task.id, "priya");
+    store.archiveEmployee("priya");
+    expect(store.listQueuedTasks()).toEqual([]);
+    expect(store.getTask(task.id)).toMatchObject({ assigneeId: null, state: { kind: "todo" } });
+    store.initStore();
+    expect(store.getTask(task.id)).toMatchObject({ assigneeId: null, state: { kind: "todo" } });
+  });
+
+  it("hands the leaver's asks and dead letters to the lead, and ends an ask no bet funds", () => {
+    foundTeam();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const bet = launch(firstProduct().id);
+    const funded = store.createTask({ betId: bet.id, title: "Post it" });
+    block(funded.id, "priya");
+    const ping = store.createTask({ title: "Answer the founder" });
+    block(ping.id, "priya");
+    const dead = store.createTask({ productId: side.id, title: "Side work" });
+    store.claimTask(dead.id, "priya");
+    store.killProduct(side.id, "dud");
+
+    store.archiveEmployee("priya");
+
+    expect(store.getTask(funded.id)).toMatchObject({
+      assigneeId: "mae",
+      state: { kind: "blocked" },
+    });
+    expect(store.getTask(ping.id)).toMatchObject({
+      assigneeId: "mae",
+      state: { kind: "dead", lastError: "Priya was released" },
+    });
+    expect(store.claimTask(dead.id, "mae")?.state.kind).toBe("queued");
   });
 });
 

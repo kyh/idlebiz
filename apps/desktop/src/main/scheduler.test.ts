@@ -235,3 +235,54 @@ describe("settling a run", () => {
     expect(store.consumeApproval(task.id, "git push")).toBe(false);
   });
 });
+
+const openBet = (budgetUsd: number) => {
+  const [product] = store.listProducts();
+  return store.openBet({
+    budgetUsd,
+    hypothesis: "a post brings visitors",
+    landingPath: null,
+    metric: "users",
+    productId: product?.id ?? "",
+    target: 50,
+    title: "Launch post",
+    windowHours: 24,
+  });
+};
+
+describe("a release", () => {
+  it("frees a spent-out bet for the lead to settle once the leaver's queued work goes", () => {
+    found();
+    const bet = openBet(1);
+    store.recordBetSpend(bet.id, 1);
+    const task = store.createTask({ assigneeId: "mae", betId: bet.id, title: "Post it" });
+    store.claimTask(task.id, "mae");
+    store.archiveEmployee("mae");
+    const drain = createScheduler(scripted().driver);
+
+    drain.start();
+    drain.stop();
+
+    expect(store.openTasksFor("priya")).toMatchObject([{ betId: bet.id }]);
+  });
+
+  it("carries the founder's answer to a leaver's funded ask to the lead", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, running } = scripted();
+    const drain = createScheduler(driver);
+    const task = store.createTask({ assigneeId: "mae", betId: bet.id, title: "Post it" });
+    drain.assign(task.id, "mae");
+    running.get("mae")?.({
+      ...done(),
+      outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
+    });
+    await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+    store.archiveEmployee("mae");
+
+    const continuation = drain.answerQuestion(task.id, "yes");
+
+    expect(continuation.assigneeId).toBe("priya");
+    expect(kindOf(continuation)).toBe("running");
+  });
+});

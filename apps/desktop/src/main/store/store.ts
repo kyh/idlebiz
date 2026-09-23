@@ -814,7 +814,39 @@ export const noteRunEnd = (id: string, sessionId: string | null): void => {
   patchIn(active.employees, id, { lastRunMetrics, sessionId }, saveRunState);
 };
 
-/** Archive the employee package and unassign queued work. */
+/**
+ * Where a released employee's open task goes: unstarted work back to the pool, so it
+ * holds no bet's slot, and an ask or a dead letter to the lead, so an answer or a
+ * retry still reaches someone. A run in flight settles on its own; null leaves it be.
+ */
+const rehomed = (t: Task, leaver: Employee, lead: string | null, now: number): Task | null => {
+  switch (t.state.kind) {
+    case "todo":
+    case "queued": {
+      return { ...t, assigneeId: null, state: { kind: "todo" } };
+    }
+    case "blocked": {
+      // an unfunded ask on the lead reads as their pending proposal, and would hold every new bet
+      return t.betId === null
+        ? {
+            ...t,
+            assigneeId: lead,
+            ...entering({ kind: "dead", lastError: `${leaver.name} was released` }, now),
+          }
+        : { ...t, assigneeId: lead };
+    }
+    case "dead": {
+      return { ...t, assigneeId: lead };
+    }
+    case "running":
+    case "done": {
+      return null;
+    }
+    // no default
+  }
+};
+
+/** Archive the employee package; their queued work goes back to the pool, their open asks to the lead. */
 export const archiveEmployee = (employeeId: string): Employee | null => {
   const emp = getEmployee(employeeId);
   if (!emp) {
@@ -825,22 +857,22 @@ export const archiveEmployee = (employeeId: string): Employee | null => {
     archiveTo(alumniDir(emp.companyId), employeeId),
   );
   const active = current();
-  const companyTasks = active.tasks;
-  for (const t of companyTasks) {
-    if (t.assigneeId === employeeId && (t.state.kind === "todo" || t.state.kind === "queued")) {
-      const next: Task = { ...t, assigneeId: null };
-      companyTasks[companyTasks.indexOf(t)] = next;
-      saveTask(next);
-    }
-  }
   const idx = active.employees.findIndex((e) => e.id === employeeId);
   if (idx !== -1) {
     active.employees.splice(idx, 1);
   }
   // the lead left: whoever remains elects one, so the tools keep an owner
-  const company = getCompany();
-  if (company?.leaderId === employeeId) {
+  if (active.company.leaderId === employeeId) {
     patchCompany({ leaderId: leadOf(listEmployees()) });
+  }
+  const lead = active.company.leaderId;
+  const now = Date.now();
+  for (const [i, t] of active.tasks.entries()) {
+    const next = t.assigneeId === employeeId ? rehomed(t, emp, lead, now) : null;
+    if (next) {
+      active.tasks[i] = next;
+      saveTask(next);
+    }
   }
   return emp;
 };
@@ -1225,10 +1257,10 @@ const close = (taskId: string, state: Settled): void => {
 const heldBy = (t: Task | null, runId: string): Task | null =>
   t && t.state.kind === "running" && t.state.runId === runId ? t : null;
 
-/** Return null on claim conflict; reviving a dead task resets its retry count. */
+/** Null on a claim conflict or for anyone off the roster; reviving a dead task resets its retry count. */
 export const claimTask = (taskId: string, employeeId: string): Task | null => {
   const t = getTask(taskId);
-  if (!t) {
+  if (!t || !getEmployee(employeeId)) {
     return null;
   }
   const { kind } = t.state;
