@@ -68,7 +68,7 @@ export const TOOL_SPECS = {
       description: z.string().min(1),
       product: z.string().min(1).optional(),
       role: z.string().min(1),
-      title: z.string().min(1),
+      title: z.string().trim().min(1).max(80),
     }),
     doc: 'hand work to a teammate of a given role (they pick it up autonomously and report back in the room). Call once to chain a handoff, or several times to fan work out in parallel. It spends against your current bet and lands on its product; name another bet with `"bet":"<slug>"` to fund work elsewhere. `"product":"<slug>"` alone picks the product only when your run has no bet. From a run that is opening a bet, name the bet it opened. It is refused when the bet has no room for another run: runs already in flight count against its budget before they bill.',
     example: { description: "...", role: "engineer", title: "..." },
@@ -149,10 +149,10 @@ export const TOOL_SPECS = {
   }),
   hire: tool({
     body: z.strictObject({
-      name: z.string().min(1).optional(),
-      persona: z.string().min(1).optional(),
+      name: z.string().trim().min(1).max(40).optional(),
+      persona: z.string().trim().min(1).max(600).optional(),
       role: z.string().min(1),
-      title: z.string().min(1),
+      title: z.string().trim().min(1).max(60),
     }),
     doc: "you lead the team and own headcount: add a role the backlog demands. Give a real first name and a vivid 2-3 sentence persona.",
     example: { name: "Mara", persona: "...", role: "engineer", title: "Frontend Engineer" },

@@ -138,6 +138,28 @@ describe("company tools", () => {
     expect(kill("x".repeat(200))).toContain("Killed");
   });
 
+  it.each([
+    { cap: 40, field: "name" },
+    { cap: 60, field: "title" },
+    { cap: 600, field: "persona" },
+  ])("refuses a hire whose $field is too long for every brief", ({ cap, field }) => {
+    const { ctx } = runAs("mae");
+    const newHire = { name: "Mara", persona: "ships", role: "designer", title: "Designer" };
+    const hireWith = (text: string) =>
+      callTool(ctx, "POST /v1/hire", { ...newHire, [field]: text });
+    expect(() => hireWith("x".repeat(cap + 1))).toThrow(`at ${field}`);
+    expect(store.listEmployees()).toHaveLength(2);
+    expect(hireWith("x".repeat(cap))).toContain("Hired");
+  });
+
+  it("refuses a delegated title too long for the lead's brief", () => {
+    const { ctx } = runAs("mae");
+    const delegate = (title: string) => callTool(ctx, "POST /v1/delegate", { ...HANDOFF, title });
+    expect(() => delegate("x".repeat(81))).toThrow("at title");
+    expect(store.listOpenTasks()).toEqual([]);
+    expect(delegate("x".repeat(80))).toContain("Delegated");
+  });
+
   it("keeps the first thing a run asks the founder", () => {
     const { ctx, asked } = runAs("priya");
     callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
