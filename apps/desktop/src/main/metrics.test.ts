@@ -298,6 +298,23 @@ describe("fetchRealMetrics reading Stripe", () => {
     expect(asked.length).toBe(first * 2);
   });
 
+  it("keeps a read a restricted key was refused part of", async () => {
+    const asked = stripe((endpoint) =>
+      endpoint.startsWith("/v1/charges")
+        ? Response.json({ data: [charge("ch_1", 900)] })
+        : new Response("{}", { status: 403 }),
+    );
+    const credential: StripeCredential = { key: "restricted", via: "own" };
+
+    const snap = await fetchRealMetrics(credential, [], []);
+    const first = asked.length;
+    const again = await fetchRealMetrics(credential, [], []);
+
+    expect(snap.revenue).toBe(9);
+    expect(again.stripe).toEqual({ answer: "refused", via: "own" });
+    expect(asked.length).toBe(first);
+  });
+
   it("takes a Stripe that never answered as neither taking nor refusing the key", async () => {
     stripe(down);
 

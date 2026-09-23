@@ -221,9 +221,11 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
 
 // Every charge is re-read, since a refund can land on any old one, and
 // customers are paged when search is unavailable. The numbers move in hours, so
-// one read of the account is kept this long, even one that came back short: a
-// null only holds the last value, and re-asking would page a capped account
-// through again every pulse.
+// one read of the account is kept this long, even one that came back short or
+// was refused: a null only holds the last value, and re-asking would page a
+// capped account, or every charge a restricted key may read, through again
+// every pulse. A new key reads at once, since the key is part of what is kept;
+// only a read Stripe never answered is asked again.
 const STRIPE_TTL_MS = 10 * 60_000;
 let stripeRead: { at: number; key: string; since: number | null; snapshot: StripeSnapshot } | null =
   null;
@@ -270,7 +272,9 @@ const stripeSnapshot = async (
     charges: settled(charges),
     customers: settled(customers),
   };
-  if (reads.every((read) => read.status === "fulfilled")) {
+  if (
+    reads.every((read) => read.status === "fulfilled" || read.reason instanceof StripeAuthError)
+  ) {
     stripeRead = { at: now, key, since, snapshot };
   }
   return snapshot;
