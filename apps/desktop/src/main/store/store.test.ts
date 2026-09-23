@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Budget } from "@/shared/domain";
-import { parseDoc, reqNum, reqStr, serializeDoc } from "./frontmatter";
+import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
@@ -89,18 +89,6 @@ const copyCompany = (from: string, to: string, createdAt: number): void => {
       metadata: { ...doc.metadata, createdAt },
     }),
   );
-  for (const slug of readdirSync(path.join(root, to, "products"))) {
-    const productFile = path.join(root, to, "products", slug, "PRODUCT.md");
-    const product = parseDoc(readFileSync(productFile, "utf-8"));
-    const workspaceDir = reqStr(product.metadata, "workspaceDir").replace(
-      path.join(root, from),
-      path.join(root, to),
-    );
-    writeFileSync(
-      productFile,
-      serializeDoc({ ...product, metadata: { ...product.metadata, workspaceDir } }),
-    );
-  }
 };
 
 const saveSnapshot = (companyId: string): Map<string, string> => {
@@ -265,7 +253,7 @@ describe("founding publication", () => {
       expect(body).not.toContain(".founding-");
     }
     const product = parseDoc(files.get("products/acme/PRODUCT.md") ?? "");
-    expect(product.metadata.workspaceDir).toBe(path.join(root, company.id, "workspace"));
+    expect(product.metadata.workspace).toBe("company");
     expect(files.get("agents/priya/AGENTS.md")).toContain(path.join(root, company.id, "workspace"));
     expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([]);
 
@@ -874,7 +862,7 @@ const seedRetiredRoutine = (companyId: string): void => {
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(2);
+    expect(stampOf(found().id)).toBe(3);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -898,7 +886,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(2);
+    expect(stampOf(co.id)).toBe(3);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -916,7 +904,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(2);
+    expect(stampOf(co.id)).toBe(3);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -924,6 +912,40 @@ describe("the save format", () => {
     expect(store.queryTasks({ status: ["superseded"] })).toMatchObject([
       { id: answered.id, state: { by: null, kind: "superseded" } },
     ]);
+  });
+
+  it("finds a format 2 product's workspace under this root, whatever path it kept", () => {
+    const co = found();
+    const emp = store.createEmployee({ ...hire("Priya") });
+    const [first] = store.listProducts();
+    if (!first) {
+      throw new Error("founding must create a product");
+    }
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    const elsewhere = path.join(tmpdir(), "moved-away", co.id);
+    const keepPath = (productId: string, workspaceDir: string): string => {
+      const file = path.join(productsDir(co.id), productId, "PRODUCT.md");
+      const doc = parseDoc(readFileSync(file, "utf-8"));
+      const { workspace: _, ...metadata } = doc.metadata;
+      writeFileSync(file, serializeDoc({ ...doc, metadata: { ...metadata, workspaceDir } }));
+      return file;
+    };
+    keepPath(first.id, path.join(elsewhere, "workspace"));
+    const gadgetFile = keepPath(
+      gadget.id,
+      path.join(elsewhere, "products", gadget.id, "workspace"),
+    );
+    restamp(co.id, 2);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(3);
+    expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
+
+    store.initStore();
+    expect(store.getProduct(first.id)?.workspaceDir).toBe(co.workspaceDir);
+    expect(store.getProduct(gadget.id)?.workspaceDir).toBe(productWorkspace(co.id, gadget.id));
+    expect(store.employeeInstructions(emp.id)).toContain(productWorkspace(co.id, gadget.id));
+    expect(store.employeeInstructions(emp.id)).not.toContain(elsewhere);
   });
 
   it("leaves alone a package written in a schema it does not read", () => {

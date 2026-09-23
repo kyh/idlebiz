@@ -205,7 +205,7 @@ const patchIn = <T extends Owned>(
  * quietly drop whatever the newer build added. It is refused instead. A save
  * stamped lower is adopted once at boot, then carries this stamp.
  */
-const SAVE_FORMAT = 2;
+const SAVE_FORMAT = 3;
 
 const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
@@ -1631,6 +1631,27 @@ const adoptAnsweredAsks = (active: ActiveCompany): void => {
 };
 
 /**
+ * Format 2 kept each product's absolute workspace path, which a copied save
+ * still pointed back through. The codec reads a product without the new key
+ * as sharing the company workspace; the old path's tail says which had their own.
+ */
+const adoptProductWorkspaces = (active: ActiveCompany): void => {
+  const { id } = active.company;
+  active.products = active.products.map((p) => {
+    const legacy = optStr(
+      parseDoc(readTextIfPresent(productFile(id, p.id)) ?? "").metadata,
+      "workspaceDir",
+    );
+    const adopted: Product =
+      legacy !== null && legacy.endsWith(path.join("products", p.id, "workspace"))
+        ? { ...p, workspaceDir: productWorkspace(id, p.id) }
+        : p;
+    saveProduct(adopted);
+    return adopted;
+  });
+};
+
+/**
  * Bring a save written in format `from` up to this one, once: saveCompany
  * then stamps it, and none of this runs for it again. A step written for
  * format N runs only for saves stamped below it. Everything that reads an
@@ -1659,6 +1680,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 2) {
     adoptAnsweredAsks(active);
+  }
+  if (from < 3) {
+    adoptProductWorkspaces(active);
   }
   saveCompany(active.company);
 };
