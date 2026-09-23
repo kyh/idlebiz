@@ -356,10 +356,15 @@ export class NpcManager {
 
   private settle(npc: Npc): void {
     npc.phase = "settled";
+    npc.nextWanderAt = this.scene.time.now + 1500 + Math.random() * 3000;
+    this.sitDown(npc);
+  }
+
+  /** The chair is solid, so a walk to it ends beside it; the sitter is placed on it. */
+  private sitDown(npc: Npc): void {
     if (npc.seat) {
       npc.sprite.setPosition(npc.seat.x, npc.seat.y);
     }
-    npc.nextWanderAt = this.scene.time.now + 1500 + Math.random() * 3000;
     this.applyLook(npc);
   }
 
@@ -370,9 +375,8 @@ export class NpcManager {
       this.applyLook(npc);
       return;
     }
-    if (!this.walkTo(npc, seat, () => this.applyLook(npc))) {
-      npc.sprite.setPosition(seat.x, seat.y);
-      this.applyLook(npc);
+    if (!this.walkTo(npc, seat, () => this.sitDown(npc))) {
+      this.sitDown(npc);
     }
   }
 
