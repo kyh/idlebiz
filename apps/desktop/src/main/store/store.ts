@@ -66,7 +66,7 @@ import {
   judge,
   windowEnd,
 } from "@/shared/bets";
-import type { Bet, BetMetric, PolicyParams } from "@/shared/bets";
+import type { Bet, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
 import { DigestSchema } from "@/shared/digest";
@@ -988,16 +988,16 @@ export const noSuchProduct = (productId: string): string =>
  * another live bet already covers is refused, since both would count the same
  * visitors.
  */
-export const openBet = (wager: {
-  productId: string;
-  title: string;
-  hypothesis: string;
-  metric: BetMetric;
-  landingPath: string | null;
-  target: number;
-  budgetUsd: number;
-  windowHours: number;
-}): Bet => {
+export const openBet = (
+  wager: {
+    productId: string;
+    title: string;
+    hypothesis: string;
+    target: number;
+    budgetUsd: number;
+    windowHours: number;
+  } & ({ metric: "users"; landingPath: string | null } | { metric: "revenue" }),
+): Bet => {
   const active = current();
   const input = { ...wager, companyId: active.company.id };
   const product = active.products.find((p) => p.id === input.productId);

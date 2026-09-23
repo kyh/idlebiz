@@ -186,16 +186,13 @@ const TOOLS = {
     const retired = retireProduct(slug, reason, ctx.employee.id);
     return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.`;
   }),
-  open_bet: define(TOOL_SPECS.open_bet, (ctx, { product, landingPath, ...bet }) => {
+  open_bet: define(TOOL_SPECS.open_bet, (ctx, { product, ...bet }) => {
     const productId = productFor(ctx, product);
     if (productId === null) {
       return "There is no product to bet on — create_product first.";
     }
-    const opened = store.openBet({
-      ...bet,
-      landingPath: landingPath ?? null,
-      productId,
-    });
+    const wager = bet.metric === "users" ? { ...bet, landingPath: bet.landingPath ?? null } : bet;
+    const opened = store.openBet({ ...wager, productId });
     announceBet(opened);
     return `Opened "${opened.title}" (${opened.id}). ${betMark(opened)} Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
   }),

@@ -1,14 +1,30 @@
 import { z } from "zod";
-import { BET_METRICS, LandingPathSchema } from "@/shared/bets";
+import { LandingPathSchema } from "@/shared/bets";
 import { INTEGRATION_KINDS } from "@/shared/domain";
 
 // Every company tool, described once: the route the control plane serves, the
 // body it parses, who may call it, and what the agent is told — docs and the
 // example are rendered from here, so a renamed field cannot leave the prose
-// teaching agents a request that now answers 400.
+// teaching agents a request that now answers 400. Bodies are strict because a
+// key an agent guessed (`bet_id` for `bet`) would otherwise be dropped and its
+// optional field quietly defaulted.
 
-const EMPTY = z.object({});
-const SLUG_AND_REASON = z.object({ reason: z.string().trim().min(1), slug: z.string().min(1) });
+const EMPTY = z.strictObject({});
+const SLUG_AND_REASON = z.strictObject({
+  reason: z.string().trim().min(1),
+  slug: z.string().min(1),
+});
+
+/** What every bet names, whatever it counts. */
+const WAGER = {
+  budgetUsd: z.number().positive().max(1000),
+  hypothesis: z.string().trim().min(1).max(600),
+  product: z.string().min(1).optional(),
+  target: z.number().positive(),
+  title: z.string().trim().min(1).max(80),
+  // long enough for a number to answer, short enough that a dud dies within the fortnight
+  windowHours: z.number().min(1).max(336),
+};
 
 export interface ToolSpec<B extends z.ZodType> {
   method: "GET" | "POST";
@@ -26,7 +42,7 @@ const tool = <B extends z.ZodType>(spec: ToolSpec<B>): ToolSpec<B> => spec;
 // oxlint-disable-next-line sort-keys -- the order agents read them in: everyone's tools, then the lead's
 export const TOOL_SPECS = {
   ask_boss: tool({
-    body: z.object({ question: z.string().trim().min(1) }),
+    body: z.strictObject({ question: z.string().trim().min(1) }),
     doc: "you are blocked or need a decision only the founder can make. Use sparingly; prefer making reasonable choices yourself. Note the answer arrives later — continue with whatever you can still do.",
     example: { question: "..." },
     leadOnly: null,
@@ -34,7 +50,7 @@ export const TOOL_SPECS = {
     path: "/v1/ask-boss",
   }),
   message_team: tool({
-    body: z.object({ text: z.string().trim().min(1) }),
+    body: z.strictObject({ text: z.string().trim().min(1) }),
     doc: "post a one-line update, decision, ask, or handoff to the team room so teammates see it live. The room already shows your name — never prefix messages with it.",
     example: { text: "..." },
     leadOnly: null,
@@ -50,7 +66,7 @@ export const TOOL_SPECS = {
     path: "/v1/team-chat",
   }),
   delegate: tool({
-    body: z.object({
+    body: z.strictObject({
       bet: z.string().min(1).optional(),
       description: z.string().min(1),
       product: z.string().min(1).optional(),
@@ -72,7 +88,7 @@ export const TOOL_SPECS = {
     path: "/v1/bets",
   }),
   request_integration: tool({
-    body: z.object({ kind: z.enum(INTEGRATION_KINDS), reason: z.string().trim().min(1) }),
+    body: z.strictObject({ kind: z.enum(INTEGRATION_KINDS), reason: z.string().trim().min(1) }),
     doc: 'the business needs a real-world connection: `"vercel"` (hosting, deploys, traffic analytics) or `"stripe"` (charging money). The founder gets a card with a Connect button; this task resumes automatically once they connect.',
     example: { kind: "vercel", reason: "..." },
     leadOnly: null,
@@ -80,7 +96,7 @@ export const TOOL_SPECS = {
     path: "/v1/request-integration",
   }),
   create_product: tool({
-    body: z.object({
+    body: z.strictObject({
       description: z.string().trim().min(1).max(600),
       name: z.string().trim().min(1).max(80),
     }),
@@ -99,17 +115,14 @@ export const TOOL_SPECS = {
     path: "/v1/kill-product",
   }),
   open_bet: tool({
-    body: z.object({
-      budgetUsd: z.number().positive().max(1000),
-      hypothesis: z.string().trim().min(1).max(600),
-      landingPath: LandingPathSchema.optional(),
-      metric: z.enum(BET_METRICS),
-      product: z.string().min(1).optional(),
-      target: z.number().positive(),
-      title: z.string().trim().min(1).max(80),
-      // long enough for a number to answer, short enough that a dud dies within the fortnight
-      windowHours: z.number().min(1).max(336),
-    }),
+    body: z.discriminatedUnion("metric", [
+      z.strictObject({
+        ...WAGER,
+        landingPath: LandingPathSchema.optional(),
+        metric: z.literal("users"),
+      }),
+      z.strictObject({ ...WAGER, metric: z.literal("revenue") }),
+    ]),
     doc: 'the team only spends against bets, so this is how work gets funded. One falsifiable hypothesis about one product: `metric` is `"users"` or `"revenue"`, `target` is how much of it the bet must bring in, `budgetUsd` is the most the bet may burn, `windowHours` is how long the number gets to answer once the work stops. A bet counts only what carries its mark (see "Marking a bet\'s traffic"), so several can run on one product at once. A users bet gets a landing path of its own, `/b/<bet slug>`; pass `"landingPath":"/guides"` instead when the bet IS a set of pages (search pages, a docs section) — a path another live bet already covers is refused.',
     example: {
       budgetUsd: 3,
@@ -125,7 +138,7 @@ export const TOOL_SPECS = {
     path: "/v1/open-bet",
   }),
   measure_bet: tool({
-    body: z.object({ slug: z.string().min(1) }),
+    body: z.strictObject({ slug: z.string().min(1) }),
     doc: "the work that could move the number is out the door: stop spending on the bet and start its clock.",
     example: { slug: "bet-slug" },
     leadOnly: "Only the team lead starts a bet's clock — tell them the work is out the door.",
@@ -141,7 +154,7 @@ export const TOOL_SPECS = {
     path: "/v1/kill-bet",
   }),
   hire: tool({
-    body: z.object({
+    body: z.strictObject({
       name: z.string().min(1).optional(),
       persona: z.string().min(1).optional(),
       role: z.string().min(1),
@@ -154,7 +167,7 @@ export const TOOL_SPECS = {
     path: "/v1/hire",
   }),
   release: tool({
-    body: z.object({ reason: z.string().default(""), slug: z.string().min(1) }),
+    body: z.strictObject({ reason: z.string().default(""), slug: z.string().min(1) }),
     doc: "let a teammate go when their role stopped pulling weight (their work is archived, never deleted).",
     example: { reason: "...", slug: "teammate-slug" },
     leadOnly: "Only the team lead can release teammates.",

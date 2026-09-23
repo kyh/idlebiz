@@ -112,6 +112,14 @@ describe("company tools", () => {
     expect(answer).toContain(`/b/${bet?.id}`);
   });
 
+  it("opens a revenue bet counted by the money tagged with it", () => {
+    const { ctx } = runAs("mae");
+    const answer = callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue" });
+    const [bet] = store.listBets();
+    expect(bet?.claim).toEqual({ metric: "revenue" });
+    expect(answer).toContain(`metadata[bet]=${bet?.id}`);
+  });
+
   it("answers with the store's refusal rather than failing the call", () => {
     const { ctx } = runAs("mae");
     expect(callTool(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" })).toContain(

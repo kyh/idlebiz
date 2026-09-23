@@ -8,9 +8,6 @@ import { formatUsd } from "@/shared/format";
 // another's result. Everything here is pure so the scheduler, the evaluator
 // and the replay judge one way.
 
-export const BET_METRICS = ["users", "revenue"] as const;
-export type BetMetric = (typeof BET_METRICS)[number];
-
 export const BetStateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("open") }),
   z.object({ kind: z.literal("measuring"), until: z.number() }),
