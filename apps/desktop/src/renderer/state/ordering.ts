@@ -52,10 +52,13 @@ export class Coalesced {
   }
 
   private async drain(): Promise<void> {
-    do {
-      this.again = false;
-      await this.run();
-    } while (this.again);
-    this.inFlight = null;
+    try {
+      do {
+        this.again = false;
+        await this.run();
+      } while (this.again);
+    } finally {
+      this.inFlight = null;
+    }
   }
 }

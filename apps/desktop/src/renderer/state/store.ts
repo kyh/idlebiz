@@ -261,6 +261,15 @@ const refreshing = new Coalesced(refreshOnce);
 
 export const refresh = (): Promise<void> => refreshing.call();
 
+/** For a refresh nobody awaits: a failure is logged, and the next refresh catches up. */
+const refreshInBackground = async (): Promise<void> => {
+  try {
+    await refresh();
+  } catch (error) {
+    console.error("Could not refresh", error);
+  }
+};
+
 /** Fetch one slice again, keeping the answer only if nothing newer has landed. */
 const reloadSlice = async <T>(
   slice: string,
@@ -425,23 +434,15 @@ export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
   });
 };
 
-const refreshAfterAnswer = async (): Promise<void> => {
-  try {
-    await refresh();
-  } catch (error) {
-    console.error("Could not refresh after answering", error);
-  }
-};
-
 export const answerQuestion = async (taskId: string, answer: string): Promise<void> => {
   await bridge().answerQuestion({ answer, taskId });
-  void refreshAfterAnswer();
+  void refreshInBackground();
 };
 
 // ---- activity --------------------------------------------------------------
 
 const RELOAD = {
-  all: refresh,
+  all: refreshInBackground,
   bets: reloadBets,
   company: reloadCompany,
   products: reloadProducts,
@@ -490,7 +491,7 @@ export const initStore = (): void => {
     return;
   }
   initialized = true;
-  void refresh();
+  void refreshInBackground();
   void loadAuth();
   void loadStripeStatus();
   bridge().onActivity(onActivity);

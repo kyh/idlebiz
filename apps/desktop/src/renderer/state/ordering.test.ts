@@ -34,4 +34,15 @@ describe("Coalesced", () => {
     await Promise.all(burst);
     expect(runs).toBe(2);
   });
+
+  it("runs again after a run rejects", async () => {
+    let runs = 0;
+    const gate = new Coalesced(() => {
+      runs += 1;
+      return runs === 1 ? Promise.reject(new Error("main went away")) : Promise.resolve();
+    });
+    await expect(gate.call()).rejects.toThrow("main went away");
+    await gate.call();
+    expect(runs).toBe(2);
+  });
 });
