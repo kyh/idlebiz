@@ -1,4 +1,6 @@
+import { NumberField } from "@base-ui/react/number-field";
 import { Toggle } from "@base-ui/react/toggle";
+import { useEffect, useEffectEvent, useId, useRef } from "react";
 import type { OfficeLayer } from "@/renderer/game/office-layout";
 import {
   autoAnchor,
@@ -9,13 +11,58 @@ import {
   srcForObject,
 } from "@/renderer/ui/office-builder/office-builder-model";
 import type { EditableObject } from "@/renderer/ui/office-builder/office-builder-model";
+import { Picker } from "@/renderer/ui/picker";
+import type { PickerOption } from "@/renderer/ui/picker";
 
-const LAYER_LABEL = {
-  floor: "floor — flat, under everyone",
-  object: "object — y-sorts with walkers",
-  overhead: "overhead — always on top",
-} satisfies Record<OfficeLayer, string>;
-const LAYERS: readonly OfficeLayer[] = ["floor", "object", "overhead"];
+const LAYER_OPTIONS: readonly PickerOption<OfficeLayer>[] = [
+  { label: "floor", title: "Flat, under everyone", value: "floor" },
+  { label: "object", title: "Y-sorts with walkers", value: "object" },
+  { label: "overhead", title: "Always on top", value: "overhead" },
+];
+
+const PLAIN_NUMBER: Intl.NumberFormatOptions = { useGrouping: false };
+
+/**
+ * Commits on blur or an arrow step, so one edit is one undo step and a cleared
+ * field is no edit rather than a move to 0. Clicking another object remounts
+ * the Inspector before this field blurs, so a typed value still pending then
+ * is committed on the way out instead of dropped.
+ */
+const CoordField = ({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (next: number) => void;
+}) => {
+  const id = useId();
+  const pending = useRef<number | null>(null);
+  const commit = (next: number | null) => {
+    pending.current = null;
+    if (next !== null && next !== value) {
+      onCommit(next);
+    }
+  };
+  const flush = useEffectEvent(() => commit(pending.current));
+  useEffect(() => () => flush(), []);
+  return (
+    <NumberField.Root
+      id={id}
+      value={value}
+      format={PLAIN_NUMBER}
+      onValueChange={(next) => {
+        pending.current = next;
+      }}
+      onValueCommitted={commit}
+      className="flex items-center justify-between gap-2"
+    >
+      <label htmlFor={id}>{label}</label>
+      <NumberField.Input className="px-field w-20 text-right" />
+    </NumberField.Root>
+  );
+};
 
 /** Only the y-sorting band has a floor line to edit. */
 const AnchorFields = ({
@@ -26,15 +73,11 @@ const AnchorFields = ({
   onChange: (next: EditableObject) => void;
 }) => (
   <>
-    <label className="flex items-center justify-between gap-2">
-      anchorY
-      <input
-        type="number"
-        value={obj.anchorY}
-        onChange={(e) => onChange({ ...obj, anchorY: Number(e.currentTarget.value) })}
-        className="px-field w-20 text-right"
-      />
-    </label>
+    <CoordField
+      label="anchorY"
+      value={obj.anchorY}
+      onCommit={(anchorY) => onChange({ ...obj, anchorY })}
+    />
     <div className="flex gap-1">
       <button
         type="button"
@@ -93,43 +136,16 @@ export const Inspector = ({
         />
         <span className="truncate">{obj.id}</span>
       </div>
-      <label className="flex items-center justify-between gap-2">
-        x
-        <input
-          type="number"
-          value={obj.x}
-          onChange={(e) => onChange(moveObject(obj, Number(e.currentTarget.value), obj.y))}
-          className="px-field w-20 text-right"
-        />
-      </label>
-      <label className="flex items-center justify-between gap-2">
-        y
-        <input
-          type="number"
-          value={obj.y}
-          onChange={(e) => onChange(moveObject(obj, obj.x, Number(e.currentTarget.value)))}
-          className="px-field w-20 text-right"
-        />
-      </label>
-      <label className="flex items-center justify-between gap-2">
-        layer
-        <select
-          value={obj.layer}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            if (v === "floor" || v === "object" || v === "overhead") {
-              onChange(setLayer(obj, v));
-            }
-          }}
-          className="px-field"
-        >
-          {LAYERS.map((l) => (
-            <option key={l} value={l}>
-              {LAYER_LABEL[l]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <CoordField label="x" value={obj.x} onCommit={(x) => onChange(moveObject(obj, x, obj.y))} />
+      <CoordField label="y" value={obj.y} onCommit={(y) => onChange(moveObject(obj, obj.x, y))} />
+      <Picker
+        options={LAYER_OPTIONS}
+        value={obj.layer}
+        onChange={(layer) => onChange(setLayer(obj, layer))}
+        label="Layer"
+        className="flex gap-1"
+        itemClassName="flex-1 py-1.5"
+      />
       {obj.layer === "object" ? (
         <AnchorFields obj={obj} onChange={onChange} />
       ) : (
