@@ -74,25 +74,19 @@ const STEP_LABELS = {
 /** Where "back" goes, or null where it doesn't go anywhere. Only the cheap,
  *  reversible steps rewind: casting the team spends a real CLI call, and past
  *  that the office is on disk. */
-const backStep = (step: Step): Step | null => {
-  switch (step) {
-    case "look": {
-      return "founder";
-    }
-    case "company": {
-      return "look";
-    }
-    case "biztype": {
-      return "company";
-    }
-    case "pitch": {
-      return "biztype";
-    }
-    default: {
-      return null;
-    }
-  }
-};
+const BACK_STEP = {
+  auth: null,
+  biztype: "company",
+  budget: null,
+  company: "look",
+  finalize: null,
+  founder: null,
+  intro: null,
+  look: "founder",
+  pitch: "biztype",
+  team: null,
+  title: null,
+} satisfies Record<Step, Step | null>;
 
 type Team =
   | { kind: "uncast" }
@@ -128,9 +122,11 @@ const teamScript = (team: Team): readonly string[] => {
     case "failed": {
       return ["Huh. My recruiter isn't picking up. Want me to try again?"];
     }
-    default: {
+    case "uncast":
+    case "casting": {
       return ["Hang on, let me text my recruiter…", "…she's reviewing resumes…"];
     }
+    // no default
   }
 };
 
@@ -368,7 +364,7 @@ const OnboardingActions = ({
         skip ▸
       </button>
     )}
-    {promptOpen && backStep(step) !== null ? (
+    {promptOpen && BACK_STEP[step] !== null ? (
       <button type="button" onClick={onBack} className="px-link" title="Esc">
         ← back
       </button>
@@ -416,9 +412,16 @@ const promptFor = (
         value: form.pitch,
       };
     }
-    default: {
+    case "title":
+    case "intro":
+    case "look":
+    case "biztype":
+    case "team":
+    case "budget":
+    case "finalize": {
       return null;
     }
+    // no default
   }
 };
 
@@ -439,9 +442,15 @@ const hintFor = (step: Step, look: number, looks: number, capUsd: number | null)
         ? "⚠ Uncapped. The office keeps spending while it works."
         : `New work stops at $${capUsd}; whatever is already running still finishes.`;
     }
-    default: {
+    case "title":
+    case "intro":
+    case "auth":
+    case "biztype":
+    case "team":
+    case "finalize": {
       return null;
     }
+    // no default
   }
 };
 
@@ -658,9 +667,16 @@ export const Onboarding = () => {
           setCursor: setCapIndex,
         };
       }
-      default: {
+      case "title":
+      case "intro":
+      case "auth":
+      case "founder":
+      case "company":
+      case "pitch":
+      case "finalize": {
         return null;
       }
+      // no default
     }
   };
   const menu = script.promptOpen ? menuFor() : null;
@@ -678,6 +694,13 @@ export const Onboarding = () => {
         // signed-in founder to the login screen
         if (auth.phase !== "checking") {
           setStep(auth.phase === "signed-in" ? "founder" : "auth");
+        }
+        break;
+      }
+      case "auth": {
+        // logging-in already has a browser open; signed-in moves on by itself
+        if (auth.phase === "signed-out" || auth.phase === "login-failed") {
+          login();
         }
         break;
       }
@@ -699,14 +722,21 @@ export const Onboarding = () => {
         }
         break;
       }
-      default: {
+      // a menu answered above, or there is nothing to confirm yet
+      case "title":
+      case "look":
+      case "biztype":
+      case "team":
+      case "budget":
+      case "finalize": {
         break;
       }
+      // no default
     }
   };
 
   const back = () => {
-    const prev = backStep(step);
+    const prev = BACK_STEP[step];
     if (prev !== null) {
       setFailure(null);
       setStep(prev);
@@ -744,6 +774,11 @@ export const Onboarding = () => {
     // a newline in the pitch is Shift+Enter
     const newline = document.activeElement?.tagName === "TEXTAREA" && e.shiftKey;
     if (e.key !== "Enter" || newline) {
+      return;
+    }
+    // a focused button answers its own Enter, and cancelling the keydown would
+    // swallow its click. Not the dialogue box: its click confirms only the intro.
+    if (e.target instanceof HTMLButtonElement && !e.target.classList.contains("ob-box-text")) {
       return;
     }
     e.preventDefault();
