@@ -395,7 +395,7 @@ describe("active company ownership", () => {
     const running = store.createTask({ origin: "founder", title: "In flight" });
     store.claimTask(running.id, employee.id);
     store.lockTaskForRun(running.id, "old-run");
-    store.postTeamMessage(employee.id, "existing room history");
+    store.postTeamMessage({ id: employee.id, kind: "employee" }, "existing room history");
     copyCompany(older.id, "newer", older.createdAt + 1);
     const oldOnly = store.createEmployee({ ...hire("Old only") });
     const oldTask = store.createTask({ origin: "founder", title: "Old only" });
@@ -439,7 +439,7 @@ describe("active company ownership", () => {
     store.createEmployee(hire("Someone"));
     store.createProduct({ description: "Another", name: "Another" });
     store.createTask({ origin: "founder", title: "Work" });
-    store.postTeamMessage(null, "hello");
+    store.postTeamMessage({ kind: "founder" }, "hello");
     store.grantApproval("some-task", "a command");
     store.recordSpend(10);
     store.setRealMetrics({ revenue: 10, users: 10 });
@@ -1354,7 +1354,7 @@ const seedRetiredRoutine = (companyId: string): void => {
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(4);
+    expect(stampOf(found().id)).toBe(5);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1378,7 +1378,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(4);
+    expect(stampOf(co.id)).toBe(5);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1396,7 +1396,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(4);
+    expect(stampOf(co.id)).toBe(5);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -1430,7 +1430,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(4);
+    expect(stampOf(co.id)).toBe(5);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -1449,13 +1449,38 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(4);
+    expect(stampOf(co.id)).toBe(5);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
     const next = store.resolveBlockedWithAnswer(ask.id, "yes");
     expect(next?.assigneeId).toBe("mae");
     expect(next && store.claimTask(next.id, "mae")?.state.kind).toBe("queued");
+  });
+
+  it("reads a format 4 room's null speaker as the founder, once", () => {
+    const co = foundTeam();
+    writeFileSync(
+      path.join(root, co.id, "chat.jsonl"),
+      [
+        JSON.stringify({ createdAt: 1, fromEmployeeId: null, text: "ship it" }),
+        JSON.stringify({ createdAt: 2, fromEmployeeId: "priya", text: "on it" }),
+        '{"createdAt":3,"fromEmpl',
+      ].join("\n"),
+    );
+    restamp(co.id, 4);
+    const room = () => store.recentTeamMessages().map(({ from, text }) => ({ from, text }));
+    const adopted = [
+      { from: { kind: "founder" }, text: "ship it" },
+      { from: { id: "priya", kind: "employee" }, text: "on it" },
+    ];
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(5);
+    expect(room()).toEqual(adopted);
+
+    store.initStore();
+    expect(room()).toEqual(adopted);
   });
 
   it("leaves alone a package written in a schema it does not read", () => {

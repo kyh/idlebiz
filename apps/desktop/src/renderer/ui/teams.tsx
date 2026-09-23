@@ -4,7 +4,7 @@ import { Bust } from "@/renderer/ui/bust";
 import { employeeName, jobTitle } from "@/renderer/ui/employee-name";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { Modal } from "@/renderer/ui/modal";
-import type { Employee } from "@/shared/domain";
+import type { Employee, TeamMessage } from "@/shared/domain";
 
 const RosterCard = ({
   emp,
@@ -25,6 +25,27 @@ const RosterCard = ({
     <EmployeeTag name={emp.name} title={jobTitle(emp)} lead={lead} status={emp.status} />
   </button>
 );
+
+const RoomLine = ({
+  message,
+  employees,
+}: {
+  message: TeamMessage;
+  employees: readonly Employee[];
+}) => {
+  const { from, text } = message;
+  if (from.kind === "office") {
+    return <div className="text-xs leading-snug text-fg-dim">{text}</div>;
+  }
+  return (
+    <div className="text-xs leading-snug">
+      <span className="text-[#3a76b8]">
+        {from.kind === "founder" ? "you" : employeeName(employees, from.id, "former teammate")}
+      </span>
+      <span className="text-fg">: {text}</span>
+    </div>
+  );
+};
 
 export const Teams = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
@@ -59,14 +80,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
           {messages.length === 0 ? (
             <div className="text-xs text-fg-dim">{quiet}</div>
           ) : (
-            messages.map((m) => (
-              <div key={m.id} className="text-xs leading-snug">
-                <span className="text-[#3a76b8]">
-                  {employeeName(employees, m.fromEmployeeId, "founder")}
-                </span>
-                <span className="text-fg">: {m.text}</span>
-              </div>
-            ))
+            messages.map((m) => <RoomLine key={m.id} message={m} employees={employees} />)
           )}
         </div>
       </div>

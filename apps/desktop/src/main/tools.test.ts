@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
 import type { RunContext } from "./tools";
@@ -12,6 +13,7 @@ process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
+const { activityEvents } = await import("./activity");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -292,5 +294,29 @@ describe("company tools", () => {
     const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
     expect(answer).not.toContain("open work");
     expect(answer).toContain("Released Priya.");
+  });
+
+  it("posts a bet the lead opens as the office's news, to the room and the feed alike", () => {
+    const { ctx } = runAs("mae");
+    const heard: Extract<ActivityEvent, { kind: "chat" }>[] = [];
+    const listen = (e: ActivityEvent): void => {
+      if (e.kind === "chat") {
+        heard.push(e);
+      }
+    };
+    activityEvents.on("activity", listen);
+    try {
+      openBet(ctx);
+      callTool(ctx, "POST /v1/message-team", { text: "on it" });
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+    const lines = [
+      { from: { kind: "office" }, text: "🎲 New bet: Launch post — a post brings visitors" },
+      { from: { id: "mae", kind: "employee" }, text: "on it" },
+    ];
+    expect(store.recentTeamMessages().map(({ from, text }) => ({ from, text }))).toEqual(lines);
+    expect(heard.map((e) => ({ from: e.payload.from, text: e.message }))).toEqual(lines);
+    expect(heard.map((e) => e.employeeId)).toEqual([null, "mae"]);
   });
 });

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { autonomousBrief, continuationBrief } from "./briefs";
+import { autonomousBrief, continuationBrief, roomTranscript } from "./briefs";
 import { RUN_COST_ESTIMATE_USD } from "@/shared/bets";
-import type { BlockedAsk, Company, Employee, Product, RunMetrics, Task } from "@/shared/domain";
+import type {
+  BlockedAsk,
+  Company,
+  Employee,
+  Product,
+  RunMetrics,
+  Task,
+  TeamMessage,
+} from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
 const company: Company = {
@@ -66,6 +74,27 @@ const briefFor = (co: Company, products: Product[], lastRunMetrics: RunMetrics |
     room: [],
     ships: [],
   }).description;
+
+const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
+  companyId: "acme",
+  createdAt: 0,
+  from,
+  text,
+});
+
+describe("the team room as the team reads it", () => {
+  it("names the founder and a teammate, and gives the office's news no speaker", () => {
+    const room = roomTranscript(
+      [
+        line({ kind: "office" }, "🎲 New bet: Launch post"),
+        line({ kind: "founder" }, "ship it"),
+        line({ id: "lead", kind: "employee" }, "on it"),
+      ],
+      (id) => (id === "lead" ? "Priya" : "someone"),
+    );
+    expect(room).toBe("- 🎲 New bet: Launch post\n- founder: ship it\n- Priya: on it");
+  });
+});
 
 describe("the brief's real numbers", () => {
   it("names the missing source rather than reporting zero", () => {

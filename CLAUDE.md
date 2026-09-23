@@ -85,6 +85,9 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   binds each implementation to its spec, and `control-plane.ts` is only transport. A change
   everyone should hear about (a bet, a product, autopilot) goes through
   `main/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's IPC.
+  Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
+  or employee), so the room agents read and the #team feed hold the same lines and no
+  office news reads as the founder's word.
 - **The policy is data, retuned by replay.** `dream` replays a fixed set of `explore`
   weights against the closed bets and swaps only to a strictly better scorer, so the
   incumbent never loses to a tie. The replay scores only work picks, so it never touches

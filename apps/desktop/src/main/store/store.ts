@@ -71,6 +71,7 @@ import {
 } from "@/shared/bets";
 import type { Bet, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
+import { parseJson } from "@/shared/json";
 import { RefusalError } from "@/shared/refusal";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
 import { DigestSchema } from "@/shared/digest";
@@ -89,6 +90,7 @@ import type {
   ProductDraft,
   Routine,
   ShipLine,
+  Speaker,
   Task,
   TaskOrigin,
   TaskPriority,
@@ -104,6 +106,7 @@ import {
   DEFAULT_MAX_AGENTS,
   LastShipSchema,
   RunMetricsSchema,
+  SpeakerSchema,
   afterFailure,
   entering,
   leadOf,
@@ -240,7 +243,7 @@ const recordIn = <T extends Owned>(
  * quietly drop whatever the newer build added. It is refused instead. A save
  * stamped lower is adopted once at boot, then carries this stamp.
  */
-const SAVE_FORMAT = 4;
+const SAVE_FORMAT = 5;
 
 const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
@@ -561,9 +564,26 @@ const TEAM_CHAT_RING = 200;
 // One chat.jsonl line, as postTeamMessage persists it (id and companyId re-assigned on load).
 const PersistedTeamMessageSchema = z.object({
   createdAt: z.number(),
-  fromEmployeeId: z.string().nullable(),
+  from: SpeakerSchema,
   text: z.string(),
 });
+type PersistedTeamMessage = z.infer<typeof PersistedTeamMessageSchema>;
+
+/**
+ * A chat.jsonl line of either shape, for adopting an older save only. Format 4
+ * and older named the speaker by employee id, null for the founder and the
+ * office alike; null reads as the founder, as the room always showed it.
+ */
+const AdoptedTeamMessageSchema = z.union([
+  PersistedTeamMessageSchema,
+  z
+    .object({ createdAt: z.number(), fromEmployeeId: z.string().nullable(), text: z.string() })
+    .transform(({ fromEmployeeId, ...row }): PersistedTeamMessage => ({
+      ...row,
+      from:
+        fromEmployeeId === null ? { kind: "founder" } : { id: fromEmployeeId, kind: "employee" },
+    })),
+]);
 
 const loadRecentChat = (active: ActiveCompany): void => {
   const companyId = active.company.id;
@@ -579,10 +599,10 @@ const adoptLegacyTeam = (co: Company): void => {
     return;
   }
   if (!existsSync(chatFile(co.id))) {
-    const rows: z.infer<typeof PersistedTeamMessageSchema>[] = [];
+    const rows: PersistedTeamMessage[] = [];
     for (const slug of slugs) {
       rows.push(
-        ...readJsonlTail(path.join(dir, slug, "chat.jsonl"), PersistedTeamMessageSchema, 10_000),
+        ...readJsonlTail(path.join(dir, slug, "chat.jsonl"), AdoptedTeamMessageSchema, 10_000),
       );
     }
     if (rows.length > 0) {
@@ -1245,12 +1265,12 @@ export const recordShip = (productId: string | null, summary: string): void => {
 };
 
 // ---- the company room ------------------------------------------------------
-export const postTeamMessage = (fromEmployeeId: string | null, text: string): TeamMessage => {
+export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   const active = current();
   const msg: TeamMessage = {
     companyId: active.company.id,
     createdAt: Date.now(),
-    fromEmployeeId,
+    from,
     text,
   };
   const ring = active.chat;
@@ -1907,6 +1927,28 @@ const adoptOrphanedTasks = (active: ActiveCompany): void => {
 };
 
 /**
+ * Format 4 and older wrote each room line's speaker as an employee id or null:
+ * rewrite the whole room in the shape that tells founder, office and employee
+ * apart. A line neither shape reads was already skipped by every reader.
+ */
+const adoptSpeakers = (companyId: string): void => {
+  const file = chatFile(companyId);
+  const text = readTextIfPresent(file);
+  if (text === null) {
+    return;
+  }
+  const rows = text.split("\n").flatMap((line) => {
+    try {
+      const row = AdoptedTeamMessageSchema.safeParse(parseJson(line));
+      return row.success ? [row.data] : [];
+    } catch {
+      return [];
+    }
+  });
+  atomicWrite(file, rows.map((row) => `${JSON.stringify(row)}\n`).join(""));
+};
+
+/**
  * Bring a save written in format `from` up to this one, once: saveCompany
  * then stamps it, and none of this runs for it again. A step written for
  * format N runs only for saves stamped below it. Everything that reads an
@@ -1917,7 +1959,6 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   const { id } = active.company;
   if (from < 1) {
     adoptLegacyTeam(active.company);
-    loadRecentChat(active);
     for (const e of active.employees) {
       if (e.sessionId !== null) {
         // AGENTS.md is rewritten without it at the end of this boot
@@ -1939,6 +1980,10 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   if (from < 3) {
     adoptProductWorkspaces(active);
     adoptOrphanedTasks(active);
+  }
+  if (from < 5) {
+    adoptSpeakers(active.company.id);
+    loadRecentChat(active);
   }
   saveCompany(active.company);
 };

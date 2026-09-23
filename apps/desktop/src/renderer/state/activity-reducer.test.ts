@@ -24,7 +24,20 @@ const employee = (id: string): Employee => ({
   title: "Engineer",
 });
 
-const held = { activity: [], employees: [employee("priya"), employee("mae")], resting: {} };
+const shipped = (id: number): ActivityEvent => ({
+  ...inRun,
+  createdAt: 0,
+  id,
+  kind: "ship",
+  message: `ship ${id}`,
+});
+
+const held = {
+  activity: [],
+  employees: [employee("priya"), employee("mae")],
+  feed: [],
+  resting: {},
+};
 const working: Employee = { ...employee("priya"), status: "working" };
 const busy = { ...held, employees: [working] };
 
@@ -148,5 +161,40 @@ describe("reduceActivity", () => {
     expect(patch.activity).toHaveLength(300);
     expect(patch.activity.at(-1)?.id).toBe(999);
     expect(patch.activity[0]?.id).toBe(1);
+  });
+
+  it("keeps the team's lines in the feed while tool calls churn the ring", () => {
+    const line: ActivityEvent = {
+      ...stamp,
+      employeeId: null,
+      kind: "chat",
+      message: "ship it",
+      payload: { from: { kind: "founder" }, to: null },
+    };
+    const posted = reduceActivity(held, line).patch;
+    let { activity } = posted;
+    const feed = posted.feed ?? [];
+    for (let id = 2; id <= 301; id += 1) {
+      const call: ActivityEvent = {
+        ...inRun,
+        createdAt: 0,
+        id,
+        kind: "tool_call",
+        message: "Read",
+        payload: {},
+      };
+      const { patch } = reduceActivity({ ...held, activity, feed }, call);
+      expect(patch.feed).toBeUndefined();
+      ({ activity } = patch);
+    }
+    expect(activity.map((e) => e.id)).not.toContain(line.id);
+    expect(feed).toEqual([line]);
+  });
+
+  it("keeps the feed to its last thirty lines", () => {
+    const full = { ...held, feed: Array.from({ length: 30 }, (_, id) => shipped(id)) };
+    const feed = reduceActivity(full, shipped(30)).patch.feed ?? [];
+    expect(feed).toHaveLength(30);
+    expect([feed[0]?.id, feed.at(-1)?.id]).toEqual([1, 30]);
   });
 });

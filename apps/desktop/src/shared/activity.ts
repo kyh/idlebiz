@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { BetStateSchema } from "./bets";
-import { BlockedAskSchema, BudgetSchema, RunOutcomeSchema, TASK_STATUSES } from "./domain";
+import {
+  BlockedAskSchema,
+  BudgetSchema,
+  RunOutcomeSchema,
+  SpeakerSchema,
+  TASK_STATUSES,
+} from "./domain";
 
 // main/activity.ts publishes this union and persists it as activity.jsonl rows.
 
@@ -39,7 +45,10 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   /** One assistant message, flushed at a tool call or the end of the turn. */
   event("message", inRun, { message: z.string() }),
   /** A line in the team room. `to` names the teammate it was handed to, if any. */
-  event("chat", byWhom, { message: z.string(), payload: z.object({ to: z.string().nullable() }) }),
+  event("chat", byWhom, {
+    message: z.string(),
+    payload: z.object({ from: SpeakerSchema, to: z.string().nullable() }),
+  }),
   /** A completed task's summary — the real counter behind the product version. */
   event("ship", inRun, { message: z.string() }),
 

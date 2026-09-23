@@ -52,6 +52,8 @@ interface State {
   company: Company | null;
   employees: Employee[];
   activity: ActivityEvent[];
+  /** What the #team channel shows, newest last. */
+  feed: ActivityEvent[];
   /** Awaiting the founder's answer. */
   pendingAsks: TaskIn<"blocked">[];
   /** Dead-lettered, needing a retry. */
@@ -72,6 +74,7 @@ let state: State = {
   company: null,
   design: null,
   employees: [],
+  feed: [],
   game: null,
   modalOpen: false,
   pendingAsks: [],

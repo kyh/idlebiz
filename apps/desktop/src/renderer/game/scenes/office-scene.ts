@@ -419,7 +419,7 @@ export class OfficeScene extends Scene {
   private subscribeActivity(): void {
     this.activityUnsub = bridge().onActivity((e: ActivityEvent) => {
       switch (e.kind) {
-        // a founder's line has nobody in the office to say it
+        // the founder's and the office's lines have nobody in the office to say them
         case "chat": {
           const speaker = e.employeeId;
           if (speaker !== null) {

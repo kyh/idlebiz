@@ -2,21 +2,26 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { betNews } from "@/main/prompts/briefs";
 import type { Bet } from "@/shared/bets";
-import type { Company, Product, ProductDraft, Task } from "@/shared/domain";
+import type { Company, Product, ProductDraft, Speaker, Task } from "@/shared/domain";
 
 // A change to the company that everyone should hear about: the store mutation,
 // the activity event and the team-room line, together. The scheduler, the
 // agents' tools and the founder's IPC all come through here, so a change reads
 // the same whoever made it.
 
-/** A system line in the team room. `to` names the teammate it is for, if any. */
-export const say = (line: string, to: string | null): void => {
-  store.postTeamMessage(null, line);
+/**
+ * A line in the team room, the only way one is written, so the room agents read
+ * and the founder's #team feed hear the same lines. `to` names the teammate it
+ * is handed to, if any.
+ */
+export const postToRoom = (from: Speaker, text: string, to: string | null = null): void => {
+  const line = text.slice(0, 400);
+  store.postTeamMessage(from, line);
   publishActivity({
-    employeeId: null,
+    employeeId: from.kind === "employee" ? from.id : null,
     kind: "chat",
-    message: line.slice(0, 400),
-    payload: { to },
+    message: line,
+    payload: { from, to },
   });
 };
 
@@ -26,7 +31,7 @@ export const announceBet = (bet: Bet): void => {
     message: bet.title,
     payload: { betId: bet.id, state: bet.state },
   });
-  store.postTeamMessage(null, betNews(bet));
+  postToRoom({ kind: "office" }, betNews(bet));
 };
 
 /** Give up on a live bet, from the lead's tool or the founder's panel. */
@@ -42,7 +47,10 @@ export const retireProduct = (productId: string, reason: string, by: string | nu
   for (const bet of store.killProduct(productId, reason, by)) {
     announceBet(bet);
   }
-  store.postTeamMessage(by, `🪦 Retired ${product.name} — ${reason}`);
+  postToRoom(
+    by === null ? { kind: "founder" } : { id: by, kind: "employee" },
+    `🪦 Retired ${product.name} — ${reason}`,
+  );
   publishActivity({
     employeeId: by,
     kind: "product.killed",
@@ -81,7 +89,7 @@ export const ship = (
   publishActivity({ ...at, kind: "ship", message });
   const ships = store.getCompany()?.ships ?? 0;
   if (ships > 0 && ships % 10 === 0) {
-    store.postTeamMessage(null, `🎉 Milestone: ${ships} things shipped — keep going!`);
+    postToRoom({ kind: "office" }, `🎉 Milestone: ${ships} things shipped — keep going!`);
   }
 };
 

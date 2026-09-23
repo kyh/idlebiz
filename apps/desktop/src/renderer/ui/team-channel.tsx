@@ -2,25 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
 import { employeeName } from "@/renderer/ui/employee-name";
-import type { ActivityEvent, ActivityKind } from "@/shared/activity";
+import type { ActivityEvent } from "@/shared/activity";
 import { formatTime } from "@/shared/format";
 
-const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
-  "chat",
-  "ship",
-  "org.hired",
-  "org.released",
-  "runner.resting",
-]);
-
-const inFeed = (a: ActivityEvent): boolean => FEED_KINDS.has(a.kind);
-
-const FeedRow = ({ e, name }: { e: ActivityEvent; name: string }) => {
+const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => string }) => {
   switch (e.kind) {
     case "ship": {
       return (
         <div style={{ color: "var(--accent-lo)" }}>
-          📦 <span className="text-fg">{name}</span> shipped: {e.message}
+          📦 <span className="text-fg">{nameOf(e.employeeId)}</span> shipped: {e.message}
         </div>
       );
     }
@@ -38,10 +28,17 @@ const FeedRow = ({ e, name }: { e: ActivityEvent; name: string }) => {
       return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
     }
     case "chat": {
-      const founder = e.employeeId === null;
+      const { from } = e.payload;
+      if (from.kind === "office") {
+        return <div className="text-fg-dim">{e.message}</div>;
+      }
       return (
         <div>
-          <span style={{ color: founder ? "var(--warn)" : "var(--accent-lo)" }}>{name}</span>{" "}
+          {from.kind === "founder" ? (
+            <span style={{ color: "var(--warn)" }}>you</span>
+          ) : (
+            <span style={{ color: "var(--accent-lo)" }}>{nameOf(from.id)}</span>
+          )}{" "}
           <span className="text-[#4c5064]">{e.message}</span>
         </div>
       );
@@ -54,7 +51,7 @@ const FeedRow = ({ e, name }: { e: ActivityEvent; name: string }) => {
 
 export const TeamChannel = () => {
   const employees = useStore((s) => s.employees);
-  const activity = useStore((s) => s.activity);
+  const feed = useStore((s) => s.feed);
   const company = useStore((s) => s.company);
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
@@ -65,8 +62,7 @@ export const TeamChannel = () => {
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const feed = activity.filter(inFeed).slice(-30);
-  // keyed on the newest event, not the count — the feed is capped at 30, so the
+  // keyed on the newest event, not the count — the feed is capped, so the
   // length stops changing once it fills and auto-scroll would die there.
   const newest = feed.at(-1)?.createdAt ?? null;
 
@@ -85,7 +81,7 @@ export const TeamChannel = () => {
     return null;
   }
 
-  const nameOf = (id: string | null): string => (id ? employeeName(employees, id, "team") : "you");
+  const nameOf = (id: string): string => employeeName(employees, id, "team");
 
   const send = () => {
     const text = draft.trim();
@@ -109,9 +105,7 @@ export const TeamChannel = () => {
             {company.autopilot ? "The team is getting to work…" : "Autopilot paused."}
           </div>
         ) : (
-          feed.map((e) => (
-            <FeedRow key={e.id} e={e} name={nameOf("employeeId" in e ? e.employeeId : null)} />
-          ))
+          feed.map((e) => <FeedRow key={e.id} e={e} nameOf={nameOf} />)
         )}
       </div>
       <div className="flex gap-1 p-1.5">

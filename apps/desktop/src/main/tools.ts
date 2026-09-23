@@ -3,7 +3,13 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
-import { announceBet, killBet, retireProduct, startProduct } from "@/main/company-actions";
+import {
+  announceBet,
+  killBet,
+  postToRoom,
+  retireProduct,
+  startProduct,
+} from "@/main/company-actions";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
@@ -69,8 +75,7 @@ const define =
 const nameOf = (id: string): string => store.getEmployee(id)?.name ?? "someone";
 
 const post = (ctx: RunContext, text: string, to: string | null = null): void => {
-  store.postTeamMessage(ctx.employee.id, text);
-  publishActivity({ employeeId: ctx.employee.id, kind: "chat", message: text, payload: { to } });
+  postToRoom({ id: ctx.employee.id, kind: "employee" }, text, to);
 };
 
 /** The product a tool means: the one it names, else the run's own, else the one waited on longest. */
@@ -142,7 +147,7 @@ const TOOLS = {
     return "Your question was sent to the founder. Note it and continue with anything you can still do.";
   }),
   message_team: define(TOOL_SPECS.message_team, (ctx, { text }) => {
-    post(ctx, text.slice(0, 400));
+    post(ctx, text);
     return "Posted to the team room.";
   }),
   read_team_chat: define(TOOL_SPECS.read_team_chat, () =>

@@ -19,16 +19,27 @@ export interface TaskBrief {
   description: string;
 }
 
+/** An office line is news, not anyone's word: it names no speaker, so no agent takes it for the founder's. */
+const roomLine = (message: TeamMessage, nameOf: (id: string) => string): string => {
+  const { from, text } = message;
+  switch (from.kind) {
+    case "founder": {
+      return `- founder: ${text}`;
+    }
+    case "office": {
+      return `- ${text}`;
+    }
+    case "employee": {
+      return `- ${nameOf(from.id)}: ${text}`;
+    }
+    // no default
+  }
+};
+
 export const roomTranscript = (
   messages: readonly TeamMessage[],
   nameOf: (id: string) => string,
-): string =>
-  messages
-    .map(
-      (message) =>
-        `- ${message.fromEmployeeId ? nameOf(message.fromEmployeeId) : "founder"}: ${message.text}`,
-    )
-    .join("\n") || "(no messages yet)";
+): string => messages.map((message) => roomLine(message, nameOf)).join("\n") || "(no messages yet)";
 
 /** "; +$2.00 since your last run" — how a live number moved, when the previous run recorded one. */
 const movedBy = (now: number, then: number | null | undefined, money: boolean): string => {

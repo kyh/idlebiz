@@ -6,7 +6,7 @@ import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import { agentDriver, askBox } from "@/main/agents/agent-driver";
 import type { RunResult, RunTools } from "@/main/agents/agent-driver";
-import { announceBet, haltForBudget, say, ship } from "@/main/company-actions";
+import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-actions";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
@@ -411,7 +411,7 @@ class Scheduler {
 
   /** Whole-token @slug or @first-name mentions wake the addressed employees. */
   founderMessage(text: string): void {
-    say(text, null);
+    postToRoom({ kind: "founder" }, text);
     for (const employeeId of resolveMentions(text, store.listEmployees())) {
       this.wakeEmployee(employeeId, founderPing(text));
     }
@@ -423,7 +423,7 @@ class Scheduler {
     if (!emp) {
       throw new RefusalError(`no employee ${employeeId}`);
     }
-    say(`@${emp.id} ${instruction}`, emp.id);
+    postToRoom({ kind: "founder" }, `@${emp.id} ${instruction}`, emp.id);
     this.wakeEmployee(employeeId, founderPing(instruction));
   }
 

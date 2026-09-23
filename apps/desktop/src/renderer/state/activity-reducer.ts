@@ -1,4 +1,4 @@
-import type { ActivityEvent } from "@/shared/activity";
+import type { ActivityEvent, ActivityKind } from "@/shared/activity";
 import type { Employee, RestingRunners } from "@/shared/domain";
 
 // What an event from main means for the renderer's copy of main's state, with
@@ -11,14 +11,30 @@ export type Slice = "company" | "employees" | "resting" | "products" | "bets" | 
 
 const ACTIVITY_RING = 300;
 
+/** What the #team feed shows. It keeps its own lines: tool calls fill the ring and would evict them. */
+const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
+  "chat",
+  "ship",
+  "org.hired",
+  "org.released",
+  "runner.resting",
+]);
+const FEED_LINES = 30;
+
 interface Held {
   activity: readonly ActivityEvent[];
+  feed: readonly ActivityEvent[];
   employees: readonly Employee[];
   resting: RestingRunners;
 }
 
 export interface ActivityStep {
-  patch: { activity: ActivityEvent[]; employees?: Employee[]; resting?: RestingRunners };
+  patch: {
+    activity: ActivityEvent[];
+    feed?: ActivityEvent[];
+    employees?: Employee[];
+    resting?: RestingRunners;
+  };
   reload: readonly Slice[];
   /** Someone joined or left: the office walks them through the door once the roster is fresh. */
   roster: { employeeId: string; hired: boolean } | null;
@@ -82,6 +98,9 @@ export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
   const ring = held.activity;
   const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
   const step: ActivityStep = { patch: { activity }, reload: reloadFor(e), roster: null };
+  if (FEED_KINDS.has(e.kind)) {
+    step.patch.feed = [...held.feed, e].slice(-FEED_LINES);
+  }
   // A status names a task, not its assignee: queueing work for someone mid-run must not idle them.
   if (e.kind === "run.start" || e.kind === "run.end") {
     const status = e.kind === "run.start" ? "working" : "idle";
