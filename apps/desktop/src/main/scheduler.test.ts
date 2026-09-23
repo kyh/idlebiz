@@ -16,8 +16,8 @@ const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
 const { companyDir, tasksDir } = await import("./paths");
-const { createScheduler, scheduler } = await import("./scheduler");
 const { activityEvents } = await import("./activity");
+const { createScheduler, scheduler } = await import("./scheduler");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -100,6 +100,18 @@ const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
 
 const kindOf = (task: Task): string | undefined => store.getTask(task.id)?.state.kind;
 
+/** Every run.end published from here on; `stop` unsubscribes. */
+const runEnds = () => {
+  const ended: ActivityEvent[] = [];
+  const listen = (e: ActivityEvent) => {
+    if (e.kind === "run.end") {
+      ended.push(e);
+    }
+  };
+  activityEvents.on("activity", listen);
+  return { ended, stop: () => activityEvents.off("activity", listen) };
+};
+
 it("ignores queue drains after stop and resumes admission only after start", () => {
   found({ capUsd: 0, mode: "capped" });
   const task = queue("priya");
@@ -145,6 +157,45 @@ describe("draining the queue", () => {
 
     expect(kindOf(urgent)).toBe("running");
     expect(kindOf(waiting)).toBe("queued");
+  });
+
+  it("starts the next task when one cannot be locked", () => {
+    const company = found();
+    const { driver } = scripted();
+    const stuck = queue("priya");
+    const next = queue("mae");
+    const taskDir = path.join(tasksDir(company.id), stuck.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(taskDir, 0o555);
+    try {
+      expect(() => createScheduler(driver).tick()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(`[start task ${stuck.id}]`, expect.anything());
+    } finally {
+      chmodSync(taskDir, 0o755);
+      logged.mockRestore();
+    }
+    expect(store.getEmployee("priya")?.status).toBe("idle");
+    expect(kindOf(next)).toBe("running");
+  });
+
+  it("runs every step of the timer's tick past a fault in one", () => {
+    found();
+    const drain = createScheduler({
+      ...scripted().driver,
+      restingRunner: () => {
+        throw new Error("disk full");
+      },
+    });
+    queue("priya");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => drain.start()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith("[drain queue]", expect.anything());
+      expect(logged).toHaveBeenCalledWith("[autopilot]", expect.anything());
+    } finally {
+      drain.stop();
+      logged.mockRestore();
+    }
   });
 
   it("starts nothing on a runner that is resting", () => {
@@ -226,10 +277,13 @@ const runOne = async (result: RunResult, betId: string | null = null) => {
 };
 
 describe("settling a run", () => {
-  it("ships finished work and frees the employee", async () => {
+  it("ships finished work, frees the employee and ends the run once", async () => {
+    const runs = runEnds();
     const { task } = await runOne(done(0.5));
+    runs.stop();
     expect(store.getTask(task.id)).toBeNull();
     expect(store.getCompany()).toMatchObject({ ships: 1, spentUsd: 0.5 });
+    expect(runs.ended).toMatchObject([{ payload: { costUsd: 0.5 }, taskId: task.id }]);
   });
 
   it("bills the run to the bet it worked for", async () => {
@@ -258,13 +312,14 @@ describe("settling a run", () => {
     await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
   });
 
-  it("books the spend and frees the employee when the settle cannot write", async () => {
+  it("books the spend, frees the employee and ends the run when the settle cannot write", async () => {
     const company = found();
     const { driver, running } = scripted();
     const task = queue("priya");
     createScheduler(driver).tick();
     const taskDir = path.join(tasksDir(company.id), task.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const runs = runEnds();
     chmodSync(taskDir, 0o555);
     try {
       running.get("priya")?.(done(0.5));
@@ -273,9 +328,11 @@ describe("settling a run", () => {
     } finally {
       chmodSync(taskDir, 0o755);
       logged.mockRestore();
+      runs.stop();
     }
     expect(kindOf(task)).not.toBe("running");
     expect(store.getCompany()?.spentUsd).toBe(0.5);
+    expect(runs.ended).toMatchObject([{ payload: { outcome: { kind: "done" } }, taskId: task.id }]);
   });
 
   it("settles the run and frees the employee when the spend cannot write", async () => {

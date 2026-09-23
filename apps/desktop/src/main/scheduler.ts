@@ -48,6 +48,15 @@ const isWorking = (employeeId: string): boolean =>
 
 const empName = (id: string): string => store.getEmployee(id)?.name ?? "someone";
 
+/** Run a step nothing above can catch: a fault is reported, and the work after it goes on. */
+const guarded = (where: string, step: () => void): void => {
+  try {
+    step();
+  } catch (error) {
+    report(where, error);
+  }
+};
+
 const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
   switch (ev.type) {
@@ -214,11 +223,6 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   store.noteRunEnd(emp.id, { instructionsDigest: r.instructionsDigest, sessionId: r.session });
 
   publishActivity({ ...at, kind: "status", message: status });
-  publishActivity({
-    ...at,
-    kind: "run.end",
-    payload: { costUsd: r.usage.costUsd, outcome: o, summary: r.summary },
-  });
 };
 
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
@@ -249,11 +253,12 @@ class Scheduler {
     this.onTick();
   }
 
-  // Retry queued work even with autopilot off.
+  // Retry queued work even with autopilot off. The timer has no caller to throw to,
+  // and a step that faults must not skip the others.
   private onTick(): void {
-    this.judgeBets();
-    this.tick();
-    this.tickAutopilot();
+    guarded("judge bets", () => this.judgeBets());
+    guarded("drain queue", () => this.tick());
+    guarded("autopilot", () => this.tickAutopilot());
   }
 
   /** Verdicts come from the real numbers on every tick, autopilot or not: a window closes on its own. */
@@ -541,7 +546,7 @@ class Scheduler {
       if (!employee || this.driver.restingRunner(employee.runner) !== null) {
         continue;
       }
-      this.startRun(task);
+      guarded(`start task ${task.id}`, () => this.startRun(task));
     }
   }
 
@@ -612,22 +617,28 @@ class Scheduler {
     }
     // The money is spent whatever the settle does, and a failed booking must not leave the
     // task running. One settle per run even when it throws: a second would bill $0 and call
-    // shipped work failed. Nothing awaits this promise, so it must not reject.
-    try {
-      book(task, result.usage.costUsd);
-    } catch (error) {
-      report(`book run ${runId}`, error);
-    }
-    try {
-      finish(runId, task, employee, result);
-    } catch (error) {
-      report(`settle run ${runId}`, error);
-    } finally {
-      store.setEmployeeStatus(employee.id, "idle");
-      this.runs.delete(runId);
-      settled.resolve();
-      this.tick();
-    }
+    // shipped work failed. Nothing awaits this promise, so each step past here reports its
+    // fault instead of rejecting, and the tick guards each start.
+    guarded(`book run ${runId}`, () => book(task, result.usage.costUsd));
+    guarded(`settle run ${runId}`, () => finish(runId, task, employee, result));
+    store.setEmployeeStatus(employee.id, "idle");
+    this.runs.delete(runId);
+    // sent even when the settle threw before its status: the office and HUD free the employee on it
+    guarded(`end run ${runId}`, () => {
+      publishActivity({
+        employeeId: employee.id,
+        kind: "run.end",
+        payload: {
+          costUsd: result.usage.costUsd,
+          outcome: result.outcome,
+          summary: result.summary,
+        },
+        runId,
+        taskId: task.id,
+      });
+    });
+    settled.resolve();
+    this.tick();
   }
 
   private execute(

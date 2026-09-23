@@ -435,6 +435,14 @@ export class OfficeScene extends Scene {
           this.npcs?.setState(employeeId, next);
           break;
         }
+        // repeats the settle's status, and stands in for it when the settle threw
+        case "run.end": {
+          this.npcs?.setState(
+            employeeId,
+            e.payload.outcome.kind === "blocked" ? "blocked" : "idle",
+          );
+          break;
+        }
         default: {
           break;
         }
