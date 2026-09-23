@@ -2,7 +2,7 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { betNews } from "@/main/prompts/briefs";
 import type { Bet } from "@/shared/bets";
-import type { Company, Product, Task } from "@/shared/domain";
+import type { Company, Product, ProductDraft, Task } from "@/shared/domain";
 
 // A change to the company that everyone should hear about: the store mutation,
 // the activity event and the team-room line, together. The scheduler, the
@@ -48,10 +48,7 @@ export const retireProduct = (productId: string, reason: string, by: string | nu
 };
 
 /** Start a product, from the lead's tool or the founder's panel. */
-export const startProduct = (
-  input: { name: string; description: string },
-  by: string | null,
-): Product => {
+export const startProduct = (input: ProductDraft, by: string | null): Product => {
   const product = store.createProduct(input);
   publishActivity({
     employeeId: by,

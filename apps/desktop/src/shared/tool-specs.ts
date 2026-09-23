@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { LandingPathSchema } from "@/shared/bets";
-import { INTEGRATION_KINDS } from "@/shared/domain";
+import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@/shared/domain";
 
 // Every company tool, described once: the route the control plane serves, the
 // body it parses, who may call it, and what the agent is told — docs and the
@@ -10,10 +10,7 @@ import { INTEGRATION_KINDS } from "@/shared/domain";
 // optional field quietly defaulted.
 
 const EMPTY = z.strictObject({});
-const SLUG_AND_REASON = z.strictObject({
-  reason: z.string().trim().min(1),
-  slug: z.string().min(1),
-});
+const SLUG_AND_REASON = z.strictObject({ reason: KillReasonSchema, slug: z.string().min(1) });
 
 /** What every bet names, whatever it counts. */
 const WAGER = {
@@ -96,10 +93,7 @@ export const TOOL_SPECS = {
     path: "/v1/request-integration",
   }),
   create_product: tool({
-    body: z.strictObject({
-      description: z.string().trim().min(1).max(600),
-      name: z.string().trim().min(1).max(80),
-    }),
+    body: ProductDraftSchema,
     doc: "a genuinely separate product (its own code, its own deploy), not a feature of one you have. It gets its own workspace; open a bet on it to fund work there.",
     example: { description: "...", name: "..." },
     leadOnly: "Only the team lead can start a product — raise it in the team room.",

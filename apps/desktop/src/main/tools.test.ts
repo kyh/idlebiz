@@ -134,6 +134,15 @@ describe("company tools", () => {
     );
   });
 
+  it("refuses a kill reason too long for a line in the room", () => {
+    const { ctx } = runAs("mae");
+    const bet = openBet(ctx);
+    const kill = (reason: string) => callTool(ctx, "POST /v1/kill-bet", { reason, slug: bet.id });
+    expect(() => kill("x".repeat(201))).toThrow(BadRequestError);
+    expect(store.getBet(bet.id)?.state.kind).toBe("open");
+    expect(kill("x".repeat(200))).toContain("Killed");
+  });
+
   it("keeps the first thing a run asks the founder", () => {
     const { ctx, asked } = runAs("priya");
     callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });

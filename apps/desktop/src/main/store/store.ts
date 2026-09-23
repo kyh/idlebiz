@@ -82,6 +82,7 @@ import type {
   LoadSkip,
   OpenTaskStatus,
   Product,
+  ProductDraft,
   Routine,
   ShipLine,
   Task,
@@ -918,7 +919,7 @@ export const listProducts = (): Product[] => [...(current().products ?? [])];
 const patchProduct = (id: string, patch: Partial<Product>): Product =>
   patchIn(current().products, id, patch, saveProduct);
 
-export const createProduct = (named: { name: string; description: string }): Product => {
+export const createProduct = (named: ProductDraft): Product => {
   const { company, products: list } = current();
   const input = { ...named, companyId: company.id };
   const id = uniqueSlug(

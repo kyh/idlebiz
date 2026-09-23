@@ -306,6 +306,16 @@ export interface Product {
   createdAt: number;
 }
 
+/** A product as it is asked for, by the founder's panel or the lead's tool. */
+export const ProductDraftSchema = z.strictObject({
+  description: z.string().trim().min(1).max(600),
+  name: z.string().trim().min(1).max(80),
+});
+export type ProductDraft = z.infer<typeof ProductDraftSchema>;
+
+/** Why a bet or a product was given up on; it lands in BET.md and as a line in the room. */
+export const KillReasonSchema = z.string().trim().min(1).max(200);
+
 /** What a task's status says about its assignee: working while a run is in flight, idle otherwise. */
 export const employeeStatusOf = (status: TaskStatus): EmployeeStatus =>
   status === "running" ? "working" : "idle";

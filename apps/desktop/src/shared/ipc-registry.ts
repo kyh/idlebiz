@@ -4,7 +4,12 @@ import type { JsonValue } from "@/shared/json";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import type { Digest } from "@/shared/digest";
-import { BudgetSchema, OPEN_TASK_STATUSES } from "@/shared/domain";
+import {
+  BudgetSchema,
+  KillReasonSchema,
+  OPEN_TASK_STATUSES,
+  ProductDraftSchema,
+} from "@/shared/domain";
 import type {
   AuthFlowEvent,
   CharacterAssets,
@@ -30,10 +35,7 @@ export const SCHEMAS = {
   answerQuestion: z.object({ answer: z.string(), taskId: z.string() }),
   assignTask: z.object({ employeeId: z.string(), taskId: z.string() }),
   composeCharacter: z.object({ seed: z.string() }),
-  createProduct: z.object({
-    description: z.string().trim().min(1).max(600),
-    name: z.string().trim().min(1).max(80),
-  }),
+  createProduct: ProductDraftSchema,
   directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
   employeeOptions: z.object({ employeeId: z.string() }),
   foundCompany: z.object({
@@ -54,8 +56,8 @@ export const SCHEMAS = {
   getCompany: z.void(),
   getFounderChoices: z.void(),
   hasAuth: z.void(),
-  killBet: z.object({ betId: z.string(), reason: z.string().trim().min(1).max(200) }),
-  killProduct: z.object({ productId: z.string(), reason: z.string().trim().min(1).max(200) }),
+  killBet: z.object({ betId: z.string(), reason: KillReasonSchema }),
+  killProduct: z.object({ productId: z.string(), reason: KillReasonSchema }),
   listBets: z.void(),
   listEmployees: z.void(),
   listProducts: z.void(),
