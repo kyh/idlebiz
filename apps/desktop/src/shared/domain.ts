@@ -234,6 +234,8 @@ export interface Employee {
   persona: string;
   runner: AgentRunner;
   sessionId: string | null;
+  /** Digest of the instructions that session was last given; a run whose instructions differ sends them again. */
+  instructionsDigest: string | null;
   /** deterministic sprite + portrait */
   spriteSeed: string;
   /** which desk slot in the office */

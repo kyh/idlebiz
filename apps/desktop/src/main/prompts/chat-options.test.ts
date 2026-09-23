@@ -7,6 +7,7 @@ const employee: Employee = {
   createdAt: 0,
   deskIndex: 0,
   id: "priya",
+  instructionsDigest: null,
   lastRunMetrics: null,
   lastShip: null,
   name: "Priya",

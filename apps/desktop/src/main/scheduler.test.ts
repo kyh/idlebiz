@@ -52,6 +52,7 @@ const found = (budget: Budget = UNCAPPED) =>
   });
 
 const done = (costUsd = 0): RunResult => ({
+  instructionsDigest: null,
   outcome: { kind: "done" },
   session: null,
   summary: "shipped it",
@@ -322,6 +323,30 @@ describe("settling a run", () => {
     expect(store.getEmployee("priya")?.status).toBe("idle");
     expect(kindOf(waiting)).toBe("queued");
     expect(started()).toBe(2);
+  });
+
+  it("remembers the session and the instructions it now holds", async () => {
+    await runOne({ ...done(), instructionsDigest: "told", session: "session-1" });
+    expect(store.getEmployee("priya")).toMatchObject({
+      instructionsDigest: "told",
+      sessionId: "session-1",
+    });
+  });
+
+  it("keeps the session and what it was told when the runner throws", async () => {
+    found();
+    store.noteRunEnd("priya", { instructionsDigest: "told", sessionId: "session-1" });
+    const broken: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: () => Promise.reject(new Error("no CLI")),
+    };
+    queue("priya");
+    createScheduler(broken).tick();
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    expect(store.getEmployee("priya")).toMatchObject({
+      instructionsDigest: "told",
+      sessionId: "session-1",
+    });
   });
 
   it("takes an unused sign-off away with the task", async () => {

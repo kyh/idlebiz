@@ -1,7 +1,8 @@
 import type { Company, Employee, Product } from "@/shared/domain";
 import { toolDocs } from "@/shared/tool-specs";
 
-// Rendered into AGENTS.md by the store and injected into every run by the driver.
+// Rendered into AGENTS.md by the store. The driver sends them to every new session, and again
+// to a resumed one whenever they changed.
 export const standingInstructions = (input: {
   employee: Employee;
   company: Company;

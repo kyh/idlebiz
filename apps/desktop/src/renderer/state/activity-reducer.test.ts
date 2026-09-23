@@ -10,6 +10,7 @@ const employee = (id: string): Employee => ({
   createdAt: 0,
   deskIndex: 0,
   id,
+  instructionsDigest: null,
   lastRunMetrics: null,
   lastShip: null,
   name: id,

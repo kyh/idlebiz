@@ -357,6 +357,8 @@ const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]): 
 
 /** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
 const RunStateSchema = z.object({
+  // defaulted like lastShip; a file without it reads as never told, so the next run sends them once
+  instructionsDigest: z.string().nullable().default(null),
   lastRunMetrics: RunMetricsSchema.nullable(),
   // defaulted: a file without it must still parse, or its session would be dropped with it
   lastShip: LastShipSchema.nullable().default(null),
@@ -365,6 +367,7 @@ const RunStateSchema = z.object({
 
 const saveRunState = (e: Employee): void => {
   const state: z.infer<typeof RunStateSchema> = {
+    instructionsDigest: e.instructionsDigest,
     lastRunMetrics: e.lastRunMetrics,
     lastShip: e.lastShip,
     sessionId: e.sessionId,
@@ -385,6 +388,7 @@ const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
     createdAt: optNum(m, "createdAt", Date.now()),
     deskIndex: optNum(m, "deskIndex", 0),
     id: reqStr(f, "slug"),
+    instructionsDigest: null,
     lastRunMetrics: null,
     lastShip: null,
     name: reqStr(f, "name"),
@@ -787,6 +791,7 @@ const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
   createdAt: Date.now(),
   deskIndex: input.deskIndex,
   id,
+  instructionsDigest: null,
   lastRunMetrics: null,
   lastShip: null,
   name: input.name,
@@ -840,15 +845,21 @@ export const setEmployeeStatus = (id: string, status: Employee["status"]): void 
   }
 };
 
-/** A run ended: keep the session to resume and where the real numbers stood, for the next brief to measure from. */
-export const noteRunEnd = (id: string, sessionId: string | null): void => {
+/**
+ * A run ended: keep the session to resume, what it was told, and where the real numbers
+ * stood, for the next brief to measure from.
+ */
+export const noteRunEnd = (
+  id: string,
+  session: Pick<Employee, "sessionId" | "instructionsDigest">,
+): void => {
   const { active } = c();
   if (!active) {
     return;
   }
   const { revenueUsd, users } = active.company;
   const lastRunMetrics = { at: Date.now(), revenueUsd, users };
-  recordIn(active.employees, id, { lastRunMetrics, sessionId }, saveRunState);
+  recordIn(active.employees, id, { ...session, lastRunMetrics }, saveRunState);
 };
 
 /**

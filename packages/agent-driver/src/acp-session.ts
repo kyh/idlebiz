@@ -88,8 +88,10 @@ export interface AcpTurnOptions {
   agent: AcpAgent;
   /** The task, or the wake prompt when resuming. */
   prompt: string;
-  /** AGENTS.md instructions, sent only for fresh sessions to avoid paying for them twice. */
+  /** AGENTS.md instructions: sent to a fresh session, and to a resumed one only when `instructionsChanged`. */
   systemPrompt: string;
+  /** The caller's systemPrompt differs from what this resumed session was given, so send it again. */
+  instructionsChanged?: boolean;
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
@@ -131,6 +133,15 @@ export interface AcpTurnResult {
   resumed: boolean;
   usage: AgentUsage;
 }
+
+/** What the session is told this turn: the instructions ride along only when it lacks them. */
+const turnText = (opts: AcpTurnOptions, resumed: boolean): string => {
+  if (!opts.systemPrompt || (resumed && !opts.instructionsChanged)) {
+    return opts.prompt;
+  }
+  const lead = resumed ? "Your standing instructions changed. They now read:\n\n" : "";
+  return `${lead}${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`;
+};
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -407,12 +418,8 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
         }
 
-        const text =
-          !resumed && opts.systemPrompt
-            ? `${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`
-            : opts.prompt;
         const res = await agent.request("session/prompt", {
-          prompt: [{ text, type: "text" }],
+          prompt: [{ text: turnText(opts, resumed), type: "text" }],
           sessionId,
         });
         flushMessage();

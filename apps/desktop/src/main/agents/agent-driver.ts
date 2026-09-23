@@ -18,6 +18,7 @@ import type {
 import { addUsage } from "@repo/agent-driver/events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -167,6 +168,8 @@ export interface RunResult {
   summary: string;
   /** The session to remember for this employee after the run; null forgets it. */
   session: string | null;
+  /** Digest of the instructions that session now holds. */
+  instructionsDigest: string | null;
   usage: AgentUsage;
 }
 
@@ -248,19 +251,32 @@ class AgentDriver {
   ): Promise<RunResult> {
     const prompt = `${task.title}\n\n${task.description}`.trim();
     const resumeId = emp.sessionId ?? undefined;
-    const run = { prompt, taskId: task.id, workspace: task.workspace };
+    // read at the start, so a change made while the run works reaches the next one
+    const instructions = store.employeeInstructions(emp.id);
+    const digest = createHash("sha256").update(instructions).digest("hex");
+    const run = {
+      instructions,
+      instructionsChanged: emp.instructionsDigest !== digest,
+      prompt,
+      taskId: task.id,
+      workspace: task.workspace,
+    };
     const first = await this.invoke(emp, company, run, onEvent, tools, resumeId, signal);
     // A resumed session that dies without producing any output is almost
     // always stale on the agent's side — retry once fresh before failing.
     const retryFresh =
       first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
     if (!retryFresh) {
-      return { ...first.result, session: first.turn.sessionId ?? emp.sessionId };
+      // a turn that opened no session leaves the stored one exactly as it was told
+      return first.turn.sessionId === undefined
+        ? { ...first.result, instructionsDigest: emp.instructionsDigest, session: emp.sessionId }
+        : { ...first.result, instructionsDigest: digest, session: first.turn.sessionId };
     }
     const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, signal);
     // the stale attempt was still billed; each attempt is already priced, so add, don't re-price
     return {
       ...retry.result,
+      instructionsDigest: digest,
       session: retry.turn.sessionId ?? null,
       usage: addUsage(first.result.usage, retry.result.usage),
     };
@@ -271,13 +287,19 @@ class AgentDriver {
   private async invoke(
     emp: Employee,
     company: Company,
-    run: { prompt: string; taskId: string; workspace: string },
+    run: {
+      instructions: string;
+      instructionsChanged: boolean;
+      prompt: string;
+      taskId: string;
+      workspace: string;
+    },
     onEvent: (e: AgentEvent) => void,
     tools: RunTools,
     resumeSessionId: string | undefined,
     signal: AbortSignal,
   ): Promise<{
-    result: Omit<RunResult, "session">;
+    result: Omit<RunResult, "session" | "instructionsDigest">;
     turn: AcpTurnResult;
     sawOutput: boolean;
   }> {
@@ -294,6 +316,7 @@ class AgentDriver {
         cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
+        instructionsChanged: run.instructionsChanged,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         onEvent: (e) => {
           sawOutput = true;
@@ -314,7 +337,7 @@ class AgentDriver {
         prompt: run.prompt,
         resumeSessionId,
         signal,
-        systemPrompt: store.employeeInstructions(emp.id),
+        systemPrompt: run.instructions,
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // parked whatever else the run says: an ask raised before the limit hit must not hide it

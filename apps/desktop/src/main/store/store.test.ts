@@ -411,7 +411,7 @@ describe("active company ownership", () => {
     expect(store.listQueuedTasks().map((task) => task.companyId)).toEqual(["newer"]);
     expect(store.getTask(running.id)?.state.kind).toBe("queued");
 
-    store.noteRunEnd(employee.id, "new-session");
+    store.noteRunEnd(employee.id, { instructionsDigest: null, sessionId: "new-session" });
     store.setProductVercel(product.id, {
       projectId: "new-project",
       projectName: "New",
@@ -579,11 +579,12 @@ describe("what a run leaves behind", () => {
     const before = readFileSync(instructions, "utf-8");
     store.setRealMetrics({ revenue: 12.5, users: null });
 
-    store.noteRunEnd(emp.id, "session-1");
+    store.noteRunEnd(emp.id, { instructionsDigest: "told-1", sessionId: "session-1" });
 
     expect(readFileSync(instructions, "utf-8")).toBe(before);
     store.initStore();
     expect(store.getEmployee(emp.id)).toMatchObject({
+      instructionsDigest: "told-1",
       lastRunMetrics: { revenueUsd: 12.5, users: null },
       sessionId: "session-1",
     });
@@ -623,7 +624,7 @@ describe("what a run leaves behind", () => {
     });
   });
 
-  it("still resumes the session of a run-state written before it kept the last ship", () => {
+  it("still resumes the session of an older run-state, owing it its instructions once", () => {
     const company = found();
     const emp = store.createEmployee(hire("Priya"));
     writeFileSync(
@@ -631,7 +632,11 @@ describe("what a run leaves behind", () => {
       JSON.stringify({ lastRunMetrics: null, sessionId: "session-1" }),
     );
     store.initStore();
-    expect(store.getEmployee(emp.id)).toMatchObject({ lastShip: null, sessionId: "session-1" });
+    expect(store.getEmployee(emp.id)).toMatchObject({
+      instructionsDigest: null,
+      lastShip: null,
+      sessionId: "session-1",
+    });
   });
 
   it("ships the work of someone released mid-run", () => {
