@@ -157,10 +157,12 @@ describe("the shipping log", () => {
   it("never hands a new task a slug the shipping log already holds", () => {
     found();
     const emp = store.createEmployee({ ...hire("Wren") });
-    const first = store.createTask({ title: "Same title" });
-    finish(first.id, emp.id, "done");
-    const second = store.createTask({ title: "Same title" });
-    expect(second.id).not.toBe(first.id);
+    for (const slug of ["same-title", "same-title-2"]) {
+      const task = store.createTask({ title: "Same title" });
+      expect(task.id).toBe(slug);
+      finish(task.id, emp.id, "done");
+    }
+    expect(store.createTask({ title: "Same title" }).id).toBe("same-title-3");
   });
 });
 
@@ -817,6 +819,27 @@ describe("archives", () => {
     expect(store.listEmployees()).toEqual([]);
     expect(existsSync(path.join(alumniDir(co.id), first.id, "AGENTS.md"))).toBe(true);
     expect(existsSync(path.join(alumniDir(co.id), second.id, "AGENTS.md"))).toBe(true);
+  });
+
+  it("hand a namesake the next number after every one archived", () => {
+    found();
+    for (const slug of ["priya", "priya-2"]) {
+      const emp = store.createEmployee({ ...hire("Priya") });
+      expect(emp.id).toBe(slug);
+      store.archiveEmployee(emp.id);
+    }
+    expect(store.createEmployee({ ...hire("Priya") }).id).toBe("priya-3");
+  });
+
+  it("keep an id past the slug length whole, so no namesake is handed it again", () => {
+    const co = found();
+    const name = "A product whose name runs well past the slug length";
+    const kept = store.createProduct({ description: "the first", name });
+    const retired = store.createProduct({ description: "the second", name });
+    expect(retired.id).toBe(`${kept.id}-2`);
+    store.killProduct(retired.id, "dud");
+    expect(existsSync(path.join(retiredDir(co.id), retired.id, "PRODUCT.md"))).toBe(true);
+    expect(store.createProduct({ description: "the third", name }).id).toBe(`${kept.id}-3`);
   });
 
   it("keep a retired product's slug, so a namesake's retirement sticks across a restart", () => {

@@ -466,33 +466,22 @@ const shelve = (t: Task): void => {
 };
 
 // ---- slug allocation ---------------------------------------------------------
-/** Scan suffixes once; onDisk also protects packages skipped during loading. */
+const firstFree = (root: string, taken: (slug: string) => boolean): string => {
+  let slug = root;
+  for (let n = 2; taken(slug); n += 1) {
+    slug = `${root}-${n}`;
+  }
+  return slug;
+};
+
+/** onDisk also protects packages skipped during loading. */
 const uniqueSlug = (
   base: string,
   existing: Iterable<string>,
   onDisk: (slug: string) => boolean = () => false,
 ): string => {
-  const root = slugify(base);
-  let rootTaken = false;
-  let highest = 1;
-  for (const id of existing) {
-    if (id === root) {
-      rootTaken = true;
-    } else if (id.startsWith(`${root}-`)) {
-      const n = Number(id.slice(root.length + 1));
-      if (Number.isInteger(n) && n > highest) {
-        highest = n;
-      }
-    }
-  }
-  if (!rootTaken && !onDisk(root)) {
-    return root;
-  }
-  let candidate = `${root}-${highest + 1}`;
-  while (onDisk(candidate)) {
-    candidate = `${candidate}-${Date.now().toString(36)}`;
-  }
-  return candidate;
+  const ids = new Set(existing);
+  return firstFree(slugify(base), (slug) => ids.has(slug) || onDisk(slug));
 };
 
 /** A slug stays taken while any package, live or archived, holds its directory. */
@@ -501,9 +490,11 @@ const heldIn =
   (slug: string): boolean =>
     dirs.some((dir) => existsSync(path.join(dir, slug)));
 
-/** A namesake retired earlier keeps its folder; the newcomer takes the next free name. */
-const archiveTo = (dir: string, slug: string): string =>
-  path.join(dir, uniqueSlug(slug, [], heldIn(dir)));
+/**
+ * A namesake retired earlier keeps its folder; the newcomer takes the next free name. Never
+ * re-slugified: an id past the slug length would lose its suffix and leave itself free.
+ */
+const archiveTo = (dir: string, id: string): string => path.join(dir, firstFree(id, heldIn(dir)));
 
 // ---- loading ----------------------------------------------------------------
 /** Oldest first; ties (same millisecond) by id, so boot order is stable. */
