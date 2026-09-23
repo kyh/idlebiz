@@ -230,6 +230,12 @@ const findRuns = (words: Words, from: number): Runs => ({
   script: null,
 });
 
+/** bash's `coproc NAME { … }` names its coprocess and zsh's coproc never does, so either word may be the command. */
+const coprocRuns = (_words: Words, from: number): Runs => ({
+  next: [from, from + 1],
+  script: null,
+});
+
 const FLOCK = gnu("-c -E -w --command --conflict-exit-code --timeout --wait");
 const COMMAND_SCRIPT = new Set(["-c", "--command"]);
 
@@ -284,6 +290,7 @@ const watchRuns = (words: Words, from: number): Runs => {
 /** Programs with a way of their own to name what they run. */
 const RUNS_OWN = new Map<string, (words: Words, from: number) => Runs>([
   ["command", commandRuns],
+  ["coproc", coprocRuns],
   ["env", envRuns],
   ["find", findRuns],
   ["flock", flockRuns],
@@ -443,11 +450,35 @@ const runs = (words: Words, from: number, program: string, plain: boolean): Runs
 };
 
 /** Wrappers no rule reads: only what they run is recorded. */
-const PASS_THROUGH = new Set([...WRAPPERS.keys(), ...RUNNERS, "command", "env", "eval"]);
+const PASS_THROUGH = new Set([...WRAPPERS.keys(), ...RUNNERS, "command", "coproc", "env", "eval"]);
 
 const ASSIGNMENT = /^[A-Za-z_]\w*\+?=/u;
-/** Words that open or close a compound command; the command after one still runs. `function` also takes a name. */
-const RESERVED = wordsOf("! { } do done elif else esac fi function if then until while");
+/** Reserved words a command's name may follow, each opening, joining or closing a compound command: `if git push`. */
+const RESERVED = wordsOf("! { } always do done elif else esac fi if then until while");
+/** Reserved words whose own operand comes before the command's name: `function NAME`, zsh's `repeat COUNT`. */
+const TAKES_OPERAND = wordsOf("function repeat");
+/** Arithmetic, which zsh's short forms run a command straight after: `while (( n-- )) git push`. */
+const ARITHMETIC = /^\(\(/u;
+/**
+ * Words zsh may start another command right after, within the same one: the `}`
+ * closing a condition's group and the `]]` closing its test (`if [[ -n $x ]] git push`).
+ * A start too many only names more commands to judge, so one is taken after each;
+ * the lexer, whose `case` count a start too many would mislead, reads them exactly.
+ */
+const RESTARTS = wordsOf("} ]]");
+
+/** How many words at `at` come before a command's name, 0 when it is the name. */
+const leadingWords = (words: Words, at: number): number => {
+  const word = words[at] ?? "";
+  if (TAKES_OPERAND.has(word)) {
+    return 2;
+  }
+  const arithmeticFor = word === "for" && ARITHMETIC.test(words[at + 1] ?? "");
+  return arithmeticFor || ASSIGNMENT.test(word) || RESERVED.has(word) || ARITHMETIC.test(word)
+    ? 1
+    : 0;
+};
+
 /** A word eval would read back as itself, so a line of them needs no second reading. */
 const PLAIN = /^[^\s'"\\`$;&|<>()#]*$/u;
 /** A name bash only knows once it expands it: `$(cat <<EOF … EOF)` runs whatever the substitution prints. */
@@ -476,15 +507,18 @@ const stageOf = ({ words, redirects }: Command): Stage => {
   }
   const plain = words.every((word) => PLAIN.test(word));
   // Every command a wrapper runs starts after it, so one pass in order meets each start after whatever named it.
-  const starts = new Set([0]);
+  // A quoted `}` or `]]` looks like a bare one, so a command may start after each.
+  const starts = new Set([0, ...words.flatMap((word, at) => (RESTARTS.has(word) ? [at + 1] : []))]);
   let managed = false;
   for (let from = 0; from < words.length; from += 1) {
     if (!starts.has(from)) {
       continue;
     }
     let start = from;
-    while (ASSIGNMENT.test(words[start] ?? "") || RESERVED.has(words[start] ?? "")) {
-      start += words[start] === "function" ? 2 : 1;
+    for (let lead = leadingWords(words, start); lead > 0; lead = leadingWords(words, start)) {
+      start += lead;
+      // A start passed on the way names this same command: `} } git push` reads it once.
+      starts.delete(start);
     }
     const head = words[start];
     if (head === undefined) {
@@ -524,11 +558,12 @@ interface Reading {
  * Every pipeline a command line runs, as calls. A script handed to a shell is
  * read as a line of its own, and so is the text a pipeline feeds a shell or
  * `source`, and the text a substitution may print as a command's name.
- * `fedTexts` holds each such text already read and whether it reads its own
+ * `readTexts` holds each such text already read and whether it reads its own
  * input: substitutions nest, so one heredoc reaches a command at every level,
- * and reading it at each would multiply the work by every level it passes.
+ * and a line with a `case` is read in every dialect, so one script reaches a
+ * shell in each; reading it every time would multiply the work at every level.
  */
-const pipelinesOf = (line: string, depth = 0, fedTexts = new Map<string, boolean>()): Reading => {
+const pipelinesOf = (line: string, depth = 0, readTexts = new Map<string, boolean>()): Reading => {
   if (depth > MAX_SCRIPT_DEPTH) {
     return {
       pipelines: lexFlat(line).map((pipeline) =>
@@ -537,29 +572,27 @@ const pipelinesOf = (line: string, depth = 0, fedTexts = new Map<string, boolean
       reads: true,
     };
   }
-  const readFed = (text: string): Reading => {
-    const known = fedTexts.get(text);
+  const readOnce = (text: string): Reading => {
+    const known = readTexts.get(text);
     if (known !== undefined) {
       return { pipelines: [], reads: known };
     }
     // Until read, a text that meets itself again is taken to read its input.
-    fedTexts.set(text, true);
-    const reading = pipelinesOf(text, depth + 1, fedTexts);
-    fedTexts.set(text, reading.reads);
+    readTexts.set(text, true);
+    const reading = pipelinesOf(text, depth + 1, readTexts);
+    readTexts.set(text, reading.reads);
     return reading;
   };
   let reads = false;
   const pipelines = lexLine(line).flatMap((pipeline) => {
     const stages = pipeline.map((command) => stageOf(command));
-    const scripts = stages
-      .flatMap((stage) => stage.scripts)
-      .map((script) => pipelinesOf(script, depth + 1, fedTexts));
+    const scripts = stages.flatMap((stage) => stage.scripts).map(readOnce);
     const fed = stages.some((stage) => stage.readsInput) || scripts.some((script) => script.reads);
     const texts = pipeline.flatMap((command, index) => [
       ...(fed ? command.input : []),
       ...(fed || stages[index]?.runsPrinted === true ? command.printed.flat() : []),
     ]);
-    const fedReadings = texts.map(readFed);
+    const fedReadings = texts.map(readOnce);
     reads ||=
       fed ||
       stages.some((stage) => stage.runsPrinted) ||

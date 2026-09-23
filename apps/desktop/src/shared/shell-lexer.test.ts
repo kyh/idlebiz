@@ -145,7 +145,9 @@ describe("lexLine", () => {
 
   it("reads ((…)) as arithmetic unless it closes as ) ), which is a subshell in a subshell", () => {
     expect(words("(( x <<= 1 ))\nls")).toEqual([[["(( x <<= 1 ))"]], [["ls"]]]);
-    expect(words("echo $((git push) )")).toEqual([[["git", "push"]], [["echo", "$((git push) )"]]]);
+    expect(words("echo $((git push) )")).toEqual(
+      expect.arrayContaining([[["git", "push"]], [["echo", "$((git push) )"]]]),
+    );
   });
 
   it("takes a carriage return for text unless it ends a line", () => {
@@ -153,12 +155,68 @@ describe("lexLine", () => {
   });
 
   it("reads a case's patterns inside a substitution without closing it", () => {
-    expect(words(`echo "$(case a in a) git push;; esac)"`)).toEqual([
-      [["case", "a", "in", "a"]],
-      [["git", "push"]],
-      [["esac"]],
-      [["echo", "$(case a in a) git push;; esac)"]],
+    expect(words(`echo "$(case a in a) git push;; esac)"`)).toEqual(
+      expect.arrayContaining([
+        [["case", "a", "in", "a"]],
+        [["git", "push"]],
+        [["esac"]],
+        [["echo", "$(case a in a) git push;; esac)"]],
+      ]),
+    );
+  });
+
+  it("reads a line with a case as each shell would, since they disagree where one opens", () => {
+    // zsh opens one after `repeat COUNT`; bash reads `repeat` as a command's name.
+    expect(words("echo $(repeat 1 case a in a) git push;; esac)")).toEqual(
+      expect.arrayContaining([
+        [["git", "push"]],
+        [["echo", "$(repeat 1 case a in a)", "git", "push"]],
+      ]),
+    );
+    expect(words("echo $(echo case a in a) git push")).toEqual([
+      [["echo", "case", "a", "in", "a"]],
+      [["echo", "$(echo case a in a)", "git", "push"]],
     ]);
+  });
+
+  it.each([
+    "coproc case",
+    "coproc N case",
+    "time case",
+    "time -p case",
+    "function f case",
+    "if { true } case",
+    "if { true } always { true } case",
+    "{ :; } always { case",
+    "if [[ -n x ]] case",
+    "if case b in b) :;; esac case",
+    "while (( n++ < 1 )) case",
+    "for ((i = 0; i < 1; i++)) case",
+  ])("opens a case where a shell reads one: %s", (lead) => {
+    expect(words(`echo $(${lead} a in a) git push;; esac)`)).toContainEqual([["git", "push"]]);
+  });
+
+  it.each([
+    "always case",
+    "true ]] case",
+    'if "[[" x ]] case',
+    "true } case",
+    "repeat case",
+    "function case",
+    "x=1 case",
+    '"if" case',
+    "done case",
+    "(( 1 )) case",
+    "case a in b) :;; case) :;; esac",
+    "case a in (case) :;; esac",
+    "case a in a) case b in b) :;; esac esac",
+    "case a in a) { :; } esac",
+    "case a { b) : }",
+    "case a in b) :;; }",
+    "case a in ( x esac y ) ) :;; esac",
+    "echo $(( x ) case ))",
+  ])("keeps the words after a substitution where a shell ends it: %s", (inner) => {
+    expect(words(`npm $(${inner}) publish`)).toContainEqual([["npm", `$(${inner})`, "publish"]]);
   });
 
   it("reads a backtick body again once its escapes are dropped", () => {

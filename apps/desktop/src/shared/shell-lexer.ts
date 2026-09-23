@@ -28,7 +28,7 @@ const MAX_DEPTH = 64;
 const OPENERS = ["$(", "$'", '$"', "<(", ">(", "(", "`", "'", '"'];
 
 /** Operators that end a command, longest first: all but a pipe also end its pipeline. */
-const SEPARATORS = ["&&", "||", "|&", "|", ";", "&", ")", "\n"];
+const SEPARATORS = ["&&", "||", "|&", ";;&", ";;", ";&", ";|", "|", ";", "&", ")", "\n"];
 const PIPES = new Set(["|", "|&"]);
 
 /** Redirections: the word after one names a file, a descriptor or a heredoc's end, never an argument. */
@@ -40,8 +40,108 @@ const FUNCTION_PARENS = /\([ \t]*\)/uy;
 /** Text no reading treats specially, taken whole rather than a character at a time. */
 const PLAIN_RUN = /[^\s$`<>'"\\|&;()]+/uy;
 
-/** Words that can come before a command's own name in what is read as one command: `if case …`. */
-const KEYWORDS = new Set(["!", "{", "do", "elif", "else", "if", "then", "time", "until", "while"]);
+/**
+ * Shells disagree on where a substitution ends. Where a `case` opens decides
+ * whether a `)` after it ends a pattern or the substitution: dash reads one where
+ * POSIX takes a command's name, bash also after `time`, `coproc NAME` and
+ * `function NAME`, zsh after forms only it has (`repeat 3 case`, `if [[ … ]] case`),
+ * and bash 3.2 finds a substitution's end by its parentheses alone. dash also
+ * reads any `$((` as arithmetic, where the others may read subshells. Reading a
+ * line as one shell can carry the words after such a `)` into the substitution
+ * another ends there, so a line they may read apart is read in every dialect.
+ */
+type Parser = "bash" | "posix" | "zsh";
+type Dialect = Parser | "bash-3.2";
+/** A strict reading follows a dialect; a flat one takes every opener for a command's start. */
+type Reading = Dialect | "flat";
+
+/** Where a command's next word stands: a `case` opens one only where the name may be. */
+type Place =
+  /** The name, or a reserved word leading it: `if case …`. */
+  | "name"
+  /** After bash's `time`, whose `-p` and `--` still come before the name. */
+  | "time"
+  /** After bash's `coproc`: the name, or the coprocess's NAME with the name after it. */
+  | "coproc"
+  /** A reserved word's operand, with the name after it: bash's `function NAME`, zsh's `repeat COUNT`. */
+  | "operand"
+  /** Past zsh's `function`, whose names run to its body's `{`: `function f case { … }`. */
+  | "names"
+  /** After `for`: `for ((…))` leads a name, `for NAME` does not. */
+  | "for"
+  /** Past a `}` closing a zsh group: `always` leads another, and a name may follow a condition's (`if { true } case`). */
+  | "brace"
+  /** Inside a zsh test, whose `]]` ends a condition a name may follow: `if [[ -n $x ]] case`. */
+  | "test"
+  /** Past a compound command's closing word, where only another may follow: `case … esac esac`. */
+  | "closed"
+  | "argument";
+
+/** Where a name may be, so a `case` or `esac` there counts. */
+const NAMED: ReadonlySet<Place> = new Set(["name", "time", "coproc", "brace"]);
+
+/** Words closing a compound command, after which bash and dash still read `esac`: `case a in a) if …; fi esac`. */
+const CLOSERS = ["done", "esac", "fi", "}"];
+
+/** What every parser makes of the word after each of these, read where a name may be. */
+const POSIX_LEADS: [string, Place][] = [
+  ...["!", "{", "do", "elif", "else", "if", "then", "until", "while"].map(
+    (word): [string, Place] => [word, "name"],
+  ),
+  ...CLOSERS.map((word): [string, Place] => [word, "closed"]),
+  ["for", "for"],
+];
+
+/** What each parser's reserved words, read where the name may be, make of the word after them. */
+const LEADS: Record<Parser, ReadonlyMap<string, Place>> = {
+  bash: new Map([...POSIX_LEADS, ["coproc", "coproc"], ["function", "operand"], ["time", "time"]]),
+  posix: new Map(POSIX_LEADS),
+  zsh: new Map([
+    ...POSIX_LEADS,
+    ["[[", "test"],
+    ["coproc", "name"],
+    // A name may follow a condition's `esac`: `if case … esac git push`.
+    ["esac", "name"],
+    ["function", "names"],
+    ["repeat", "operand"],
+    ["time", "name"],
+    ["}", "brace"],
+  ]),
+};
+
+/** Arithmetic, which zsh's short forms run a command straight after: `while (( n-- )) case`. */
+const ARITHMETIC = /^\(\(/u;
+const TIME_OPTIONS = new Set(["-p", "--"]);
+/** What ends a `case` item, after which the next word is a pattern: `case a in b) :;; case) …` opens nothing. */
+const ITEM_ENDS = new Set([";;", ";;&", ";&", ";|"]);
+
+const nameAt = (word: string, bare: boolean, parser: Parser): Place => {
+  if (!bare) {
+    return "argument";
+  }
+  if (parser === "zsh" && ARITHMETIC.test(word)) {
+    return "name";
+  }
+  return LEADS[parser].get(word) ?? "argument";
+};
+
+/** What a word read at each place leaves the next one as. */
+const STEPS: Record<Place, (word: string, bare: boolean, parser: Parser) => Place> = {
+  argument: () => "argument",
+  brace: (word, bare, parser) => (bare && word === "always" ? "name" : nameAt(word, bare, parser)),
+  closed: (word, bare) => (bare && CLOSERS.includes(word) ? "closed" : "argument"),
+  coproc: (word, bare, parser) => {
+    const next = nameAt(word, bare, parser);
+    return next === "argument" ? "name" : next;
+  },
+  for: (word, bare) => (bare && ARITHMETIC.test(word) ? "name" : "argument"),
+  name: nameAt,
+  names: (word, bare) => (bare && word === "{" ? "name" : "names"),
+  operand: () => "name",
+  test: (word, bare) => (bare && word === "]]" ? "name" : "test"),
+  time: (word, bare, parser) =>
+    bare && TIME_OPTIONS.has(word) ? "time" : nameAt(word, bare, parser),
+};
 
 /** The escapes bash drops from a backtick body before reading it, which is how `\`` nests one substitution in another. */
 const BACKTICK_ESCAPE = /\\(?<escaped>[$\\`])/gu;
@@ -96,6 +196,16 @@ interface Heredoc {
   input: string[];
 }
 
+/**
+ * A `case` reads its subject and `in` before its patterns, and a `)` ends those;
+ * the list after runs commands. Past a zsh pattern's `( … )` it is `grouped`: a
+ * `)` there ends the patterns, and anything else starts the list.
+ */
+type Clause = "commands" | "subject" | "in" | "patterns" | "grouped";
+
+/** What a list has open: a `case`, zsh's `case a { … }`, a zsh group, or the `( … )` zsh reads whole in a pattern. */
+type Open = "case" | "braced case" | "group" | "pattern group";
+
 /** One command list being read: the top level, a subshell, or a substitution. */
 interface Frame {
   pipeline: Command[];
@@ -115,10 +225,14 @@ interface Frame {
   target: Target;
   /** Whether the command has a redirection, which makes it one even with no words: `(cat) <<EOF | sh`. */
   redirected: boolean;
-  /** Whether the command has a word besides keywords yet: only its first such word can open or close a `case`. */
-  named: boolean;
-  /** `case` commands not yet closed by `esac`: until then a `)` ends a pattern, not the list. */
+  /** Where the command's next word stands, which says whether a `case` there opens one. */
+  place: Place;
+  /** What is open, innermost last: zsh's bare `}` closes a group or a braced `case` wherever it stands. */
+  opens: Open[];
+  /** How many of `opens` are a `case`: until none is, a `)` ends a pattern, not the list. */
   cases: number;
+  /** Where the innermost open `case` is: its patterns run nothing, so a `case` among them opens nothing. */
+  clause: Clause;
 }
 
 const append = (frame: Frame, text: string): void => {
@@ -132,18 +246,89 @@ const pushAll = <T>(into: T[], items: readonly T[]): void => {
   }
 };
 
-/** `case` and `esac` count only as a command's name, unquoted: `echo case` opens nothing. */
-const countCase = (frame: Frame, word: string): void => {
-  if (frame.named || frame.quoted) {
-    frame.named = true;
+/** Closes the innermost `case`, if nothing opened since is still open. */
+const closeCase = (frame: Frame): void => {
+  const open = frame.opens.at(-1);
+  if (open === "case" || open === "braced case") {
+    frame.opens.pop();
+    frame.cases -= 1;
+    frame.clause = "commands";
+  }
+};
+
+/** What an open `case`'s subject, `in` and patterns make of the next word: among its patterns only its end means anything. */
+const CASE_WORDS: Record<
+  Exclude<Clause, "commands" | "grouped">,
+  (frame: Frame, word: string, bare: boolean, parser: Parser) => void
+> = {
+  in: (frame, word, bare, parser) => {
+    const braced = bare && parser === "zsh" && word === "{";
+    if (braced) {
+      frame.opens.pop();
+      frame.opens.push("braced case");
+    }
+    frame.clause = braced || (bare && word === "in") ? "patterns" : "commands";
+  },
+  patterns: (frame, word, bare, parser) => {
+    // zsh ends either kind of `case` with either word.
+    if (bare && (word === "esac" || (parser === "zsh" && word === "}"))) {
+      closeCase(frame);
+      frame.place = nameAt(word, bare, parser);
+    }
+  },
+  subject: (frame) => {
+    frame.clause = "in";
+  },
+};
+
+/** zsh's `}` among commands closes the innermost group, which a name may follow, or `case a { … }`. */
+const closeBrace = (frame: Frame): boolean => {
+  const open = frame.opens.at(-1);
+  if (open === "group") {
+    frame.opens.pop();
+    frame.place = "brace";
+  } else if (open === "braced case") {
+    closeCase(frame);
+    frame.place = "brace";
+  }
+  return open === "group" || open === "braced case";
+};
+
+/** Reads a word that belongs to what is open rather than to a command, and says whether it did. */
+const readOpen = (frame: Frame, word: string, bare: boolean, parser: Parser): boolean => {
+  if (frame.opens.at(-1) === "pattern group") {
+    return true;
+  }
+  if (frame.clause === "grouped") {
+    frame.clause = "commands";
+  }
+  if (frame.clause !== "commands") {
+    CASE_WORDS[frame.clause](frame, word, bare, parser);
+    return true;
+  }
+  return parser === "zsh" && bare && word === "}" && frame.place !== "test" && closeBrace(frame);
+};
+
+/**
+ * Reads a command's word as a parser does: an unquoted `case` or `esac` where a
+ * name may be opens or closes one (`echo case` opens nothing, `repeat 3 case`
+ * does under zsh), and a pattern opens nothing.
+ */
+const readWord = (frame: Frame, word: string, bare: boolean, parser: Parser): void => {
+  if (readOpen(frame, word, bare, parser)) {
     return;
   }
-  if (word === "case") {
+  const named = bare && NAMED.has(frame.place);
+  if (named && word === "case") {
+    frame.opens.push("case");
     frame.cases += 1;
-  } else if (word === "esac" && frame.cases > 0) {
-    frame.cases -= 1;
+    frame.clause = "subject";
+  } else if (bare && word === "esac" && (named || frame.place === "closed")) {
+    closeCase(frame);
+  } else if (bare && word === "{" && parser === "zsh" && (named || frame.place === "names")) {
+    frame.opens.push("group");
   }
-  frame.named = !KEYWORDS.has(word);
+  frame.place = STEPS[frame.place](word, bare, parser);
 };
 
 const joinGroup = (frame: Frame): void => {
@@ -153,14 +338,20 @@ const joinGroup = (frame: Frame): void => {
 };
 
 /**
- * Reads one line. A strict reading follows bash. A flat one takes every quote
- * and opener for a command start, and every heredoc or comment line for a line
- * of commands, so it needs no recursion and finds a command wherever one could start.
+ * Reads one line. A strict reading follows bash, save where its dialect reads a
+ * `case`. A flat one takes every quote and opener for a command start, and every
+ * heredoc or comment line for a line of commands, so it needs no recursion and
+ * finds a command wherever one could start.
  */
 class Scanner {
   readonly pipelines: Pipeline[] = [];
   /** A quote never closed (bash refuses the line) or nesting too deep to follow. */
   unreadable = false;
+  /**
+   * Whether a dialect may read the line apart from bash: it has an unquoted
+   * `case`, or a `$((` bash reads as subshells, which dash reads as arithmetic.
+   */
+  divergent = false;
   private at = 0;
   private depth: number;
   private frame: Frame | null = null;
@@ -168,11 +359,13 @@ class Scanner {
   /** Where a `((` was read to its end and turned out to open subshells, so it is not taken for arithmetic again. */
   private readonly subshells = new Set<number>();
   private readonly text: string;
+  private readonly reading: Reading;
   private readonly strict: boolean;
 
-  constructor(text: string, strict: boolean, depth = 0) {
+  constructor(text: string, reading: Reading, depth = 0) {
     this.text = text;
-    this.strict = strict;
+    this.reading = reading;
+    this.strict = reading !== "flat";
     this.depth = depth;
   }
 
@@ -180,12 +373,14 @@ class Scanner {
   list(close: string | null): Words[] {
     const frame: Frame = {
       cases: 0,
+      clause: "commands",
       fed: [],
       group: [],
       input: [],
-      named: false,
+      opens: [],
       piped: false,
       pipeline: [],
+      place: "name",
       printed: [],
       quoted: false,
       redirected: false,
@@ -233,6 +428,14 @@ class Scanner {
       this.at += opener.length;
       return true;
     }
+    if (char === "(" && frame.clause === "patterns" && frame.word === null) {
+      // A pattern may open with one: `case a in (b) …`. zsh reads to its `)` as pattern, spaces and all.
+      if (this.reading === "zsh") {
+        frame.opens.push("pattern group");
+      }
+      this.at += 1;
+      return true;
+    }
     if (char === "(") {
       this.parenthesis(frame);
       return true;
@@ -254,7 +457,7 @@ class Scanner {
     if (parens !== undefined && frame.words.length > 0) {
       // A definition runs nothing, so its name is no command: `vercel() { … }` deploys nothing.
       frame.words = [];
-      frame.named = false;
+      frame.place = "name";
       this.at += parens.length;
       return;
     }
@@ -298,12 +501,23 @@ class Scanner {
       joinGroup(frame);
       this.endCommand(frame);
       frame.piped = true;
+      if (frame.clause === "grouped") {
+        frame.clause = "patterns";
+      }
       return true;
     }
     // A pipe at the end of a line feeds the next line: `curl … |`, then `bash`.
     const piping = frame.pipeline.length > 0 && frame.words.length === 0 && frame.word === null;
     if (operator !== "\n" || !piping) {
       this.endPipeline(frame);
+    }
+    if (operator === ")" && frame.opens.at(-1) === "pattern group") {
+      frame.opens.pop();
+      frame.clause = frame.opens.at(-1) === "pattern group" ? "patterns" : "grouped";
+    } else if (operator === ")" && (frame.clause === "patterns" || frame.clause === "grouped")) {
+      frame.clause = "commands";
+    } else if (ITEM_ENDS.has(operator) && frame.cases > 0) {
+      frame.clause = "patterns";
     }
     if (operator === "\n") {
       this.heredocBodies();
@@ -403,6 +617,9 @@ class Scanner {
     if (!this.strict || this.subshells.has(start)) {
       return null;
     }
+    if (this.reading === "posix" && opening === 3) {
+      return this.dashArithmetic();
+    }
     const before = {
       pending: [...this.pending],
       pipelines: this.pipelines.length,
@@ -421,6 +638,7 @@ class Scanner {
       return this.text.slice(start, this.at);
     }
     this.subshells.add(start);
+    this.divergent ||= opening === 3;
     this.at = start;
     this.pending.splice(0);
     pushAll(this.pending, before.pending);
@@ -428,6 +646,21 @@ class Scanner {
     this.frame?.printed.splice(before.printed);
     this.unreadable = before.unreadable;
     return null;
+  }
+
+  /** dash reads any `$((` as arithmetic, to the first `))` outside parentheses: a lone `)` is text to it. */
+  private dashArithmetic(): string {
+    const start = this.at;
+    this.at += 3;
+    if (this.descend()) {
+      let closed = this.through("(", ")", true);
+      while (closed && this.text.charAt(this.at) !== ")") {
+        closed = this.through("(", ")", true);
+      }
+      this.at += closed ? 1 : 0;
+      this.depth -= 1;
+    }
+    return this.text.slice(start, this.at);
   }
 
   /** Reads past the `close` that matches, counting nested `open`s: inside, only quotes, escapes, substitutions and expansions are more than text. */
@@ -465,10 +698,11 @@ class Scanner {
     this.at = Math.min(end + 1, this.text.length);
     this.unreadable ||= end >= this.text.length;
     if (this.descend()) {
-      const inner = new Scanner(unescaped, this.strict, this.depth);
+      const inner = new Scanner(unescaped, this.reading, this.depth);
       pushAll(this.frame?.printed ?? [], inner.list(null));
       pushAll(this.pipelines, inner.pipelines);
       this.unreadable ||= inner.unreadable;
+      this.divergent ||= inner.divergent;
       this.depth -= 1;
     }
     return this.text.slice(start, this.at);
@@ -629,7 +863,12 @@ class Scanner {
       return;
     }
     if (frame.target === "argument") {
-      countCase(frame, frame.word);
+      const bare = !frame.quoted;
+      this.divergent ||= bare && frame.word === "case";
+      const { reading } = this;
+      if (reading !== "flat" && reading !== "bash-3.2") {
+        readWord(frame, frame.word, bare, reading);
+      }
       frame.words.push(frame.word);
     } else if (frame.target === "redirect") {
       frame.redirects.push(frame.word);
@@ -665,7 +904,7 @@ class Scanner {
     frame.redirects = [];
     frame.input = [];
     frame.printed = [];
-    frame.named = false;
+    frame.place = "name";
     frame.redirected = false;
     frame.target = "argument";
   }
@@ -684,20 +923,45 @@ class Scanner {
   }
 }
 
+const read = (line: string, reading: Reading): Scanner => {
+  const scanner = new Scanner(line, reading);
+  scanner.list(null);
+  return scanner;
+};
+
 /** The flat reading alone, for text too deep to follow: more commands than bash would run, found without recursing. */
-export const lexFlat = (line: string): Pipeline[] => {
-  const flat = new Scanner(line, false);
-  flat.list(null);
-  return flat.pipelines;
+export const lexFlat = (line: string): Pipeline[] => read(line, "flat").pipelines;
+
+/** Each pipeline the readings found, once however many found it. */
+const union = (readings: readonly Scanner[]): Pipeline[] => {
+  const seen = new Set<string>();
+  const pipelines: Pipeline[] = [];
+  for (const reading of readings) {
+    for (const pipeline of reading.pipelines) {
+      const key = JSON.stringify(pipeline);
+      if (!seen.has(key)) {
+        seen.add(key);
+        pipelines.push(pipeline);
+      }
+    }
+  }
+  return pipelines;
 };
 
 /**
  * Every pipeline a command line runs, in the order bash starts them: a
- * substitution's before the command it feeds. A line the strict reading cannot
- * follow is read flat as well, so a stray quote cannot hide what comes after it.
+ * substitution's before the command it feeds. A line dialects may read apart
+ * is read in each as well, and a line the strict reading cannot follow is read
+ * flat, so neither a stray quote nor one shell's grammar can hide what comes
+ * after it.
  */
 export const lexLine = (line: string): Pipeline[] => {
-  const strict = new Scanner(line, true);
-  strict.list(null);
-  return strict.unreadable ? [...strict.pipelines, ...lexFlat(line)] : strict.pipelines;
+  const bash = read(line, "bash");
+  const readings = bash.divergent
+    ? [bash, read(line, "zsh"), read(line, "posix"), read(line, "bash-3.2")]
+    : [bash];
+  const pipelines = bash.divergent ? union(readings) : bash.pipelines;
+  return readings.some((reading) => reading.unreadable)
+    ? [...pipelines, ...lexFlat(line)]
+    : pipelines;
 };
