@@ -1,4 +1,4 @@
-import { betGoal, betMoney, betProgress, ledgerOrder } from "@/shared/bets";
+import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, betProgress, ledgerOrder } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { INTEGRATION_LABELS, businessTypeById, isLead, serializeBlockedAsk } from "@/shared/domain";
 import type {
@@ -70,8 +70,7 @@ const budgetLine = (company: Company): string => {
   if (company.budget.mode !== "capped") {
     return `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
   }
-  const critical = company.spentUsd >= company.budget.capUsd * 0.8;
-  return `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent${critical ? " — over 80%: critical work only, keep runs short" : ""}.`;
+  return `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent.`;
 };
 
 /** What the allocator decided this run is for: an `Allocation` with its ids resolved. */
@@ -194,7 +193,7 @@ const assignmentBrief = (
           widen
             ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
             : `${where}.`,
-          `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about $1, so a budget under $3 buys almost nothing; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
+          `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}, so a budget that covers fewer than three runs buys almost nothing; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
         ],
         title: `Open the next bet for ${product?.name ?? company.name}`,

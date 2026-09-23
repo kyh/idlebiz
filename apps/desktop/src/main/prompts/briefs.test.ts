@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { autonomousBrief } from "./briefs";
+import { RUN_COST_ESTIMATE_USD } from "@/shared/bets";
 import type { Company, Employee, Product, RunMetrics } from "@/shared/domain";
+import { formatUsd } from "@/shared/format";
 
 const company: Company = {
   autopilot: true,
@@ -91,5 +93,20 @@ describe("the brief's real numbers", () => {
     });
     expect(text).toContain("+$2.50 since your last run");
     expect(text).toContain("unchanged since your last run");
+  });
+});
+
+describe("the brief's budget", () => {
+  it("states a capped budget as a fact, with no advice about how close it is", () => {
+    const text = briefFor({ ...company, budget: { capUsd: 10, mode: "capped" }, spentUsd: 9 }, [
+      product,
+    ]);
+    expect(text).toContain("AI budget: $9.00 of $10.00 spent.");
+    expect(text).not.toContain("critical work only");
+  });
+
+  it("prices a run at the estimate the allocator counts runs in flight at", () => {
+    const text = briefFor(company, [product]);
+    expect(text).toContain(`One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}`);
   });
 });
