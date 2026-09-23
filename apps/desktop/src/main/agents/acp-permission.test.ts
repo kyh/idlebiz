@@ -244,7 +244,7 @@ describe("a tool call the agent announces", () => {
       );
       expect(end.kind).toBe("completed");
       expect(names).toEqual([name]);
-      expect(asks.map((ask) => ask.tool)).toEqual([{ command: title, kind: "shell" }]);
+      expect(asks.map((ask) => ask.tool)).toEqual([{ kind: "unknown", title }]);
     },
   );
 });
