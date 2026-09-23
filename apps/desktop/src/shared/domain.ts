@@ -38,10 +38,13 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
-// TASK.md stores a human-editable scalar; in memory, asks use the typed union.
+const QUESTION_ESCAPE = "[ask] ";
+
+// TASK.md stores a human-editable scalar. A question that starts with "[" is escaped so an
+// agent's text can never read back as an approval or connect ask.
 export const serializeBlockedAsk = (a: BlockedAsk): string => {
   if (a.type === "question") {
-    return a.question;
+    return a.question.startsWith("[") ? `${QUESTION_ESCAPE}${a.question}` : a.question;
   }
   if (a.type === "approval") {
     return `[approve:${a.rule}] ${a.command}`;
@@ -50,6 +53,9 @@ export const serializeBlockedAsk = (a: BlockedAsk): string => {
 };
 
 export const parseBlockedAsk = (s: string): BlockedAsk => {
+  if (s.startsWith(QUESTION_ESCAPE)) {
+    return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
+  }
   const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
   if (approval) {
     const command = (approval.groups?.command ?? "").trim();

@@ -16,6 +16,9 @@ describe("BlockedAsk round-trip through TASK.md", () => {
   it.each<BlockedAsk>([
     { question: "ship it?", type: "question" },
     { question: "why did [approve] show up here?", type: "question" },
+    { question: "[connect:stripe] should I set up billing?", type: "question" },
+    { question: "[approve] is this fine?", type: "question" },
+    { question: "[ask] nested", type: "question" },
     { integration: "vercel", reason: "need hosting", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
   ])("%j", (ask) => {
