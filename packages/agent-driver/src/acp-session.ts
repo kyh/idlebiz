@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
-import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
+import { client, ndJsonStream, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import type {
   ClientCapabilities,
   NewSessionRequest,
@@ -26,6 +26,12 @@ const fmtMs = (ms: number): string =>
 
 /** Longer than the 2s both adapters give their CLI after stdin closes before signalling it. */
 const TEARDOWN_GRACE_MS = 5000;
+
+/** How long an exited agent's pipes get to close: its own children can hold them open for good. */
+const EXIT_CLOSE_GRACE_MS = 250;
+
+/** How long a dropped connection waits for the agent's exit, which says why it died. */
+const DROPPED_CONNECTION_GRACE_MS = 1000;
 
 // Claude's cost extension reports this process's running total, including on resume.
 const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
@@ -354,10 +360,11 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       pokeIdle();
       keepStderr(d);
     });
+    const died = (code: number | null): void =>
+      settle(failed(stderrTail() || `${bin} exited with code ${code} mid-turn`));
     child.on("error", (err: Error) => settle(failed(`${bin}: ${err.message}`)));
-    child.on("close", (code) =>
-      settle(failed(stderrTail() || `${bin} exited with code ${code} mid-turn`)),
-    );
+    child.on("close", died);
+    child.on("exit", (code) => setTimeout(() => died(code), EXIT_CLOSE_GRACE_MS).unref());
 
     pokeIdle();
     if (opts.maxSessionMs > 0) {
@@ -533,12 +540,18 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       try {
         await turn();
       } catch (error) {
-        const limit = limitOf(error);
-        settle(
-          limit
-            ? result({ error: errorMessage(error), kind: "limited", resetsAt: limit.resetsAt })
-            : failed(errorMessage(error)),
-        );
+        if (error instanceof RequestError) {
+          const limit = limitOf(error);
+          settle(
+            limit
+              ? result({ error: error.message, kind: "limited", resetsAt: limit.resetsAt })
+              : failed(error.message),
+          );
+          return;
+        }
+        // Anything else is the connection dropping, and a dying agent drops it before its exit
+        // can report the stderr that says why: that report wins unless no exit follows.
+        setTimeout(() => settle(failed(errorMessage(error))), DROPPED_CONNECTION_GRACE_MS).unref();
       }
     })();
   });

@@ -17,6 +17,22 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
 });
 `;
 
+/** An ACP agent that opens a session, then runs `onPrompt` (JS that can use `id` and `send`). */
+const agentThat = (onPrompt: string): string => `
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method } = JSON.parse(line);
+  if (method === "initialize") send({ id, result: { agentCapabilities: {}, protocolVersion: 1 } });
+  if (method === "session/new") send({ id, result: { sessionId: "s1" } });
+  if (method === "session/set_mode") send({ id, result: {} });
+  if (method === "session/prompt") { ${onPrompt} }
+});
+`;
+
+const PANIC = "thread 'main' panicked at src/main.rs:12:5";
+const panics = `process.stderr.write(${JSON.stringify(PANIC)}, () => process.exit(101));`;
+const orphans = `require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"], { stdio: "inherit" });`;
+
 interface SessionFailure {
   actions: string[];
   category: string;
@@ -118,6 +134,26 @@ describe("how a turn ends", () => {
       error: "agent stopped: refusal\nYou've hit your usage limit",
       kind: "failed",
     });
+  });
+});
+
+describe("a turn whose agent dies mid-prompt", () => {
+  it("fails with what the agent said on stderr, not the connection it dropped", async () => {
+    const { end } = await turn(agentThat(panics));
+    expect(end).toEqual({ error: PANIC, kind: "failed" });
+  });
+
+  it("fails on the agent's exit though a child of its own holds its pipes open", async () => {
+    const { end } = await turn(agentThat(`${orphans}\n${panics}`));
+    expect(end).toEqual({ error: PANIC, kind: "failed" });
+  });
+
+  it("fails at once with the agent's own error when it answers the prompt with one", async () => {
+    const answers = `send({ id, error: { code: -32603, message: "Internal error" } });
+process.stderr.write("shutting down");
+setTimeout(() => process.exit(1), 200);`;
+    const { end } = await turn(agentThat(answers));
+    expect(end).toEqual({ error: "Internal error", kind: "failed" });
   });
 });
 
