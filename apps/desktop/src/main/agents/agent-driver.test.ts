@@ -9,7 +9,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("@/main/store/store");
-const { decidePermission, memoryAfter, outcomeOf } = await import("./agent-driver");
+const { agentDriver, decidePermission, memoryAfter, outcomeOf } = await import("./agent-driver");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -65,6 +65,22 @@ describe("outcomeOf", () => {
   it("does not hold the task to a turn the app stopped, unless it finished anyway", () => {
     expect(outcomeOf(failed, null, true)).toEqual({ kind: "interrupted" });
     expect(outcomeOf({ kind: "completed" }, null, true)).toEqual({ kind: "done" });
+  });
+});
+
+describe("rest", () => {
+  it("parks a runner until its limit lifts, and only that runner", () => {
+    const until = Date.now() + 60_000;
+    agentDriver.rest("claude", until);
+    expect(agentDriver.restingRunner("claude")).toBe(until);
+    expect(agentDriver.restingRunner("codex")).toBeNull();
+    expect(agentDriver.restingRunners()).toEqual({ claude: until });
+  });
+
+  it("wakes a runner once its limit has lifted", () => {
+    agentDriver.rest("codex", Date.now() - 1);
+    expect(agentDriver.restingRunner("codex")).toBeNull();
+    expect(agentDriver.restingRunners()).not.toHaveProperty("codex");
   });
 });
 

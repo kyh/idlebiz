@@ -1,16 +1,14 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { tmpdir } from "node:os";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
-import { acpAgentFor, agentDriver } from "@/main/agents/agent-driver";
-import { runAcpTurn } from "@repo/agent-driver/acp-session";
+import { agentDriver } from "@/main/agents/agent-driver";
 import { foundingTeamPrompt } from "@/main/prompts/onboarding";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
-import type { AgentRunner, AuthFlowEvent, BusinessTypeId } from "@/shared/domain";
+import type { AuthFlowEvent, BusinessTypeId } from "@/shared/domain";
 import { HireCandidateSchema } from "@/shared/hire";
 import type { HireCandidate } from "@/shared/hire";
 
@@ -123,34 +121,13 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
 
 const CandidatesSchema = z.array(HireCandidateSchema).min(3).max(8);
 
-const completeOneShot = async (prompt: string): Promise<string> => {
-  const runner: AgentRunner = agentDriver.pickRunner(0);
-  const res = await runAcpTurn({
-    agent: acpAgentFor(runner),
-    cwd: tmpdir(),
-    idleTimeoutMs: 3 * 60_000,
-    maxSessionMs: 5 * 60_000,
-    onEvent: () => {
-      /* empty */
-    },
-    // Roster generation needs no tools or filesystem access.
-    onPermission: () => Promise.resolve({ allow: false }),
-    prompt,
-    systemPrompt: "",
-  });
-  if (res.end.kind !== "completed") {
-    throw new Error(res.end.error);
-  }
-  return res.summary;
-};
-
 export const generateCandidates = async (input: {
   companyName: string;
   mission: string;
   businessType: BusinessTypeId;
 }): Promise<HireCandidate[]> => {
   const prompt = foundingTeamPrompt(input.companyName, input.mission, input.businessType);
-  const raw = await completeOneShot(prompt);
+  const raw = await agentDriver.completeOneShot(prompt);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
   return CandidatesSchema.parse(parseJson(jsonText));
 };

@@ -19,6 +19,7 @@ import { addUsage } from "@repo/agent-driver/events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -47,7 +48,7 @@ const resolveFromApp = createRequire(import.meta.url);
 const unpacked = (file: string): string =>
   file.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
 
-export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
+const acpAgentFor = (runner: AgentRunner): AcpAgent => {
   const adapter: RunnerAdapter = RUNNERS[runner];
   // The packaged executable is Electron; child agents need its Node mode.
   const env: AcpAgent["env"] = { ELECTRON_RUN_AS_NODE: "1" };
@@ -263,6 +264,35 @@ class AgentDriver {
     return until;
   }
 
+  /** Park a runner until its usage limit lifts; pickRunner prefers the awake ones meanwhile. */
+  rest(runner: AgentRunner, until: number): void {
+    this.restingUntil.set(runner, until);
+  }
+
+  /** One turn with no tools, files or memory: its final message, or a throw with why it ended short. */
+  async completeOneShot(prompt: string): Promise<string> {
+    const runner = this.pickRunner(0);
+    const res = await runAcpTurn({
+      agent: acpAgentFor(runner),
+      cwd: tmpdir(),
+      idleTimeoutMs: 3 * 60_000,
+      maxSessionMs: 5 * 60_000,
+      onEvent: () => {
+        /* empty */
+      },
+      onPermission: () => Promise.resolve({ allow: false }),
+      prompt,
+      systemPrompt: "",
+    });
+    if (res.end.kind === "limited") {
+      this.rest(runner, res.end.resetsAt);
+    }
+    if (res.end.kind !== "completed") {
+      throw new Error(res.end.error);
+    }
+    return res.summary;
+  }
+
   async runTask(
     emp: Employee,
     company: Company,
@@ -361,7 +391,7 @@ class AgentDriver {
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // parked whatever else the run says: an ask raised before the limit hit must not hide it
       if (res.end.kind === "limited") {
-        this.restingUntil.set(emp.runner, res.end.resetsAt);
+        this.rest(emp.runner, res.end.resetsAt);
       }
       const outcome = outcomeOf(res.end, tools.asks.current(), signal.aborted);
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
