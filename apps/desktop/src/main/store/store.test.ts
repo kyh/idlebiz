@@ -132,7 +132,7 @@ describe("the shipping log", () => {
   it("moves a task that settles done out of the open queue into shipped/", () => {
     const co = found();
     const emp = store.createEmployee({ ...hire("Priya") });
-    const task = store.createTask({ title: "Ship it" });
+    const task = store.createTask({ origin: "founder", title: "Ship it" });
     finish(task.id, emp.id, "shipped");
 
     expect(existsSync(path.join(tasksDir(co.id), task.id))).toBe(false);
@@ -145,12 +145,12 @@ describe("the shipping log", () => {
   it("reads the shipping log from disk only when asked, and boot shelves done work left in the queue", () => {
     const co = found();
     const emp = store.createEmployee({ ...hire("Sana") });
-    const shipped = store.createTask({ title: "Done before" });
+    const shipped = store.createTask({ origin: "founder", title: "Done before" });
     finish(shipped.id, emp.id, "one");
-    const open = store.createTask({ title: "Still open" });
+    const open = store.createTask({ origin: "founder", title: "Still open" });
 
     // a save from before shipped/ existed: a done package still under tasks/
-    const legacy = store.createTask({ title: "Legacy done" });
+    const legacy = store.createTask({ origin: "founder", title: "Legacy done" });
     store.claimTask(legacy.id, emp.id);
     store.lockTaskForRun(legacy.id, "run-2");
     store.settleTask(legacy.id, "run-2", { kind: "done", summary: "two" });
@@ -173,11 +173,11 @@ describe("the shipping log", () => {
     found();
     const emp = store.createEmployee({ ...hire("Wren") });
     for (const slug of ["same-title", "same-title-2"]) {
-      const task = store.createTask({ title: "Same title" });
+      const task = store.createTask({ origin: "founder", title: "Same title" });
       expect(task.id).toBe(slug);
       finish(task.id, emp.id, "done");
     }
-    expect(store.createTask({ title: "Same title" }).id).toBe("same-title-3");
+    expect(store.createTask({ origin: "founder", title: "Same title" }).id).toBe("same-title-3");
   });
 });
 
@@ -220,7 +220,7 @@ describe("products", () => {
     const emp = store.createEmployee({ ...hire("Ravi") });
     const [first] = store.listProducts();
     const gadget = store.createProduct({ description: "x", name: "Gadget" });
-    const task = store.createTask({ productId: gadget.id, title: "Ship it" });
+    const task = store.createTask({ origin: "founder", productId: gadget.id, title: "Ship it" });
     finish(task.id, emp.id, "done");
     store.recordShip(task.productId, "shipped");
     expect(store.getProduct(gadget.id)?.ships).toBe(1);
@@ -253,8 +253,8 @@ describe("scheduler queue admission", () => {
     found({ capUsd: 0, mode: "capped" });
     const employee = store.createEmployee({ ...hire("Priya") });
     const teammate = store.createEmployee({ ...hire("Sana") });
-    const task = store.createTask({ title: "First task" });
-    const next = store.createTask({ title: "Next task" });
+    const task = store.createTask({ origin: "founder", title: "First task" });
+    const next = store.createTask({ origin: "founder", title: "Next task" });
     store.claimTask(task.id, employee.id);
     store.claimTask(next.id, teammate.id);
 
@@ -271,7 +271,7 @@ describe("a write that fails", () => {
   it("leaves the task as the save has it, free to lock again", () => {
     const co = found();
     const employee = store.createEmployee({ ...hire("Priya") });
-    const task = store.createTask({ title: "Ship it" });
+    const task = store.createTask({ origin: "founder", title: "Ship it" });
     store.claimTask(task.id, employee.id);
     const dir = path.join(tasksDir(co.id), task.id);
     chmodSync(dir, 0o555);
@@ -290,7 +290,7 @@ describe("a write that fails", () => {
   it("still hands a failed run's task back to the queue", () => {
     const co = found();
     const employee = store.createEmployee({ ...hire("Priya") });
-    const task = store.createTask({ title: "Ship it" });
+    const task = store.createTask({ origin: "founder", title: "Ship it" });
     store.claimTask(task.id, employee.id);
     store.lockTaskForRun(task.id, "run-1");
     const dir = path.join(tasksDir(co.id), task.id);
@@ -389,15 +389,15 @@ describe("active company ownership", () => {
     if (!product) {
       throw new Error("founding must create a product");
     }
-    const queued = store.createTask({ title: "Ship it" });
+    const queued = store.createTask({ origin: "founder", title: "Ship it" });
     store.claimTask(queued.id, employee.id);
-    const running = store.createTask({ title: "In flight" });
+    const running = store.createTask({ origin: "founder", title: "In flight" });
     store.claimTask(running.id, employee.id);
     store.lockTaskForRun(running.id, "old-run");
     store.postTeamMessage(employee.id, "existing room history");
     copyCompany(older.id, "newer", older.createdAt + 1);
     const oldOnly = store.createEmployee({ ...hire("Old only") });
-    const oldTask = store.createTask({ title: "Old only" });
+    const oldTask = store.createTask({ origin: "founder", title: "Old only" });
     store.claimTask(oldTask.id, oldOnly.id);
     const before = saveSnapshot(older.id);
 
@@ -437,7 +437,7 @@ describe("active company ownership", () => {
     store.setAutopilot(false);
     store.createEmployee(hire("Someone"));
     store.createProduct({ description: "Another", name: "Another" });
-    store.createTask({ title: "Work" });
+    store.createTask({ origin: "founder", title: "Work" });
     store.postTeamMessage(null, "hello");
     store.grantApproval("some-task", "a command");
     store.recordSpend(10);
@@ -453,7 +453,9 @@ describe("active company ownership", () => {
     expect(store.getEmployee("nobody")).toBeNull();
     expect(store.listQueuedTasks()).toEqual([]);
     expect(() => store.listEmployees()).toThrow("no company is loaded");
-    expect(() => store.createTask({ title: "No" })).toThrow("no company is loaded");
+    expect(() => store.createTask({ origin: "founder", title: "No" })).toThrow(
+      "no company is loaded",
+    );
   });
 
   it("does not migrate an inactive legacy save", () => {
@@ -499,7 +501,7 @@ describe("active company ownership", () => {
     (failure) => {
       const older = found({ capUsd: 0, mode: "capped" });
       const employee = store.createEmployee({ ...hire("Priya") });
-      const task = store.createTask({ title: "Waiting" });
+      const task = store.createTask({ origin: "founder", title: "Waiting" });
       store.claimTask(task.id, employee.id);
       copyCompany(older.id, "broken", older.createdAt + 1);
       const file = path.join(root, "broken", "COMPANY.md");
@@ -606,11 +608,11 @@ describe("what a run leaves behind", () => {
   it("keeps their last ship, for a dialogue to build on without reading the log", () => {
     found();
     const emp = store.createEmployee(hire("Priya"));
-    const quiet = store.createTask({ title: "Quiet" });
+    const quiet = store.createTask({ origin: "founder", title: "Quiet" });
     finish(quiet.id, emp.id, "");
     expect(store.getEmployee(emp.id)?.lastShip).toBeNull();
 
-    const task = store.createTask({ title: "Ship it" });
+    const task = store.createTask({ origin: "founder", title: "Ship it" });
     finish(task.id, emp.id, "x".repeat(600));
     store.initStore();
 
@@ -635,7 +637,7 @@ describe("what a run leaves behind", () => {
   it("ships the work of someone released mid-run", () => {
     found();
     const emp = store.createEmployee(hire("Priya"));
-    const task = store.createTask({ title: "Ship it" });
+    const task = store.createTask({ origin: "founder", title: "Ship it" });
     store.claimTask(task.id, emp.id);
     store.lockTaskForRun(task.id, "run-1");
     store.archiveEmployee(emp.id);
@@ -686,7 +688,7 @@ const firstProduct = () => {
 const workOn = (betId: string) => {
   const priya = store.createEmployee({ ...hire("Priya") });
   const task = (title: string, run: "queue" | "start" | "ask" | null) => {
-    const t = store.createTask({ assigneeId: priya.id, betId, title });
+    const t = store.createTask({ assigneeId: priya.id, betId, origin: "work", title });
     if (run !== null) {
       store.claimTask(t.id, priya.id);
     }
@@ -804,7 +806,7 @@ describe("bets", () => {
     const bet = launch(product.id);
     const other = launch(product.id);
     const states = workOn(bet.id);
-    const untouched = store.createTask({ betId: other.id, title: "Elsewhere" });
+    const untouched = store.createTask({ betId: other.id, origin: "work", title: "Elsewhere" });
     store.setBetReading(bet.id, 60);
     expect(store.judgeBets(1).map((b) => b.state.kind)).toEqual(["won"]);
     expect(states()).toEqual(["dead", "dead", "running", "dead"]);
@@ -819,6 +821,7 @@ describe("bets", () => {
     const bet = launch(side.id);
     const task = store.createTask({
       betId: bet.id,
+      origin: "work",
       productId: side.id,
       title: "Post",
     });
@@ -839,6 +842,7 @@ describe("bets", () => {
     const task = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
+      origin: "work",
       productId: side.id,
       title: "Post",
     });
@@ -976,7 +980,7 @@ describe("archives", () => {
   it("refuse a release or a retirement the move cannot make, and nothing leaves", () => {
     const co = found();
     const emp = store.createEmployee({ ...hire("Priya") });
-    const task = store.createTask({ assigneeId: emp.id, title: "Ship it" });
+    const task = store.createTask({ assigneeId: emp.id, origin: "founder", title: "Ship it" });
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
     for (const archive of [alumniDir(co.id), retiredDir(co.id)]) {
@@ -1004,7 +1008,7 @@ const block = (taskId: string, employeeId: string): void => {
 describe("a release", () => {
   it("refuses a claim for anyone off the roster", () => {
     foundTeam();
-    const task = store.createTask({ title: "Ship it" });
+    const task = store.createTask({ origin: "founder", title: "Ship it" });
     store.archiveEmployee("priya");
     expect(store.claimTask(task.id, "ghost")).toBeNull();
     expect(store.claimTask(task.id, "priya")).toBeNull();
@@ -1014,9 +1018,18 @@ describe("a release", () => {
   it("leaves the leaver's unstarted work dead on the lead, holding no bet's run", () => {
     foundTeam();
     const bet = launch(firstProduct().id);
-    const queued = store.createTask({ assigneeId: "priya", betId: bet.id, title: "Post it" });
+    const queued = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
     store.claimTask(queued.id, "priya");
-    const todo = store.createTask({ assigneeId: "priya", title: "Answer the founder" });
+    const todo = store.createTask({
+      assigneeId: "priya",
+      origin: "founder",
+      title: "Answer the founder",
+    });
 
     expect(store.archiveEmployee("priya")?.rehomed).toBe(2);
 
@@ -1036,11 +1049,11 @@ describe("a release", () => {
     foundTeam();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(firstProduct().id);
-    const funded = store.createTask({ betId: bet.id, title: "Post it" });
+    const funded = store.createTask({ betId: bet.id, origin: "work", title: "Post it" });
     block(funded.id, "priya");
-    const ping = store.createTask({ title: "Answer the founder" });
+    const ping = store.createTask({ origin: "founder", title: "Answer the founder" });
     block(ping.id, "priya");
-    const dead = store.createTask({ productId: side.id, title: "Side work" });
+    const dead = store.createTask({ origin: "founder", productId: side.id, title: "Side work" });
     store.claimTask(dead.id, "priya");
     store.killProduct(side.id, "dud", null);
 
@@ -1061,7 +1074,7 @@ describe("a release", () => {
 describe("an answered ask", () => {
   it("is history superseded by its continuation, never a ship", () => {
     const co = foundTeam();
-    const ask = store.createTask({ title: "Ship it" });
+    const ask = store.createTask({ origin: "founder", title: "Ship it" });
     block(ask.id, "priya");
 
     const next = store.resolveBlockedWithAnswer(ask.id, "yes");
@@ -1078,6 +1091,17 @@ describe("an answered ask", () => {
     ]);
     expect(store.listOpenTasks().map((t) => t.id)).toEqual([next?.id]);
   });
+
+  it("hands its continuation the reason it existed", () => {
+    foundTeam();
+    const ask = store.createTask({ origin: "routine", title: "Playtest" });
+    block(ask.id, "priya");
+
+    const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+    store.initStore();
+
+    expect(next && store.getTask(next.id)?.origin).toBe("routine");
+  });
 });
 
 describe("the shipping log as served", () => {
@@ -1086,16 +1110,20 @@ describe("the shipping log as served", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(1000);
-      const first = store.createTask({ description: "the brief it ran on", title: "First" });
+      const first = store.createTask({
+        description: "the brief it ran on",
+        origin: "founder",
+        title: "First",
+      });
       finish(first.id, "priya", "one");
       vi.setSystemTime(2000);
-      const quiet = store.createTask({ title: "Quiet" });
+      const quiet = store.createTask({ origin: "founder", title: "Quiet" });
       finish(quiet.id, "priya", "");
-      const ask = store.createTask({ title: "Ask" });
+      const ask = store.createTask({ origin: "founder", title: "Ask" });
       block(ask.id, "mae");
       store.resolveBlockedWithAnswer(ask.id, "yes");
       vi.setSystemTime(3000);
-      const second = store.createTask({ title: "Second" });
+      const second = store.createTask({ origin: "founder", title: "Second" });
       finish(second.id, "mae", "two");
       store.initStore();
 
@@ -1198,7 +1226,7 @@ const seedRetiredRoutine = (companyId: string): void => {
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(3);
+    expect(stampOf(found().id)).toBe(4);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1222,7 +1250,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(3);
+    expect(stampOf(co.id)).toBe(4);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1232,15 +1260,15 @@ describe("the save format", () => {
   it("relabels the answers a format 1 save shelved as ships, and runs only the steps after it", () => {
     const co = found();
     const emp = store.createEmployee({ ...hire("Priya") });
-    const answered = store.createTask({ title: "Ask" });
+    const answered = store.createTask({ origin: "founder", title: "Ask" });
     finish(answered.id, emp.id, "Founder answered: yes");
-    const shipped = store.createTask({ title: "Ship it" });
+    const shipped = store.createTask({ origin: "founder", title: "Ship it" });
     finish(shipped.id, emp.id, "shipped");
     restamp(co.id, 1);
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(3);
+    expect(stampOf(co.id)).toBe(4);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -1274,7 +1302,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(3);
+    expect(stampOf(co.id)).toBe(4);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -1287,13 +1315,13 @@ describe("the save format", () => {
   it("hands a format 2 leaver's funded ask to the lead, and the answer runs on them", () => {
     const co = foundTeam();
     const bet = launch(firstProduct().id);
-    const ask = store.createTask({ betId: bet.id, title: "Post it" });
+    const ask = store.createTask({ betId: bet.id, origin: "work", title: "Post it" });
     block(ask.id, "priya");
     rmSync(employeeAgentDir(co.id, "priya"), { recursive: true });
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(3);
+    expect(stampOf(co.id)).toBe(4);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });

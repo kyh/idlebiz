@@ -112,6 +112,15 @@ export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded"] as co
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+export const TASK_ORIGINS = [
+  "work",
+  "settle",
+  "propose",
+  "routine",
+  "founder",
+  "delegated",
+] as const;
+export type TaskOrigin = (typeof TASK_ORIGINS)[number];
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 export type EmployeeStatus = "idle" | "working";
 
@@ -392,6 +401,8 @@ export interface Task {
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for (a founder ping, a review). */
   betId: string | null;
+  /** Why this task exists; a continuation inherits it. */
+  origin: TaskOrigin;
   title: string;
   description: string | null;
   state: TaskState;

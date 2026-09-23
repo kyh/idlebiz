@@ -158,7 +158,12 @@ describe("company tools", () => {
     });
     expect(answer).toContain("Delegated");
     const [task] = store.listOpenTasks();
-    expect(task).toMatchObject({ assigneeId: "priya", betId: bet?.id, productId: bet?.productId });
+    expect(task).toMatchObject({
+      assigneeId: "priya",
+      betId: bet?.id,
+      origin: "delegated",
+      productId: bet?.productId,
+    });
     expect(assigned).toEqual([task?.id]);
   });
 
@@ -199,7 +204,7 @@ describe("company tools", () => {
   it("tells the lead how much of a released teammate's open work is now theirs", () => {
     const { ctx } = runAs("mae");
     callTool(ctx, "POST /v1/delegate", HANDOFF);
-    store.createTask({ assigneeId: "priya", title: "Answer the founder" });
+    store.createTask({ assigneeId: "priya", origin: "founder", title: "Answer the founder" });
     const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
     expect(answer).toContain("Their open work is yours now: 2 tasks");
     expect(store.openTasksFor("mae")).toHaveLength(2);

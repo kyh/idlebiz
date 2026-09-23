@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
-import type { Budget, Task } from "@/shared/domain";
+import type { Budget, Task, TaskOrigin } from "@/shared/domain";
 import type { RunResult } from "./agents/agent-driver";
 import type { EmployeeRunner } from "./scheduler";
 
@@ -82,6 +82,7 @@ const scripted = () => {
 const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
   const task = store.createTask({
     assigneeId: employeeId,
+    origin: "founder",
     priority,
     title: `Work for ${employeeId}`,
   });
@@ -182,6 +183,7 @@ const runOne = async (result: RunResult, betId: string | null = null) => {
   const task = store.createTask({
     assigneeId: "priya",
     betId,
+    origin: "founder",
     title: "Work",
   });
   store.claimTask(task.id, "priya");
@@ -215,6 +217,7 @@ describe("settling a run", () => {
     const task = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
+      origin: "work",
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
@@ -345,12 +348,59 @@ const openBet = (budgetUsd: number) => {
   });
 };
 
+/** Leave the lead (Priya, the first hire) waiting on the founder over a task of this origin. */
+const blockOnLead = (origin: TaskOrigin) => {
+  const task = store.createTask({ assigneeId: "priya", origin, title: "Ask first" });
+  store.claimTask(task.id, "priya");
+  store.lockTaskForRun(task.id, "run-1");
+  store.settleTask(task.id, "run-1", {
+    ask: { question: "Which way?", type: "question" },
+    kind: "blocked",
+    summary: null,
+  });
+};
+
+const proposing = () =>
+  store.openTasksFor("priya").filter((t) => t.origin === "propose" && t.state.kind === "running");
+
+describe("asking the lead for the next bet", () => {
+  it.each<TaskOrigin>(["routine", "founder", "delegated"])(
+    "goes on while the lead's %s ask waits on the founder",
+    (origin) => {
+      found();
+      blockOnLead(origin);
+      const drain = createScheduler(scripted().driver);
+
+      drain.start();
+      drain.stop();
+
+      expect(proposing()).toHaveLength(1);
+    },
+  );
+
+  it("waits while the lead's last proposal does", () => {
+    found();
+    blockOnLead("propose");
+    const drain = createScheduler(scripted().driver);
+
+    drain.start();
+    drain.stop();
+
+    expect(proposing()).toEqual([]);
+  });
+});
+
 describe("a release", () => {
   it("frees a spent-out bet for the lead to settle once the leaver's queued work goes", () => {
     found();
     const bet = openBet(1);
     store.recordBetSpend(bet.id, 1);
-    const task = store.createTask({ assigneeId: "mae", betId: bet.id, title: "Post it" });
+    const task = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
     store.claimTask(task.id, "mae");
     store.archiveEmployee("mae");
     const drain = createScheduler(scripted().driver);
@@ -369,7 +419,12 @@ describe("a release", () => {
     const bet = openBet(5);
     const { driver, running } = scripted();
     const drain = createScheduler(driver);
-    const task = store.createTask({ assigneeId: "mae", betId: bet.id, title: "Post it" });
+    const task = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
     drain.assign(task.id, "mae");
     running.get("mae")?.({
       ...done(),

@@ -27,14 +27,7 @@ import {
   isRoutineDue,
   resolveMentions,
 } from "@/shared/domain";
-import type {
-  Company,
-  Employee,
-  IntegrationKind,
-  Task,
-  TaskPriority,
-  TaskStatus,
-} from "@/shared/domain";
+import type { Company, Employee, IntegrationKind, Task, TaskStatus } from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -110,7 +103,7 @@ const nextAllocation = (company: Company): Allocation => {
       bets: store.listBets(),
       busy: store.runsInFlight(),
       products: store.listProducts().map((p) => p.id),
-      proposalPending: leadTasks.some((t) => t.betId === null && t.state.kind === "blocked"),
+      proposalPending: leadTasks.some((t) => t.origin === "propose" && t.state.kind === "blocked"),
       runCostUsd: RUN_COST_ESTIMATE_USD,
       stalled,
     },
@@ -294,24 +287,19 @@ class Scheduler {
       store.markRoutineRun(r.id);
       // a routine is about the company, but its work lands on a product:
       // the one waited on longest, like autopilot's own turn
-      this.brief(assignee, routineBrief(r), store.attentionProduct()?.id ?? null);
+      this.brief(assignee, routineBrief(r), {
+        origin: "routine",
+        productId: store.attentionProduct()?.id ?? null,
+      });
     }
   }
 
   private brief(
     emp: Employee,
     brief: TaskBrief,
-    productId: string | null,
-    priority: TaskPriority = "medium",
-    betId: string | null = null,
+    filed: Pick<Task, "origin" | "productId"> & Partial<Pick<Task, "betId" | "priority">>,
   ): Task {
-    const task = store.createTask({
-      betId,
-      productId,
-      ...brief,
-      assigneeId: emp.id,
-      priority,
-    });
+    const task = store.createTask({ ...filed, ...brief, assigneeId: emp.id });
     this.tryAssign(task.id, emp.id);
     return task;
   }
@@ -355,7 +343,10 @@ class Scheduler {
     if (allocation.kind === "propose") {
       const product = allocation.productId === null ? null : store.getProduct(allocation.productId);
       const assignment: Assignment = { kind: "propose", product, widen: allocation.widen };
-      this.brief(emp, heartbeatBrief(company, emp, employees, assignment), product?.id ?? null);
+      this.brief(emp, heartbeatBrief(company, emp, employees, assignment), {
+        origin: "propose",
+        productId: product?.id ?? null,
+      });
       return;
     }
     // a settle run carries its bet too: the call it makes is that bet's cost, and one
@@ -363,7 +354,7 @@ class Scheduler {
     const bet = store.getBet(allocation.betId);
     if (bet) {
       const brief = heartbeatBrief(company, emp, employees, { bet, kind: allocation.kind });
-      this.brief(emp, brief, bet.productId, "medium", bet.id);
+      this.brief(emp, brief, { betId: bet.id, origin: allocation.kind, productId: bet.productId });
     }
   }
 
@@ -478,7 +469,14 @@ class Scheduler {
           t.description === brief.description &&
           (t.state.kind === "queued" || t.state.kind === "todo"),
       );
-    return waiting ?? this.brief(emp, brief, store.productOfEmployee(emp.id)?.id ?? null, "high");
+    return (
+      waiting ??
+      this.brief(emp, brief, {
+        origin: "founder",
+        priority: "high",
+        productId: store.productOfEmployee(emp.id)?.id ?? null,
+      })
+    );
   }
 
   /** Assign, tolerating a busy assignee — the queue picks it up next tick. */

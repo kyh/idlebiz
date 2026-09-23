@@ -165,6 +165,7 @@ const TOOLS = {
       assigneeId: mate.id,
       betId: funded?.id ?? null,
       description,
+      origin: "delegated",
       priority: "medium",
       productId,
       title,

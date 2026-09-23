@@ -1,10 +1,11 @@
 import {
+  TASK_ORIGINS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   parseBlockedAsk,
   serializeBlockedAsk,
 } from "@/shared/domain";
-import type { BlockedAsk, Task, TaskState, TaskStatus } from "@/shared/domain";
+import type { BlockedAsk, Task, TaskOrigin, TaskState, TaskStatus } from "@/shared/domain";
 import {
   PACKAGE_SCHEMA,
   nullableNum,
@@ -47,6 +48,7 @@ const stateFields = (st: TaskState): FrontmatterDoc["metadata"] => {
 export const taskToDoc = (t: Task): FrontmatterDoc => {
   const metadata: FrontmatterDoc["metadata"] = {
     createdAt: t.createdAt,
+    origin: t.origin,
     priority: t.priority,
     status: t.state.kind,
   };
@@ -134,6 +136,10 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
   }
 };
 
+/** An origin the save never wrote, or one this build does not know, reads as the bet's work or the founder's, never a proposal: at worst the lead is asked once more. */
+const parseTaskOrigin = (raw: string | null, betId: string | null): TaskOrigin =>
+  TASK_ORIGINS.find((o) => o === raw) ?? (betId === null ? "founder" : "work");
+
 /** Queued and running belong to someone; a file saying otherwise (a hand edit, a released assignee) is work nobody has. */
 const UNOWNED: TaskState = { kind: "todo" };
 
@@ -144,17 +150,19 @@ export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
   const priority = TASK_PRIORITIES.find((p) => p === prioRaw) ?? "medium";
   const body = doc.body.trim();
   const assigneeId = optStr(m, "assigneeId");
+  const betId = optStr(m, "betId");
   const state = parseTaskState(m);
   return {
     artifacts: strArray(m, "artifacts"),
     assigneeId,
     attempts: optNum(m, "attempts", 0),
-    betId: optStr(m, "betId"),
+    betId,
     companyId,
     completedAt: nullableNum(m, "completedAt"),
     createdAt: optNum(m, "createdAt", Date.now()),
     description: body === "" ? null : body,
     id: reqStr(f, "slug"),
+    origin: parseTaskOrigin(optStr(m, "origin"), betId),
     priority,
     productId: optStr(m, "productId"),
     startedAt: nullableNum(m, "startedAt"),

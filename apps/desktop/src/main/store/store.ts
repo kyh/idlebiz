@@ -87,6 +87,7 @@ import type {
   Routine,
   ShipLine,
   Task,
+  TaskOrigin,
   TaskPriority,
   TaskState,
   TaskStatus,
@@ -236,7 +237,7 @@ const recordIn = <T extends Owned>(
  * quietly drop whatever the newer build added. It is refused instead. A save
  * stamped lower is adopted once at boot, then carries this stamp.
  */
-const SAVE_FORMAT = 3;
+const SAVE_FORMAT = 4;
 
 const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
@@ -868,7 +869,7 @@ const rehomed = (t: Task, leaverName: string, lead: string | null, now: number):
       return deadOnLead();
     }
     case "blocked": {
-      // an unfunded ask on the lead reads as their pending proposal, and would hold every new bet
+      // a departing lead's blocked proposal would read as the next lead's, and hold every new bet
       return t.betId === null ? deadOnLead() : { ...t, assigneeId: lead };
     }
     case "dead": {
@@ -1225,6 +1226,7 @@ export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
 export const createTask = (brief: {
   productId?: string | null;
   betId?: string | null;
+  origin: TaskOrigin;
   title: string;
   description?: string | null;
   priority?: TaskPriority;
@@ -1247,6 +1249,7 @@ export const createTask = (brief: {
     createdAt: Date.now(),
     description: t.description ?? null,
     id,
+    origin: t.origin,
     priority: t.priority ?? "medium",
     productId: t.productId ?? null,
     startedAt: null,
@@ -1479,6 +1482,7 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
   }
   const next = createTask({
     betId: t.betId,
+    origin: t.origin,
     productId: t.productId,
     ...continuationBrief(t, t.state.ask, answer),
     assigneeId: t.assigneeId,

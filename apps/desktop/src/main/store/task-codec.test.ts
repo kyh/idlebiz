@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TASK_ORIGINS } from "@/shared/domain";
 import type { Task, TaskState } from "@/shared/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
@@ -13,6 +14,7 @@ const base: Omit<Task, "state"> = {
   createdAt: 1_700_000_000_000,
   description: "Build it, then ship it.",
   id: "ship-the-thing",
+  origin: "work",
   priority: "high",
   productId: "widget",
   startedAt: 1_700_000_001_000,
@@ -41,6 +43,21 @@ describe("task codec", () => {
   ])("round-trips $kind", (state) => {
     const task: Task = { ...base, state };
     expect(roundTrip(task)).toEqual(task);
+  });
+
+  it.each(TASK_ORIGINS)("round-trips why a %s task exists", (origin) => {
+    const task: Task = { ...base, origin, state: { kind: "todo" } };
+    expect(roundTrip(task)).toEqual(task);
+  });
+
+  it("reads an unknown or missing origin as the bet's work or the founder's, never a proposal", () => {
+    const doc = taskToDoc({ ...base, origin: "propose", state: { kind: "todo" } });
+    const { origin: _unstamped, ...funded } = doc.metadata;
+    const { betId: _unfunded, ...unfunded } = funded;
+    const read = (metadata: typeof doc.metadata) => docToTask({ ...doc, metadata }, "acme").origin;
+    expect(read(funded)).toBe("work");
+    expect(read(unfunded)).toBe("founder");
+    expect(read({ ...unfunded, origin: "hunch" })).toBe("founder");
   });
 
   it("writes the state as the status line and that state's fields only", () => {
