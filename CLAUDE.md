@@ -50,9 +50,13 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget
   at ~$1 each), else the lead settles a spent-out bet, else the lead opens the next one (a
-  run of straight losses asks for new ground), else wait. "Waiting on the founder" is
-  modelled there once: a bet with a blocked task gets no hands — settle runs carry their
-  bet, so that covers them — and a lead whose last proposal is blocked is not asked again.
+  run of straight losses asks for new ground), else wait. That budget check is `hasRoomFor`,
+  and `delegate` asks it too: a bet without room refuses the handoff rather than let its
+  work run unfunded. A bet that leaves open (measured, killed, judged) dead-letters its
+  unstarted work; measuring keeps what waits on the founder, since that step may be what
+  moves the number. "Waiting on the founder" is modelled in `allocate` once: a bet with a
+  blocked task gets no hands — settle runs carry their bet, so that covers them — and a
+  lead whose last proposal is blocked is not asked again.
   Routines and founder pings are the only unfunded work, and a routine is only work that
   recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
   bet's job.

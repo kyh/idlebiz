@@ -82,9 +82,9 @@ export type ClosedBet = Bet & { state: Extract<BetState, { kind: "won" | "killed
 export const isClosed = (bet: Bet): bet is ClosedBet =>
   bet.state.kind === "won" || bet.state.kind === "killed";
 
-/** Open with budget left: the only bets work may be spent on. */
-export const isFundable = (bet: Bet): boolean =>
-  bet.state.kind === "open" && bet.spentUsd < bet.budgetUsd;
+/** Open, with budget left once the runs already in flight bill: the only bets one more run may be spent on. */
+export const hasRoomFor = (bet: Bet, inFlight: number, runCostUsd: number): boolean =>
+  bet.state.kind === "open" && bet.spentUsd + inFlight * runCostUsd < bet.budgetUsd;
 
 /** Open with the budget gone: no more work, and the lead owes it a call — start the clock or kill it. */
 export const isSpentOut = (bet: Bet): boolean =>
@@ -221,7 +221,7 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
     (b) => b.state.kind === "open" && scores.has(b.productId) && !ledger.stalled.has(b.id),
   );
   const [best] = open
-    .filter((b) => b.spentUsd + busyOn(b) * ledger.runCostUsd < b.budgetUsd)
+    .filter((b) => hasRoomFor(b, busyOn(b), ledger.runCostUsd))
     .toSorted((a, b) => rank(b) - rank(a));
   if (best) {
     return { betId: best.id, kind: "work" };

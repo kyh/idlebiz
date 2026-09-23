@@ -55,7 +55,11 @@ const runAs = (employeeId: string) => {
   const assigned: string[] = [];
   const ctx: RunContext = {
     asks: askBox((ask) => asked.push(ask)),
-    assign: (taskId) => assigned.push(taskId),
+    // the scheduler queues what it is handed, and queued work is in flight
+    assign: (taskId, assigneeId) => {
+      assigned.push(taskId);
+      store.claimTask(taskId, assigneeId);
+    },
     company,
     driver: {
       disposeEmployee: () => {
@@ -77,6 +81,17 @@ const BET = {
   title: "Launch post",
   windowHours: 48,
 };
+
+const openBet = (ctx: RunContext) => {
+  callTool(ctx, "POST /v1/open-bet", BET);
+  const [bet] = store.listBets();
+  if (!bet) {
+    throw new Error("no bet opened");
+  }
+  return bet;
+};
+
+const HANDOFF = { description: "write it", role: "engineer", title: "Draft the post" };
 
 describe("company tools", () => {
   it("answers null for a route no tool serves", () => {
@@ -133,5 +148,39 @@ describe("company tools", () => {
     const [task] = store.listOpenTasks();
     expect(task).toMatchObject({ assigneeId: "priya", betId: bet?.id, productId: bet?.productId });
     expect(assigned).toEqual([task?.id]);
+  });
+
+  it("refuses work a bet's runs in flight would already spend", () => {
+    const { ctx } = runAs("mae");
+    const bet = openBet(ctx);
+    store.recordBetSpend(bet.id, 2);
+    const named = { ...HANDOFF, bet: bet.id };
+    expect(callTool(ctx, "POST /v1/delegate", named)).toContain("Delegated");
+    expect(callTool(ctx, "POST /v1/delegate", named)).toContain(
+      "no room for another run: $2.00 of $3.00 spent and 1 in flight",
+    );
+    expect(store.listOpenTasks()).toHaveLength(1);
+  });
+
+  it("gives a bet that stopped taking work nothing more, even from its own run", () => {
+    const { ctx } = runAs("mae");
+    const bet = openBet(ctx);
+    const settling = { ...ctx, run: { ...ctx.run, betId: bet.id, productId: bet.productId } };
+    store.recordBetSpend(bet.id, 3);
+    expect(callTool(settling, "POST /v1/delegate", HANDOFF)).toContain("is spent out");
+    store.measureBet(bet.id, 0);
+    expect(callTool(settling, "POST /v1/delegate", HANDOFF)).toContain("its clock is running");
+    expect(store.listOpenTasks()).toEqual([]);
+  });
+
+  it("needs a bet named to put a bet's run to work on another product", () => {
+    const { ctx } = runAs("mae");
+    const bet = openBet(ctx);
+    const side = store.createProduct({ description: "a side project", name: "Side" });
+    const working = { ...ctx, run: { ...ctx.run, betId: bet.id } };
+    const elsewhere = { ...HANDOFF, product: side.id };
+    expect(callTool(working, "POST /v1/delegate", elsewhere)).toContain(`Name a bet on ${side.id}`);
+    expect(callTool(ctx, "POST /v1/delegate", elsewhere)).toContain("Delegated");
+    expect(store.listOpenTasks()).toMatchObject([{ betId: null, productId: side.id }]);
   });
 });

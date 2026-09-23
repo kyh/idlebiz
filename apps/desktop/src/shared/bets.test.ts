@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POLICY, allocate, claimsCollide, dream, judge } from "@/shared/bets";
+import { DEFAULT_POLICY, allocate, claimsCollide, dream, hasRoomFor, judge } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 
 const HOUR = 3_600_000;
@@ -90,6 +90,21 @@ describe("claimsCollide", () => {
     const revenue = bet({ claim: { metric: "revenue" }, id: "r" });
     expect(claimsCollide(revenue, bet({ claim: { metric: "revenue" }, id: "r2" }))).toBe(false);
     expect(claimsCollide(revenue, landing("a", "/"))).toBe(false);
+  });
+});
+
+describe("hasRoomFor", () => {
+  it("counts runs in flight against the budget before they bill", () => {
+    const halfSpent = bet({ budgetUsd: 3, spentUsd: 1.5 });
+    expect(hasRoomFor(halfSpent, 1, 1)).toBe(true);
+    expect(hasRoomFor(halfSpent, 2, 1)).toBe(false);
+    expect(hasRoomFor(halfSpent, 2, 0)).toBe(true);
+  });
+
+  it("has none once the budget is spent, or the bet has stopped taking work", () => {
+    expect(hasRoomFor(bet({ spentUsd: 5 }), 0, 1)).toBe(false);
+    expect(hasRoomFor(bet({ state: measuring }), 0, 1)).toBe(false);
+    expect(hasRoomFor(bet({ state: verdict(60, 1) }), 0, 1)).toBe(false);
   });
 });
 

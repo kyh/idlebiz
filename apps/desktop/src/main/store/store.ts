@@ -1053,6 +1053,32 @@ export const recordBetSpend = (betId: string, costUsd: number): void => {
   }
 };
 
+/** Runs queued or running per bet: each will bill it, and none has yet. */
+export const runsInFlight = (): ReadonlyMap<string, number> => {
+  const counts = new Map<string, number>();
+  for (const t of current().tasks) {
+    if (t.betId !== null && (t.state.kind === "queued" || t.state.kind === "running")) {
+      counts.set(t.betId, (counts.get(t.betId) ?? 0) + 1);
+    }
+  }
+  return counts;
+};
+
+/**
+ * Dead-letter the matching work that has not started; the founder can still
+ * revive it from the Inbox. A running task finishes its run, and dead work
+ * keeps the error it died of.
+ */
+const deadLetter = (match: (t: Task) => boolean, reason: string, now: number): void => {
+  const { tasks } = current();
+  for (const t of tasks.filter(match)) {
+    const { kind } = t.state;
+    if (kind === "todo" || kind === "queued" || kind === "blocked") {
+      patchIn(tasks, t.id, entering({ kind: "dead", lastError: reason }, now), saveTask);
+    }
+  }
+};
+
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
@@ -1067,7 +1093,10 @@ export const measureBet = (betId: string, now: number): Bet => {
   if (!bet || bet.state.kind !== "open") {
     throw new Error(`no open bet "${betId}"`);
   }
-  return patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
+  const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
+  // work waiting on the founder stays: that step may be the one that moves the number
+  deadLetter((t) => t.betId === betId && t.state.kind !== "blocked", "bet is measuring", now);
+  return measuring;
 };
 
 const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
@@ -1080,6 +1109,7 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
     throw new Error(`no live bet "${betId}"`);
   }
   const killed = closeAsKilled(bet, reason, now);
+  deadLetter((t) => t.betId === betId, "bet killed", now);
   retune(current());
   return killed;
 };
@@ -1094,7 +1124,9 @@ export const judgeBets = (now: number): Bet[] => {
       changed.push(patchBet(bet.id, { state }));
     }
   }
-  if (changed.some(isClosed)) {
+  const closed = new Set(changed.filter(isClosed).map((b) => b.id));
+  if (closed.size > 0) {
+    deadLetter((t) => t.betId !== null && closed.has(t.betId), "bet closed", now);
     retune(active);
   }
   return changed;
@@ -1442,11 +1474,7 @@ export const killProduct = (productId: string, reason: string): Bet[] => {
   if (killed.length > 0) {
     retune(active);
   }
-  for (const t of active.tasks.filter((x) => x.productId === productId)) {
-    if (t.state.kind !== "running" && !isHistory(t)) {
-      patchTask(t.id, entering({ kind: "dead", lastError: "product retired" }, now));
-    }
-  }
+  deadLetter((t) => t.productId === productId, "product retired", now);
   active.products.splice(active.products.indexOf(product), 1);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });

@@ -613,6 +613,35 @@ const firstProduct = () => {
   return product;
 };
 
+/** Work on a bet in every state a task can be in before it ships: to do, queued, running, waiting on the founder. */
+const workOn = (betId: string) => {
+  const priya = store.createEmployee({ ...hire("Priya") });
+  const task = (title: string, run: "queue" | "start" | "ask" | null) => {
+    const t = store.createTask({ assigneeId: priya.id, betId, title });
+    if (run !== null) {
+      store.claimTask(t.id, priya.id);
+    }
+    if (run === "start" || run === "ask") {
+      store.lockTaskForRun(t.id, `run-${t.id}`);
+    }
+    if (run === "ask") {
+      store.settleTask(t.id, `run-${t.id}`, {
+        ask: { question: "Ship it?", type: "question" },
+        kind: "blocked",
+        summary: null,
+      });
+    }
+    return t.id;
+  };
+  const ids = [
+    task("Todo", null),
+    task("Queued", "queue"),
+    task("Running", "start"),
+    task("Asked", "ask"),
+  ];
+  return () => ids.map((id) => store.getTask(id)?.state.kind);
+};
+
 describe("bets", () => {
   it("gives a users bet a path of its own and refuses one another bet already covers", () => {
     found();
@@ -655,6 +684,46 @@ describe("bets", () => {
       spentUsd: 2,
       state: { kind: "won", moved: 60 },
     });
+  });
+
+  it("counts a bet's queued and running work as in flight", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    workOn(bet.id);
+    expect(store.runsInFlight()).toEqual(new Map([[bet.id, 2]]));
+  });
+
+  it("drops a measuring bet's unstarted work, but keeps what waits on the founder", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    const states = workOn(bet.id);
+    store.measureBet(bet.id, 0);
+    expect(states()).toEqual(["dead", "dead", "running", "blocked"]);
+    expect(store.listOpenTasks().find((t) => t.title === "Queued")?.state).toEqual({
+      kind: "dead",
+      lastError: "bet is measuring",
+    });
+  });
+
+  it("drops a killed bet's waiting work, the founder's asks included", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    const states = workOn(bet.id);
+    store.killBet(bet.id, "dud", 0);
+    expect(states()).toEqual(["dead", "dead", "running", "dead"]);
+  });
+
+  it("drops the waiting work of a bet the evaluator closes, and only that bet's", () => {
+    found();
+    const product = firstProduct();
+    const bet = launch(product.id);
+    const other = launch(product.id);
+    const states = workOn(bet.id);
+    const untouched = store.createTask({ betId: other.id, title: "Elsewhere" });
+    store.setBetReading(bet.id, 60);
+    expect(store.judgeBets(1).map((b) => b.state.kind)).toEqual(["won"]);
+    expect(states()).toEqual(["dead", "dead", "running", "dead"]);
+    expect(store.getTask(untouched.id)?.state.kind).toBe("todo");
   });
 
   it("retires a product with its bets and open work, but never the last one", () => {

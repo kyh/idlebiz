@@ -52,6 +52,16 @@ describe("reduceActivity", () => {
     expect(reduceActivity(held, { ...stamp, kind: "run.start" }).reload).toEqual([]);
   });
 
+  it("refetches the work a bet dropped when it stopped taking any", () => {
+    const measured: ActivityEvent = {
+      ...stamp,
+      kind: "bet.changed",
+      message: "Launch post",
+      payload: { betId: "launch-post", state: { kind: "measuring", until: 1 } },
+    };
+    expect(reduceActivity(held, measured).reload).toEqual(["bets", "tasks"]);
+  });
+
   it("patches the one employee a status names, and nobody else", () => {
     const running: ActivityEvent = {
       ...stamp,

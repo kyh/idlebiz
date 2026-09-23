@@ -38,8 +38,9 @@ const reloadFor = (e: ActivityEvent): readonly Slice[] => {
     case "product.killed": {
       return ["products", "bets"];
     }
+    // a bet that stops taking work dead-letters the work it had waiting
     case "bet.changed": {
-      return ["bets"];
+      return ["bets", "tasks"];
     }
     // an ask exists the moment it is raised, and a dead letter the moment it dies:
     // the inbox must not wait for the run to end to agree with the office

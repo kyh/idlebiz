@@ -98,16 +98,9 @@ const heartbeatBrief = (
 
 /** Where the next idle employee goes, by the company's current policy. */
 const nextAllocation = (company: Company): Allocation => {
-  const busy = new Map<string, number>();
   const stalled = new Set<string>();
   for (const t of store.listOpenTasks()) {
-    if (t.betId === null) {
-      continue;
-    }
-    if (t.state.kind === "queued" || t.state.kind === "running") {
-      busy.set(t.betId, (busy.get(t.betId) ?? 0) + 1);
-    }
-    if (t.state.kind === "blocked") {
+    if (t.betId !== null && t.state.kind === "blocked") {
       stalled.add(t.betId);
     }
   }
@@ -115,7 +108,7 @@ const nextAllocation = (company: Company): Allocation => {
   return allocate(
     {
       bets: store.listBets(),
-      busy,
+      busy: store.runsInFlight(),
       products: store.listProducts().map((p) => p.id),
       proposalPending: leadTasks.some((t) => t.betId === null && t.state.kind === "blocked"),
       runCostUsd: RUN_COST_ESTIMATE_USD,
