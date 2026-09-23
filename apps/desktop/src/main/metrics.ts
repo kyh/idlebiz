@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpError, getJson } from "@/main/lib/http";
-import { getSecret } from "@/main/secrets";
+import { STRIPE_CONNECT_TOKEN, getSecret } from "@/main/secrets";
 import type { MetricsConfig } from "@/main/store/metrics-config";
 import type { Bet } from "@/shared/bets";
 import type { Product } from "@/shared/domain";
@@ -192,7 +192,7 @@ export interface StripeCredential {
  * in the file is no key.
  */
 export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | null => {
-  const token = cfg?.stripeAccount ? getSecret("STRIPE_CONNECT_TOKEN") : null;
+  const token = cfg?.stripeAccount ? getSecret(STRIPE_CONNECT_TOKEN) : null;
   if (token) {
     return { key: token, via: "connect" };
   }

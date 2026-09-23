@@ -142,11 +142,12 @@ rather than crashing boot.
   `src/lib/env.ts`). Missing ⇒ `/api/stripe/*` refuses the flow with a clear message.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`.
   `main/secrets.ts` exports them into the process env at boot so both the metrics providers
-  and every employee's shell inherit them: `STRIPE_SECRET_KEY`, `STRIPE_CONNECT_TOKEN`,
-  `VERCEL_TOKEN`. `STRIPE_SECRET_KEY` always feeds revenue; `STRIPE_CONNECT_TOKEN` only for
-  the company whose `metrics.json` holds the connected account (`stripeCredential` in
-  `main/metrics.ts`), and only a refused Connect token shows Stripe as revoked in the HUD; a
-  refused own key just leaves revenue unread. One `VERCEL_TOKEN` serves every product:
+  and every employee's shell inherit them: `STRIPE_SECRET_KEY`, `VERCEL_TOKEN`. Employees
+  charge with `STRIPE_SECRET_KEY`, and it always feeds revenue. `STRIPE_CONNECT_TOKEN` is
+  read-only and stays out of the env: metrics reads it only for the company whose
+  `metrics.json` holds the connected account (`stripeCredential` in `main/metrics.ts`), and
+  only a refused Connect token shows Stripe as revoked in the HUD; a refused own key just
+  leaves revenue unread. One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).

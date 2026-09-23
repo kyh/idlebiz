@@ -12,7 +12,7 @@ import type { ConnectedAccount, DeauthorizeBody } from "@repo/stripe-connect-pro
 import { newKeyring, open } from "@repo/stripe-connect-protocol/seal";
 import type { Keyring } from "@repo/stripe-connect-protocol/seal";
 import { listenLoopback } from "@/main/lib/http";
-import { getSecret, setSecret, deleteSecret } from "@/main/secrets";
+import { STRIPE_CONNECT_TOKEN, getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import { requireCompany } from "@/main/store/store";
 import { errorMessage } from "@/shared/errors";
@@ -23,7 +23,6 @@ import type { StripeStatus } from "@/shared/integrations";
 
 const WEB_BASE = process.env["IDLEBIZ_WEB_URL"] ?? "https://idlebiz.com";
 const FLOW_TIMEOUT_MS = 5 * 60_000;
-const STRIPE_TOKEN_KEY = "STRIPE_CONNECT_TOKEN";
 
 type Revocation = { kind: "revoked" } | { kind: "unconfirmed"; reason: string };
 
@@ -67,7 +66,7 @@ export const getStripeStatus = (companyId: string): StripeStatus => {
     return { message: lastError, state: "error" };
   }
   const account = readMetricsConfig(companyId)?.stripeAccount;
-  if (account && getSecret(STRIPE_TOKEN_KEY)) {
+  if (account && getSecret(STRIPE_CONNECT_TOKEN)) {
     return { accountId: account.accountId, livemode: account.livemode, state: "connected" };
   }
   return { state: "disconnected" };
@@ -111,10 +110,11 @@ const html = (body: string): string =>
 const connect = (companyId: string, account: ConnectedAccount): void => {
   requireCompany();
   const { accessToken, stripeUserId: accountId, livemode } = account;
-  setSecret(STRIPE_TOKEN_KEY, accessToken);
+  // The binding is the write that can refuse, and a token saved without one is never revoked.
   writeMetricsConfig(companyId, {
     stripeAccount: { accountId, connectedAt: Date.now(), livemode },
   });
+  setSecret(STRIPE_CONNECT_TOKEN, accessToken);
   lastError = null;
   notify({ accountId, livemode, state: "connected" });
   onConnected(companyId);
@@ -263,10 +263,10 @@ const revoke = async (body: DeauthorizeBody): Promise<Revocation> => {
 export const disconnectStripe = async (companyId: string): Promise<void> => {
   requireCompany();
   const current = cancelPending();
-  const token = getSecret(STRIPE_TOKEN_KEY);
+  const token = getSecret(STRIPE_CONNECT_TOKEN);
   const account = readMetricsConfig(companyId)?.stripeAccount;
   // Clear local credentials immediately; new authorization waits for remote revocation below.
-  deleteSecret(STRIPE_TOKEN_KEY);
+  deleteSecret(STRIPE_CONNECT_TOKEN);
   writeMetricsConfig(companyId, { stripeAccount: undefined });
   lastError = null;
   notify({ state: "disconnected" });

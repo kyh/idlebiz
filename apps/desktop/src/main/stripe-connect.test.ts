@@ -1,5 +1,5 @@
 import { channel } from "node:diagnostics_channel";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, IncomingMessage } from "node:http";
 import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
@@ -16,7 +16,6 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-stripe-"));
 const previous = {
   IDLEBIZ_ROOT_DIR: process.env["IDLEBIZ_ROOT_DIR"],
   IDLEBIZ_WEB_URL: process.env["IDLEBIZ_WEB_URL"],
-  STRIPE_CONNECT_TOKEN: process.env["STRIPE_CONNECT_TOKEN"],
 };
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 let holdRevocation: ((res: ServerResponse) => void) | null = null;
@@ -174,6 +173,30 @@ describe("Stripe flow ownership", () => {
       holdRevocation = null;
       revocation.end();
       await Promise.all([disconnect, reconnect]);
+    }
+  });
+});
+
+describe("Stripe connect", () => {
+  it("saves no token when the company's binding cannot be written", async () => {
+    const secretsFile = path.join(root, "secrets.json");
+    const metricsFile = path.join(root, company.id, "metrics.json");
+    const secrets = '{"STRIPE_SECRET_KEY":"own"}';
+    writeFileSync(secretsFile, secrets);
+    writeFileSync(metricsFile, '{"stripeAccount":');
+    try {
+      await stripe.beginConnect(company.id);
+      const response = await fetch(await callbackUrl(latestState(), "token-unbound"));
+      expect(await response.text()).toContain("Stripe connection failed");
+      expect(readFileSync(secretsFile, "utf-8")).toBe(secrets);
+      expect(stripe.getStripeStatus(company.id)).toEqual({
+        message: expect.stringContaining("it will not be overwritten"),
+        state: "error",
+      });
+      expect(connected).toEqual([]);
+    } finally {
+      rmSync(metricsFile, { force: true });
+      rmSync(secretsFile, { force: true });
     }
   });
 });

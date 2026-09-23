@@ -53,7 +53,7 @@ const realNumbers = (
 ): string => {
   const revenue =
     company.revenueUsd === null
-      ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" when there is something to charge for.'
+      ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
       : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
   const users =
     company.users === null

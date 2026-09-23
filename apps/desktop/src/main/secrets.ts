@@ -9,6 +9,15 @@ import type { JsonRecord } from "@/shared/json";
 
 const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
+/**
+ * Kept out of the env every run inherits: the grant is read-only, so it cannot charge, and
+ * it belongs to the one company that connected it (`stripeCredential`), while the env
+ * outlives that company. Metrics reads it from the file.
+ */
+export const STRIPE_CONNECT_TOKEN = "STRIPE_CONNECT_TOKEN";
+
+const inEnv = (key: string): boolean => !key.startsWith("_") && key !== STRIPE_CONNECT_TOKEN;
+
 const readSecretsForUpdate = (): JsonRecord | null =>
   readJsonFileForUpdate(SECRETS_PATH, jsonRecordSchema);
 
@@ -43,7 +52,7 @@ export const exportSecretsToEnv = (): { file: string; cause: unknown } | null =>
     return null;
   }
   for (const [k, v] of Object.entries(stringsOf(raw))) {
-    if (!k.startsWith("_")) {
+    if (inEnv(k)) {
       process.env[k] = v;
     }
   }
@@ -57,7 +66,7 @@ export const setSecret = (key: string, value: string): void => {
   const raw = readSecretsForUpdate() ?? {};
   raw[key] = value;
   writeSecretsFile(raw);
-  if (!key.startsWith("_")) {
+  if (inEnv(key)) {
     process.env[key] = value;
   }
 };

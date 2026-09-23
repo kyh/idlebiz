@@ -9,6 +9,8 @@ const previous = {
   A: process.env["A"],
   B: process.env["B"],
   IDLEBIZ_ROOT_DIR: process.env["IDLEBIZ_ROOT_DIR"],
+  STRIPE_CONNECT_TOKEN: process.env["STRIPE_CONNECT_TOKEN"],
+  STRIPE_SECRET_KEY: process.env["STRIPE_SECRET_KEY"],
 };
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const { deleteSecret, exportSecretsToEnv, getSecret, setSecret } = await import("./secrets");
@@ -23,16 +25,20 @@ const restore = (key: keyof typeof previous): void => {
   }
 };
 
+const restoreSecrets = (): void => {
+  for (const key of ["A", "B", "STRIPE_CONNECT_TOKEN", "STRIPE_SECRET_KEY"] as const) {
+    restore(key);
+  }
+};
+
 beforeEach(() => {
   rmSync(secretsFile, { force: true });
-  restore("A");
-  restore("B");
+  restoreSecrets();
 });
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
-  restore("A");
-  restore("B");
+  restoreSecrets();
   restore("IDLEBIZ_ROOT_DIR");
 });
 
@@ -82,5 +88,17 @@ describe("a readable secrets.json", () => {
 
     expect(exportSecretsToEnv()).toBeNull();
     expect(process.env["A"]).toBe("1");
+  });
+
+  it("keeps the Connect token in the file, out of every run's env", () => {
+    writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"connected","STRIPE_SECRET_KEY":"own"}');
+
+    expect(exportSecretsToEnv()).toBeNull();
+    expect(process.env["STRIPE_SECRET_KEY"]).toBe("own");
+    expect(process.env["STRIPE_CONNECT_TOKEN"]).toBe(previous.STRIPE_CONNECT_TOKEN);
+
+    setSecret("STRIPE_CONNECT_TOKEN", "reconnected");
+    expect(getSecret("STRIPE_CONNECT_TOKEN")).toBe("reconnected");
+    expect(process.env["STRIPE_CONNECT_TOKEN"]).toBe(previous.STRIPE_CONNECT_TOKEN);
   });
 });
