@@ -8,6 +8,8 @@ export interface RunnerAdapter {
   sessionModeId?: string;
   /** Adapter env var pointing at the player's CLI; bundled optional binaries may be absent. */
   binEnvVar?: string;
+  /** The player's CLI on PATH, and the env var that overrides where it lives. */
+  cli: { command: string; override: string };
   displayName: string;
   loginArgs: string[];
   authProbe: { args: string[]; loggedIn: (output: string) => boolean };
@@ -38,6 +40,7 @@ export const RUNNERS = {
     acpEntry: "@agentclientprotocol/claude-agent-acp/dist/index.js",
     authProbe: { args: ["auth", "status"], loggedIn: claudeLoggedIn },
     binEnvVar: "CLAUDE_CODE_EXECUTABLE",
+    cli: { command: "claude", override: "CLAUDE_BIN" },
     displayName: "Claude Code",
     fallbackPricingModel: "claude-sonnet",
     loginArgs: ["auth", "login"],
@@ -47,6 +50,7 @@ export const RUNNERS = {
     // `codex login status` exits 0 either way and says how you're logged in
     authProbe: { args: ["login", "status"], loggedIn: (out) => !/not logged in/iu.test(out) },
     binEnvVar: "CODEX_PATH",
+    cli: { command: "codex", override: "CODEX_BIN" },
     displayName: "Codex",
     fallbackPricingModel: "gpt-5.5-codex",
     loginArgs: ["login"],

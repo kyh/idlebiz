@@ -4,8 +4,10 @@ import { RUNNER_IDS } from "./runner";
 import type { RunnerId } from "./runner";
 
 // Probe the player's CLI login, which the ACP adapter inherits.
-export const runnerBin = (id: RunnerId): string =>
-  id === "claude" ? (process.env.CLAUDE_BIN ?? "claude") : (process.env.CODEX_BIN ?? "codex");
+export const runnerBin = (id: RunnerId): string => {
+  const { command, override } = RUNNERS[id].cli;
+  return process.env[override] ?? command;
+};
 
 export type RunnerProbe = { id: RunnerId; bin: string } & (
   | { installed: false }

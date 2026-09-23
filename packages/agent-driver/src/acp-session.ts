@@ -368,7 +368,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
 
         // Resume without replaying history; a rejected session id falls back to fresh.
         const resume = async (): Promise<string | undefined> => {
-          if (opts.resumeSessionId === undefined || init.agentCapabilities?.loadSession !== true) {
+          if (
+            opts.resumeSessionId === undefined ||
+            !init.agentCapabilities?.sessionCapabilities?.resume
+          ) {
             return undefined;
           }
           try {
@@ -386,12 +389,12 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         resumed = resumedId !== undefined;
 
         const startFresh = async (): Promise<string> => {
-          const builder = agent.buildSession(opts.cwd);
-          if (additionalDirectories.length > 0) {
-            builder.withAdditionalDirectories(additionalDirectories);
-          }
-          const started = await builder.start();
-          return started.sessionId;
+          const created = await agent.request("session/new", {
+            additionalDirectories,
+            cwd: opts.cwd,
+            mcpServers: [],
+          });
+          return created.sessionId;
         };
         sessionId = resumedId ?? (await startFresh());
 
