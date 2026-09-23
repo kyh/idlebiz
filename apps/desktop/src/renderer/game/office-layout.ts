@@ -86,17 +86,21 @@ const depthFor = (obj: OfficeObjectDef, index: number): number => {
 };
 
 const placementsOf = (objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] =>
-  objects.map((obj, index) => ({
-    def: obj,
-    depth: depthFor(obj, index),
-    flipX: obj.flipX ?? false,
-    flipY: obj.flipY ?? false,
-    id: obj.id,
-    key: `office-object-sprite-${obj.id}`,
-    path: objectSpritePath(obj),
-    x: obj.x,
-    y: obj.y,
-  }));
+  objects.map((obj, index) => {
+    const path = objectSpritePath(obj);
+    return {
+      def: obj,
+      depth: depthFor(obj, index),
+      flipX: obj.flipX ?? false,
+      flipY: obj.flipY ?? false,
+      id: obj.id,
+      // keyed by the file, not the id: one id can name two PNGs, and each must paint its own
+      key: `office-object-sprite-${path}`,
+      path,
+      x: obj.x,
+      y: obj.y,
+    };
+  });
 
 /** The layout as the scene reads it: the walk grid and the paint-ordered placements. */
 export const officeOf = (layout: OfficeLayoutData): Office => ({

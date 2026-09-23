@@ -1,9 +1,10 @@
-// Checks reachability, floor pockets, sprite overhang and face occlusion using
-// the same geometry as the game. Art and collision are authored independently.
+// Checks reachability, floor pockets, sprite measurements, sprite overhang and face
+// occlusion using the same geometry as the game. Art and collision are authored
+// independently.
 // Usage: node scripts/check-office.mjs [--layout path.json] [--sheet path.png]
 // Exit 0 = clean, 1 = invalid layout.
 import path from "node:path";
-import { parseArgs } from "node:util";
+import { isDeepStrictEqual, parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
 import { parseOfficeLayout } from "../src/shared/office-layout-schema.ts";
 import {
@@ -17,7 +18,8 @@ import { comparePaintOrder } from "../src/shared/office-depth.ts";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, FRAME_H, FRAME_W } from "../src/shared/character-frame.ts";
 import { hiddenNodes, opaqueAt } from "../src/shared/office-sight.ts";
 import { objectSpritePath } from "../src/renderer/game/office-object-sprite.ts";
-import { loadRaw } from "./lib/pixels.cjs";
+import { SPRITE_BOUNDS } from "../src/renderer/game/sprite-bounds.generated.ts";
+import { loadRaw, opaqueBounds } from "./lib/pixels.cjs";
 
 const appRoot = path.resolve(import.meta.dirname, "..");
 
@@ -150,6 +152,38 @@ const checkPockets = (layout) => {
   );
 };
 
+/** Why the builder's box for a sprite is not the box of the pixels the scene draws, or null. */
+const measurementFault = async (sprite) => {
+  const measured = SPRITE_BOUNDS.get(sprite);
+  if (!measured) {
+    return "never measured";
+  }
+  const img = await loadRaw(path.join(appRoot, "public", sprite));
+  const actual = { bounds: opaqueBounds(img), h: img.h, w: img.w };
+  return isDeepStrictEqual(actual, measured) ? null : "measured from other pixels";
+};
+
+const checkMeasured = async (layout) => {
+  const sprites = new Set(layout.objects.map((obj) => objectSpritePath(obj)));
+  const offenders = [];
+  for (const sprite of sprites) {
+    const fault = await measurementFault(sprite);
+    if (fault) {
+      offenders.push({ fault, sprite });
+    }
+  }
+  console.log(`checked: ${sprites.size} placed sprites`);
+  report(
+    "placed sprite(s) the builder would size wrong",
+    "every placed sprite is measured from the PNG the scene draws",
+    offenders,
+    (o) => `${o.sprite}  ${o.fault}`,
+    "The builder hit-tests, flips and anchors an object by its sprite's measured box, and\n" +
+      "throws on one it has never measured. After adding or changing art run\n" +
+      "pnpm --filter @repo/desktop generate:sprite-bounds.",
+  );
+};
+
 const checkVoid = (layout, painted, silhouette, nodes) => {
   const { width: W, height: H } = layout;
   const offenders = [];
@@ -208,6 +242,7 @@ const main = async () => {
 
   checkReachability(layout);
   checkPockets(layout);
+  await checkMeasured(layout);
 
   const nodes = reachableNodes(walkGridOf(layout), layout.spawn);
 

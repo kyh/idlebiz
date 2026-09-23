@@ -115,6 +115,12 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   `door`), the walk grid (`shared/office-grid.ts`) and the sight judgement
   (`shared/office-sight.ts`) are shared by the scene, the save handler and that script —
   a layout main refuses to save is exactly one the check would fail.
+- **A sprite is its resolved path, never its id.** `objectSpritePath` picks the PNG; the
+  scene keys its texture by that path, and the builder sizes, hits and anchors the object
+  by that path's entry in `sprite-bounds.generated.ts`, one scan of the shipped art. Run
+  `pnpm --filter @repo/desktop generate:sprite-bounds` after adding or changing a PNG:
+  the builder throws on a sprite it has not measured, and `check:office` fails on a placed
+  one that is missing or measured from other pixels.
 - **The walker has two rules the authored collision does not.** A seat's cell is solid
   (sitters are placed on the chair; walkers never stand in it) and open floor no body can
   probe is sealed — both in `walkGridOf`, so the scene, the gate and the builder's

@@ -13,7 +13,7 @@ import {
 } from "@/shared/office-layout-schema";
 import type { OfficeObjectDef } from "@/shared/office-layout-schema";
 import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
-import type { OfficeObjectAsset } from "@/renderer/game/office-object-catalog.generated";
+import { objectSpritePath, spriteBounds } from "@/renderer/game/office-object-sprite";
 import { ROOM_BUILDER_TILES } from "@/renderer/game/room-builder-tiles.generated";
 import type { RoomBuilderTile } from "@/renderer/game/room-builder-tiles.generated";
 import { sealedCollision } from "@/shared/office-grid";
@@ -83,29 +83,23 @@ export interface EditableLayout {
   collision: string[];
 }
 
-const CATALOG = new Map<string, OfficeObjectAsset>(OFFICE_OBJECT_ASSETS.map((a) => [a.id, a]));
 export const ALL_OBJECT_IDS: readonly string[] = OFFICE_OBJECT_ASSETS.map((a) => a.id);
 export const ROOM_TILES: readonly RoomBuilderTile[] = ROOM_BUILDER_TILES;
 
-const rawBounds = (id: string): { canvasW: number; canvasH: number; b: Rect } => {
-  const v = CATALOG.get(id);
-  // room-builder tiles are not in the catalog: full cell
-  return v
-    ? { b: v.bounds, canvasH: v.h, canvasW: v.w }
-    : { b: { h: 32, w: 32, x: 0, y: 0 }, canvasH: 32, canvasW: 32 };
-};
-/** Canvas-local content bbox, adjusted for flips (flipping mirrors the content
- * inside its canvas box, so the bbox moves to the mirrored corner). */
-const contentBounds = (o: Pick<EditableObject, "id" | "flipX" | "flipY">): Rect => {
-  const { canvasW, canvasH, b } = rawBounds(o.id);
+type Sprite = Pick<EditableObject, "id" | "path" | "flipX" | "flipY">;
+
+/** Canvas-local content bbox of the PNG the scene draws, adjusted for flips (flipping
+ * mirrors the content inside its canvas box, so the bbox moves to the mirrored corner). */
+const contentBounds = (o: Sprite): Rect => {
+  const { w, h, bounds: b } = spriteBounds(objectSpritePath(o));
   return {
     h: b.h,
     w: b.w,
-    x: o.flipX ? canvasW - (b.x + b.w) : b.x,
-    y: o.flipY ? canvasH - (b.y + b.h) : b.y,
+    x: o.flipX ? w - (b.x + b.w) : b.x,
+    y: o.flipY ? h - (b.y + b.h) : b.y,
   };
 };
-type Placed = Pick<EditableObject, "id" | "x" | "y" | "flipX" | "flipY">;
+type Placed = Pick<EditableObject, "id" | "path" | "x" | "y" | "flipX" | "flipY">;
 
 /** Where the object's content sits in the world: what you see, hit and select. */
 export const worldRect = (o: Placed): Rect => {
@@ -113,21 +107,13 @@ export const worldRect = (o: Placed): Rect => {
   return { h: b.h, w: b.w, x: o.x + b.x, y: o.y + b.y };
 };
 /** y-sort anchor for an object placed at world y = bottom of its (flipped) content. */
-const anchorFor = (o: Pick<EditableObject, "id" | "flipX" | "flipY">, y: number): number => {
+const anchorFor = (o: Sprite, y: number): number => {
   const b = contentBounds(o);
   return y + b.y + b.h;
 };
-export const assetSrc = (id: string): string | null => {
-  const v = CATALOG.get(id);
-  return v ? v.path : null;
-};
-/** Image src for a placed object — its explicit path (tiles) or its catalog sprite. */
-export const srcForObject = (o: { id: string; path?: string }): string | null => {
-  if (o.path) {
-    return o.path;
-  }
-  return assetSrc(o.id);
-};
+export const assetSrc = (id: string): string => objectSpritePath({ id });
+/** Image src for a placed object: the PNG the scene draws, relative to the page. */
+export const srcForObject = (o: Pick<EditableObject, "id" | "path">): string => objectSpritePath(o);
 /**
  * The objects in the order the game paints them, back to front — what the builder
  * renders and what it serializes. Sorts by the game's own comparator, so the builder
@@ -239,8 +225,9 @@ export const toLayoutData = (L: EditableLayout): OfficeLayoutData => {
   });
 };
 
-/** Place by the sprite's CONTENT top-left at (cx, cy) — so the visible sprite lands
- * where you click, not offset by the transparent padding in its source image. */
+/** Place a prop by its CONTENT top-left at (cx, cy) — so the visible sprite lands
+ * where you click, not offset by the transparent padding in its source image. A floor
+ * tile is placed by its canvas instead. */
 export const makeObject = (
   id: string,
   cx: number,
@@ -248,8 +235,9 @@ export const makeObject = (
   opts: { path?: string; layer?: OfficeLayer } = {},
 ): EditableObject => {
   const layer = opts.layer ?? "object";
-  const unflipped = { flipX: false, flipY: false, id };
-  const b = contentBounds(unflipped);
+  const unflipped = { flipX: false, flipY: false, id, path: opts.path };
+  // tiles are cut from a 32px grid and must land on it, whatever their opaque part
+  const b = layer === "floor" ? { x: 0, y: 0 } : contentBounds(unflipped);
   const x = cx - b.x;
   const y = cy - b.y;
   const base = {

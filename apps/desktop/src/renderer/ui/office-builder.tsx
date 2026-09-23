@@ -76,7 +76,7 @@ const isTyping = (target: EventTarget | null): boolean =>
 
 interface PaletteItem {
   id: string;
-  src: string | null;
+  src: string;
 }
 
 const PaletteView = ({
@@ -114,27 +114,22 @@ const PaletteView = ({
       className="px-field m-2"
     />
     <div className="px-scroll grid min-h-0 flex-1 grid-cols-3 gap-1 overflow-y-auto p-2">
-      {items.map((it) => {
-        if (!it.src) {
-          return null;
-        }
-        return (
-          <button
-            type="button"
-            key={it.id}
-            onClick={() => onPick(it.id)}
-            title={it.id}
-            data-pressed={picked === it.id ? "" : undefined}
-            className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
-          >
-            <img
-              src={it.src}
-              alt={it.id}
-              className="max-h-10 max-w-none [image-rendering:pixelated]"
-            />
-          </button>
-        );
-      })}
+      {items.map((it) => (
+        <button
+          type="button"
+          key={it.id}
+          onClick={() => onPick(it.id)}
+          title={it.id}
+          data-pressed={picked === it.id ? "" : undefined}
+          className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
+        >
+          <img
+            src={it.src}
+            alt={it.id}
+            className="max-h-10 max-w-none [image-rendering:pixelated]"
+          />
+        </button>
+      ))}
     </div>
   </aside>
 );

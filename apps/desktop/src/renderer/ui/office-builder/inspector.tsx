@@ -85,14 +85,12 @@ export const Inspector = ({
   return (
     <div className="flex flex-col gap-2">
       <div className="px-inset flex items-center gap-2 p-2">
-        {src ? (
-          <img
-            src={src}
-            alt={obj.id}
-            style={{ transform: flipTransform(obj) }}
-            className="max-h-12 max-w-none [image-rendering:pixelated]"
-          />
-        ) : null}
+        <img
+          src={src}
+          alt={obj.id}
+          style={{ transform: flipTransform(obj) }}
+          className="max-h-12 max-w-none [image-rendering:pixelated]"
+        />
         <span className="truncate">{obj.id}</span>
       </div>
       <label className="flex items-center justify-between gap-2">

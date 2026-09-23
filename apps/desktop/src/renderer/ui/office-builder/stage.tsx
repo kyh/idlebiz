@@ -124,15 +124,11 @@ const ObjectLayerView = ({
   return (
     <>
       {objects.map((o, i) => {
-        const src = srcForObject(o);
-        if (!src) {
-          return null;
-        }
         const dragging = picked.has(o.uid);
         return (
           <img
             key={o.uid}
-            src={src}
+            src={srcForObject(o)}
             alt={o.id}
             draggable={false}
             style={{

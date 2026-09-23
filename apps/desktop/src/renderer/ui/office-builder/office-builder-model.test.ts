@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { layoutIssues } from "@/shared/office-grid";
+import { objectSpritePath } from "@/renderer/game/office-object-sprite";
+import { SPRITE_BOUNDS } from "@/renderer/game/sprite-bounds.generated";
 import {
   ALL_OBJECT_IDS,
   ROOM_TILES,
@@ -7,11 +9,13 @@ import {
   autoAnchor,
   flipObject,
   loadLayout,
+  makeObject,
   moveObject,
   sealPockets,
   setCollisionCell,
   srcForObject,
   toLayoutData,
+  worldRect,
 } from "./office-builder-model";
 import type { EditableLayout, EditableObject } from "./office-builder-model";
 
@@ -19,8 +23,7 @@ import type { EditableLayout, EditableObject } from "./office-builder-model";
 // the filesystem root instead of beside index.html.
 const page = "file:///Applications/IdleBiz.app/Contents/Resources/app.asar/renderer/index.html#/ui";
 const rendererDir = new URL("./", page).href;
-const missesPage = (src: string | null): boolean =>
-  src === null || !new URL(src, page).href.startsWith(rendererDir);
+const missesPage = (src: string): boolean => !new URL(src, page).href.startsWith(rendererDir);
 
 describe("builder sprite srcs", () => {
   it("resolve beside a file:// page for every catalog sprite", () => {
@@ -33,9 +36,53 @@ describe("builder sprite srcs", () => {
     expect(placed.filter(missesPage)).toEqual([]);
   });
 
-  it("has no src for an id the catalog does not know", () => {
-    expect(assetSrc("no-such-object")).toBeNull();
-    expect(srcForObject({ id: "no-such-object" })).toBeNull();
+  it("refuses an id the catalog does not know", () => {
+    expect(() => assetSrc("no-such-object")).toThrow(/no-such-object/u);
+    expect(() => srcForObject({ id: "no-such-object" })).toThrow(/no-such-object/u);
+  });
+});
+
+const unmeasured = (sprites: readonly string[]): string[] =>
+  sprites.filter((sprite) => !SPRITE_BOUNDS.has(sprite));
+
+describe("builder sprite bounds", () => {
+  it("are measured for everything the palette places and the shipped office draws", () => {
+    expect(unmeasured(ALL_OBJECT_IDS.map(assetSrc))).toEqual([]);
+    expect(unmeasured(ROOM_TILES.map((t) => t.path))).toEqual([]);
+    expect(unmeasured(loadLayout().objects.map(srcForObject))).toEqual([]);
+  });
+
+  // d2-mirb-60-16 is a 32x32 canvas whose content is the bottom 6px: the box a click
+  // hits and the line a walker sorts on are its content, not the canvas
+  const rail = { id: "d2-mirb-60-16", path: "workspace-kit/design2/d2-mirb-60-16.png" };
+
+  it("come from the PNG the object draws", () => {
+    const placed = { ...rail, flipX: false, flipY: false, x: 180, y: 70 };
+    expect(worldRect(placed)).toEqual({ h: 6, w: 32, x: 180, y: 96 });
+    expect(worldRect({ ...placed, flipY: true })).toEqual({ h: 6, w: 32, x: 180, y: 70 });
+  });
+
+  it("follow an object's own path over its id's catalog sprite", () => {
+    const fix = { id: "office-object-001", path: "workspace-kit/design2/d2-fix-0.png" };
+    const placed = { ...fix, flipX: false, flipY: false, x: 10, y: 20 };
+    expect(srcForObject(fix)).toBe(fix.path);
+    expect(worldRect(placed)).toEqual({ h: 6, w: 2, x: 10, y: 20 });
+  });
+
+  it("put a placed sprite's content where the click lands and anchor it on its bottom", () => {
+    const made = makeObject(rail.id, 100, 100, { path: rail.path });
+    expect(worldRect(made)).toMatchObject({ x: 100, y: 100 });
+    expect(made.layer === "object" ? made.anchorY : null).toBe(106);
+    expect(objectSpritePath(made)).toBe(rail.path);
+  });
+
+  it("put a floor tile's canvas on the click, keeping it on the grid it was cut from", () => {
+    const made = makeObject("rb-3-0", 32, 0, {
+      layer: "floor",
+      path: "workspace-kit/room-builder/32/tile-3-0.png",
+    });
+    expect(made).toMatchObject({ x: 32, y: 0 });
+    expect(worldRect(made).x).toBe(50);
   });
 });
 

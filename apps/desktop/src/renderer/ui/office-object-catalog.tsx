@@ -1,14 +1,20 @@
 import { useMemo, useState } from "react";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { OFFICE_OBJECT_ASSETS } from "@/renderer/game/office-object-catalog.generated";
-import type { OfficeObjectAsset } from "@/renderer/game/office-object-catalog.generated";
+import { spriteBounds } from "@/renderer/game/office-object-sprite";
+
+const SIZED_ASSETS = OFFICE_OBJECT_ASSETS.map((asset) => {
+  const { w, h } = spriteBounds(asset.path);
+  return { ...asset, h, w };
+});
+type SizedAsset = (typeof SIZED_ASSETS)[number];
 
 const ObjectCard = ({
   asset,
   copied,
   onCopy,
 }: {
-  asset: OfficeObjectAsset;
+  asset: SizedAsset;
   copied: boolean;
   onCopy: () => void;
 }) => (
@@ -48,7 +54,7 @@ const ObjectCard = ({
   </article>
 );
 
-const matchesQuery = (asset: OfficeObjectAsset, query: string) => {
+const matchesQuery = (asset: SizedAsset, query: string) => {
   if (query.length === 0) {
     return true;
   }
@@ -65,7 +71,7 @@ export const OfficeObjectCatalog = () => {
 
   const normalizedQuery = query.trim().toLowerCase();
   const visibleAssets = useMemo(
-    () => OFFICE_OBJECT_ASSETS.filter((asset) => matchesQuery(asset, normalizedQuery)),
+    () => SIZED_ASSETS.filter((asset) => matchesQuery(asset, normalizedQuery)),
     [normalizedQuery],
   );
 
@@ -86,7 +92,7 @@ export const OfficeObjectCatalog = () => {
             <div>
               <h1 className="text-base">Office Objects</h1>
               <p className="text-xs text-[#d6d9e7]">
-                {visibleAssets.length} / {OFFICE_OBJECT_ASSETS.length} objects
+                {visibleAssets.length} / {SIZED_ASSETS.length} objects
               </p>
             </div>
 

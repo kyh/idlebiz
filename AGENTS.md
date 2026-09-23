@@ -180,9 +180,10 @@ rather than crashing boot.
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
-  Four passes: every seat, point of interest and the door reachable from spawn; no open
+  Five passes: every seat, point of interest and the door reachable from spawn; no open
   floor cell no body can stand on; no reachable spot with the player's art over the void;
-  no reachable spot with the player's face painted over. The walker seals the second and
+  no reachable spot with the player's face painted over; every placed sprite measured from
+  its PNG (run `generate:sprite-bounds` after adding art). The walker seals the second and
   the scene seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`),
   so a saved layout is safe to walk even when its data would fail the gate.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,

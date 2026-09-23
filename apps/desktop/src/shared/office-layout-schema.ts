@@ -22,15 +22,13 @@ export const MAX_FLOOR_LINE = ENTITY_BAND_HEIGHT - FRAME_H;
 /** A floor line the entity band can hold. Custom layouts are user input — bound it here. */
 const floorLineSchema = z.number().min(0).max(MAX_FLOOR_LINE);
 
-const rectSchema = z.object({ h: z.number(), w: z.number(), x: z.number(), y: z.number() });
 const pointSchema = z.object({ x: z.number(), y: z.number() });
 const placedSchema = {
-  bounds: rectSchema.optional(),
   flipX: z.boolean().optional(),
   flipY: z.boolean().optional(),
   // Empty ids cannot resolve a catalog sprite when no explicit path is present.
   id: z.string().min(1),
-  path: z.string().optional(),
+  path: z.string().min(1).optional(),
   x: z.number(),
   y: z.number(),
 };
@@ -160,9 +158,6 @@ const canonicalObject = (obj: OfficeObjectDef): OfficeObjectDef => {
   }
   if (obj.flipY) {
     row.flipY = true;
-  }
-  if (obj.bounds !== undefined) {
-    row.bounds = obj.bounds;
   }
   return row;
 };

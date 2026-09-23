@@ -66,6 +66,11 @@ describe("parseOfficeLayout", () => {
       objects: [{ id: "", layer: "overhead", x: 0, y: 0 }],
     };
     expect(() => parseOfficeLayout(blank)).toThrow(/id/u);
+    const pathless: JsonValue = {
+      ...legacy,
+      objects: [{ id: "office-object-001", layer: "overhead", path: "", x: 0, y: 0 }],
+    };
+    expect(() => parseOfficeLayout(pathless)).toThrow(/path/u);
   });
 
   it("rejects a collision row that is not 0s and 1s", () => {
