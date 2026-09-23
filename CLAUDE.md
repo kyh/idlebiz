@@ -87,11 +87,15 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   runs, so an act chained after a step that may move the page, or inside one whose steps the
   command does not show (`batch`, `chat`), is signed for once, exactly, like a shell rule.
   Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
-  as the founder, are held too. A site or a server is leased for the rest of the run; a page
-  or a server nothing can name never is. codex asking to widen its own sandbox is held every
-  time, never leased: once widened, nothing else in the run asks. A signature only ever picks
-  the runner's one-time option, never an "always" one. Both runners' wire formats end in
-  `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
+  as the founder, are held too. Every turn sets the runner's asking mode, and claude's
+  session carries flag-tier ask rules (shell, edits, MCP) that outrank any allow rule in the
+  founder's claude settings; codex still honours `allow` decisions in the founder's
+  ~/.codex/rules, which run a command outside the sandbox unasked. A site or a server is
+  leased for the rest of the run; a page or a server nothing can name never is. codex asking
+  to widen its own sandbox is held every time, never leased: once widened, nothing else in
+  the run asks. A signature only ever picks the runner's one-time option, never an "always"
+  one. Both runners' wire formats end in `packages/agent-driver/src/tool-ask.ts`; the policy
+  only ever sees a `ToolAsk`.
 
 ## Two traps that fail silently
 

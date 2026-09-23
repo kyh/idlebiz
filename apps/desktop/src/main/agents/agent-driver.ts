@@ -57,6 +57,7 @@ export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
   return {
     command: [process.execPath, unpacked(resolveFromApp.resolve(adapter.acpEntry))],
     env,
+    sessionMeta: adapter.sessionMeta,
     sessionModeId: adapter.sessionModeId,
     usagePerRequest: adapter.usagePerRequest,
   };

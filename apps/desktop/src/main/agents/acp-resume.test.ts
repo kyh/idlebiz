@@ -15,6 +15,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   if (method === "initialize") send({ id, result: { agentCapabilities: ${capabilities}, protocolVersion: 1 } });
   if (method === "session/resume") send({ id, ...${resumeAnswer} });
   if (method === "session/new") send({ id, result: { sessionId: "fresh" } });
+  if (method === "session/set_mode") send({ id, result: {} });
   if (method === "session/prompt") {
     const content = { text: params.prompt[0].text, type: "text" };
     send({ method: "session/update", params: { sessionId: params.sessionId, update: { content, sessionUpdate: "agent_message_chunk" } } });
@@ -38,7 +39,7 @@ afterEach(() => {
 
 const turn = (agentScript: string, systemPrompt = "", instructionsChanged = false) =>
   runAcpTurn({
-    agent: { command: [process.execPath, "-e", agentScript] },
+    agent: { command: [process.execPath, "-e", agentScript], sessionModeId: "default" },
     cwd,
     idleTimeoutMs: 0,
     instructionsChanged,

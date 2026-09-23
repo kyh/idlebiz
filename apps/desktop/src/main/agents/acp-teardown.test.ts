@@ -68,7 +68,7 @@ describe("tearing a turn down", () => {
     cwd = mkdtempSync(path.join(tmpdir(), "idlebiz-teardown-"));
     const stop = new AbortController();
     const turn = runAcpTurn({
-      agent: { command: [process.execPath, "-e", WEDGED_AGENT] },
+      agent: { command: [process.execPath, "-e", WEDGED_AGENT], sessionModeId: "default" },
       cwd,
       idleTimeoutMs: 0,
       maxSessionMs: 0,

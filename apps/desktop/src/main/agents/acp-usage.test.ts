@@ -21,6 +21,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
     used(params.sessionId, 90000);
     send({ id, result: {} });
   }
+  if (method === "session/set_mode") send({ id, result: {} });
   if (method === "session/prompt") {
     for (const tokens of [1000, 2000, 2000, 3000]) used(params.sessionId, tokens);
     const usage = { cachedReadTokens: 1500, inputTokens: 900, outputTokens: 600, totalTokens: 3000 };
@@ -41,7 +42,11 @@ afterEach(() => {
 
 const turn = (usagePerRequest?: true) =>
   runAcpTurn({
-    agent: { command: [process.execPath, "-e", codexLikeAgent], usagePerRequest },
+    agent: {
+      command: [process.execPath, "-e", codexLikeAgent],
+      sessionModeId: "read-only",
+      usagePerRequest,
+    },
     cwd,
     idleTimeoutMs: 0,
     maxSessionMs: 0,

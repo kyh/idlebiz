@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
+import type { NewSessionRequest } from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import { zeroUsage } from "./events";
 import { limitOf } from "./rate-limit";
@@ -64,8 +65,10 @@ const webWritable = (stream: Writable): WritableStream<Uint8Array> =>
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
   command: readonly string[];
-  /** Session mode to select once the session exists — see `RunnerAdapter`. */
-  sessionModeId?: string;
+  /** Session mode to set every turn — see `RunnerAdapter`. */
+  sessionModeId: string;
+  /** Sent as `_meta` when the session is created or resumed — see `RunnerAdapter`. */
+  sessionMeta?: NewSessionRequest["_meta"];
   /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
   usagePerRequest?: true;
   /** Environment this agent needs to find its own CLI. */
@@ -396,6 +399,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           }
           try {
             await agent.request("session/resume", {
+              _meta: opts.agent.sessionMeta,
               additionalDirectories,
               cwd: opts.cwd,
               sessionId: opts.resumeSessionId,
@@ -410,6 +414,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
 
         const startFresh = async (): Promise<string> => {
           const created = await agent.request("session/new", {
+            _meta: opts.agent.sessionMeta,
             additionalDirectories,
             cwd: opts.cwd,
             mcpServers: [],
@@ -418,14 +423,12 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         };
         sessionId = resumedId ?? (await startFresh());
 
-        // Resume restores the default mode. Set it every turn and fail if it cannot be
-        // set: Codex's default can execute without raising permission requests.
-        if (opts.agent.sessionModeId !== undefined) {
-          await agent.request("session/set_mode", {
-            modeId: opts.agent.sessionModeId,
-            sessionId,
-          });
-        }
+        // Fresh or resumed, a session starts in a default mode that may not ask at all, so
+        // this runs every turn, and a mode that cannot be set fails the turn before it prompts.
+        await agent.request("session/set_mode", {
+          modeId: opts.agent.sessionModeId,
+          sessionId,
+        });
 
         // a resume may replay what the session spent before
         requestTokens = 0;

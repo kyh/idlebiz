@@ -1,3 +1,4 @@
+import type { NewSessionRequest } from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import type { Rates } from "./pricing";
 import type { RunnerId } from "./runner";
@@ -5,8 +6,14 @@ import type { RunnerId } from "./runner";
 export interface RunnerAdapter {
   /** Module specifier of the ACP subprocess. */
   acpEntry: string;
-  /** Mode that raises permission requests. Codex needs it; Claude asks by default. */
-  sessionModeId?: string;
+  /**
+   * Mode that raises permission requests, set every turn: fresh or resumed, a session
+   * starts in a default that may skip the founder gate — codex's own, or the
+   * `permissions.defaultMode` claude reads from the player's user, project or local settings.
+   */
+  sessionModeId: string;
+  /** Sent as `_meta` on session/new and session/resume: the adapter's own session options. */
+  sessionMeta?: NewSessionRequest["_meta"];
   /** Adapter env var pointing at the player's CLI; bundled optional binaries may be absent. */
   binEnvVar?: string;
   /** The player's CLI on PATH, and the env var that overrides where it lives. */
@@ -41,6 +48,24 @@ const claudeLoggedIn = (output: string): boolean => {
   }
 };
 
+/**
+ * With bypass off, no settings tier can start a session in it. `settings` is the flag tier:
+ * its ask rules beat allow rules from any tier, and its values outrank the player's user,
+ * project and local settings, which stay loaded for their MCP servers.
+ */
+const claudeSessionMeta = {
+  claudeCode: {
+    options: {
+      allowDangerouslySkipPermissions: false,
+      settings: {
+        permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit", "mcp__*"] },
+        // a sandboxed command otherwise runs without the Bash ask
+        sandbox: { autoAllowBashIfSandboxed: false },
+      },
+    },
+  },
+};
+
 export const RUNNERS = {
   claude: {
     acpEntry: "@agentclientprotocol/claude-agent-acp/dist/index.js",
@@ -50,6 +75,8 @@ export const RUNNERS = {
     displayName: "Claude Code",
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
+    sessionMeta: claudeSessionMeta,
+    sessionModeId: "default",
   },
   codex: {
     acpEntry: "@agentclientprotocol/codex-acp/dist/index.js",

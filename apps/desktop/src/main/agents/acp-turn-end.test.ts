@@ -12,6 +12,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   const { id, method } = JSON.parse(line);
   if (method === "initialize") send({ id, result: { agentCapabilities: {}, protocolVersion: 1 } });
   if (method === "session/new") send({ id, result: { sessionId: "s1" } });
+  if (method === "session/set_mode") send({ id, result: {} });
   if (method === "session/prompt" && ${JSON.stringify(answer)} !== null) send({ id, ...JSON.parse(${JSON.stringify(answer)}) });
 });
 `;
@@ -28,7 +29,7 @@ afterEach(() => {
 
 const turn = (agentScript: string, maxSessionMs = 0) =>
   runAcpTurn({
-    agent: { command: [process.execPath, "-e", agentScript] },
+    agent: { command: [process.execPath, "-e", agentScript], sessionModeId: "default" },
     cwd,
     idleTimeoutMs: 0,
     maxSessionMs,
