@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BlockedAskSchema,
-  parseBlockedAsk,
   resolveMentions,
   afterFailure,
   entering,
@@ -10,42 +8,7 @@ import {
   MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
   MaxAgentsSchema,
-  serializeBlockedAsk,
 } from "./domain";
-import type { BlockedAsk } from "./domain";
-
-describe("BlockedAsk round-trip through TASK.md", () => {
-  it.each<BlockedAsk>([
-    { question: "ship it?", type: "question" },
-    { question: "why did [approve] show up here?", type: "question" },
-    { question: "[connect:stripe] should I set up billing?", type: "question" },
-    { question: "[approve] is this fine?", type: "question" },
-    { question: "[ask] nested", type: "question" },
-    { integration: "vercel", reason: "need hosting", type: "integration" },
-    { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
-  ])("%j", (ask) => {
-    expect(parseBlockedAsk(serializeBlockedAsk(ask))).toEqual(ask);
-  });
-
-  it("reads an approval without a rule id as held by the broadest rule", () => {
-    expect(parseBlockedAsk("[approve] git push origin main")).toEqual({
-      command: "git push origin main",
-      rule: "write-outside",
-      type: "approval",
-    });
-  });
-
-  it("preserves a retired rule through validation and TASK.md", () => {
-    const saved = "[approve:retired-rule] git push origin main";
-    const ask = BlockedAskSchema.parse(parseBlockedAsk(saved));
-    expect(ask).toEqual({
-      command: "git push origin main",
-      rule: "retired-rule",
-      type: "approval",
-    });
-    expect(serializeBlockedAsk(ask)).toBe(saved);
-  });
-});
 
 describe("resolveMentions", () => {
   const roster = [

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TASK_ORIGINS } from "@/shared/domain";
-import type { Task, TaskState } from "@/shared/domain";
+import { BlockedAskSchema, TASK_ORIGINS } from "@/shared/domain";
+import type { BlockedAsk, Task, TaskState } from "@/shared/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
@@ -107,6 +107,48 @@ describe("task codec", () => {
     const doc = taskToDoc({ ...base, state: { kind: "todo" } });
     const out = docToTask({ ...doc, metadata: { ...doc.metadata, status: "weird" } }, "acme");
     expect(out.state).toEqual({ kind: "todo" });
+  });
+});
+
+const blocked = (ask: BlockedAsk): Task => ({
+  ...base,
+  state: { ask, kind: "blocked", summary: null },
+});
+
+const askSavedAs = (blockedQuestion: string): TaskState => {
+  const doc = taskToDoc(blocked({ question: "?", type: "question" }));
+  return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }, "acme").state;
+};
+
+describe("a blocked task's ask in TASK.md", () => {
+  it.each<BlockedAsk>([
+    { question: "ship it?", type: "question" },
+    { question: "why did [approve] show up here?", type: "question" },
+    { question: "[connect:stripe] should I set up billing?", type: "question" },
+    { question: "[approve] is this fine?", type: "question" },
+    { question: "[ask] nested", type: "question" },
+    { integration: "vercel", reason: "need hosting", type: "integration" },
+    { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+  ])("round-trips %j", (ask) => {
+    expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
+  });
+
+  it("reads an approval without a rule id as held by the broadest rule", () => {
+    expect(askSavedAs("[approve] git push origin main")).toEqual(
+      blocked({ command: "git push origin main", rule: "write-outside", type: "approval" }).state,
+    );
+  });
+
+  it("preserves a retired rule through validation and TASK.md", () => {
+    const saved = "[approve:retired-rule] git push origin main";
+    const ask: BlockedAsk = {
+      command: "git push origin main",
+      rule: "retired-rule",
+      type: "approval",
+    };
+    expect(askSavedAs(saved)).toEqual(blocked(ask).state);
+    expect(BlockedAskSchema.parse(ask)).toEqual(ask);
+    expect(taskToDoc(blocked(ask)).metadata.blockedQuestion).toBe(saved);
   });
 });
 

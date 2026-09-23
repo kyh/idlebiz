@@ -1,10 +1,4 @@
-import {
-  TASK_ORIGINS,
-  TASK_PRIORITIES,
-  TASK_STATUSES,
-  parseBlockedAsk,
-  serializeBlockedAsk,
-} from "@/shared/domain";
+import { INTEGRATION_KINDS, TASK_ORIGINS, TASK_PRIORITIES, TASK_STATUSES } from "@/shared/domain";
 import type { BlockedAsk, Task, TaskOrigin, TaskState, TaskStatus } from "@/shared/domain";
 import {
   PACKAGE_SCHEMA,
@@ -15,6 +9,38 @@ import {
   strArray,
 } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
+
+const QUESTION_ESCAPE = "[ask] ";
+
+// TASK.md stores a human-editable scalar. A question that starts with "[" is escaped so an
+// agent's text can never read back as an approval or connect ask.
+const serializeBlockedAsk = (a: BlockedAsk): string => {
+  if (a.type === "question") {
+    return a.question.startsWith("[") ? `${QUESTION_ESCAPE}${a.question}` : a.question;
+  }
+  if (a.type === "approval") {
+    return `[approve:${a.rule}] ${a.command}`;
+  }
+  return `[connect:${a.integration}] ${a.reason}`;
+};
+
+const parseBlockedAsk = (s: string): BlockedAsk => {
+  if (s.startsWith(QUESTION_ESCAPE)) {
+    return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
+  }
+  const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
+  if (approval) {
+    const command = (approval.groups?.command ?? "").trim();
+    const rule = approval.groups?.rule ?? "write-outside";
+    return { command, rule, type: "approval" };
+  }
+  const m = /^\[connect:(?<kind>[a-z]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);
+  const integration = INTEGRATION_KINDS.find((k) => k === m?.groups?.kind);
+  if (!integration) {
+    return { question: s, type: "question" };
+  }
+  return { integration, reason: (m?.groups?.reason ?? "").trim(), type: "integration" };
+};
 
 /** A state's own fields, written flat beside the status line; a null one gets no line. */
 const stateFields = (st: TaskState): FrontmatterDoc["metadata"] => {

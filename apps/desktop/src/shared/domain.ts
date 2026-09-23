@@ -44,38 +44,6 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
 
-const QUESTION_ESCAPE = "[ask] ";
-
-// TASK.md stores a human-editable scalar. A question that starts with "[" is escaped so an
-// agent's text can never read back as an approval or connect ask.
-export const serializeBlockedAsk = (a: BlockedAsk): string => {
-  if (a.type === "question") {
-    return a.question.startsWith("[") ? `${QUESTION_ESCAPE}${a.question}` : a.question;
-  }
-  if (a.type === "approval") {
-    return `[approve:${a.rule}] ${a.command}`;
-  }
-  return `[connect:${a.integration}] ${a.reason}`;
-};
-
-export const parseBlockedAsk = (s: string): BlockedAsk => {
-  if (s.startsWith(QUESTION_ESCAPE)) {
-    return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
-  }
-  const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
-  if (approval) {
-    const command = (approval.groups?.command ?? "").trim();
-    const rule = approval.groups?.rule ?? "write-outside";
-    return { command, rule, type: "approval" };
-  }
-  const m = /^\[connect:(?<kind>[a-z]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);
-  const integration = INTEGRATION_KINDS.find((k) => k === m?.groups?.kind);
-  if (!integration) {
-    return { question: s, type: "question" };
-  }
-  return { integration, reason: (m?.groups?.reason ?? "").trim(), type: "integration" };
-};
-
 /**
  * Resolve `@token` mentions against the roster: employee slug match first,
  * then exact first-name token (case-insensitive). Whole-token matching only —

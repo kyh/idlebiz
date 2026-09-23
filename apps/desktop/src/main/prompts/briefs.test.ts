@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { autonomousBrief } from "./briefs";
+import { autonomousBrief, continuationBrief } from "./briefs";
 import { RUN_COST_ESTIMATE_USD } from "@/shared/bets";
-import type { Company, Employee, Product, RunMetrics } from "@/shared/domain";
+import type { BlockedAsk, Company, Employee, Product, RunMetrics, Task } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
 const company: Company = {
@@ -108,5 +108,64 @@ describe("the brief's budget", () => {
   it("prices a run at the estimate the allocator counts runs in flight at", () => {
     const text = briefFor(company, [product]);
     expect(text).toContain(`One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}`);
+  });
+});
+
+describe("the brief that carries the founder's answer", () => {
+  const task: Task = {
+    artifacts: [],
+    assigneeId: "lead",
+    attempts: 0,
+    betId: null,
+    companyId: "acme",
+    completedAt: null,
+    createdAt: 0,
+    description: "Wire checkout to the pricing page.",
+    id: "checkout",
+    origin: "work",
+    priority: "medium",
+    productId: "app",
+    startedAt: null,
+    state: { kind: "todo" },
+    title: "Add checkout",
+  };
+  const briefOn = (ask: BlockedAsk, t: Task = task) =>
+    continuationBrief(t, ask, "Yes, go ahead.").description;
+
+  it("never says who asked: a leaver's ask may reach the lead", () => {
+    const text = briefOn({ question: "Monthly or yearly?", type: "question" });
+    expect(text).toContain("This task was waiting on the founder for:\n> Monthly or yearly?");
+    expect(text).toContain("The founder answered:\n> Yes, go ahead.");
+    expect(text).not.toContain("You previously asked");
+  });
+
+  it("carries the original task's description, when it has one", () => {
+    const ask: BlockedAsk = { question: "Monthly or yearly?", type: "question" };
+    expect(briefOn(ask)).toContain(
+      "Original task: Add checkout\n\nWire checkout to the pricing page.",
+    );
+    expect(briefOn(ask, { ...task, description: null })).toMatch(/Original task: Add checkout$/u);
+  });
+
+  it.each<[BlockedAsk, string, string]>([
+    [
+      { question: "[connect:stripe] should I set up billing?", type: "question" },
+      "> [connect:stripe] should I set up billing?",
+      "[ask]",
+    ],
+    [
+      { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+      "> permission to run `npx vercel deploy --prod`",
+      "[approve:deploy]",
+    ],
+    [
+      { integration: "stripe", reason: "to take payments", type: "integration" },
+      "> a Stripe connection: to take payments",
+      "[connect:stripe]",
+    ],
+  ])("reads a %j ask in words, not as TASK.md stores it", (ask, words, stored) => {
+    const text = briefOn(ask);
+    expect(text).toContain(words);
+    expect(text).not.toContain(stored);
   });
 });

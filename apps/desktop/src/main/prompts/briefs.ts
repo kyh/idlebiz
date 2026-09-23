@@ -1,6 +1,6 @@
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, betProgress, ledgerOrder } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
-import { INTEGRATION_LABELS, businessTypeById, isLead, serializeBlockedAsk } from "@/shared/domain";
+import { INTEGRATION_LABELS, businessTypeById, isLead } from "@/shared/domain";
 import type {
   BlockedAsk,
   Company,
@@ -312,8 +312,33 @@ export const founderPing = (text: string): TaskBrief => ({
   title: `Founder: ${text.slice(0, 48)}`,
 });
 
+const askInWords = (ask: BlockedAsk): string => {
+  switch (ask.type) {
+    case "question": {
+      return ask.question;
+    }
+    case "approval": {
+      return `permission to run \`${ask.command}\``;
+    }
+    case "integration": {
+      return `a ${INTEGRATION_LABELS[ask.integration]} connection: ${ask.reason}`;
+    }
+    // no default
+  }
+};
+
+/** Whoever runs it may not be who asked: a leaver's open asks pass to the lead. */
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
-  description: `You previously asked the founder:\n> ${serializeBlockedAsk(ask)}\n\nThe founder answered:\n> ${answer}\n\nContinue the work with that answer. Original task: ${task.title}`,
+  description: [
+    "This task was waiting on the founder for:",
+    `> ${askInWords(ask)}`,
+    "",
+    "The founder answered:",
+    `> ${answer}`,
+    "",
+    `Continue the work with that answer. Original task: ${task.title}`,
+    ...(task.description === null ? [] : ["", task.description]),
+  ].join("\n"),
   title: `Continue: ${task.title.slice(0, 60)}`,
 });
 
