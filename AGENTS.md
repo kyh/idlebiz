@@ -235,7 +235,8 @@ rather than crashing boot.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a
   hand-rolled external store in `state/store.ts`.
 - `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`,
-  `activity.ts`, `command-policy.ts`, `format.ts`, `errors.ts`, `character-frame.ts` (the
+  `activity.ts`, `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a
+  line as bash would), `format.ts`, `errors.ts`, `character-frame.ts` (the
   sprite box every process slices by), `office-depth.ts` (draw bands + paint order),
   `office-layout-schema.ts` (office-design.json, versioned and migrated) and `office-grid.ts`
   (walking as pure math; the scene, the save handler and `check:office` all use it).
