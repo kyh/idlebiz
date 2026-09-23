@@ -212,3 +212,58 @@ it("lists a token's own projects when it is refused the team list", async () => 
     projects: [{ id: "prj_acme", name: "acme" }],
   });
 });
+
+it("names the team of a project that shares its name with a personal one", async () => {
+  vercelAccount(({ pathname, teamId }) => {
+    if (pathname === "/v2/teams") {
+      return Promise.resolve(
+        Response.json({
+          teams: [
+            { id: "team_a", name: "Acme Inc", slug: "acme-inc" },
+            { id: "team_b", name: null, slug: "side-gig" },
+          ],
+        }),
+      );
+    }
+    return teamId === null
+      ? null
+      : Promise.resolve(Response.json({ projects: [{ id: `prj_${teamId}`, name: "acme" }] }));
+  });
+
+  await expect(listVercelProjects("token")).resolves.toEqual({
+    account: "kai",
+    kind: "loaded",
+    projects: [
+      { id: "prj_acme", name: "acme" },
+      { id: "prj_team_a", name: "acme", teamId: "team_a", teamName: "Acme Inc" },
+      { id: "prj_team_b", name: "acme", teamId: "team_b", teamName: "side-gig" },
+    ],
+  });
+});
+
+it("lists a project the personal account and its team both return once, under the team", async () => {
+  vercelAccount(({ pathname, teamId }) => {
+    if (pathname === "/v2/teams") {
+      return Promise.resolve(Response.json({ teams: [{ id: "team_a", name: "Acme Inc" }] }));
+    }
+    return teamId === null
+      ? null
+      : Promise.resolve(
+          Response.json({
+            projects: [
+              { id: "prj_acme", name: "acme" },
+              { id: "prj_docs", name: "docs" },
+            ],
+          }),
+        );
+  });
+
+  await expect(listVercelProjects("token")).resolves.toEqual({
+    account: "kai",
+    kind: "loaded",
+    projects: [
+      { id: "prj_acme", name: "acme", teamId: "team_a", teamName: "Acme Inc" },
+      { id: "prj_docs", name: "docs", teamId: "team_a", teamName: "Acme Inc" },
+    ],
+  });
+});

@@ -10,6 +10,8 @@ export interface VercelProject {
   id: string;
   name: string;
   teamId?: string;
+  /** Its team's name, which tells it from a same-named project elsewhere. */
+  teamName?: string;
 }
 
 /**

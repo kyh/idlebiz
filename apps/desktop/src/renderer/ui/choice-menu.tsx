@@ -3,6 +3,8 @@ import { Toolbar } from "@base-ui/react/toolbar";
 import { cn } from "cn";
 
 export interface MenuItem {
+  /** Tells rows apart when labels may repeat; the label otherwise. */
+  id?: string;
   label: string;
   hint?: string;
   disabled?: boolean;
@@ -76,7 +78,7 @@ export const ChoiceMenu = ({ menu, className }: { menu: Menu; className?: string
     >
       {menu.items.map((item, i) => (
         <Toolbar.Button
-          key={item.label}
+          key={item.id ?? item.label}
           ref={(el) => {
             items.current[i] = el;
           }}

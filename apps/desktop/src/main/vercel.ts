@@ -66,7 +66,9 @@ const ProjectsSchema = z.object({
   projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
 });
 const TeamsSchema = z.object({
-  teams: z.array(z.object({ id: z.string(), name: z.string().nullish() })).default([]),
+  teams: z
+    .array(z.object({ id: z.string(), name: z.string().nullish(), slug: z.string().optional() }))
+    .default([]),
 });
 
 /**
@@ -94,12 +96,19 @@ export const listProjects = async (token: string): Promise<VercelProject[]> => {
         if (!projs.success) {
           return [];
         }
-        return projs.data.projects.map((p) => ({ id: p.id, name: p.name, teamId: team.id }));
+        return projs.data.projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          teamId: team.id,
+          teamName: team.name ?? team.slug,
+        }));
       }),
     );
     out.push(...perTeam.flat());
   }
-  return out;
+  // The personal listing can repeat a team's projects; the team's listing wins,
+  // since its teamId reaches the project whatever the token's default scope.
+  return [...new Map(out.map((p) => [p.id, p])).values()];
 };
 
 const VisitsCountSchema = z.object({

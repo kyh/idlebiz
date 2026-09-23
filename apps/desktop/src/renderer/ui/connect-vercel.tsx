@@ -145,8 +145,8 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
               cursor,
               items: lookup.projects.map((p) => ({
                 disabled: busy,
-                hint: p.teamId ? "a team project" : undefined,
-                label: p.name,
+                id: p.id,
+                label: p.teamName ? `${p.name} · ${p.teamName}` : p.name,
               })),
               pick: (i) => {
                 const project = lookup.projects[i];
