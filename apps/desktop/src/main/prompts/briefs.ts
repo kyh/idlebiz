@@ -30,9 +30,6 @@ export const roomTranscript = (
     )
     .join("\n") || "(no messages yet)";
 
-/** The live numbers the founder's HUD shows, so a run can steer by them.
- *  Null is "no source connected", never zero: the difference decides whether
- *  the next move is growth or asking for the connection. */
 /** "; +$2.00 since your last run" — how a live number moved, when the previous run recorded one. */
 const movedBy = (now: number, then: number | null | undefined, money: boolean): string => {
   if (then === null || then === undefined) {
@@ -46,6 +43,9 @@ const movedBy = (now: number, then: number | null | undefined, money: boolean): 
   return `; ${delta > 0 ? "+" : "−"}${shown} since your last run`;
 };
 
+/** The live numbers the founder's HUD shows, so a run can steer by them.
+ *  Null is "no source connected", never zero: the difference decides whether
+ *  the next move is growth or asking for the connection. */
 const realNumbers = (
   company: Company,
   products: readonly Product[],

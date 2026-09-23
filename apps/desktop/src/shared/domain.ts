@@ -397,9 +397,9 @@ export const taskIn =
 export interface Task {
   id: string;
   companyId: string;
-  /** The product this work is for; null is company-level work (a review, a routine). */
+  /** The product this work is for; null only for a propose run no product has room for (and saves from before products). */
   productId: string | null;
-  /** The bet this work spends against; null is work no bet pays for (a founder ping, a review). */
+  /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what those runs delegate. */
   betId: string | null;
   /** Why this task exists; a continuation inherits it. */
   origin: TaskOrigin;
