@@ -25,6 +25,8 @@ const WEB_BASE = process.env["IDLEBIZ_WEB_URL"] ?? "https://idlebiz.com";
 const FLOW_TIMEOUT_MS = 5 * 60_000;
 const STRIPE_TOKEN_KEY = "STRIPE_CONNECT_TOKEN";
 
+type Revocation = { kind: "revoked" } | { kind: "unconfirmed"; reason: string };
+
 interface PendingFlow {
   companyId: string;
   server: Server;
@@ -36,7 +38,7 @@ interface PendingFlow {
 
 let pending: PendingFlow | null = null;
 let generation = 0;
-let revoking: Promise<void> | null = null;
+let revoking: Promise<Revocation> | null = null;
 let lastError: string | null = null;
 
 type Notify = (status: StripeStatus) => void;
@@ -239,23 +241,28 @@ export const beginConnect = async (companyId: string): Promise<{ started: boolea
   }
 };
 
-const revoke = async (body: DeauthorizeBody): Promise<void> => {
+// The web route answers 403 when the token no longer reads the account: the
+// grant is already gone, so there is nothing left for the founder to remove.
+const revoke = async (body: DeauthorizeBody): Promise<Revocation> => {
   try {
-    await fetch(`${WEB_BASE}${DEAUTHORIZE_PATH}`, {
+    const res = await fetch(`${WEB_BASE}${DEAUTHORIZE_PATH}`, {
       body: JSON.stringify(body),
       headers: { "Content-Type": "application/json" },
       method: "POST",
       signal: AbortSignal.timeout(8000),
     });
-  } catch {
-    /* best effort — local cleanup already completed */
+    return res.ok || res.status === 403
+      ? { kind: "revoked" }
+      : { kind: "unconfirmed", reason: `HTTP ${res.status}` };
+  } catch (error) {
+    return { kind: "unconfirmed", reason: errorMessage(error) };
   }
 };
 
-/** Deauthorize on Stripe's side (best effort) and clean up local state. */
+/** Clean up local state, then deauthorize on Stripe's side; the founder hears when Stripe did not confirm. */
 export const disconnectStripe = async (companyId: string): Promise<void> => {
   requireCompany();
-  cancelPending();
+  const current = cancelPending();
   const token = getSecret(STRIPE_TOKEN_KEY);
   const account = readMetricsConfig(companyId)?.stripeAccount;
   // Clear local credentials immediately; new authorization waits for remote revocation below.
@@ -267,9 +274,14 @@ export const disconnectStripe = async (companyId: string): Promise<void> => {
     const body: DeauthorizeBody = { accessToken: token, stripeUserId: account.accountId };
     const revocation = revoke(body);
     revoking = revocation;
-    await revocation;
+    const outcome = await revocation;
     if (revoking === revocation) {
       revoking = null;
+    }
+    if (outcome.kind === "unconfirmed" && current === generation) {
+      fail(
+        `Disconnected here, but Stripe may still list IdleBiz (${outcome.reason}) — remove it under Installed apps in your Stripe Dashboard.`,
+      );
     }
   }
 };

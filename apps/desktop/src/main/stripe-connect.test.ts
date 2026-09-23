@@ -9,6 +9,7 @@ import { z } from "zod";
 import { loopbackUrl, parseState } from "@repo/stripe-connect-protocol/protocol";
 import type { OAuthState } from "@repo/stripe-connect-protocol/protocol";
 import { seal } from "@repo/stripe-connect-protocol/seal";
+import type { StripeStatus } from "@/shared/integrations";
 import { listenLoopback } from "./lib/http";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-stripe-"));
@@ -44,8 +45,9 @@ const company = store.foundCompany({
 });
 const urls: string[] = [];
 const connected: string[] = [];
+const notified: StripeStatus[] = [];
 stripe.initStripeConnect({
-  notify: () => {},
+  notify: (status) => notified.push(status),
   onConnected: (id) => connected.push(id),
   openExternal: (url) => {
     urls.push(url);
@@ -55,6 +57,7 @@ stripe.initStripeConnect({
 beforeEach(() => {
   urls.length = 0;
   connected.length = 0;
+  notified.length = 0;
 });
 afterEach(async () => {
   holdRevocation = null;
@@ -92,6 +95,14 @@ const callbackUrl = async (state: OAuthState, token: string): Promise<string> =>
     stripeUserId: "acct_fixture",
   });
   return loopbackUrl(state, { kind: "sealed", sealed });
+};
+
+const connectThenDisconnect = async (answer: (res: ServerResponse) => void): Promise<void> => {
+  await stripe.beginConnect(company.id);
+  const response = await fetch(await callbackUrl(latestState(), "token-connected"));
+  await response.text();
+  holdRevocation = answer;
+  await stripe.disconnectStripe(company.id);
 };
 
 describe("Stripe flow ownership", () => {
@@ -164,5 +175,49 @@ describe("Stripe flow ownership", () => {
       revocation.end();
       await Promise.all([disconnect, reconnect]);
     }
+  });
+});
+
+describe("Stripe disconnect", () => {
+  it("reads a revoked grant, or one the token can no longer read, as disconnected", async () => {
+    for (const status of [200, 403]) {
+      await connectThenDisconnect((res) => res.writeHead(status).end());
+      expect(getSecret("STRIPE_CONNECT_TOKEN"), String(status)).toBeNull();
+      expect(stripe.getStripeStatus(company.id), String(status)).toEqual({
+        state: "disconnected",
+      });
+    }
+  });
+
+  it("tells the founder when Stripe did not confirm the revocation", async () => {
+    await connectThenDisconnect((res) => res.writeHead(502).end());
+    expect(getSecret("STRIPE_CONNECT_TOKEN")).toBeNull();
+    expect(stripe.getStripeStatus(company.id)).toEqual({
+      message:
+        "Disconnected here, but Stripe may still list IdleBiz (HTTP 502) — remove it under Installed apps in your Stripe Dashboard.",
+      state: "error",
+    });
+  });
+
+  it("tells the founder when the revocation never reached Stripe", async () => {
+    await connectThenDisconnect((res) => res.destroy());
+    expect(getSecret("STRIPE_CONNECT_TOKEN")).toBeNull();
+    expect(stripe.getStripeStatus(company.id).state).toBe("error");
+  });
+
+  it("keeps quiet about an unconfirmed revocation once the founder reconnects", async () => {
+    const received = Promise.withResolvers<ServerResponse>();
+    const disconnect = connectThenDisconnect(received.resolve);
+    const revocation = await received.promise;
+    const reconnect = stripe.beginConnect(company.id);
+    revocation.writeHead(502).end();
+    await disconnect;
+    expect(await reconnect).toEqual({ started: true });
+    expect(notified.map(({ state }) => state)).toEqual([
+      "connecting",
+      "connected",
+      "disconnected",
+      "connecting",
+    ]);
   });
 });
