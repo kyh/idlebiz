@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { cn } from "cn";
 
@@ -16,29 +16,58 @@ export interface Menu {
   pick: (i: number) => void;
 }
 
+const isTextField = (el: Element | null): boolean =>
+  el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+
 /** An RPG choice window: a list with a ▶ cursor. Base UI's Toolbar owns the
  *  roving focus (↑↓, wrapping, Enter/Space on the item); the cursor IS the
- *  focused item, and the pointer moves it by hovering. */
+ *  focused item, and the pointer moves it by hovering. The focused item answers
+ *  Enter and Space itself, so the page's own Enter handler must not also fire.
+ *  `data-composite-item-active` is read once, when the toolbar first registers
+ *  its items: it makes the cursor's item the default tab stop, not the first. */
 export const ChoiceMenu = ({ menu, className }: { menu: Menu; className?: string }) => {
   const items = useRef<(HTMLButtonElement | null)[]>([]);
   const { cursor } = menu;
   // the toolbar registers its items in the render after mount, so a focus set
-  // any earlier is not seen as its highlighted item; one macrotask is enough
+  // any earlier is not seen as its highlighted item; one macrotask is enough.
+  // A text field that took focus in the same commit (an autoFocus answer box)
+  // keeps it.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const item = items.current[cursor];
-      if (item && document.activeElement !== item) {
+      const focused = document.activeElement;
+      if (item && focused !== item && !isTextField(focused)) {
         item.focus();
       }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [cursor]);
+
+  // Base UI keeps its highlight on the same element as rows come and go around
+  // it, while the cursor is an index: follow the element. A focused row that
+  // went away left focus on the body, so hand it back to the cursor's row.
+  const reconcile = useEffectEvent(() => {
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) {
+      items.current[Math.min(cursor, menu.items.length - 1)]?.focus();
+      return;
+    }
+    const at = focused instanceof HTMLButtonElement ? items.current.indexOf(focused) : -1;
+    if (at !== -1 && at !== cursor) {
+      menu.setCursor(at);
+    }
+  });
+  const labels = menu.items.map((item) => item.label).join("\n");
+  useEffect(() => {
+    const timer = window.setTimeout(() => reconcile(), 0);
+    return () => window.clearTimeout(timer);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the rows' labels are the trigger; what runs reads the DOM they rendered
+  }, [labels]);
+
   return (
     <Toolbar.Root
       orientation="vertical"
       className={cn("px-menu px-window px-pop", className)}
-      // the item under the cursor answers Enter and Space itself; the page's
-      // own Enter handler must not also fire
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.stopPropagation();
@@ -53,8 +82,6 @@ export const ChoiceMenu = ({ menu, className }: { menu: Menu; className?: string
           }}
           className="px-menu-item"
           data-cur={i === cursor}
-          // read once, when the toolbar first registers its items: the cursor's
-          // item is the default tab stop rather than the first one
           data-composite-item-active={i === cursor ? "" : undefined}
           title={item.hint}
           disabled={item.disabled}

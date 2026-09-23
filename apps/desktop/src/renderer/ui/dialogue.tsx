@@ -23,6 +23,11 @@ import { cn } from "cn";
 
 const NOTE_MS = 1800;
 
+const HINTS = {
+  menu: "↑↓ move · ⏎ select · esc leave",
+  talk: "⏎ send · esc back",
+};
+
 type Spoken = Extract<ActivityEvent, { kind: "chat" | "message" | "ship" }>;
 
 const isSpoken = (a: ActivityEvent): a is Spoken =>
@@ -189,7 +194,8 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
       ? tasks.filter(taskIn("blocked")).find((t) => t.state.ask.type === "question")
       : undefined;
   const question = asked && asked.state.ask.type === "question" ? asked.state.ask.question : null;
-  // the menu: main's options for this employee, then Talk… for free text
+  // the menu: main's options for this employee, then Talk… for free text. It
+  // waits for the options so it opens on the first one, not on Talk.
   const rows: Row[] = [
     ...(fetched?.options ?? []).map((option): Row => ({ kind: "ask", option })),
     { kind: "talk" },
@@ -288,7 +294,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6">
       <div className="dlg">
-        {mode === "menu" ? <ChoiceMenu menu={menu} className="dlg-menu" /> : null}
+        {mode === "menu" && fetched ? <ChoiceMenu menu={menu} className="dlg-menu" /> : null}
         <div className="px-battle px-pop dlg-box">
           <div className="dlg-bust">
             <Bust seed={emp.spriteSeed} size="lg" alt={emp.name} />
@@ -327,9 +333,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
               />
             ) : null}
             <SendStatus submission={submission} note={note} />
-            <div className="px-hint mt-auto text-right">
-              {mode === "talk" ? "⏎ send · esc back" : "↑↓ move · ⏎ select · esc leave"}
-            </div>
+            <div className="px-hint mt-auto text-right">{HINTS[mode]}</div>
           </div>
           <button
             type="button"
