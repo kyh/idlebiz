@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
+const { companyDir, tasksDir } = await import("./paths");
 const { createScheduler, scheduler } = await import("./scheduler");
 
 beforeEach(() => {
@@ -196,6 +197,45 @@ describe("settling a run", () => {
     createScheduler(driver).tick();
     running.get("priya")?.(done(1.25));
     await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
+  });
+
+  it("books the spend and frees the employee when the settle cannot write", async () => {
+    const company = found();
+    const { driver, running } = scripted();
+    const task = queue("priya");
+    createScheduler(driver).tick();
+    const taskDir = path.join(tasksDir(company.id), task.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(taskDir, 0o555);
+    try {
+      running.get("priya")?.(done(0.5));
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+      expect(logged).toHaveBeenCalledOnce();
+    } finally {
+      chmodSync(taskDir, 0o755);
+      logged.mockRestore();
+    }
+    expect(store.getCompany()?.spentUsd).toBe(0.5);
+  });
+
+  it("settles the run and frees the employee when the spend cannot write", async () => {
+    const company = found();
+    const { driver, running } = scripted();
+    const task = queue("priya");
+    createScheduler(driver).tick();
+    const dir = companyDir(company.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(dir, 0o555);
+    try {
+      running.get("priya")?.(done(0.5));
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("could not book run"));
+    } finally {
+      chmodSync(dir, 0o755);
+      logged.mockRestore();
+    }
+    expect(kindOf(task)).not.toBe("running");
+    expect(store.getCompany()?.spentUsd).toBe(0.5);
   });
 
   it("holds a task that asked the founder something", async () => {

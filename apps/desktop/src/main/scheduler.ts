@@ -126,6 +126,20 @@ const admit = (company: Company): boolean => {
   return false;
 };
 
+const book = (task: Task, costUsd: number): void => {
+  if (costUsd <= 0) {
+    return;
+  }
+  const before = store.getCompany();
+  const after = store.recordSpend(costUsd);
+  if (task.betId !== null) {
+    store.recordBetSpend(task.betId, costUsd);
+  }
+  if (before && !isOutOfBudget(before) && isOutOfBudget(after)) {
+    haltForBudget(after);
+  }
+};
+
 /** Usage limits and the app quitting park the task without consuming a retry. */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
@@ -195,19 +209,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   if (status !== "queued") {
     store.revokeApprovals(task.id);
   }
-  store.setEmployeeStatus(emp.id, "idle");
   store.noteRunEnd(emp.id, r.session);
-
-  if (r.usage.costUsd > 0) {
-    const before = store.getCompany();
-    const after = store.recordSpend(r.usage.costUsd);
-    if (task.betId !== null) {
-      store.recordBetSpend(task.betId, r.usage.costUsd);
-    }
-    if (before && after && !isOutOfBudget(before) && isOutOfBudget(after)) {
-      haltForBudget(after);
-    }
-  }
 
   publishActivity({ ...at, kind: "status", message: status });
   publishActivity({
@@ -564,30 +566,45 @@ class Scheduler {
     company: Company,
     signal: AbortSignal,
   ): Promise<void> {
+    let result: RunResult;
     try {
-      await this.execute(runId, task, employee, company, signal);
+      result = await this.execute(runId, task, employee, company, signal);
     } catch (error) {
-      finish(runId, task, employee, {
+      result = {
         outcome: { error: errorMessage(error), kind: "failed" },
         session: employee.sessionId,
         summary: "",
         usage: zeroUsage(),
-      });
+      };
+    }
+    // The money is spent whatever the settle does, and a failed booking must not leave the
+    // task running. One settle per run even when it throws: a second would bill $0 and call
+    // shipped work failed. Nothing awaits this promise, so it must not reject.
+    try {
+      book(task, result.usage.costUsd);
+    } catch (error) {
+      console.error(`could not book run ${runId}: ${errorMessage(error)}`);
+    }
+    try {
+      finish(runId, task, employee, result);
+    } catch (error) {
+      console.error(`could not settle run ${runId}: ${errorMessage(error)}`);
     } finally {
+      store.setEmployeeStatus(employee.id, "idle");
       this.runs.delete(runId);
       this.tick();
     }
   }
 
-  private async execute(
+  private execute(
     runId: string,
     task: Task,
     emp: Employee,
     company: Company,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<RunResult> {
     const product = task.productId === null ? null : store.getProduct(task.productId);
-    const result = await this.driver.runTask(
+    return this.driver.runTask(
       emp,
       company,
       {
@@ -605,7 +622,6 @@ class Scheduler {
       }),
       signal,
     );
-    finish(runId, task, emp, result);
   }
 }
 
