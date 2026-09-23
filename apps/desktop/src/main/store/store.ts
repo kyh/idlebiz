@@ -185,21 +185,46 @@ interface Owned {
   companyId: string;
 }
 
-const patchIn = <T extends Owned>(
-  list: T[],
-  id: string,
-  patch: Partial<T>,
-  save: (row: T) => void,
-): T => {
+const patchedRow = <T extends Owned>(list: T[], id: string, patch: Partial<T>) => {
   const idx = list.findIndex((row) => row.id === id);
   const cur = list[idx];
   // every caller looked the row up first, so a missing one is a bug, not an outcome
   if (!cur) {
     throw new Error(`nothing to patch at "${id}"`);
   }
-  const next = { ...cur, ...patch, companyId: cur.companyId, id: cur.id };
-  list[idx] = next;
+  return { idx, next: { ...cur, ...patch, companyId: cur.companyId, id: cur.id } };
+};
+
+/** A change that holds only once saved, like a lock: a save that throws leaves the row as the disk has it. */
+const patchIn = <T extends Owned>(
+  list: T[],
+  id: string,
+  patch: Partial<T>,
+  save: (row: T) => void,
+): T => {
+  const { idx, next } = patchedRow(list, id, patch);
   save(next);
+  list[idx] = next;
+  return next;
+};
+
+/**
+ * A record of what already happened, like a run ending or money spent: the cache takes it even
+ * when the save throws. The row's next write carries it to disk, and boot recovers a task the
+ * disk still has running.
+ */
+const recordIn = <T extends Owned>(
+  list: T[],
+  id: string,
+  patch: Partial<T>,
+  save: (row: T) => void,
+): T => {
+  const { idx, next } = patchedRow(list, id, patch);
+  try {
+    save(next);
+  } finally {
+    list[idx] = next;
+  }
   return next;
 };
 
@@ -599,8 +624,21 @@ const patchCompany = (patch: Partial<Company>): Company => {
   const active = current();
   const co = active.company;
   const next = { ...co, ...patch, id: co.id };
-  active.company = next;
   saveCompany(next);
+  active.company = next;
+  return next;
+};
+
+/** patchCompany for what already happened, as recordIn is for a row: the next company write saves it. */
+const recordCompany = (patch: Partial<Company>): Company => {
+  const active = current();
+  const co = active.company;
+  const next = { ...co, ...patch, id: co.id };
+  try {
+    saveCompany(next);
+  } finally {
+    active.company = next;
+  }
   return next;
 };
 
@@ -616,8 +654,8 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
-  active.grants = grants;
   atomicWrite(approvalsFile(active.company.id), JSON.stringify(grants, null, 2));
+  active.grants = grants;
 };
 
 export const grantApproval = (taskId: string, key: string): void => {
@@ -651,7 +689,7 @@ const addSpend = (totalUsd: number, costUsd: number): number =>
   Math.round((totalUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
 
 export const recordSpend = (costUsd: number): Company =>
-  patchCompany({ spentUsd: addSpend(current().company.spentUsd, costUsd) });
+  recordCompany({ spentUsd: addSpend(current().company.spentUsd, costUsd) });
 
 export const setBudget = (budget: Budget): Company => patchCompany({ budget });
 
@@ -736,13 +774,7 @@ const dropRetiredRoutines = (active: ActiveCompany): void => {
 export const listRoutines = (): Routine[] => [...current().routines];
 
 export const markRoutineRun = (routineId: string): void => {
-  const list = current().routines;
-  const r = list?.find((x) => x.id === routineId);
-  if (!r) {
-    return;
-  }
-  r.lastRunAt = Date.now();
-  saveRoutine(r);
+  patchIn(current().routines, routineId, { lastRunAt: Date.now() }, saveRoutine);
 };
 
 // ---- employees -------------------------------------------------------------
@@ -823,7 +855,7 @@ export const noteRunEnd = (id: string, sessionId: string | null): void => {
   }
   const { revenueUsd, users } = active.company;
   const lastRunMetrics = { at: Date.now(), revenueUsd, users };
-  patchIn(active.employees, id, { lastRunMetrics, sessionId }, saveRunState);
+  recordIn(active.employees, id, { lastRunMetrics, sessionId }, saveRunState);
 };
 
 /**
@@ -1053,7 +1085,7 @@ export const setBetReading = (betId: string, reading: number | null): void => {
 export const recordBetSpend = (betId: string, costUsd: number): void => {
   const bet = getBet(betId);
   if (bet) {
-    patchBet(betId, { spentUsd: addSpend(bet.spentUsd, costUsd) });
+    recordIn(current().bets, betId, { spentUsd: addSpend(bet.spentUsd, costUsd) }, saveBet);
   }
 };
 
@@ -1086,8 +1118,8 @@ const deadLetter = (match: (t: Task) => boolean, reason: string, now: number): v
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
-    active.policy = next;
     atomicWrite(policyFile(active.company.id), JSON.stringify(next, null, 2));
+    active.policy = next;
   }
 };
 
@@ -1144,14 +1176,23 @@ export const recentShips = (): readonly string[] => current().recentShips ?? [];
 
 export const recordShip = (productId: string | null, summary: string): void => {
   const active = current();
-  patchCompany({ ships: active.company.ships + 1 });
+  recordCompany({ ships: active.company.ships + 1 });
   const product = productId === null ? null : getProduct(productId);
   if (product) {
-    patchProduct(product.id, { lastShipAt: Date.now(), ships: product.ships + 1 });
+    recordIn(
+      active.products,
+      product.id,
+      { lastShipAt: Date.now(), ships: product.ships + 1 },
+      saveProduct,
+    );
   }
   // the counters are the record; the brief's list follows them
-  active.recentShips = [...active.recentShips, summary].slice(-RECENT_SHIPS);
-  atomicWrite(recentShipsFile(active.company.id), JSON.stringify(active.recentShips, null, 2));
+  const ships = [...active.recentShips, summary].slice(-RECENT_SHIPS);
+  try {
+    atomicWrite(recentShipsFile(active.company.id), JSON.stringify(ships, null, 2));
+  } finally {
+    active.recentShips = ships;
+  }
 };
 
 // ---- the company room ------------------------------------------------------
@@ -1300,6 +1341,10 @@ export const listQueuedTasks = (): Task[] => {
 const patchTask = (id: string, patch: Partial<Task>): Task =>
   patchIn(current().tasks, id, patch, saveTask);
 
+/** How a task leaves a run that has ended, or an ask that was answered: it happened, saved or not. */
+const recordTask = (id: string, patch: Partial<Task>): Task =>
+  recordIn(current().tasks, id, patch, saveTask);
+
 /** How a run can leave its task: shipped, or waiting on the founder. Only an answer supersedes one. */
 type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
 
@@ -1317,7 +1362,7 @@ const noteShip = (t: Task): void => {
     taskId: t.id,
     title: t.title,
   };
-  patchIn(current().employees, t.assigneeId, { lastShip }, saveRunState);
+  recordIn(current().employees, t.assigneeId, { lastShip }, saveRunState);
 };
 
 // Persist before shelving so boot can recover a crash between the two writes.
@@ -1325,7 +1370,7 @@ const close = (
   taskId: string,
   state: Settled | Extract<TaskState, { kind: "superseded" }>,
 ): void => {
-  const t = patchTask(taskId, entering(state, Date.now()));
+  const t = recordTask(taskId, entering(state, Date.now()));
   if (!isHistory(t)) {
     return;
   }
@@ -1409,7 +1454,7 @@ export const failTask = (taskId: string, runId: string, error: string): FailureV
     return null;
   }
   const next = failed(t, error);
-  patchTask(taskId, next.task);
+  recordTask(taskId, next.task);
   return next.verdict;
 };
 
@@ -1418,7 +1463,7 @@ export const parkTask = (taskId: string, runId: string, until: number, lastError
   if (!heldBy(getTask(taskId), runId)) {
     return;
   }
-  patchTask(taskId, { state: { kind: "queued", lastError, nextAttemptAt: until } });
+  recordTask(taskId, { state: { kind: "queued", lastError, nextAttemptAt: until } });
 };
 
 /**
@@ -1814,8 +1859,8 @@ export const initStore = (): LoadReport => {
 
 // ---- activity log ----------------------------------------------------------
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  active.sinceLastLook = next;
   atomicWrite(sinceLastLookFile(active.company.id), JSON.stringify(next, null, 2));
+  active.sinceLastLook = next;
 };
 
 /** The founder has the office in view as of `at`: what came before is seen, and the count starts over. */

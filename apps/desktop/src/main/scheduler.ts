@@ -543,7 +543,15 @@ class Scheduler {
     }
 
     const runId = crypto.randomUUID();
-    const locked = store.lockTaskForRun(task.id, runId);
+    // A lock the save refuses leaves the task queued for the next tick; throwing would stall
+    // every candidate after it, on every tick.
+    let locked: Task | null;
+    try {
+      locked = store.lockTaskForRun(task.id, runId);
+    } catch (error) {
+      console.error(`could not lock task ${task.id}: ${errorMessage(error)}`);
+      return;
+    }
     // lost race
     if (!locked) {
       return;

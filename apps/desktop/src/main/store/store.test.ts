@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -235,6 +236,46 @@ describe("scheduler queue admission", () => {
     expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([task.id, next.id]);
     expect(store.getEmployee(employee.id)?.status).toBe("idle");
     expect(store.getEmployee(teammate.id)?.status).toBe("idle");
+  });
+});
+
+describe("a write that fails", () => {
+  it("leaves the task as the save has it, free to lock again", () => {
+    const co = found();
+    const employee = store.createEmployee({ ...hire("Priya") });
+    const task = store.createTask({ title: "Ship it" });
+    store.claimTask(task.id, employee.id);
+    const dir = path.join(tasksDir(co.id), task.id);
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => store.lockTaskForRun(task.id, "run-1")).toThrow();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(store.getTask(task.id)?.state.kind).toBe("queued");
+    expect(store.lockTaskForRun(task.id, "run-2")?.state).toMatchObject({
+      kind: "running",
+      runId: "run-2",
+    });
+  });
+
+  it("still hands a failed run's task back to the queue", () => {
+    const co = found();
+    const employee = store.createEmployee({ ...hire("Priya") });
+    const task = store.createTask({ title: "Ship it" });
+    store.claimTask(task.id, employee.id);
+    store.lockTaskForRun(task.id, "run-1");
+    const dir = path.join(tasksDir(co.id), task.id);
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => store.failTask(task.id, "run-1", "boom")).toThrow();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 1,
+      state: { kind: "queued", lastError: "boom" },
+    });
   });
 });
 
@@ -684,6 +725,22 @@ describe("bets", () => {
       spentUsd: 2,
       state: { kind: "won", moved: 60 },
     });
+  });
+
+  it("keeps spend its save refused, and the bet's next write carries it", () => {
+    const co = found();
+    const bet = launch(firstProduct().id);
+    const dir = path.dirname(betFile(co.id, bet.id));
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => store.recordBetSpend(bet.id, 1.5)).toThrow();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(store.getBet(bet.id)?.spentUsd).toBe(1.5);
+    store.setBetReading(bet.id, 10);
+    store.initStore();
+    expect(store.getBet(bet.id)).toMatchObject({ reading: 10, spentUsd: 1.5 });
   });
 
   it("counts a bet's queued and running work as in flight", () => {

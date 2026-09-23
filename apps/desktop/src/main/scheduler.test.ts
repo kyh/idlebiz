@@ -150,6 +150,30 @@ describe("draining the queue", () => {
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
   });
+
+  it("moves past a task whose lock cannot write and retries it next tick", () => {
+    const company = found();
+    const { driver } = scripted();
+    const drain = createScheduler(driver);
+    const stuck = queue("priya", "high");
+    const next = queue("mae");
+    const taskDir = path.join(tasksDir(company.id), stuck.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(taskDir, 0o555);
+    try {
+      expect(() => drain.tick()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("could not lock task"));
+    } finally {
+      chmodSync(taskDir, 0o755);
+      logged.mockRestore();
+    }
+    expect(kindOf(stuck)).toBe("queued");
+    expect(kindOf(next)).toBe("running");
+
+    drain.tick();
+
+    expect(kindOf(stuck)).toBe("running");
+  });
 });
 
 const runOne = async (result: RunResult, betId: string | null = null) => {
@@ -215,6 +239,7 @@ describe("settling a run", () => {
       chmodSync(taskDir, 0o755);
       logged.mockRestore();
     }
+    expect(kindOf(task)).not.toBe("running");
     expect(store.getCompany()?.spentUsd).toBe(0.5);
   });
 
@@ -236,6 +261,11 @@ describe("settling a run", () => {
     }
     expect(kindOf(task)).not.toBe("running");
     expect(store.getCompany()?.spentUsd).toBe(0.5);
+
+    store.setAutopilot(false);
+    store.initStore();
+
+    expect(store.getCompany()).toMatchObject({ ships: 1, spentUsd: 0.5 });
   });
 
   it("holds a task that asked the founder something", async () => {
