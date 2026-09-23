@@ -9,6 +9,7 @@ import {
   idleFrame,
 } from "@/renderer/game/character-sheet";
 import type { CharacterAnims, Dir } from "@/renderer/game/character-sheet";
+import { BootGate } from "@/renderer/game/boot-gate";
 import { loadCharacter } from "@/renderer/game/characters";
 import { ClickWalk } from "@/renderer/game/click-walk";
 import type { Walker } from "@/renderer/game/click-walk";
@@ -88,6 +89,12 @@ export class OfficeScene extends Scene {
   private facing: Dir = "down";
   private debugGfx?: Phaser.GameObjects.Graphics;
   private npcs?: NpcManager;
+  /**
+   * What the office hears while it boots waits for its snapshot, then replays in
+   * order: statuses and asks are last-writer-wins and a spawn of someone already
+   * there is a no-op, so replaying what the snapshot already saw is harmless.
+   */
+  private readonly npcEvents = new BootGate<NpcManager>();
   private clickWalk?: ClickWalk;
   /** The layout's grid with the spots nobody should stand in closed; set once the room is judged. */
   /**
@@ -161,10 +168,12 @@ export class OfficeScene extends Scene {
     window.__officeDebug = this.debugApi();
 
     // live hires and releases come and go through the door
-    const onSpawn = (emp: Employee) => {
-      void this.npcs?.spawn(emp, "door");
-    };
-    const onDespawn = (employeeId: string) => this.npcs?.despawn(employeeId, "door");
+    const onSpawn = (emp: Employee) =>
+      this.npcEvents.run((npcs) => {
+        void npcs.spawn(emp, "door");
+      });
+    const onDespawn = (employeeId: string) =>
+      this.npcEvents.run((npcs) => npcs.despawn(employeeId, "door"));
     const onModal = (open: boolean) => {
       this.modalOpen = open;
       if (open) {
@@ -193,6 +202,7 @@ export class OfficeScene extends Scene {
       this.events.off(Scenes.Events.SHUTDOWN, teardown);
       this.events.off(Scenes.Events.DESTROY, teardown);
       this.generation += 1;
+      this.npcEvents.shut();
       this.events.off(Scenes.Events.ADDED_TO_SCENE, roundQuad);
       this.activityUnsub?.();
       document.removeEventListener("focusin", onFocusChange);
@@ -236,6 +246,7 @@ export class OfficeScene extends Scene {
 
   private async boot(): Promise<void> {
     this.generation += 1;
+    this.npcEvents.boot();
     const { generation } = this;
     const masks = textureMasks(this.textures);
     const seats = this.buildRoom(masks);
@@ -289,6 +300,7 @@ export class OfficeScene extends Scene {
         npcs.setState(task.assigneeId, "blocked");
       }
     }
+    this.npcEvents.open(npcs);
   }
 
   private buildRoom(masks: (key: string) => OpaqueMask | null): Seat[] {
@@ -412,34 +424,33 @@ export class OfficeScene extends Scene {
       }
       switch (e.kind) {
         case "chat": {
-          this.npcs?.onChat(employeeId, e.message, e.payload.to);
+          this.npcEvents.run((npcs) => npcs.onChat(employeeId, e.message, e.payload.to));
           return;
         }
         // what they are doing right now, as the sprite can show it
         case "tool_call": {
-          this.npcs?.onTool(employeeId, poseForToolKind(e.payload.kind));
+          const pose = poseForToolKind(e.payload.kind);
+          this.npcEvents.run((npcs) => npcs.onTool(employeeId, pose));
           return;
         }
         // an ask raised mid-run: the "!" goes up now, not when the run settles
         case "run.ask": {
-          this.npcs?.onAsk(employeeId);
+          this.npcEvents.run((npcs) => npcs.onAsk(employeeId));
           return;
         }
         case "run.start": {
-          this.npcs?.setState(employeeId, "working");
+          this.npcEvents.run((npcs) => npcs.setState(employeeId, "working"));
           return;
         }
         case "run.end": {
-          this.npcs?.setState(
-            employeeId,
-            e.payload.outcome.kind === "blocked" ? "blocked" : "idle",
-          );
+          const state = e.payload.outcome.kind === "blocked" ? "blocked" : "idle";
+          this.npcEvents.run((npcs) => npcs.setState(employeeId, state));
           return;
         }
         // an answer requeues the task, but its run may not start at once: drop the "!" now
         case "status": {
           if (e.message === "queued") {
-            this.npcs?.unblock(employeeId);
+            this.npcEvents.run((npcs) => npcs.unblock(employeeId));
           }
           break;
         }
