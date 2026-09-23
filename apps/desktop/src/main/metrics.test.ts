@@ -22,7 +22,10 @@ afterAll(() => {
 
 const charge = (id: string, amount: number, metadata: Record<string, string> = {}) => ({
   amount,
+  amount_captured: amount,
   amount_refunded: 0,
+  captured: true,
+  currency: "usd",
   id,
   metadata,
   paid: true,
@@ -101,6 +104,41 @@ describe("sumCharges", () => {
       }),
     );
     expect(revenue?.total).toBe(7);
+  });
+
+  it("counts no authorization that was never captured", async () => {
+    const revenue = await sumCharges(() =>
+      Promise.resolve({
+        data: [
+          charge("ch_1", 1000, { bet: "x", product: "app" }),
+          { ...charge("ch_2", 5000, { bet: "x", product: "app" }), captured: false },
+        ],
+      }),
+    );
+    expect(revenue?.total).toBe(10);
+    expect([...(revenue?.byProduct ?? [])]).toEqual([["app", 10]]);
+    expect([...(revenue?.byBet ?? [])]).toEqual([["x", 10]]);
+  });
+
+  it("counts what a partial capture took, not what it authorized", async () => {
+    const revenue = await sumCharges(() =>
+      Promise.resolve({
+        data: [{ ...charge("ch_1", 5000, { bet: "x", product: "app" }), amount_captured: 1000 }],
+      }),
+    );
+    expect(revenue?.total).toBe(10);
+    expect([...(revenue?.byBet ?? [])]).toEqual([["x", 10]]);
+  });
+
+  it("reads no other currency's minor units as cents", async () => {
+    const revenue = await sumCharges(() =>
+      Promise.resolve({
+        data: [{ ...charge("ch_1", 2000, { bet: "x", product: "app" }), currency: "jpy" }],
+      }),
+    );
+    expect(revenue?.total).toBe(0);
+    expect(revenue?.byProduct.size).toBe(0);
+    expect(revenue?.byBet.size).toBe(0);
   });
 
   it("reports nothing rather than half a total", async () => {
@@ -192,6 +230,19 @@ describe("fetchRealMetrics", () => {
 
 describe("fetchRealMetrics reading Stripe", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("reads every Stripe answer at the pinned API version", async () => {
+    const versions: (string | null)[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      versions.push(new Headers(init.headers).get("Stripe-Version"));
+      return Promise.resolve(Response.json({ data: [], total_count: 0 }));
+    });
+
+    await fetchRealMetrics({ key: "pinned", via: "own" }, [], [revenueBet("pricing", 0)]);
+
+    expect(versions).toHaveLength(3);
+    expect(new Set(versions)).toEqual(new Set(["2025-03-31.basil"]));
+  });
 
   it("asks customer search to expand its total", async () => {
     const asked = stripe((endpoint) =>

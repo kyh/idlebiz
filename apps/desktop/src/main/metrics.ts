@@ -32,9 +32,17 @@ class StripeAuthError extends Error {
   }
 }
 
+// Pinned, since an unpinned read answers in the account's default version and a
+// charge's fields change meaning across it: before basil a partial capture booked
+// its uncaptured rest in amount_refunded, so captured less refunded undercounts.
+const STRIPE_VERSION = "2025-03-31.basil";
+
 const stripeGet = async (endpoint: string, key: string): Promise<JsonValue> => {
   try {
-    return await getJson(`https://api.stripe.com${endpoint}`, { Authorization: `Bearer ${key}` });
+    return await getJson(`https://api.stripe.com${endpoint}`, {
+      Authorization: `Bearer ${key}`,
+      "Stripe-Version": STRIPE_VERSION,
+    });
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
       throw new StripeAuthError(`stripe ${error.status}`);
@@ -47,8 +55,10 @@ const StripeChargePageSchema = z.object({
   data: z
     .array(
       z.object({
-        amount: z.number().optional(),
+        amount_captured: z.number().optional(),
         amount_refunded: z.number().optional(),
+        captured: z.boolean().optional(),
+        currency: z.string().optional(),
         id: z.string().optional(),
         metadata: z.record(z.string(), z.string()).optional(),
         paid: z.boolean().optional(),
@@ -61,7 +71,7 @@ const StripeChargePageSchema = z.object({
 const MAX_CHARGE_PAGES = 100;
 
 export interface Revenue {
-  /** Dollars kept across every charge. */
+  /** Dollars kept across every captured USD charge. */
   total: number;
   /** The share of it tagged `metadata[product]=<id>`; untagged money belongs to the company alone. */
   byProduct: ReadonlyMap<string, number>;
@@ -77,11 +87,13 @@ const credit = (bucket: Map<string, number>, tag: string | undefined, kept: numb
 };
 
 /**
- * Money kept, in dollars, from one read of every charge: paid less refunded,
- * bucketed by product tag in the same pass so the company's total and its
- * products' can never disagree. Null when the read is incomplete — a page
- * that cannot be parsed, or more pages than the cap — so half a total never
- * overwrites the last good one.
+ * Money kept, in dollars, from one read of every charge: what USD charges
+ * captured less what they refunded, bucketed by product tag in the same pass so
+ * the company's total and its products' can never disagree. An authorization,
+ * or the part of one left uncaptured, is not money, and another currency's
+ * minor units are not cents, so neither counts. Null when the read is
+ * incomplete — a page that cannot be parsed, or more pages than the cap — so
+ * half a total never overwrites the last good one.
  */
 export const sumCharges = async (
   fetchPage: (after: string | null) => Promise<JsonValue>,
@@ -96,8 +108,8 @@ export const sumCharges = async (
       return null;
     }
     for (const ch of page.data.data) {
-      if (ch.paid === true) {
-        const kept = (ch.amount ?? 0) - (ch.amount_refunded ?? 0);
+      if (ch.paid === true && ch.captured === true && ch.currency === "usd") {
+        const kept = (ch.amount_captured ?? 0) - (ch.amount_refunded ?? 0);
         cents += kept;
         credit(byProduct, ch.metadata?.["product"], kept);
         credit(byBet, ch.metadata?.["bet"], kept);

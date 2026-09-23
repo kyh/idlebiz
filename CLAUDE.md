@@ -40,7 +40,7 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   lets an agent declare a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
-  bet reads Stripe money tagged `metadata[bet]=<slug>`. So any number of bets run on one
+  bet reads captured USD charges tagged `metadata[bet]=<slug>`. So any number of bets run on one
   product and none can claim another's result; `claimsCollide` refuses only a path another
   live bet already covers. Readings arrive with the metrics pulse and live on the bet
   (`reading`), so `judge` needs nothing but the bet. Vercel's analytics API wants `since`

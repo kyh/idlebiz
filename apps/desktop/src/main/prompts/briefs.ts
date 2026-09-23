@@ -105,7 +105,7 @@ const betLine = (bet: Bet): string => {
 export const betMark = (bet: Bet): string =>
   bet.claim.metric === "users"
     ? `It counts only visitors who land on ${bet.claim.landingPath} (or a page under it) of ${bet.productId}'s deploy: every link this bet places anywhere must point there, and the path must serve a real page — see "Marking a bet's traffic" in your instructions.`
-    : `It counts only Stripe money tagged metadata[bet]=${bet.id}: every payment link, checkout session or payment intent made for it must carry that tag on the payment itself.`;
+    : `It counts only captured USD charges tagged metadata[bet]=${bet.id}: every payment link, checkout session or payment intent made for it must be priced in usd and carry that tag on the payment itself.`;
 
 /** What the team room hears when a bet opens or changes state. */
 export const betNews = (bet: Bet): string => {

@@ -46,7 +46,7 @@ const BetRow = ({ bet }: { bet: Bet }) => {
       <p className="mt-1 text-xs text-fg-dim">
         {bet.claim.metric === "users"
           ? `counts visitors landing on ${bet.claim.landingPath}`
-          : `counts Stripe money tagged bet=${bet.id}`}
+          : `counts USD Stripe charges tagged bet=${bet.id}`}
       </p>
       <div className="mt-1 flex items-baseline justify-between gap-2 text-xs text-fg-dim">
         <span className="min-w-0 truncate" title={verdictOf(bet)}>

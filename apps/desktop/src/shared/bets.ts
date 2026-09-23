@@ -32,7 +32,7 @@ export const LandingPathSchema = z
 export const BetClaimSchema = z.discriminatedUnion("metric", [
   /** Visitors who landed under `landingPath` since the bet opened: every link the bet places points there. */
   z.object({ landingPath: LandingPathSchema, metric: z.literal("users") }),
-  /** Money kept from Stripe charges tagged `metadata[bet]=<id>`. */
+  /** Money kept from captured USD Stripe charges tagged `metadata[bet]=<id>`. */
   z.object({ metric: z.literal("revenue") }),
 ]);
 export type BetClaim = z.infer<typeof BetClaimSchema>;
