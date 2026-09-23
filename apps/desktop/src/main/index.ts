@@ -291,7 +291,10 @@ void (async () => {
     callback(false);
   });
   store.initStore();
-  exportSecretsToEnv();
+  const unreadableSecrets = exportSecretsToEnv();
+  if (unreadableSecrets) {
+    store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
+  }
   await adoptShellPath();
   agentDriver.init();
   await controlPlane.start();

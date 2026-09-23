@@ -143,7 +143,8 @@ rather than crashing boot.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`.
   `main/secrets.ts` exports them into the process env at boot so both the metrics providers
   and every employee's shell inherit them: `STRIPE_SECRET_KEY` / `STRIPE_CONNECT_TOKEN`,
-  `PLAUSIBLE_API_KEY`, `VERCEL_TOKEN`.
+  `PLAUSIBLE_API_KEY`, `VERCEL_TOKEN`. One that fails to parse is listed in Settings and
+  never rewritten (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

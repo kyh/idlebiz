@@ -1,7 +1,6 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { atomicWrite, readJsonFile } from "@/main/lib/fs";
+import { atomicWrite, readJsonFile, readJsonFileForUpdate } from "@/main/lib/fs";
 import { ROOT_DIR } from "@/main/paths";
 import { jsonRecordSchema } from "@/shared/json";
 import type { JsonRecord } from "@/shared/json";
@@ -10,22 +9,28 @@ import type { JsonRecord } from "@/shared/json";
 
 const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
-const readSecretsFile = (): JsonRecord | null => readJsonFile(SECRETS_PATH, jsonRecordSchema);
+const readSecretsForUpdate = (): JsonRecord | null =>
+  readJsonFileForUpdate(SECRETS_PATH, jsonRecordSchema);
 
 const writeSecretsFile = (raw: JsonRecord): void =>
   atomicWrite(SECRETS_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
 
-const loadSecrets = (): Record<string, string> => {
-  const file = readSecretsFile() ?? {};
-  return Object.fromEntries(
-    Object.entries(file).filter(
+const stringsOf = (raw: JsonRecord): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(raw).filter(
       (entry): entry is [string, string] => z.string().safeParse(entry[1]).success,
     ),
   );
-};
 
-export const exportSecretsToEnv = (): Record<string, string> => {
-  if (!existsSync(SECRETS_PATH)) {
+/** Export the string secrets into this process's env; returns what boot reports when secrets.json can't be read. */
+export const exportSecretsToEnv = (): { file: string; cause: unknown } | null => {
+  let raw: JsonRecord | null;
+  try {
+    raw = readSecretsForUpdate();
+  } catch (error) {
+    return { cause: error, file: SECRETS_PATH };
+  }
+  if (raw === null) {
     // seed an empty, documented file so the founder knows where keys go
     try {
       writeSecretsFile({
@@ -35,21 +40,21 @@ export const exportSecretsToEnv = (): Record<string, string> => {
     } catch {
       /* best effort */
     }
-    return {};
+    return null;
   }
-  const secrets = loadSecrets();
-  for (const [k, v] of Object.entries(secrets)) {
+  for (const [k, v] of Object.entries(stringsOf(raw))) {
     if (!k.startsWith("_")) {
       process.env[k] = v;
     }
   }
-  return secrets;
+  return null;
 };
 
-export const getSecret = (key: string): string | null => loadSecrets()[key] ?? null;
+export const getSecret = (key: string): string | null =>
+  stringsOf(readJsonFile(SECRETS_PATH, jsonRecordSchema) ?? {})[key] ?? null;
 
 export const setSecret = (key: string, value: string): void => {
-  const raw = readSecretsFile() ?? {};
+  const raw = readSecretsForUpdate() ?? {};
   raw[key] = value;
   writeSecretsFile(raw);
   if (!key.startsWith("_")) {
@@ -58,7 +63,7 @@ export const setSecret = (key: string, value: string): void => {
 };
 
 export const deleteSecret = (key: string): void => {
-  const raw = readSecretsFile();
+  const raw = readSecretsForUpdate();
   if (raw === null) {
     return;
   }

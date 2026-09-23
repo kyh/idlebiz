@@ -1,6 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
-import { atomicWrite, readJsonFile } from "@/main/lib/fs";
+import { atomicWrite, readJsonFile, readJsonFileForUpdate } from "@/main/lib/fs";
 import { companyDir } from "@/main/paths";
 
 // Which providers a company reads its real numbers from. A leaf: the store
@@ -34,7 +34,7 @@ export const readMetricsConfig = (companyId: string): MetricsConfig | null =>
 
 /** Merge a patch into metrics.json; an `undefined` field drops that provider. The file is a MetricsConfig both ways. */
 export const writeMetricsConfig = (companyId: string, patch: Partial<MetricsConfig>): void => {
-  const existing = readJsonFile(metricsPath(companyId), MetricsConfigSchema) ?? {};
+  const existing = readJsonFileForUpdate(metricsPath(companyId), MetricsConfigSchema) ?? {};
   const next = MetricsConfigSchema.parse({ ...existing, ...patch });
   atomicWrite(metricsPath(companyId), JSON.stringify(next, null, 2));
 };

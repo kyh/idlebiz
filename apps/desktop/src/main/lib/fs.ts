@@ -2,6 +2,7 @@ import {
   appendFileSync,
   chmodSync,
   closeSync,
+  existsSync,
   fstatSync,
   mkdirSync,
   openSync,
@@ -11,7 +12,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import type { z } from "zod";
+import { z } from "zod";
+import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
 
 // Every file main writes goes through here: atomically, and behind one gate.
@@ -71,6 +73,30 @@ export const readJsonFile = <T>(file: string, schema: z.ZodType<T>): T | null =>
   } catch {
     return null;
   }
+};
+
+/**
+ * A JSON file about to be rewritten: null only when it does not exist yet.
+ * Anything else unreadable throws, so a read-modify-write never replaces a
+ * file it could not read.
+ */
+export const readJsonFileForUpdate = <T>(file: string, schema: z.ZodType<T>): T | null => {
+  if (!existsSync(file)) {
+    return null;
+  }
+  let cause: string;
+  try {
+    const parsed = schema.safeParse(parseJson(readFileSync(file, "utf-8")));
+    if (parsed.success) {
+      return parsed.data;
+    }
+    cause = z.prettifyError(parsed.error);
+  } catch (error) {
+    cause = errorMessage(error);
+  }
+  throw new Error(
+    `IdleBiz can't read ${file} (${cause}). Fix it by hand; it will not be overwritten.`,
+  );
 };
 
 /** How much of a log to read for its last rows — a bound, so a long-lived log stays cheap to open. */

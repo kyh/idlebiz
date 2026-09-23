@@ -494,6 +494,9 @@ const skip = (kind: LoadSkip["kind"], file: string, cause: unknown): void => {
   lastLoad.skipped.push({ error: errorMessage(cause), kind, path: file });
 };
 
+/** Report a file boot needed but could not read, alongside the packages the store skipped. */
+export const noteUnreadable = skip;
+
 const safeReaddir = (dir: string): string[] => {
   try {
     return readdirSync(dir);

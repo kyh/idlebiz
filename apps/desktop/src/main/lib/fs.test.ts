@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readJsonlTail } from "./fs";
+import { readJsonFileForUpdate, readJsonlTail } from "./fs";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-jsonl-"));
 const file = path.join(root, "activity.jsonl");
@@ -37,4 +37,29 @@ describe("JSONL tail", () => {
 
     expect(readJsonlTail(file, RowSchema, 10)).toEqual([{ value: 2 }, { value: 3 }]);
   });
+});
+
+describe("JSON file read for an update", () => {
+  const json = path.join(root, "config.json");
+
+  it("is null only when the file does not exist", () => {
+    rmSync(json, { force: true });
+
+    expect(readJsonFileForUpdate(json, RowSchema)).toBeNull();
+  });
+
+  it("reads a file the schema accepts", () => {
+    writeFileSync(json, '{"value":1}');
+
+    expect(readJsonFileForUpdate(json, RowSchema)).toEqual({ value: 1 });
+  });
+
+  it.each(['{"value":1,}', '{"value":"one"}'])(
+    "refuses %j rather than reading it as empty",
+    (text) => {
+      writeFileSync(json, text);
+
+      expect(() => readJsonFileForUpdate(json, RowSchema)).toThrow(`IdleBiz can't read ${json}`);
+    },
+  );
 });

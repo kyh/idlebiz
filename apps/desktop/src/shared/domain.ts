@@ -441,9 +441,9 @@ export type AuthFlowEvent =
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
 export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
-/** A package on disk the store could not read at boot, and why. */
+/** A file on disk boot could not read, and why. */
 export interface LoadSkip {
-  kind: "company" | "employee" | "task" | "routine" | "product" | "bet" | "team";
+  kind: "company" | "employee" | "task" | "routine" | "product" | "bet" | "team" | "secrets";
   path: string;
   error: string;
 }
