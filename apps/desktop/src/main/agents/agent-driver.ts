@@ -59,6 +59,7 @@ export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
     env,
     sessionMeta: adapter.sessionMeta,
     sessionModeId: adapter.sessionModeId,
+    typedFailures: adapter.typedFailures,
     usagePerRequest: adapter.usagePerRequest,
   };
 };
@@ -175,6 +176,25 @@ export interface RunResult {
   usage: AgentUsage;
 }
 
+type Memory = Pick<RunResult, "session" | "instructionsDigest">;
+
+/**
+ * What an employee remembers after a turn: the session it ran, holding the instructions it was
+ * given. A turn that opened none leaves `stored` exactly as it was; a spent session is forgotten.
+ */
+export const memoryAfter = (
+  turn: Pick<AcpTurnResult, "end" | "sessionId">,
+  stored: Memory,
+  digest: string,
+): Memory => {
+  if (turn.end.kind === "failed" && turn.end.sessionSpent) {
+    return { instructionsDigest: null, session: null };
+  }
+  return turn.sessionId === undefined
+    ? stored
+    : { instructionsDigest: digest, session: turn.sessionId };
+};
+
 class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
@@ -269,17 +289,14 @@ class AgentDriver {
     const retryFresh =
       first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
     if (!retryFresh) {
-      // a turn that opened no session leaves the stored one exactly as it was told
-      return first.turn.sessionId === undefined
-        ? { ...first.result, instructionsDigest: emp.instructionsDigest, session: emp.sessionId }
-        : { ...first.result, instructionsDigest: digest, session: first.turn.sessionId };
+      const stored = { instructionsDigest: emp.instructionsDigest, session: emp.sessionId };
+      return { ...first.result, ...memoryAfter(first.turn, stored, digest) };
     }
     const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, signal);
     // the stale attempt was still billed; each attempt is already priced, so add, don't re-price
     return {
       ...retry.result,
-      instructionsDigest: digest,
-      session: retry.turn.sessionId ?? null,
+      ...memoryAfter(retry.turn, { instructionsDigest: digest, session: null }, digest),
       usage: addUsage(first.result.usage, retry.result.usage),
     };
   }

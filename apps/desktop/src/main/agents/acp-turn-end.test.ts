@@ -17,6 +17,49 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
 });
 `;
 
+interface SessionFailure {
+  actions: string[];
+  category: string;
+  severity: "error" | "warning";
+  title: string;
+}
+
+const typedError = (category: string, actions: string[], title: string): SessionFailure => ({
+  actions,
+  category,
+  severity: "error",
+  title,
+});
+
+/**
+ * codex-acp ending a turn on `failure`: on the prompt response to a client that declared typed
+ * failures, and otherwise only in prose, the turn still ending end_turn.
+ */
+const failingAgent = (failure: SessionFailure, stderr = ""): string => `
+process.stderr.write(${JSON.stringify(stderr)});
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
+const failure = ${JSON.stringify(failure)};
+let typed = false;
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method, params } = JSON.parse(line);
+  if (method === "initialize") {
+    const air = params.clientCapabilities._meta?.jetbrains?.air;
+    typed = Number.isInteger(air?.version) && air.version >= 1 && air.capabilities?.includes("sessionFailure") === true;
+    send({ id, result: { agentCapabilities: {}, protocolVersion: 1 } });
+  }
+  if (method === "session/new") send({ id, result: { sessionId: "s1" } });
+  if (method === "session/set_mode") send({ id, result: {} });
+  if (method === "session/prompt") {
+    if (!typed) {
+      const content = { text: failure.title, type: "text" };
+      send({ method: "session/update", params: { sessionId: "s1", update: { content, sessionUpdate: "agent_message_chunk" } } });
+    }
+    const _meta = typed ? { jetbrains: { air: { sessionFailure: failure, version: 1 } } } : {};
+    send({ id, result: { _meta, stopReason: "end_turn" } });
+  }
+});
+`;
+
 let cwd = "";
 
 beforeEach(() => {
@@ -29,7 +72,11 @@ afterEach(() => {
 
 const turn = (agentScript: string, maxSessionMs = 0) =>
   runAcpTurn({
-    agent: { command: [process.execPath, "-e", agentScript], sessionModeId: "default" },
+    agent: {
+      command: [process.execPath, "-e", agentScript],
+      sessionModeId: "default",
+      typedFailures: true,
+    },
     cwd,
     idleTimeoutMs: 0,
     maxSessionMs,
@@ -44,13 +91,16 @@ describe("how a turn ends", () => {
     const refusal = JSON.stringify({
       error: {
         code: -32_603,
-        data: { codexErrorInfo: "usageLimitExceeded", message: "try again in 2 hours" },
-        message: "Internal error",
+        data: { errorKind: "rate_limit" },
+        message: "You've hit your limit · try again in 2 hours",
       },
     });
     const before = Date.now();
     const { end } = await turn(scriptedAgent(refusal));
-    expect(end).toMatchObject({ error: "Internal error", kind: "limited" });
+    expect(end).toMatchObject({
+      error: "You've hit your limit · try again in 2 hours",
+      kind: "limited",
+    });
     const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
     expect(resetsAt).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
   });
@@ -68,5 +118,75 @@ describe("how a turn ends", () => {
       error: "agent stopped: refusal\nYou've hit your usage limit",
       kind: "failed",
     });
+  });
+});
+
+describe("a turn the agent ended on a typed failure", () => {
+  it("rests on a usage or rate limit until the time it names", async () => {
+    const title = "You've hit your usage limit. Try again in 2 hours.";
+    const before = Date.now();
+    const { end } = await turn(failingAgent(typedError("limit", [], title)));
+    expect(end).toMatchObject({ error: title, kind: "limited" });
+    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
+    expect(resetsAt).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
+
+    const rate = await turn(failingAgent(typedError("limit", ["retry"], "Rate limit reached")));
+    expect(rate.end.kind).toBe("limited");
+  });
+
+  it("rests on an overloaded service, for a default park when it names no time", async () => {
+    const title = "Selected model is at capacity. Please try a different model.";
+    const before = Date.now();
+    const { end } = await turn(failingAgent(typedError("service", ["retry"], title)));
+    expect(end).toMatchObject({ error: title, kind: "limited" });
+    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
+    expect(resetsAt).toBeGreaterThanOrEqual(before + 30 * 60_000);
+  });
+
+  it("fails, never rests, on a service fault typed exactly as an overload but not one", async () => {
+    const { end } = await turn(failingAgent(typedError("service", ["retry"], "Turn failed")));
+    expect(end).toEqual({ error: "Turn failed", kind: "failed" });
+  });
+
+  it("fails, never rests, on an internal error, with what the agent said on stderr", async () => {
+    const title = "Codex encountered an internal error.";
+    const internal = typedError("service", ["retry", "new_session"], title);
+    const { end } = await turn(failingAgent(internal));
+    expect(end).toEqual({ error: title, kind: "failed" });
+
+    const logged = await turn(failingAgent(internal, "ResponseError: turn/start failed"));
+    expect(logged.end).toEqual({
+      error: `${title}\nResponseError: turn/start failed`,
+      kind: "failed",
+    });
+  });
+
+  it("fails and spends the session when only a new one can go on", async () => {
+    const title = "Codex ran out of room in the model's context window.";
+    const { end, sessionId } = await turn(
+      failingAgent(typedError("limit", ["new_session"], title)),
+    );
+    expect(end).toEqual({ error: title, kind: "failed", sessionSpent: true });
+    expect(sessionId).toBe("s1");
+  });
+
+  it("fails, keeping the session, on any other error", async () => {
+    const refused = await turn(failingAgent(typedError("request", [], "Bad request")));
+    expect(refused.end).toEqual({ error: "Bad request", kind: "failed" });
+    const lost = await turn(
+      failingAgent(typedError("connection", ["retry", "new_session"], "Connection lost")),
+    );
+    expect(lost.end).toEqual({ error: "Connection lost", kind: "failed" });
+  });
+
+  it("completes when the agent reports no failure, or only a warning the turn got past", async () => {
+    const clean = await turn(scriptedAgent(JSON.stringify({ result: { stopReason: "end_turn" } })));
+    expect(clean.end).toEqual({ kind: "completed" });
+    const warning = failingAgent({
+      ...typedError("service", [], "Reconnecting…"),
+      severity: "warning",
+    });
+    const { end } = await turn(warning);
+    expect(end).toEqual({ kind: "completed" });
   });
 });

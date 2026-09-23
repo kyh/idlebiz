@@ -28,6 +28,13 @@ export interface RunnerAdapter {
    * usage_update arrives per request (codex-acp), so the turn is counted from their sum.
    */
   usagePerRequest?: true;
+  /**
+   * Declare the adapter's typed session failures on initialize. Undeclared, codex-acp tells a
+   * failed turn only in prose and still ends it `end_turn`, which reads as finished work.
+   * claude-agent-acp speaks them too, but declared, it would stop rejecting a limited turn
+   * with the `errorKind` that `limitOf` parks on.
+   */
+  typedFailures?: true;
 }
 
 const claudeAuthStatus = z.object({ loggedIn: z.boolean() });
@@ -88,6 +95,7 @@ export const RUNNERS = {
     fallbackRates: { cachedInput: 0.125, input: 1.25, output: 10 },
     loginArgs: ["login"],
     sessionModeId: "read-only",
+    typedFailures: true,
     usagePerRequest: true,
   },
 } satisfies Record<RunnerId, RunnerAdapter>;

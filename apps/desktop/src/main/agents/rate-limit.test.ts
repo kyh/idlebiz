@@ -1,5 +1,5 @@
 import { RequestError } from "@agentclientprotocol/sdk";
-import { limitOf } from "@repo/agent-driver/rate-limit";
+import { liftsAt, limitOf } from "@repo/agent-driver/rate-limit";
 import { describe, expect, it } from "vitest";
 
 // noon in Los Angeles
@@ -15,19 +15,6 @@ describe("limitOf", () => {
   it("does not park on a rejection that names no limit", () => {
     expect(limitOf(RequestError.internalError({ errorKind: "server_error" }), now)).toBeNull();
     expect(limitOf(RequestError.internalError(undefined, "Session not found"), now)).toBeNull();
-  });
-
-  it("parks on codex's usage limit, though its message says only Internal error", () => {
-    const bare = new RequestError(-32_603, "Internal error", {
-      codexErrorInfo: "usageLimitExceeded",
-    });
-    expect(limitOf(bare, now)).toEqual({ resetsAt: minutes(30) });
-
-    const told = RequestError.internalError({
-      codexErrorInfo: "usageLimitExceeded",
-      message: "You've hit your usage limit. Try again in 2 hours 15 minutes.",
-    });
-    expect(limitOf(told, now)).toEqual({ resetsAt: minutes(135) });
   });
 
   it("parks on claude's errorKind", () => {
@@ -50,5 +37,14 @@ describe("limitOf", () => {
       "You're out of usage credits · try again in 30 hours",
     );
     expect(limitOf(late, now)).toEqual({ resetsAt: minutes(12 * 60) });
+  });
+});
+
+describe("liftsAt", () => {
+  it("is the time the agent's text names, else half an hour out", () => {
+    expect(liftsAt("You've hit your usage limit. Try again in 2 hours 15 minutes.", now)).toBe(
+      minutes(135),
+    );
+    expect(liftsAt("Server overloaded", now)).toBe(minutes(30));
   });
 });

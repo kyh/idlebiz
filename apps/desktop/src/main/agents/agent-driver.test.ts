@@ -9,7 +9,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("@/main/store/store");
-const { decidePermission, outcomeOf } = await import("./agent-driver");
+const { decidePermission, memoryAfter, outcomeOf } = await import("./agent-driver");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -65,6 +65,33 @@ describe("outcomeOf", () => {
   it("does not hold the task to a turn the app stopped, unless it finished anyway", () => {
     expect(outcomeOf(failed, null, true)).toEqual({ kind: "interrupted" });
     expect(outcomeOf({ kind: "completed" }, null, true)).toEqual({ kind: "done" });
+  });
+});
+
+describe("memoryAfter", () => {
+  const stored = { instructionsDigest: "old", session: "kept" };
+
+  it("remembers the session the turn ran, holding the instructions it was given", () => {
+    expect(memoryAfter({ end: { kind: "completed" }, sessionId: "ran" }, stored, "new")).toEqual({
+      instructionsDigest: "new",
+      session: "ran",
+    });
+    expect(memoryAfter({ end: failed, sessionId: "ran" }, stored, "new")).toEqual({
+      instructionsDigest: "new",
+      session: "ran",
+    });
+  });
+
+  it("leaves what was stored when the turn opened no session", () => {
+    expect(memoryAfter({ end: failed }, stored, "new")).toEqual(stored);
+  });
+
+  it("forgets a session only a new one can follow", () => {
+    const spent = { error: "context window exceeded", kind: "failed", sessionSpent: true } as const;
+    expect(memoryAfter({ end: spent, sessionId: "kept" }, stored, "new")).toEqual({
+      instructionsDigest: null,
+      session: null,
+    });
   });
 });
 

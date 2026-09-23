@@ -7,10 +7,12 @@ const DEFAULT_PARK_MS = 30 * 60_000;
 /** Cap parses that land absurdly far out (clock skew, bad zone math). */
 const MAX_PARK_MS = 12 * 3_600_000;
 
-// claude-agent-acp flags a usage limit by its text's prefix, apart from errorKind, so the
-// agent's own message is read too. An overload parks as well: retried at once, every
-// task on the runner would be dead-lettered within minutes.
+// claude-agent-acp flags a usage limit by its text's prefix, apart from errorKind, and codex-acp
+// types an overload exactly as its catch-all service failure, so the agent's own message is read
+// too. An overload parks as well: retried at once, every task on the runner would be
+// dead-lettered within minutes.
 const LIMIT_PATTERNS = [
+  /model is at capacity/iu,
   /session limit/iu,
   /usage limit/iu,
   /rate.?limit/iu,
@@ -24,12 +26,8 @@ const LIMIT_PATTERNS = [
 /** claude's `errorKind` values that stop every task on the runner, not just this one. */
 const LIMIT_KINDS = new Set(["rate_limit", "billing_error", "overloaded"]);
 
-/** What claude-agent-acp (`errorKind`) and codex-acp (`codexErrorInfo`, `message`) put in a rejected prompt's data. */
-const LimitData = z.object({
-  codexErrorInfo: z.unknown().optional(),
-  errorKind: z.string().optional(),
-  message: z.string().optional(),
-});
+/** What claude-agent-acp puts in a rejected prompt's data. codex-acp reports its limits as typed failures instead. */
+const LimitData = z.object({ errorKind: z.string().optional() });
 
 export interface RateLimitInfo {
   /** Epoch ms when the limit lifts (best effort; defaulted when unparseable). */
@@ -105,6 +103,13 @@ const resetNamedIn = (text: string, now: Date): number | null => {
   return relMs === null ? absoluteResetAt(text, now) : now.getTime() + relMs;
 };
 
+/** When a limit the agent described as `text` lifts: the time it names, else a default park. */
+export const liftsAt = (text: string, now = new Date()): number =>
+  Math.min(resetNamedIn(text, now) ?? now.getTime() + DEFAULT_PARK_MS, now.getTime() + MAX_PARK_MS);
+
+/** Whether the agent's own `text` tells of a usage limit or an overload. */
+export const readsAsLimit = (text: string): boolean => LIMIT_PATTERNS.some((p) => p.test(text));
+
 /**
  * The usage limit an agent refused a request for, or null. Only the agent's own
  * rejection counts: a watchdog's or a crash's text is never read as a limit.
@@ -115,19 +120,8 @@ export const limitOf = (error: unknown, now = new Date()): RateLimitInfo | null 
     return null;
   }
   const parsed = LimitData.safeParse(error.data);
-  const data = parsed.success ? parsed.data : {};
+  const errorKind = parsed.success ? parsed.data.errorKind : undefined;
   const limited =
-    (data.errorKind !== undefined && LIMIT_KINDS.has(data.errorKind)) ||
-    data.codexErrorInfo === "usageLimitExceeded" ||
-    LIMIT_PATTERNS.some((p) => p.test(error.message));
-  if (!limited) {
-    return null;
-  }
-  // codex's message is the bare "Internal error"; its readable text is in the data
-  const named =
-    resetNamedIn(error.message, now) ??
-    (data.message === undefined ? null : resetNamedIn(data.message, now));
-  return {
-    resetsAt: Math.min(named ?? now.getTime() + DEFAULT_PARK_MS, now.getTime() + MAX_PARK_MS),
-  };
+    (errorKind !== undefined && LIMIT_KINDS.has(errorKind)) || readsAsLimit(error.message);
+  return limited ? { resetsAt: liftsAt(error.message, now) } : null;
 };

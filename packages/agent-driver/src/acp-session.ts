@@ -2,10 +2,14 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
-import type { NewSessionRequest } from "@agentclientprotocol/sdk";
+import type {
+  ClientCapabilities,
+  NewSessionRequest,
+  PromptResponse,
+} from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import { zeroUsage } from "./events";
-import { limitOf } from "./rate-limit";
+import { liftsAt, limitOf, readsAsLimit } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
@@ -28,6 +32,26 @@ const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
 const ToolCallDescription = z.object({ description: z.string().optional() });
+
+/** How a client declares codex-acp's typed session failures (the JetBrains AIR extension). */
+const TYPED_FAILURES: ClientCapabilities = {
+  _meta: { jetbrains: { air: { capabilities: ["sessionFailure"], version: 1 } } },
+};
+
+/** A declared typed failure, as it rides on the prompt response that ends the turn. */
+const SessionFailureMeta = z.object({
+  jetbrains: z.object({
+    air: z.object({
+      sessionFailure: z.object({
+        actions: z.array(z.string()),
+        category: z.string(),
+        details: z.string().optional(),
+        severity: z.string(),
+        title: z.string(),
+      }),
+    }),
+  }),
+});
 
 // Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
 const webReadable = (stream: Readable): ReadableStream<Uint8Array> =>
@@ -71,6 +95,8 @@ export interface AcpAgent {
   sessionMeta?: NewSessionRequest["_meta"];
   /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
   usagePerRequest?: true;
+  /** Declare typed session failures on initialize — see `RunnerAdapter`. */
+  typedFailures?: true;
   /** Environment this agent needs to find its own CLI. */
   env?: Record<string, string>;
 }
@@ -122,11 +148,16 @@ export interface AcpTurnOptions {
   onEvent: (e: AgentEvent) => void;
 }
 
-/** How a turn ended: the agent finished it, refused it for a usage limit, or something stopped it. */
+/** How a turn ended: the agent finished it, hit a usage limit or an overload, or something stopped it. */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
   | { readonly kind: "limited"; readonly resetsAt: number; readonly error: string }
-  | { readonly kind: "failed"; readonly error: string };
+  | {
+      readonly kind: "failed";
+      readonly error: string;
+      /** The session is out of context or budget: only a new one can go on. */
+      readonly sessionSpent?: true;
+    };
 
 export interface AcpTurnResult {
   end: AcpTurnEnd;
@@ -146,6 +177,29 @@ const turnText = (opts: AcpTurnOptions, resumed: boolean): string => {
   }
   const lead = resumed ? "Your standing instructions changed. They now read:\n\n" : "";
   return `${lead}${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`;
+};
+
+/**
+ * How a turn ends on the typed failure its agent reported, or null when it reported none. A
+ * warning is one the turn got past. A limit rests the runner, unless only a new session can go
+ * on. A service fault rests it only when its text tells of an overload: codex-acp types an
+ * overload exactly as its catch-all for every error it cannot place, which it did not retry, and
+ * resting on one of those would retry a deterministic fault forever. Failing is bounded by attempts.
+ */
+const failureEnd = (meta: PromptResponse["_meta"]): AcpTurnEnd | null => {
+  const parsed = SessionFailureMeta.safeParse(meta);
+  if (!parsed.success || parsed.data.jetbrains.air.sessionFailure.severity !== "error") {
+    return null;
+  }
+  const { actions, category, details, title } = parsed.data.jetbrains.air.sessionFailure;
+  const error = details === undefined ? title : `${title}\n${details}`;
+  if (category === "limit" && actions.includes("new_session")) {
+    return { error, kind: "failed", sessionSpent: true };
+  }
+  if (category === "limit" || (category === "service" && readsAsLimit(error))) {
+    return { error, kind: "limited", resetsAt: liftsAt(error) };
+  }
+  return { error, kind: "failed" };
 };
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
@@ -378,11 +432,11 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
 
     const stream = ndJsonStream(webWritable(stdin), webReadable(stdout));
     const turn = async (): Promise<void> => {
-      const stopReason = await app.connectWith(stream, async (agent) => {
+      const { failure, stopReason } = await app.connectWith(stream, async (agent) => {
         // Required before anything else. claude's adapter tolerates its
         // absence; codex's answers every later call with "Not initialized".
         const init = await agent.request("initialize", {
-          clientCapabilities: {},
+          clientCapabilities: opts.agent.typedFailures ? TYPED_FAILURES : {},
           clientInfo: { name: "idlebiz", version: "1" },
           protocolVersion: PROTOCOL_VERSION,
         });
@@ -454,8 +508,18 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             outputTokens: scaled(u.outputTokens ?? 0),
           };
         }
-        return res.stopReason;
+        return { failure: failureEnd(res._meta), stopReason: res.stopReason };
       });
+      // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr
+      if (failure?.kind === "failed") {
+        const tail = stderrTail();
+        settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
+        return;
+      }
+      if (failure) {
+        settle(result(failure));
+        return;
+      }
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
         settle(result({ kind: "completed" }));
         return;
