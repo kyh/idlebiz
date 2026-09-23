@@ -1,3 +1,4 @@
+import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { bridge } from "@/renderer/bridge";
 import { Curtain } from "@/renderer/ui/curtain";
 import { SaveIssues } from "@/renderer/ui/save-issues";
@@ -6,11 +7,13 @@ import type { LoadSkip } from "@/shared/domain";
 // Offering onboarding here would create a second company over an unreadable save.
 export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => (
   <Curtain>
-    <div className="text-base text-fg">Your save can&apos;t be read</div>
-    <div className="mt-1 text-sm leading-relaxed text-fg-dim">
+    <AlertDialog.Title className="text-base text-fg">
+      Your save can&apos;t be read
+    </AlertDialog.Title>
+    <AlertDialog.Description className="mt-1 text-sm leading-relaxed text-fg-dim">
       A company folder under ~/.idlebiz exists, but its file did not parse. Fix or move it, then
       relaunch. Starting over from here would create a second company on top of it.
-    </div>
+    </AlertDialog.Description>
     <div className="mt-3">
       <SaveIssues issues={issues} />
     </div>

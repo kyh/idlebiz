@@ -22,6 +22,8 @@ import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
 import { reduceActivity } from "@/renderer/state/activity-reducer";
 import type { Slice } from "@/renderer/state/activity-reducer";
+import { bootOf } from "@/renderer/state/boot";
+import type { Boot } from "@/renderer/state/boot";
 import { Coalesced, latestWins } from "@/renderer/state/ordering";
 
 interface State {
@@ -34,7 +36,8 @@ interface State {
    * they do.
    */
   layout: OfficeLayoutData | null;
-  authed: boolean;
+  /** A coding CLI is signed in; null until main's probe answers. */
+  authed: boolean | null;
   stripeStatus: StripeStatus;
   /** Everything the company builds, oldest first, and where each one really is. */
   products: Product[];
@@ -42,7 +45,7 @@ interface State {
   /** Every bet the company has made, oldest first. */
   bets: Bet[];
   resting: RestingRunners;
-  /** Packages boot could not read. A skipped company blocks the office (see App). */
+  /** Packages boot could not read. A skipped company blocks the office (see Boot). */
   saveIssues: LoadSkip[];
   company: Company | null;
   employees: Employee[];
@@ -56,15 +59,12 @@ interface State {
   modalOpen: boolean;
   /** The employee the founder is talking to, from the office or the roster. */
   talkingTo: string | null;
-  /** Derived on every set(): what the window shows, one of four. */
-  boot: Boot;
 }
 
 let state: State = {
   activity: [],
-  authed: true,
+  authed: null,
   bets: [],
-  boot: { kind: "loading" },
   booted: false,
   company: null,
   employees: [],
@@ -82,34 +82,8 @@ let state: State = {
 };
 const listeners = new Set<() => void>();
 
-/**
- * What the window shows: exactly one of these. A company boot could not read
- * stops everything (a fresh start here would stack a second company on it);
- * no company means onboarding; a company means the office, gated on a CLI.
- */
-export type Boot =
-  | { kind: "loading" }
-  | { kind: "unreadable"; issues: LoadSkip[] }
-  | { kind: "onboarding" }
-  | { kind: "office"; company: Company; authed: boolean };
-
-const bootOf = (s: Omit<State, "boot">): Boot => {
-  const issues = s.saveIssues.filter((issue) => issue.kind === "company");
-  if (issues.length > 0) {
-    return { issues, kind: "unreadable" };
-  }
-  if (!s.booted) {
-    return { kind: "loading" };
-  }
-  if (!s.company) {
-    return { kind: "onboarding" };
-  }
-  return { authed: s.authed, company: s.company, kind: "office" };
-};
-
-const set = (patch: Partial<Omit<State, "boot">>): void => {
-  const next = { ...state, ...patch };
-  state = { ...next, boot: bootOf(next) };
+const set = (patch: Partial<State>): void => {
+  state = { ...state, ...patch };
   for (const l of listeners) {
     l();
   }
@@ -120,15 +94,22 @@ const subscribe = (l: () => void): (() => void) => {
 };
 
 /**
- * Subscribe to the store. With a selector the component re-renders only when
- * the selected value changes — so select a field, not a fresh object.
+ * Subscribe to one value in the store. The component re-renders only when it
+ * changes — so select a field, not a fresh object.
  */
-export function useStore(): State;
-export function useStore<T>(selector: (s: State) => T): T;
-export function useStore<T>(selector?: (s: State) => T): T | State {
-  const select = (): T | State => (selector ? selector(state) : state);
+export const useStore = <T>(selector: (s: State) => T): T => {
+  const select = (): T => selector(state);
   return useSyncExternalStore(subscribe, select, select);
-}
+};
+
+/** What the window shows, re-rendered only when one of its inputs moves. */
+export const useBoot = (): Boot => {
+  const saveIssues = useStore((s) => s.saveIssues);
+  const booted = useStore((s) => s.booted);
+  const hasCompany = useStore((s) => s.company !== null);
+  const authed = useStore((s) => s.authed);
+  return bootOf({ authed, booted, hasCompany, saveIssues });
+};
 
 export const setAuthed = (ok: boolean): void => {
   set({ authed: ok });
@@ -234,7 +215,7 @@ const refreshOnce = async (): Promise<void> => {
       ])
     : [[], [], [], []];
   // a slice a newer request already answered keeps the newer answer
-  const patch: Partial<Omit<State, "boot">> = { booted: true, resting, saveIssues: load.skipped };
+  const patch: Partial<State> = { booted: true, resting, saveIssues: load.skipped };
   if (order.accepts("company", ticket)) {
     patch.company = company;
   }
@@ -474,8 +455,14 @@ const onActivity = async (e: ActivityEvent): Promise<void> => {
 // ---- lifecycle -------------------------------------------------------------
 
 const loadAuth = async (): Promise<void> => {
-  const r = await bridge().hasAuth();
-  set({ authed: r.ok });
+  try {
+    const r = await bridge().hasAuth();
+    set({ authed: r.ok });
+  } catch (error) {
+    // left unknown, the office would wait forever; the gate at least offers a sign-in
+    console.error("Could not check the CLI login", error);
+    set({ authed: false });
+  }
 };
 
 const loadStripeStatus = async (): Promise<void> => {

@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useStore } from "@/renderer/state/store";
-import type { Boot } from "@/renderer/state/store";
+import { initStore, setGame, useBoot, useStore } from "@/renderer/state/store";
+import type { Boot } from "@/renderer/state/boot";
 import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
 import { AuthGate } from "@/renderer/ui/auth-gate";
@@ -83,10 +83,12 @@ const Screen = ({
     case "onboarding": {
       return <Onboarding />;
     }
+    case "signed-out": {
+      return <AuthGate />;
+    }
     case "office": {
       return (
         <>
-          {boot.authed ? null : <AuthGate />}
           <Hud onOpen={onOverlay} />
           <TeamChannel />
           <Dialogue />
@@ -100,7 +102,7 @@ const Screen = ({
 };
 
 export const App = () => {
-  const boot = useStore((s) => s.boot);
+  const boot = useBoot();
   const layout = useStore((s) => s.layout);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const route = useSyncExternalStore(subscribeToHash, getHash);
