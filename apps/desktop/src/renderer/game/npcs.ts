@@ -513,6 +513,8 @@ export class NpcManager {
     if (!path || path.length === 0) {
       return false;
     }
+    // a step-away scheduled by the last arrival would replace this walk and drop its arrival
+    clearPending(npc);
     npc.plan = { onArrive, path };
     return true;
   }
@@ -542,7 +544,9 @@ export class NpcManager {
     const ok = this.walkTo(npc, besideOf(target.sprite), () => {
       this.showBubble(npc, message);
       npc.pendingTimer = this.scene.time.delayedCall(BUBBLE_MS - 400, () => {
-        this.stepAway(npc);
+        if (!npc.plan && npc.activity.kind === "idle") {
+          this.stepAway(npc);
+        }
       });
     });
     if (!ok) {
