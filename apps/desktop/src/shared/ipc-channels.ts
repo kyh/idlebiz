@@ -65,3 +65,15 @@ export type WireValue =
   | undefined
   | WireValue[]
   | { [key: string]: WireValue };
+
+export interface IpcFailure {
+  ok: false;
+  message: string;
+}
+
+/**
+ * What main answers an invoke with. Electron rethrows a handler's throw as
+ * "Error invoking remote method '<channel>': Error: <message>", so a refusal
+ * crosses as data and the preload throws its message bare.
+ */
+export type IpcReply<T> = { ok: true; value: T } | IpcFailure;

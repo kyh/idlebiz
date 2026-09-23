@@ -193,7 +193,9 @@ rather than crashing boot.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
   for channel names and must stay dependency-free (the sandboxed preload imports it);
   zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its
-  schema's output — declare the schema, never a parallel type.
+  schema's output — declare the schema, never a parallel type. A handler's throw crosses as
+  an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the preload rethrows bare, so the founder
+  reads the store's sentence, not Electron's wrapper; frame and payload checks still throw.
 - **Everything main says happened goes through `main/activity.ts`.** `publishActivity`
   stamps, persists and fans out one `ActivityEvent` (`shared/activity.ts`, a discriminated
   union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a

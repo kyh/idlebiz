@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import type { WebFrameMain } from "electron";
 import type { z } from "zod";
+import { settle } from "@/main/lib/ipc-reply";
 import { CHANNELS } from "@/shared/ipc-channels";
 import type { InvokeMethod, WireValue } from "@/shared/ipc-channels";
 import { SCHEMAS } from "@/shared/ipc-registry";
@@ -21,6 +22,6 @@ export const handle = <M extends InvokeMethod>(method: M, fn: IpcHandler<M>): vo
     if (!result.success) {
       throw new Error(`[ipc:${method}] payload validation failed — ${result.error.message}`);
     }
-    return fn(result.data);
+    return settle(fn, result.data);
   });
 };
