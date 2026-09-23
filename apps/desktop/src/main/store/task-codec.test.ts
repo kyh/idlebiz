@@ -52,6 +52,15 @@ describe("task codec", () => {
     expect("blockedQuestion" in metadata).toBe(false);
   });
 
+  it.each<TaskState>([
+    { kind: "queued", lastError: null, nextAttemptAt: null },
+    { ask: { question: "ship it?", type: "question" }, kind: "blocked", summary: null },
+    { kind: "done", summary: null },
+    { by: null, kind: "superseded" },
+  ])("gives a $kind task's empty fields no line", (state) => {
+    expect(serializeDoc(taskToDoc({ ...base, state }))).not.toContain("null");
+  });
+
   it("reads statuses older saves wrote as dead, keeping the error", () => {
     const doc = taskToDoc({ ...base, state: { kind: "dead", lastError: "gave up" } });
     for (const legacy of ["failed", "cancelled"]) {

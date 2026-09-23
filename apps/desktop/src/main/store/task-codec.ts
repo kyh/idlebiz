@@ -15,51 +15,31 @@ import {
 } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 
-/** A state's own fields, written flat beside the status line. */
-const writeTaskState = (metadata: FrontmatterDoc["metadata"], st: TaskState): void => {
+/** A state's own fields, written flat beside the status line; a null one gets no line. */
+const stateFields = (st: TaskState): FrontmatterDoc["metadata"] => {
   switch (st.kind) {
     case "todo": {
-      break;
+      return {};
     }
     case "queued": {
-      if (st.nextAttemptAt !== null) {
-        metadata.nextAttemptAt = st.nextAttemptAt;
-      }
-      if (st.lastError !== null) {
-        metadata.lastError = st.lastError;
-      }
-      break;
+      return { lastError: st.lastError, nextAttemptAt: st.nextAttemptAt };
     }
     case "running": {
-      metadata.runId = st.runId;
-      break;
+      return { runId: st.runId };
     }
     case "blocked": {
-      metadata.blockedQuestion = serializeBlockedAsk(st.ask);
-      if (st.summary !== null) {
-        metadata.summary = st.summary;
-      }
-      break;
+      return { blockedQuestion: serializeBlockedAsk(st.ask), summary: st.summary };
     }
     case "done": {
-      if (st.summary !== null) {
-        metadata.summary = st.summary;
-      }
-      break;
+      return { summary: st.summary };
     }
     case "superseded": {
-      if (st.by !== null) {
-        metadata.supersededBy = st.by;
-      }
-      break;
+      return { supersededBy: st.by };
     }
     case "dead": {
-      metadata.lastError = st.lastError;
-      break;
+      return { lastError: st.lastError };
     }
-    default: {
-      break;
-    }
+    // no default
   }
 };
 
@@ -79,7 +59,11 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
   if (t.betId !== null) {
     metadata.betId = t.betId;
   }
-  writeTaskState(metadata, t.state);
+  for (const [key, value] of Object.entries(stateFields(t.state))) {
+    if (value !== null) {
+      metadata[key] = value;
+    }
+  }
   if (t.artifacts.length > 0) {
     metadata.artifacts = JSON.stringify(t.artifacts);
   }
@@ -146,9 +130,7 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
     case "dead": {
       return { kind: "dead", lastError: lastError ?? summary ?? "unknown failure" };
     }
-    default: {
-      return { kind: "todo" };
-    }
+    // no default
   }
 };
 
