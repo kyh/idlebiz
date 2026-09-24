@@ -52,7 +52,8 @@ allocator and the replay.
   gets the lead a "settle" run: measure or kill. No tool lets an agent declare a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
-  bet reads captured live-mode USD charges tagged `metadata[bet]=<slug>`. So any number of
+  bet reads captured live-mode USD charges tagged `metadata[bet]=<slug>`, the tag
+  `create_payment_link` sets on every payment of a link made for that bet. So any number of
   bets run on one product and none can claim another's result. A named path over the whole
   site or `/b` is refused (`namedPathRefusal`), and so is one overlapping a path a live bet
   covers or a closed one named (`holdsItsPath`): each counts visitors the bet did not bring.
@@ -119,9 +120,13 @@ allocator and the replay.
   bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated.** An outward step that needs IdleBiz's own keys is
   a signed tool main runs: `deploy` runs the Vercel CLI with the founder's token and a
-  minimal env (`main/deploy.ts`), once the founder signs off on the action it names
-  (`deploy <product> to production`). That action is the approval's key, so it takes the
-  same one-time grant a held command does (`requireSignOff` in `main/tools.ts`).
+  minimal env (`main/deploy.ts`), and `create_payment_link` prices in USD and makes a Stripe
+  payment link with the founder's own key (`main/payment-links.ts`; a Connect grant is
+  read-only), tagging each payment for its product and a named open revenue bet on it. Each
+  runs once the founder signs off on the action it names (`deploy <product> to production`,
+  `payment link "<name>" at $<amount> on <product> for bet <slug>`). That action is the
+  approval's key, so it takes the same one-time grant a held command does (`requireSignOff`
+  in `main/tools.ts`).
   The CLI runs code the workspace holds with the token in its env unless kept from it: npx
   prefers a `vercel` the folder it starts in provides, the CLI runs `vercel.ts` and kin to
   read them, and git runs what a repo's config names. So npx starts in a folder under the

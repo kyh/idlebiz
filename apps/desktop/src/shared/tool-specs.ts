@@ -114,6 +114,29 @@ export const TOOL_SPECS = {
     method: "POST",
     path: "/v1/deploy",
   }),
+  create_payment_link: tool({
+    body: z.strictObject({
+      amountUsd: z.number().min(0.5).max(10_000),
+      bet: z.string().min(1).optional(),
+      // JSON quoting leaves format characters raw: a direction override would let the
+      // name visually rewrite the price the founder signs
+      name: z
+        .string()
+        .trim()
+        .min(1)
+        .max(80)
+        .regex(
+          /^[^\p{Cc}\p{Cf}]+$/u,
+          "name must be plain text: no control, zero-width or direction-changing characters",
+        ),
+      product: z.string().min(1).optional(),
+    }),
+    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. The founder signs off on each link: the first call is held, and calling again once they answer creates it.',
+    example: { amountUsd: 9, bet: "bet-slug", name: "..." },
+    leadOnly: null,
+    method: "POST",
+    path: "/v1/payment-link",
+  }),
   create_product: tool({
     body: ProductDraftSchema,
     doc: `a genuinely separate product (its own code, its own deploy), not a feature of one you have. It gets its own workspace; open a bet on it to fund work there. The company runs at most ${MAX_LIVE_PRODUCTS} at once: past that, a new one replaces one you kill_product.`,

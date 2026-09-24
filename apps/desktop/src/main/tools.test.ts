@@ -14,6 +14,7 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
+const { stripePaymentLink } = await import("./payment-links");
 const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
 
@@ -71,6 +72,7 @@ const runAs = (employeeId: string) => {
       store.claimTask(taskId, assigneeId);
     },
     company,
+    createPaymentLink: () => Promise.reject(new Error("charged without a test asking for it")),
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
     driver: { pickRunner: () => "claude" },
     employee,
@@ -553,5 +555,195 @@ describe("deploy", () => {
     expect(answer).toContain('Error: Command "npm run build" exited with 1');
     expect(answer).not.toContain(TOKEN);
     expect(answer?.length).toBeLessThan(2000);
+  });
+});
+
+const LINK = { amountUsd: 9, name: "Pro plan" };
+const PAID_URL = "https://buy.stripe.com/pro";
+
+/** Stripe, as far as a payment link goes: every form it was sent, by endpoint. */
+const fakeStripe = () => {
+  const sent: { endpoint: string; auth: string | null; form: Record<string, string> }[] = [];
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    const endpoint = new URL(url).pathname;
+    sent.push({
+      auth: new Headers(init.headers).get("Authorization"),
+      endpoint,
+      form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
+    });
+    return Promise.resolve(
+      Response.json(endpoint === "/v1/prices" ? { id: "price_1" } : { url: PAID_URL }),
+    );
+  });
+  return sent;
+};
+
+/** A run of Priya's on Acme that charges through the fake Stripe, with the founder's key saved. */
+const chargingRun = (key: string | null = "sk_live_founder") => {
+  if (key !== null) {
+    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
+  }
+  const run = runAs("priya");
+  const stripe = fakeStripe();
+  const ctx: RunContext = {
+    ...run.ctx,
+    createPaymentLink: stripePaymentLink,
+    run: { ...run.ctx.run, productId: "acme" },
+  };
+  return { ...run, ctx, stripe };
+};
+
+const revenueBet = (productId = "acme") =>
+  store.openBet({ ...BET, metric: "revenue", productId, target: 20, title: "Paid tier" });
+
+describe("create_payment_link", () => {
+  it("holds the first call for the founder's sign-off, and asks Stripe nothing", async () => {
+    const { ctx, asked, stripe } = chargingRun();
+    const bet = revenueBet();
+    const action = `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`;
+
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
+      `Held for the founder's sign-off on "${action}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    );
+    expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("once signed off, prices it in cents and tags the payment for the product and the bet", async () => {
+    const { ctx, stripe } = chargingRun();
+    const bet = revenueBet();
+    store.grantApproval(
+      ctx.run.taskId,
+      `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`,
+    );
+
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
+      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL}`,
+    );
+    expect(stripe).toEqual([
+      {
+        auth: "Bearer sk_live_founder",
+        endpoint: "/v1/prices",
+        form: { currency: "usd", "product_data[name]": "Pro plan", unit_amount: "900" },
+      },
+      {
+        auth: "Bearer sk_live_founder",
+        endpoint: "/v1/payment_links",
+        form: {
+          "line_items[0][price]": "price_1",
+          "line_items[0][quantity]": "1",
+          "metadata[bet]": bet.id,
+          "metadata[product]": "acme",
+          "payment_intent_data[metadata][bet]": bet.id,
+          "payment_intent_data[metadata][product]": "acme",
+        },
+      },
+    ]);
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toContain(
+      "Held for the founder's sign-off",
+    );
+    expect(stripe).toHaveLength(2);
+  });
+
+  it("tags the product alone when no bet is named, charging whole cents", async () => {
+    const { ctx, stripe } = chargingRun();
+    const side = store.createProduct({ description: "a side project", name: "Side" });
+    store.grantApproval(ctx.run.taskId, `payment link "Pro plan" at $12.50 on ${side.id}`);
+
+    const answer = await callTool(ctx, "POST /v1/payment-link", {
+      amountUsd: 12.499,
+      name: "  Pro plan ",
+      product: side.id,
+    });
+
+    expect(answer).toContain(PAID_URL);
+    expect(stripe.map(({ form }) => form)).toMatchObject([
+      { unit_amount: "1250" },
+      { "metadata[product]": side.id, "payment_intent_data[metadata][product]": side.id },
+    ]);
+    expect(Object.keys(stripe[1]?.form ?? {})).not.toContain("metadata[bet]");
+  });
+
+  it("quotes the name in what the founder signs, so it cannot pose as the price", async () => {
+    const { ctx, asked } = chargingRun();
+    await callTool(ctx, "POST /v1/payment-link", { amountUsd: 500, name: 'Tip" at $1.00 on acme' });
+    expect(asked).toEqual([
+      {
+        command: String.raw`payment link "Tip\" at $1.00 on acme" at $500.00 on acme`,
+        rule: "payments",
+        type: "approval",
+      },
+    ]);
+  });
+
+  it.each([
+    { hidden: "\u202E", what: "a direction override" },
+    { hidden: "\u200B", what: "a zero-width space" },
+    { hidden: "\n", what: "a line break" },
+  ])(
+    "refuses a name holding $what, which could redraw the price the founder reads",
+    async ({ hidden }) => {
+      const { ctx, asked, stripe } = chargingRun();
+      const name = `Tip ${hidden}emca no 00.1$ ta `;
+      await expect(
+        callTool(ctx, "POST /v1/payment-link", { amountUsd: 500, name }),
+      ).rejects.toThrow(BadRequestError);
+      expect(asked).toEqual([]);
+      expect(stripe).toEqual([]);
+    },
+  );
+
+  it("asks the founder for their own key while IdleBiz has none", async () => {
+    const { ctx, asked, stripe } = chargingRun(null);
+    const answer = await callTool(ctx, "POST /v1/payment-link", LINK);
+    expect(answer).toContain("ask the founder via ask_boss to add STRIPE_SECRET_KEY");
+    expect(asked).toEqual([]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("refuses a bet whose money the link could not be counted for", async () => {
+    const { ctx, asked, stripe } = chargingRun();
+    const side = store.createProduct({ description: "a side project", name: "Side" });
+    const elsewhere = revenueBet(side.id);
+    const visitors = store.openBet({
+      ...BET,
+      landingPath: null,
+      metric: "users",
+      productId: "acme",
+    });
+    const killed = revenueBet();
+    store.killBet(killed.id, "dud", Date.now());
+
+    for (const bet of [elsewhere, visitors, killed, { id: "no-such-bet" }]) {
+      expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
+        `"${bet.id}" is not an open revenue bet on acme — read_bets lists every live bet, what it counts and its product.`,
+      );
+    }
+    expect(asked).toEqual([]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("says a test key's link takes no real money", async () => {
+    const { ctx } = chargingRun("sk_test_founder");
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toBe(
+      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
+    );
+  });
+
+  it("answers with Stripe's own reason when it makes no link", async () => {
+    const { ctx } = chargingRun();
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        Response.json(
+          { error: { message: "Your account cannot currently make live charges." } },
+          { status: 400 },
+        ),
+      ),
+    );
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toBe(
+      "Stripe made no payment link: Your account cannot currently make live charges.",
+    );
   });
 });

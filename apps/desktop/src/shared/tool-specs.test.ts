@@ -42,6 +42,11 @@ describe("tool specs", () => {
     expect(body.safeParse({ ...example, metric, target }).success).toBe(true);
   });
 
+  it.each([0.49, 10_000.01])("refuses a payment link of $%d", (amountUsd) => {
+    const { body, example } = TOOL_SPECS.create_payment_link;
+    expect(body.safeParse({ ...example, amountUsd }).success).toBe(false);
+  });
+
   it("tells the lead each metric's floor", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");
   });
@@ -55,6 +60,7 @@ describe("tool specs", () => {
     expect(toolDocs(false)).not.toContain("**open_bet**");
     expect(toolDocs(false)).toContain("**delegate**");
     expect(toolDocs(false)).toContain("**deploy**");
+    expect(toolDocs(false)).toContain("**create_payment_link**");
     expect(toolDocs(true)).toContain("**open_bet**");
   });
 

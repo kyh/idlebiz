@@ -37,7 +37,7 @@ type StripeAnswer = "accepted" | "refused" | "unanswered";
 // Pinned, since an unpinned read answers in the account's default version and a
 // charge's fields change meaning across it: before basil a partial capture booked
 // its uncaptured rest in amount_refunded, so captured less refunded undercounts.
-const STRIPE_VERSION = "2025-03-31.basil";
+export const STRIPE_VERSION = "2025-03-31.basil";
 
 const stripeGet = (endpoint: string, key: string): Promise<JsonValue> =>
   getJson(`https://api.stripe.com${endpoint}`, {
@@ -253,9 +253,12 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
 /** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
 const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
 
+/** Whether `key` is a Stripe key in test mode, whose charges nobody paid. */
+export const isTestKey = (key: string): boolean => /^[rs]k_test_/u.test(key);
+
 /** A test-mode key sees only test-mode charges, so while those do not count, nothing it reads does. */
 const countsNoMoney = (credential: StripeCredential): boolean =>
-  /^[rs]k_test_/u.test(credential.key) && !countsTestMoney();
+  isTestKey(credential.key) && !countsTestMoney();
 
 /** Whether the company reads Stripe with a key in test mode, whose charges count for nothing. */
 export const stripeInTestMode = (companyId: string): boolean => {

@@ -12,7 +12,8 @@ import {
   retireProduct,
   startProduct,
 } from "@/main/company-actions";
-import { measureRefusal } from "@/main/metrics";
+import { isTestKey, measureRefusal } from "@/main/metrics";
+import type { PaymentLinker } from "@/main/payment-links";
 import { getSecret } from "@/main/secrets";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
@@ -20,7 +21,7 @@ import type { Bet } from "@/shared/bets";
 import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
 import type { Company, Employee, TaskOrigin } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
-import { plural } from "@/shared/format";
+import { formatUsd, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
 import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
@@ -44,6 +45,8 @@ export interface RunContext {
   assign: (taskId: string, employeeId: string) => void;
   /** Deploy with the founder's Vercel key, which the run itself never holds. */
   deploy: Deployer;
+  /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
+  createPaymentLink: PaymentLinker;
 }
 
 /** A tool ready to be called with whatever the agent sent. */
@@ -244,6 +247,52 @@ const TOOLS = {
       ? `Deployed ${product.name} to production: ${deployed.url}`
       : `Deployed ${product.name} to production: ${live} (this deployment: ${deployed.url})`;
   }),
+  create_payment_link: define(
+    TOOL_SPECS.create_payment_link,
+    async (ctx, { amountUsd, bet, name, product: named }) => {
+      const key = getSecret("STRIPE_SECRET_KEY");
+      if (!key) {
+        return "IdleBiz has no Stripe key to charge with: ask the founder via ask_boss to add STRIPE_SECRET_KEY, saying what you would sell and at what price. A Stripe connection only reads revenue; it cannot create payments.";
+      }
+      const productId = productFor(ctx, named);
+      if (productId === null) {
+        return "There is no product to charge for — create_product first.";
+      }
+      const product = store.getProduct(productId);
+      if (!product) {
+        return store.noSuchProduct(productId);
+      }
+      if (bet !== undefined) {
+        const claimed = store.getBet(bet);
+        if (
+          claimed?.productId !== product.id ||
+          claimed.claim.metric !== "revenue" ||
+          claimed.state.kind !== "open"
+        ) {
+          return `"${bet}" is not an open revenue bet on ${product.id} — read_bets lists every live bet, what it counts and its product.`;
+        }
+      }
+      const cents = Math.round(amountUsd * 100);
+      const price = formatUsd(cents / 100);
+      // quoted as JSON, so a name cannot pose as more of the action the founder signs
+      const action = `payment link ${JSON.stringify(name)} at ${price} on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
+      requireSignOff(ctx, action, "payments");
+      const made = await ctx.createPaymentLink({
+        bet: bet ?? null,
+        cents,
+        key,
+        name,
+        product: product.id,
+      });
+      if (!made.ok) {
+        return `Stripe made no payment link: ${made.error}`;
+      }
+      const testMode = isTestKey(key)
+        ? " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1."
+        : "";
+      return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${testMode}`;
+    },
+  ),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);
     post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
