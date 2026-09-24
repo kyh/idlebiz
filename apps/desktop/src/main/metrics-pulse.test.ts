@@ -98,8 +98,10 @@ describe("a pulse", () => {
       amount_captured: 700,
       amount_refunded: 0,
       captured: true,
+      created: BOOT / 1000,
       currency: "usd",
       id: "ch_1",
+      livemode: true,
       metadata: { bet: bet.id, product: productId },
       paid: true,
     };
