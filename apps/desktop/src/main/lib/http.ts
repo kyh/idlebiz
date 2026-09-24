@@ -30,16 +30,22 @@ const failure = async (res: Response, url: string): Promise<HttpError> => {
   }
 };
 
+/** `fetch` that throws HttpError on any non-2xx status. */
+export const fetchOk = async (url: string, init: RequestInit): Promise<Response> => {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    throw await failure(res, url);
+  }
+  return res;
+};
+
 /** GET a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */
 export const getJson = async (
   url: string,
   headers: Record<string, string>,
   timeoutMs = 8000,
 ): Promise<JsonValue> => {
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) {
-    throw await failure(res, url);
-  }
+  const res = await fetchOk(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
   return jsonValueSchema.parse(await res.json());
 };
 
@@ -50,15 +56,12 @@ export const postForm = async (
   form: Readonly<Record<string, string>>,
   timeoutMs = 8000,
 ): Promise<JsonValue> => {
-  const res = await fetch(url, {
+  const res = await fetchOk(url, {
     body: new URLSearchParams(form),
     headers,
     method: "POST",
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) {
-    throw await failure(res, url);
-  }
   return jsonValueSchema.parse(await res.json());
 };
 

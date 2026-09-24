@@ -8,7 +8,7 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 
 const { setSecret } = await import("@/main/secrets");
-const { latestDeployment, projectAccount, visitQuery } = await import("./vercel");
+const { latestDeployment, visitQuery } = await import("./vercel");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -110,27 +110,5 @@ describe("latestDeployment", () => {
     );
 
     await expect(latestDeployment("prj_reconnect")).resolves.toMatchObject({ kind: "deployed" });
-  });
-});
-
-describe("projectAccount", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("takes a team project's team without asking", async () => {
-    const asked = vercel(status(500));
-    await expect(projectAccount(project, "token")).resolves.toBe("team_1");
-    expect(asked.calls).toBe(0);
-  });
-
-  it("asks Vercel who owns a project listed with no team", async () => {
-    vercel(() => Promise.resolve(Response.json({ accountId: "team_hobby", id: "prj_2" })));
-    await expect(projectAccount({ projectId: "prj_2", teamId: null }, "token")).resolves.toBe(
-      "team_hobby",
-    );
-
-    vercel(status(404));
-    await expect(projectAccount({ projectId: "prj_gone", teamId: null }, "token")).rejects.toThrow(
-      "404",
-    );
   });
 });

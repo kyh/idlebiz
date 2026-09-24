@@ -475,8 +475,16 @@ describe("company tools", () => {
 });
 
 const TOKEN = "vercel-secret-token";
-const ACTION = "deploy acme to production";
-const DEPLOYED: DeployResult = { ok: true, output: "", url: "https://acme-1.vercel.app" };
+const VERCEL = { projectId: "prj_1", projectName: "acme-site", teamId: "team_1" };
+const BOUND_ACTION = "deploy acme to production on Vercel project acme-site";
+const NEW_ACTION = "deploy acme to production on a new Vercel project named acme";
+const NEW_PROJECT = { projectId: "prj_new", projectName: "acme", teamId: null };
+const DEPLOYED: DeployResult = {
+  alias: null,
+  kind: "deployed",
+  project: VERCEL,
+  url: "https://acme-1.vercel.app",
+};
 
 /** A run of Priya's on Acme whose deploys answer `result`, and what each deploy was asked. */
 const deployingRun = (result: DeployResult) => {
@@ -497,43 +505,104 @@ const connectVercel = () =>
   writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ VERCEL_TOKEN: TOKEN }));
 
 describe("deploy", () => {
-  it("holds the first call for the founder's sign-off on the action it names", async () => {
+  it("holds the first call for the founder's sign-off on the product and the project it lands in", async () => {
     connectVercel();
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
+    store.setProductVercel("acme", VERCEL);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
-      `Held for the founder's sign-off on "${ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+      `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
-    expect(asked).toEqual([{ command: ACTION, rule: "deploy", type: "approval" }]);
+    expect(asked).toEqual([{ command: BOUND_ACTION, rule: "deploy", type: "approval" }]);
     expect(deploys).toEqual([]);
   });
 
   it("deploys once signed off, into the product's project, and spends the sign-off", async () => {
     connectVercel();
     const { ctx, deploys } = deployingRun(DEPLOYED);
-    const vercel = { projectId: "prj_1", projectName: "acme", teamId: "team_1" };
-    const product = store.setProductVercel("acme", vercel);
-    store.grantApproval(ctx.run.taskId, ACTION);
+    const product = store.setProductVercel("acme", VERCEL);
+    store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
     expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
-    expect(deploys).toEqual([{ binding: vercel, cwd: product.workspaceDir, token: TOKEN }]);
+    expect(deploys).toEqual([
+      { cwd: product.workspaceDir, target: { binding: VERCEL, kind: "bound" }, token: TOKEN },
+    ]);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Held for the founder's sign-off");
     expect(deploys).toHaveLength(1);
   });
 
   it("leads with the production domain, since the deployment's own URL sits behind Vercel's login", async () => {
     connectVercel();
-    const { ctx } = deployingRun({
-      ok: true,
-      output: "Building…\n▲ Aliased         https://acme.vercel.app\nhttps://acme-1.vercel.app",
-      url: "https://acme-1.vercel.app",
-    });
-    store.grantApproval(ctx.run.taskId, ACTION);
+    const { ctx } = deployingRun({ ...DEPLOYED, alias: "https://acme.vercel.app" });
+    store.setProductVercel("acme", VERCEL);
+    store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
     expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
       "Deployed Acme to production: https://acme.vercel.app (this deployment: https://acme-1.vercel.app)",
     );
+  });
+
+  it("puts a product bound to nothing into a project named for it, and binds it there", async () => {
+    connectVercel();
+    const { ctx, asked, deploys } = deployingRun({ ...DEPLOYED, project: NEW_PROJECT });
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain(`sign-off on "${NEW_ACTION}"`);
+    expect(asked).toEqual([{ command: NEW_ACTION, rule: "deploy", type: "approval" }]);
+    store.grantApproval(ctx.run.taskId, NEW_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      "Deployed Acme to production: https://acme-1.vercel.app\nAcme is now bound to the new Vercel project acme, which counts its visitors.",
+    );
+    expect(deploys.map((d) => d.target)).toEqual([{ kind: "new", name: "acme" }]);
+    expect(store.getProduct("acme")?.vercel).toEqual(NEW_PROJECT);
+  });
+
+  it("binds a new project its failed deploy made, so the next deploy lands there too", async () => {
+    connectVercel();
+    const reason = 'Vercel\'s build failed: Command "npm run build" exited with 1.';
+    const { ctx } = deployingRun({ kind: "failed", project: NEW_PROJECT, reason });
+    store.grantApproval(ctx.run.taskId, NEW_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      `The deploy of Acme failed: ${reason}\nAcme is now bound to the new Vercel project acme, which counts its visitors.`,
+    );
+    expect(store.getProduct("acme")?.vercel).toEqual(NEW_PROJECT);
+  });
+
+  it("leaves a binding the founder made while the deploy ran", async () => {
+    connectVercel();
+    const run = deployingRun(DEPLOYED);
+    const ctx: RunContext = {
+      ...run.ctx,
+      deploy: () => {
+        store.setProductVercel("acme", VERCEL);
+        return Promise.resolve({ ...DEPLOYED, project: NEW_PROJECT });
+      },
+    };
+    store.grantApproval(ctx.run.taskId, NEW_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      "Deployed Acme to production: https://acme-1.vercel.app",
+    );
+    expect(store.getProduct("acme")?.vercel).toEqual(VERCEL);
+  });
+
+  it("asks the founder to bind a product whose name another Vercel project holds", async () => {
+    connectVercel();
+    const { ctx, asked } = deployingRun({ kind: "name-taken", name: "acme" });
+    store.grantApproval(ctx.run.taskId, NEW_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain(
+      'Vercel already has a project named "acme"',
+    );
+    expect(asked).toEqual([
+      {
+        integration: "vercel",
+        reason: 'to bind Acme to its Vercel project: one named "acme" already exists',
+        type: "integration",
+      },
+    ]);
+    expect(store.getProduct("acme")?.vercel).toBeNull();
   });
 
   it("asks for Vercel, not a sign-off, while no key is saved", async () => {
@@ -543,18 +612,6 @@ describe("deploy", () => {
       { integration: "vercel", reason: "to deploy Acme", type: "integration" },
     ]);
     expect(deploys).toEqual([]);
-  });
-
-  it("answers a failed deploy with the end of what Vercel printed, never the key", async () => {
-    connectVercel();
-    const printed = `${"building…\n".repeat(500)}using ${TOKEN}\nError: Command "npm run build" exited with 1`;
-    const { ctx } = deployingRun({ ok: false, output: printed });
-    store.grantApproval(ctx.run.taskId, ACTION);
-
-    const answer = await callTool(ctx, "POST /v1/deploy", {});
-    expect(answer).toContain('Error: Command "npm run build" exited with 1');
-    expect(answer).not.toContain(TOKEN);
-    expect(answer?.length).toBeLessThan(2000);
   });
 });
 

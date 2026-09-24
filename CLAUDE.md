@@ -120,21 +120,27 @@ allocator and the replay.
   bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`) never
   reach an employee's process: main reads each where it uses it, and a run starts from the
-  founder's env less every credential-shaped name but its runner's own login (`runEnv` in
-  `main/agents/run-env.ts`). An outward step that needs those keys is a signed tool main
-  runs: `deploy` runs the Vercel CLI with the founder's token and a minimal env
-  (`main/deploy.ts`), and `create_payment_link` prices in USD and makes a Stripe payment
-  link with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
+  founder's env less every credential-shaped name, and every URL with a login in it, but its
+  runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward step that needs
+  those keys is a signed tool main runs: `deploy` uploads the product's folder through
+  Vercel's API with the founder's token, and Vercel builds it on its own machines
+  (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link
+  with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
   tagging each payment for its product and a named open revenue bet on it. Each runs once
-  the founder signs off on the action it names (`deploy <product> to production`,
-  `payment link "<name>" at $<amount> on <product> for bet <slug>`). That action is the
-  approval's key, so it takes the same one-time grant a held command does (`requireSignOff`
-  in `main/tools.ts`).
-  The CLI runs code the workspace holds with the token in its env unless kept from it: npx
-  prefers a `vercel` the folder it starts in provides, the CLI runs `vercel.ts` and kin to
-  read them, and git runs what a repo's config names. So npx starts in a folder under the
-  save and gets the workspace as an argument, git gets no repo, and a workspace holding
-  config as code is not deployed.
+  the founder signs off on the action it names:
+  `deploy <product> to production on Vercel project <name>`, or
+  `on a new Vercel project named <product>` for a product bound to none;
+  `payment link "<name>" at $<amount> on <product> for bet <slug>`. That action is the
+  approval's key, so it takes the same one-time grant a held command does
+  (`requireSignOff` in `main/tools.ts`).
+  The deploy never runs the Vercel CLI: the CLI runs code a folder holds (`vercel.ts`, a
+  `vercel` npx finds first, what a repo's config tells git to run) with the token in its
+  env, and any release can add a way. Main only reads the files, a symlink as the path it
+  holds (as the CLI uploads it), never what it names. Main names the project too: the
+  bound one, or for an unbound product a new one named after it, bound as soon as Vercel
+  makes it; a name another project holds asks the founder to bind instead. So no file in
+  the folder (`.vercel/project.json`, a `name` in vercel.json) picks which of the founder's
+  projects is overwritten.
   Everything an agent runs itself meets one judgement, the tripwire `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
   A signature pins a command, not the tree it ships, and runs on one product share its

@@ -4,7 +4,7 @@ import type { JsonValue } from "@/shared/json";
 import { getSecret } from "@/main/secrets";
 import type { DeployRead, VercelProject } from "@/shared/integrations";
 
-const API = "https://api.vercel.com";
+export const VERCEL_API = "https://api.vercel.com";
 
 const apiGet = (
   path: string,
@@ -16,7 +16,7 @@ const apiGet = (
   );
   const qs = new URLSearchParams(given).toString();
   return getJson(
-    `${API}${path}${qs ? `?${qs}` : ""}`,
+    `${VERCEL_API}${path}${qs ? `?${qs}` : ""}`,
     { Authorization: `Bearer ${token}` },
     10_000,
   );
@@ -104,28 +104,6 @@ export const listProjects = async (token: string): Promise<VercelProject[]> => {
   // The personal listing can repeat a team's projects; the team's listing wins,
   // since its teamId reaches the project whatever the token's default scope.
   return [...new Map(out.map((p) => [p.id, p])).values()];
-};
-
-const ProjectAccountSchema = z.object({ accountId: z.string().min(1) });
-
-/**
- * The account that owns a project, which the CLI takes as its org: the team, or
- * whoever owns one listed with no team. That is not always the token's user,
- * since a token's default scope can be a team, so Vercel is asked.
- */
-export const projectAccount = async (
-  project: { projectId: string; teamId: string | null },
-  token: string,
-): Promise<string> => {
-  if (project.teamId !== null) {
-    return project.teamId;
-  }
-  const answer = await apiGet(`/v9/projects/${encodeURIComponent(project.projectId)}`, token);
-  const parsed = ProjectAccountSchema.safeParse(answer);
-  if (!parsed.success) {
-    throw new Error(`Vercel did not say which account owns project ${project.projectId}`);
-  }
-  return parsed.data.accountId;
 };
 
 const VisitsCountSchema = z.object({

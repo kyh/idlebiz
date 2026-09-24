@@ -165,13 +165,14 @@ rather than crashing boot.
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
-  through the `deploy` tool, which runs the Vercel CLI with `VERCEL_TOKEN` in main
-  (`main/deploy.ts`) once the founder signs off.
+  through the `deploy` tool, which uploads the product's folder through Vercel's API with
+  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool sets a
+  project's env vars or domains, or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
-  `SECRET`, `PASSWORD`, `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`, `CREDENTIALS`, `AUTH` as whole
-  `_` segments — except its runner's own login (`providerEnv` in
-  `packages/agent-driver/src/registry.ts`) and `SSH_AUTH_SOCK` (`runEnv` in
-  `main/agents/run-env.ts`). AWS access keys sign for the whole account, so neither runner
+  `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
+  whole `_` segments — and every URL with a login in it but a `*_PROXY`, except its runner's
+  own login (`providerEnv` in `packages/agent-driver/src/registry.ts`) and `SSH_AUTH_SOCK`
+  (`runEnv` in `main/agents/run-env.ts`). AWS access keys sign for the whole account, so neither runner
   keeps them: a founder on Bedrock signs in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
   The founder's logins kept under HOME (git, ssh, `gh`, npm, the Vercel CLI, `~/.aws`) still
   reach every run.
@@ -276,7 +277,7 @@ rather than crashing boot.
   idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
-  (the two integrations, same shape), `deploy.ts` (the Vercel CLI the `deploy` tool runs),
+  (the two integrations, same shape), `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `payment-links.ts` (the Stripe calls `create_payment_link` makes), `secrets.ts`,
   `metrics.ts`, `tray.ts`.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a

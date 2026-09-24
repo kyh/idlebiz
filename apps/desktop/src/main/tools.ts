@@ -3,8 +3,7 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
-import type { Deployer } from "@/main/deploy";
-import { productionAlias } from "@/main/deploy";
+import type { DeployTarget, Deployer } from "@/main/deploy";
 import {
   announceBet,
   killBet,
@@ -106,9 +105,11 @@ const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId): void
   );
 };
 
-/** The end of what a deploy printed, where its error is, without the key it ran on. */
-const deployTail = (output: string, token: string): string =>
-  output.replaceAll(token, "[VERCEL_TOKEN]").slice(-1500);
+/** What the founder signs for a deploy: the product, and the Vercel project it lands in. */
+const deployAction = (productId: string, target: DeployTarget): string =>
+  target.kind === "bound"
+    ? `deploy ${productId} to production on Vercel project ${target.binding.projectName}`
+    : `deploy ${productId} to production on a new Vercel project named ${target.name}`;
 
 /** Why a bet takes no more work, in the words the agent should act on. */
 const noRoomIn = (bet: Bet, inFlight: number): string => {
@@ -233,19 +234,38 @@ const TOOLS = {
       });
       return "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
     }
-    requireSignOff(ctx, `deploy ${product.id} to production`, "deploy");
-    const deployed = await ctx.deploy({
-      binding: product.vercel,
-      cwd: product.workspaceDir,
-      token,
-    });
-    if (!deployed.ok) {
-      return `The deploy of ${product.name} failed. The end of what Vercel printed:\n${deployTail(deployed.output, token)}`;
+    const target: DeployTarget =
+      product.vercel === null
+        ? { kind: "new", name: product.id }
+        : { binding: product.vercel, kind: "bound" };
+    requireSignOff(ctx, deployAction(product.id, target), "deploy");
+    const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token });
+    if (deployed.kind === "name-taken") {
+      ctx.asks.raise({
+        integration: "vercel",
+        reason: `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
+        type: "integration",
+      });
+      return `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it. The founder has a Vercel card waiting to bind ${product.name} to its project; this task resumes once they do. Continue with what you can.`;
     }
-    const live = productionAlias(deployed.output);
-    return live === null
-      ? `Deployed ${product.name} to production: ${deployed.url}`
-      : `Deployed ${product.name} to production: ${live} (this deployment: ${deployed.url})`;
+    // a new project exists from its first deployment on, live or not
+    const made = target.kind === "new" ? deployed.project : null;
+    const binds = made !== null && store.getProduct(product.id)?.vercel === null ? made : null;
+    if (binds !== null) {
+      store.setProductVercel(product.id, binds);
+    }
+    const bindNote =
+      binds === null
+        ? ""
+        : `\n${product.name} is now bound to the new Vercel project ${binds.projectName}, which counts its visitors.`;
+    if (deployed.kind === "failed") {
+      return `The deploy of ${product.name} failed: ${deployed.reason}${bindNote}`;
+    }
+    const live =
+      deployed.alias === null
+        ? deployed.url
+        : `${deployed.alias} (this deployment: ${deployed.url})`;
+    return `Deployed ${product.name} to production: ${live}${bindNote}`;
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,

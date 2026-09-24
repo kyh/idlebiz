@@ -108,7 +108,7 @@ export const TOOL_SPECS = {
   }),
   deploy: tool({
     body: z.strictObject({ product: z.string().min(1).optional() }),
-    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. Keep Vercel's config in \`vercel.json\`: a folder holding \`vercel.ts\` (or .mts, .js, .mjs, .cjs) is not deployed. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
+    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The folder's files go up as they are, less what \`.vercelignore\` and Vercel's defaults leave out (node_modules, .git, .env.local), and Vercel builds them on its own machines, with the settings in \`vercel.json\`. A product with no Vercel project gets a new one named after it. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. No tool sets the project's environment variables or domains: a product that needs one asks the founder via ask_boss. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
     example: {},
     leadOnly: null,
     method: "POST",
@@ -131,7 +131,7 @@ export const TOOL_SPECS = {
         ),
       product: z.string().min(1).optional(),
     }),
-    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. The founder signs off on each link: the first call is held, and calling again once they answer creates it.',
+    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds a Stripe key. The founder signs off on each link: the first call is held, and calling again once they answer creates it.',
     example: { amountUsd: 9, bet: "bet-slug", name: "..." },
     leadOnly: null,
     method: "POST",
