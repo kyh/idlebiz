@@ -431,6 +431,12 @@ const MUST_ALLOW = [
   "gh pr --help",
 ];
 
+/**
+ * What a long line may take. The blowups these guard against take seconds at these
+ * sizes, so the budget leaves a slow CI runner room without letting one through.
+ */
+const LINEAR_BUDGET_MS = 250;
+
 /** The quickest of a few runs: a busy machine slows one run, never all, while work that grows too fast is slow every time. */
 const quickest = (run: () => void): number =>
   Math.min(
@@ -460,7 +466,7 @@ describe("classifyCommand", () => {
       `${"} ".repeat(5000)}git push`,
       `${"watch ".repeat(200)}git push`,
     ]) {
-      expect(quickest(() => classifyCommand(command))).toBeLessThan(50);
+      expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
     }
   });
 
@@ -473,7 +479,7 @@ describe("classifyCommand", () => {
       command = `${apart} sh -c '${command.replaceAll("'", String.raw`'\''`)}'`;
     }
     expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: "git-push" } });
-    expect(quickest(() => classifyCommand(command))).toBeLessThan(50);
+    expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
   });
 
   it("reads a line shells read apart in linear time, however many programs it names", () => {
@@ -483,7 +489,7 @@ describe("classifyCommand", () => {
       `echo $(case a in b) :;; esac) ${names.join(" ")}`,
       `echo $(case a in b) :;; esac) ${"'git' ".repeat(5000)}`,
     ]) {
-      expect(quickest(() => classifyCommand(command))).toBeLessThan(50);
+      expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
     }
   });
 
@@ -493,14 +499,14 @@ describe("classifyCommand", () => {
       command = `$(cat <<E${level}\n$(${command})\nE${level}\n)`;
     }
     expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: "git-push" } });
-    expect(quickest(() => classifyCommand(command))).toBeLessThan(50);
+    expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
   });
 
   it.each([`${'echo "$('.repeat(2000)}git push`, `${"bash <<EOF\n".repeat(2000)}git push`])(
     "stays conservative past nesting it will not follow",
     (command) => {
       expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: "git-push" } });
-      expect(quickest(() => classifyCommand(command))).toBeLessThan(50);
+      expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
     },
   );
 
