@@ -445,6 +445,15 @@ export class NpcManager {
     }
   }
 
+  /** Asks the steering loop dropped: only those still asking keep the "!". */
+  unblockAllBut(asking: ReadonlySet<string>): void {
+    for (const id of this.npcs.keys()) {
+      if (!asking.has(id)) {
+        this.unblock(id);
+      }
+    }
+  }
+
   /** A tool call landed: hands on the keyboard, or eyes on the screen. */
   onTool(id: string, pose: WorkPose): void {
     const npc = this.npcs.get(id);

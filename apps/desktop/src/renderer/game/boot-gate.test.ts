@@ -31,6 +31,19 @@ describe("BootGate", () => {
     expect(log).toEqual([]);
   });
 
+  it("stops holding when a failed boot shuts it, and the next boot opens clean", () => {
+    const gate = new BootGate<string>();
+    const log: string[] = [];
+    gate.boot();
+    gate.run(record(log, "held"));
+    gate.shut();
+    gate.run(record(log, "after"));
+    gate.boot();
+    gate.run(record(log, "new"));
+    gate.open("office");
+    expect(log).toEqual(["office:new"]);
+  });
+
   it("starts a restart's hold empty, so only its own events reach its office", () => {
     const gate = new BootGate<string>();
     const log: string[] = [];

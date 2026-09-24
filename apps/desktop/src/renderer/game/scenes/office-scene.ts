@@ -246,8 +246,21 @@ export class OfficeScene extends Scene {
 
   private async boot(): Promise<void> {
     this.generation += 1;
-    this.npcEvents.boot();
     const { generation } = this;
+    this.npcEvents.boot();
+    try {
+      await this.bootOffice(generation);
+    } catch (error) {
+      console.error("Could not boot the office", error);
+      // left booting, the gate would hold every later event for the scene's life;
+      // a boot already replaced must leave its successor's gate alone
+      if (generation === this.generation) {
+        this.npcEvents.shut();
+      }
+    }
+  }
+
+  private async bootOffice(generation: number): Promise<void> {
     const masks = textureMasks(this.textures);
     const seats = this.buildRoom(masks);
 
@@ -285,7 +298,9 @@ export class OfficeScene extends Scene {
     // the office is already staffed when it opens: nobody parades in on boot.
     // Spawns serialise on Phaser's loader, but composing the sheets need not:
     // main caches by seed, so warming them all at once makes the chain read hits.
-    await Promise.all(employees.map((emp) => getCharacterAssets(emp.spriteSeed)));
+    // Only a warm-up: a sheet that fails here fails again in its own spawn, which
+    // lets everyone else in.
+    await Promise.allSettled(employees.map((emp) => getCharacterAssets(emp.spriteSeed)));
     if (generation !== this.generation) {
       return;
     }
@@ -457,11 +472,36 @@ export class OfficeScene extends Scene {
           }
           break;
         }
+        // a bet that stops taking work, or a retired product, drops the asks it had waiting
+        // with no event per task
+        case "bet.changed":
+        case "product.killed": {
+          void this.recheckAsks();
+          break;
+        }
         default: {
           break;
         }
       }
     });
+  }
+
+  /**
+   * Asks main who still waits on the founder and lowers every other "!". Never
+   * raises one: that is run.end's, and a late answer would revive an ask since answered.
+   */
+  private async recheckAsks(): Promise<void> {
+    const { generation } = this;
+    try {
+      const blocked = await bridge().listTasks({ status: ["blocked"] });
+      if (generation !== this.generation) {
+        return;
+      }
+      const asking = new Set(blocked.flatMap((t) => (t.assigneeId ? [t.assigneeId] : [])));
+      this.npcEvents.run((npcs) => npcs.unblockAllBut(asking));
+    } catch (error) {
+      console.error("Could not recheck the office's asks", error);
+    }
   }
 
   private talkTo(employeeId: string): void {
