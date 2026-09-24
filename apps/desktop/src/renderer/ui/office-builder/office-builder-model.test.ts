@@ -8,6 +8,7 @@ import {
   addSelected,
   assetSrc,
   autoAnchor,
+  blockFootprint,
   duplicates,
   flipObject,
   loadLayout,
@@ -248,5 +249,60 @@ describe("sealing pockets", () => {
     expect(sealed[10]?.[10]).toBe("1");
     expect(openedCells(blocked.collision, sealed)).toEqual([]);
     expect(sealPockets({ ...blocked, collision: sealed })).toEqual(sealed);
+  });
+});
+
+const closedCells = (before: readonly string[], after: readonly string[]): string[] =>
+  openedCells(after, before);
+const blocked = (layout: EditableLayout, selection: readonly string[]): string[] =>
+  closedCells(layout.collision, blockFootprint({ layout, selection }).layout.collision);
+
+describe("blocking the selection's footprint", () => {
+  const shipped = loadLayout();
+  const open: EditableLayout = {
+    ...shipped,
+    collision: shipped.collision.map((row) => "0".repeat(row.length)),
+  };
+  const lamp = { ...rug, layer: "overhead", uid: "lamp" } satisfies EditableObject;
+
+  // the desk's art is 32x14 at (40, 142): columns 2-4, rows 8-9
+  it("closes every cell a selected y-sorted object's art touches, and only those", () => {
+    const layout = { ...open, objects: [desk, { ...desk, uid: "other", x: 200 }] };
+    expect(blocked(layout, ["desk"])).toEqual(["8,2", "8,3", "8,4", "9,2", "9,3", "9,4"]);
+  });
+
+  it("follows the art the scene draws, flips included", () => {
+    const layout = { ...open, objects: [flipObject(desk, "y")] };
+    expect(blocked(layout, ["desk"])).toEqual(["3,2", "3,3", "3,4", "4,2", "4,3", "4,4"]);
+  });
+
+  it("closes nothing for the flat bands, which walkers cross or pass under", () => {
+    const doc: BuilderDoc = {
+      layout: { ...open, objects: [rug, lamp] },
+      selection: ["rug", "lamp"],
+    };
+    expect(blockFootprint(doc)).toBe(doc);
+  });
+
+  it("keeps painted collision and the selection, and stops at the grid's edge", () => {
+    const offTheCorner = moveObject(desk, -8, -90);
+    const painted = paint({ ...open, objects: [offTheCorner] }, 20, 20, 1);
+    const doc: BuilderDoc = { layout: painted, selection: ["desk"] };
+    const next = blockFootprint(doc);
+    expect(closedCells(painted.collision, next.layout.collision)).toEqual(["0,0", "0,1"]);
+    expect(openedCells(painted.collision, next.layout.collision)).toEqual([]);
+    expect(next.layout.collision.map((row) => row.length)).toEqual(
+      painted.collision.map((row) => row.length),
+    );
+    expect(next.selection).toBe(doc.selection);
+  });
+
+  it("hands back the same doc when every cell is already solid, so nothing is recorded", () => {
+    const doc: BuilderDoc = { layout: { ...open, objects: [desk] }, selection: ["desk"] };
+    const once = blockFootprint(doc);
+    expect(once).not.toBe(doc);
+    expect(blockFootprint(once)).toBe(once);
+    const none: BuilderDoc = { ...doc, selection: [] };
+    expect(blockFootprint(none)).toBe(none);
   });
 });

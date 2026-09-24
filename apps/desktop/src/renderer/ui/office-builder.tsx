@@ -14,6 +14,7 @@ import {
   ALL_OBJECT_IDS,
   addSelected,
   assetSrc,
+  blockFootprint,
   duplicates,
   flipObject,
   loadLayout,
@@ -150,6 +151,8 @@ const Toolbar = ({
   onZoomOut,
   showCollision,
   onToggleCollision,
+  canBlockFootprint,
+  onBlockFootprint,
   onSealPockets,
   onSave,
   saving,
@@ -163,6 +166,8 @@ const Toolbar = ({
   onZoomOut: () => void;
   showCollision: boolean;
   onToggleCollision: (pinned: boolean) => void;
+  canBlockFootprint: boolean;
+  onBlockFootprint: () => void;
   onSealPockets: () => void;
   onSave: () => void;
   saving: boolean;
@@ -202,6 +207,15 @@ const Toolbar = ({
       >
         Collision
       </Toggle>
+      <button
+        type="button"
+        onClick={onBlockFootprint}
+        disabled={!canBlockFootprint}
+        className="px-btn px-2.5 py-1.5"
+        title="Close the collision cells under the selected objects; floor and overhead pieces block nothing (then Save)"
+      >
+        Block footprint
+      </button>
       <button
         type="button"
         onClick={onSealPockets}
@@ -551,6 +565,12 @@ export const OfficeBuilder = ({ design }: { design: OfficeDesign }) => {
           onZoomOut={zoomOut}
           showCollision={showCollision}
           onToggleCollision={setCollisionPinned}
+          canBlockFootprint={blockFootprint(history.present) !== history.present}
+          onBlockFootprint={() => {
+            history.commit(blockFootprint);
+            setStatus("Blocked walking under the selected objects.");
+            setCollisionPinned(true);
+          }}
           onSealPockets={() => {
             commitLayout((L) => ({ ...L, collision: sealPockets(L) }));
             setStatus("Sealed open floor no body can reach.");

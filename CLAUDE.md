@@ -174,8 +174,10 @@ allocator and the replay.
   font-size: use `.px-icon`.
 - **The office's art and its collision don't know about each other.** `buildRoom` reads
   `objects`, the walk grid reads `collision` — two independent sections of
-  office-design.json, nothing reconciles them. The body probe is 16x12 but the sprite is
-  32x64, so art overhangs the body by ~8px and any disagreement renders the character
+  office-design.json, and nothing keeps them in step. The builder's Block footprint closes
+  the cells under a selection once, when asked. Those cells stay closed when the piece
+  later moves, flips or is deleted. The body probe is 16x12 but the sprite is 32x64, so
+  art overhangs the body by ~8px and any disagreement renders the character
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
   it fails on any seat, point of interest or door unreachable from spawn, any open floor
   cell no body can ever stand on, any reachable spot where the player's art, facing right,

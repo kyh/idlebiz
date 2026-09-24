@@ -17,6 +17,7 @@ import { objectSpritePath, spriteBounds } from "@/shared/office-object-sprite";
 import { ROOM_BUILDER_TILES } from "@/renderer/game/room-builder-tiles.generated";
 import type { RoomBuilderTile } from "@/renderer/game/room-builder-tiles.generated";
 import { sealedCollision } from "@/shared/office-grid";
+import type { GridCell } from "@/shared/office-grid";
 
 export type Tool =
   | "select"
@@ -327,6 +328,42 @@ export const setCollisionCell = (
 export const paintCell = (d: BuilderDoc, c: number, r: number, val: 0 | 1): BuilderDoc => {
   const collision = setCollisionCell(d.layout.collision, d.layout.cols, c, r, val);
   return collision === d.layout.collision ? d : withLayout(d, { ...d.layout, collision });
+};
+
+/** Every collision cell a world rect touches, clipped to the grid. */
+const cellsUnder = (L: EditableLayout, rect: Rect): GridCell[] => {
+  const c0 = Math.max(0, Math.floor(rect.x / L.cell));
+  const r0 = Math.max(0, Math.floor(rect.y / L.cell));
+  const c1 = Math.min(L.cols, Math.ceil((rect.x + rect.w) / L.cell));
+  const r1 = Math.min(L.rows, Math.ceil((rect.y + rect.h) / L.cell));
+  const cells: GridCell[] = [];
+  for (let r = r0; r < r1; r += 1) {
+    for (let c = c0; c < c1; c += 1) {
+      cells.push({ c, r });
+    }
+  }
+  return cells;
+};
+
+/**
+ * Close every cell a selected y-sorted object's art touches, so no walker stands inside it.
+ * The whole art, not a guessed floor depth: a sprite does not say how deep its piece is,
+ * and the overlay shows what closed for the clear brush to reopen. The flat bands have no
+ * footprint, since walkers cross the floor band and pass under the overhead one. Only ever
+ * closes cells; the same doc when all of them are already solid.
+ */
+export const blockFootprint = (d: BuilderDoc): BuilderDoc => {
+  const picked = new Set(d.selection);
+  const L = d.layout;
+  let { collision } = L;
+  for (const o of L.objects) {
+    if (o.layer === "object" && picked.has(o.uid)) {
+      for (const { r, c } of cellsUnder(L, worldRect(o))) {
+        collision = setCollisionCell(collision, L.cols, c, r, 1);
+      }
+    }
+  }
+  return collision === L.collision ? d : withLayout(d, { ...L, collision });
 };
 
 /**
