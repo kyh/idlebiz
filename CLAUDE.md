@@ -222,6 +222,8 @@ allocator and the replay.
   React's `useActionState`): the control is busy while main works and a refusal lands beside
   it as a `<Failure>`. No `void action()` in a handler, no hand-rolled `mounted` refs — a
   throw inside an action goes to the error boundary, so the hook returns failure as state.
+  A read goes through `useAsync` (`renderer/hooks/use-async.ts`) the same way: its failure
+  is state, and an answer that lands after its deps changed is dropped.
 - **React and the office scene talk through `renderer/game/office-port.ts`**, a typed
   vocabulary over Phaser's emitter. The scene still fetches its own roster when it boots: it
   restarts the moment a company is founded, before the store has refreshed.

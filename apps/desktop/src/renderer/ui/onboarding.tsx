@@ -4,6 +4,7 @@ import { useAsync } from "@/renderer/hooks/use-async";
 import { useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useKeyedState } from "@/renderer/hooks/use-keyed-state";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { bridge } from "@/renderer/bridge";
 import { officeReady, refresh } from "@/renderer/state/store";
@@ -544,7 +545,13 @@ export const Onboarding = () => {
   const [pitch, setPitch] = useState("");
   const [team, setTeam] = useState<Team>({ kind: "uncast" });
   const [capIndex, setCapIndex] = useState(DEFAULT_CAP_INDEX);
+  // Founding stays off useSubmission: the step machine drives it. A refusal
+  // sends the step back to the budget, and an action would hold the founding
+  // screen's setStep until main answered.
   const [failure, setFailure] = useState<string | null>(null);
+  // Once founded the company is on disk and main refuses a second founding, so
+  // only this refresh is retried; the office opens once the copy here has it.
+  const opening = useSubmission(refresh);
   const [cursor, setCursor] = useKeyedState(step, 0);
 
   const capUsd = CAPS[capIndex] ?? null;
@@ -579,16 +586,6 @@ export const Onboarding = () => {
     void cast();
   };
 
-  /** The company is on disk; the office opens once the copy here has it. */
-  const openOffice = async () => {
-    setFailure(null);
-    try {
-      await refresh();
-    } catch (error) {
-      setFailure(errorMessage(error));
-    }
-  };
-
   const finalize = async () => {
     if (team.kind !== "cast" || team.hires.length === 0 || step === "finalize") {
       return;
@@ -612,7 +609,7 @@ export const Onboarding = () => {
       return;
     }
     officeReady();
-    await openOffice();
+    opening.submit();
   };
 
   const looks = choices.length;
@@ -683,18 +680,10 @@ export const Onboarding = () => {
         };
       }
       case "finalize": {
-        // founded already, and main refuses a second founding: only the refresh is retried
-        if (failure === null) {
+        if (opening.submission.kind !== "failed") {
           return null;
         }
-        return {
-          cursor,
-          items: OPEN_FAILED_ITEMS,
-          pick: () => {
-            void openOffice();
-          },
-          setCursor,
-        };
+        return { cursor, items: OPEN_FAILED_ITEMS, pick: () => opening.submit(), setCursor };
       }
       case "title":
       case "intro":
@@ -819,7 +808,10 @@ export const Onboarding = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const problem = failure ?? (team.kind === "failed" ? team.message : null);
+  const problem =
+    failure ??
+    (opening.submission.kind === "failed" ? opening.submission.message : null) ??
+    (team.kind === "failed" ? team.message : null);
   // Enter on the intro's last page waits for the probe; say so instead of doing nothing
   const hint =
     step === "intro" && auth.phase === "checking"

@@ -5,7 +5,8 @@ import { errorMessage } from "@/shared/errors";
 /**
  * Where an async read stands. A ready value is `current` when it was read under
  * the deps of this render; after they change it stays on screen, not current,
- * until the new read lands.
+ * until the new read lands. A failure is only ever this render's: an older one
+ * reads as loading, so asking again never shows the last refusal as its answer.
  */
 export type Loaded<T> =
   | { kind: "loading" }
@@ -34,7 +35,7 @@ export const loadedOf = <T>(landed: Landed<T> | null, read: () => Promise<T>): L
     return { kind: "loading" };
   }
   if (landed.settled.kind === "failed") {
-    return landed.settled;
+    return landed.read === read ? landed.settled : { kind: "loading" };
   }
   return { ...landed.settled, current: landed.read === read };
 };

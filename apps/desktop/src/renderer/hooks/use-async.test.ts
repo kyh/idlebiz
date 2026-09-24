@@ -20,4 +20,8 @@ describe("useAsync's outcome", () => {
     const landed = await settle(refused);
     expect(loadedOf(landed, refused)).toEqual({ kind: "failed", message: "no employee e1" });
   });
+
+  it("is loading, not the old failure, while a read under new deps is in flight", async () => {
+    expect(loadedOf(await settle(refused), after)).toEqual({ kind: "loading" });
+  });
 });

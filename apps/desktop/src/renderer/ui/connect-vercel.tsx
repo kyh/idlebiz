@@ -1,67 +1,24 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { bridge } from "@/renderer/bridge";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
-import { errorMessage } from "@/shared/errors";
+import { lookupFor, problemOf } from "@/renderer/ui/vercel-lookup";
 import type { Product } from "@/shared/domain";
-import type { VercelListing, VercelProject } from "@/shared/integrations";
-
-type Lookup =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "error"; message: string }
-  | {
-      state: "loaded";
-      account: string | undefined;
-      projects: VercelProject[];
-      /** The token that listed them; absent when it is the saved one. */
-      token?: string;
-    };
-
-/** How the picker shows a listing; `token` is the one pasted, absent when the saved one was tried. */
-const lookupOf = (listing: VercelListing, token?: string): Lookup => {
-  switch (listing.kind) {
-    case "loaded": {
-      return { account: listing.account, projects: listing.projects, state: "loaded", token };
-    }
-    case "rejected": {
-      // A saved token that is refused, or missing, only means one has to be pasted.
-      return token === undefined
-        ? { state: "idle" }
-        : {
-            message: "That token was rejected — create one at vercel.com/account/tokens.",
-            state: "error",
-          };
-    }
-    case "unreachable": {
-      return {
-        message: `Couldn't reach Vercel — check your connection and try again. (${listing.reason})`,
-        state: "error",
-      };
-    }
-    // no default
-  }
-};
-
-const problemOf = (lookup: Lookup): string | null => {
-  if (lookup.state === "error") {
-    return lookup.message;
-  }
-  if (lookup.state === "loaded" && lookup.projects.length === 0) {
-    return "No projects on this account yet.";
-  }
-  return null;
-};
+import type { VercelProject } from "@/shared/integrations";
 
 // One token serves every product, so a product is bound with the saved one
 // unless the founder pastes another.
 const PickProject = ({ productId, onClose }: { productId: string; onClose: () => void }) => {
   const [token, setToken] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [lookup, setLookup] = useState<Lookup>({ state: "loading" });
+  // a fresh object per Continue, so asking again with the same token reads again
+  const [asked, setAsked] = useState<{ token?: string }>({});
+  const listing = useAsync(() => bridge().vercelListProjects(asked), [asked]);
+  const lookup = lookupFor(listing, asked.token);
   const connecting = useSubmission(
     async ({ project, given }: { project: VercelProject; given: string | undefined }) => {
       await connectVercel({
@@ -75,33 +32,6 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
     },
   );
   const busy = lookup.state === "loading" || connecting.submission.kind === "sending";
-
-  useEffect(() => {
-    let current = true;
-    const trySaved = async () => {
-      const res = await bridge()
-        .vercelListProjects({})
-        .catch(() => null);
-      if (current) {
-        setLookup(res ? lookupOf(res) : { state: "idle" });
-      }
-    };
-    void trySaved();
-    return () => {
-      current = false;
-    };
-  }, []);
-
-  const loadProjects = async () => {
-    const given = token.trim();
-    setLookup({ state: "loading" });
-    try {
-      const res = await bridge().vercelListProjects({ token: given });
-      setLookup(lookupOf(res, given));
-    } catch (error) {
-      setLookup({ message: errorMessage(error), state: "error" });
-    }
-  };
 
   const saved = lookup.state === "loaded" && lookup.token === undefined;
   const problem = problemOf(lookup);
@@ -124,9 +54,7 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
         />
         <button
           type="button"
-          onClick={() => {
-            void loadProjects();
-          }}
+          onClick={() => setAsked({ token: token.trim() })}
           disabled={busy || token.trim().length === 0}
           className="px-btn-accent px-btn"
         >
