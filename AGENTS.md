@@ -279,7 +279,7 @@ rather than crashing boot.
   (`shared/refusal.ts`) is a fault and is reported too.
 - **Main keeps a log file.** `main/lib/log.ts` sends main's console, uncaught errors and
   crashed renderer or child processes to `main.log` under `app.getPath("logs")`
-  (`~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)` userData), never under the
+  (`~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)` userData, or in `roots/<id>/` beneath it for an isolated `IDLEBIZ_ROOT_DIR`), never under the
   save root, which a reset deletes. A catch that carries on past an unexpected error calls
   `report` (`main/lib/report.ts`); a boot that throws says where the log is and exits.
 - **Everything main says happened goes through `main/activity.ts`.** `publishActivity`

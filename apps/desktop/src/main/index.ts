@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -288,17 +289,21 @@ const ensureWindow = (): void => {
 };
 
 // Electron names the app, and so its userData, after package.json's productName;
-// dev gets its own so a dev run never shares a lock or a cache with the app.
+// dev gets its own so a dev run never shares a lock or a cache with the app. The
+// single-instance lock lives in userData and guards a save, so each isolated save
+// root gets its own beneath it: sessions on different roots run side by side.
 // Dev's Electron is ad-hoc signed, so the Keychain asks again for its item after every
 // Electron change, and that prompt stalls automation: dev seals with Chromium's mock
 // keychain, a fixed key, and never touches the real one.
 if (isDev) {
-  app.setPath("userData", path.join(app.getPath("appData"), `${app.name} (dev)`));
+  const devData = path.join(app.getPath("appData"), `${app.name} (dev)`);
+  const rootId = createHash("sha256").update(ROOT_DIR).digest("hex").slice(0, 16);
+  app.setPath("userData", ON_REAL_SAVE ? devData : path.join(devData, "roots", rootId));
   app.commandLine.appendSwitch("use-mock-keychain");
 }
 initLog();
 
-// one office per machine: a second instance would run a second scheduler
+// one office per save: a second instance would run a second scheduler
 // against the same save, spending twice and racing every write
 if (!app.requestSingleInstanceLock()) {
   app.quit();
