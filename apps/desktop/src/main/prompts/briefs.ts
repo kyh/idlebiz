@@ -54,6 +54,20 @@ const movedBy = (now: number, then: number | null | undefined, money: boolean): 
   return `; ${delta > 0 ? "+" : "−"}${shown} since your last run`;
 };
 
+/** The company's revenue line: a test-mode Stripe reads as zero, which is not "nothing sold yet". */
+const revenueLine = (
+  company: Company,
+  since: RunMetrics | null,
+  stripeTestMode: boolean,
+): string => {
+  if (stripeTestMode) {
+    return '- Revenue: Stripe is in test mode — no charge counts; request_integration "stripe" for a live account so revenue can be counted.';
+  }
+  return company.revenueUsd === null
+    ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
+    : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
+};
+
 /** The live numbers the founder's HUD shows, so a run can steer by them.
  *  Null is "no source connected", never zero: the difference decides whether
  *  the next move is growth or asking for the connection. */
@@ -61,11 +75,9 @@ const realNumbers = (
   company: Company,
   products: readonly Product[],
   since: RunMetrics | null,
+  stripeTestMode: boolean,
 ): string => {
-  const revenue =
-    company.revenueUsd === null
-      ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
-      : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
+  const revenue = revenueLine(company, since, stripeTestMode);
   const users =
     company.users === null
       ? '- Users: no source connected — nobody can see traffic; a product deployed on Vercel reports visitors (request_integration "vercel").'
@@ -226,6 +238,8 @@ export interface AutonomousBriefInput {
   ships: readonly string[];
   /** Dead-lettered tasks worth a second look. */
   problems: readonly Task[];
+  /** The company reads Stripe with a test-mode key while test money does not count. */
+  stripeTestMode: boolean;
   nameOf: (id: string) => string;
 }
 
@@ -240,6 +254,7 @@ export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
     room,
     ships,
     problems,
+    stripeTestMode,
     nameOf,
   } = input;
   const isLeader = isLead(company, employee);
@@ -288,7 +303,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     shipped,
     ``,
     `Real numbers (what the founder sees; grow these):`,
-    realNumbers(company, products, employee.lastRunMetrics),
+    realNumbers(company, products, employee.lastRunMetrics, stripeTestMode),
     ``,
     `Recent failures to consider fixing or unblocking:`,
     failures,

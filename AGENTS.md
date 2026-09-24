@@ -155,6 +155,10 @@ rather than crashing boot.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).
+- `IDLEBIZ_COUNT_TEST_MONEY=1` counts test-mode Stripe charges toward revenue and bets, for
+  an end-to-end run of a revenue bet on a test key. Without it only live-mode money counts:
+  a test-mode key reads as "Stripe is in test mode — no charge counts" in the brief and
+  `measure_bet` refuses a revenue bet on it (`main/metrics.ts`).
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for

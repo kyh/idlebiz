@@ -45,22 +45,25 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   the budget stops the work but not the clock, because the step that moves the number may
   still be waiting on the founder and a window over nothing shipped is a false verdict. Nor
   does it start one over a number no source reads (`measureRefusal`: the company's Stripe
-  key, the product's Vercel project). A spent-out bet gets the lead a "settle" run: measure
-  or kill. No tool lets an agent declare a win.
+  key, live unless test money counts, and the product's Vercel project). A spent-out bet
+  gets the lead a "settle" run: measure or kill. No tool lets an agent declare a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
-  bet reads captured USD charges tagged `metadata[bet]=<slug>`. So any number of bets run on one
-  product and none can claim another's result. A named path over the whole site or `/b` is
-  refused (`namedPathRefusal`), and so is one overlapping a path a live bet covers or a closed
-  one named (`holdsItsPath`): each counts visitors the bet did not bring. The team's own
-  visits never count; the standing instructions say how to check a path without recording
-  one. Readings arrive with the metrics pulse and live on the bet (`reading`, taken at
-  `readAt`), so `judge` needs only the bet and the pulse's clock.
+  bet reads captured live-mode USD charges tagged `metadata[bet]=<slug>`. So any number of
+  bets run on one product and none can claim another's result. A named path over the whole
+  site or `/b` is refused (`namedPathRefusal`), and so is one overlapping a path a live bet
+  covers or a closed one named (`holdsItsPath`): each counts visitors the bet did not bring.
+  The team's own visits never count; the standing instructions say how to check a path
+  without recording one. Readings arrive with the metrics pulse and live on the bet
+  (`reading`, taken at `readAt`), so `judge` needs only the bet and the pulse's clock.
   Vercel's analytics API wants `since` and `until` together and filters in OData; path
   filters are free, utm ones are a paid add-on — which is why the mark is a path.
   Per-product revenue reads the same charges over the account's whole history, tagged
   `metadata[product]`, while bets read only charges since the oldest live revenue bet
-  opened; untagged money counts for the company only.
+  opened; untagged money counts for the company only. Test-mode money (a test card,
+  `stripe trigger`) is money nobody paid, so it counts nowhere unless
+  `IDLEBIZ_COUNT_TEST_MONEY=1` (AGENTS.md). Without it a test-mode key gives a bet no
+  reading, not a zero, so a bet only it could read closes unmeasured, never as a loss.
 - **Idle hands only spend against a fundable bet.** `allocate` decides everything about
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget

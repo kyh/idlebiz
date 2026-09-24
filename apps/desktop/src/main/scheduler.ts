@@ -7,6 +7,7 @@ import { guarded, report } from "@/main/lib/report";
 import { agentDriver, askBox } from "@/main/agents/agent-driver";
 import type { RunResult, RunTools } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-actions";
+import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
@@ -94,6 +95,7 @@ const heartbeatBrief = (
     products: store.listProducts(),
     room: store.recentTeamMessages(12),
     ships: store.recentShips(),
+    stripeTestMode: stripeInTestMode(company.id),
   });
 
 /** Where the next idle employee goes, by the company's current policy. */

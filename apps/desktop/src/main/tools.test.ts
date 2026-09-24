@@ -13,6 +13,7 @@ process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
+const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
 
 beforeEach(() => {
@@ -22,6 +23,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 afterAll(() => {
@@ -179,7 +181,7 @@ describe("company tools", () => {
 
     writeFileSync(
       path.join(root, "secrets.json"),
-      '{"STRIPE_SECRET_KEY":"sk_test","VERCEL_TOKEN":"token"}',
+      '{"STRIPE_SECRET_KEY":"sk_live_1","VERCEL_TOKEN":"token"}',
     );
     expect(measure(money.id)).toContain("is measuring");
     expect(measure(visits.id)).toContain("bind Vercel");
@@ -190,6 +192,58 @@ describe("company tools", () => {
     });
     expect(measure(visits.id)).toContain("is measuring");
     expect(measure(visits.id)).toContain("no open bet");
+  });
+
+  it("starts no clock on revenue while Stripe is in test mode", () => {
+    const { ctx } = runAs("mae");
+    callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    const [money] = store.listBets();
+    if (!money) {
+      throw new Error("no revenue bet opened");
+    }
+    const measure = () => callTool(ctx, "POST /v1/measure-bet", { slug: money.id });
+    const secrets = path.join(root, "secrets.json");
+
+    writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
+    expect(measure()).toContain("Stripe is in test mode — no charge counts");
+    expect(store.getBet(money.id)?.state.kind).toBe("open");
+
+    writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_live_1"}');
+    expect(measure()).toContain("is measuring");
+  });
+
+  it("kills a revenue bet a test key read as unmeasured, so nothing learns from it", async () => {
+    const { ctx } = runAs("mae");
+    callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    const [money] = store.listBets();
+    if (!money) {
+      throw new Error("no revenue bet opened");
+    }
+    const testCharge = {
+      amount_captured: 700,
+      captured: true,
+      created: Math.floor(Date.now() / 1000),
+      currency: "usd",
+      id: "ch_test",
+      livemode: false,
+      metadata: { bet: money.id },
+      paid: true,
+    };
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json({ data: [testCharge], total_count: 1 })),
+    );
+
+    const snap = await fetchRealMetrics(
+      { key: "sk_test_1", via: "own" },
+      store.listProducts(),
+      store.listBets(),
+    );
+    for (const [betId, { reading, at }] of snap.betReadings) {
+      store.setBetReading(betId, reading, at);
+    }
+    callTool(ctx, "POST /v1/kill-bet", { reason: "no live Stripe to count it", slug: money.id });
+
+    expect(store.getBet(money.id)?.state).toMatchObject({ kind: "killed", moved: null });
   });
 
   it("refuses a kill reason too long for a line in the room", () => {

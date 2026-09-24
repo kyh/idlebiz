@@ -11,7 +11,8 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-metrics-"));
 const secretsFile = path.join(root, "secrets.json");
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
-const { countPages, fetchRealMetrics, stripeCredential, sumCharges } = await import("./metrics");
+const { countPages, fetchRealMetrics, stripeCredential, stripeInTestMode, sumCharges } =
+  await import("./metrics");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -30,6 +31,7 @@ const charge = (id: string, amount: number, metadata: Record<string, string> = {
   created: 1_700_000_000,
   currency: "usd",
   id,
+  livemode: true,
   metadata,
   paid: true,
 });
@@ -84,10 +86,13 @@ const visits = (at: readonly number[]): URLSearchParams[] => {
   return asked;
 };
 
+/** What a read counts while test money does not. */
+const liveMoney = (fetchPage: Parameters<typeof sumCharges>[0]) => sumCharges(fetchPage, false);
+
 describe("sumCharges", () => {
   it("follows the list past its first hundred", async () => {
     const asked: (string | null)[] = [];
-    const revenue = await sumCharges((after) => {
+    const revenue = await liveMoney((after) => {
       asked.push(after);
       return Promise.resolve(
         after === null
@@ -100,7 +105,7 @@ describe("sumCharges", () => {
   });
 
   it("credits a product with what its tag claims, in the same read", async () => {
-    const revenue = await sumCharges(() =>
+    const revenue = await liveMoney(() =>
       Promise.resolve({
         data: [
           charge("ch_1", 1000, { product: "app" }),
@@ -114,7 +119,7 @@ describe("sumCharges", () => {
   });
 
   it("counts what was kept: not unpaid charges, not refunds", async () => {
-    const revenue = await sumCharges(() =>
+    const revenue = await liveMoney(() =>
       Promise.resolve({
         data: [
           { ...charge("ch_1", 1000), amount_refunded: 1000 },
@@ -127,7 +132,7 @@ describe("sumCharges", () => {
   });
 
   it("counts no authorization that was never captured", async () => {
-    const revenue = await sumCharges(() =>
+    const revenue = await liveMoney(() =>
       Promise.resolve({
         data: [
           charge("ch_1", 1000, { bet: "x", product: "app" }),
@@ -143,7 +148,7 @@ describe("sumCharges", () => {
   });
 
   it("counts what a partial capture took, not what it authorized", async () => {
-    const revenue = await sumCharges(() =>
+    const revenue = await liveMoney(() =>
       Promise.resolve({
         data: [{ ...charge("ch_1", 5000, { bet: "x", product: "app" }), amount_captured: 1000 }],
       }),
@@ -155,7 +160,7 @@ describe("sumCharges", () => {
   });
 
   it("reads no other currency's minor units as cents", async () => {
-    const revenue = await sumCharges(() =>
+    const revenue = await liveMoney(() =>
       Promise.resolve({
         data: [{ ...charge("ch_1", 2000, { bet: "x", product: "app" }), currency: "jpy" }],
       }),
@@ -165,8 +170,29 @@ describe("sumCharges", () => {
     expect(revenue?.byBet.size).toBe(0);
   });
 
+  it("counts a test-mode charge nowhere unless test money counts", async () => {
+    const page = {
+      data: [
+        charge("ch_live", 1000, { bet: "x", product: "app" }),
+        { ...charge("ch_test", 5000, { bet: "x", product: "app" }), livemode: false },
+      ],
+    };
+
+    const live = await sumCharges(() => Promise.resolve(page), false);
+    const all = await sumCharges(() => Promise.resolve(page), true);
+
+    expect(live?.total).toBe(10);
+    expect([...(live?.byProduct ?? [])]).toEqual([["app", 10]]);
+    expect([...(live?.byBet ?? [])]).toEqual([
+      ["x", [{ cents: 1000, created: 1_700_000_000_000 }]],
+    ]);
+    expect(all?.total).toBe(60);
+    expect([...(all?.byProduct ?? [])]).toEqual([["app", 60]]);
+    expect(all?.byBet.get("x")).toHaveLength(2);
+  });
+
   it("reports nothing rather than half a total", async () => {
-    const revenue = await sumCharges((after) =>
+    const revenue = await liveMoney((after) =>
       Promise.resolve(
         after === null ? { data: [charge("ch_1", 1000)], has_more: true } : "rate limited",
       ),
@@ -183,12 +209,12 @@ describe("sumCharges", () => {
       metadata: { bet: "x" },
       paid: true,
     };
-    const revenue = await sumCharges(() => Promise.resolve({ data: [undated] }));
+    const revenue = await liveMoney(() => Promise.resolve({ data: [undated] }));
     expect(revenue).toBeNull();
   });
 
   it("reports nothing when the list outruns the page cap", async () => {
-    const revenue = await sumCharges(() =>
+    const revenue = await liveMoney(() =>
       Promise.resolve({ data: [charge("ch_1", 100)], has_more: true }),
     );
     expect(revenue).toBeNull();
@@ -244,6 +270,27 @@ describe("stripeCredential", () => {
   });
 });
 
+describe("stripeInTestMode", () => {
+  beforeEach(() => rmSync(secretsFile, { force: true }));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("takes a test-mode key, secret or restricted, for one whose money counts for nothing", () => {
+    expect(stripeInTestMode("co")).toBe(false);
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_live_1"}');
+    expect(stripeInTestMode("co")).toBe(false);
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
+    expect(stripeInTestMode("co")).toBe(true);
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"rk_test_1"}');
+    expect(stripeInTestMode("co")).toBe(true);
+  });
+
+  it("lets a test-mode key's money count under IDLEBIZ_COUNT_TEST_MONEY=1", () => {
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
+    vi.stubEnv("IDLEBIZ_COUNT_TEST_MONEY", "1");
+    expect(stripeInTestMode("co")).toBe(false);
+  });
+});
+
 describe("fetchRealMetrics", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: 401 })));
@@ -274,6 +321,7 @@ describe("fetchRealMetrics", () => {
 describe("fetchRealMetrics reading Stripe", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
@@ -321,6 +369,30 @@ describe("fetchRealMetrics reading Stripe", () => {
       ["pricing", { at: expect.any(Number), reading: 7 }],
       ["later", { at: expect.any(Number), reading: 0 }],
     ]);
+  });
+
+  it("gives a bet no reading on a test key unless IDLEBIZ_COUNT_TEST_MONEY=1, reading again when it flips", async () => {
+    const asked = stripe((endpoint) =>
+      endpoint.startsWith("/v1/charges")
+        ? Response.json({ data: [{ ...charge("ch_1", 700, { bet: "pricing" }), livemode: false }] })
+        : Response.json({ total_count: 1 }),
+    );
+    const credential: StripeCredential = { key: "sk_test_flag", via: "own" };
+    const bets = [revenueBet("pricing", 0)];
+
+    const live = await fetchRealMetrics(credential, [], bets);
+    const first = asked.length;
+    vi.stubEnv("IDLEBIZ_COUNT_TEST_MONEY", "1");
+    const test = await fetchRealMetrics(credential, [], bets);
+
+    expect(live.revenue).toBe(0);
+    expect(live.betReadings.get("pricing")?.reading).toBeNull();
+    expect(asked.slice(0, first).filter((endpoint) => endpoint.includes("created[gte]"))).toEqual(
+      [],
+    );
+    expect(asked.slice(first)).toContain("/v1/charges?limit=100&created[gte]=0");
+    expect(test.revenue).toBe(7);
+    expect(test.betReadings.get("pricing")?.reading).toBe(7);
   });
 
   it("keeps the money it read when the customer count fails", async () => {
@@ -447,6 +519,26 @@ describe("fetchRealMetrics reading Stripe", () => {
         null,
       ),
     ).toMatchObject({ kind: "killed", moved: 18 });
+  });
+
+  it("closes a window a test key read as unmeasured, never as a loss", async () => {
+    const closes = 1_700_000_000_000;
+    vi.useFakeTimers({ now: closes + 2 * 24 * 3_600_000, toFake: ["Date"] });
+    stripe((endpoint) =>
+      endpoint.startsWith("/v1/charges")
+        ? Response.json({ data: [{ ...charge("ch_1", 700, { bet: "pricing" }), livemode: false }] })
+        : Response.json({ total_count: 1 }),
+    );
+    const held: Bet = { ...revenueBet("pricing", 0), state: { kind: "measuring", until: closes } };
+
+    const snap = await fetchRealMetrics({ key: "sk_test_held", via: "own" }, [], [held]);
+
+    expect(snap.betReadings.get("pricing")?.reading).toBeNull();
+    expect(judge(held, Date.now(), 0)).toMatchObject({
+      kind: "killed",
+      moved: null,
+      reason: "Stripe never reported its revenue",
+    });
   });
 });
 

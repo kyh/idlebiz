@@ -61,7 +61,12 @@ const product: Product = {
   workspaceDir: "/tmp/acme",
 };
 
-const briefFor = (co: Company, products: Product[], lastRunMetrics: RunMetrics | null = null) =>
+const briefFor = (
+  co: Company,
+  products: Product[],
+  lastRunMetrics: RunMetrics | null = null,
+  stripeTestMode = false,
+) =>
   autonomousBrief({
     assignment: { kind: "propose", product: products[0] ?? null, widen: false },
     bets: [],
@@ -73,6 +78,7 @@ const briefFor = (co: Company, products: Product[], lastRunMetrics: RunMetrics |
     products,
     room: [],
     ships: [],
+    stripeTestMode,
   }).description;
 
 const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
@@ -113,6 +119,12 @@ describe("the brief's real numbers", () => {
     expect(text).toContain("Users: 340 visitors");
     expect(text).toContain("- App: 300 visitors");
     expect(text).not.toContain("- Site:");
+  });
+
+  it("says a test-mode Stripe counts no charge rather than reporting zero", () => {
+    const text = briefFor({ ...company, revenueUsd: 0 }, [product], null, true);
+    expect(text).toContain("Revenue: Stripe is in test mode — no charge counts");
+    expect(text).not.toContain("Revenue: $0.00");
   });
 
   it("says how the numbers moved since the employee's last run", () => {
