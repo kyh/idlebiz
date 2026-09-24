@@ -137,8 +137,11 @@ export const ledgerOrder = (bets: readonly Bet[], verdicts = Infinity): Bet[] =>
     .slice(0, verdicts),
 ];
 
-/** How long the pulse asks for a reading taken after a window closed before the last one decides: a source down longer than this no longer holds the verdict. */
+/** How long the pulse must have asked without a break before a source that sent nothing counts as dead: at boot or on waking, nothing has asked it yet. */
 export const KILL_GRACE_MS = 20 * 60_000;
+
+/** Where a claim is read: what a verdict names when it waited on a reading in vain. */
+const sourceOf = (claim: BetClaim): string => (claim.metric === "revenue" ? "Stripe" : "Vercel");
 
 /**
  * The verdict is the evaluator's, never the team's: a bet wins when what it
@@ -161,30 +164,44 @@ export const judge = (bet: Bet, now: number, pulsingSince: number | null): BetSt
   if (state.kind === "open" || now < state.until) {
     return state;
   }
-  // A reading taken before the window closed can miss the money that decides
-  // it: a Stripe read is kept for minutes, and a window can close while the app
-  // is quit or asleep. The grace runs on the pulse's clock, since the wall clock
-  // passing says nothing about whether anyone asked the source.
-  const readSinceClose = bet.readAt !== null && bet.readAt >= state.until;
-  const askedLongEnough =
-    pulsingSince !== null && now >= Math.max(state.until, pulsingSince) + KILL_GRACE_MS;
-  if (!readSinceClose && !askedLongEnough) {
+  if (bet.readAt !== null && bet.readAt >= state.until) {
+    return {
+      closedAt: now,
+      kind: "killed",
+      moved,
+      reason: `it brought ${betProgress(bet)} ${bet.claim.metric}`,
+    };
+  }
+  // A reading taken before the window closed can miss what decides it, so the
+  // verdict waits a second window for one. The pulse must also have been asking:
+  // the wall clock passing while the app was quit or asleep says nothing about
+  // whether the source answers.
+  const waited = now >= windowEnd(bet, state.until);
+  const asked = pulsingSince !== null && now >= pulsingSince + KILL_GRACE_MS;
+  if (!waited || !asked) {
     return state;
   }
+  const source = sourceOf(bet.claim);
   return {
     closedAt: now,
     kind: "killed",
     moved,
     reason:
       moved === null
-        ? `no source ever reported its ${bet.claim.metric}`
-        : `it brought ${betProgress(bet)} ${bet.claim.metric}`,
+        ? `${source} never reported its ${bet.claim.metric}`
+        : `${source} sent no reading in the ${bet.windowHours}h after its window closed`,
   };
 };
 
+/** A verdict some source read the number for. */
+type MeasuredBet = ClosedBet & { state: { moved: number } };
+
+/** A bet killed before any source reported its number says nothing about its hypothesis, so neither the policy nor its replay learns from it. */
+const isMeasured = (bet: Bet): bet is MeasuredBet => isClosed(bet) && bet.state.moved !== null;
+
 /** What a closed bet returned against what it promised, capped so one outlier cannot own the mean. */
-const yieldOf = (bet: ClosedBet): number =>
-  Math.min(2, Math.max(0, (bet.state.moved ?? 0) / Math.max(bet.target, 1)));
+const yieldOf = (bet: MeasuredBet): number =>
+  Math.min(2, Math.max(0, bet.state.moved / Math.max(bet.target, 1)));
 
 export const PolicyParamsSchema = z.object({
   /** Weight of the bonus for products with little history. */
@@ -227,8 +244,12 @@ export interface Ledger {
   proposalPending: boolean;
 }
 
-/** Mean yield of a product's closed bets plus a bonus that shrinks as its history grows. */
-const productScore = (productId: string, closed: readonly ClosedBet[], explore: number): number => {
+/** Mean yield of a product's measured verdicts plus a bonus that shrinks as its history grows. */
+const productScore = (
+  productId: string,
+  closed: readonly MeasuredBet[],
+  explore: number,
+): number => {
   const own = closed.filter((b) => b.productId === productId);
   const mean = own.length === 0 ? 0 : own.reduce((sum, b) => sum + yieldOf(b), 0) / own.length;
   return mean + explore * Math.sqrt(Math.log(closed.length + 2) / (own.length + 1));
@@ -239,7 +260,7 @@ const CROWDING = 0.5;
 /** Where the next idle hour goes. Pure, so a candidate policy can be replayed against history. */
 export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   const closed = ledger.bets
-    .filter(isClosed)
+    .filter(isMeasured)
     .toSorted((a, b) => a.state.closedAt - b.state.closedAt);
   const scores = new Map(
     ledger.products.map((id) => [id, productScore(id, closed, params.explore)]),
@@ -284,14 +305,14 @@ const MAX_BETS_TO_DREAM = 100;
 const EXPLORE_CANDIDATES: readonly number[] = [0, 0.5, 1, 2];
 
 /**
- * Replay a policy against the company's closed bets: at each moment a bet opened,
- * the policy picks among the bets that really were open then, knowing only what
- * had closed by then, and earns the yield per dollar its pick really returned.
- * Exact over what happened, silent about what did not. Per-dollar yield is
- * floored at one run's cost, because no run is cheaper than that: a win the
- * pulse credited before any run billed cannot price itself at zero.
+ * Replay a policy against the company's measured verdicts: at each moment a bet
+ * opened, the policy picks among the bets that really were open then, knowing
+ * only what had closed by then, and earns the yield per dollar its pick really
+ * returned. Exact over what happened, silent about what did not. Per-dollar
+ * yield is floored at one run's cost, because no run is cheaper than that: a win
+ * the pulse credited before any run billed cannot price itself at zero.
  */
-const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number => {
+const replayScore = (params: PolicyParams, bets: readonly MeasuredBet[]): number => {
   let earned = 0;
   let picks = 0;
   const products = [...new Set(bets.map((b) => b.productId))];
@@ -326,7 +347,7 @@ const replayScore = (params: PolicyParams, bets: readonly ClosedBet[]): number =
 /** The best-replaying policy. The incumbent is a candidate and wins ties, so a swap is never a step down. */
 export const dream = (incumbent: PolicyParams, bets: readonly Bet[]): PolicyParams => {
   const closed = bets
-    .filter(isClosed)
+    .filter(isMeasured)
     .toSorted((a, b) => a.state.closedAt - b.state.closedAt)
     .slice(-MAX_BETS_TO_DREAM);
   if (closed.length < MIN_BETS_TO_DREAM) {

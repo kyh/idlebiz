@@ -40,6 +40,16 @@ const verdict = (moved: number, closedAt: number): BetState =>
 const closed = (id: string, productId: string, at: number, moved: number, spentUsd = 1): Bet =>
   bet({ createdAt: at, id, productId, spentUsd, state: verdict(moved, at + HOUR) });
 
+/** Killed before any source reported its number. */
+const unread = (id: string, productId: string, at: number): Bet =>
+  bet({
+    createdAt: at,
+    id,
+    productId,
+    spentUsd: 1,
+    state: { closedAt: at + HOUR, kind: "killed", moved: null, reason: "never read" },
+  });
+
 const ledger = (bets: Bet[], products = ["app", "site"]) => ({
   bets,
   busy: new Map<string, number>(),
@@ -50,6 +60,8 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
 });
 
 const measuring: BetState = { kind: "measuring", until: 10 };
+/** One more window after `measuring` closed: how long a verdict waits on a fresh reading. */
+const CLOSES_AGAIN = 10 + 24 * HOUR;
 const ASKING_ALL_ALONG = 0;
 
 describe("judge", () => {
@@ -80,7 +92,7 @@ describe("judge", () => {
   it("kills nothing on a reading taken before its window closed", () => {
     const stale = bet({ readAt: 9, reading: 20, state: measuring });
     expect(judge(stale, 10, ASKING_ALL_ALONG)).toBe(measuring);
-    expect(judge(stale, 10 + KILL_GRACE_MS - 1, ASKING_ALL_ALONG)).toBe(measuring);
+    expect(judge(stale, CLOSES_AGAIN - 1, ASKING_ALL_ALONG)).toBe(measuring);
   });
 
   it("wins on the first reading after the window closed, if it reached the target", () => {
@@ -91,30 +103,37 @@ describe("judge", () => {
     });
   });
 
-  it("kills on the last reading once the pulse asked through the grace without a fresh one", () => {
+  it("kills on the last reading once a second window passed without a fresh one, naming the source", () => {
     expect(
-      judge(
-        bet({ readAt: 9, reading: 20, state: measuring }),
-        10 + KILL_GRACE_MS,
-        ASKING_ALL_ALONG,
-      ),
-    ).toMatchObject({ kind: "killed", moved: 20 });
+      judge(bet({ readAt: 9, reading: 20, state: measuring }), CLOSES_AGAIN, ASKING_ALL_ALONG),
+    ).toMatchObject({
+      kind: "killed",
+      moved: 20,
+      reason: "Vercel sent no reading in the 24h after its window closed",
+    });
   });
 
-  it("counts the grace from when the pulse began asking, not from the close", () => {
+  it("calls a source dead only once the pulse has asked it through the grace", () => {
     const stale = bet({ readAt: 9, reading: 20, state: measuring });
-    const wokeAt = 10 + 5 * KILL_GRACE_MS;
+    const wokeAt = CLOSES_AGAIN + 5 * HOUR;
     expect(judge(stale, wokeAt, null)).toBe(measuring);
     expect(judge(stale, wokeAt, wokeAt)).toBe(measuring);
     expect(judge(stale, wokeAt + KILL_GRACE_MS - 1, wokeAt)).toBe(measuring);
     expect(judge(stale, wokeAt + KILL_GRACE_MS, wokeAt)).toMatchObject({ kind: "killed" });
   });
 
-  it("kills a bet nothing could ever measure", () => {
-    expect(judge(bet({ state: measuring }), 10, ASKING_ALL_ALONG)).toBe(measuring);
-    expect(judge(bet({ state: measuring }), 10 + KILL_GRACE_MS, ASKING_ALL_ALONG)).toMatchObject({
+  it("kills a bet nothing could ever measure, naming the source that never answered", () => {
+    const visits = bet({ state: measuring });
+    const money = bet({ claim: { metric: "revenue" }, state: measuring });
+    expect(judge(visits, CLOSES_AGAIN - 1, ASKING_ALL_ALONG)).toBe(measuring);
+    expect(judge(visits, CLOSES_AGAIN, ASKING_ALL_ALONG)).toMatchObject({
       kind: "killed",
       moved: null,
+      reason: "Vercel never reported its users",
+    });
+    expect(judge(money, CLOSES_AGAIN, ASKING_ALL_ALONG)).toMatchObject({
+      moved: null,
+      reason: "Stripe never reported its revenue",
     });
   });
 
@@ -264,6 +283,33 @@ describe("allocate", () => {
     });
   });
 
+  it("counts no bet a source never read toward a run of losses", () => {
+    const losses = [
+      closed("l0", "app", 0, 0),
+      closed("l1", "app", HOUR, 0),
+      unread("u", "app", 2 * HOUR),
+    ];
+    expect(allocate(ledger(losses), DEFAULT_POLICY)).toMatchObject({
+      kind: "propose",
+      widen: false,
+    });
+  });
+
+  it("scores a product only by what its bets were read to bring", () => {
+    const pick = allocate(
+      ledger([
+        closed("a", "app", 0, 100),
+        unread("u1", "app", 0),
+        unread("u2", "app", 0),
+        closed("s", "site", 0, 50),
+        bet({ id: "app-next", productId: "app" }),
+        bet({ id: "site-next", productId: "site" }),
+      ]),
+      { explore: 0, plateau: 3 },
+    );
+    expect(pick).toEqual({ betId: "app-next", kind: "work" });
+  });
+
   it("proposes on the best proven product otherwise", () => {
     expect(allocate(ledger([closed("a", "site", 0, 100)]), { explore: 0, plateau: 3 })).toEqual({
       kind: "propose",
@@ -305,18 +351,39 @@ describe("dream", () => {
     expect(next.explore).toBeLessThanOrEqual(DEFAULT_POLICY.explore);
   });
 
+  // ten verdicts on which a bolder explore replays better than the incumbent's
+  const early = ["e0", "e1", "e2", "e3"].map((id, i) => closed(id, "app", i * HOUR, 40));
+  const late = ["app", "app", "app", "site", "site", "site"].map((productId, i) =>
+    bet({
+      createdAt: 10 * HOUR + i,
+      id: `l${i}`,
+      productId,
+      spentUsd: 1,
+      state: verdict(productId === "site" ? 100 : 10, 20 * HOUR),
+    }),
+  );
+
   it("keeps the incumbent plateau", () => {
-    const early = ["e0", "e1", "e2", "e3"].map((id, i) => closed(id, "app", i * HOUR, 40));
-    const late = ["app", "app", "app", "site", "site", "site"].map((productId, i) =>
-      bet({
-        createdAt: 10 * HOUR + i,
-        id: `l${i}`,
-        productId,
-        spentUsd: 1,
-        state: verdict(productId === "site" ? 100 : 10, 20 * HOUR),
-      }),
-    );
     expect(dream({ explore: 1, plateau: 5 }, [...early, ...late])).toEqual({
+      explore: 2,
+      plateau: 5,
+    });
+  });
+
+  it("counts no bet a source never read toward the history it needs", () => {
+    const unreadApp = late.map((b) =>
+      b.productId === "app" ? unread(b.id, "app", b.createdAt) : b,
+    );
+    expect(dream({ explore: 1, plateau: 5 }, [...early, ...unreadApp])).toEqual({
+      explore: 1,
+      plateau: 5,
+    });
+  });
+
+  it("leaves a bet no source ever read out of the replay", () => {
+    expect(
+      dream({ explore: 1, plateau: 5 }, [unread("u", "site", 10 * HOUR - 1), ...early, ...late]),
+    ).toEqual({
       explore: 2,
       plateau: 5,
     });

@@ -133,7 +133,7 @@ export const TOOL_SPECS = {
   }),
   measure_bet: tool({
     body: z.strictObject({ slug: z.string().min(1) }),
-    doc: "the work that could move the number is out the door: stop spending on the bet and start its clock.",
+    doc: "the work that could move the number is out the door: stop spending on the bet and start its clock. Refused while nothing can read that number: no Stripe key for a revenue bet, no Vercel project on a users bet's product.",
     example: { slug: "bet-slug" },
     leadOnly: "Only the team lead starts a bet's clock — tell them the work is out the door.",
     method: "POST",

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HttpError, getJson } from "@/main/lib/http";
 import { STRIPE_CONNECT_TOKEN, getSecret } from "@/main/secrets";
+import { readMetricsConfig } from "@/main/store/metrics-config";
 import type { MetricsConfig } from "@/main/store/metrics-config";
 import type { Bet } from "@/shared/bets";
 import type { Product } from "@/shared/domain";
@@ -248,6 +249,23 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
   }
   const own = getSecret("STRIPE_SECRET_KEY");
   return own ? { key: own, via: "own" } : null;
+};
+
+/**
+ * Why no source would read what `bet` claims, in the words the lead should act
+ * on, or null when one can: the company's Stripe key for money, its product's
+ * Vercel project for visitors. A window over a number nothing reads could only
+ * close on no reading at all.
+ */
+export const measureRefusal = (bet: Bet, product: Product | null): string | null => {
+  if (bet.claim.metric === "revenue") {
+    return stripeCredential(readMetricsConfig(bet.companyId)) === null
+      ? 'No source reads revenue yet — ask the founder for STRIPE_SECRET_KEY, or to connect Stripe (request_integration "stripe"), then measure_bet again.'
+      : null;
+  }
+  return product?.vercel && getSecret("VERCEL_TOKEN")
+    ? null
+    : `No source reads users of ${product?.name ?? bet.productId} yet — ask the founder to bind Vercel to it (request_integration "vercel"), then measure_bet again.`;
 };
 
 // Every charge is re-read, since a refund can land on any old one, and

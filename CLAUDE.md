@@ -36,14 +36,17 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   closes short — on a reading taken after the close (the pulse reads at boot and re-reads
   Stripe past its cache for it), since a cached read can miss the money that decides it.
   A measuring bet's reading stops at its close — visits up to `until`, charges made by it —
-  so however late that read comes, nothing after the window counts. Without one, the last
-  reading decides only once the pulse has asked for `KILL_GRACE_MS` past the close without a
-  break (`pulsingSince`): a window that closed while the app was quit or asleep waits on a
-  read, not the wall clock. Only the lead starts a window (`measure_bet`): spending out the
-  budget stops the work but not the clock, because the step that moves the number may still
-  be waiting on the founder and a window over nothing shipped is a false verdict. A
-  spent-out bet gets the lead a "settle" run: measure or kill. No tool lets an agent declare
-  a win.
+  so however late that read comes, nothing after the window counts. Without one, the verdict
+  holds for a second window (`windowHours` past the close), then the bet dies on its last
+  reading with a reason naming the source that sent nothing — but only once the pulse has
+  asked for `KILL_GRACE_MS` without a break (`pulsingSince`), so a window that closed while
+  the app was quit or asleep waits on a read, not the wall clock. The founder or the lead can
+  still kill a held bet by hand. Only the lead starts a window (`measure_bet`): spending out
+  the budget stops the work but not the clock, because the step that moves the number may
+  still be waiting on the founder and a window over nothing shipped is a false verdict. Nor
+  does it start one over a number no source reads (`measureRefusal`: the company's Stripe
+  key, the product's Vercel project). A spent-out bet gets the lead a "settle" run: measure
+  or kill. No tool lets an agent declare a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
   bet reads captured USD charges tagged `metadata[bet]=<slug>`. So any number of bets run on one
@@ -96,12 +99,15 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   or employee), so the room agents read and the #team feed hold the same lines and no
   office news reads as the founder's word.
 - **The policy is data, retuned by replay.** `dream` replays a fixed set of `explore`
-  weights against the closed bets and swaps only to a strictly better scorer, so the
-  incumbent never loses to a tie. The replay scores only work picks, so it never touches
-  `plateau`, and it floors a pick's cost at one run's so a win nothing paid for cannot
-  price itself at zero. It stays on the defaults below eight closed bets. Steering changes go
-  in the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
-  single-player: the replay only ever sees this company's bets, and no ledger leaves the machine.
+  weights against the measured verdicts and swaps only to a strictly better scorer, so the
+  incumbent never loses to a tie. A bet killed before any source reported its number
+  (`moved === null`) says nothing about its hypothesis, so neither the replay nor `allocate`
+  (product yield, the plateau's run of losses) counts it. The replay scores only work picks,
+  so it never touches `plateau`, and it floors a pick's cost at one run's so a win nothing
+  paid for cannot price itself at zero. It stays on the defaults below eight measured
+  verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
+  ledger as facts only. The game is single-player: the replay only ever sees this company's
+  bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, through one judgement: `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
   A signature pins a command, not the tree it ships, and runs on one product share its

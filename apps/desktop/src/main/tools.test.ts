@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -161,6 +161,35 @@ describe("company tools", () => {
     expect(() => callTool(ctx, "POST /v1/open-bet", { ...BET, target: -1 })).toThrow(
       BadRequestError,
     );
+  });
+
+  it("starts no clock over a number nothing could read, and starts it once a source can", () => {
+    const { ctx } = runAs("mae");
+    const visits = openBet(ctx);
+    callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    const money = store.listBets().find((b) => b.claim.metric === "revenue");
+    if (!money) {
+      throw new Error("no revenue bet opened");
+    }
+    const measure = (slug: string) => callTool(ctx, "POST /v1/measure-bet", { slug });
+
+    expect(measure(money.id)).toContain("No source reads revenue yet");
+    expect(measure(visits.id)).toContain("No source reads users of");
+    expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
+
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      '{"STRIPE_SECRET_KEY":"sk_test","VERCEL_TOKEN":"token"}',
+    );
+    expect(measure(money.id)).toContain("is measuring");
+    expect(measure(visits.id)).toContain("bind Vercel");
+    store.setProductVercel(visits.productId, {
+      projectId: "prj",
+      projectName: "App",
+      teamId: null,
+    });
+    expect(measure(visits.id)).toContain("is measuring");
+    expect(measure(visits.id)).toContain("no open bet");
   });
 
   it("refuses a kill reason too long for a line in the room", () => {

@@ -10,6 +10,7 @@ import {
   retireProduct,
   startProduct,
 } from "@/main/company-actions";
+import { measureRefusal } from "@/main/metrics";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
@@ -206,6 +207,14 @@ const TOOLS = {
     return `Opened "${opened.title}" (${opened.id}). ${betMark(opened)} Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
   }),
   measure_bet: define(TOOL_SPECS.measure_bet, (_ctx, { slug }) => {
+    const named = store.getBet(slug);
+    const refusal =
+      named?.state.kind === "open"
+        ? measureRefusal(named, store.getProduct(named.productId))
+        : null;
+    if (refusal !== null) {
+      return refusal;
+    }
     const bet = store.measureBet(slug, Date.now());
     announceBet(bet);
     return `"${bet.title}" is measuring: no more work is spent on it, and it has ${bet.windowHours}h to bring in ${betGoal(bet)}.`;
