@@ -117,7 +117,17 @@ allocator and the replay.
   policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
-- **Outward-facing stays founder-gated**, through one judgement: `holdFor` in
+- **Outward-facing stays founder-gated.** An outward step that needs IdleBiz's own keys is
+  a signed tool main runs: `deploy` runs the Vercel CLI with the founder's token and a
+  minimal env (`main/deploy.ts`), once the founder signs off on the action it names
+  (`deploy <product> to production`). That action is the approval's key, so it takes the
+  same one-time grant a held command does (`requireSignOff` in `main/tools.ts`).
+  The CLI runs code the workspace holds with the token in its env unless kept from it: npx
+  prefers a `vercel` the folder it starts in provides, the CLI runs `vercel.ts` and kin to
+  read them, and git runs what a repo's config names. So npx starts in a folder under the
+  save and gets the workspace as an argument, git gets no repo, and a workspace holding
+  config as code is not deployed.
+  Everything an agent runs itself meets one judgement, the tripwire `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
   A signature pins a command, not the tree it ships, and runs on one product share its
   workspace, so a run carrying one has that workspace to itself: the scheduler's `tick` starts

@@ -606,7 +606,7 @@ describe("asking the lead for the next bet", () => {
     },
   );
 
-  it("hands the proposal tools that fund nothing but the bet it opens", () => {
+  it("hands the proposal tools that fund nothing but the bet it opens", async () => {
     found();
     const { driver, tools } = scripted();
     const drain = createScheduler(driver);
@@ -616,7 +616,9 @@ describe("asking the lead for the next bet", () => {
 
     expect(proposing()).toHaveLength(1);
     const handoff = { description: "write it", role: "engineer", title: "Draft the post" };
-    expect(tools.get("priya")?.call("POST /v1/delegate", handoff)).toContain("open_bet first");
+    expect(await tools.get("priya")?.call("POST /v1/delegate", handoff)).toContain(
+      "open_bet first",
+    );
   });
 
   it("waits while the lead's last proposal does", () => {

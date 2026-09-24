@@ -317,7 +317,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     failures,
     ``,
     coordinate,
-    `Make it real: products should end up runnable, and when ready, published (ask the founder via ask_boss before anything outward-facing like deploying or posting).`,
+    `Make it real: products should end up runnable, and when ready, deployed with the deploy tool (ask the founder via ask_boss before anything else outward-facing, like posting).`,
     `When you finish, post a one-line update to the team room with message_team(text).`,
     `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
   ].join("\n");

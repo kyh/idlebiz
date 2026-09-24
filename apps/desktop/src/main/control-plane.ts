@@ -10,7 +10,7 @@ import type { JsonValue } from "@/shared/json";
 // lives in shared/tool-specs.ts and main/tools.ts; this only carries the call.
 
 /** Answers one call by `METHOD /path` in prose the agent reads; null when there is no such tool. */
-export type ToolCaller = (route: string, raw: JsonValue) => string | null;
+export type ToolCaller = (route: string, raw: JsonValue) => Promise<string | null>;
 
 interface RunHandle {
   /** Run-scoped env for the agent process: the API URL and its bearer token. */
@@ -107,7 +107,7 @@ class ControlPlane {
         respond(res, 401, { error: "unknown or expired run token", ok: false });
         return;
       }
-      const message = run(route, raw);
+      const message = await run(route, raw);
       if (message === null) {
         respond(res, 404, { error: `no such tool: ${route}`, ok: false });
       } else {

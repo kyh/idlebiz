@@ -54,6 +54,7 @@ describe("tool specs", () => {
   it("shows the lead's tools to the lead alone", () => {
     expect(toolDocs(false)).not.toContain("**open_bet**");
     expect(toolDocs(false)).toContain("**delegate**");
+    expect(toolDocs(false)).toContain("**deploy**");
     expect(toolDocs(true)).toContain("**open_bet**");
   });
 

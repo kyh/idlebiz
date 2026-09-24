@@ -106,6 +106,28 @@ export const listProjects = async (token: string): Promise<VercelProject[]> => {
   return [...new Map(out.map((p) => [p.id, p])).values()];
 };
 
+const ProjectAccountSchema = z.object({ accountId: z.string().min(1) });
+
+/**
+ * The account that owns a project, which the CLI takes as its org: the team, or
+ * whoever owns one listed with no team. That is not always the token's user,
+ * since a token's default scope can be a team, so Vercel is asked.
+ */
+export const projectAccount = async (
+  project: { projectId: string; teamId: string | null },
+  token: string,
+): Promise<string> => {
+  if (project.teamId !== null) {
+    return project.teamId;
+  }
+  const answer = await apiGet(`/v9/projects/${encodeURIComponent(project.projectId)}`, token);
+  const parsed = ProjectAccountSchema.safeParse(answer);
+  if (!parsed.success) {
+    throw new Error(`Vercel did not say which account owns project ${project.projectId}`);
+  }
+  return parsed.data.accountId;
+};
+
 const VisitsCountSchema = z.object({
   data: z.object({ pageviews: z.number().optional(), visitors: z.number().optional() }),
 });

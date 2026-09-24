@@ -162,7 +162,9 @@ rather than crashing boot.
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
-  (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too).
+  (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
+  through the `deploy` tool, which runs the Vercel CLI with `VERCEL_TOKEN` in main
+  (`main/deploy.ts`) once the founder signs off.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).
@@ -264,7 +266,8 @@ rather than crashing boot.
   idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
-  (the two integrations, same shape), `secrets.ts`, `metrics.ts`, `tray.ts`.
+  (the two integrations, same shape), `deploy.ts` (the Vercel CLI the `deploy` tool runs),
+  `secrets.ts`, `metrics.ts`, `tray.ts`.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a
   hand-rolled external store in `state/store.ts`.
 - `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`,

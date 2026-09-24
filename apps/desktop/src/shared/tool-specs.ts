@@ -28,6 +28,12 @@ const WAGER = {
   windowHours: z.number().min(1).max(336),
 };
 
+/**
+ * How long a deploy may take. The agent's call waits on it without a word, so it
+ * stays well inside the run's idle watchdog (`DEFAULT_IDLE_TIMEOUT_MS`).
+ */
+export const DEPLOY_TIMEOUT_MS = 5 * 60_000;
+
 const USERS_FLOOR = `a users target is a whole number of visitors, at least ${MIN_BET_TARGET.users}: fewer is won by the founder's own clicks`;
 const REVENUE_FLOOR = `a revenue target is at least ${formatUsd(MIN_BET_TARGET.revenue)}: less is won by a single charge`;
 
@@ -99,6 +105,14 @@ export const TOOL_SPECS = {
     leadOnly: null,
     method: "POST",
     path: "/v1/request-integration",
+  }),
+  deploy: tool({
+    body: z.strictObject({ product: z.string().min(1).optional() }),
+    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. Keep Vercel's config in \`vercel.json\`: a folder holding \`vercel.ts\` (or .mts, .js, .mjs, .cjs) is not deployed. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
+    example: {},
+    leadOnly: null,
+    method: "POST",
+    path: "/v1/deploy",
   }),
   create_product: tool({
     body: ProductDraftSchema,

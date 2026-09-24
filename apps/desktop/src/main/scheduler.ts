@@ -9,6 +9,7 @@ import type { RunResult, RunTools } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-actions";
 import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
+import { deployToVercel } from "@/main/deploy";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
 import { RUN_COST_ESTIMATE_USD, allocate } from "@/shared/bets";
@@ -422,6 +423,7 @@ class Scheduler {
         this.queue(taskId, employeeId);
       },
       company,
+      deploy: deployToVercel,
       driver: this.driver,
       employee,
       run,

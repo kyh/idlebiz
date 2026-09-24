@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
+import type { DeployRequest, DeployResult } from "./deploy";
 import type { RunContext } from "./tools";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-tools-"));
@@ -70,6 +71,7 @@ const runAs = (employeeId: string) => {
       store.claimTask(taskId, assigneeId);
     },
     company,
+    deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
     driver: { pickRunner: () => "claude" },
     employee,
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
@@ -86,8 +88,8 @@ const BET = {
   windowHours: 48,
 };
 
-const openBet = (ctx: RunContext) => {
-  callTool(ctx, "POST /v1/open-bet", BET);
+const openBet = async (ctx: RunContext) => {
+  await callTool(ctx, "POST /v1/open-bet", BET);
   const [bet] = store.listBets();
   if (!bet) {
     throw new Error("no bet opened");
@@ -98,42 +100,42 @@ const openBet = (ctx: RunContext) => {
 const HANDOFF = { description: "write it", role: "engineer", title: "Draft the post" };
 
 describe("company tools", () => {
-  it("answers null for a route no tool serves", () => {
-    expect(callTool(runAs("mae").ctx, "POST /v1/nope", {})).toBeNull();
+  it("answers null for a route no tool serves", async () => {
+    expect(await callTool(runAs("mae").ctx, "POST /v1/nope", {})).toBeNull();
   });
 
-  it("turns the lead's tools away from anyone else, before looking at the body", () => {
+  it("turns the lead's tools away from anyone else, before looking at the body", async () => {
     const { ctx } = runAs("priya");
-    expect(callTool(ctx, "POST /v1/open-bet", {})).toContain("Only the team lead");
+    expect(await callTool(ctx, "POST /v1/open-bet", {})).toContain("Only the team lead");
     expect(store.listBets()).toEqual([]);
   });
 
-  it("opens a bet for the lead and says how it is counted", () => {
+  it("opens a bet for the lead and says how it is counted", async () => {
     const { ctx } = runAs("mae");
-    const answer = callTool(ctx, "POST /v1/open-bet", BET);
+    const answer = await callTool(ctx, "POST /v1/open-bet", BET);
     const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ landingPath: `/b/${bet?.id}`, metric: "users" });
     expect(answer).toContain(`/b/${bet?.id}`);
   });
 
-  it("opens a revenue bet counted by the money tagged with it", () => {
+  it("opens a revenue bet counted by the money tagged with it", async () => {
     const { ctx } = runAs("mae");
-    const answer = callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue" });
+    const answer = await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue" });
     const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ metric: "revenue" });
     expect(answer).toContain(`metadata[bet]=${bet?.id}`);
   });
 
-  it("answers with the store's refusal rather than failing the call", () => {
+  it("answers with the store's refusal rather than failing the call", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
-    expect(callTool(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" })).toContain(
-      "no live bet",
-    );
+    expect(
+      await callTool(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" }),
+    ).toContain("no live bet");
     expect(logged).not.toHaveBeenCalled();
   });
 
-  it("answers a fault too, so the run goes on, and reports it", () => {
+  it("answers a fault too, so the run goes on, and reports it", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     const fault = new TypeError("cannot read the queue");
@@ -143,34 +145,34 @@ describe("company tools", () => {
         throw fault;
       },
     };
-    expect(callTool(broken, "POST /v1/delegate", HANDOFF)).toBe(fault.message);
+    expect(await callTool(broken, "POST /v1/delegate", HANDOFF)).toBe(fault.message);
     expect(logged).toHaveBeenCalledExactlyOnceWith("[tool /v1/delegate]", fault);
   });
 
-  it("turns a hire away at the seat cap as an answer, not a fault", () => {
+  it("turns a hire away at the seat cap as an answer, not a fault", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     store.setMaxAgents(2);
-    expect(callTool(ctx, "POST /v1/hire", { role: "engineer", title: "Engineer" })).toContain(
+    expect(await callTool(ctx, "POST /v1/hire", { role: "engineer", title: "Engineer" })).toContain(
       "Couldn't hire: the office is at its 2-seat cap",
     );
     expect(store.listEmployees()).toHaveLength(2);
     expect(logged).not.toHaveBeenCalled();
   });
 
-  it("turns a product or a bet past the portfolio's caps away as an answer, not a fault", () => {
+  it("turns a product or a bet past the portfolio's caps away as an answer, not a fault", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     for (const name of ["Two", "Three", "Four", "Five"]) {
-      callTool(ctx, "POST /v1/create-product", { description: name, name });
+      await callTool(ctx, "POST /v1/create-product", { description: name, name });
     }
-    expect(callTool(ctx, "POST /v1/create-product", { description: "x", name: "Six" })).toBe(
+    expect(await callTool(ctx, "POST /v1/create-product", { description: "x", name: "Six" })).toBe(
       "The company already runs 5 products; kill_product one before starting another.",
     );
     for (const title of ["One", "Two", "Three"]) {
-      callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme", title });
+      await callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme", title });
     }
-    expect(callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme" })).toBe(
+    expect(await callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme" })).toBe(
       "Acme already carries 3 live bets; wait for a verdict or kill one first.",
     );
     expect(store.listProducts()).toHaveLength(5);
@@ -178,47 +180,49 @@ describe("company tools", () => {
     expect(logged).not.toHaveBeenCalled();
   });
 
-  it("calls a body that does not parse the caller's error", () => {
+  it("calls a body that does not parse the caller's error", async () => {
     const { ctx } = runAs("mae");
-    expect(() => callTool(ctx, "POST /v1/open-bet", { ...BET, target: -1 })).toThrow(
+    await expect(callTool(ctx, "POST /v1/open-bet", { ...BET, target: -1 })).rejects.toThrow(
       BadRequestError,
     );
-    expect(() => callTool(ctx, "POST /v1/open-bet", { ...BET, target: 1 })).toThrow("at least 10");
+    await expect(callTool(ctx, "POST /v1/open-bet", { ...BET, target: 1 })).rejects.toThrow(
+      "at least 10",
+    );
     expect(store.listBets()).toEqual([]);
   });
 
-  it("starts no clock over a number nothing could read, and starts it once a source can", () => {
+  it("starts no clock over a number nothing could read, and starts it once a source can", async () => {
     const { ctx } = runAs("mae");
-    const visits = openBet(ctx);
-    callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    const visits = await openBet(ctx);
+    await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const money = store.listBets().find((b) => b.claim.metric === "revenue");
     if (!money) {
       throw new Error("no revenue bet opened");
     }
     const measure = (slug: string) => callTool(ctx, "POST /v1/measure-bet", { slug });
 
-    expect(measure(money.id)).toContain("No source reads revenue yet");
-    expect(measure(visits.id)).toContain("No source reads users of");
+    expect(await measure(money.id)).toContain("No source reads revenue yet");
+    expect(await measure(visits.id)).toContain("No source reads users of");
     expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
 
     writeFileSync(
       path.join(root, "secrets.json"),
       '{"STRIPE_SECRET_KEY":"sk_live_1","VERCEL_TOKEN":"token"}',
     );
-    expect(measure(money.id)).toContain("is measuring");
-    expect(measure(visits.id)).toContain("bind Vercel");
+    expect(await measure(money.id)).toContain("is measuring");
+    expect(await measure(visits.id)).toContain("bind Vercel");
     store.setProductVercel(visits.productId, {
       projectId: "prj",
       projectName: "App",
       teamId: null,
     });
-    expect(measure(visits.id)).toContain("is measuring");
-    expect(measure(visits.id)).toContain("no open bet");
+    expect(await measure(visits.id)).toContain("is measuring");
+    expect(await measure(visits.id)).toContain("no open bet");
   });
 
-  it("starts no clock on revenue while Stripe is in test mode", () => {
+  it("starts no clock on revenue while Stripe is in test mode", async () => {
     const { ctx } = runAs("mae");
-    callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
     if (!money) {
       throw new Error("no revenue bet opened");
@@ -227,16 +231,16 @@ describe("company tools", () => {
     const secrets = path.join(root, "secrets.json");
 
     writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
-    expect(measure()).toContain("Stripe is in test mode — no charge counts");
+    expect(await measure()).toContain("Stripe is in test mode — no charge counts");
     expect(store.getBet(money.id)?.state.kind).toBe("open");
 
     writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_live_1"}');
-    expect(measure()).toContain("is measuring");
+    expect(await measure()).toContain("is measuring");
   });
 
   it("kills a revenue bet a test key read as unmeasured, so nothing learns from it", async () => {
     const { ctx } = runAs("mae");
-    callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
     if (!money) {
       throw new Error("no revenue bet opened");
@@ -263,56 +267,59 @@ describe("company tools", () => {
     for (const [betId, { reading, at }] of snap.betReadings) {
       store.setBetReading(betId, reading, at);
     }
-    callTool(ctx, "POST /v1/kill-bet", { reason: "no live Stripe to count it", slug: money.id });
+    await callTool(ctx, "POST /v1/kill-bet", {
+      reason: "no live Stripe to count it",
+      slug: money.id,
+    });
 
     expect(store.getBet(money.id)?.state).toMatchObject({ kind: "killed", moved: null });
   });
 
-  it("refuses a kill reason too long for a line in the room", () => {
+  it("refuses a kill reason too long for a line in the room", async () => {
     const { ctx } = runAs("mae");
-    const bet = openBet(ctx);
+    const bet = await openBet(ctx);
     const kill = (reason: string) => callTool(ctx, "POST /v1/kill-bet", { reason, slug: bet.id });
-    expect(() => kill("x".repeat(201))).toThrow(BadRequestError);
+    await expect(kill("x".repeat(201))).rejects.toThrow(BadRequestError);
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
-    expect(kill("x".repeat(200))).toContain("Killed");
+    expect(await kill("x".repeat(200))).toContain("Killed");
   });
 
   it.each([
     { cap: 40, field: "name" },
     { cap: 60, field: "title" },
     { cap: 600, field: "persona" },
-  ])("refuses a hire whose $field is too long for every brief", ({ cap, field }) => {
+  ])("refuses a hire whose $field is too long for every brief", async ({ cap, field }) => {
     const { ctx } = runAs("mae");
     const newHire = { name: "Mara", persona: "ships", role: "designer", title: "Designer" };
     const hireWith = (text: string) =>
       callTool(ctx, "POST /v1/hire", { ...newHire, [field]: text });
-    expect(() => hireWith("x".repeat(cap + 1))).toThrow(`at ${field}`);
+    await expect(hireWith("x".repeat(cap + 1))).rejects.toThrow(`at ${field}`);
     expect(store.listEmployees()).toHaveLength(2);
-    expect(hireWith("x".repeat(cap))).toContain("Hired");
+    expect(await hireWith("x".repeat(cap))).toContain("Hired");
   });
 
-  it("refuses a delegated title too long for the lead's brief", () => {
+  it("refuses a delegated title too long for the lead's brief", async () => {
     const { ctx } = runAs("mae");
     const delegate = (title: string) => callTool(ctx, "POST /v1/delegate", { ...HANDOFF, title });
-    expect(() => delegate("x".repeat(81))).toThrow("at title");
+    await expect(delegate("x".repeat(81))).rejects.toThrow("at title");
     expect(store.listOpenTasks()).toEqual([]);
-    expect(delegate("x".repeat(80))).toContain("Delegated");
+    expect(await delegate("x".repeat(80))).toContain("Delegated");
   });
 
-  it("keeps the first thing a run asks the founder", () => {
+  it("keeps the first thing a run asks the founder", async () => {
     const { ctx, asked } = runAs("priya");
-    callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
-    callTool(ctx, "POST /v1/request-integration", { kind: "vercel", reason: "to deploy" });
+    await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
+    await callTool(ctx, "POST /v1/request-integration", { kind: "vercel", reason: "to deploy" });
     expect(asked).toEqual([{ question: "Ship it?", type: "question" }]);
     expect(ctx.asks.current()).toEqual({ question: "Ship it?", type: "question" });
   });
 
-  it("delegates to a teammate by role, against the run's bet", () => {
+  it("delegates to a teammate by role, against the run's bet", async () => {
     const { ctx, assigned } = runAs("mae");
-    callTool(ctx, "POST /v1/open-bet", BET);
+    await callTool(ctx, "POST /v1/open-bet", BET);
     const [bet] = store.listBets();
     const working = { ...ctx, run: { ...ctx.run, betId: bet?.id ?? null } };
-    const answer = callTool(working, "POST /v1/delegate", {
+    const answer = await callTool(working, "POST /v1/delegate", {
       description: "write it",
       role: "engineer",
       title: "Draft the post",
@@ -328,67 +335,71 @@ describe("company tools", () => {
     expect(assigned).toEqual([task?.id]);
   });
 
-  it("refuses work a bet's runs in flight would already spend", () => {
+  it("refuses work a bet's runs in flight would already spend", async () => {
     const { ctx } = runAs("mae");
-    const bet = openBet(ctx);
+    const bet = await openBet(ctx);
     store.recordBetSpend(bet.id, 2);
     const named = { ...HANDOFF, bet: bet.id };
-    expect(callTool(ctx, "POST /v1/delegate", named)).toContain("Delegated");
-    expect(callTool(ctx, "POST /v1/delegate", named)).toContain(
+    expect(await callTool(ctx, "POST /v1/delegate", named)).toContain("Delegated");
+    expect(await callTool(ctx, "POST /v1/delegate", named)).toContain(
       "no room for another run: $2.00 of $3.00 spent and 1 in flight",
     );
     expect(store.listOpenTasks()).toHaveLength(1);
   });
 
-  it("gives a bet that stopped taking work nothing more, even from its own run", () => {
+  it("gives a bet that stopped taking work nothing more, even from its own run", async () => {
     const { ctx } = runAs("mae");
-    const bet = openBet(ctx);
+    const bet = await openBet(ctx);
     const settling = { ...ctx, run: { ...ctx.run, betId: bet.id, productId: bet.productId } };
     store.recordBetSpend(bet.id, 3);
-    expect(callTool(settling, "POST /v1/delegate", HANDOFF)).toContain("is spent out");
+    expect(await callTool(settling, "POST /v1/delegate", HANDOFF)).toContain("is spent out");
     store.measureBet(bet.id, 0);
-    expect(callTool(settling, "POST /v1/delegate", HANDOFF)).toContain("its clock is running");
+    expect(await callTool(settling, "POST /v1/delegate", HANDOFF)).toContain(
+      "its clock is running",
+    );
     expect(store.listOpenTasks()).toEqual([]);
   });
 
-  it("needs a bet named to put a bet's run to work on another product", () => {
+  it("needs a bet named to put a bet's run to work on another product", async () => {
     const { ctx } = runAs("mae");
-    const bet = openBet(ctx);
+    const bet = await openBet(ctx);
     const side = store.createProduct({ description: "a side project", name: "Side" });
     const working = { ...ctx, run: { ...ctx.run, betId: bet.id } };
     const elsewhere = { ...HANDOFF, product: side.id };
-    expect(callTool(working, "POST /v1/delegate", elsewhere)).toContain(`Name a bet on ${side.id}`);
-    expect(callTool(ctx, "POST /v1/delegate", elsewhere)).toContain("Delegated");
+    expect(await callTool(working, "POST /v1/delegate", elsewhere)).toContain(
+      `Name a bet on ${side.id}`,
+    );
+    expect(await callTool(ctx, "POST /v1/delegate", elsewhere)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: null, productId: side.id }]);
   });
 
-  it("makes a proposal delegate against the bet it opened, never unfunded", () => {
+  it("makes a proposal delegate against the bet it opened, never unfunded", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     const proposing: RunContext = { ...ctx, run: { ...ctx.run, origin: "propose" } };
-    expect(callTool(proposing, "POST /v1/delegate", HANDOFF)).toContain("open_bet first");
+    expect(await callTool(proposing, "POST /v1/delegate", HANDOFF)).toContain("open_bet first");
     expect(logged).not.toHaveBeenCalled();
     expect(store.listOpenTasks()).toEqual([]);
-    const bet = openBet(proposing);
+    const bet = await openBet(proposing);
     const named = { ...HANDOFF, bet: bet.id };
-    expect(callTool(proposing, "POST /v1/delegate", named)).toContain("Delegated");
+    expect(await callTool(proposing, "POST /v1/delegate", named)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: bet.id, origin: "delegated" }]);
   });
 
   it.each<TaskOrigin>(["founder", "routine", "delegated"])(
     "lets a %s run delegate work no bet pays for",
-    (origin) => {
+    async (origin) => {
       const { ctx } = runAs("mae");
       const unfunded: RunContext = { ...ctx, run: { ...ctx.run, origin } };
-      expect(callTool(unfunded, "POST /v1/delegate", HANDOFF)).toContain("Delegated");
+      expect(await callTool(unfunded, "POST /v1/delegate", HANDOFF)).toContain("Delegated");
       expect(store.listOpenTasks()).toMatchObject([{ betId: null, origin: "delegated" }]);
     },
   );
 
-  it("tells the lead which of a released teammate's open work is now theirs, and what was dropped", () => {
+  it("tells the lead which of a released teammate's open work is now theirs, and what was dropped", async () => {
     const { ctx } = runAs("mae");
-    callTool(ctx, "POST /v1/delegate", HANDOFF);
-    const bet = openBet(ctx);
+    await callTool(ctx, "POST /v1/delegate", HANDOFF);
+    const bet = await openBet(ctx);
     const ask = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
@@ -402,20 +413,20 @@ describe("company tools", () => {
       kind: "blocked",
       summary: null,
     });
-    const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
+    const answer = await callTool(ctx, "POST /v1/release", { slug: "priya" });
     expect(answer).toContain("Their open work is yours now: 1 task,");
     expect(answer).toContain("Dropped 1 task of theirs");
     expect(store.openTasksFor("mae")).toMatchObject([{ id: ask.id }]);
   });
 
-  it("names no inherited work when the teammate left none", () => {
+  it("names no inherited work when the teammate left none", async () => {
     const { ctx } = runAs("mae");
-    const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
+    const answer = await callTool(ctx, "POST /v1/release", { slug: "priya" });
     expect(answer).not.toContain("open work");
     expect(answer).toContain("Released Priya.");
   });
 
-  it("posts a bet the lead opens as the office's news, to the room and the feed alike", () => {
+  it("posts a bet the lead opens as the office's news, to the room and the feed alike", async () => {
     const { ctx } = runAs("mae");
     const heard: Extract<ActivityEvent, { kind: "chat" }>[] = [];
     const listen = (e: ActivityEvent): void => {
@@ -425,8 +436,8 @@ describe("company tools", () => {
     };
     activityEvents.on("activity", listen);
     try {
-      openBet(ctx);
-      callTool(ctx, "POST /v1/message-team", { text: "on it" });
+      await openBet(ctx);
+      await callTool(ctx, "POST /v1/message-team", { text: "on it" });
     } finally {
       activityEvents.off("activity", listen);
     }
@@ -439,7 +450,7 @@ describe("company tools", () => {
     expect(heard.map((e) => e.employeeId)).toEqual([null, "mae"]);
   });
 
-  it("keeps a long bet whole in the room, capping only the feed and free-form chat", () => {
+  it("keeps a long bet whole in the room, capping only the feed and free-form chat", async () => {
     const { ctx } = runAs("mae");
     const hypothesis = "h".repeat(600);
     const heard: string[] = [];
@@ -450,13 +461,97 @@ describe("company tools", () => {
     };
     activityEvents.on("activity", listen);
     try {
-      callTool(ctx, "POST /v1/open-bet", { ...BET, hypothesis });
-      callTool(ctx, "POST /v1/message-team", { text: "m".repeat(500) });
+      await callTool(ctx, "POST /v1/open-bet", { ...BET, hypothesis });
+      await callTool(ctx, "POST /v1/message-team", { text: "m".repeat(500) });
     } finally {
       activityEvents.off("activity", listen);
     }
     const news = `🎲 New bet: ${BET.title} — ${hypothesis}`;
     expect(store.recentTeamMessages().map(({ text }) => text)).toEqual([news, "m".repeat(400)]);
     expect(heard).toEqual([news.slice(0, 400), "m".repeat(400)]);
+  });
+});
+
+const TOKEN = "vercel-secret-token";
+const ACTION = "deploy acme to production";
+const DEPLOYED: DeployResult = { ok: true, output: "", url: "https://acme-1.vercel.app" };
+
+/** A run of Priya's on Acme whose deploys answer `result`, and what each deploy was asked. */
+const deployingRun = (result: DeployResult) => {
+  const run = runAs("priya");
+  const deploys: DeployRequest[] = [];
+  const ctx: RunContext = {
+    ...run.ctx,
+    deploy: (req) => {
+      deploys.push(req);
+      return Promise.resolve(result);
+    },
+    run: { ...run.ctx.run, productId: "acme" },
+  };
+  return { ...run, ctx, deploys };
+};
+
+const connectVercel = () =>
+  writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ VERCEL_TOKEN: TOKEN }));
+
+describe("deploy", () => {
+  it("holds the first call for the founder's sign-off on the action it names", async () => {
+    connectVercel();
+    const { ctx, asked, deploys } = deployingRun(DEPLOYED);
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      `Held for the founder's sign-off on "${ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    );
+    expect(asked).toEqual([{ command: ACTION, rule: "deploy", type: "approval" }]);
+    expect(deploys).toEqual([]);
+  });
+
+  it("deploys once signed off, into the product's project, and spends the sign-off", async () => {
+    connectVercel();
+    const { ctx, deploys } = deployingRun(DEPLOYED);
+    const vercel = { projectId: "prj_1", projectName: "acme", teamId: "team_1" };
+    const product = store.setProductVercel("acme", vercel);
+    store.grantApproval(ctx.run.taskId, ACTION);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      "Deployed Acme to production: https://acme-1.vercel.app",
+    );
+    expect(deploys).toEqual([{ binding: vercel, cwd: product.workspaceDir, token: TOKEN }]);
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Held for the founder's sign-off");
+    expect(deploys).toHaveLength(1);
+  });
+
+  it("leads with the production domain, since the deployment's own URL sits behind Vercel's login", async () => {
+    connectVercel();
+    const { ctx } = deployingRun({
+      ok: true,
+      output: "Building…\n▲ Aliased         https://acme.vercel.app\nhttps://acme-1.vercel.app",
+      url: "https://acme-1.vercel.app",
+    });
+    store.grantApproval(ctx.run.taskId, ACTION);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      "Deployed Acme to production: https://acme.vercel.app (this deployment: https://acme-1.vercel.app)",
+    );
+  });
+
+  it("asks for Vercel, not a sign-off, while no key is saved", async () => {
+    const { ctx, asked, deploys } = deployingRun(DEPLOYED);
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Vercel is not connected");
+    expect(asked).toEqual([
+      { integration: "vercel", reason: "to deploy Acme", type: "integration" },
+    ]);
+    expect(deploys).toEqual([]);
+  });
+
+  it("answers a failed deploy with the end of what Vercel printed, never the key", async () => {
+    connectVercel();
+    const printed = `${"building…\n".repeat(500)}using ${TOKEN}\nError: Command "npm run build" exited with 1`;
+    const { ctx } = deployingRun({ ok: false, output: printed });
+    store.grantApproval(ctx.run.taskId, ACTION);
+
+    const answer = await callTool(ctx, "POST /v1/deploy", {});
+    expect(answer).toContain('Error: Command "npm run build" exited with 1');
+    expect(answer).not.toContain(TOKEN);
+    expect(answer?.length).toBeLessThan(2000);
   });
 });

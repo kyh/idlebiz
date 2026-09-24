@@ -46,7 +46,7 @@ describe("run-scoped control-plane requests", () => {
       const calls: string[] = [];
       const handle = controlPlane.registerRun((route, raw) => {
         calls.push(`${route} ${JSON.stringify(raw)}`);
-        return "created";
+        return Promise.resolve("created");
       });
       try {
         const status = await post(
@@ -71,11 +71,39 @@ describe("run-scoped control-plane requests", () => {
     },
   );
 
+  it("serves an answer a tool gives only once its work is done", async () => {
+    const { promise: called, resolve: arrive } = Promise.withResolvers<string>();
+    const { promise: deployed, resolve: finish } = Promise.withResolvers<string>();
+    const handle = controlPlane.registerRun((route) => {
+      arrive(route);
+      return deployed;
+    });
+    try {
+      const answer = fetch(`${controlPlane.baseUrl()}/v1/deploy`, {
+        body: "{}",
+        headers: { authorization: `Bearer ${handle.env.IDLEBIZ_RUN_TOKEN ?? ""}` },
+        method: "POST",
+      });
+      expect(await called).toBe("POST /v1/deploy");
+      finish("Deployed Acme to production: https://acme.vercel.app");
+      const res = await answer;
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toEqual({
+        message: "Deployed Acme to production: https://acme.vercel.app",
+        ok: true,
+      });
+    } finally {
+      handle.release();
+    }
+  });
+
   it("hands a run no address once stopped, and a fresh one after a restart", async () => {
     controlPlane.stop();
-    expect(() => controlPlane.registerRun(() => null)).toThrow("control plane not started");
+    expect(() => controlPlane.registerRun(() => Promise.resolve(null))).toThrow(
+      "control plane not started",
+    );
     await controlPlane.start();
-    const handle = controlPlane.registerRun(() => null);
+    const handle = controlPlane.registerRun(() => Promise.resolve(null));
     expect(handle.env.IDLEBIZ_API_URL).toBe(controlPlane.baseUrl());
     handle.release();
   });

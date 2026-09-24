@@ -3,6 +3,8 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
+import type { Deployer } from "@/main/deploy";
+import { productionAlias } from "@/main/deploy";
 import {
   announceBet,
   killBet,
@@ -11,6 +13,7 @@ import {
   startProduct,
 } from "@/main/company-actions";
 import { measureRefusal } from "@/main/metrics";
+import { getSecret } from "@/main/secrets";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
@@ -18,12 +21,13 @@ import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
 import type { Company, Employee, TaskOrigin } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { plural } from "@/shared/format";
+import type { HoldRuleId } from "@/shared/hold-rules";
 import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
 
-/** What a tool call acts on behalf of: who is running, for what, and the two things only the scheduler can do. */
+/** What a tool call acts on behalf of: who is running, for what, and what only main can do for it. */
 export interface RunContext {
   employee: Employee;
   company: Company;
@@ -38,10 +42,12 @@ export interface RunContext {
   driver: Pick<typeof agentDriver, "pickRunner">;
   /** Queue a task for a teammate; a busy one picks it up on a later tick. */
   assign: (taskId: string, employeeId: string) => void;
+  /** Deploy with the founder's Vercel key, which the run itself never holds. */
+  deploy: Deployer;
 }
 
 /** A tool ready to be called with whatever the agent sent. */
-type Tool = (ctx: RunContext, raw: JsonValue) => string;
+type Tool = (ctx: RunContext, raw: JsonValue) => Promise<string>;
 
 /**
  * An implementation bound to its spec, so the body it receives is the one the
@@ -53,9 +59,9 @@ type Tool = (ctx: RunContext, raw: JsonValue) => string;
 const define =
   <B extends z.ZodType>(
     spec: ToolSpec<B>,
-    run: (ctx: RunContext, body: z.infer<B>) => string,
+    run: (ctx: RunContext, body: z.infer<B>) => string | Promise<string>,
   ): Tool =>
-  (ctx, raw) => {
+  async (ctx, raw) => {
     if (spec.leadOnly !== null && !isLead(ctx.company, ctx.employee)) {
       return spec.leadOnly;
     }
@@ -64,7 +70,7 @@ const define =
       throw new BadRequestError(z.prettifyError(body.error));
     }
     try {
-      return run(ctx, body.data);
+      return await run(ctx, body.data);
     } catch (error) {
       if (!(error instanceof RefusalError)) {
         report(`tool ${spec.path}`, error);
@@ -82,6 +88,24 @@ const post = (ctx: RunContext, text: string, to: string | null = null): void => 
 /** The product a tool means: the one it names, else the run's own, else the one waited on longest. */
 const productFor = (ctx: RunContext, named: string | undefined): string | null =>
   named ?? ctx.run.productId ?? store.attentionProduct()?.id ?? null;
+
+/**
+ * Spend the founder's sign-off on `action` in this task, or ask them for it and
+ * end the call. The action is the approval's key, so it reads as what is signed.
+ */
+const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId): void => {
+  if (store.consumeApproval(ctx.run.taskId, action)) {
+    return;
+  }
+  ctx.asks.raise({ command: action, rule, type: "approval" });
+  throw new RefusalError(
+    `Held for the founder's sign-off on "${action}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+  );
+};
+
+/** The end of what a deploy printed, where its error is, without the key it ran on. */
+const deployTail = (output: string, token: string): string =>
+  output.replaceAll(token, "[VERCEL_TOKEN]").slice(-1500);
 
 /** Why a bet takes no more work, in the words the agent should act on. */
 const noRoomIn = (bet: Bet, inFlight: number): string => {
@@ -188,6 +212,38 @@ const TOOLS = {
     ctx.asks.raise({ integration: kind, reason, type: "integration" });
     return `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`;
   }),
+  deploy: define(TOOL_SPECS.deploy, async (ctx, { product: named }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to deploy — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    const token = getSecret("VERCEL_TOKEN");
+    if (!token) {
+      ctx.asks.raise({
+        integration: "vercel",
+        reason: `to deploy ${product.name}`,
+        type: "integration",
+      });
+      return "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
+    }
+    requireSignOff(ctx, `deploy ${product.id} to production`, "deploy");
+    const deployed = await ctx.deploy({
+      binding: product.vercel,
+      cwd: product.workspaceDir,
+      token,
+    });
+    if (!deployed.ok) {
+      return `The deploy of ${product.name} failed. The end of what Vercel printed:\n${deployTail(deployed.output, token)}`;
+    }
+    const live = productionAlias(deployed.output);
+    return live === null
+      ? `Deployed ${product.name} to production: ${deployed.url}`
+      : `Deployed ${product.name} to production: ${live} (this deployment: ${deployed.url})`;
+  }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);
     post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
@@ -287,7 +343,11 @@ const TOOLS = {
 } satisfies Record<ToolName, Tool>;
 
 /** Call the tool served at `METHOD /path`; null when there is none. */
-export const callTool = (ctx: RunContext, route: string, raw: JsonValue): string | null => {
+export const callTool = (
+  ctx: RunContext,
+  route: string,
+  raw: JsonValue,
+): Promise<string | null> => {
   const name = TOOL_NAMES.find((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}` === route);
-  return name === undefined ? null : TOOLS[name](ctx, raw);
+  return name === undefined ? Promise.resolve(null) : TOOLS[name](ctx, raw);
 };
