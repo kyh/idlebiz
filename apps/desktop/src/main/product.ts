@@ -6,6 +6,7 @@ import { latestDeployment } from "@/main/vercel";
 import { judgeOpening } from "@/main/workspace-open";
 import type { Opening } from "@/main/workspace-open";
 import type { ProductStatus } from "@/shared/integrations";
+import { RefusalError } from "@/shared/refusal";
 
 // Where a product is, as the team points at it: PRODUCT.md at the product's
 // workspace root carries an `entry:` line naming a path there or a URL. Nothing
@@ -46,7 +47,7 @@ export const openWorkspacePath = async (rel: string): Promise<void> => {
     rel,
   );
   if (opening === null) {
-    throw new Error("no such path in the workspace");
+    throw new RefusalError("no such path in the workspace");
   }
   await openTarget(opening);
 };
@@ -70,7 +71,7 @@ export const openProduct = async (productId: string): Promise<string> => {
   }
   const opening = judgeOpening([product.workspaceDir], entry);
   if (opening === null) {
-    throw new Error("entry is not in the product's workspace");
+    throw new RefusalError("the product's entry is not in its workspace");
   }
   await openTarget(opening);
   return entry;

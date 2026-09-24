@@ -267,7 +267,8 @@ rather than crashing boot.
   hand-rolled external store in `state/store.ts`.
 - `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`,
   `activity.ts`, `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a
-  line as bash would, and as zsh, dash and bash 3.2 would where they disagree),
+  line as bash would, read loosely as well where another shell may split it apart),
+  `hold-rules.ts` (what an approval card says each rule holds; data only, for the renderer),
   `format.ts`, `errors.ts`, `character-frame.ts` (the
   sprite box every process slices by), `office-depth.ts` (draw bands + paint order),
   `office-layout-schema.ts` (office-design.json, versioned and migrated), `office-grid.ts`

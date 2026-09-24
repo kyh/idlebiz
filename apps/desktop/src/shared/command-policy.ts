@@ -1,12 +1,13 @@
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
+import type { HoldRuleId } from "./hold-rules";
 import { lexFlat, lexLine } from "./shell-lexer";
-import type { Command, Words } from "./shell-lexer";
+import type { Command, Pipeline, Words } from "./shell-lexer";
 
 // IdleBiz answers every permission ask both runners raise, so an unmatched command runs
 // with the founder's privileges: the CLIs' own sandboxes do not stand behind it. Persist
 // rule ids so approval cards can explain them.
-// A command line is split as bash would split it, and as zsh, dash and bash 3.2 would
-// where they disagree, and seen through every wrapper that runs another command, so a
+// A command line is split as bash would split it, read loosely as well where another
+// shell may split it apart, and seen through every wrapper that runs another command, so a
 // rule reads a program's own words and never the text of a quoted argument. Heredoc
 // text is data unless a shell or `source` reads it, or a substitution may print it as
 // a command's name. It is a tripwire for outward actions, not a sandbox: what a script
@@ -23,21 +24,8 @@ const RULE_IDS = [
   "read-credentials",
   "destructive-outside",
   "write-outside",
-] as const;
+] as const satisfies readonly HoldRuleId[];
 export type RuleId = (typeof RULE_IDS)[number];
-
-interface CommandRule {
-  id:
-    | RuleId
-    | "browser-act"
-    | "browser-unseen"
-    | "external-tool"
-    | "sandbox-widen"
-    | "save-edit"
-    | "unknown-ask";
-  /** Shown on the approval card — what the founder is being asked to allow. */
-  describe: string;
-}
 
 /** A program as invoked: its name without a path, every word after it, and what its command's redirections name. */
 interface Call {
@@ -48,7 +36,8 @@ interface Call {
   literal: boolean;
 }
 
-interface Rule extends CommandRule {
+interface Rule {
+  id: RuleId;
   /** Whether a pipeline runs something this rule holds. */
   holds: (pipeline: readonly Call[]) => boolean;
   /** Skip when everything the command targets is the game's own loopback API. */
@@ -623,80 +612,6 @@ const stageOf = (
   return stage;
 };
 
-/** Past this many scripts inside scripts, which heredocs can nest without escaping, a script is read flat. */
-const MAX_SCRIPT_DEPTH = 8;
-
-/** What a command line runs, as calls, and whether any of it reads a script from its input. */
-interface Reading {
-  pipelines: Call[][];
-  /** `bash`, `source /dev/stdin`, `eval "$(cat)"`: what the line is fed may run. */
-  reads: boolean;
-}
-
-/**
- * Every pipeline a command line runs, as calls. A script handed to a shell is
- * read as a line of its own, and so is the text a pipeline feeds a shell or
- * `source`, and the text a substitution may print as a command's name.
- * `readTexts` holds each such text already read and whether it reads its own
- * input: substitutions nest, so one heredoc reaches a command at every level,
- * and a line with a `case` is read in every dialect, so one script reaches a
- * shell in each; reading it every time would multiply the work at every level.
- * `verbatim` says whether the shell runs `line` as written; a fed or printed
- * text never counts, since an unquoted heredoc's body is expanded first.
- */
-const pipelinesOf = (
-  line: string,
-  depth = 0,
-  readTexts = new Map<string, boolean>(),
-  verbatim = true,
-): Reading => {
-  if (depth > MAX_SCRIPT_DEPTH) {
-    return {
-      // No script is followed this deep, so a wrapper's words are read where they stand: `watch … git push "$x"`.
-      pipelines: lexFlat(line).map((pipeline) =>
-        pipeline.flatMap((command) => stageOf(command, false, true).calls),
-      ),
-      reads: true,
-    };
-  }
-  const readOnce = (text: string, literal: boolean): Reading => {
-    // A text read as written is read again where the shell may have filled it in: only then are its calls not literal.
-    const key = JSON.stringify([text, literal]);
-    const known = readTexts.get(key);
-    if (known !== undefined) {
-      return { pipelines: [], reads: known };
-    }
-    // Until read, a text that meets itself again is taken to read its input.
-    readTexts.set(key, true);
-    const reading = pipelinesOf(text, depth + 1, readTexts, literal);
-    readTexts.set(key, reading.reads);
-    return reading;
-  };
-  let reads = false;
-  const pipelines = lexLine(line).flatMap((pipeline) => {
-    const stages = pipeline.map((command) => stageOf(command, verbatim));
-    const scripts = stages.flatMap((stage) =>
-      stage.scripts.map((script) => readOnce(script, stage.literal)),
-    );
-    const fed = stages.some((stage) => stage.readsInput) || scripts.some((script) => script.reads);
-    const texts = pipeline.flatMap((command, index) => [
-      ...(fed ? command.input : []),
-      ...(fed || stages[index]?.runsPrinted === true ? command.printed.flat() : []),
-    ]);
-    const fedReadings = texts.map((text) => readOnce(text, false));
-    reads ||=
-      fed ||
-      stages.some((stage) => stage.runsPrinted) ||
-      fedReadings.some((reading) => reading.reads);
-    return [
-      stages.flatMap((stage) => stage.calls),
-      ...scripts.flatMap((script) => script.pipelines),
-      ...fedReadings.flatMap((reading) => reading.pipelines),
-    ];
-  });
-  return { pipelines, reads };
-};
-
 const anyCall =
   (test: (call: Call) => boolean) =>
   (pipeline: readonly Call[]): boolean =>
@@ -827,7 +742,7 @@ const aliasReads = (call: Call, command: GitHubCommand): boolean => {
   ) {
     return false;
   }
-  const [pipeline, ...others] = lexLine(expansion);
+  const [pipeline, ...others] = lexLine(expansion).pipelines;
   const [expanded, ...piped] = pipeline ?? [];
   if (
     expanded === undefined ||
@@ -962,7 +877,6 @@ const WRITERS = new Set(["chmod", "chown", "mv", "tee"]);
 
 const RULES: readonly Rule[] = [
   {
-    describe: "Deploy the product to a live, public URL.",
     // Bare `vercel` deploys; exclude read-only subcommands rather than listing deploy verbs.
     holds: anyCall(
       (call) => DEPLOY_TOOLS.has(call.program) && !DEPLOY_TOOL_READS.has(call.args[0] ?? ""),
@@ -970,14 +884,12 @@ const RULES: readonly Rule[] = [
     id: "deploy",
   },
   {
-    describe: "Publish a package to a public registry.",
     holds: anyCall(
       (call) => PACKAGE_MANAGERS.has(call.program) && call.args.some((arg) => PUBLISHES.has(arg)),
     ),
     id: "publish-package",
   },
   {
-    describe: "Push commits to a remote repository.",
     holds: anyCall(
       (call) =>
         call.program === "git" && call.args[leadingOptions(call.args, 0, GIT).end] === "push",
@@ -985,20 +897,17 @@ const RULES: readonly Rule[] = [
     id: "git-push",
   },
   {
-    describe: "Change something on GitHub — open, merge, comment on, edit or release.",
     // Exclude read-only verbs rather than listing writes.
     holds: anyCall((call) => call.program === "gh" && changesGitHub(call)),
     id: "github-create",
   },
   {
-    describe: "Move real money or change records in your Stripe account.",
     holds: anyCall(
       (call) => call.program === "stripe" && call.args.some((arg) => STRIPE_WRITES.has(arg)),
     ),
     id: "payments",
   },
   {
-    describe: "Send data to a service on the internet.",
     holds: anyCall(
       (call) =>
         (call.program === "curl" && sends(call.args, CURL)) ||
@@ -1008,7 +917,6 @@ const RULES: readonly Rule[] = [
     networked: true,
   },
   {
-    describe: "Copy files to another machine over the network.",
     holds: anyCall(
       (call) =>
         (COPIERS.has(call.program) && call.args.some((arg) => REMOTE_PATH.test(arg))) ||
@@ -1018,7 +926,6 @@ const RULES: readonly Rule[] = [
     networked: true,
   },
   {
-    describe: "Download code from the internet and run it immediately.",
     holds: (pipeline) => {
       const fetched = pipeline.findIndex((call) => FETCHERS.has(call.program));
       return (
@@ -1029,7 +936,6 @@ const RULES: readonly Rule[] = [
     networked: true,
   },
   {
-    describe: "Read your stored credentials.",
     holds: anyCall(
       (call) =>
         (CREDENTIAL_READERS.has(call.program) && call.args.some((arg) => CREDENTIALS.test(arg))) ||
@@ -1041,14 +947,12 @@ const RULES: readonly Rule[] = [
     id: "read-credentials",
   },
   {
-    describe: "Irreversibly delete or overwrite files outside the workspace.",
     holds: anyCall(
       (call) => DELETERS.has(call.program) && call.args.some((arg) => OUTSIDE.test(arg)),
     ),
     id: "destructive-outside",
   },
   {
-    describe: "Change files or permissions outside the workspace.",
     holds: anyCall(
       (call) =>
         (WRITERS.has(call.program) && call.args.some((arg) => NAMES_OUTSIDE.test(arg))) ||
@@ -1059,48 +963,135 @@ const RULES: readonly Rule[] = [
   },
 ];
 
-/** Approvals that cover the rest of a run rather than one command: what the founder signs is the site or the server, not the keystroke. */
-const LEASE_RULES = [
-  {
-    describe:
-      "Act in a real browser on this site — log in, type, click, submit — for the rest of this run.",
-    id: "browser-act",
-  },
-  // Employee sessions load the founder's own CLI settings, so every MCP server
-  // the founder connected for themselves — a browser, a mailbox, a chat
-  // workspace — is in the employee's hands too, already signed in.
-  {
-    describe:
-      "Use a tool connected in your own CLI settings (an MCP server, signed in as you) for the rest of this run.",
-    id: "external-tool",
-  },
-] as const satisfies readonly CommandRule[];
+/** Every program whose words a rule reads. A rule reading another names it here too, or a line shells read apart can hand that program a word unseen. */
+const RULE_PROGRAMS = new Set([
+  ...DEPLOY_TOOLS,
+  ...PACKAGE_MANAGERS.keys(),
+  ...COPIERS,
+  ...CREDENTIAL_READERS,
+  ...DELETERS,
+  ...FETCHERS,
+  ...WRITERS,
+  "dd",
+  "gh",
+  "git",
+  "security",
+  "ssh",
+  "stripe",
+]);
 
-/** Signed for like a shell command, once and exactly: no site can be named, so there is nothing to lease. */
-const BROWSER_UNSEEN_RULE = {
-  describe:
-    "Act in a real browser on a page nobody could check first — one run of exactly this command.",
-  id: "browser-unseen",
-} as const satisfies CommandRule;
+/**
+ * Where shells may disagree on where a substitution ends, a word read here
+ * inside one, or as a command after it, may be an argument of the command
+ * around it: dash hands `publish` to npm in `npm $(echo $(( x ) ))) publish`.
+ * So each call a flat reading finds of a program a rule reads is read again
+ * with the words after it, up to that program's next call, which takes the
+ * rest. Stopping there keeps a long line linear.
+ */
+const tailsOf = (flat: readonly Pipeline[]): Call[][] => {
+  const commands = flat.flat();
+  const words = commands.flatMap((command) => command.words);
+  const latest = new Map<string, { call: Call; after: number }>();
+  const tails: Call[][] = [];
+  const close = (program: string, end: number): void => {
+    const open = latest.get(program);
+    if (open !== undefined) {
+      tails.push([{ ...open.call, args: [...open.call.args, ...words.slice(open.after, end)] }]);
+    }
+  };
+  let at = 0;
+  for (const command of commands) {
+    const start = at;
+    at += command.words.length;
+    for (const call of stageOf(command, false).calls) {
+      if (RULE_PROGRAMS.has(call.program)) {
+        close(call.program, start);
+        latest.set(call.program, { after: at, call });
+      }
+    }
+  }
+  for (const program of latest.keys()) {
+    close(program, words.length);
+  }
+  return tails;
+};
 
-/** Signed for once and exactly, never leased: a widened sandbox already lets every later command in the run skip asking. */
-const SANDBOX_RULE = {
-  describe:
-    "Let this run reach the internet or write outside its workspace without asking again, for every command until the run ends.",
-  id: "sandbox-widen",
-} as const satisfies CommandRule;
+/** Past this many scripts inside scripts, which heredocs can nest without escaping, a script is read flat. */
+const MAX_SCRIPT_DEPTH = 8;
 
-/** Never leased: the save is what IdleBiz reads back as the company's truth. */
-const SAVE_EDIT_RULE = {
-  describe:
-    "Edit the company's save files directly — tasks, bets, approvals, teammates' instructions.",
-  id: "save-edit",
-} as const satisfies CommandRule;
+/** What a command line runs, as calls, and whether any of it reads a script from its input. */
+interface Reading {
+  pipelines: Call[][];
+  /** `bash`, `source /dev/stdin`, `eval "$(cat)"`: what the line is fed may run. */
+  reads: boolean;
+}
 
-const UNKNOWN_RULE = {
-  describe: "A tool call IdleBiz could not recognise — one run of exactly this.",
-  id: "unknown-ask",
-} as const satisfies CommandRule;
+/**
+ * Every pipeline a command line runs, as calls. A script handed to a shell is
+ * read as a line of its own, and so is the text a pipeline feeds a shell or
+ * `source`, and the text a substitution may print as a command's name.
+ * `readTexts` holds each such text already read and whether it reads its own
+ * input: substitutions nest, so one heredoc reaches a command at every level,
+ * and reading it at each would multiply the work by every level it passes.
+ * `verbatim` says whether the shell runs `line` as written; a fed or printed
+ * text never counts, since an unquoted heredoc's body is expanded first.
+ */
+const pipelinesOf = (
+  line: string,
+  depth = 0,
+  readTexts = new Map<string, boolean>(),
+  verbatim = true,
+): Reading => {
+  if (depth > MAX_SCRIPT_DEPTH) {
+    return {
+      // No script is followed this deep, so a wrapper's words are read where they stand: `watch … git push "$x"`.
+      pipelines: lexFlat(line).map((pipeline) =>
+        pipeline.flatMap((command) => stageOf(command, false, true).calls),
+      ),
+      reads: true,
+    };
+  }
+  const readOnce = (text: string, literal: boolean): Reading => {
+    // A text read as written is read again where the shell may have filled it in: only then are its calls not literal.
+    const key = JSON.stringify([text, literal]);
+    const known = readTexts.get(key);
+    if (known !== undefined) {
+      return { pipelines: [], reads: known };
+    }
+    // Until read, a text that meets itself again is taken to read its input.
+    readTexts.set(key, true);
+    const reading = pipelinesOf(text, depth + 1, readTexts, literal);
+    readTexts.set(key, reading.reads);
+    return reading;
+  };
+  let reads = false;
+  const lexed = lexLine(line);
+  const pipelines = lexed.pipelines.flatMap((pipeline) => {
+    const stages = pipeline.map((command) => stageOf(command, verbatim));
+    const scripts = stages.flatMap((stage) =>
+      stage.scripts.map((script) => readOnce(script, stage.literal)),
+    );
+    const fed = stages.some((stage) => stage.readsInput) || scripts.some((script) => script.reads);
+    const texts = pipeline.flatMap((command, index) => [
+      ...(fed ? command.input : []),
+      ...(fed || stages[index]?.runsPrinted === true ? command.printed.flat() : []),
+    ]);
+    const fedReadings = texts.map((text) => readOnce(text, false));
+    reads ||=
+      fed ||
+      stages.some((stage) => stage.runsPrinted) ||
+      fedReadings.some((reading) => reading.reads);
+    return [
+      stages.flatMap((stage) => stage.calls),
+      ...scripts.flatMap((script) => script.pipelines),
+      ...fedReadings.flatMap((reading) => reading.pipelines),
+    ];
+  });
+  return {
+    pipelines: lexed.divergent ? [...pipelines, ...tailsOf(lexFlat(line))] : pipelines,
+    reads,
+  };
+};
 
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
 const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
@@ -1330,7 +1321,7 @@ const landing = (page: BrowserPage | null): string | null => {
 const unseen = (command: string): Hold => ({
   key: command,
   leasable: false,
-  rule: BROWSER_UNSEEN_RULE.id,
+  rule: "browser-unseen",
 });
 
 /** What acting on the page at `url` waits on, or null when it may run. A null `url` is a page nobody knows. */
@@ -1420,13 +1411,7 @@ const onlyLoopbackTargets = (command: string): boolean => {
   return urls.length > 0 || command.includes("$IDLEBIZ_API_URL");
 };
 
-export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: CommandRule };
-
-/** What the approval card says about a held command, by the rule that held it. */
-export const describeRule = (id: string): string =>
-  [...RULES, ...LEASE_RULES, BROWSER_UNSEEN_RULE, SANDBOX_RULE, SAVE_EDIT_RULE, UNKNOWN_RULE].find(
-    (rule) => rule.id === id,
-  )?.describe ?? `Saved rule "${id}" is unavailable in this version.`;
+export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Rule };
 
 export const classifyCommand = (command: string): CommandVerdict => {
   const { pipelines } = pipelinesOf(command);
@@ -1454,7 +1439,7 @@ export const normalizeCommand = (command: string): string =>
 export interface Hold {
   /** The approval key, and the text on the founder's card. */
   key: string;
-  rule: CommandRule["id"];
+  rule: HoldRuleId;
   leasable: boolean;
 }
 
@@ -1499,7 +1484,7 @@ const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
   return {
     key: oneLine(`edit: ${files.join(", ")}`),
     leasable: false,
-    rule: loose.some((file) => within(file, room.save)) ? SAVE_EDIT_RULE.id : "write-outside",
+    rule: loose.some((file) => within(file, room.save)) ? "save-edit" : "write-outside",
   };
 };
 
@@ -1537,7 +1522,7 @@ export const holdFor = async (
     return {
       key: `sandbox: widen to ${reach || "more access"}`,
       leasable: false,
-      rule: SANDBOX_RULE.id,
+      rule: "sandbox-widen",
     };
   }
   if (tool.kind === "edit") {
@@ -1557,7 +1542,7 @@ export const holdFor = async (
   }
   if (tool.kind === "unknown") {
     const key = oneLine(`ask: ${tool.title || "a tool call nothing named"}`);
-    return { key, leasable: false, rule: UNKNOWN_RULE.id };
+    return { key, leasable: false, rule: "unknown-ask" };
   }
   // Judged as sent: normalizing folds the newlines that separate commands into spaces.
   const key = normalizeCommand(tool.command);

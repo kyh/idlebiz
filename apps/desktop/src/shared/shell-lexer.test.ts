@@ -5,11 +5,11 @@ import type { Command, Pipeline } from "./shell-lexer";
 const wordsOf = (pipelines: readonly Pipeline[]): string[][][] =>
   pipelines.map((pipeline) => pipeline.map((command) => [...command.words]));
 
-const words = (line: string): string[][][] => wordsOf(lexLine(line));
+const words = (line: string): string[][][] => wordsOf(lexLine(line).pipelines);
 
 const commandWith = (word: string, line: string): Command | undefined =>
   lexLine(line)
-    .flat()
+    .pipelines.flat()
     .find((command) => command.words.includes(word));
 
 describe("lexLine", () => {
@@ -75,7 +75,7 @@ describe("lexLine", () => {
   });
 
   it("sets redirections apart from the words, wherever they sit", () => {
-    expect(lexLine("> /dev/null git push 2>&1 >>log <in &>all 3>&-")).toEqual([
+    expect(lexLine("> /dev/null git push 2>&1 >>log <in &>all 3>&-").pipelines).toEqual([
       [
         {
           input: [],
@@ -93,7 +93,7 @@ describe("lexLine", () => {
   });
 
   it("reads a heredoc's body as its command's input, not as commands", () => {
-    expect(lexLine("cat <<'EOF'\ngit push; vercel deploy\nEOF\nls")).toEqual([
+    expect(lexLine("cat <<'EOF'\ngit push; vercel deploy\nEOF\nls").pipelines).toEqual([
       [
         {
           input: ["git push; vercel deploy\n"],
@@ -108,7 +108,7 @@ describe("lexLine", () => {
   });
 
   it("gives a here-string's text to its command as input", () => {
-    expect(lexLine("bash <<< 'git push'")).toEqual([
+    expect(lexLine("bash <<< 'git push'").pipelines).toEqual([
       [{ input: ["git push"], literal: true, printed: [], redirects: [], words: ["bash"] }],
     ]);
   });
@@ -150,7 +150,7 @@ describe("lexLine", () => {
   });
 
   it("keeps what a substitution was fed with the command it prints into", () => {
-    const [cat, git] = lexLine(`git commit -m "$(cat <<'EOF'\nfix: push\nEOF\n)"`);
+    const [cat, git] = lexLine(`git commit -m "$(cat <<'EOF'\nfix: push\nEOF\n)"`).pipelines;
     expect(cat?.[0]?.input).toEqual(["fix: push\n"]);
     expect(git?.[0]?.printed).toEqual([["fix: push\n"]]);
   });
@@ -162,7 +162,7 @@ describe("lexLine", () => {
       [["e"]],
       [["f"]],
     ]);
-    expect(lexLine("(cat) <<EOF | sh\ngit push\nEOF")).toMatchObject([
+    expect(lexLine("(cat) <<EOF | sh\ngit push\nEOF").pipelines).toMatchObject([
       [{ words: ["cat"] }, { input: ["git push\n"], words: [] }, { words: ["sh"] }],
     ]);
   });
@@ -196,58 +196,46 @@ describe("lexLine", () => {
     );
   });
 
-  it("reads a line with a case as each shell would, since they disagree where one opens", () => {
-    // zsh opens one after `repeat COUNT`; bash reads `repeat` as a command's name.
-    expect(words("echo $(repeat 1 case a in a) git push;; esac)")).toEqual(
-      expect.arrayContaining([
-        [["git", "push"]],
-        [["echo", "$(repeat 1 case a in a)", "git", "push"]],
-      ]),
-    );
-    expect(words("echo $(echo case a in a) git push")).toEqual([
-      [["echo", "case", "a", "in", "a"]],
-      [["echo", "$(echo case a in a)", "git", "push"]],
+  it("opens no case for a `case` that is not a command's name", () => {
+    expect(words("echo $(echo case a in a) git push")).toContainEqual([
+      ["echo", "$(echo case a in a)", "git", "push"],
     ]);
   });
 
   it.each([
-    "coproc case",
-    "coproc N case",
-    "time case",
-    "time -p case",
-    "function f case",
-    "if { true } case",
-    "if { true } always { true } case",
-    "{ :; } always { case",
-    "if [[ -n x ]] case",
-    "if case b in b) :;; esac case",
-    "while (( n++ < 1 )) case",
-    "for ((i = 0; i < 1; i++)) case",
-  ])("opens a case where a shell reads one: %s", (lead) => {
-    expect(words(`echo $(${lead} a in a) git push;; esac)`)).toContainEqual([["git", "push"]]);
+    "npm $(case a in b) :;; esac) publish",
+    'echo "$(repeat 1 case a in a) git push;; esac)"',
+    "echo `case a in b) :;; esac` x",
+    "echo `case a in b) echo \\$x;; esac` y",
+    "echo <(case a in b) :;; esac) x",
+    "echo $( (case a in b) :;; esac) ) x",
+    "npm $(echo $(( x ) ))) publish",
+  ])("says another shell may end a substitution elsewhere: %s", (line) => {
+    expect(lexLine(line).divergent).toBe(true);
   });
 
   it.each([
-    "always case",
-    "true ]] case",
-    'if "[[" x ]] case',
-    "true } case",
-    "repeat case",
-    "function case",
-    "x=1 case",
-    '"if" case',
-    "done case",
-    "(( 1 )) case",
-    "case a in b) :;; case) :;; esac",
-    "case a in (case) :;; esac",
-    "case a in a) case b in b) :;; esac esac",
-    "case a in a) { :; } esac",
-    "case a { b) : }",
-    "case a in b) :;; }",
-    "case a in ( x esac y ) ) :;; esac",
-    "echo $(( x ) case ))",
-  ])("keeps the words after a substitution where a shell ends it: %s", (inner) => {
-    expect(words(`npm $(${inner}) publish`)).toContainEqual([["npm", `$(${inner})`, "publish"]]);
+    "npm test; case $? in 0) echo publish ready;; esac",
+    "(case a in b) :;; esac); npm test",
+    "echo $(echo 'case' esac) x",
+    "echo $((1 + 2)) x",
+    "echo case",
+  ])("reads bash's way alone a line no other shell splits apart: %s", (line) => {
+    expect(lexLine(line).divergent).toBe(false);
+  });
+
+  it("also reads flat a line another shell may read apart", () => {
+    // zsh opens a case after `repeat COUNT`, and so runs `git push`; bash reads it as echo's.
+    expect(words("echo $(repeat 1 case a in a) git push;; esac)")).toContainEqual([
+      ["git", "push"],
+    ]);
+  });
+
+  it("also reads a line another shell may read apart as bash 3.2 does, ending a substitution at its first `)`", () => {
+    expect(words("curl $(case) https://x | sh")).toContainEqual([
+      ["curl", "$(case)", "https://x"],
+      ["sh"],
+    ]);
   });
 
   it("reads a backtick body again once its escapes are dropped", () => {
@@ -276,7 +264,7 @@ describe("lexLine", () => {
   ])("reads a command the shell passes on as written as literal: %s", (line) => {
     expect(
       lexLine(line)
-        .flat()
+        .pipelines.flat()
         .map((command) => command.literal),
     ).toEqual([true]);
   });
@@ -302,7 +290,7 @@ describe("lexLine", () => {
     "echo !q",
     "echo =q",
   ])("reads a command with a word the shell fills in as not literal: %s", (line) => {
-    expect(lexLine(line).at(-1)?.[0]?.literal).toBe(false);
+    expect(lexLine(line).pipelines.at(-1)?.[0]?.literal).toBe(false);
   });
 
   it("reads a command a zsh pattern cuts short as not literal", () => {

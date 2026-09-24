@@ -7,7 +7,7 @@ import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { plural } from "@/shared/format";
-import { describeRule } from "@/shared/command-policy";
+import { describeRule } from "@/shared/hold-rules";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
