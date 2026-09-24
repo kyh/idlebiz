@@ -39,21 +39,36 @@ describe("toolAskOf", () => {
     },
   );
 
-  it("reads claude's Write by the file it names", () => {
+  it("reads claude's Write by the file it names, and any other path it locates", () => {
     const rawInput = { content: "{}", file_path: "../approvals.json" };
     expect(ask({ kind: "edit", rawInput, title: "Write ../approvals.json" })).toEqual({
       kind: "edit",
       paths: ["../approvals.json"],
+    });
+    const locations = [{ path: "../approvals.json" }, { path: "/save/acme/approvals.json" }];
+    expect(ask({ kind: "edit", locations, rawInput, title: "Write ../approvals.json" })).toEqual({
+      kind: "edit",
+      paths: ["../approvals.json", "/save/acme/approvals.json"],
     });
   });
 
   it("reads codex's patch by its locations: the approval has no input", () => {
     const locations = [{ path: "/save/acme/bets/b/BET.md" }, { path: "/save/acme/workspace/a.ts" }];
     expect(ask({ kind: "edit", locations, title: "Edit files" })).toEqual({
-      kind: "edit",
-      paths: ["/save/acme/bets/b/BET.md", "/save/acme/workspace/a.ts"],
+      kind: "patch",
+      sources: ["/save/acme/bets/b/BET.md", "/save/acme/workspace/a.ts"],
     });
-    expect(ask({ kind: "edit", title: "Edit files" })).toEqual({ kind: "edit", paths: [] });
+    expect(ask({ kind: "edit", title: "Edit files" })).toEqual({ kind: "patch", sources: [] });
+  });
+
+  it("holds codex's patch that names only the workspace: it asks for a move out of it", async () => {
+    const tool = ask({ kind: "edit", locations: [{ path: "/w/notes.md" }], title: "Edit files" });
+    const room = { cwd: "/w", save: "/save", writable: ["/w"] };
+    expect(await holdFor(tool, new Set(), () => Promise.resolve(null), room)).toEqual({
+      key: "edit: /w/notes.md, a file the ask does not name",
+      leasable: false,
+      rule: "write-outside",
+    });
   });
 
   it("names the host codex asks a command it does not show to reach", () => {

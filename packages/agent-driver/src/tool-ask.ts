@@ -8,8 +8,10 @@ export type ToolAsk =
   | { kind: "mcp"; server: string | null }
   /** codex asking to widen its own sandbox (request_permissions): once widened, later commands run inside it without asking. */
   | { kind: "sandbox"; network: boolean; paths: readonly string[] }
-  /** A file edit by the agent's own tool, as the files it names; codex's patch names them only in the call's locations. */
-  | { kind: "edit"; paths: readonly string[] }
+  /** A file edit by the agent's own tool that names its file (claude's Write and Edit). */
+  | { kind: "edit"; paths: readonly [string, ...string[]] }
+  /** codex's patch, as the files it changes: its approval names each change's own path, never where a `Move to:` takes it. */
+  | { kind: "patch"; sources: readonly string[] }
   /** codex asking to let a command it does not name reach an http(s) host; it gives no other protocol a URL. `host` is null when the URL will not parse. */
   | { kind: "network"; host: string | null }
   /** A read of the web by the agent's own tool (claude's WebFetch and WebSearch). */
@@ -111,11 +113,13 @@ export const toolAskOf = (request: {
   }
   if (request.kind === "edit") {
     const located = (request.locations ?? []).map((location) => location.path);
-    if (located.length > 0) {
-      return { kind: "edit", paths: located };
-    }
     const named = EditInput.safeParse(request.rawInput);
-    return { kind: "edit", paths: named.success ? [named.data.file_path] : [] };
+    if (!named.success) {
+      // codex's patch approval carries no input
+      return { kind: "patch", sources: located };
+    }
+    const file = named.data.file_path;
+    return { kind: "edit", paths: [file, ...located.filter((other) => other !== file)] };
   }
   if (request.kind === "fetch") {
     return { kind: "fetch" };

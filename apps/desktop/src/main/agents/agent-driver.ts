@@ -78,17 +78,36 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
 const execFileAsync = promisify(execFile);
 
 /**
- * The URL of the top page, then of every frame under it; null where the reading
- * frame's origin may not look. `get url` names only the top page, while a ref act
- * can land in any frame. The walk starts at `top`, wherever the session is switched.
+ * The URL of the top page, then of every frame found under it; null where the
+ * reading frame's origin may not look. `get url` names only the top page, while a
+ * ref act can land in any frame. The walk starts at `top`, wherever the session is
+ * switched. `window.frames` leaves out frames in shadow roots, and a page's own
+ * `var length` hides the rest, so each readable document is searched as well, open
+ * roots included; a frame in a closed root shows only in resource timing, once it
+ * has loaded, by the URL it first asked for; frames inside it not at all.
  */
-const PAGE_URLS = `(() => {
+export const PAGE_URLS = `(() => {
   const urls = [];
+  const seen = new Set();
   const walk = (w) => {
+    if (w == null || seen.has(w)) return;
+    seen.add(w);
     let url = null;
-    try { url = w.location.href; } catch {}
+    let doc = null;
+    try { url = w.location.href; doc = w.document; } catch {}
     urls.push(url);
     for (let i = 0; i < w.length; i += 1) walk(w[i]);
+    if (doc === null) return;
+    const roots = [doc];
+    for (let root = roots.pop(); root !== undefined; root = roots.pop()) {
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) roots.push(el.shadowRoot);
+        if (el.contentWindow) walk(el.contentWindow);
+      }
+    }
+    for (const entry of w.performance.getEntriesByType("resource")) {
+      if (["iframe", "frame", "object", "embed"].includes(entry.initiatorType)) urls.push(entry.name);
+    }
   };
   walk(window.top);
   return urls;

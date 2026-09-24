@@ -125,18 +125,24 @@ allocator and the replay.
   them or runs. The agents are told the folder is shared. An
   `agent-browser` verb is read where agent-browser reads it, the first word its global options
   leave, and any verb but a listed page read is held unless the session's live page (read from
-  the browser, since a click can land anywhere) is loopback, every frame in it the top page's
-  own (or about:) — a frame from any other origin, another localhost port included, reads as
-  nobody's: a ref from `snapshot`, a `frame` switch or `webmcp --frame` acts inside a frame
-  while the URL stays the top page's, so a localhost build framing Stripe is a page nobody can
-  read. That page is read before the command runs, so an act chained after a step that may move
-  the page (opening a loopback page, whose frames are unread until it loads; pointing the
-  session at another browser or namespace, or moving it under its other name: "default" is the
-  unnamed session unless `AGENT_BROWSER_SESSION` says otherwise), or inside one whose page or
-  steps no read can see (`batch`, `chat`, an init script, an extension, an empty `--session`, a
-  word the shell fills in), is signed for once, exactly, like a shell rule. Only the command
-  line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json` goes
-  unread, so either can still reroute or script a session unseen.
+  the browser, since a click can land anywhere) is loopback, every frame found in it of the top
+  page's own origin (or about:) — a frame from any other origin, another localhost port
+  included, reads as nobody's: a ref from `snapshot`, a `frame` switch or `webmcp --frame` acts
+  inside a frame while the URL stays the top page's, so a localhost build framing Stripe (its
+  buy button and pricing table sit in shadow roots) is a page nobody can read. Frames are found
+  through `window.frames`, every readable document's open shadow roots and its resource timing;
+  one in a closed shadow root is known only by the URL it first asked for, and only once it has
+  finished loading: not while it loads, not where a redirect or later navigation took it, not
+  any frame inside it, and not at all once the page has filled or cleared its resource-timing
+  buffer. That page is read before the command runs,
+  so an act chained after a step that may move the page (opening a loopback page, whose frames
+  are unread until it loads; pointing the session at another browser or namespace, or moving
+  it under its other name: "default" is the unnamed session unless `AGENT_BROWSER_SESSION`
+  says otherwise), or inside one whose page or steps no read can see (`batch`, `chat`, an init
+  script, an extension, an empty `--session`, a word the shell fills in), is signed for once,
+  exactly, like a shell rule. Only the command line's own options count: an `AGENT_BROWSER_*`
+  variable or an `agent-browser.json` goes unread, so either can still reroute or script a
+  session unseen.
   Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
   as the founder, are held too. Every turn sets the runner's asking mode, and claude's
   session carries flag-tier ask rules (shell, edits, MCP) that outrank any allow rule in the
@@ -145,10 +151,12 @@ allocator and the replay.
   leased for the rest of the run; a page or a server nothing can name never is. codex asking
   to widen its own sandbox is held every time, never leased: once widened, nothing else in
   the run asks. A signature only ever picks the runner's one-time option, never an "always"
-  one. An edit by the agent's own edit tool (claude's Write/Edit, codex's patch) outside a
-  run's own dirs (its working directory, memory folder, the shared workspace, the tool cache)
-  is held, under `save-edit` when it lands in the save; a shell write is not judged by path,
-  so `cp x ../approvals.json` still runs. A web read by the agent's own tool runs, as a bare
+  one. An edit by claude's Write/Edit outside a run's own dirs (its working directory, memory
+  folder, the shared workspace, the tool cache) is held, under `save-edit` when it lands in
+  the save. codex's patch is held every time it asks: codex asks only past its own roots, and
+  its ask names each file the patch changes but never where a move takes one, so a patch
+  naming only the workspace can still write the save. A shell write is not judged by path, so
+  `cp x ../approvals.json` still runs. A web read by the agent's own tool runs, as a bare
   `curl` does; an ask IdleBiz cannot recognise is held once, exactly, and so is a codex
   `execute` approval that names no command. Both runners' wire formats end in
   `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.

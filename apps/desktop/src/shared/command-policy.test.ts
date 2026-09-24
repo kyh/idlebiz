@@ -519,7 +519,9 @@ const ROOM: Confinement = {
   save: SAVE,
   writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],
 };
-const edit = (...paths: string[]) => ({ kind: "edit", paths }) as const;
+const edit = (file: string, ...more: string[]) =>
+  ({ kind: "edit", paths: [file, ...more] }) as const;
+const patch = (...sources: string[]) => ({ kind: "patch", sources }) as const;
 
 describe("holdFor", () => {
   it("holds an outward-facing command for one run of exactly it", async () => {
@@ -641,7 +643,7 @@ describe("holdFor", () => {
   });
 
   it("never takes the team's build as read when the chain opens it: its frames are not", async () => {
-    const checkout = at({ "": "http://localhost:3000/checkout" }, [null]);
+    const checkout = at({ "": "http://localhost:3000/checkout" });
     const chain =
       "agent-browser open http://localhost:3000/checkout && agent-browser snapshot && agent-browser click @e6";
     expect(await holdFor(shell(chain), NONE, checkout, ROOM)).toEqual({
@@ -802,6 +804,7 @@ describe("holdFor", () => {
     const own = at({ "": "http://localhost:3000" }, [
       "http://localhost:3000/embed",
       "about:srcdoc",
+      "blob:http://localhost:3000/5f0c",
     ]);
     expect(await holdFor(shell("agent-browser click @e5"), NONE, own, ROOM)).toBeNull();
   });
@@ -812,6 +815,16 @@ describe("holdFor", () => {
       rule: "browser-unseen",
     });
   });
+
+  it.each(["http://localhost:4000/pay", "http://127.0.0.1:3000/pay", "file:///tmp/pay.html"])(
+    "takes a frame the read names only by URL as the build's own only at its origin: %s",
+    async (frame) => {
+      const framing = at({ "": "http://localhost:3000/checkout" }, [frame]);
+      expect(await holdFor(shell("agent-browser click @e5"), NONE, framing, ROOM)).toMatchObject({
+        rule: "browser-unseen",
+      });
+    },
+  );
 
   it("judges a remote page by its site, whatever it frames", async () => {
     const live = at({ "": "https://news.example.com/submit" }, [null]);
@@ -886,11 +899,23 @@ describe("holdFor", () => {
     expect(hold?.rule).toBe("save-edit");
   });
 
-  it("holds an edit that names no file: codex asks only past its roots", async () => {
-    expect(await holdFor(edit(), NONE, at({}), ROOM)).toEqual({
-      key: "edit: files nothing named",
+  it("holds codex's patch even when every file it names is the run's own: a move goes unnamed", async () => {
+    expect(await holdFor(patch("notes.md", `${MEMORY}/log.md`), NONE, at({}), ROOM)).toEqual({
+      key: `edit: ${WORKSPACE}/notes.md, ${MEMORY}/log.md, a file the ask does not name`,
       leasable: false,
       rule: "write-outside",
+    });
+    expect(await holdFor(patch(), NONE, at({}), ROOM)).toEqual({
+      key: "edit: a file the ask does not name",
+      leasable: false,
+      rule: "write-outside",
+    });
+  });
+
+  it("holds codex's patch that names the save as an edit of it", async () => {
+    expect(await holdFor(patch("../bets/b/BET.md"), NONE, at({}), ROOM)).toMatchObject({
+      key: `edit: ${SAVE}/acme/bets/b/BET.md, a file the ask does not name`,
+      rule: "save-edit",
     });
   });
 

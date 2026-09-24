@@ -1285,7 +1285,12 @@ const hostOf = (url: string): string | null => {
   }
 };
 
-/** A browser session's page as the browser shows it: the top page's URL, and every frame's under it, null for one another origin keeps from it. */
+/**
+ * A browser session's page as the browser shows it: the top page's URL, and a URL
+ * for each frame found under it, null for one whose origin keeps it from the read.
+ * A frame the page's script cannot reach is named, once loaded, by the URL it first
+ * asked for; one inside it is not named.
+ */
 interface BrowserPage {
   url: string;
   frames: readonly (string | null)[];
@@ -1294,18 +1299,32 @@ interface BrowserPage {
 /** Where a browser session is right now; null when nothing could say. "" is the default session. */
 export type LivePage = (session: string) => Promise<BrowserPage | null>;
 
+/** A URL's origin, or null for one no other URL shares (file:, data:, about:). */
+const originOf = (url: string): string | null => {
+  const origin = URL.parse(url)?.origin;
+  return origin === undefined || origin === "null" ? null : origin;
+};
+
 /**
  * Where an act on a live page lands, or null when nobody could say. A ref from
  * `snapshot`, a `frame` switch or `webmcp --frame` acts inside a frame while the
  * URL stays the top page's, so the team's own build holding a frame of any other
- * origin, another localhost port included, is a page nobody could read. Elsewhere
- * the act waits on the site anyway.
+ * origin, another localhost port included, is a page nobody could read: only a
+ * frame of the top page's origin, or an about: one, counts as its. Elsewhere the
+ * act waits on the site anyway.
  */
 const landing = (page: BrowserPage | null): string | null => {
   if (page === null) {
     return null;
   }
-  return onLoopback(page.url) && !page.frames.every(onLoopback) ? null : page.url;
+  if (!onLoopback(page.url)) {
+    return page.url;
+  }
+  const origin = originOf(page.url);
+  const own = (frame: string | null): boolean =>
+    frame !== null &&
+    (frame.startsWith("about:") || (origin !== null && originOf(frame) === origin));
+  return page.frames.every(own) ? page.url : null;
 };
 
 const unseen = (command: string): Hold => ({
@@ -1472,10 +1491,6 @@ const within = (file: string, root: string): boolean =>
 const oneLine = (text: string): string => text.replaceAll(/\s+/gu, " ").trim();
 
 const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
-  if (paths.length === 0) {
-    // codex asks for a patch only when it leaves its writable roots, so one that names no file is outside
-    return { key: "edit: files nothing named", leasable: false, rule: "write-outside" };
-  }
   const files = paths.map((file) => resolvePath(room.cwd, file));
   const loose = files.filter((file) => !room.writable.some((root) => within(file, root)));
   if (loose.length === 0) {
@@ -1485,6 +1500,20 @@ const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
     key: oneLine(`edit: ${files.join(", ")}`),
     leasable: false,
     rule: loose.some((file) => within(file, room.save)) ? SAVE_EDIT_RULE.id : "write-outside",
+  };
+};
+
+/**
+ * codex asks for a patch only when it reaches past its writable roots (or into a
+ * path it protects inside them, like .git), so its ask is held whatever it names:
+ * the files listed may all be the run's own while a move takes one into the save.
+ */
+const patchHold = (sources: readonly string[], room: Confinement): Hold => {
+  const files = sources.map((file) => resolvePath(room.cwd, file));
+  return {
+    key: oneLine(`edit: ${[...files, "a file the ask does not name"].join(", ")}`),
+    leasable: false,
+    rule: editHold(sources, room)?.rule ?? "write-outside",
   };
 };
 
@@ -1513,6 +1542,9 @@ export const holdFor = async (
   }
   if (tool.kind === "edit") {
     return editHold(tool.paths, confinement);
+  }
+  if (tool.kind === "patch") {
+    return patchHold(tool.sources, confinement);
   }
   if (tool.kind === "network") {
     // the command behind it goes unseen, so nothing tells a read from a send
