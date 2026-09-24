@@ -226,6 +226,11 @@ export type Allocation =
 const MAX_LIVE_PRODUCTS = 5;
 /** Past this many live bets a product waits for a verdict: each one is a window the lead has to watch. */
 const MAX_LIVE_BETS_PER_PRODUCT = 3;
+/** The smallest target a bet may set: below it the founder's own clicks or a single charge win it, and every win lifts its product's score and breaks a losing streak. */
+export const MIN_BET_TARGET: Readonly<Record<BetClaim["metric"], number>> = {
+  revenue: 5,
+  users: 10,
+};
 
 /** A run bills only when it ends, so runs in flight are counted at what one has typically cost; without it three hands start on a $2 bet and land it at $5. */
 export const RUN_COST_ESTIMATE_USD = 1;

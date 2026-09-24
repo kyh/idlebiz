@@ -29,7 +29,10 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
 ## The company is steered by bets
 
 `shared/bets.ts` is the whole steering loop, pure: a bet is one hypothesis about one real
-number (`users` | `revenue`) of one product, with a spend cap and a window.
+number (`users` | `revenue`) of one product, with a spend cap and a window. Its target has
+a floor, `MIN_BET_TARGET` (10 whole users, $5), which `open_bet`'s body refuses below:
+under it the founder's own clicks or one charge would win the bet, and a win steers the
+allocator and the replay.
 
 - **The evaluator judges, never the team.** `judge` runs every scheduler tick against the
   live product numbers: won when the number moved by the target, killed when its window

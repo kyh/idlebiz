@@ -163,6 +163,8 @@ describe("company tools", () => {
     expect(() => callTool(ctx, "POST /v1/open-bet", { ...BET, target: -1 })).toThrow(
       BadRequestError,
     );
+    expect(() => callTool(ctx, "POST /v1/open-bet", { ...BET, target: 1 })).toThrow("at least 10");
+    expect(store.listBets()).toEqual([]);
   });
 
   it("starts no clock over a number nothing could read, and starts it once a source can", () => {

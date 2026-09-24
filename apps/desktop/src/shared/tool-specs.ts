@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { LandingPathSchema } from "@/shared/bets";
+import { LandingPathSchema, MIN_BET_TARGET } from "@/shared/bets";
 import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@/shared/domain";
+import { formatUsd } from "@/shared/format";
 
 // Every company tool, described once: the route the control plane serves, the
 // body it parses, who may call it, and what the agent is told — docs and the
@@ -17,11 +18,13 @@ const WAGER = {
   budgetUsd: z.number().positive().max(1000),
   hypothesis: z.string().trim().min(1).max(600),
   product: z.string().min(1).optional(),
-  target: z.number().positive(),
   title: z.string().trim().min(1).max(80),
   // long enough for a number to answer, short enough that a dud dies within the fortnight
   windowHours: z.number().min(1).max(336),
 };
+
+const USERS_FLOOR = `a users target is a whole number of visitors, at least ${MIN_BET_TARGET.users}: fewer is won by the founder's own clicks`;
+const REVENUE_FLOOR = `a revenue target is at least ${formatUsd(MIN_BET_TARGET.revenue)}: less is won by a single charge`;
 
 export interface ToolSpec<B extends z.ZodType> {
   method: "GET" | "POST";
@@ -114,10 +117,15 @@ export const TOOL_SPECS = {
         ...WAGER,
         landingPath: LandingPathSchema.optional(),
         metric: z.literal("users"),
+        target: z.number().int(USERS_FLOOR).min(MIN_BET_TARGET.users, USERS_FLOOR),
       }),
-      z.strictObject({ ...WAGER, metric: z.literal("revenue") }),
+      z.strictObject({
+        ...WAGER,
+        metric: z.literal("revenue"),
+        target: z.number().min(MIN_BET_TARGET.revenue, REVENUE_FLOOR),
+      }),
     ]),
-    doc: 'the team only spends against bets, so this is how work gets funded. One falsifiable hypothesis about one product: `metric` is `"users"` or `"revenue"`, `target` is how much of it the bet must bring in, `budgetUsd` is the most the bet may burn, `windowHours` is how long the number gets to answer once the work stops. A bet counts only what carries its mark (see "Marking a bet\'s traffic"), so several can run on one product at once. A users bet gets a landing path of its own, `/b/<bet slug>`; pass `"landingPath":"/guides"` instead when the bet IS a set of pages it creates (search pages, a docs section). Name only a new section, since a path that already gets visitors counts them too: the whole site, `/b` and any path another bet holds are refused.',
+    doc: `the team only spends against bets, so this is how work gets funded. One falsifiable hypothesis about one product: \`metric\` is \`"users"\` or \`"revenue"\`, \`target\` is how much of it the bet must bring in (at least ${MIN_BET_TARGET.users} users, a whole number, or ${formatUsd(MIN_BET_TARGET.revenue)}), \`budgetUsd\` is the most the bet may burn, \`windowHours\` is how long the number gets to answer once the work stops. A bet counts only what carries its mark (see "Marking a bet's traffic"), so several can run on one product at once. A users bet gets a landing path of its own, \`/b/<bet slug>\`; pass \`"landingPath":"/guides"\` instead when the bet IS a set of pages it creates (search pages, a docs section). Name only a new section, since a path that already gets visitors counts them too: the whole site, \`/b\` and any path another bet holds are refused.`,
     example: {
       budgetUsd: 3,
       hypothesis: "...",
