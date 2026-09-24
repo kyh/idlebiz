@@ -18,6 +18,7 @@ import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
 import { runPreamble } from "@/main/prompts/briefs";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
+import { taskToDoc } from "./task-codec";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
@@ -698,6 +699,22 @@ const firstProduct = () => {
   return product;
 };
 
+/** A task's state, open or shelved as history. */
+const stateOf = (id: string) =>
+  (store.getTask(id) ?? store.listShippedTasks().find((t) => t.id === id))?.state;
+
+/** Rewrite an open task on disk as dead of `lastError`, as five failed runs or an older build left it; boot reads it. */
+const writeDead = (companyId: string, taskId: string, lastError: string): void => {
+  const t = store.getTask(taskId);
+  if (!t) {
+    throw new Error(`no open task ${taskId}`);
+  }
+  writeFileSync(
+    path.join(tasksDir(companyId), taskId, "TASK.md"),
+    serializeDoc(taskToDoc({ ...t, state: { kind: "dead", lastError } })),
+  );
+};
+
 /** Work on a bet in every state a task can be in before it ships: to do, queued, running, waiting on the founder. */
 const workOn = (betId: string) => {
   const priya = store.createEmployee({ ...hire("Priya") });
@@ -724,7 +741,7 @@ const workOn = (betId: string) => {
     task("Running", "start"),
     task("Asked", "ask"),
   ];
-  return () => ids.map((id) => store.getTask(id)?.state.kind);
+  return () => ids.map((id) => stateOf(id)?.kind);
 };
 
 /** A task on the bet whose run "run-1" is in flight. */
@@ -833,10 +850,10 @@ describe("bets", () => {
     const bet = launch(firstProduct().id);
     const states = workOn(bet.id);
     store.measureBet(bet.id, 0);
-    expect(states()).toEqual(["dead", "dead", "running", "blocked"]);
-    expect(store.listOpenTasks().find((t) => t.title === "Queued")?.state).toEqual({
-      kind: "dead",
-      lastError: "bet is measuring",
+    expect(states()).toEqual(["dropped", "dropped", "running", "blocked"]);
+    expect(store.listShippedTasks().find((t) => t.title === "Queued")?.state).toEqual({
+      kind: "dropped",
+      reason: "bet is measuring",
     });
   });
 
@@ -845,7 +862,48 @@ describe("bets", () => {
     const bet = launch(firstProduct().id);
     const states = workOn(bet.id);
     store.killBet(bet.id, "dud", 0);
-    expect(states()).toEqual(["dead", "dead", "running", "dead"]);
+    expect(states()).toEqual(["dropped", "dropped", "running", "dropped"]);
+  });
+
+  it("shelves dropped work as history the Inbox cannot revive, not as a failure", () => {
+    const co = found();
+    const bet = launch(firstProduct().id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const task = store.createTask({
+      assigneeId: priya.id,
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.killBet(bet.id, "dud", 0);
+
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.claimTask(task.id, priya.id)).toBeNull();
+    expect(store.queryTasks({ status: ["blocked", "dead"] })).toEqual([]);
+    store.initStore();
+    expect(existsSync(path.join(shippedDir(co.id), task.id, "TASK.md"))).toBe(true);
+    expect(store.listShippedTasks()).toMatchObject([
+      { completedAt: 0, id: task.id, state: { kind: "dropped", reason: "bet killed" } },
+    ]);
+    expect(store.shippingLog()).toEqual([]);
+  });
+
+  it("keeps a dead letter revivable when its bet stops: its run failed on its own", () => {
+    const co = found();
+    const bet = launch(firstProduct().id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const task = store.createTask({
+      assigneeId: priya.id,
+      betId: bet.id,
+      origin: "work",
+      title: "Post",
+    });
+    writeDead(co.id, task.id, "boom");
+    store.initStore();
+
+    store.measureBet(bet.id, 0);
+
+    expect(store.getTask(task.id)?.state).toEqual({ kind: "dead", lastError: "boom" });
   });
 
   it("drops the waiting work of a bet the evaluator closes, and only that bet's", () => {
@@ -857,11 +915,11 @@ describe("bets", () => {
     const untouched = store.createTask({ betId: other.id, origin: "work", title: "Elsewhere" });
     store.setBetReading(bet.id, 60, 1);
     expect(store.judgeBets(1, 0).map((b) => b.state.kind)).toEqual(["won"]);
-    expect(states()).toEqual(["dead", "dead", "running", "dead"]);
+    expect(states()).toEqual(["dropped", "dropped", "running", "dropped"]);
     expect(store.getTask(untouched.id)?.state.kind).toBe("todo");
   });
 
-  it("ends a run's task when its bet stops taking work while it runs", () => {
+  it("drops a run's task when its bet stops taking work while it runs", () => {
     found();
     const product = firstProduct();
     const killed = launch(product.id);
@@ -872,13 +930,12 @@ describe("bets", () => {
     store.killBet(killed.id, "dud", 0);
     store.measureBet(measured.id, 0);
 
-    expect(store.failTask(failing, "run-1", "boom")).toEqual({ attempts: 1, kind: "dead" });
-    expect(store.parkTask(parking, "run-1", 0, "usage limit")).toEqual({
-      attempts: 0,
-      kind: "dead",
-    });
-    expect(store.getTask(failing)?.state).toEqual({ kind: "dead", lastError: "bet closed" });
-    expect(store.getTask(parking)?.state).toEqual({ kind: "dead", lastError: "bet is measuring" });
+    expect(store.failTask(failing, "run-1", "boom")).toEqual({ kind: "dropped" });
+    expect(store.parkTask(parking, "run-1", 0, "usage limit")).toEqual({ kind: "dropped" });
+    expect(store.getTask(failing)).toBeNull();
+    expect(store.getTask(parking)).toBeNull();
+    expect(stateOf(failing)).toEqual({ kind: "dropped", reason: "bet closed" });
+    expect(stateOf(parking)).toEqual({ kind: "dropped", reason: "bet is measuring" });
   });
 
   it("puts a failed or parked run's task back on the queue while its bet is open", () => {
@@ -894,7 +951,7 @@ describe("bets", () => {
     expect(store.getTask(parking)?.state).toMatchObject({ kind: "queued", nextAttemptAt: 0 });
   });
 
-  it("ends a run cut off by a restart once its bet stops taking work, and re-queues one on an open bet", () => {
+  it("drops a run cut off by a restart once its bet stops taking work, and re-queues one on an open bet", () => {
     found();
     const product = firstProduct();
     const measured = launch(product.id);
@@ -906,17 +963,17 @@ describe("bets", () => {
 
     store.initStore();
 
-    expect(store.getTask(stopped)).toMatchObject({
-      attempts: 0,
-      state: { kind: "dead", lastError: "bet is measuring" },
-    });
+    expect(store.getTask(stopped)).toBeNull();
+    expect(store.listShippedTasks()).toMatchObject([
+      { attempts: 0, id: stopped, state: { kind: "dropped", reason: "bet is measuring" } },
+    ]);
     expect(store.getTask(live)).toMatchObject({
       attempts: 1,
       state: { kind: "queued", lastError: "Interrupted by app restart" },
     });
   });
 
-  it("ends the founder's answered step on a measuring bet when it fails; the Inbox can retry it", () => {
+  it("drops the founder's answered step on a measuring bet when it fails, beyond the Inbox's reach", () => {
     found();
     const bet = launch(firstProduct().id);
     const priya = store.createEmployee({ ...hire("Priya") });
@@ -934,11 +991,8 @@ describe("bets", () => {
     store.claimTask(next.id, priya.id);
     store.lockTaskForRun(next.id, "run-2");
 
-    expect(store.failTask(next.id, "run-2", "boom")?.kind).toBe("dead");
-    expect(store.claimTask(next.id, priya.id)).toMatchObject({
-      attempts: 0,
-      state: { kind: "queued" },
-    });
+    expect(store.failTask(next.id, "run-2", "boom")?.kind).toBe("dropped");
+    expect(store.claimTask(next.id, priya.id)).toBeNull();
   });
 
   it("retires a product with its bets and open work, but never the last one", () => {
@@ -956,7 +1010,7 @@ describe("bets", () => {
     expect(store.killProduct(side.id, "no traction", null).map((b) => b.id)).toEqual([bet.id]);
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
     expect(store.getBet(bet.id)?.state).toMatchObject({ kind: "killed" });
-    expect(store.getTask(task.id)?.state.kind).toBe("dead");
+    expect(stateOf(task.id)).toEqual({ kind: "dropped", reason: "product retired" });
     expect(existsSync(path.join(retiredDir(co.id), side.id, "PRODUCT.md"))).toBe(true);
     expect(existsSync(path.join(productsDir(co.id), side.id))).toBe(false);
     store.initStore();
@@ -1143,7 +1197,7 @@ describe("a release", () => {
     expect(store.getTask(task.id)?.state.kind).toBe("todo");
   });
 
-  it("leaves the leaver's unstarted work dead on the lead, holding no bet's run", () => {
+  it("drops the leaver's unstarted work, holding no bet's run", () => {
     foundTeam();
     const bet = launch(firstProduct().id);
     const queued = store.createTask({
@@ -1159,42 +1213,37 @@ describe("a release", () => {
       title: "Answer the founder",
     });
 
-    expect(store.archiveEmployee("priya")?.rehomed).toBe(2);
+    expect(store.archiveEmployee("priya")).toMatchObject({ dropped: 2, rehomed: 0 });
 
-    const released = {
-      assigneeId: "mae",
-      state: { kind: "dead", lastError: "Priya was released" },
-    };
     expect(store.listQueuedTasks()).toEqual([]);
     expect(store.runsInFlight().get(bet.id)).toBeUndefined();
     store.initStore();
-    expect(store.getTask(queued.id)).toMatchObject(released);
-    expect(store.getTask(todo.id)).toMatchObject(released);
-    expect(store.claimTask(queued.id, "mae")?.state.kind).toBe("queued");
+    expect(store.listOpenTasks()).toEqual([]);
+    const released = { kind: "dropped", reason: "Priya was released" };
+    expect(stateOf(queued.id)).toEqual(released);
+    expect(stateOf(todo.id)).toEqual(released);
+    expect(store.claimTask(queued.id, "mae")).toBeNull();
   });
 
-  it("hands the leaver's asks and dead letters to the lead, and ends an ask no bet funds", () => {
-    foundTeam();
-    const side = store.createProduct({ description: "a side bet", name: "Side" });
+  it("hands the leaver's asks and dead letters to the lead, and drops an ask no bet funds", () => {
+    const co = foundTeam();
     const bet = launch(firstProduct().id);
     const funded = store.createTask({ betId: bet.id, origin: "work", title: "Post it" });
     block(funded.id, "priya");
     const ping = store.createTask({ origin: "founder", title: "Answer the founder" });
     block(ping.id, "priya");
-    const dead = store.createTask({ origin: "founder", productId: side.id, title: "Side work" });
-    store.claimTask(dead.id, "priya");
-    store.killProduct(side.id, "dud", null);
+    const dead = store.createTask({ assigneeId: "priya", origin: "founder", title: "Side work" });
+    writeDead(co.id, dead.id, "boom");
+    store.initStore();
 
-    store.archiveEmployee("priya");
+    expect(store.archiveEmployee("priya")).toMatchObject({ dropped: 1, rehomed: 2 });
 
     expect(store.getTask(funded.id)).toMatchObject({
       assigneeId: "mae",
       state: { kind: "blocked" },
     });
-    expect(store.getTask(ping.id)).toMatchObject({
-      assigneeId: "mae",
-      state: { kind: "dead", lastError: "Priya was released" },
-    });
+    expect(store.getTask(ping.id)).toBeNull();
+    expect(stateOf(ping.id)).toEqual({ kind: "dropped", reason: "Priya was released" });
     expect(store.claimTask(dead.id, "mae")?.state.kind).toBe("queued");
   });
 });
@@ -1354,7 +1403,7 @@ const seedRetiredRoutine = (companyId: string): void => {
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(5);
+    expect(stampOf(found().id)).toBe(6);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1378,7 +1427,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(5);
+    expect(stampOf(co.id)).toBe(6);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1396,7 +1445,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(5);
+    expect(stampOf(co.id)).toBe(6);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -1430,7 +1479,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(5);
+    expect(stampOf(co.id)).toBe(6);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -1449,7 +1498,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(5);
+    expect(stampOf(co.id)).toBe(6);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
@@ -1476,11 +1525,43 @@ describe("the save format", () => {
     ];
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(5);
+    expect(stampOf(co.id)).toBe(6);
     expect(room()).toEqual(adopted);
 
     store.initStore();
     expect(room()).toEqual(adopted);
+  });
+
+  it("drops the work a format 5 save dead-lettered for the steering loop, and keeps its failures", () => {
+    const co = foundTeam();
+    const reasons = [
+      "bet is measuring",
+      "bet closed",
+      "bet killed",
+      "product retired",
+      "Sam was released",
+    ];
+    for (const reason of reasons) {
+      writeDead(co.id, store.createTask({ origin: "founder", title: reason }).id, reason);
+    }
+    const failed = store.createTask({ origin: "founder", title: "Fix the build" });
+    writeDead(co.id, failed.id, "boom");
+    restamp(co.id, 5);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(6);
+
+    store.initStore();
+    expect(store.listOpenTasks()).toMatchObject([
+      { id: failed.id, state: { kind: "dead", lastError: "boom" } },
+    ]);
+    expect(
+      store
+        .listShippedTasks()
+        .filter(taskIn("dropped"))
+        .map((t) => t.state.reason)
+        .toSorted(),
+    ).toEqual(reasons.toSorted());
   });
 
   it("leaves alone a package written in a schema it does not read", () => {

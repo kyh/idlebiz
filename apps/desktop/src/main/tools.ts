@@ -255,7 +255,9 @@ const TOOLS = {
     if (target.status === "working") {
       return `${target.name} is mid-task right now — try again when they're idle.`;
     }
-    const rehomed = store.archiveEmployee(slug)?.rehomed ?? 0;
+    const left = store.archiveEmployee(slug);
+    const rehomed = left?.rehomed ?? 0;
+    const dropped = left?.dropped ?? 0;
     post(ctx, `👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
     publishActivity({
       employeeId: target.id,
@@ -266,7 +268,11 @@ const TOOLS = {
       rehomed === 0
         ? ""
         : ` Their open work is yours now: ${plural(rehomed, "task")}, each waiting in the founder's Inbox for an answer or a retry.`;
-    return `Released ${target.name}.${inherited} Their workspace contributions and memory are archived under alumni/.`;
+    const lost =
+      dropped === 0
+        ? ""
+        : ` Dropped ${plural(dropped, "task")} of theirs — delegate again whatever still matters.`;
+    return `Released ${target.name}.${inherited}${lost} Their workspace contributions and memory are archived under alumni/.`;
   }),
 } satisfies Record<ToolName, Tool>;
 

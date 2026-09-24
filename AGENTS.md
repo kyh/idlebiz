@@ -177,10 +177,12 @@ rather than crashing boot.
 - **Some icons deliberately use OS fonts.** VG5000 lacks recognizable equivalents for
   ⚙ settings, 💼 company, and ☕ idle; ❗ attention and ⚠ warnings retain their color cues.
   These fallback glyphs are exceptions. Keep the vendored font unchanged.
-- **Only finished work is history.** `done` tasks move to `shipped/` and load on demand;
-  so does an ask the founder answered, `superseded` by its continuation and never a ship.
-  `dead` tasks stay in the active queue because the Inbox can retry them and employees
-  use them to identify unresolved problems. `listTasks` answers open work only; the one
+- **Only closed work is history.** `done` tasks move to `shipped/` and load on demand;
+  so does an ask the founder answered, `superseded` by its continuation, and work the
+  steering loop `dropped` (its bet stopped taking work, its product was retired, its
+  assignee released), neither ever a ship. `dead` tasks — runs that failed on their own —
+  stay in the active queue because the Inbox can retry them and employees use them to
+  identify unresolved problems. `listTasks` answers open work only; the one
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).

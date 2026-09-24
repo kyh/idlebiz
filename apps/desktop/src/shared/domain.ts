@@ -75,8 +75,12 @@ export const resolveMentions = (
 /** What stays in the queue. dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried, kept for the Inbox to retry. */
 export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead"] as const;
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
-/** The open ones plus history, shelved in shipped/. superseded: an ask the founder answered. */
-export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded"] as const;
+/**
+ * The open ones plus history, shelved in shipped/. superseded: an ask the founder answered.
+ * dropped: work the steering loop took away — its bet stopped taking work, its product was
+ * retired, or its assignee was released.
+ */
+export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded", "dropped"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -334,6 +338,8 @@ export type TaskState =
   | { kind: "done"; summary: string | null }
   /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for one an older save answered. */
   | { kind: "superseded"; by: string | null }
+  /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
+  | { kind: "dropped"; reason: string }
   | { kind: "dead"; lastError: string };
 
 // the state kinds and the status vocabulary (TASK.md, the IPC filter, status events) are one set
@@ -352,6 +358,7 @@ export const entering = (
   }
   return state.kind === "done" ||
     state.kind === "superseded" ||
+    state.kind === "dropped" ||
     state.kind === "blocked" ||
     state.kind === "dead"
     ? { completedAt: now, state }
@@ -388,7 +395,7 @@ export interface Task {
   createdAt: number;
   /** When its latest run began. */
   startedAt: number | null;
-  /** When it last reached done, superseded, blocked or dead. */
+  /** When it last reached done, superseded, dropped, blocked or dead. */
   completedAt: number | null;
 }
 

@@ -142,15 +142,11 @@ const book = (task: Task, costUsd: number): void => {
 
 /**
  * Usage limits and the app quitting park the task without consuming a retry. A task whose
- * bet stopped taking work while it ran is neither retried nor parked: it dies.
+ * bet stopped taking work while it ran is neither retried nor parked: it is dropped.
  */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
   const o = r.outcome;
-  const die = (attempts: number, error: string): TaskStatus => {
-    publishActivity({ ...at, kind: "task.dead", payload: { attempts, error } });
-    return "dead";
-  };
   let status: TaskStatus;
   switch (o.kind) {
     case "blocked": {
@@ -170,7 +166,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
     }
     case "resting": {
       const parked = store.parkTask(task.id, runId, o.until, o.error);
-      status = parked?.kind === "dead" ? die(parked.attempts, o.error) : "queued";
+      status = parked?.kind === "dropped" ? "dropped" : "queued";
       publishActivity({
         ...at,
         kind: "runner.resting",
@@ -179,15 +175,21 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
       break;
     }
     case "interrupted": {
-      const error = "Interrupted by app quit";
-      const parked = store.parkTask(task.id, runId, Date.now(), error);
-      status = parked?.kind === "dead" ? die(parked.attempts, error) : "queued";
+      const parked = store.parkTask(task.id, runId, Date.now(), "Interrupted by app quit");
+      status = parked?.kind === "dropped" ? "dropped" : "queued";
       break;
     }
     case "failed": {
       const verdict = store.failTask(task.id, runId, o.error);
-      if (verdict?.kind === "dead") {
-        status = die(verdict.attempts, o.error);
+      if (verdict?.kind === "dropped") {
+        status = "dropped";
+      } else if (verdict?.kind === "dead") {
+        status = "dead";
+        publishActivity({
+          ...at,
+          kind: "task.dead",
+          payload: { attempts: verdict.attempts, error: o.error },
+        });
       } else {
         status = "queued";
         if (verdict) {

@@ -74,6 +74,7 @@ describe("entering", () => {
     expect(entering({ kind: "running", runId: "r" }, 5)).toMatchObject({ startedAt: 5 });
     expect(entering({ kind: "done", summary: null }, 7)).toMatchObject({ completedAt: 7 });
     expect(entering({ kind: "dead", lastError: "x" }, 8)).toMatchObject({ completedAt: 8 });
+    expect(entering({ kind: "dropped", reason: "x" }, 10)).toMatchObject({ completedAt: 10 });
     expect(entering({ kind: "todo" }, 9)).toEqual({ state: { kind: "todo" } });
   });
 });

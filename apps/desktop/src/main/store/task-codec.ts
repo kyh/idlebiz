@@ -63,6 +63,9 @@ const stateFields = (st: TaskState): FrontmatterDoc["metadata"] => {
     case "superseded": {
       return { supersededBy: st.by };
     }
+    case "dropped": {
+      return { dropReason: st.reason };
+    }
     case "dead": {
       return { lastError: st.lastError };
     }
@@ -154,6 +157,9 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
     }
     case "superseded": {
       return { by: optStr(m, "supersededBy"), kind: "superseded" };
+    }
+    case "dropped": {
+      return { kind: "dropped", reason: optStr(m, "dropReason") ?? "no reason kept" };
     }
     case "dead": {
       return { kind: "dead", lastError: lastError ?? summary ?? "unknown failure" };

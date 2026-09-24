@@ -243,7 +243,7 @@ const recordIn = <T extends Owned>(
  * quietly drop whatever the newer build added. It is refused instead. A save
  * stamped lower is adopted once at boot, then carries this stamp.
  */
-const SAVE_FORMAT = 5;
+const SAVE_FORMAT = 6;
 
 const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
@@ -475,6 +475,27 @@ const saveRoutine = (r: Routine): void => {
 
 const shelve = (t: Task): void => {
   moveDir(path.join(tasksDir(t.companyId), t.id), path.join(shippedDir(t.companyId), t.id));
+};
+
+/** Shipped work, answered asks and dropped work: shelved in shipped/, never acted on again. */
+const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "dropped"]);
+const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
+
+/** Move a task just saved as history out of the open queue; one the move fails stays for boot to shelve. */
+const shelveClosed = (t: Task): boolean => {
+  try {
+    shelve(t);
+  } catch (error) {
+    report(`shelve ${t.id}`, error);
+    return false;
+  }
+  const active = current();
+  const idx = active.tasks.findIndex((task) => task.id === t.id);
+  if (idx !== -1) {
+    active.tasks.splice(idx, 1);
+  }
+  active.shipped?.push(t);
+  return true;
 };
 
 // ---- slug allocation ---------------------------------------------------------
@@ -884,59 +905,72 @@ export const noteRunEnd = (
   recordIn(active.employees, id, { ...session, lastRunMetrics }, saveRunState);
 };
 
+const RELEASED = " was released";
+
 /**
- * Where a released employee's open task goes: to the lead, so an answer or a retry still
- * reaches someone. Unstarted work lands dead, so it holds no bet's slot and waits in the
- * founder's Inbox instead of running on the lead unasked. A run in flight settles on its
+ * Where a released employee's open task goes. An ask a bet funds, or a dead letter, goes to
+ * the lead, so an answer or a retry still reaches someone. Unstarted work is dropped, so it
+ * holds no bet's slot and never runs on the lead unasked. A run in flight settles on its
  * own; null leaves it be.
  */
 const rehomed = (t: Task, leaverName: string, lead: string | null, now: number): Task | null => {
-  const deadOnLead = (): Task => ({
+  const dropped = (): Task => ({
     ...t,
-    assigneeId: lead,
-    ...entering({ kind: "dead", lastError: `${leaverName} was released` }, now),
+    ...entering({ kind: "dropped", reason: `${leaverName}${RELEASED}` }, now),
   });
   switch (t.state.kind) {
     case "todo":
     case "queued": {
-      return deadOnLead();
+      return dropped();
     }
     case "blocked": {
       // a departing lead's blocked proposal would read as the next lead's, and hold every new bet
-      return t.betId === null ? deadOnLead() : { ...t, assigneeId: lead };
+      return t.betId === null ? dropped() : { ...t, assigneeId: lead };
     }
     case "dead": {
       return { ...t, assigneeId: lead };
     }
     case "running":
     case "done":
-    case "superseded": {
+    case "superseded":
+    case "dropped": {
       return null;
     }
     // no default
   }
 };
 
-/** Hand every open task the leaver holds to the lead, as `rehomed` places it; returns how many moved. */
-const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): number => {
+interface HandedOver {
+  /** Now the lead's. */
+  rehomed: number;
+  dropped: number;
+}
+
+/** Hand every open task the leaver holds to the lead or to history, as `rehomed` places it. */
+const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): HandedOver => {
   const lead = active.company.leaderId;
   const now = Date.now();
-  let moved = 0;
-  for (const [i, t] of active.tasks.entries()) {
-    const next = t.assigneeId === leaverId ? rehomed(t, leaverName, lead, now) : null;
-    if (next) {
-      active.tasks[i] = next;
-      saveTask(next);
-      moved += 1;
+  const moved: HandedOver = { dropped: 0, rehomed: 0 };
+  for (const t of active.tasks.filter((task) => task.assigneeId === leaverId)) {
+    const next = rehomed(t, leaverName, lead, now);
+    if (!next) {
+      continue;
+    }
+    recordIn(active.tasks, t.id, next, saveTask);
+    if (isHistory(next)) {
+      shelveClosed(next);
+      moved.dropped += 1;
+    } else {
+      moved.rehomed += 1;
     }
   }
   return moved;
 };
 
-/** Archive the employee package and hand their open work to the lead; `rehomed` counts it. */
+/** Archive the employee package and hand their open work on, as `handOver` counts it. */
 export const archiveEmployee = (
   employeeId: string,
-): { employee: Employee; rehomed: number } | null => {
+): ({ employee: Employee } & HandedOver) | null => {
   const emp = getEmployee(employeeId);
   if (!emp) {
     return null;
@@ -954,7 +988,7 @@ export const archiveEmployee = (
   if (active.company.leaderId === employeeId) {
     patchCompany({ leaderId: leadOf(listEmployees()) });
   }
-  return { employee: emp, rehomed: handOver(active, employeeId, emp.name) };
+  return { employee: emp, ...handOver(active, employeeId, emp.name) };
 };
 
 // ---- products --------------------------------------------------------------
@@ -1158,25 +1192,28 @@ export const runsInFlight = (): ReadonlyMap<string, number> => {
 };
 
 /**
- * Dead-letter the matching work that has not started; the founder can still
- * revive it from the Inbox. A running task finishes its run, and dies if that
- * run fails, parks (`failTask`, `parkTask`) or never settles before the app
- * restarts (`recoverInterrupted`). Dead work keeps the error it died of.
+ * Drop the matching work that is waiting into history: no failure, and nothing
+ * the founder can revive, since it would only bill a bet or product that takes
+ * no more work. A running task finishes its run, and is dropped if that run
+ * fails, parks (`failTask`, `parkTask`) or never settles before the app
+ * restarts (`recoverInterrupted`). A dead letter stays one: its run failed on its own.
  */
-const deadLetter = (match: (t: Task) => boolean, reason: string, now: number): void => {
+const dropWork = (match: (t: Task) => boolean, reason: string, now: number): void => {
   const { tasks } = current();
   for (const t of tasks.filter(match)) {
     const { kind } = t.state;
     if (kind === "todo" || kind === "queued" || kind === "blocked") {
-      patchIn(tasks, t.id, entering({ kind: "dead", lastError: reason }, now), saveTask);
+      shelveClosed(patchIn(tasks, t.id, entering({ kind: "dropped", reason }, now), saveTask));
     }
   }
 };
 
 const BET_MEASURING = "bet is measuring";
 const BET_CLOSED = "bet closed";
+const BET_KILLED = "bet killed";
+const PRODUCT_RETIRED = "product retired";
 
-/** Why the bet takes no more runs, as its dead letters say; null while it is open, or for work on none. */
+/** Why the bet takes no more runs, as the work it drops says; null while it is open, or for work on none. */
 const stoppedBetReason = (bet: Bet | null): string | null => {
   if (!bet || bet.state.kind === "open") {
     return null;
@@ -1200,7 +1237,7 @@ export const measureBet = (betId: string, now: number): Bet => {
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
   // work waiting on the founder stays: that step may be the one that moves the number
-  deadLetter((t) => t.betId === betId && t.state.kind !== "blocked", BET_MEASURING, now);
+  dropWork((t) => t.betId === betId && t.state.kind !== "blocked", BET_MEASURING, now);
   return measuring;
 };
 
@@ -1214,7 +1251,7 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
     throw new RefusalError(`no live bet "${betId}"`);
   }
   const killed = closeAsKilled(bet, reason, now);
-  deadLetter((t) => t.betId === betId, "bet killed", now);
+  dropWork((t) => t.betId === betId, BET_KILLED, now);
   retune(current());
   return killed;
 };
@@ -1240,7 +1277,7 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   }
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));
   if (closed.size > 0) {
-    deadLetter((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
+    dropWork((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
     retune(active);
   }
   return changed;
@@ -1343,10 +1380,6 @@ export const getTask = (id: string): Task | null =>
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
-/** Shipped work and answered asks: shelved in shipped/, never acted on again. */
-const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded"]);
-const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
-
 /** The company's open queue: everything not yet history, newest first. */
 export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
 
@@ -1361,7 +1394,7 @@ export const queryTasks = (query: {
     .filter((t) => status === undefined || status.some((s) => s === t.state.kind));
 };
 
-/** Everything the company has finished, newest first. Read from disk the first time it is asked for. */
+/** Everything shelved as history, newest first. Read from disk the first time it is asked for. */
 export const listShippedTasks = (): Task[] => {
   const active = current();
   const companyId = active.company.id;
@@ -1451,22 +1484,9 @@ const close = (
   state: Settled | Extract<TaskState, { kind: "superseded" }>,
 ): void => {
   const t = recordTask(taskId, entering(state, Date.now()));
-  if (!isHistory(t)) {
-    return;
+  if (isHistory(t) && shelveClosed(t)) {
+    noteShip(t);
   }
-  try {
-    shelve(t);
-  } catch (error) {
-    report(`shelve ${t.id}`, error);
-    return;
-  }
-  const active = current();
-  const idx = active.tasks.findIndex((task) => task.id === t.id);
-  if (idx !== -1) {
-    active.tasks.splice(idx, 1);
-  }
-  active.shipped?.push(t);
-  noteShip(t);
 };
 
 const heldBy = (t: Task | null, runId: string): Task | null =>
@@ -1527,28 +1547,36 @@ const failed = (t: Task, lastError: string) => {
   return { task, verdict };
 };
 
-type Died = Extract<FailureVerdict, { kind: "dead" }>;
+interface Dropped {
+  kind: "dropped";
+}
 
-/** A run whose bet stopped taking work while it ran ends its task instead of requeueing it; null while the bet is open. */
-const diedWithBet = (t: Task, attempts: number): Died | null => {
+/** A run whose bet stopped taking work while it ran drops its task instead of requeueing it; null while the bet is open. */
+const droppedWithBet = (t: Task, attempts: number): Dropped | null => {
   const reason = stoppedBetReason(t.betId === null ? null : getBet(t.betId));
   if (reason === null) {
     return null;
   }
-  recordTask(t.id, { attempts, ...entering({ kind: "dead", lastError: reason }, Date.now()) });
-  return { attempts, kind: "dead" };
+  shelveClosed(
+    recordTask(t.id, { attempts, ...entering({ kind: "dropped", reason }, Date.now()) }),
+  );
+  return { kind: "dropped" };
 };
 
 /** A run failed: the task takes its next verdict. Only the owning run may; null when it no longer holds the lock. */
-export const failTask = (taskId: string, runId: string, error: string): FailureVerdict | null => {
+export const failTask = (
+  taskId: string,
+  runId: string,
+  error: string,
+): FailureVerdict | Dropped | null => {
   const t = heldBy(getTask(taskId), runId);
   if (!t) {
     return null;
   }
   const next = failed(t, error);
-  const died = diedWithBet(t, next.verdict.attempts);
-  if (died) {
-    return died;
+  const dropped = droppedWithBet(t, next.verdict.attempts);
+  if (dropped) {
+    return dropped;
   }
   recordTask(taskId, next.task);
   return next.verdict;
@@ -1564,14 +1592,14 @@ export const parkTask = (
   runId: string,
   until: number,
   lastError: string,
-): { kind: "parked" } | Died | null => {
+): { kind: "parked" } | Dropped | null => {
   const t = heldBy(getTask(taskId), runId);
   if (!t) {
     return null;
   }
-  const died = diedWithBet(t, t.attempts);
-  if (died) {
-    return died;
+  const dropped = droppedWithBet(t, t.attempts);
+  if (dropped) {
+    return dropped;
   }
   recordTask(taskId, { state: { kind: "queued", lastError, nextAttemptAt: until } });
   return { kind: "parked" };
@@ -1611,7 +1639,7 @@ export const productOfEmployee = (employeeId: string): Product | null => {
 };
 
 /**
- * Retire a product: its live bets die with it, its open work is dead-lettered,
+ * Retire a product: its live bets die with it, its waiting work is dropped,
  * and its package moves to retired/ whole, with its code beside PRODUCT.md even
  * when that lived outside the package, as the first product's does. The last
  * product cannot go — a company with none would be handed a fresh first product
@@ -1656,7 +1684,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   if (killed.length > 0) {
     retune(active);
   }
-  deadLetter((t) => t.productId === productId, "product retired", now);
+  dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
   active.products.splice(active.products.indexOf(product), 1);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
@@ -1786,11 +1814,11 @@ const readCompanies = (): FoundSave[] => {
   return companies;
 };
 
-/** A run the last launch never saw settle: it dies with a bet that stopped taking work, else counts as failed. */
+/** A run the last launch never saw settle: dropped with a bet that stopped taking work, else counted as failed. */
 const recoverInterrupted = (task: Task, bets: readonly Bet[], now: number): Task => {
   const stopped = stoppedBetReason(bets.find((bet) => bet.id === task.betId) ?? null);
   if (stopped !== null) {
-    return { ...task, ...entering({ kind: "dead", lastError: stopped }, now) };
+    return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
   }
   return task.assigneeId
     ? failed(task, "Interrupted by app restart").task
@@ -1918,6 +1946,27 @@ const adoptProductWorkspaces = (active: ActiveCompany): void => {
   });
 };
 
+/** The reasons format 5 and older dead-lettered the work the steering loop dropped with. */
+const DROP_REASONS: ReadonlySet<string> = new Set([
+  BET_MEASURING,
+  BET_CLOSED,
+  BET_KILLED,
+  PRODUCT_RETIRED,
+]);
+
+/**
+ * Format 5 and older dead-lettered the work a bet, a retired product or a release dropped,
+ * beside real failures, so the Inbox offered it back. The reason each kept tells them apart.
+ */
+const adoptDroppedWork = (active: ActiveCompany): void => {
+  for (const t of active.tasks.filter(taskIn("dead"))) {
+    const reason = t.state.lastError;
+    if (DROP_REASONS.has(reason) || reason.endsWith(RELEASED)) {
+      shelveClosed(recordIn(active.tasks, t.id, { state: { kind: "dropped", reason } }, saveTask));
+    }
+  }
+};
+
 /**
  * An older build's release left the leaver's asks and dead letters on their id, which no
  * claim reaches: an answer queued a continuation nobody runs. Whoever an open task still
@@ -1993,6 +2042,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   if (from < 5) {
     adoptSpeakers(active.company.id);
     loadRecentChat(active);
+  }
+  if (from < 6) {
+    adoptDroppedWork(active);
   }
   saveCompany(active.company);
 };

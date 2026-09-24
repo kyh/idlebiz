@@ -280,13 +280,27 @@ describe("company tools", () => {
     },
   );
 
-  it("tells the lead how much of a released teammate's open work is now theirs", () => {
+  it("tells the lead which of a released teammate's open work is now theirs, and what was dropped", () => {
     const { ctx } = runAs("mae");
     callTool(ctx, "POST /v1/delegate", HANDOFF);
-    store.createTask({ assigneeId: "priya", origin: "founder", title: "Answer the founder" });
+    const bet = openBet(ctx);
+    const ask = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Ask",
+    });
+    store.claimTask(ask.id, "priya");
+    store.lockTaskForRun(ask.id, "run-1");
+    store.settleTask(ask.id, "run-1", {
+      ask: { question: "Ship it?", type: "question" },
+      kind: "blocked",
+      summary: null,
+    });
     const answer = callTool(ctx, "POST /v1/release", { slug: "priya" });
-    expect(answer).toContain("Their open work is yours now: 2 tasks");
-    expect(store.openTasksFor("mae")).toHaveLength(2);
+    expect(answer).toContain("Their open work is yours now: 1 task,");
+    expect(answer).toContain("Dropped 1 task of theirs");
+    expect(store.openTasksFor("mae")).toMatchObject([{ id: ask.id }]);
   });
 
   it("names no inherited work when the teammate left none", () => {

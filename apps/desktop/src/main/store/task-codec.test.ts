@@ -39,6 +39,7 @@ describe("task codec", () => {
     { kind: "done", summary: null },
     { by: "continue-ship-the-thing", kind: "superseded" },
     { by: null, kind: "superseded" },
+    { kind: "dropped", reason: "bet killed" },
     { kind: "dead", lastError: "five strikes" },
   ])("round-trips $kind", (state) => {
     const task: Task = { ...base, state };
@@ -84,6 +85,13 @@ describe("task codec", () => {
       const out = docToTask({ ...doc, metadata: { ...doc.metadata, status: legacy } }, "acme");
       expect(out.state).toEqual({ kind: "dead", lastError: "gave up" });
     }
+  });
+
+  it("keeps a dropped task dropped when its reason is missing", () => {
+    const doc = taskToDoc({ ...base, state: { kind: "dropped", reason: "bet closed" } });
+    const { dropReason: _lost, ...withoutReason } = doc.metadata;
+    const out = docToTask({ ...doc, metadata: withoutReason }, "acme");
+    expect(out.state).toEqual({ kind: "dropped", reason: "no reason kept" });
   });
 
   it("treats a running task whose lock is missing as a retry, not a run", () => {

@@ -581,7 +581,7 @@ describe("a file the save refuses on every tick", () => {
 });
 
 describe("a bet that stops taking work mid-run", () => {
-  it("ends the task of a run that parks, rather than queue it again", async () => {
+  it("drops the task of a run that parks, rather than queue it again, and counts no failure", async () => {
     found();
     const bet = openBet(5);
     const { driver, running } = scripted();
@@ -607,11 +607,25 @@ describe("a bet that stops taking work mid-run", () => {
       activityEvents.off("activity", listen);
     }
 
-    expect(store.getTask(task.id)?.state).toEqual({ kind: "dead", lastError: "bet is measuring" });
-    expect(heard.filter((e) => e.kind === "task.dead")).toMatchObject([
-      { payload: { attempts: 0, error: "usage limit" }, taskId: task.id },
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.listShippedTasks()).toMatchObject([
+      { id: task.id, state: { kind: "dropped", reason: "bet is measuring" } },
     ]);
-    expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dead" });
+    expect(heard.filter((e) => e.kind === "task.dead")).toEqual([]);
+    expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dropped" });
+  });
+
+  it("names none of the work a killed bet dropped among the failures in the lead's next brief", () => {
+    found();
+    const bet = openBet(5);
+    store.createTask({ assigneeId: "mae", betId: bet.id, origin: "work", title: "Post it" });
+    store.killBet(bet.id, "dud", Date.now());
+    const drain = createScheduler(scripted().driver);
+
+    drain.start();
+    drain.stop();
+
+    expect(proposing()[0]?.description).toContain("fixing or unblocking:\n(none)");
   });
 });
 
@@ -634,8 +648,10 @@ describe("a release", () => {
     drain.stop();
 
     expect(store.openTasksFor("priya")).toMatchObject([
-      { id: task.id, state: { kind: "dead" } },
-      { betId: bet.id, state: { kind: "running" } },
+      { betId: bet.id, origin: "settle", state: { kind: "running" } },
+    ]);
+    expect(store.listShippedTasks()).toMatchObject([
+      { id: task.id, state: { kind: "dropped", reason: "Mae was released" } },
     ]);
   });
 

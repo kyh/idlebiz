@@ -11,7 +11,7 @@ import { mkdirSync } from "node:fs";
 //       memory/             the agent's own scratch memory
 //       run-state.json      what a run leaves for the next: session to resume and what it was told, the real numbers as it ended, the last ship
 //     tasks/<slug>/TASK.md  open work
-//     shipped/<slug>/TASK.md  work the team finished (the shipping log), and asks the founder answered
+//     shipped/<slug>/TASK.md  work the team finished (the shipping log), asks the founder answered, work the steering loop dropped
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product's is workspace/)
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole

@@ -6,7 +6,7 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
-  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done or answered,
+  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
   get products/<slug>/workspace/), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
@@ -62,12 +62,17 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   at ~$1 each), else the lead settles a spent-out bet, else the lead opens the next one (a
   run of straight losses asks for new ground), else wait. That budget check is `hasRoomFor`,
   and `delegate` asks it too: a bet without room refuses the handoff rather than let its
-  work run unfunded. A bet that leaves open (measured, killed, judged) dead-letters its
-  unstarted work, and a run still on it that fails, parks or is cut off by a restart dies
+  work run unfunded. A bet that leaves open (measured, killed, judged) drops its waiting
+  work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again; measuring keeps what waits on the founder, since that step may
-  be what moves the number. "Waiting on the founder" is modelled in `allocate` once: a bet
-  with a blocked task gets no hands — settle runs carry their bet, so that covers them — and
-  a lead whose last proposal is blocked is not asked again.
+  be what moves the number. Retiring a product drops its waiting work, and a release drops
+  the leaver's unstarted work and any ask no bet funds. `dropped` is history, not a failure:
+  the Inbox never offers it back and the lead's brief never lists it, since reviving it would
+  only bill what takes no more work; the lead delegates the idea again under a live bet.
+  `dead` is only work whose runs failed on their own, and stays revivable. "Waiting on the
+  founder" is modelled in `allocate` once: a bet with a blocked task gets no hands — settle
+  runs carry their bet, so that covers them — and a lead whose last proposal is blocked is
+  not asked again.
   Routines and founder pings are the only unfunded work, and a routine is only work that
   recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
   bet's job.

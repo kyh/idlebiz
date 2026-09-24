@@ -53,11 +53,11 @@ const reloadFor = (e: ActivityEvent): readonly Slice[] => {
     case "product.created": {
       return ["products"];
     }
-    // retiring a product dead-letters its open work
+    // retiring a product drops its waiting work
     case "product.killed": {
       return ["products", "bets", "tasks"];
     }
-    // a bet that stops taking work dead-letters the work it had waiting
+    // a bet that stops taking work drops the work it had waiting
     case "bet.changed": {
       return ["bets", "tasks"];
     }
