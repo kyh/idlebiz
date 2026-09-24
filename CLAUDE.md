@@ -73,7 +73,10 @@ allocator and the replay.
   at ~$1 each), else the lead settles a spent-out bet, else the lead opens the next one (a
   run of straight losses asks for new ground), else wait. That budget check is `hasRoomFor`,
   and `delegate` asks it too: a bet without room refuses the handoff rather than let its
-  work run unfunded. A bet that leaves open (measured, killed, judged) drops its waiting
+  work run unfunded. The portfolio's caps (5 live products, 3 live bets a product) are the
+  store's: `createProduct` and `openBet` refuse past them, the founder's New product too,
+  and a proposal offers new ground as a new product only while `portfolioHasRoom`.
+  A bet that leaves open (measured, killed, judged) drops its waiting
   work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again; measuring keeps what waits on the founder, since that step may
   be what moves the number. Retiring a product drops its waiting work, and a release drops

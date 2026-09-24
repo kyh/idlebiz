@@ -9,6 +9,7 @@ import {
   holdsItsPath,
   judge,
   namedPathRefusal,
+  productHasRoom,
 } from "@/shared/bets";
 import type { Bet, BetState } from "@/shared/bets";
 
@@ -313,6 +314,7 @@ describe("allocate", () => {
   it("proposes on the best proven product otherwise", () => {
     expect(allocate(ledger([closed("a", "site", 0, 100)]), { explore: 0, plateau: 3 })).toEqual({
       kind: "propose",
+      newProduct: true,
       productId: "site",
       widen: false,
     });
@@ -322,9 +324,28 @@ describe("allocate", () => {
     const full = ["one", "two", "three"].map((id) => bet({ id, state: measuring }));
     expect(allocate(ledger(full, ["app"]), DEFAULT_POLICY)).toEqual({
       kind: "propose",
+      newProduct: true,
       productId: null,
       widen: true,
     });
+  });
+
+  it("asks for new ground on a product it has, never a new one, once the portfolio is full", () => {
+    const products = ["app", "b", "c", "d", "e"];
+    const losses = [0, 1, 2].map((i) => closed(`l${i}`, "app", i * HOUR, 0));
+    expect(allocate(ledger(losses, products), DEFAULT_POLICY)).toEqual({
+      kind: "propose",
+      newProduct: false,
+      productId: "b",
+      widen: true,
+    });
+  });
+
+  it("counts only live bets against a product's room", () => {
+    const live = ["one", "two"].map((id) => bet({ id, state: measuring }));
+    expect(productHasRoom([...live, closed("done", "app", 0, 0)], "app")).toBe(true);
+    expect(productHasRoom([...live, bet({ id: "three", state: measuring })], "app")).toBe(false);
+    expect(productHasRoom([...live, bet({ id: "three", state: measuring })], "site")).toBe(true);
   });
 
   it("waits when the portfolio is full and every product carries all it can", () => {

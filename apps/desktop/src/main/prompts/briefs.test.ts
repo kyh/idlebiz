@@ -68,7 +68,7 @@ const briefFor = (
   stripeTestMode = false,
 ) =>
   autonomousBrief({
-    assignment: { kind: "propose", product: products[0] ?? null, widen: false },
+    assignment: { kind: "propose", newProduct: true, product: products[0] ?? null, widen: false },
     bets: [],
     company: co,
     employee: { ...employee, lastRunMetrics },
@@ -151,6 +151,31 @@ describe("the brief's budget", () => {
     const text = briefFor(company, [product]);
     expect(text).toContain(`One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)};`);
     expect(text).not.toContain("buys almost nothing");
+  });
+});
+
+const proposal = (widen: boolean, newProduct: boolean): string =>
+  autonomousBrief({
+    assignment: { kind: "propose", newProduct, product, widen },
+    bets: [],
+    company,
+    employee,
+    employees: [employee],
+    nameOf: () => "Priya",
+    problems: [],
+    products: [product],
+    room: [],
+    ships: [],
+    stripeTestMode: false,
+  }).description;
+
+describe("the brief that asks for the next bet", () => {
+  it("offers a new product as new ground only while the portfolio has room for one", () => {
+    expect(proposal(true, true)).toContain("create_product, then bet on it");
+    const full = proposal(true, false);
+    expect(full).not.toContain("create_product");
+    expect(full).toContain("a channel it has never tried — App (app) has room for one.");
+    expect(full).toContain("already runs 5 products, all it can: a new one needs kill_product");
   });
 });
 

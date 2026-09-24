@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { LandingPathSchema, MIN_BET_TARGET } from "@/shared/bets";
+import {
+  LandingPathSchema,
+  MAX_LIVE_BETS_PER_PRODUCT,
+  MAX_LIVE_PRODUCTS,
+  MIN_BET_TARGET,
+} from "@/shared/bets";
 import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
@@ -97,7 +102,7 @@ export const TOOL_SPECS = {
   }),
   create_product: tool({
     body: ProductDraftSchema,
-    doc: "a genuinely separate product (its own code, its own deploy), not a feature of one you have. It gets its own workspace; open a bet on it to fund work there.",
+    doc: `a genuinely separate product (its own code, its own deploy), not a feature of one you have. It gets its own workspace; open a bet on it to fund work there. The company runs at most ${MAX_LIVE_PRODUCTS} at once: past that, a new one replaces one you kill_product.`,
     example: { description: "...", name: "..." },
     leadOnly: "Only the team lead can start a product — raise it in the team room.",
     method: "POST",
@@ -125,7 +130,7 @@ export const TOOL_SPECS = {
         target: z.number().min(MIN_BET_TARGET.revenue, REVENUE_FLOOR),
       }),
     ]),
-    doc: `the team only spends against bets, so this is how work gets funded. One falsifiable hypothesis about one product: \`metric\` is \`"users"\` or \`"revenue"\`, \`target\` is how much of it the bet must bring in (at least ${MIN_BET_TARGET.users} users, a whole number, or ${formatUsd(MIN_BET_TARGET.revenue)}), \`budgetUsd\` is the most the bet may burn, \`windowHours\` is how long the number gets to answer once the work stops. A bet counts only what carries its mark (see "Marking a bet's traffic"), so several can run on one product at once. A users bet gets a landing path of its own, \`/b/<bet slug>\`; pass \`"landingPath":"/guides"\` instead when the bet IS a set of pages it creates (search pages, a docs section). Name only a new section, since a path that already gets visitors counts them too: the whole site, \`/b\` and any path another bet holds are refused.`,
+    doc: `the team only spends against bets, so this is how work gets funded. One falsifiable hypothesis about one product: \`metric\` is \`"users"\` or \`"revenue"\`, \`target\` is how much of it the bet must bring in (at least ${MIN_BET_TARGET.users} users, a whole number, or ${formatUsd(MIN_BET_TARGET.revenue)}), \`budgetUsd\` is the most the bet may burn, \`windowHours\` is how long the number gets to answer once the work stops. A bet counts only what carries its mark (see "Marking a bet's traffic"), so several can run on one product at once, up to ${MAX_LIVE_BETS_PER_PRODUCT} live. A users bet gets a landing path of its own, \`/b/<bet slug>\`; pass \`"landingPath":"/guides"\` instead when the bet IS a set of pages it creates (search pages, a docs section). Name only a new section, since a path that already gets visitors counts them too: the whole site, \`/b\` and any path another bet holds are refused.`,
     example: {
       budgetUsd: 3,
       hypothesis: "...",

@@ -762,9 +762,19 @@ describe("bets", () => {
       reading: null,
       state: { kind: "open" },
     });
-    expect(launch(product.id).id).not.toBe(bet.id);
-    launch(product.id, "/guides");
+    expect(launch(product.id, "/guides").id).not.toBe(bet.id);
     expect(() => launch(product.id, "/guides/late-fees")).toThrow("already counts visitors");
+  });
+
+  it("refuses a product a fourth live bet until a verdict frees its room", () => {
+    found();
+    const product = firstProduct();
+    const [first] = [launch(product.id), launch(product.id), launch(product.id)];
+    expect(() => launch(product.id)).toThrow(
+      "Acme already carries 3 live bets; wait for a verdict or kill one first.",
+    );
+    store.killBet(first.id, "dud", 0);
+    expect(launch(product.id).state).toEqual({ kind: "open" });
   });
 
   it.each(["/", "/b", "/b/launch-post"])(
@@ -1015,6 +1025,21 @@ describe("bets", () => {
     expect(existsSync(path.join(productsDir(co.id), side.id))).toBe(false);
     store.initStore();
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
+  });
+
+  it("refuses a sixth live product, the founder's included, until one is retired", () => {
+    found();
+    const second = store.createProduct({ description: "Two", name: "Two" });
+    for (const name of ["Three", "Four", "Five"]) {
+      store.createProduct({ description: name, name });
+    }
+    const sixth = { description: "one too many", name: "Six" };
+    expect(() => store.createProduct(sixth)).toThrow(
+      "The company already runs 5 products; kill_product one before starting another.",
+    );
+    expect(store.listProducts()).toHaveLength(5);
+    store.killProduct(second.id, "no traction", null);
+    expect(store.createProduct(sixth).name).toBe("Six");
   });
 
   it("refuses to retire a product a teammate's run is working in, but not the caller's own", () => {

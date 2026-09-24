@@ -381,7 +381,12 @@ class Scheduler {
     }
     if (allocation.kind === "propose") {
       const product = allocation.productId === null ? null : store.getProduct(allocation.productId);
-      const assignment: Assignment = { kind: "propose", product, widen: allocation.widen };
+      const assignment: Assignment = {
+        kind: "propose",
+        newProduct: allocation.newProduct,
+        product,
+        widen: allocation.widen,
+      };
       this.brief(emp, heartbeatBrief(company, emp, employees, assignment), {
         origin: "propose",
         productId: product?.id ?? null,

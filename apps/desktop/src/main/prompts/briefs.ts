@@ -1,4 +1,11 @@
-import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, betProgress, ledgerOrder } from "@/shared/bets";
+import {
+  MAX_LIVE_PRODUCTS,
+  RUN_COST_ESTIMATE_USD,
+  betGoal,
+  betMoney,
+  betProgress,
+  ledgerOrder,
+} from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { INTEGRATION_LABELS, businessTypeById, isLead } from "@/shared/domain";
 import type {
@@ -101,8 +108,8 @@ export type Assignment =
   | { kind: "work"; bet: Bet }
   /** The bet's budget is gone: the lead starts its clock or kills it. */
   | { kind: "settle"; bet: Bet }
-  /** Nothing is fundable, so the lead opens the next bet: on `product`, or on new ground when `widen`. */
-  | { kind: "propose"; product: Product | null; widen: boolean };
+  /** Nothing is fundable, so the lead opens the next bet: on `product`, or on new ground when `widen` — a new product only when `newProduct`. */
+  | { kind: "propose"; product: Product | null; widen: boolean; newProduct: boolean };
 
 const betLine = (bet: Bet): string => {
   const st = bet.state;
@@ -205,17 +212,18 @@ const assignmentBrief = (
       };
     }
     case "propose": {
-      const { product, widen } = assignment;
+      const { product, widen, newProduct } = assignment;
       const where = product
         ? `${product.name} (${product.id}) has room for one`
         : "every product already carries all the live bets it can";
+      const newGround = newProduct
+        ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
+        : `Go somewhere new: a channel it has never tried — ${where}. The company already runs ${MAX_LIVE_PRODUCTS} products, all it can: a new one needs kill_product to make room first.`;
       return {
         focus: product,
         lines: [
           `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet has budget left. Opening the next one is your job this run.`,
-          widen
-            ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
-            : `${where}.`,
+          widen ? newGround : `${where}.`,
           `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
         ],

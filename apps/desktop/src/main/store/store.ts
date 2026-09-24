@@ -59,6 +59,8 @@ import { docToTask, taskToDoc } from "@/main/store/task-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import {
   DEFAULT_POLICY,
+  MAX_LIVE_BETS_PER_PRODUCT,
+  MAX_LIVE_PRODUCTS,
   PolicyParamsSchema,
   claimsCollide,
   defaultLandingPath,
@@ -67,6 +69,8 @@ import {
   isClosed,
   judge,
   namedPathRefusal,
+  portfolioHasRoom,
+  productHasRoom,
   windowEnd,
 } from "@/shared/bets";
 import type { Bet, PolicyParams } from "@/shared/bets";
@@ -1026,8 +1030,14 @@ export const listProducts = (): Product[] => [...(current().products ?? [])];
 const patchProduct = (id: string, patch: Partial<Product>): Product =>
   patchIn(current().products, id, patch, saveProduct);
 
+/** Past the cap a new product has to replace a killed one, whoever starts it: the founder's panel too. */
 export const createProduct = (named: ProductDraft): Product => {
   const { company, products: list } = current();
+  if (!portfolioHasRoom(list.length)) {
+    throw new RefusalError(
+      `The company already runs ${MAX_LIVE_PRODUCTS} products; kill_product one before starting another.`,
+    );
+  }
   const input = { ...named, companyId: company.id };
   const id = uniqueSlug(
     input.name,
@@ -1092,9 +1102,10 @@ export const noSuchProduct = (productId: string): string =>
     .join(", ")}.`;
 
 /**
- * Open a bet. A users bet lands on its own path unless it names one; a named
- * path over the whole site or /b, or one another bet holds, is refused, since
- * it would count visitors this bet did not bring.
+ * Open a bet, on a product with room for another. A users bet lands on its own
+ * path unless it names one; a named path over the whole site or /b, or one
+ * another bet holds, is refused, since it would count visitors this bet did not
+ * bring.
  */
 export const openBet = (
   wager: {
@@ -1111,6 +1122,11 @@ export const openBet = (
   const product = active.products.find((p) => p.id === input.productId);
   if (!product) {
     throw new RefusalError(noSuchProduct(input.productId));
+  }
+  if (!productHasRoom(active.bets, product.id)) {
+    throw new RefusalError(
+      `${product.name} already carries ${MAX_LIVE_BETS_PER_PRODUCT} live bets; wait for a verdict or kill one first.`,
+    );
   }
   const refusal =
     input.metric === "users" && input.landingPath !== null

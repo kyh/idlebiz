@@ -217,15 +217,21 @@ export type Allocation =
   | { kind: "work"; betId: string }
   /** A bet spent its budget: the lead starts its clock or kills it before anything new is opened. */
   | { kind: "settle"; betId: string }
-  /** Nothing fundable: the lead opens a bet. `widen` asks for new ground, `productId` names the best proven one. */
-  | { kind: "propose"; productId: string | null; widen: boolean }
+  /** Nothing fundable: the lead opens a bet. `widen` asks for new ground, `productId` names the best proven one, `newProduct` says the portfolio can take another. */
+  | { kind: "propose"; productId: string | null; widen: boolean; newProduct: boolean }
   /** Nothing to spend on until a verdict or the founder: every product has all the live bets it can carry and the portfolio is full, or the lead's last proposal is waiting on them. */
   | { kind: "wait" };
 
 /** Past this many live products a new one has to replace a killed one. */
-const MAX_LIVE_PRODUCTS = 5;
+export const MAX_LIVE_PRODUCTS = 5;
 /** Past this many live bets a product waits for a verdict: each one is a window the lead has to watch. */
-const MAX_LIVE_BETS_PER_PRODUCT = 3;
+export const MAX_LIVE_BETS_PER_PRODUCT = 3;
+
+export const portfolioHasRoom = (liveProducts: number): boolean => liveProducts < MAX_LIVE_PRODUCTS;
+
+export const productHasRoom = (bets: readonly Bet[], productId: string): boolean =>
+  bets.filter((b) => !isClosed(b) && b.productId === productId).length < MAX_LIVE_BETS_PER_PRODUCT;
+
 /** The smallest target a bet may set: below it the founder's own clicks or a single charge win it, and every win lifts its product's score and breaks a losing streak. */
 export const MIN_BET_TARGET: Readonly<Record<BetClaim["metric"], number>> = {
   revenue: 5,
@@ -291,14 +297,19 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   }
   const recent = closed.slice(-params.plateau);
   const widen = recent.length >= params.plateau && recent.every((b) => b.state.kind === "killed");
-  const liveBets = ledger.bets.filter((b) => !isClosed(b));
   const [proven] = ledger.products
-    .filter((id) => liveBets.filter((b) => b.productId === id).length < MAX_LIVE_BETS_PER_PRODUCT)
+    .filter((id) => productHasRoom(ledger.bets, id))
     .toSorted((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
-  if (proven === undefined && ledger.products.length >= MAX_LIVE_PRODUCTS) {
+  const newProduct = portfolioHasRoom(ledger.products.length);
+  if (proven === undefined && !newProduct) {
     return { kind: "wait" };
   }
-  return { kind: "propose", productId: proven ?? null, widen: widen || proven === undefined };
+  return {
+    kind: "propose",
+    newProduct,
+    productId: proven ?? null,
+    widen: widen || proven === undefined,
+  };
 };
 
 /** History shorter than this says too little to retune on. */

@@ -158,6 +158,26 @@ describe("company tools", () => {
     expect(logged).not.toHaveBeenCalled();
   });
 
+  it("turns a product or a bet past the portfolio's caps away as an answer, not a fault", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = runAs("mae");
+    for (const name of ["Two", "Three", "Four", "Five"]) {
+      callTool(ctx, "POST /v1/create-product", { description: name, name });
+    }
+    expect(callTool(ctx, "POST /v1/create-product", { description: "x", name: "Six" })).toBe(
+      "The company already runs 5 products; kill_product one before starting another.",
+    );
+    for (const title of ["One", "Two", "Three"]) {
+      callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme", title });
+    }
+    expect(callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme" })).toBe(
+      "Acme already carries 3 live bets; wait for a verdict or kill one first.",
+    );
+    expect(store.listProducts()).toHaveLength(5);
+    expect(store.listBets()).toHaveLength(3);
+    expect(logged).not.toHaveBeenCalled();
+  });
+
   it("calls a body that does not parse the caller's error", () => {
     const { ctx } = runAs("mae");
     expect(() => callTool(ctx, "POST /v1/open-bet", { ...BET, target: -1 })).toThrow(
