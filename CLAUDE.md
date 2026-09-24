@@ -78,8 +78,8 @@ allocator and the replay.
   and a proposal offers new ground as a new product only while `portfolioHasRoom`.
   A bet that leaves open (measured, killed, judged) drops its waiting
   work, and a run still on it that fails, parks or is cut off by a restart is dropped
-  instead of queueing again; measuring keeps what waits on the founder, since that step may
-  be what moves the number. Retiring a product drops its waiting work, and a release drops
+  instead of queueing again, as is one that asks the founder once the bet has closed;
+  measuring keeps what waits on the founder, since that step may be what moves the number. Retiring a product drops its waiting work, and a release drops
   the leaver's unstarted work and any ask no bet funds. `dropped` is history, not a failure:
   the Inbox never offers it back and the lead's brief never lists it, since reviving it would
   only bill what takes no more work; the lead delegates the idea again under a live bet.
@@ -111,10 +111,10 @@ allocator and the replay.
   weights against the measured verdicts and swaps only to a strictly better scorer, so the
   incumbent never loses to a tie. A bet killed before any source reported its number
   (`moved === null`) says nothing about its hypothesis, so neither the replay nor `allocate`
-  (product yield, the plateau's run of losses) counts it. The replay scores only work picks,
-  so it never touches `plateau`, and it floors a pick's cost at one run's so a win nothing
-  paid for cannot price itself at zero. It stays on the defaults below eight measured
-  verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
+  (product yield, the plateau's run of losses) counts it. The replay scores only work picks
+  and floors a pick's cost at one run's, so a win nothing paid for cannot price itself at
+  zero; the plateau (three straight losses) only shapes a proposal, so it is a constant, not
+  policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, through one judgement: `holdFor` in

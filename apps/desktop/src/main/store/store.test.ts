@@ -14,10 +14,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KILL_GRACE_MS, windowEnd } from "@/shared/bets";
+import type { BetState } from "@/shared/bets";
 import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
 import { runPreamble } from "@/main/prompts/briefs";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
+import { betToDoc } from "./bet-codec";
 import { taskToDoc } from "./task-codec";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
@@ -32,6 +34,7 @@ const {
   companyWorkspace,
   employeeAgentDir,
   employeeRunStateFile,
+  policyFile,
   productWorkspace,
   productsDir,
   retiredDir,
@@ -541,7 +544,12 @@ describe("the digest", () => {
         ...inRun,
         createdAt: 2,
         kind: "run.end",
-        payload: { costUsd: 0.25, outcome: { kind: "done" }, summary: "done" },
+        payload: {
+          costUsd: 0.25,
+          outcome: { kind: "done" },
+          settled: "done",
+          summary: "done",
+        },
       },
       true,
     );
@@ -830,6 +838,14 @@ describe("bets", () => {
     expect(store.getBet(bet.id)).toMatchObject({ reading: 10, spentUsd: 1.5 });
   });
 
+  it("keeps a tuned policy's explore, but not a plateau an older build tuned with it", () => {
+    const co = found();
+    mkdirSync(path.dirname(policyFile(co.id)), { recursive: true });
+    writeFileSync(policyFile(co.id), JSON.stringify({ explore: 0.5, plateau: 2 }));
+    store.initStore();
+    expect(store.allocationPolicy()).toEqual({ explore: 0.5 });
+  });
+
   it("kills a closed window only on a reading taken after it, and stamps a quiet bet once", () => {
     found();
     const bet = launch(firstProduct().id);
@@ -946,6 +962,31 @@ describe("bets", () => {
     expect(store.getTask(parking)).toBeNull();
     expect(stateOf(failing)).toEqual({ kind: "dropped", reason: "bet closed" });
     expect(stateOf(parking)).toEqual({ kind: "dropped", reason: "bet is measuring" });
+  });
+
+  it("drops a run's ask once its bet has closed, but keeps one on a measuring bet", () => {
+    found();
+    const product = firstProduct();
+    const killed = launch(product.id);
+    const measured = launch(product.id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const onKilled = running(killed.id, priya.id);
+    const onMeasured = running(measured.id, priya.id);
+    store.killBet(killed.id, "dud", 0);
+    store.measureBet(measured.id, 0);
+    const ask = (taskId: string) =>
+      store.settleTask(taskId, "run-1", {
+        ask: { question: "Ship it?", type: "question" },
+        kind: "blocked",
+        summary: null,
+      });
+
+    expect(ask(onKilled)).toEqual({ kind: "dropped" });
+    expect(ask(onMeasured)?.kind).toBe("blocked");
+    expect(store.getTask(onKilled)).toBeNull();
+    expect(stateOf(onKilled)).toEqual({ kind: "dropped", reason: "bet closed" });
+    expect(store.resolveBlockedWithAnswer(onKilled, "yes")).toBeNull();
+    expect(store.getTask(onMeasured)?.state.kind).toBe("blocked");
   });
 
   it("puts a failed or parked run's task back on the queue while its bet is open", () => {
@@ -1429,6 +1470,32 @@ const seedRetiredRoutine = (companyId: string): void => {
   );
 };
 
+/** Rewrite a product's package with the absolute workspace path format 2 and older kept. */
+const keepWorkspacePath = (companyId: string, productId: string, workspaceDir: string): string => {
+  const file = path.join(productsDir(companyId), productId, "PRODUCT.md");
+  const doc = parseDoc(readFileSync(file, "utf-8"));
+  const { workspace: _, ...metadata } = doc.metadata;
+  writeFileSync(file, serializeDoc({ ...doc, metadata: { ...metadata, workspaceDir } }));
+  return file;
+};
+
+/** Take the origin off an open task's file, as format 3 and older wrote it. */
+const forgetOrigin = (companyId: string, taskId: string): void => {
+  const file = path.join(tasksDir(companyId), taskId, "TASK.md");
+  const doc = parseDoc(readFileSync(file, "utf-8"));
+  const { origin: _, ...metadata } = doc.metadata;
+  writeFileSync(file, serializeDoc({ ...doc, metadata }));
+};
+
+/** Rewrite a bet's state on disk alone, as a build that left its work behind did. */
+const writeBetState = (companyId: string, betId: string, state: BetState): void => {
+  const bet = store.getBet(betId);
+  if (!bet) {
+    throw new Error(`no bet ${betId}`);
+  }
+  writeFileSync(betFile(companyId, betId), serializeDoc(betToDoc({ ...bet, state })));
+};
+
 describe("the save format", () => {
   it("stamps what it writes", () => {
     expect(stampOf(found().id)).toBe(6);
@@ -1492,15 +1559,9 @@ describe("the save format", () => {
     }
     const gadget = store.createProduct({ description: "x", name: "Gadget" });
     const elsewhere = path.join(tmpdir(), "moved-away", co.id);
-    const keepPath = (productId: string, workspaceDir: string): string => {
-      const file = path.join(productsDir(co.id), productId, "PRODUCT.md");
-      const doc = parseDoc(readFileSync(file, "utf-8"));
-      const { workspace: _, ...metadata } = doc.metadata;
-      writeFileSync(file, serializeDoc({ ...doc, metadata: { ...metadata, workspaceDir } }));
-      return file;
-    };
-    keepPath(first.id, path.join(elsewhere, "workspace"));
-    const gadgetFile = keepPath(
+    keepWorkspacePath(co.id, first.id, path.join(elsewhere, "workspace"));
+    const gadgetFile = keepWorkspacePath(
+      co.id,
       gadget.id,
       path.join(elsewhere, "products", gadget.id, "workspace"),
     );
@@ -1590,6 +1651,84 @@ describe("the save format", () => {
         .map((t) => t.state.reason)
         .toSorted(),
     ).toEqual(reasons.toSorted());
+  });
+
+  it("moves the code of a first product a format 2 save retired into its archive", () => {
+    const co = found();
+    const first = firstProduct();
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    writeFileSync(path.join(companyWorkspace(co.id), "index.html"), "the old app");
+    const elsewhere = path.join(tmpdir(), "moved-away", co.id);
+    keepWorkspacePath(co.id, first.id, path.join(elsewhere, "workspace"));
+    keepWorkspacePath(co.id, gadget.id, path.join(elsewhere, "products", gadget.id, "workspace"));
+    mkdirSync(retiredDir(co.id), { recursive: true });
+    renameSync(path.join(productsDir(co.id), first.id), path.join(retiredDir(co.id), first.id));
+    restamp(co.id, 2);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(6);
+
+    store.initStore();
+    const archived = path.join(retiredDir(co.id), first.id, "workspace", "index.html");
+    expect(readFileSync(archived, "utf-8")).toBe("the old app");
+    expect(existsSync(companyWorkspace(co.id))).toBe(false);
+    expect(store.listProducts()).toMatchObject([
+      { id: gadget.id, workspaceDir: productWorkspace(co.id, gadget.id) },
+    ]);
+  });
+
+  it("names a format 3 lead's proposal as one, and its answer stays one", () => {
+    const co = foundTeam();
+    const proposals = ["Open the next bet for Acme", "Continue: Open the next bet for Acme"].map(
+      (title) => store.createTask({ origin: "propose", title }).id,
+    );
+    const ping = store.createTask({ origin: "founder", title: "Answer the founder" }).id;
+    for (const id of [...proposals, ping]) {
+      block(id, "mae");
+      forgetOrigin(co.id, id);
+    }
+    restamp(co.id, 3);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(6);
+
+    store.initStore();
+    expect(proposals.map((id) => store.getTask(id)?.origin)).toEqual(["propose", "propose"]);
+    expect(store.getTask(ping)?.origin).toBe("founder");
+    const [proposal = ""] = proposals;
+    expect(store.resolveBlockedWithAnswer(proposal, "go")?.origin).toBe("propose");
+  });
+
+  it("drops the waiting work a format 5 save left on a stopped bet, but not a measuring bet's asks", () => {
+    const co = found();
+    const product = firstProduct();
+    const measured = launch(product.id);
+    const killed = launch(product.id);
+    const measuredWork = workOn(measured.id);
+    const killedWork = workOn(killed.id);
+    writeBetState(co.id, measured.id, { kind: "measuring", until: windowEnd(measured, 0) });
+    writeBetState(co.id, killed.id, { closedAt: 0, kind: "killed", moved: null, reason: "dud" });
+    restamp(co.id, 5);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(6);
+
+    store.initStore();
+    expect(measuredWork()).toEqual(["dropped", "dropped", "dropped", "blocked"]);
+    expect(killedWork()).toEqual(["dropped", "dropped", "dropped", "dropped"]);
+    expect(store.listQueuedTasks()).toEqual([]);
+    expect(
+      store
+        .listShippedTasks()
+        .filter((t) => t.title === "Queued" || t.title === "Asked")
+        .map((t) => [t.betId, t.title, t.state]),
+    ).toEqual(
+      expect.arrayContaining([
+        [measured.id, "Queued", { kind: "dropped", reason: "bet is measuring" }],
+        [killed.id, "Queued", { kind: "dropped", reason: "bet closed" }],
+        [killed.id, "Asked", { kind: "dropped", reason: "bet closed" }],
+      ]),
+    );
   });
 
   it("leaves alone a package written in a schema it does not read", () => {

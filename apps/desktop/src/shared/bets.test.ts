@@ -219,7 +219,7 @@ describe("allocate", () => {
         bet({ id: "app-next", productId: "app" }),
         bet({ id: "site-next", productId: "site" }),
       ]),
-      { explore: 0, plateau: 3 },
+      { explore: 0 },
     );
     expect(pick).toEqual({ betId: "app-next", kind: "work" });
   });
@@ -306,13 +306,13 @@ describe("allocate", () => {
         bet({ id: "app-next", productId: "app" }),
         bet({ id: "site-next", productId: "site" }),
       ]),
-      { explore: 0, plateau: 3 },
+      { explore: 0 },
     );
     expect(pick).toEqual({ betId: "app-next", kind: "work" });
   });
 
   it("proposes on the best proven product otherwise", () => {
-    expect(allocate(ledger([closed("a", "site", 0, 100)]), { explore: 0, plateau: 3 })).toEqual({
+    expect(allocate(ledger([closed("a", "site", 0, 100)]), { explore: 0 })).toEqual({
       kind: "propose",
       newProduct: true,
       productId: "site",
@@ -384,29 +384,20 @@ describe("dream", () => {
     }),
   );
 
-  it("keeps the incumbent plateau", () => {
-    expect(dream({ explore: 1, plateau: 5 }, [...early, ...late])).toEqual({
-      explore: 2,
-      plateau: 5,
-    });
+  it("swaps to an explore weight that replays better", () => {
+    expect(dream(DEFAULT_POLICY, [...early, ...late])).toEqual({ explore: 2 });
   });
 
   it("counts no bet a source never read toward the history it needs", () => {
     const unreadApp = late.map((b) =>
       b.productId === "app" ? unread(b.id, "app", b.createdAt) : b,
     );
-    expect(dream({ explore: 1, plateau: 5 }, [...early, ...unreadApp])).toEqual({
-      explore: 1,
-      plateau: 5,
-    });
+    expect(dream(DEFAULT_POLICY, [...early, ...unreadApp])).toEqual({ explore: 1 });
   });
 
   it("leaves a bet no source ever read out of the replay", () => {
-    expect(
-      dream({ explore: 1, plateau: 5 }, [unread("u", "site", 10 * HOUR - 1), ...early, ...late]),
-    ).toEqual({
+    expect(dream(DEFAULT_POLICY, [unread("u", "site", 10 * HOUR - 1), ...early, ...late])).toEqual({
       explore: 2,
-      plateau: 5,
     });
   });
 

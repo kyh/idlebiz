@@ -714,6 +714,42 @@ describe("a bet that stops taking work mid-run", () => {
     expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dropped" });
   });
 
+  it("drops the task of a run that asks the founder once its bet has closed", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver).tick();
+    store.killBet(bet.id, "dud", Date.now());
+    const heard: ActivityEvent[] = [];
+    const listen = (e: ActivityEvent) => heard.push(e);
+    activityEvents.on("activity", listen);
+    try {
+      running.get("priya")?.({
+        ...done(),
+        outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
+      });
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.listShippedTasks()).toMatchObject([
+      { id: task.id, state: { kind: "dropped", reason: "bet closed" } },
+    ]);
+    expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dropped" });
+    expect(heard.find((e) => e.kind === "run.end")).toMatchObject({
+      payload: { outcome: { kind: "blocked" }, settled: "dropped" },
+    });
+  });
+
   it("names none of the work a killed bet dropped among the failures in the lead's next brief", () => {
     found();
     const bet = openBet(5);

@@ -144,20 +144,21 @@ const book = (task: Task, costUsd: number): void => {
 
 /**
  * Usage limits and the app quitting park the task without consuming a retry. A task whose
- * bet stopped taking work while it ran is neither retried nor parked: it is dropped.
+ * bet stopped taking work while it ran is neither retried nor parked: it is dropped, and so
+ * is its ask to the founder once that bet has closed.
  */
-const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void => {
+const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskStatus => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
   const o = r.outcome;
   let status: TaskStatus;
   switch (o.kind) {
     case "blocked": {
-      status = "blocked";
-      store.settleTask(task.id, runId, {
+      const settled = store.settleTask(task.id, runId, {
         ask: o.ask,
         kind: "blocked",
         summary: r.summary || null,
       });
+      status = settled?.kind === "dropped" ? "dropped" : "blocked";
       break;
     }
     case "done": {
@@ -219,6 +220,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
   store.noteRunEnd(emp.id, { instructionsDigest: r.instructionsDigest, sessionId: r.session });
 
   publishActivity({ ...at, kind: "status", message: status });
+  return status;
 };
 
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
@@ -664,7 +666,7 @@ class Scheduler {
     // shipped work failed. Nothing awaits this promise, so each step past here reports its
     // fault instead of rejecting, and the tick guards each start.
     guarded(`book run ${runId}`, () => book(task, result.usage.costUsd));
-    guarded(`settle run ${runId}`, () => finish(runId, task, employee, result));
+    const status = guarded(`settle run ${runId}`, () => finish(runId, task, employee, result));
     store.setEmployeeStatus(employee.id, "idle");
     this.runs.delete(runId);
     // sent even when the settle threw before its status: the office and HUD free the employee on it
@@ -675,6 +677,7 @@ class Scheduler {
         payload: {
           costUsd: result.usage.costUsd,
           outcome: result.outcome,
+          settled: status,
           summary: result.summary,
         },
         runId,

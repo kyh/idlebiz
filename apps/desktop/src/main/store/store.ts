@@ -1214,8 +1214,9 @@ export const runsInFlight = (): ReadonlyMap<string, number> => {
  * Drop the matching work that is waiting into history: no failure, and nothing
  * the founder can revive, since it would only bill a bet or product that takes
  * no more work. A running task finishes its run, and is dropped if that run
- * fails, parks (`failTask`, `parkTask`) or never settles before the app
- * restarts (`recoverInterrupted`). A dead letter stays one: its run failed on its own.
+ * fails, parks (`failTask`, `parkTask`), asks the founder once its bet has
+ * closed (`settleTask`) or never settles before the app restarts
+ * (`recoverInterrupted`). A dead letter stays one: its run failed on its own.
  */
 const dropWork = (match: (t: Task) => boolean, reason: string, now: number): void => {
   const { tasks } = current();
@@ -1542,12 +1543,46 @@ export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
   return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
 };
 
-/** The run settled: the task is done, or waits on the founder. Only the owning run may. */
-export const settleTask = (taskId: string, runId: string, state: Settled): void => {
-  if (!heldBy(getTask(taskId), runId)) {
-    return;
+interface Dropped {
+  kind: "dropped";
+}
+
+/** A run whose bet stopped taking work while it ran drops its task rather than leave it waiting; null while the bet is open. */
+const droppedWithBet = (t: Task, attempts: number): Dropped | null => {
+  const reason = stoppedBetReason(t.betId === null ? null : getBet(t.betId));
+  if (reason === null) {
+    return null;
+  }
+  shelveClosed(
+    recordTask(t.id, { attempts, ...entering({ kind: "dropped", reason }, Date.now()) }),
+  );
+  return { kind: "dropped" };
+};
+
+/**
+ * The run settled: the task is done, or waits on the founder. Only the owning run may; null
+ * when it no longer holds the lock. An ask on a closed bet is dropped: an answer would only
+ * bill a bet that takes no more work. One on a measuring bet stays, since that step may be
+ * what moves the number.
+ */
+export const settleTask = (
+  taskId: string,
+  runId: string,
+  state: Settled,
+): Settled | Dropped | null => {
+  const t = heldBy(getTask(taskId), runId);
+  if (!t) {
+    return null;
+  }
+  const closedBet =
+    state.kind === "blocked" &&
+    stoppedBetReason(t.betId === null ? null : getBet(t.betId)) === BET_CLOSED;
+  const dropped = closedBet ? droppedWithBet(t, t.attempts) : null;
+  if (dropped) {
+    return dropped;
   }
   close(taskId, state);
+  return state;
 };
 
 const failed = (t: Task, lastError: string) => {
@@ -1562,22 +1597,6 @@ const failed = (t: Task, lastError: string) => {
           state: { kind: "queued", lastError, nextAttemptAt: verdict.retryAt },
         };
   return { task, verdict };
-};
-
-interface Dropped {
-  kind: "dropped";
-}
-
-/** A run whose bet stopped taking work while it ran drops its task instead of requeueing it; null while the bet is open. */
-const droppedWithBet = (t: Task, attempts: number): Dropped | null => {
-  const reason = stoppedBetReason(t.betId === null ? null : getBet(t.betId));
-  if (reason === null) {
-    return null;
-  }
-  shelveClosed(
-    recordTask(t.id, { attempts, ...entering({ kind: "dropped", reason }, Date.now()) }),
-  );
-  return { kind: "dropped" };
 };
 
 /** A run failed: the task takes its next verdict. Only the owning run may; null when it no longer holds the lock. */
@@ -1963,6 +1982,31 @@ const adoptProductWorkspaces = (active: ActiveCompany): void => {
   });
 };
 
+/**
+ * Format 2 and older retired the first product without its code, which stayed in workspace/
+ * as the company's working directory. The retired package's kept path says whose it was: the
+ * one outside a package of its own. Runs after adoptProductWorkspaces: until then every live
+ * product reads as the one coding in workspace/.
+ */
+const adoptRetiredFirstWorkspace = (active: ActiveCompany): void => {
+  const { id } = active.company;
+  const code = companyWorkspace(id);
+  if (!existsSync(code) || active.products.some((p) => p.workspaceDir === code)) {
+    return;
+  }
+  const owner = safeReaddir(retiredDir(id)).find((slug) => {
+    const legacy = optStr(
+      parseDoc(readTextIfPresent(path.join(retiredDir(id), slug, "PRODUCT.md")) ?? "").metadata,
+      "workspaceDir",
+    );
+    return legacy !== null && !legacy.endsWith(path.join("products", slug, "workspace"));
+  });
+  const archive = owner === undefined ? null : path.join(retiredDir(id), owner, "workspace");
+  if (archive !== null && !existsSync(archive)) {
+    moveDir(code, archive);
+  }
+};
+
 /** The reasons format 5 and older dead-lettered the work the steering loop dropped with. */
 const DROP_REASONS: ReadonlySet<string> = new Set([
   BET_MEASURING,
@@ -1980,6 +2024,40 @@ const adoptDroppedWork = (active: ActiveCompany): void => {
     const reason = t.state.lastError;
     if (DROP_REASONS.has(reason) || reason.endsWith(RELEASED)) {
       shelveClosed(recordIn(active.tasks, t.id, { state: { kind: "dropped", reason } }, saveTask));
+    }
+  }
+};
+
+/**
+ * Format 5 and older could leave a measured or closed bet's waiting work queued, to run and
+ * bill it: drop it as the bet's change does. A measuring bet keeps what waits on the founder.
+ */
+const adoptStoppedBetWork = (active: ActiveCompany): void => {
+  const now = Date.now();
+  for (const bet of active.bets) {
+    const reason = stoppedBetReason(bet);
+    if (reason !== null) {
+      dropWork(
+        (t) => t.betId === bet.id && (reason === BET_CLOSED || t.state.kind !== "blocked"),
+        reason,
+        now,
+      );
+    }
+  }
+};
+
+/** An older save's lead proposal, by its fixed title behind any "Continue: " an answer added. */
+const PROPOSAL_TITLE = /^(?:Continue: )*Open the next bet for /u;
+
+/**
+ * Format 3 and older kept no origin, so the codec reads the lead's bet-less proposal as the
+ * founder's: it would hold no new bets while it waits, and its answer could delegate work no
+ * bet funds. Its title tells it apart.
+ */
+const adoptProposalOrigins = (active: ActiveCompany): void => {
+  for (const t of active.tasks) {
+    if (t.betId === null && t.origin !== "propose" && PROPOSAL_TITLE.test(t.title)) {
+      recordIn(active.tasks, t.id, { origin: "propose" }, saveTask);
     }
   }
 };
@@ -2054,7 +2132,11 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 3) {
     adoptProductWorkspaces(active);
+    adoptRetiredFirstWorkspace(active);
     adoptOrphanedTasks(active);
+  }
+  if (from < 4) {
+    adoptProposalOrigins(active);
   }
   if (from < 5) {
     adoptSpeakers(active.company.id);
@@ -2062,6 +2144,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 6) {
     adoptDroppedWork(active);
+    adoptStoppedBetWork(active);
   }
   saveCompany(active.company);
 };

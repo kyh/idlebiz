@@ -59,6 +59,11 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
       /** What the run cost, as its CLI billed it: the number the budget moved by. Rows from before it was recorded have none. */
       costUsd: z.number().optional(),
       outcome: RunOutcomeSchema,
+      /**
+       * Where the settle left the task, which the outcome alone does not say: an ask on a
+       * closed bet is dropped. Null when the settle threw.
+       */
+      settled: z.enum(TASK_STATUSES).nullable(),
       summary: z.string(),
     }),
   }),

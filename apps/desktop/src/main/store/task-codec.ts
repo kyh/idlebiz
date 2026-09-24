@@ -168,7 +168,7 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
   }
 };
 
-/** An origin the save never wrote, or one this build does not know, reads as the bet's work or the founder's, never a proposal: at worst the lead is asked once more. */
+/** An origin the file lacks, or one this build does not know, reads as the bet's work or the founder's, never a proposal; an older save's proposals are named at adoption (`adoptProposalOrigins`). */
 const parseTaskOrigin = (raw: string | null, betId: string | null): TaskOrigin =>
   TASK_ORIGINS.find((o) => o === raw) ?? (betId === null ? "founder" : "work");
 

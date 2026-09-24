@@ -206,12 +206,16 @@ const yieldOf = (bet: MeasuredBet): number =>
 export const PolicyParamsSchema = z.object({
   /** Weight of the bonus for products with little history. */
   explore: z.number(),
-  /** This many straight losses reads as a plateau. */
-  plateau: z.number().int().positive(),
 });
 export type PolicyParams = z.infer<typeof PolicyParamsSchema>;
 
-export const DEFAULT_POLICY: PolicyParams = { explore: 1, plateau: 3 };
+export const DEFAULT_POLICY: PolicyParams = { explore: 1 };
+
+/**
+ * This many straight losses reads as a plateau. A constant, not policy: it only shapes a
+ * proposal, and the replay scores only work picks, so nothing could tune it.
+ */
+const PLATEAU = 3;
 
 export type Allocation =
   | { kind: "work"; betId: string }
@@ -295,8 +299,8 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   if (ledger.proposalPending) {
     return { kind: "wait" };
   }
-  const recent = closed.slice(-params.plateau);
-  const widen = recent.length >= params.plateau && recent.every((b) => b.state.kind === "killed");
+  const recent = closed.slice(-PLATEAU);
+  const widen = recent.length >= PLATEAU && recent.every((b) => b.state.kind === "killed");
   const [proven] = ledger.products
     .filter((id) => productHasRoom(ledger.bets, id))
     .toSorted((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
@@ -317,7 +321,6 @@ const MIN_BETS_TO_DREAM = 8;
 /** The replay is quadratic in bets and runs on the main process; the latest verdicts are also the ones the policy should fit. */
 const MAX_BETS_TO_DREAM = 100;
 
-/** Replay only scores work picks, which plateau never touches, so dream tunes explore alone. */
 const EXPLORE_CANDIDATES: readonly number[] = [0, 0.5, 1, 2];
 
 /**
@@ -372,7 +375,7 @@ export const dream = (incumbent: PolicyParams, bets: readonly Bet[]): PolicyPara
   let best = incumbent;
   let bestScore = replayScore(incumbent, closed);
   for (const explore of EXPLORE_CANDIDATES) {
-    const candidate = { ...incumbent, explore };
+    const candidate = { explore };
     const candidateScore = replayScore(candidate, closed);
     if (candidateScore > bestScore) {
       best = candidate;

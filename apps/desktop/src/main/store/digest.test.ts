@@ -19,7 +19,7 @@ describe("folding the digest", () => {
       ...inRun,
       createdAt: 1,
       kind: "run.end",
-      payload: { costUsd: 0.25, outcome: done, summary: "" },
+      payload: { costUsd: 0.25, outcome: done, settled: "done", summary: "" },
     });
     const twice =
       once &&
@@ -27,7 +27,7 @@ describe("folding the digest", () => {
         ...inRun,
         createdAt: 2,
         kind: "run.end",
-        payload: { outcome: done, summary: "" },
+        payload: { outcome: done, settled: "done", summary: "" },
       });
     expect(twice).toMatchObject({ runs: 2, spentUsd: 0.25 });
   });

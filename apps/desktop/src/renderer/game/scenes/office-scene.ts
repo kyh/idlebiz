@@ -444,7 +444,9 @@ export class OfficeScene extends Scene {
         }
         // sent by the run itself, so it frees them even when the settle threw
         case "run.end": {
-          const state = e.payload.outcome.kind === "blocked" ? "blocked" : "idle";
+          const { outcome, settled } = e.payload;
+          const asks = settled === null ? outcome.kind === "blocked" : settled === "blocked";
+          const state = asks ? "blocked" : "idle";
           this.npcEvents.run((npcs) => npcs.setState(e.employeeId, state));
           return;
         }

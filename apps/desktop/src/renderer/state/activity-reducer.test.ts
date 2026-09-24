@@ -118,7 +118,7 @@ describe("reduceActivity", () => {
       ...stamp,
       ...inRun,
       kind: "run.end",
-      payload: { outcome: { kind: "done" }, summary: "" },
+      payload: { outcome: { kind: "done" }, settled: "done", summary: "" },
     };
     expect(reduceActivity(busy, ended).patch.employees?.map((e) => e.status)).toEqual(["idle"]);
   });

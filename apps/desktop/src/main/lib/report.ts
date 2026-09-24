@@ -7,11 +7,12 @@ export const report = (where: string, error: unknown): void => {
   console.error(`[${where}]`, error);
 };
 
-/** Run a step whose fault must not stop the work after it: the fault is reported, and the caller goes on. */
-export const guarded = (where: string, step: () => void): void => {
+/** Run a step whose fault must not stop the work after it: the fault is reported, and the caller goes on with null. */
+export const guarded = <T>(where: string, step: () => T): T | null => {
   try {
-    step();
+    return step();
   } catch (error) {
     report(where, error);
+    return null;
   }
 };
