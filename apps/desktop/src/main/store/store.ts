@@ -35,27 +35,18 @@ import {
   chatFile,
   legacyTeamsDir,
 } from "@/main/paths";
-import {
-  PACKAGE_SCHEMA,
-  parseDoc,
-  serializeDoc,
-  slugify,
-  reqStr,
-  optStr,
-  reqNum,
-  optNum,
-  nullableNum,
-  optBool,
-} from "@/main/store/frontmatter";
+import { parseDoc, serializeDoc, slugify, optStr } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { continuationBrief } from "@/main/prompts/briefs";
-import { standingInstructions } from "@/main/prompts/instructions";
 import { RETIRED_ROUTINES, defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
 import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
+import { SAVE_FORMAT, companyToDoc, docToCompany, formatOf } from "@/main/store/company-codec";
+import { docToEmployee, employeeBody, employeeToDoc } from "@/main/store/employee-codec";
+import { docToRoutine, routineToDoc } from "@/main/store/routine-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
 import {
   DEFAULT_POLICY,
@@ -103,10 +94,7 @@ import type {
   TeamMessage,
   VercelBinding,
 } from "@/shared/domain";
-import { isRunnerId } from "@repo/agent-driver/runner";
 import {
-  BUSINESS_TYPES,
-  DEFAULT_FOUNDER_SEED,
   DEFAULT_MAX_AGENTS,
   LastShipSchema,
   RunMetricsSchema,
@@ -240,131 +228,7 @@ const recordIn = <T extends Owned>(
   return next;
 };
 
-// ---- serialization ----------------------------------------------------------
-/**
- * What this build writes. A save stamped higher was written by a newer build:
- * writers rebuild every file from what they understand, so opening it would
- * quietly drop whatever the newer build added. It is refused instead. A save
- * stamped lower is adopted once at boot, then carries this stamp.
- */
-const SAVE_FORMAT = 6;
-
-const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
-
-const companyToDoc = (co: Company): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = {
-    autopilot: co.autopilot,
-    businessType: co.businessType,
-    founderName: co.founderName,
-    founderSpriteSeed: co.founderSpriteSeed,
-    maxAgents: co.maxAgents,
-    ships: co.ships,
-  };
-  if (co.leaderId !== null) {
-    metadata.leaderId = co.leaderId;
-  }
-  // real metrics: absent keys mean "no source has ever reported"
-  if (co.revenueUsd !== null) {
-    metadata.revenueUsd = co.revenueUsd;
-  }
-  if (co.users !== null) {
-    metadata.users = co.users;
-  }
-  metadata.budgetMode = co.budget.mode;
-  if (co.budget.mode === "capped") {
-    metadata.budgetCapUsd = co.budget.capUsd;
-  }
-  metadata.spentUsd = co.spentUsd;
-  metadata.createdAt = co.createdAt;
-  metadata.format = SAVE_FORMAT;
-  return {
-    body: `# ${co.name}\n\n${co.mission}\n`,
-    fields: {
-      description: co.mission,
-      kind: "company",
-      name: co.name,
-      schema: PACKAGE_SCHEMA,
-      slug: co.id,
-    },
-    metadata,
-  };
-};
-
-const parseBusinessType = (raw: string | null): BusinessTypeId => {
-  const found = BUSINESS_TYPES.find((b) => b.id === raw);
-  return found ? found.id : "custom";
-};
-
-const parseBudget = (m: FrontmatterDoc["metadata"]): Budget => {
-  if (optStr(m, "budgetMode") === "capped") {
-    return { capUsd: Math.max(0, optNum(m, "budgetCapUsd", 0)), mode: "capped" };
-  }
-  return { mode: "infinite" };
-};
-
-const docToCompany = (doc: FrontmatterDoc): Company => {
-  if (formatOf(doc) > SAVE_FORMAT) {
-    throw new Error(
-      `this save was written by a newer IdleBiz (format ${formatOf(doc)}, this build reads ${SAVE_FORMAT}) — update the app to open it`,
-    );
-  }
-  const f = doc.fields;
-  const m = doc.metadata;
-  const id = reqStr(f, "slug");
-  return {
-    autopilot: optBool(m, "autopilot", true),
-    budget: parseBudget(m),
-    businessType: parseBusinessType(optStr(m, "businessType")),
-    createdAt: reqNum(m, "createdAt"),
-    founderName: optStr(m, "founderName") ?? "Founder",
-    founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? DEFAULT_FOUNDER_SEED,
-    id,
-    leaderId: optStr(m, "leaderId"),
-    maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
-    mission: optStr(f, "description") ?? "",
-    name: reqStr(f, "name"),
-    revenueUsd: nullableNum(m, "revenueUsd"),
-    ships: optNum(m, "ships", 0),
-    spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
-    users: nullableNum(m, "users"),
-    workspaceDir: companySharedDir(id),
-  };
-};
-
-const parseRunner = (v: string | null): AgentRunner => (v && isRunnerId(v) ? v : "codex");
-
-const employeeBody = (e: Employee, co: Company, products: readonly Product[]): string =>
-  standingInstructions({
-    company: co,
-    employee: e,
-    lead: co.leaderId === e.id,
-    memoryDir: employeeMemoryDir(co.id, e.id),
-    products,
-  });
-
-const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = {
-    createdAt: e.createdAt,
-    deskIndex: e.deskIndex,
-    persona: e.persona,
-    role: e.role,
-    runner: e.runner,
-    spriteSeed: e.spriteSeed,
-    title: e.title,
-  };
-  return {
-    body: employeeBody(e, co, products),
-    fields: {
-      description: e.title || e.role,
-      kind: "agent",
-      name: e.name,
-      schema: PACKAGE_SCHEMA,
-      slug: e.id,
-    },
-    metadata,
-  };
-};
-
+// ---- run state --------------------------------------------------------------
 /** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
 const RunStateSchema = z.object({
   // defaulted like lastShip; a file without it reads as never told, so the next run sends them once
@@ -388,54 +252,6 @@ const saveRunState = (e: Employee): void => {
 const withRunState = (e: Employee): Employee => ({
   ...e,
   ...readJsonFile(employeeRunStateFile(e.companyId, e.id), RunStateSchema),
-});
-
-const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
-  const f = doc.fields;
-  const m = doc.metadata;
-  return {
-    companyId,
-    createdAt: optNum(m, "createdAt", Date.now()),
-    deskIndex: optNum(m, "deskIndex", 0),
-    id: reqStr(f, "slug"),
-    instructionsDigest: null,
-    lastRunMetrics: null,
-    lastShip: null,
-    name: reqStr(f, "name"),
-    persona: optStr(m, "persona") ?? "",
-    role: optStr(m, "role") ?? "general",
-    runner: parseRunner(optStr(m, "runner")),
-    // saves from before run-state.json kept the session here; adoptOlderSave moves it into run-state.json
-    sessionId: optStr(m, "sessionId"),
-    spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
-    status: "idle",
-    title: optStr(m, "title") ?? optStr(f, "description") ?? "",
-  };
-};
-
-const routineToDoc = (r: Routine): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = { intervalHours: r.intervalHours };
-  if (r.role !== null) {
-    metadata.role = r.role;
-  }
-  if (r.lastRunAt !== null) {
-    metadata.lastRunAt = r.lastRunAt;
-  }
-  return {
-    body: `${r.instruction}\n`,
-    fields: { name: r.name, schema: PACKAGE_SCHEMA, slug: r.id },
-    metadata,
-  };
-};
-
-const docToRoutine = (doc: FrontmatterDoc, companyId: string): Routine => ({
-  companyId,
-  id: reqStr(doc.fields, "slug"),
-  instruction: doc.body.trim(),
-  intervalHours: optNum(doc.metadata, "intervalHours", 24),
-  lastRunAt: nullableNum(doc.metadata, "lastRunAt"),
-  name: reqStr(doc.fields, "name"),
-  role: optStr(doc.metadata, "role"),
 });
 
 // ---- persistence ------------------------------------------------------------

@@ -258,8 +258,9 @@ rather than crashing boot.
 
 ## Map
 
-- `apps/desktop/src/main` — the control plane. `store/store.ts` (markdown packages ⇄ domain
-  objects), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
+- `apps/desktop/src/main` — the control plane. `store/store.ts` (the one company in memory,
+  every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
+  domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
