@@ -17,8 +17,9 @@
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
     "release:publish": "bash scripts/publish-release.sh",
     "with-env": "dotenv -e .env --",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",
+    "e2e": "playwright test",
     "clean": "rm -rf .cache .output"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@agentclientprotocol/sdk": "catalog:",
     "@base-ui/react": "1.8.0",
+    "@playwright/test": "^1.63.0",
     "@repo/agent-driver": "workspace:*",
     "@repo/px-kit": "workspace:*",
     "@repo/stripe-connect-protocol": "workspace:*",

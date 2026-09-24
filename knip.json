@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     "apps/desktop": {
-      "project": ["src/**", "scripts/**"],
+      "project": ["src/**", "scripts/**", "e2e/**"],
       "ignoreDependencies": [
         "@agentclientprotocol/claude-agent-acp",
         "@agentclientprotocol/codex-acp"

@@ -285,8 +285,11 @@ allocator and the replay.
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 
-Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
+Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip` · `pnpm e2e`
 `pnpm knip` checks unused files, exports and dependencies; it is not part of `verify`.
+`pnpm e2e` builds the desktop app and drives it with Playwright: macOS only, every test that
+founds a company (office, #team, key entry, sealing) skips without a signed-in CLI, never
+spends, not part of `verify` or CI (see `AGENTS.md`).
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
 and real loopback requests; no Electron or Phaser)

@@ -18,6 +18,7 @@ pnpm install
 pnpm verify        # static gate: typecheck · lint · format · check:office · test · build
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:desktop   # Electron window + CDP on :9222
+pnpm e2e           # builds the desktop app, then drives it (macOS, local only)
 ```
 
 No database, no Docker, no server to provision — `pnpm install` really is the whole setup.
@@ -68,6 +69,28 @@ pnpm verify
 - `no-unsafe-*` off under `apps/desktop/scripts/**`: untyped .mjs/.cjs scripts reading JSON and pixel data.
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
+
+End-to-end suite — `pnpm e2e` builds the desktop app, then drives the build with
+Playwright's Electron support (`apps/desktop/e2e/`); `pnpm -F @repo/desktop e2e` reruns it on
+the last build. It covers the title screen, the builder and the catalog, a founded company's
+office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
+shown as set and, for Stripe, removable; a key refused is never saved), a key pasted into
+secrets.json being sealed, and a held command denied from #team. It is local only, not part
+of `pnpm verify` or CI:
+
+- It needs a macOS desktop session: each launch shows the window and takes focus.
+- Every test that founds a company (the office, the #team approval, Vercel and Stripe key
+  entry, sealing) needs a signed-in `claude` or `codex` CLI and skips without one; only the
+  title screen and the builder and catalog run without it. The refusal tests send made-up
+  keys to the real Vercel and Stripe APIs, so they need the network; where a key is taken,
+  main's `fetch` answers both APIs from canned JSON (`stubStripeAndVercel`), so no real
+  account or key is needed.
+- Quit `pnpm dev:desktop` first: an unpackaged launch shares its userData and so its
+  single-instance lock, and the suite refuses to start while that is held.
+- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds over the preload
+  bridge with a hand-written team (no casting run), a $0 cap and autopilot off; the
+  scheduler checks the budget before it spawns anything, so no run can start. It directs
+  nobody, and every test ends by asserting its save logged no `run.start`.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
@@ -244,7 +267,7 @@ rather than crashing boot.
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
   requests. Command policy
   rules each need a matching example; everyday commands must remain allowed. Drive anything
-  requiring a window live instead.
+  requiring a window live instead, or cover it in the e2e suite.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
   for channel names and must stay dependency-free (the sandboxed preload imports it);
   zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its

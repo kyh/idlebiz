@@ -9,6 +9,7 @@
     "dev:desktop": "pnpm dev:kill && turbo watch dev -F @repo/desktop... --env-mode=loose",
     "dev:kill": "bash apps/desktop/scripts/devkill.sh",
     "dev:web": "turbo watch dev -F @repo/web...",
+    "e2e": "pnpm -F @repo/desktop build && pnpm -F @repo/desktop e2e",
     "lint": "oxlint --report-unused-disable-directives",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --check",
