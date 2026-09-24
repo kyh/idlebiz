@@ -118,7 +118,9 @@ allocator and the replay.
   policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
-- **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`) never
+- **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`, each
+  sealed with the macOS Keychain, since employees run as the founder's OS user; dev seals
+  with the mock keychain, and nothing on the real save, so it strands none) never
   reach an employee's process: main reads each where it uses it, and a run starts from the
   founder's env less every credential-shaped name, and every URL with a login in it, but its
   runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward step that needs

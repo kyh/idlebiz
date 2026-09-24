@@ -1,7 +1,7 @@
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, session, shell } from "electron";
+import { app, BrowserWindow, safeStorage, session, shell } from "electron";
 import { registerIpcHandlers } from "@/main/lib/ipc-handler";
 import type { IpcHandlers } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
@@ -35,14 +35,15 @@ import {
 } from "@/main/vercel-connect";
 import { adoptShellPath } from "@/main/lib/shell-path";
 import { bootFailed, initLog } from "@/main/lib/log";
-import { checkSecrets } from "@/main/secrets";
+import { report } from "@/main/lib/report";
+import { checkSecrets, setSealer } from "@/main/secrets";
 import {
   initStripeConnect,
   beginConnect,
   disconnectStripe,
   getStripeStatus,
 } from "@/main/stripe-connect";
-import { ROOT_DIR } from "@/main/paths";
+import { ON_REAL_SAVE, ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 
 const moduleDir = import.meta.dirname;
@@ -272,8 +273,12 @@ const ensureWindow = (): void => {
 
 // Electron names the app, and so its userData, after package.json's productName;
 // dev gets its own so a dev run never shares a lock or a cache with the app.
+// Dev's Electron is ad-hoc signed, so the Keychain asks again for its item after every
+// Electron change, and that prompt stalls automation: dev seals with Chromium's mock
+// keychain, a fixed key, and never touches the real one.
 if (isDev) {
   app.setPath("userData", path.join(app.getPath("appData"), `${app.name} (dev)`));
+  app.commandLine.appendSwitch("use-mock-keychain");
 }
 initLog();
 
@@ -292,6 +297,18 @@ const boot = async (): Promise<void> => {
     // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Electron callback API
     callback(false);
   });
+  // The app can't open what the mock key seals, so on the real save dev seals nothing:
+  // a key dev entered or found plain stays plain for the app to seal, never stranded.
+  if (isDev && ON_REAL_SAVE) {
+    report("secrets", "dev on the real save keeps secrets.json's keys as it finds them");
+  } else if (safeStorage.isEncryptionAvailable()) {
+    setSealer({
+      open: (sealed) => safeStorage.decryptString(sealed),
+      seal: (plain) => safeStorage.encryptString(plain),
+    });
+  } else {
+    report("secrets", "the Keychain is unavailable, so secrets.json keeps its keys as plain text");
+  }
   store.initStore();
   const unreadableSecrets = checkSecrets();
   if (unreadableSecrets) {

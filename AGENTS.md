@@ -154,6 +154,19 @@ rather than crashing boot.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`. They are
   IdleBiz's own: main reads each where it uses it (`getSecret` in `main/secrets.ts`) and
   exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
+  Employees still run as the founder's OS user, so each value is sealed with Electron's
+  `safeStorage` (the macOS Keychain, `setSealer` at boot) as `sealed:v1:<base64>`. Enter
+  keys in the app: `VERCEL_TOKEN` through a product's Vercel button (under users), Stripe in
+  the Budget panel (under revenue). A key pasted into the file as plain text is sealed the
+  next time main reads it. One the Keychain can't open (another build sealed it, or access
+  was denied) reads as absent, is named in Settings and stays as it is: enter it again.
+  Dev (any unpackaged launch, e2e too) runs on Chromium's mock keychain
+  (`--use-mock-keychain`): its Electron is ad-hoc signed, so the real Keychain would ask
+  again after every Electron change and stall automation. It never touches the Keychain,
+  and it seals with a fixed key: a key dev sealed is no secret and only dev opens it. On the
+  real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so the packaged app's keys read as
+  absent there and one entered there is written plain for the app to seal. Use
+  `IDLEBIZ_ROOT_DIR`.
   Employees charge through the `create_payment_link` tool, which makes the link with
   `STRIPE_SECRET_KEY` in main (`main/payment-links.ts`) once the founder signs off, and
   metrics reads revenue with it for every company but

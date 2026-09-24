@@ -42,7 +42,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           <div className="px-inset p-3 text-sm text-fg">
             <div className="text-xs uppercase tracking-wide text-danger">Skipped at boot</div>
             <div className="mt-1 text-xs text-fg-dim">
-              These files under ~/.idlebiz did not parse and were left out. Fix them and relaunch.
+              These files under ~/.idlebiz could not be read and were left out. Fix them and
+              relaunch.
             </div>
             <div className="mt-2">
               <SaveIssues issues={saveIssues} />
