@@ -132,6 +132,23 @@ describe("lexLine", () => {
     expect(words("cat <<EOF\n$(git push)\nEOF")).toEqual([[["cat"]], [["git", "push"]]]);
   });
 
+  it("gives a subshell's heredoc the lines after it", () => {
+    expect(words("(cat <<EOF)\ngit push\nEOF")).toEqual([[["cat"]]]);
+  });
+
+  it.each([
+    "echo $(cat <<EOF)\ngit push\nEOF",
+    "echo `cat <<EOF`\ngit push\nEOF",
+    "cat <(cat <<EOF)\ngit push\nEOF",
+    "cat =(cat <<EOF)\ngit push\nEOF",
+  ])("gives a heredoc no body when its substitution closes first: %s", (line) => {
+    expect(words(line)).toContainEqual([["git", "push"]]);
+  });
+
+  it("also reads flat a heredoc whose substitution runs past the body's closing line", () => {
+    expect(words("cat <<EOF\n$(echo '\nEOF\ngit push\n')\nEOF")).toContainEqual([["git", "push"]]);
+  });
+
   it("keeps what a substitution was fed with the command it prints into", () => {
     const [cat, git] = lexLine(`git commit -m "$(cat <<'EOF'\nfix: push\nEOF\n)"`);
     expect(cat?.[0]?.input).toEqual(["fix: push\n"]);

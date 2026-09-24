@@ -1,5 +1,6 @@
-// Splits a command line the way bash does, so the command policy reads what would
-// run instead of guessing at the text. Nothing is expanded: `$HOME` stays `$HOME`,
+// Splits a command line the way bash does, and where shells may read it apart the
+// way zsh, dash and bash 3.2 do too, so the command policy reads what would run
+// instead of guessing at the text. Nothing is expanded: `$HOME` stays `$HOME`,
 // and a substitution keeps its text in its word while its own commands are read
 // as commands too. Each character is read a bounded number of times, so a long
 // line cannot stall the caller.
@@ -373,7 +374,7 @@ const joinGroup = (frame: Frame): void => {
  */
 class Scanner {
   readonly pipelines: Pipeline[] = [];
-  /** A quote never closed (bash refuses the line) or nesting too deep to follow. */
+  /** A quote never closed (bash refuses the line), nesting too deep to follow, or a substitution running on past its heredoc's body. */
   unreadable = false;
   /**
    * Whether a dialect may read the line apart from bash: it has an unquoted
@@ -480,6 +481,12 @@ class Scanner {
     if (arithmetic !== null) {
       frame.expands = true;
       append(frame, arithmetic);
+      return;
+    }
+    if (frame.word === "=" && !frame.quoted) {
+      // zsh's `=( … )` is a process substitution, read apart from the line like `<( … )`.
+      frame.expands = true;
+      append(frame, this.enclosing(1, ")"));
       return;
     }
     // Where bash reads no subshell, zsh reads a pattern: `query=m(u)tation*`, `-f (q)uery=m*`.
@@ -619,13 +626,13 @@ class Scanner {
       return null;
     }
     const arithmetic = this.text.charAt(this.at + 2) === "(" ? this.arithmetic(3) : null;
-    return arithmetic ?? this.nested(2, ")");
+    return arithmetic ?? this.enclosing(2, ")");
   }
 
   /** `<( … )` and `>( … )`, which are literal text inside quotes. */
   private processSubstitution(char: string): string | null {
     const opens = (char === "<" || char === ">") && this.text.charAt(this.at + 1) === "(";
-    return opens ? this.nested(2, ")") : null;
+    return opens ? this.enclosing(2, ")") : null;
   }
 
   /** `${…}` and `$[…]` are one word to bash up to their close: `${x:- #}` holds no comment, `${x//<</}` no heredoc. */
@@ -732,7 +739,7 @@ class Scanner {
     const body = this.text.slice(start + 1, end);
     const unescaped = body.replaceAll(BACKTICK_ESCAPE, "$<escaped>");
     if (unescaped === body) {
-      return this.nested(1, "`");
+      return this.enclosing(1, "`");
     }
     this.at = Math.min(end + 1, this.text.length);
     this.unreadable ||= end >= this.text.length;
@@ -756,6 +763,18 @@ class Scanner {
       this.depth -= 1;
     }
     return this.text.slice(start, this.at);
+  }
+
+  /**
+   * A substitution is read apart from the line around it, so a heredoc opened in
+   * one that closes on the same line has no body: `echo $(cat <<EOF)` runs the
+   * lines after it. A subshell's heredoc does take them: `(cat <<EOF)`.
+   */
+  private enclosing(opening: number, close: string): string {
+    const pending = this.pending.length;
+    const text = this.nested(opening, close);
+    this.pending.splice(pending);
+    return text;
   }
 
   /** One level deeper, unless that is past what this follows: then the line is read flat as well. */
@@ -870,6 +889,8 @@ class Scanner {
       heredoc.input.push(this.text.slice(start, end));
       if (!heredoc.literal) {
         this.substitutionsIn(start, end);
+        // bash ends the body at its closing line first, so lines read here as the substitution's run as commands.
+        this.unreadable ||= this.at > end;
       }
       this.at = Math.max(this.at, this.lineAfter(end));
     }

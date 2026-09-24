@@ -5,11 +5,12 @@ import type { Command, Words } from "./shell-lexer";
 // IdleBiz answers every permission ask both runners raise, so an unmatched command runs
 // with the founder's privileges: the CLIs' own sandboxes do not stand behind it. Persist
 // rule ids so approval cards can explain them.
-// A command line is split as bash would split it and seen through every wrapper that
-// runs another command, so a rule reads a program's own words and never the text of
-// a quoted argument. Heredoc text is data unless a shell or `source` reads it, or a
-// substitution may print it as a command's name. What a script runs stays unseen:
-// `npm run deploy` or a script on disk goes through.
+// A command line is split as bash would split it, and as zsh, dash and bash 3.2 would
+// where they disagree, and seen through every wrapper that runs another command, so a
+// rule reads a program's own words and never the text of a quoted argument. Heredoc
+// text is data unless a shell or `source` reads it, or a substitution may print it as
+// a command's name. It is a tripwire for outward actions, not a sandbox: what a script
+// runs stays unseen, so `npm run deploy` or a script on disk goes through.
 const RULE_IDS = [
   "deploy",
   "publish-package",
@@ -323,15 +324,23 @@ const suRuns = (words: Words, from: number): Runs => ({
 });
 
 const WATCH = gnu("-n -q --equexit --interval");
+const WATCH_EXEC = new Set(["-x", "--exec"]);
 
-/** watch hands its operands to `sh -c` joined by spaces, or with `-x` runs them as they are. */
-const watchRuns = (words: Words, from: number): Runs => {
-  const { end } = leadingOptions(words, from, WATCH);
-  return { next: [end], script: words.slice(end).join(" ") };
+/**
+ * watch hands its operands to `sh -c` joined by spaces, or with `-x` runs them as
+ * they are. Words a shell reads back as themselves run the same either way, so,
+ * as with eval, they are read once: reading both ways at every `watch` doubles the
+ * work at each one.
+ */
+const watchRuns = (words: Words, from: number, plain: boolean): Runs => {
+  const { end, flags } = leadingOptions(words, from, WATCH);
+  return plain || flags.some((flag) => WATCH_EXEC.has(flag.name))
+    ? { next: [end], script: null }
+    : { next: [], script: words.slice(end).join(" ") };
 };
 
-/** Programs with a way of their own to name what they run. */
-const RUNS_OWN = new Map<string, (words: Words, from: number) => Runs>([
+/** Programs with a way of their own to name what they run; `plain` says a shell would read their words back as themselves. */
+const RUNS_OWN = new Map<string, (words: Words, from: number, plain: boolean) => Runs>([
   ["command", commandRuns],
   ["coproc", coprocRuns],
   ["env", envRuns],
@@ -476,7 +485,7 @@ const runs = (words: Words, from: number, program: string, plain: boolean): Runs
   }
   const own = RUNS_OWN.get(program);
   if (own !== undefined) {
-    return own(words, from);
+    return own(words, from, plain);
   }
   if (RUNNERS.has(program)) {
     return runner(words, from);
@@ -503,12 +512,14 @@ const TAKES_OPERAND = wordsOf("function repeat");
 /** Arithmetic, which zsh's short forms run a command straight after: `while (( n-- )) git push`. */
 const ARITHMETIC = /^\(\(/u;
 /**
- * Words zsh may start another command right after, within the same one: the `}`
- * closing a condition's group and the `]]` closing its test (`if [[ -n $x ]] git push`).
- * A start too many only names more commands to judge, so one is taken after each;
- * the lexer, whose `case` count a start too many would mislead, reads them exactly.
+ * Words zsh may start another command right after, within the same one: the `{`
+ * opening a body past any number of function names (`function f g { git push }`),
+ * the `}` closing a condition's group and the `]]` closing its test
+ * (`if [[ -n $x ]] git push`). A start too many only names more commands to judge,
+ * so one is taken after each; the lexer, whose `case` count a start too many would
+ * mislead, reads them exactly.
  */
-const RESTARTS = wordsOf("} ]]");
+const RESTARTS = wordsOf("{ } ]]");
 
 /** How many words at `at` come before a command's name, 0 when it is the name. */
 const leadingWords = (words: Words, at: number): number => {
@@ -526,6 +537,12 @@ const leadingWords = (words: Words, at: number): number => {
 const PLAIN = /^[^\s'"\\`$;&|<>()#]*$/u;
 /** A name bash only knows once it expands it: `$(cat <<EOF … EOF)` runs whatever the substitution prints. */
 const EXPANDED = /[$`]/u;
+/**
+ * Programs that change the words of what they run after the shell has read them:
+ * xargs appends its input or fills it in, find fills in `{}`, and eval and watch's
+ * shell expand them again.
+ */
+const REWRITES = new Set(["eval", "find", "watch", "xargs"]);
 /** `npx vercel@latest` runs vercel; a leading `@` is a package scope. */
 const PACKAGE_VERSION = /(?!^)@[^@/]*$/u;
 
@@ -544,19 +561,28 @@ interface Stage {
   runsPrinted: boolean;
 }
 
-/** `verbatim` says whether the text the command was read from is what its shell runs: a script handed on in a word the outer shell expands is not. */
-const stageOf = ({ words, redirects, literal: read }: Command, verbatim: boolean): Stage => {
+/**
+ * `verbatim` says whether the text the command was read from is what its shell runs: a script
+ * handed on in a word the outer shell expands is not. `plain` says whether the words eval or
+ * watch hand a shell are read where they stand instead of as a script: by default, when a
+ * shell would read each back as itself.
+ */
+const stageOf = (
+  { words, redirects, literal: read }: Command,
+  verbatim: boolean,
+  plain = words.every((word) => PLAIN.test(word)),
+): Stage => {
   const literal = read && verbatim;
   const stage: Stage = { calls: [], literal, readsInput: false, runsPrinted: false, scripts: [] };
   if (words.length === 0) {
     // Redirections alone still open their files for what runs there: `(cat) < ~/.ssh/id_rsa | …`.
     stage.calls.push({ args: [], literal, program: "", redirects });
   }
-  const plain = words.every((word) => PLAIN.test(word));
   // Every command a wrapper runs starts after it, so one pass in order meets each start after whatever named it.
   // A quoted `}` or `]]` looks like a bare one, so a command may start after each.
   const starts = new Set([0, ...words.flatMap((word, at) => (RESTARTS.has(word) ? [at + 1] : []))]);
   let managed = false;
+  let rewritten = false;
   for (let from = 0; from < words.length; from += 1) {
     if (!starts.has(from)) {
       continue;
@@ -575,9 +601,15 @@ const stageOf = ({ words, redirects, literal: read }: Command, verbatim: boolean
     // A package manager run by another is already among its words, which are all the publish rule reads.
     const repeated = managed && PACKAGE_MANAGERS.has(program);
     if (!PASS_THROUGH.has(program) && !repeated) {
-      stage.calls.push({ args: words.slice(start + 1), literal, program, redirects });
+      stage.calls.push({
+        args: words.slice(start + 1),
+        literal: literal && !rewritten,
+        program,
+        redirects,
+      });
     }
     managed ||= PACKAGE_MANAGERS.has(program);
+    rewritten ||= REWRITES.has(program);
     const next = runs(words, start + 1, program, plain);
     if (next.script !== null) {
       stage.scripts.push(next.script);
@@ -620,8 +652,9 @@ const pipelinesOf = (
 ): Reading => {
   if (depth > MAX_SCRIPT_DEPTH) {
     return {
+      // No script is followed this deep, so a wrapper's words are read where they stand: `watch … git push "$x"`.
       pipelines: lexFlat(line).map((pipeline) =>
-        pipeline.flatMap((command) => stageOf(command, false).calls),
+        pipeline.flatMap((command) => stageOf(command, false, true).calls),
       ),
       reads: true,
     };
@@ -680,7 +713,9 @@ const DEPLOY_TOOL_READS = wordsOf(`
 const PUBLISHES = new Set(["deprecate", "publish", "unpublish"]);
 
 /** git's own options that take a value, before its subcommand. */
-const GIT = exact("-C -c --config-env --git-dir --namespace --super-prefix --work-tree");
+const GIT = exact(
+  "-C -c --attr-source --config-env --git-dir --namespace --super-prefix --work-tree",
+);
 
 /** gh subcommands that change nothing on GitHub — every other one does. */
 const GITHUB_READS = wordsOf(
@@ -689,6 +724,7 @@ const GITHUB_READS = wordsOf(
 
 /** gh commands whose subcommand is no verb on GitHub; `api` is judged by its flags instead. */
 const GITHUB_ASIDE = wordsOf("api auth browse completion config help search status version");
+const GITHUB_HELP = wordsOf("--help -h");
 
 /** A gh command, and where its name sits among gh's words. */
 interface GitHubCommand {
@@ -770,7 +806,7 @@ const ALIAS_SHELL = wordsOf("-s --shell");
 
 /**
  * Whether `gh alias` leaves every later gh command as the policy reads it. `gh NAME …`
- * passes when a read verb or nothing follows the name, and runs the alias's expansion
+ * passes when a read verb or only help follows the name, and runs the alias's expansion
  * with those words after it, so an alias passes only as a read subcommand of a GitHub
  * command, which no word after it makes write. gh fills `$1` into the expansion's text
  * before splitting it (`'$1' view`), runs a `--shell` or `!` alias in a shell, and reads
@@ -822,11 +858,13 @@ const changesGitHub = (call: Call): boolean => {
   if (command.name === "alias") {
     return !aliasReads(call, command);
   }
-  return (
-    !GITHUB_ASIDE.has(command.name) &&
-    command.subcommand !== undefined &&
-    !GITHUB_READS.has(command.subcommand)
-  );
+  if (GITHUB_ASIDE.has(command.name)) {
+    return false;
+  }
+  // A leaf command, an alias or an extension runs with no subcommand: `gh copilot -p …`, `gh pm --squash`.
+  return command.subcommand === undefined
+    ? call.args.slice(command.at + 1).some((word) => !GITHUB_HELP.has(word))
+    : !GITHUB_READS.has(command.subcommand);
 };
 
 const GITHUB_AUTH_STATUS = pflag("-h --hostname --jq --json --template");
