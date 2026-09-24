@@ -222,7 +222,19 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): void =>
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
 export type EmployeeRunner = Pick<typeof agentDriver, "runTask" | "restingRunner" | "pickRunner">;
 
-interface InFlight {
+/** Every run on a product shares its workspace; the company's own work runs in the company's. */
+const workspaceOf = (task: Task, company: Company): string => {
+  const product = task.productId === null ? null : store.getProduct(task.productId);
+  return product?.workspaceDir ?? company.workspaceDir;
+};
+
+interface Placement {
+  readonly workspace: string;
+  /** Carries a founder sign-off, so no other run shares its workspace (`admitsInto`). */
+  readonly exclusive: boolean;
+}
+
+interface InFlight extends Placement {
   readonly abort: AbortController;
   /** Resolves once the run has settled and freed its employee. */
   readonly settled: PromiseWithResolvers<void>;
@@ -529,29 +541,59 @@ class Scheduler {
   }
 
   tick(): void {
-    if (this.stopped) {
+    const company = store.getCompany();
+    if (this.stopped || !company) {
       return;
     }
+    const queued = store.listQueuedTasks();
+    const draining = new Set(
+      queued
+        .filter((t) => store.holdsApproval(t.id) && this.assigneeFree(t))
+        .map((t) => workspaceOf(t, company)),
+    );
     // Visit each candidate once: a rejected start must not spin on the same task.
-    for (const task of store.listQueuedTasks()) {
+    for (const task of queued) {
       if (this.runs.size >= GLOBAL_CONCURRENCY_CAP) {
         break;
       }
       if (this.runs.size >= BACKGROUND_CAPACITY && task.priority !== "high") {
         continue;
       }
-      if (task.assigneeId === null || isWorking(task.assigneeId)) {
+      if (!this.assigneeFree(task)) {
         continue;
       }
-      const employee = store.getEmployee(task.assigneeId);
-      if (!employee || this.driver.restingRunner(employee.runner) !== null) {
-        continue;
+      const placement: Placement = {
+        exclusive: store.holdsApproval(task.id),
+        workspace: workspaceOf(task, company),
+      };
+      if (this.admitsInto(placement, draining)) {
+        guarded(`start task ${task.id}`, () => this.startRun(task, placement));
       }
-      guarded(`start task ${task.id}`, () => this.startRun(task));
     }
   }
 
-  private startRun(task: Task): void {
+  private assigneeFree(task: Task): boolean {
+    if (task.assigneeId === null || isWorking(task.assigneeId)) {
+      return false;
+    }
+    const employee = store.getEmployee(task.assigneeId);
+    return employee !== null && this.driver.restingRunner(employee.runner) === null;
+  }
+
+  /**
+   * A sign-off pins a command, not the tree it ships, so a signed run waits for its workspace to
+   * empty and has it to itself. Nobody new starts there meanwhile: `draining` holds each
+   * workspace where a signed run waits with its employee free to start it.
+   */
+  private admitsInto({ exclusive, workspace }: Placement, draining: ReadonlySet<string>): boolean {
+    const peers = [...this.runs.values()].filter((r) => r.workspace === workspace);
+    if (exclusive) {
+      return peers.length === 0;
+    }
+    return !draining.has(workspace) && !peers.some((r) => r.exclusive);
+  }
+
+  private startRun(task: Task, placement: Placement): void {
     if (this.stopped) {
       return;
     }
@@ -579,6 +621,7 @@ class Scheduler {
 
     store.setEmployeeStatus(employeeId, "working");
     const inFlight: InFlight = {
+      ...placement,
       abort: new AbortController(),
       settled: Promise.withResolvers(),
     };
@@ -595,11 +638,11 @@ class Scheduler {
     task: Task,
     employee: Employee,
     company: Company,
-    { abort, settled }: InFlight,
+    { abort, settled, workspace }: InFlight,
   ): Promise<void> {
     let result: RunResult;
     try {
-      result = await this.execute(runId, task, employee, company, abort.signal);
+      result = await this.execute(runId, task, employee, company, workspace, abort.signal);
     } catch (error) {
       result = {
         instructionsDigest: employee.instructionsDigest,
@@ -640,6 +683,7 @@ class Scheduler {
     task: Task,
     emp: Employee,
     company: Company,
+    workspace: string,
     signal: AbortSignal,
   ): Promise<RunResult> {
     const product = task.productId === null ? null : store.getProduct(task.productId);
@@ -650,7 +694,7 @@ class Scheduler {
         description: `${runPreamble(product, company)}\n\n${task.description ?? ""}`.trim(),
         id: task.id,
         title: task.title,
-        workspace: product?.workspaceDir ?? company.workspaceDir,
+        workspace,
       },
       (ev: AgentEvent) => onAgentEvent(runId, task, emp, ev),
       this.toolsFor(emp, company, {

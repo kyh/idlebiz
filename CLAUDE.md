@@ -101,7 +101,11 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   in the policy, not into prompts as advice: briefs carry the ledger as facts only. The game is
   single-player: the replay only ever sees this company's bets, and no ledger leaves the machine.
 - **Outward-facing stays founder-gated**, through one judgement: `holdFor` in
-  `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly. An
+  `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
+  A signature pins a command, not the tree it ships, and runs on one product share its
+  workspace, so a run carrying one has that workspace to itself: the scheduler's `tick` starts
+  it only once no other run is live there, and starts nobody new there while it waits on
+  them or runs. The agents are told the folder is shared. An
   `agent-browser` verb is read where agent-browser reads it, the first word its global options
   leave, and any verb but a listed page read is held unless the session's live page (read from
   the browser, since a click can land anywhere) is loopback, every frame in it the top page's

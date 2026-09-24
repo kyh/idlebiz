@@ -1358,9 +1358,12 @@ describe("founder approvals", () => {
   it("belong to the task they were given for, once", () => {
     found();
     store.grantApproval("continue-deploy", "vercel deploy --prod");
+    expect(store.holdsApproval("continue-deploy")).toBe(true);
+    expect(store.holdsApproval("someone-elses-task")).toBe(false);
     expect(store.consumeApproval("someone-elses-task", "vercel deploy --prod")).toBe(false);
     expect(store.consumeApproval("continue-deploy", "vercel deploy")).toBe(false);
     expect(store.consumeApproval("continue-deploy", "vercel deploy --prod")).toBe(true);
+    expect(store.holdsApproval("continue-deploy")).toBe(false);
     expect(store.consumeApproval("continue-deploy", "vercel deploy --prod")).toBe(false);
   });
 

@@ -463,6 +463,105 @@ describe("settling a run", () => {
   });
 });
 
+const onProduct = (employeeId: string, productId: string) => {
+  const task = store.createTask({
+    assigneeId: employeeId,
+    origin: "founder",
+    productId,
+    title: `Work for ${employeeId}`,
+  });
+  store.claimTask(task.id, employeeId);
+  return task;
+};
+
+/** The deploy lands in the first product's workspace; the side product has its own. */
+const twoProducts = () => {
+  found();
+  const home = store.listProducts()[0]?.id ?? "";
+  const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+  const { driver, resting, running } = scripted();
+  return { drain: createScheduler(driver), home, resting, running, side };
+};
+
+/** Run the employee's work on the product until it asks the founder to deploy it. */
+const askToDeploy = async (
+  { drain, running }: ReturnType<typeof twoProducts>,
+  employeeId: string,
+  productId: string,
+) => {
+  const task = onProduct(employeeId, productId);
+  drain.tick();
+  running.get(employeeId)?.({
+    ...done(),
+    outcome: {
+      ask: { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+      kind: "blocked",
+    },
+  });
+  await vi.waitFor(() => expect(store.getEmployee(employeeId)?.status).toBe("idle"));
+  return task;
+};
+
+describe("a run the founder signed for", () => {
+  it("waits for the run already in its workspace, and nobody new starts there meanwhile", async () => {
+    const office = twoProducts();
+    const { drain, home, running, side } = office;
+    onProduct("mae", home);
+    drain.tick();
+    const ask = await askToDeploy(office, "priya", home);
+
+    const deploy = drain.resolveApproval(ask.id, true);
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    expect(kindOf(deploy)).toBe("queued");
+    expect(kindOf(beside)).toBe("queued");
+
+    const elsewhere = onProduct("ana", side);
+    drain.tick();
+
+    expect(kindOf(elsewhere)).toBe("running");
+
+    running.get("mae")?.(done());
+    await vi.waitFor(() => expect(kindOf(deploy)).toBe("running"));
+  });
+
+  it("has its workspace to itself while another product's work goes on", async () => {
+    const office = twoProducts();
+    const { drain, home, running, side } = office;
+    const ask = await askToDeploy(office, "priya", home);
+
+    const deploy = drain.resolveApproval(ask.id, true);
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    expect(kindOf(deploy)).toBe("running");
+    expect(kindOf(beside)).toBe("queued");
+
+    const elsewhere = onProduct("ana", side);
+    drain.tick();
+
+    expect(kindOf(elsewhere)).toBe("running");
+
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(kindOf(beside)).toBe("running"));
+  });
+
+  it("holds nobody back while its own runner rests", async () => {
+    const office = twoProducts();
+    const { drain, home, resting } = office;
+    const ask = await askToDeploy(office, "ana", home);
+    resting.add("codex");
+
+    const deploy = drain.resolveApproval(ask.id, true);
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    expect(kindOf(deploy)).toBe("queued");
+    expect(kindOf(beside)).toBe("running");
+  });
+});
+
 const openBet = (budgetUsd: number) => {
   const [product] = store.listProducts();
   return store.openBet({

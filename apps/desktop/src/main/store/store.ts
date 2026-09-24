@@ -706,6 +706,9 @@ export const grantApproval = (taskId: string, key: string): void => {
   }
 };
 
+export const holdsApproval = (taskId: string): boolean =>
+  current().grants.some((g) => g.taskId === taskId);
+
 /** Spend the sign-off, if this task holds one for exactly this. */
 export const consumeApproval = (taskId: string, key: string): boolean => {
   const { grants } = current();
