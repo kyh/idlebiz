@@ -191,14 +191,14 @@ rather than crashing boot.
 - **Office art and collision are independent sections of `office-design.json`.** After any
   layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
   Six passes: every seat, point of interest and the door reachable from spawn; no open
-  floor cell no body can stand on; no reachable spot with the player's art over the void;
-  no reachable spot with the player's face painted over; no placed object naming art this
-  build lacks; every placed sprite measured from its PNG (run `generate:sprite-bounds`
-  after adding art). The walker seals the second and the scene seals the fourth at boot
-  (`shared/office-grid.ts`, `shared/office-sight.ts`), so a saved layout is safe to walk
-  even when its data would fail the gate; main opens one failing the fifth as the bundled
-  office and refuses to save it, and refuses one whose fourth-pass spots, once closed,
-  cut a seat, point of interest or the door off.
+  floor cell no body can stand on; no reachable spot with the player's art (facing right)
+  over the void; no reachable spot with the player's face painted over; no placed object
+  naming art this build lacks; every placed sprite measured from its PNG (run
+  `generate:sprite-bounds` after adding art). The walker seals the second and the scene
+  seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`), so a saved
+  layout is safe to walk even when its data would fail the gate; main opens one failing
+  the fifth as the bundled office and refuses to save it, and refuses one whose fourth-pass
+  spots, once closed, cut a seat, point of interest or the door off, or close in the spawn.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
   requests. Command policy

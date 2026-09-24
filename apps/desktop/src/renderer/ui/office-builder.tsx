@@ -405,8 +405,8 @@ export const OfficeBuilder = ({ design }: { design: OfficeDesign }) => {
     commitLayout((L) => moveObjects(L, selection, d.x, d.y));
 
   const saving = useSubmission(async () => {
-    // The same judges main applies, run here first so every reason reads plainly
-    // rather than as IPC's payload validation error.
+    // Main's schema and walk judges, run here first so every reason reads plainly
+    // rather than as IPC's payload validation error. Art and sight need the PNGs main reads.
     const data = toLayoutData(layout);
     const issues = [...schemaIssues(data), ...layoutIssues(data)];
     if (issues.length > 0) {

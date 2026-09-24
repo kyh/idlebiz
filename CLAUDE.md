@@ -178,9 +178,9 @@ allocator and the replay.
   32x64, so art overhangs the body by ~8px and any disagreement renders the character
   against the void. Run `pnpm --filter @repo/desktop check:office` after editing a layout;
   it fails on any seat, point of interest or door unreachable from spawn, any open floor
-  cell no body can ever stand on, any reachable spot where the player's art hangs over
-  nothing, any reachable spot where something drawn above the player covers their
-  face, and any placed object naming art this build lacks. The schema
+  cell no body can ever stand on, any reachable spot where the player's art, facing right,
+  hangs over nothing, any reachable spot where something drawn above the player covers
+  their face, and any placed object naming art this build lacks. The schema
   (`shared/office-layout-schema.ts`, v2: `seats` with roles, `pois`, `door`), the walk
   grid (`shared/office-grid.ts`), the art lookup (`shared/office-object-sprite.ts`) and
   the sight judgement (`shared/office-sight.ts`) are shared by the scene, the save
@@ -203,7 +203,8 @@ allocator and the replay.
   where the founder's face would be painted over, judged from the real textures, so a
   saved layout the gate never saw still cannot hide them. Main judges the same pose from
   the PNGs, a bundled employee standing in for the founder, and refuses a save only when
-  closing them would cut a seat, POI or door off (`sightIssues`). On a source sheet that
+  closing them would cut a seat, POI or door off or close in the spawn, where the founder
+  is placed exactly and could not take a step (`sightIssues`). On a source sheet that
   pose is not the top-left frame but `SOURCE_STANDING_FRAME`.
 
 ## UI conventions

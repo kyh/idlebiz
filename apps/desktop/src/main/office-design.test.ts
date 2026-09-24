@@ -126,6 +126,13 @@ describe("saving the office", () => {
     },
   );
 
+  it("refuses a layout whose sight seal would close the spawn around the founder", async () => {
+    await expect(saveOfficeDesign(corridor(overhead("d2-ow-6-3", 8, -16)), art)).rejects.toThrow(
+      "spawn 24,24 is inside collision once the spots where furniture hides a face are closed",
+    );
+    expect(existsSync(officeFile)).toBe(false);
+  });
+
   // a source sheet's top-left frame faces right; judged by it, this seat stays reachable
   it("judges sight by the pose the scene stands the founder in", async () => {
     await expect(saveOfficeDesign(corridor(overhead("d2-fix-117", 120, 14)), art)).rejects.toThrow(

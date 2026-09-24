@@ -4,6 +4,7 @@ import {
   authoredGrid,
   closedAt,
   reachableNodes,
+  spawnIssue,
   unreachablePlaces,
   walkGridOf,
   withoutNodes,
@@ -14,7 +15,8 @@ import { objectSpritePath } from "./office-object-sprite.ts";
 
 // The scene seals standing spots where furniture hides the founder's face. The save
 // handler and check:office use the same judgement with PNG masks instead of Phaser
-// textures: main refuses a layout that seal cuts off, the gate any hidden spot at all.
+// textures: main refuses a layout that seal cuts off or closes around the spawn, the
+// gate any hidden spot at all.
 
 /** Opaque-pixel coverage of a sprite, in its own pixel space. */
 export interface OpaqueMask {
@@ -179,8 +181,9 @@ export const sightSealedGrid = (
   );
 
 /**
- * Places the layout sends people that closing its hidden spots cuts off from spawn.
- * A hidden spot alone is no issue: the scene closes it at boot and walks around it.
+ * What closing the layout's hidden spots breaks: a spawn the founder cannot step from,
+ * else the places it sends people that are cut off from spawn. A hidden spot alone is
+ * no issue: the scene closes it at boot and walks around it.
  */
 export const sightIssues = (
   layout: OfficeLayoutData,
@@ -194,7 +197,8 @@ export const sightIssues = (
     authoredGrid(layout),
     hidden.map((h) => h.node),
   );
-  return unreachablePlaces(layout, closed).map(
+  const stuck = spawnIssue(layout, closed);
+  return (stuck ? [stuck] : unreachablePlaces(layout, closed)).map(
     (issue) => `${issue} once the spots where furniture hides a face are closed`,
   );
 };

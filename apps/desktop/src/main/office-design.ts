@@ -65,7 +65,7 @@ export const loadOfficeDesign = (): OfficeDesign => {
   }
 };
 
-/** Places the layout sends people that the scene's boot-time sight seal would cut off. */
+/** What the scene's boot-time sight seal would break: the spawn, or places it cuts off. */
 const sightIssuesOf = async (layout: OfficeLayoutData, art: OfficeArt): Promise<string[]> => {
   // native, so loaded on a save rather than at boot
   const { default: sharp } = await import("sharp");

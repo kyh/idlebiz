@@ -326,6 +326,19 @@ const destinations = (layout: OfficeLayoutData): { label: string; spot: PixelPoi
 const inWorld = (layout: OfficeLayoutData, p: PixelPoint): boolean =>
   p.x >= 0 && p.y >= 0 && p.x < layout.width && p.y < layout.height;
 
+/**
+ * Why the founder could not take a single step from spawn on `grid`, or null. They are
+ * placed there exactly, never snapped, and every step is collision-checked.
+ */
+export const spawnIssue = (layout: OfficeLayoutData, grid: WalkGrid): string | null => {
+  if (!inWorld(layout, layout.spawn)) {
+    return `spawn ${at(layout.spawn)} is outside the world`;
+  }
+  return bodyBlockedAt(grid, layout.spawn.x, layout.spawn.y)
+    ? `spawn ${at(layout.spawn)} is inside collision`
+    : null;
+};
+
 /** Every place in the world the layout sends people that a walker from spawn cannot reach on `grid`. */
 export const unreachablePlaces = (layout: OfficeLayoutData, grid: WalkGrid): string[] => {
   const reachable = reachableTiles(grid, layout.spawn);
@@ -354,16 +367,10 @@ export const layoutIssues = (layout: OfficeLayoutData): string[] => {
     return issues;
   }
 
-  // The founder is placed at the spawn exactly, never snapped: a body inside a
-  // wall there can't take a single step.
-  if (!inWorld(layout, layout.spawn)) {
-    issues.push(`spawn ${at(layout.spawn)} is outside the world`);
-  } else if (bodyBlockedAt(grid, layout.spawn.x, layout.spawn.y)) {
-    issues.push(`spawn ${at(layout.spawn)} is inside collision`);
-  }
   // nothing else can be judged without a start
-  if (issues.length > 0) {
-    return issues;
+  const stuck = spawnIssue(layout, grid);
+  if (stuck) {
+    return [stuck];
   }
 
   const seen = new Map<string, number>();

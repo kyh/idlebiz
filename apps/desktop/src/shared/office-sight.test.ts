@@ -179,6 +179,27 @@ describe("sightIssues", () => {
     ]);
   });
 
+  // the founder is placed at spawn exactly and every step is collision-checked
+  it("names the spawn when the spot closed is where the founder stands", () => {
+    const layout = corridor([tile(8, -16)]);
+    expect(layoutIssues(layout)).toEqual([]);
+    expect(judge(layout).issues).toEqual([
+      "spawn 24,24 is inside collision once the spots where furniture hides a face are closed",
+    ]);
+  });
+
+  it("names the spawn when the spot closed is beside it, under the founder's body", () => {
+    // hides half the face one node east of spawn, none of the spawn's own
+    const layout = corridor([tile(40, -16)]);
+    const { hidden, issues } = judge(layout);
+    expect(layoutIssues(layout)).toEqual([]);
+    expect(hidden.map((h) => h.node)).toContainEqual({ x: 40, y: 24 });
+    expect(hidden.map((h) => h.node)).not.toContainEqual(layout.spawn);
+    expect(issues).toEqual([
+      "spawn 24,24 is inside collision once the spots where furniture hides a face are closed",
+    ]);
+  });
+
   it("lets a hidden spot be closed when every place is still reachable around it", () => {
     // over the west room's south-west corner, away from the corridor
     const { hidden, issues } = judge(corridor([tile(8, 36)]));
