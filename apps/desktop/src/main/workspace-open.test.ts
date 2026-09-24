@@ -15,27 +15,31 @@ writeFileSync(path.join(root, "run.command"), "#!/bin/sh\n");
 writeFileSync(path.join(root, "README.MD"), "# hi\n");
 symlinkSync(path.join(root, "run.command"), path.join(root, "notes.md"));
 writeFileSync(path.join(root, "a.md"), "# hi\n");
-execFileSync("/usr/bin/xattr", [
-  "-w",
-  "com.apple.LaunchServices.OpenWith",
-  "x",
-  path.join(root, "a.md"),
-]);
 writeFileSync(path.join(root, "b.md"), "# hi\n");
-execFileSync("/usr/bin/xattr", [
-  "-wx",
-  "com.apple.FinderInfo",
-  `616c69734d414353${"0".repeat(48)}`,
-  path.join(root, "b.md"),
-]);
 mkdirSync(path.join(root, "Bare/Contents"), { recursive: true });
 writeFileSync(path.join(root, "Bare/Contents/PkgInfo"), "APPL????");
-execFileSync("/usr/bin/xattr", [
-  "-wx",
-  "com.apple.FinderInfo",
-  `00000000000000002000${"0".repeat(44)}`,
-  path.join(root, "Bare"),
-]);
+// Only macOS carries the attributes that make a plain file or folder open as an app.
+const onMac = process.platform === "darwin";
+if (onMac) {
+  execFileSync("/usr/bin/xattr", [
+    "-w",
+    "com.apple.LaunchServices.OpenWith",
+    "x",
+    path.join(root, "a.md"),
+  ]);
+  execFileSync("/usr/bin/xattr", [
+    "-wx",
+    "com.apple.FinderInfo",
+    `616c69734d414353${"0".repeat(48)}`,
+    path.join(root, "b.md"),
+  ]);
+  execFileSync("/usr/bin/xattr", [
+    "-wx",
+    "com.apple.FinderInfo",
+    `00000000000000002000${"0".repeat(44)}`,
+    path.join(root, "Bare"),
+  ]);
+}
 writeFileSync(path.join(outside, "secret.md"), "# not yours\n");
 symlinkSync(path.join(outside, "secret.md"), path.join(root, "out.md"));
 writeFileSync(path.join(product, "index.html"), "<p>hi</p>\n");
@@ -57,13 +61,20 @@ describe("judgeOpening", () => {
 
   it.each([
     ["Report.app/", path.join(root, "Report.app")],
-    ["Bare", path.join(root, "Bare")],
     ["run.command", path.join(root, "run.command")],
     ["notes.md", path.join(root, "run.command")],
-    ["a.md", path.join(root, "a.md")],
-    ["b.md", path.join(root, "b.md")],
   ])("reveals %j at its real path", (rel, real) => {
     expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
+  });
+
+  describe.runIf(onMac)("where macOS marks a plain file or folder as an app", () => {
+    it.each([
+      ["Bare", path.join(root, "Bare")],
+      ["a.md", path.join(root, "a.md")],
+      ["b.md", path.join(root, "b.md")],
+    ])("reveals %j at its real path", (rel, real) => {
+      expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
+    });
   });
 
   it("opens an absolute path inside a root", () => {
