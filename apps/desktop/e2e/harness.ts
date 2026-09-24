@@ -1,7 +1,9 @@
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { _electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, JSHandle, Page } from "@playwright/test";
 import type { Company, Employee, Product } from "@/shared/domain";
@@ -47,7 +49,43 @@ const runsStarted = async (root: string): Promise<number> => {
   return started;
 };
 
-const start = async (root: string): Promise<Launched> => {
+/** The app's page, once it has navigated: DevTools' is `devtools://`, and any page starts at `about:blank`. */
+const isAppPage = (page: Page): boolean => /^(?:file|https?):/u.test(page.url());
+
+/**
+ * The app's own window. An unpackaged launch detaches DevTools into a window that opens first
+ * and never reports loaded, so windows are told apart by URL, polled until the app's appears.
+ */
+const appWindow = async (app: ElectronApplication): Promise<Page> => {
+  for (;;) {
+    const page = app.windows().find(isAppPage);
+    if (page) {
+      return page;
+    }
+    await sleep(100);
+  }
+};
+
+/**
+ * Close the app and wait for its process to exit: `close()` can resolve while main is still
+ * quitting, and until it has, the next launch loses the single-instance lock and quits.
+ */
+export const closeFully = async (app: ElectronApplication): Promise<void> => {
+  const child = app.process();
+  const exited =
+    child.exitCode === null && child.signalCode === null ? once(child, "exit") : Promise.resolve();
+  await app.close();
+  await exited;
+};
+
+/**
+ * Launch the built app on `root`; `track` holds it and its userData the moment they exist,
+ * so a launch that fails later is still closed and cleaned up.
+ */
+const start = async (
+  root: string,
+  track: (app: ElectronApplication, userData: string) => void,
+): Promise<Launched> => {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
       // a dev shell's renderer URL would load the dev server instead of the build
@@ -63,7 +101,8 @@ const start = async (root: string): Promise<Launched> => {
     cwd: DESKTOP_DIR,
     env: { ...env, IDLEBIZ_ROOT_DIR: root },
   });
-  const page = await app.firstWindow();
+  track(app, await app.evaluate(({ app: electronApp }) => electronApp.getPath("userData")));
+  const page = await appWindow(app);
   // Phaser stalls on a hidden document, and an unpackaged launch opens DevTools over the window.
   await app.evaluate(({ BrowserWindow, app: electronApp }) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -81,14 +120,22 @@ const start = async (root: string): Promise<Launched> => {
 export const test = base.extend<Fixtures>({
   launch: async ({ root }, provide) => {
     const open = new Set<ElectronApplication>();
-    await provide(async () => {
-      const launched = await start(root);
-      open.add(launched.app);
-      launched.app.once("close", () => open.delete(launched.app));
-      return launched;
-    });
+    const userData = new Set<string>();
+    await provide(() =>
+      start(root, (app, dir) => {
+        open.add(app);
+        app.once("close", () => open.delete(app));
+        userData.add(dir);
+      }),
+    );
     for (const app of open) {
-      await app.close();
+      await closeFully(app);
+    }
+    // each isolated root gets its own userData (main/index.ts); only those are this test's to delete
+    for (const dir of userData) {
+      if (dir.includes(`${path.sep}roots${path.sep}`)) {
+        await rm(dir, { force: true, recursive: true });
+      }
     }
   },
   // oxlint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; the root has none

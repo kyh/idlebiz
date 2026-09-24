@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, foundCompany, test } from "./harness";
+import { closeFully, expect, foundCompany, test } from "./harness";
 
 // `npcs` is private to the scene and the manager; the string reaches them at runtime.
 const NPCS_IN_OFFICE = `window.__game?.scene.getScene("office")?.npcs?.npcs.size ?? -1`;
@@ -10,7 +10,7 @@ const HELD_COMMAND = "deploy tip-jar to production";
 test("a founded company boots into the office", async ({ launch }) => {
   const founding = await launch();
   const { employees } = await foundCompany(founding.page);
-  await founding.app.close();
+  await closeFully(founding.app);
 
   const { page } = await launch();
   for (const plate of [/revenue/iu, /users/iu, /product/iu, /team/iu]) {
@@ -26,7 +26,7 @@ test("a held command waits in #team and the inbox until the founder denies it", 
 }) => {
   const founding = await launch();
   const { company, product } = await foundCompany(founding.page);
-  await founding.app.close();
+  await closeFully(founding.app);
   const taskDir = path.join(root, company.id, "tasks", "e2e-deploy");
   await mkdir(taskDir, { recursive: true });
   await writeFile(

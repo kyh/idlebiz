@@ -1,4 +1,5 @@
 import {
+  closeFully,
   bridgeOf,
   expect,
   foundCompany,
@@ -17,7 +18,7 @@ test("a Vercel token Vercel takes binds the product's project and is kept sealed
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await founding.app.close();
+  await closeFully(founding.app);
 
   const { app, page } = await launch();
   await stubStripeAndVercel(app);
@@ -45,7 +46,7 @@ test("a Vercel token Vercel refuses is shown as refused and never saved", async 
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await founding.app.close();
+  await closeFully(founding.app);
 
   const { page } = await launch();
   await page.getByRole("button", { name: /users/iu }).click();
@@ -65,7 +66,7 @@ test("a Stripe key Stripe refuses is shown as refused and never saved", async ({
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await founding.app.close();
+  await closeFully(founding.app);
 
   const { page } = await launch();
   await page.getByRole("button", { name: /revenue/iu }).click();
@@ -89,7 +90,7 @@ test("a Stripe key Stripe takes is kept sealed, shown as set and removable", asy
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await founding.app.close();
+  await closeFully(founding.app);
 
   const { app, page } = await launch();
   await stubStripeAndVercel(app);
@@ -121,7 +122,7 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
     (b, productId) => b.vercelConnect({ productId, projectId: "prj_e2e", projectName: "e2e" }),
     product.id,
   );
-  await founding.app.close();
+  await closeFully(founding.app);
   const token = "e2e-pasted-vercel-token";
   await writeSecrets(root, { ...(await readSecrets(root)), VERCEL_TOKEN: token });
 
