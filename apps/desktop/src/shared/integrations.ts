@@ -5,6 +5,11 @@ export type StripeStatus =
   | { state: "connected"; accountId: string; livemode: boolean }
   | { state: "error"; message: string };
 
+/** The founder's own Stripe key as the renderer sees it: enough to tell which key it is, never the key. */
+export type StripeKeyStatus =
+  | { state: "unset" }
+  | { state: "set"; last4: string; livemode: boolean };
+
 /** A Vercel project the founder can bind the company to. */
 export interface VercelProject {
   id: string;

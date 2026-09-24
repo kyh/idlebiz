@@ -168,12 +168,16 @@ rather than crashing boot.
   absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
   Employees charge through the `create_payment_link` tool, which makes the link with
-  `STRIPE_SECRET_KEY` in main (`main/payment-links.ts`) once the founder signs off, and
-  metrics reads revenue with it for every company but
+  `STRIPE_SECRET_KEY` in main (`main/payment-links.ts`) once the founder signs off; with no
+  key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
+  saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
+  waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
+  and Read on Charges and Customers for the revenue read below. Metrics reads revenue with it
+  for every company but
   the one whose `metrics.json` holds the connected account: that one reads through
   `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
   on (`stripeCredential` in `main/metrics.ts`). The Connect token is read-only. A key Stripe
-  refuses shows in the HUD — a Connect token as revoked, the own key by name — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
+  refuses shows in the HUD — a Connect token as revoked, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
@@ -290,7 +294,8 @@ rather than crashing boot.
   idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
-  (the two integrations, same shape), `deploy.ts` (the Vercel API calls the `deploy` tool makes),
+  (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),
+  `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `payment-links.ts` (the Stripe calls `create_payment_link` makes), `secrets.ts`,
   `metrics.ts`, `tray.ts`.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a

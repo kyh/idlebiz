@@ -247,7 +247,7 @@ describe("Stripe disconnect", () => {
 
 describe("Stripe read health", () => {
   const ownKeyRefused =
-    "Stripe refused STRIPE_SECRET_KEY in ~/.idlebiz/secrets.json — revenue is unread until it is fixed.";
+    "Stripe won't let your charging key read charges and customers — grant it Read on both, replace it, or connect Stripe.";
 
   it("names a refused own key until Stripe takes one again", () => {
     stripe.noteStripeRead(company.id, { answer: "refused", via: "own" });

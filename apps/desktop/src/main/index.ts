@@ -43,6 +43,7 @@ import {
   disconnectStripe,
   getStripeStatus,
 } from "@/main/stripe-connect";
+import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "@/main/stripe-key";
 import { ON_REAL_SAVE, ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 
@@ -82,6 +83,12 @@ const officeArt = (): OfficeArt => ({
       : path.join(moduleDir, "../renderer"),
   sheet: path.join(employeeSheetDir(), "employee-sheet-01.png"),
 });
+
+/** Stripe takes a key now: read it at once, and resume the work that waited on it. */
+const stripeReady = (): void => {
+  metricsPulse.now();
+  scheduler.resumeIntegrationAsks("stripe");
+};
 
 const ipcHandlers = {
   answerQuestion: ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer),
@@ -160,6 +167,15 @@ const ipcHandlers = {
   },
   stripeConnect: () => beginConnect(store.requireCompany().id),
   stripeDisconnect: () => disconnectStripe(store.requireCompany().id),
+  stripeKeyRemove: () => {
+    removeStripeKey();
+    metricsPulse.now();
+  },
+  stripeKeySave: async ({ key }) => {
+    await saveStripeKey(key);
+    stripeReady();
+  },
+  stripeKeyStatus,
   stripeStatus: () => {
     const company = store.getCompany();
     return company ? getStripeStatus(company.id) : { state: "disconnected" };
@@ -326,10 +342,7 @@ const boot = async (): Promise<void> => {
 
   initStripeConnect({
     notify: (status) => broadcast("onStripeStatus", status),
-    onConnected: () => {
-      metricsPulse.now();
-      scheduler.resumeIntegrationAsks("stripe");
-    },
+    onConnected: stripeReady,
     openExternal: (url) => shell.openExternal(url),
   });
   initVercelConnect({

@@ -7,6 +7,8 @@ import {
   resetSpend,
   connectStripe,
   disconnectStripe,
+  saveStripeKey,
+  removeStripeKey,
 } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
@@ -14,7 +16,7 @@ import type { PickerOption } from "@/renderer/ui/picker";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Budget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
-import type { StripeStatus } from "@/shared/integrations";
+import type { StripeKeyStatus, StripeStatus } from "@/shared/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },
@@ -74,9 +76,70 @@ const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
   );
 };
 
+const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
+  const [draft, setDraft] = useState("");
+  const saving = useSubmission(async (key: string) => {
+    await saveStripeKey(key);
+    setDraft("");
+  });
+  const removing = useSubmission(removeStripeKey);
+  if (stripeKey.state === "set") {
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-fg">
+          ✓ key …{stripeKey.last4}
+          <span
+            className="px-badge ml-2"
+            style={{
+              color: stripeKey.livemode ? "var(--ok)" : "var(--warn)",
+            }}
+          >
+            {stripeKey.livemode ? "live" : "test"}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={() => removing.submit()}
+          disabled={removing.submission.kind === "sending"}
+          className="px-btn"
+        >
+          Remove
+        </button>
+        <Failure submission={removing.submission} doing="remove the key" />
+      </div>
+    );
+  }
+  const key = draft.trim();
+  const sending = saving.submission.kind === "sending";
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="sk_… or rk_…"
+          type="password"
+          aria-label="Stripe secret key"
+          className="px-field flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => saving.submit(key)}
+          disabled={sending || key.length === 0}
+          className="px-btn-accent px-btn"
+        >
+          {sending ? "Checking…" : "Save"}
+        </button>
+      </div>
+      <Failure submission={saving.submission} doing="save the key" />
+    </div>
+  );
+};
+
 export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const stripeStatus = useStore((s) => s.stripeStatus);
+  const stripeKey = useStore((s) => s.stripeKey);
   const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
   // the draft carries the saved cap it was typed against, so a cap saved
   // elsewhere replaces a stale draft without an effect resetting it
@@ -176,10 +239,16 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
           </div>
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm leading-snug text-fg">
-              Connect your Stripe account to see your REAL revenue and customers — there are no
-              numbers without it{liveMetrics ? " — live now ⚡" : ""}.
+              Connect your Stripe account to see your REAL revenue and customers
+              {liveMetrics ? " — live now ⚡" : ""}.
             </div>
             <StripeConnection stripeStatus={stripeStatus} />
+            <div className="pt-2 text-sm leading-snug text-fg">
+              Charging key: lets the team create payment links, each one you sign off. Without
+              Connect it also reads revenue, so a restricted key needs Read on Charges and Customers
+              too.
+            </div>
+            <ChargingKey stripeKey={stripeKey} />
           </div>
         </div>
       </div>

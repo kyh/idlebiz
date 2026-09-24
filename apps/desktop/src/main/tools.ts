@@ -13,7 +13,7 @@ import {
 } from "@/main/company-actions";
 import { isTestKey, measureRefusal } from "@/main/metrics";
 import type { PaymentLinker } from "@/main/payment-links";
-import { getSecret } from "@/main/secrets";
+import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
@@ -270,10 +270,6 @@ const TOOLS = {
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,
     async (ctx, { amountUsd, bet, name, product: named }) => {
-      const key = getSecret("STRIPE_SECRET_KEY");
-      if (!key) {
-        return "IdleBiz has no Stripe key to charge with: ask the founder via ask_boss to add STRIPE_SECRET_KEY, saying what you would sell and at what price. A Stripe connection only reads revenue; it cannot create payments.";
-      }
       const productId = productFor(ctx, named);
       if (productId === null) {
         return "There is no product to charge for — create_product first.";
@@ -294,6 +290,15 @@ const TOOLS = {
       }
       const cents = Math.round(amountUsd * 100);
       const price = formatUsd(cents / 100);
+      const key = getSecret(STRIPE_SECRET_KEY);
+      if (!key) {
+        ctx.asks.raise({
+          integration: "stripe",
+          reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
+          type: "integration",
+        });
+        return "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
+      }
       // quoted as JSON, so a name cannot pose as more of the action the founder signs
       const action = `payment link ${JSON.stringify(name)} at ${price} on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
       requireSignOff(ctx, action, "payments");

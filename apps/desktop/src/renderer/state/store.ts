@@ -16,7 +16,7 @@ import type {
 } from "@/shared/domain";
 import type { Digest } from "@/shared/digest";
 import { errorMessage } from "@/shared/errors";
-import type { ProductStatus, StripeStatus } from "@/shared/integrations";
+import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@/shared/integrations";
 import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
 import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
@@ -41,6 +41,8 @@ interface State {
   /** A coding CLI is signed in, by main's probe or a login since; null until the probe answers. */
   authed: boolean | null;
   stripeStatus: StripeStatus;
+  /** The key the team charges with; unset until main answers. */
+  stripeKey: StripeKeyStatus;
   /** Everything the company builds, oldest first, and where each one really is. */
   products: Product[];
   productStatus: ReadonlyMap<string, ProductStatus>;
@@ -82,6 +84,7 @@ let state: State = {
   products: [],
   resting: {},
   saveIssues: [],
+  stripeKey: { state: "unset" },
   stripeStatus: { state: "disconnected" },
   stuckTasks: [],
   talkingTo: null,
@@ -397,6 +400,20 @@ export const disconnectStripe = (): Promise<void> =>
     await bridge().stripeDisconnect();
   });
 
+const loadStripeKey = async (): Promise<void> => {
+  set({ stripeKey: await bridge().stripeKeyStatus() });
+};
+
+export const saveStripeKey = async (key: string): Promise<void> => {
+  await bridge().stripeKeySave({ key });
+  await loadStripeKey();
+};
+
+export const removeStripeKey = async (): Promise<void> => {
+  await bridge().stripeKeyRemove();
+  await loadStripeKey();
+};
+
 export const connectVercel = async (input: {
   productId: string;
   /** Absent: keep the saved token. */
@@ -559,6 +576,7 @@ export const initStore = (): void => {
   void refreshInBackground();
   void loadAuth();
   void loadStripeStatus();
+  void loadStripeKey();
   bridge().onActivity((e) => {
     void onActivityInBackground(e);
   });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpError, getJson } from "@/main/lib/http";
-import { STRIPE_CONNECT_TOKEN, getSecret } from "@/main/secrets";
+import { STRIPE_CONNECT_TOKEN, STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
 import { readMetricsConfig } from "@/main/store/metrics-config";
 import type { MetricsConfig } from "@/main/store/metrics-config";
 import type { Bet } from "@/shared/bets";
@@ -246,7 +246,7 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
   if (token) {
     return { key: token, via: "connect" };
   }
-  const own = getSecret("STRIPE_SECRET_KEY");
+  const own = getSecret(STRIPE_SECRET_KEY);
   return own ? { key: own, via: "own" } : null;
 };
 
@@ -276,7 +276,7 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
   if (bet.claim.metric === "revenue") {
     const credential = stripeCredential(readMetricsConfig(bet.companyId));
     if (credential === null) {
-      return 'No source reads revenue yet — ask the founder for STRIPE_SECRET_KEY, or to connect Stripe (request_integration "stripe"), then measure_bet again.';
+      return 'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.';
     }
     return countsNoMoney(credential)
       ? 'Stripe is in test mode — no charge counts. Ask the founder to connect a live Stripe account (request_integration "stripe"), then measure_bet again.'

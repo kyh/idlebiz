@@ -78,6 +78,7 @@ type Used =
   | "onActivity"
   | "onAuthEvent"
   | "onStripeStatus"
+  | "stripeKeyStatus"
   | "stripeStatus";
 
 interface MainHolds {
@@ -122,6 +123,7 @@ const fakeMain = (late: readonly Late[]) => {
     },
     onStripeStatus: () => () => {},
     restingRunners: () => answerOf("restingRunners", main.resting),
+    stripeKeyStatus: () => Promise.resolve({ state: "unset" }),
     stripeStatus: () => Promise.resolve({ state: "disconnected" }),
   };
   return {

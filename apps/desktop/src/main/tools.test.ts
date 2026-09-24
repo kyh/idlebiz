@@ -203,7 +203,9 @@ describe("company tools", () => {
     }
     const measure = (slug: string) => callTool(ctx, "POST /v1/measure-bet", { slug });
 
-    expect(await measure(money.id)).toContain("No source reads revenue yet");
+    expect(await measure(money.id)).toBe(
+      'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.',
+    );
     expect(await measure(visits.id)).toContain("No source reads users of");
     expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
 
@@ -750,12 +752,27 @@ describe("create_payment_link", () => {
     },
   );
 
-  it("asks the founder for their own key while IdleBiz has none", async () => {
+  it("leaves the founder a Stripe card, not a sign-off, while IdleBiz has no key", async () => {
     const { ctx, asked, stripe } = chargingRun(null);
     const answer = await callTool(ctx, "POST /v1/payment-link", LINK);
-    expect(answer).toContain("ask the founder via ask_boss to add STRIPE_SECRET_KEY");
-    expect(asked).toEqual([]);
+    expect(answer).toContain("a Stripe card waiting that takes them to the Budget panel");
+    expect(answer).toContain("this task resumes automatically once the key is saved");
+    expect(asked).toEqual([
+      {
+        integration: "stripe",
+        reason: 'to sell "Pro plan" at $9.00 through a payment link',
+        type: "integration",
+      },
+    ]);
     expect(stripe).toEqual([]);
+  });
+
+  it("raises no card for a link it could not make anyway", async () => {
+    const { ctx, asked } = chargingRun(null);
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: "no-such-bet" })).toContain(
+      "is not an open revenue bet",
+    );
+    expect(asked).toEqual([]);
   });
 
   it("refuses a bet whose money the link could not be counted for", async () => {

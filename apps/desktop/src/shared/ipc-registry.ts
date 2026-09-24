@@ -25,7 +25,12 @@ import type {
 } from "@/shared/domain";
 import { BusinessTypeSchema, HireProposalSchema } from "@/shared/hire";
 import type { HireProposal } from "@/shared/hire";
-import type { ProductStatus, StripeStatus, VercelListing } from "@/shared/integrations";
+import type {
+  ProductStatus,
+  StripeKeyStatus,
+  StripeStatus,
+  VercelListing,
+} from "@/shared/integrations";
 import { officeLayoutSchema } from "@/shared/office-layout-schema";
 import type { OfficeDesign } from "@/shared/office-layout-schema";
 
@@ -92,6 +97,9 @@ export const SCHEMAS = {
   startLogin: z.void(),
   stripeConnect: z.void(),
   stripeDisconnect: z.void(),
+  stripeKeyRemove: z.void(),
+  stripeKeySave: z.object({ key: z.string().trim().min(1) }),
+  stripeKeyStatus: z.void(),
   stripeStatus: z.void(),
   takeDigest: z.void(),
   teamMessages: z.object({ limit: z.number().int().optional() }),
@@ -134,6 +142,9 @@ interface Results {
   stripeConnect: { started: boolean };
   stripeDisconnect: Done;
   onStripeStatus: StripeStatus;
+  stripeKeyStatus: StripeKeyStatus;
+  stripeKeySave: Done;
+  stripeKeyRemove: Done;
 
   takeDigest: Digest | null;
   vercelListProjects: VercelListing;

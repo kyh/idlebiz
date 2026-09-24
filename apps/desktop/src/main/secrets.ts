@@ -13,6 +13,7 @@ import type { JsonRecord } from "@/shared/json";
 const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
 export const STRIPE_CONNECT_TOKEN = "STRIPE_CONNECT_TOKEN";
+export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
 
 /** Marks a value the sealer encrypted, as base64; a different scheme takes a new version. */
 const SEALED = "sealed:v1:";
