@@ -18,7 +18,7 @@ writeFileSync(path.join(root, "a.md"), "# hi\n");
 writeFileSync(path.join(root, "b.md"), "# hi\n");
 mkdirSync(path.join(root, "Bare/Contents"), { recursive: true });
 writeFileSync(path.join(root, "Bare/Contents/PkgInfo"), "APPL????");
-// Only macOS carries the attributes that make a plain file or folder open as an app.
+// Only macOS has the attributes that make LaunchServices open a plain file or folder as an app.
 const onMac = process.platform === "darwin";
 if (onMac) {
   execFileSync("/usr/bin/xattr", [
@@ -52,33 +52,11 @@ afterAll(() => {
 
 describe("judgeOpening", () => {
   it.each([
-    ["", root],
-    ["docs/", path.join(root, "docs")],
-    ["README.MD", path.join(root, "README.MD")],
-  ])("opens %j", (rel, real) => {
-    expect(judgeOpening([root], rel)).toEqual({ kind: "open", path: real });
-  });
-
-  it.each([
     ["Report.app/", path.join(root, "Report.app")],
     ["run.command", path.join(root, "run.command")],
     ["notes.md", path.join(root, "run.command")],
   ])("reveals %j at its real path", (rel, real) => {
     expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
-  });
-
-  describe.runIf(onMac)("where macOS marks a plain file or folder as an app", () => {
-    it.each([
-      ["Bare", path.join(root, "Bare")],
-      ["a.md", path.join(root, "a.md")],
-      ["b.md", path.join(root, "b.md")],
-    ])("reveals %j at its real path", (rel, real) => {
-      expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
-    });
-  });
-
-  it("opens an absolute path inside a root", () => {
-    expect(judgeOpening([root, product], product)).toEqual({ kind: "open", path: product });
   });
 
   it.each([
@@ -91,10 +69,33 @@ describe("judgeOpening", () => {
     expect(judgeOpening([root], rel)).toBeNull();
   });
 
-  it("tries every root and skips one that does not exist", () => {
-    expect(judgeOpening([path.join(root, "gone"), root, product], "index.html")).toEqual({
-      kind: "open",
-      path: path.join(product, "index.html"),
+  // Elsewhere the launch attributes cannot be read, so everything is revealed: nothing here opens.
+  describe.runIf(onMac)("on macOS, where it can read what LaunchServices would do", () => {
+    it.each([
+      ["", root],
+      ["docs/", path.join(root, "docs")],
+      ["README.MD", path.join(root, "README.MD")],
+    ])("opens %j", (rel, real) => {
+      expect(judgeOpening([root], rel)).toEqual({ kind: "open", path: real });
+    });
+
+    it("opens an absolute path inside a root", () => {
+      expect(judgeOpening([root, product], product)).toEqual({ kind: "open", path: product });
+    });
+
+    it("tries every root and skips one that does not exist", () => {
+      expect(judgeOpening([path.join(root, "gone"), root, product], "index.html")).toEqual({
+        kind: "open",
+        path: path.join(product, "index.html"),
+      });
+    });
+
+    it.each([
+      ["Bare", path.join(root, "Bare")],
+      ["a.md", path.join(root, "a.md")],
+      ["b.md", path.join(root, "b.md")],
+    ])("reveals %j, which its attributes mark as an app", (rel, real) => {
+      expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
     });
   });
 });
