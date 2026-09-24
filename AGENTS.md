@@ -84,8 +84,9 @@ Runtime, desktop — attach to the Electron renderer over CDP.
 > which immediately drains queued work, even with autopilot off. Existing companies can
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
 > (`main/paths.ts`). `dev:desktop` runs Turbo in loose env mode, so the whole shell env
-> reaches Electron and the employees' CLIs, as in a terminal launch. Isolation protects the
-> real save, but onboarding and employee runs still bill the signed-in CLI.
+> reaches Electron, and the employees' CLIs less its credential-shaped names, as in a
+> terminal launch. Isolation protects the real save, but onboarding and employee runs still
+> bill the signed-in CLI.
 
 **(a) CLI-free routes** — the office builder and the object catalog render with no company,
 so no scheduler work is required to see them. They contain no Phaser; skip the block below.
@@ -150,23 +151,30 @@ rather than crashing boot.
 
 - `apps/web` — `STRIPE_CLIENT_ID`, `STRIPE_SECRET_KEY` (see `.env.example`, read through
   `src/lib/env.ts`). Missing ⇒ `/api/stripe/*` refuses the flow with a clear message.
-- Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`.
-  `main/secrets.ts` exports them into the process env at boot so both the metrics providers
-  and every employee's shell inherit them: `STRIPE_SECRET_KEY`, `VERCEL_TOKEN`. Employees
-  charge through the `create_payment_link` tool, which makes the link with
+- Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`. They are
+  IdleBiz's own: main reads each where it uses it (`getSecret` in `main/secrets.ts`) and
+  exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
+  Employees charge through the `create_payment_link` tool, which makes the link with
   `STRIPE_SECRET_KEY` in main (`main/payment-links.ts`) once the founder signs off, and
   metrics reads revenue with it for every company but
   the one whose `metrics.json` holds the connected account: that one reads through
   `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
-  on (`stripeCredential` in `main/metrics.ts`). The Connect token is read-only and stays
-  out of the env. A key Stripe refuses shows in the HUD — a Connect token as revoked, the own key by name —
-  until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
+  on (`stripeCredential` in `main/metrics.ts`). The Connect token is read-only. A key Stripe
+  refuses shows in the HUD — a Connect token as revoked, the own key by name — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
   through the `deploy` tool, which runs the Vercel CLI with `VERCEL_TOKEN` in main
   (`main/deploy.ts`) once the founder signs off.
+- A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
+  `SECRET`, `PASSWORD`, `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`, `CREDENTIALS`, `AUTH` as whole
+  `_` segments — except its runner's own login (`providerEnv` in
+  `packages/agent-driver/src/registry.ts`) and `SSH_AUTH_SOCK` (`runEnv` in
+  `main/agents/run-env.ts`). AWS access keys sign for the whole account, so neither runner
+  keeps them: a founder on Bedrock signs in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
+  The founder's logins kept under HOME (git, ssh, `gh`, npm, the Vercel CLI, `~/.aws`) still
+  reach every run.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

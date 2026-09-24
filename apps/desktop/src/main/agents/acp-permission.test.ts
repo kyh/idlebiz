@@ -72,6 +72,7 @@ const turn = (
   runAcpTurn({
     agent: {
       command: [process.execPath, "-e", agentScript],
+      env: {},
       sessionMeta: more.sessionMeta,
       sessionModeId: "default",
     },

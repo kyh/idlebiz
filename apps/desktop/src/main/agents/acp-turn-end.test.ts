@@ -90,6 +90,7 @@ const turn = (agentScript: string, maxSessionMs = 0) =>
   runAcpTurn({
     agent: {
       command: [process.execPath, "-e", agentScript],
+      env: {},
       sessionModeId: "default",
       typedFailures: true,
     },

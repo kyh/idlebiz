@@ -5,7 +5,6 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-api-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-const previousToken = process.env.VERCEL_TOKEN;
 process.env.IDLEBIZ_ROOT_DIR = root;
 
 const { setSecret } = await import("@/main/secrets");
@@ -17,11 +16,6 @@ afterAll(() => {
     delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
     process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-  if (previousToken === undefined) {
-    delete process.env.VERCEL_TOKEN;
-  } else {
-    process.env.VERCEL_TOKEN = previousToken;
   }
 });
 

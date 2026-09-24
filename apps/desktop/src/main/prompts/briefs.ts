@@ -377,7 +377,7 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
 });
 
 export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
-  `${INTEGRATION_LABELS[kind]} is now connected — the credentials are in your environment. Continue where you left off.`;
+  `${INTEGRATION_LABELS[kind]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
 
 export const approvalAnswer = (approved: boolean, command: string): string =>
   approved

@@ -9,11 +9,11 @@ const previous = {
   A: process.env.A,
   B: process.env.B,
   IDLEBIZ_ROOT_DIR: process.env.IDLEBIZ_ROOT_DIR,
-  STRIPE_CONNECT_TOKEN: process.env.STRIPE_CONNECT_TOKEN,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+  VERCEL_TOKEN: process.env.VERCEL_TOKEN,
 };
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { deleteSecret, exportSecretsToEnv, getSecret, setSecret } = await import("./secrets");
+const { checkSecrets, deleteSecret, getSecret, setSecret } = await import("./secrets");
 
 const restore = (key: keyof typeof previous): void => {
   const value = previous[key];
@@ -26,7 +26,7 @@ const restore = (key: keyof typeof previous): void => {
 };
 
 const restoreSecrets = (): void => {
-  for (const key of ["A", "B", "STRIPE_CONNECT_TOKEN", "STRIPE_SECRET_KEY"] as const) {
+  for (const key of ["A", "B", "STRIPE_SECRET_KEY", "VERCEL_TOKEN"] as const) {
     restore(key);
   }
 };
@@ -58,8 +58,8 @@ describe("a secrets.json the founder broke by hand", () => {
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
   });
 
-  it("is reported at boot instead of exporting nothing silently", () => {
-    const failure = exportSecretsToEnv();
+  it("is reported at boot and left as the founder wrote it", () => {
+    const failure = checkSecrets();
     expect(failure?.file).toBe(secretsFile);
     expect(failure?.cause).toBeInstanceOf(Error);
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
@@ -68,9 +68,10 @@ describe("a secrets.json the founder broke by hand", () => {
 });
 
 describe("a readable secrets.json", () => {
-  it("is seeded at boot when missing", () => {
-    expect(exportSecretsToEnv()).toBeNull();
+  it("is seeded at boot when missing, saying the keys stay with IdleBiz", () => {
+    expect(checkSecrets()).toBeNull();
     expect(existsSync(secretsFile)).toBe(true);
+    expect(readFileSync(secretsFile, "utf-8")).toContain("never given to your employees");
   });
 
   it("keeps the other keys when one is set or deleted", () => {
@@ -85,22 +86,23 @@ describe("a readable secrets.json", () => {
     expect(getSecret("B")).toBeNull();
   });
 
-  it("exports its string keys at boot", () => {
-    writeFileSync(secretsFile, '{"A":"1","_readme":"docs"}');
+  it("keeps every key in the file, out of this process's env and so every run's", () => {
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"own","_readme":"docs"}');
 
-    expect(exportSecretsToEnv()).toBeNull();
-    expect(process.env.A).toBe("1");
+    expect(checkSecrets()).toBeNull();
+    expect(process.env.STRIPE_SECRET_KEY).toBe(previous.STRIPE_SECRET_KEY);
+
+    setSecret("VERCEL_TOKEN", "saved");
+    expect(getSecret("VERCEL_TOKEN")).toBe("saved");
+    expect(process.env.VERCEL_TOKEN).toBe(previous.VERCEL_TOKEN);
   });
 
-  it("keeps the Connect token in the file, out of every run's env", () => {
-    writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"connected","STRIPE_SECRET_KEY":"own"}');
+  it("leaves the founder's own variable of the same name alone when a key is deleted", () => {
+    process.env.A = "from the shell";
+    writeFileSync(secretsFile, '{"A":"1"}');
 
-    expect(exportSecretsToEnv()).toBeNull();
-    expect(process.env.STRIPE_SECRET_KEY).toBe("own");
-    expect(process.env.STRIPE_CONNECT_TOKEN).toBe(previous.STRIPE_CONNECT_TOKEN);
-
-    setSecret("STRIPE_CONNECT_TOKEN", "reconnected");
-    expect(getSecret("STRIPE_CONNECT_TOKEN")).toBe("reconnected");
-    expect(process.env.STRIPE_CONNECT_TOKEN).toBe(previous.STRIPE_CONNECT_TOKEN);
+    deleteSecret("A");
+    expect(getSecret("A")).toBeNull();
+    expect(process.env.A).toBe("from the shell");
   });
 });

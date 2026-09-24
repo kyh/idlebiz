@@ -44,6 +44,7 @@ const turn = (usagePerRequest?: true) =>
   runAcpTurn({
     agent: {
       command: [process.execPath, "-e", codexLikeAgent],
+      env: {},
       sessionModeId: "read-only",
       usagePerRequest,
     },

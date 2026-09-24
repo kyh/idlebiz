@@ -1,17 +1,19 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
+import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { BlockedAsk } from "@/shared/domain";
+import { parseJson } from "@/shared/json";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("@/main/store/store");
-const { PAGE_URLS, agentDriver, decidePermission, memoryAfter, outcomeOf } =
+const { PAGE_URLS, acpAgentFor, agentDriver, decidePermission, memoryAfter, outcomeOf } =
   await import("./agent-driver");
 
 beforeEach(() => {
@@ -282,5 +284,86 @@ describe("decidePermission", () => {
     expect(await decide(AbortSignal.abort())).toEqual({ allow: false });
     expect(asked).toEqual([]);
     expect(store.consumeApproval("deploy", "git push")).toBe(true);
+  });
+});
+
+/** An ACP agent whose one message is the names of the variables it was started with. */
+const ENV_NAMING_AGENT = `
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method } = JSON.parse(line);
+  if (method === "initialize") send({ id, result: { agentCapabilities: {}, protocolVersion: 1 } });
+  if (method === "session/new") send({ id, result: { sessionId: "s1" } });
+  if (method === "session/set_mode") send({ id, result: {} });
+  if (method === "session/prompt") {
+    const content = { text: JSON.stringify(Object.keys(process.env)), type: "text" };
+    send({ method: "session/update", params: { sessionId: "s1", update: { content, sessionUpdate: "agent_message_chunk" } } });
+    send({ id, result: { stopReason: "end_turn" } });
+  }
+});
+`;
+
+describe("the environment an agent is spawned with", () => {
+  const founder = {
+    ANTHROPIC_API_KEY: "sk-ant-founder",
+    STRIPE_SECRET_KEY: "sk_live_founder",
+    VERCEL_TOKEN: "vercel-founder",
+  };
+  const touched = [...Object.keys(founder), "CLAUDE_BIN", "CODEX_BIN"];
+  const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
+  const names = z.array(z.string());
+  let cwd = "";
+
+  beforeEach(() => {
+    cwd = mkdtempSync(path.join(tmpdir(), "idlebiz-run-env-"));
+    Object.assign(process.env, founder);
+  });
+
+  afterEach(() => {
+    rmSync(cwd, { force: true, recursive: true });
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  it("holds none of IdleBiz's keys, even when main's own env has them", async () => {
+    const agent = acpAgentFor("claude");
+    const { end, summary } = await runAcpTurn({
+      agent: { ...agent, command: [process.execPath, "-e", ENV_NAMING_AGENT] },
+      cwd,
+      env: { IDLEBIZ_RUN_TOKEN: "run" },
+      idleTimeoutMs: 0,
+      maxSessionMs: 0,
+      onEvent: () => {},
+      prompt: "work",
+      systemPrompt: "",
+      teardownGraceMs: 100,
+    });
+    expect(end).toEqual({ kind: "completed" });
+    const spawnedWith = names.parse(parseJson(summary));
+    expect(spawnedWith).not.toContain("VERCEL_TOKEN");
+    expect(spawnedWith).not.toContain("STRIPE_SECRET_KEY");
+    expect(spawnedWith).toEqual(
+      expect.arrayContaining(["ANTHROPIC_API_KEY", "IDLEBIZ_RUN_TOKEN", "PATH"]),
+    );
+  });
+
+  it("probes a CLI's login in the env its runs get", async () => {
+    const seen = path.join(cwd, "seen.json");
+    const cli = path.join(cwd, "claude");
+    const script = `require("node:fs").writeFileSync(${JSON.stringify(seen)}, JSON.stringify(Object.keys(process.env)));`;
+    writeFileSync(cli, `#!/usr/bin/env node\n${script}\n`, { mode: 0o755 });
+    process.env.CLAUDE_BIN = cli;
+    process.env.CODEX_BIN = path.join(cwd, "no-codex");
+
+    await agentDriver.refresh();
+    const probedWith = names.parse(parseJson(readFileSync(seen, "utf-8")));
+    expect(probedWith).not.toContain("VERCEL_TOKEN");
+    expect(probedWith).toContain("ANTHROPIC_API_KEY");
   });
 });

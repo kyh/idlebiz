@@ -66,9 +66,9 @@ export const productionAlias = (output: string): string | null =>
 const Printed = z.object({ stderr: z.string(), stdout: z.string() });
 
 /**
- * Main's env holds every secret the founder saved, so the CLI gets only what it runs
- * on. A relative PATH entry names a folder in whichever directory a program runs,
- * and the CLI runs git in the product's.
+ * Main's env is the founder's, with whatever credentials their shell exports, so the CLI
+ * gets only what it runs on. A relative PATH entry names a folder in whichever directory
+ * a program runs, and the CLI runs git in the product's.
  */
 const passedThrough = () => ({
   ...Object.fromEntries(

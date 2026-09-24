@@ -17,7 +17,11 @@ export const isReady = (p: RunnerProbe): boolean => p.installed && p.authed;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
-const run = (bin: string, args: string[]): Promise<{ ok: boolean; output: string }> =>
+const run = (
+  bin: string,
+  args: string[],
+  env: Record<string, string>,
+): Promise<{ ok: boolean; output: string }> =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process events)
   new Promise((resolve) => {
     let output = "";
@@ -31,7 +35,7 @@ const run = (bin: string, args: string[]): Promise<{ ok: boolean; output: string
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(bin, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       done(false);
       return;
@@ -57,15 +61,15 @@ const run = (bin: string, args: string[]): Promise<{ ok: boolean; output: string
     });
   });
 
-// Probe the player's CLI login, which the ACP adapter inherits.
-const probeRunner = async (id: RunnerId): Promise<RunnerProbe> => {
+// Probe the player's CLI login in the env its runs get, so signed in means a run can sign in.
+const probeRunner = async (id: RunnerId, env: Record<string, string>): Promise<RunnerProbe> => {
   const bin = runnerBin(id);
-  const version = await run(bin, ["--version"]);
+  const version = await run(bin, ["--version"], env);
   if (!version.ok) {
     return { bin, id, installed: false };
   }
   const { authProbe } = RUNNERS[id];
-  const auth = await run(bin, authProbe.args);
+  const auth = await run(bin, authProbe.args, env);
   return {
     authed: auth.ok && authProbe.loggedIn(auth.output),
     bin,
@@ -75,4 +79,6 @@ const probeRunner = async (id: RunnerId): Promise<RunnerProbe> => {
   };
 };
 
-export const probeRunners = (): Promise<RunnerProbe[]> => Promise.all(RUNNER_IDS.map(probeRunner));
+export const probeRunners = (
+  envOf: (id: RunnerId) => Record<string, string>,
+): Promise<RunnerProbe[]> => Promise.all(RUNNER_IDS.map((id) => probeRunner(id, envOf(id))));

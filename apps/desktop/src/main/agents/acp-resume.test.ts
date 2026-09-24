@@ -39,7 +39,7 @@ afterEach(() => {
 
 const turn = (agentScript: string, systemPrompt = "", instructionsChanged = false) =>
   runAcpTurn({
-    agent: { command: [process.execPath, "-e", agentScript], sessionModeId: "default" },
+    agent: { command: [process.execPath, "-e", agentScript], env: {}, sessionModeId: "default" },
     cwd,
     idleTimeoutMs: 0,
     instructionsChanged,

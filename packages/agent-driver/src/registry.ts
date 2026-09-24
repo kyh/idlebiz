@@ -16,6 +16,12 @@ export interface RunnerAdapter {
   sessionMeta?: NewSessionRequest["_meta"];
   /** Adapter env var pointing at the player's CLI; bundled optional binaries may be absent. */
   binEnvVar?: string;
+  /**
+   * Prefixes of the env vars this CLI signs in and is configured with: a run's env drops
+   * every other credential-shaped name, and without these the CLI could not reach its model.
+   * Agent code reads them too, so keep no key that signs for more than the model.
+   */
+  providerEnv: readonly string[];
   /** The player's CLI on PATH, and the env var that overrides where it lives. */
   cli: { command: string; override: string };
   displayName: string;
@@ -82,6 +88,14 @@ export const RUNNERS = {
     displayName: "Claude Code",
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
+    // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, so
+    // Bedrock is a profile or that token; Vertex reads the path of Google's key file
+    providerEnv: [
+      "ANTHROPIC_",
+      "CLAUDE_",
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+    ],
     sessionMeta: claudeSessionMeta,
     sessionModeId: "default",
   },
@@ -94,6 +108,8 @@ export const RUNNERS = {
     displayName: "Codex",
     fallbackRates: { cachedInput: 0.125, input: 1.25, output: 10 },
     loginArgs: ["login"],
+    // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY
+    providerEnv: ["OPENAI_", "CODEX_", "AWS_BEARER_TOKEN_BEDROCK", "AZURE_OPENAI_"],
     sessionModeId: "read-only",
     typedFailures: true,
     usagePerRequest: true,

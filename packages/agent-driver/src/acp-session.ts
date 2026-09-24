@@ -105,8 +105,8 @@ export interface AcpAgent {
   usagePerRequest?: true;
   /** Declare typed session failures on initialize — see `RunnerAdapter`. */
   typedFailures?: true;
-  /** Environment this agent needs to find its own CLI. */
-  env?: Record<string, string>;
+  /** The agent's whole environment: nothing of this process's own reaches it unless named here. */
+  env: Record<string, string>;
 }
 
 /** A tool call an agent wants to make, as the policy layer sees it. */
@@ -137,7 +137,7 @@ export interface AcpTurnOptions {
   resumeSessionId?: string;
   /** Extra dirs the agent may read/write (e.g. its own memory folder). */
   addDirs?: string[];
-  /** Run-scoped env additions (control-plane URL + token, secrets). */
+  /** Run-scoped additions to the agent's env (the control-plane URL and token, tool caches). */
   env?: Record<string, string>;
   /**
    * Decides tool permissions. Omission allows everything; the caller must provide confinement.
@@ -380,7 +380,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         cwd: opts.cwd,
         // its own process group, so the backstop can reach the CLI it runs
         detached: true,
-        env: { ...process.env, ...opts.agent.env, ...opts.env },
+        env: { ...opts.agent.env, ...opts.env },
         signal: opts.signal,
         stdio: ["pipe", "pipe", "pipe"],
       });

@@ -27,6 +27,7 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
+import { runEnv } from "@/main/agents/run-env";
 import { report } from "@/main/lib/report";
 import type { ToolCaller } from "@/main/control-plane";
 import type {
@@ -49,10 +50,17 @@ const resolveFromApp = createRequire(import.meta.url);
 const unpacked = (file: string): string =>
   file.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
 
-const acpAgentFor = (runner: AgentRunner): AcpAgent => {
+/** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
+const runnerEnv = (runner: AgentRunner): Record<string, string> =>
+  runEnv(process.env, RUNNERS[runner].providerEnv);
+
+export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
   const adapter: RunnerAdapter = RUNNERS[runner];
-  // The packaged executable is Electron; child agents need its Node mode.
-  const env: AcpAgent["env"] = { ELECTRON_RUN_AS_NODE: "1" };
+  const env: AcpAgent["env"] = {
+    ...runnerEnv(runner),
+    // The packaged executable is Electron; child agents need its Node mode.
+    ELECTRON_RUN_AS_NODE: "1",
+  };
   if (adapter.binEnvVar) {
     env[adapter.binEnvVar] = runnerBin(runner);
   }
@@ -265,7 +273,7 @@ class AgentDriver {
   }
 
   private async probe(): Promise<RunnerProbe[]> {
-    const probes = await probeRunners();
+    const probes = await probeRunners(runnerEnv);
     this.probes = probes;
     return probes;
   }

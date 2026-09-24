@@ -118,12 +118,15 @@ allocator and the replay.
   policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
-- **Outward-facing stays founder-gated.** An outward step that needs IdleBiz's own keys is
-  a signed tool main runs: `deploy` runs the Vercel CLI with the founder's token and a
-  minimal env (`main/deploy.ts`), and `create_payment_link` prices in USD and makes a Stripe
-  payment link with the founder's own key (`main/payment-links.ts`; a Connect grant is
-  read-only), tagging each payment for its product and a named open revenue bet on it. Each
-  runs once the founder signs off on the action it names (`deploy <product> to production`,
+- **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`) never
+  reach an employee's process: main reads each where it uses it, and a run starts from the
+  founder's env less every credential-shaped name but its runner's own login (`runEnv` in
+  `main/agents/run-env.ts`). An outward step that needs those keys is a signed tool main
+  runs: `deploy` runs the Vercel CLI with the founder's token and a minimal env
+  (`main/deploy.ts`), and `create_payment_link` prices in USD and makes a Stripe payment
+  link with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
+  tagging each payment for its product and a named open revenue bet on it. Each runs once
+  the founder signs off on the action it names (`deploy <product> to production`,
   `payment link "<name>" at $<amount> on <product> for bet <slug>`). That action is the
   approval's key, so it takes the same one-time grant a held command does (`requireSignOff`
   in `main/tools.ts`).

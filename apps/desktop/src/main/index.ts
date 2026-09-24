@@ -35,7 +35,7 @@ import {
 } from "@/main/vercel-connect";
 import { adoptShellPath } from "@/main/lib/shell-path";
 import { bootFailed, initLog } from "@/main/lib/log";
-import { exportSecretsToEnv } from "@/main/secrets";
+import { checkSecrets } from "@/main/secrets";
 import {
   initStripeConnect,
   beginConnect,
@@ -293,7 +293,7 @@ const boot = async (): Promise<void> => {
     callback(false);
   });
   store.initStore();
-  const unreadableSecrets = exportSecretsToEnv();
+  const unreadableSecrets = checkSecrets();
   if (unreadableSecrets) {
     store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
   }
