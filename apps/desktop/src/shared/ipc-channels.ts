@@ -66,7 +66,7 @@ export type WireValue =
   | WireValue[]
   | { [key: string]: WireValue };
 
-export interface IpcFailure {
+interface IpcFailure {
   ok: false;
   message: string;
 }
@@ -77,3 +77,11 @@ export interface IpcFailure {
  * crosses as data and the preload throws its message bare.
  */
 export type IpcReply<T> = { ok: true; value: T } | IpcFailure;
+
+/** Whether what came back over the wire is a reply at all: the preload has no schemas to check it with. */
+export const isReply = (value: unknown): value is IpcReply<WireValue> =>
+  typeof value === "object" &&
+  value !== null &&
+  "ok" in value &&
+  (value.ok === true ||
+    (value.ok === false && "message" in value && typeof value.message === "string"));

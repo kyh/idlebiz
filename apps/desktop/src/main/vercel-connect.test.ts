@@ -4,9 +4,9 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-"));
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-const previousToken = process.env["VERCEL_TOKEN"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+const previousToken = process.env.VERCEL_TOKEN;
+process.env.IDLEBIZ_ROOT_DIR = root;
 
 const store = await import("@/main/store/store");
 const { getSecret, setSecret } = await import("@/main/secrets");
@@ -62,14 +62,14 @@ const vercelAccount = (override: Override = () => null): (string | null)[] => {
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
   if (previousToken === undefined) {
-    delete process.env["VERCEL_TOKEN"];
+    delete process.env.VERCEL_TOKEN;
   } else {
-    process.env["VERCEL_TOKEN"] = previousToken;
+    process.env.VERCEL_TOKEN = previousToken;
   }
 });
 
@@ -86,7 +86,7 @@ it("rejects an unknown product before replacing the founder's credential", () =>
   ).toThrow();
 
   expect(getSecret("VERCEL_TOKEN")).toBe("existing-token");
-  expect(process.env["VERCEL_TOKEN"]).toBe("existing-token");
+  expect(process.env.VERCEL_TOKEN).toBe("existing-token");
 });
 
 it("unbinds the active product without removing the credential shared with older saves", () => {

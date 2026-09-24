@@ -9,17 +9,17 @@ import type { StripeCredential } from "./metrics";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-metrics-"));
 const secretsFile = path.join(root, "secrets.json");
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const { countPages, fetchRealMetrics, stripeCredential, stripeInTestMode, sumCharges } =
   await import("./metrics");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
 
@@ -365,9 +365,9 @@ describe("fetchRealMetrics reading Stripe", () => {
 
     expect(asked).toContain("/v1/charges?limit=100&created[gte]=1700000000");
     expect(snap.revenue).toBe(57);
-    expect([...snap.betReadings]).toEqual([
-      ["pricing", { at: expect.any(Number), reading: 7 }],
-      ["later", { at: expect.any(Number), reading: 0 }],
+    expect([...snap.betReadings].map(([id, read]) => [id, read.reading])).toEqual([
+      ["pricing", 7],
+      ["later", 0],
     ]);
   });
 

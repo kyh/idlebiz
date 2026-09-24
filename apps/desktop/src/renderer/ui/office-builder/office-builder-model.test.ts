@@ -202,6 +202,7 @@ describe("editing several objects at once", () => {
 
 const openedCells = (before: readonly string[], after: readonly string[]): string[] =>
   before.flatMap((row, r) =>
+    // oxlint-disable-next-line typescript/no-misused-spread -- collision rows are ASCII 0s and 1s
     [...row].flatMap((cell, c) => (cell === "1" && after[r]?.[c] === "0" ? [`${r},${c}`] : [])),
   );
 const paint = (L: EditableLayout, c: number, r: number, val: 0 | 1): EditableLayout => ({

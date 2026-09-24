@@ -21,8 +21,8 @@ import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store");
 const { scheduler } = await import("@/main/scheduler");
 const {
@@ -47,9 +47,9 @@ beforeEach(() => {
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
 

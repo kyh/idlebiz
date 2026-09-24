@@ -76,7 +76,7 @@ const resetGame = async (): Promise<void> => {
 /** The PNGs the save handler judges sight from: public/ as the page is served it, and check:office's sheet. */
 const officeArt = (): OfficeArt => ({
   publicDir:
-    isDev && process.env["ELECTRON_RENDERER_URL"]
+    isDev && process.env.ELECTRON_RENDERER_URL
       ? path.join(app.getAppPath(), "public")
       : path.join(moduleDir, "../renderer"),
   sheet: path.join(employeeSheetDir(), "employee-sheet-01.png"),
@@ -87,7 +87,7 @@ const ipcHandlers = {
   assignTask: ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId),
   composeCharacter: async ({ seed }) => {
     const { composeCharacter } = await import("@/main/character/compositor");
-    return composeCharacter(seed);
+    return await composeCharacter(seed);
   },
   createProduct: (input) => startProduct(input, null),
   directEmployee: ({ employeeId, instruction }) =>
@@ -117,7 +117,7 @@ const ipcHandlers = {
   getCompany: store.getCompany,
   getFounderChoices: async () => {
     const { listFounderChoices } = await import("@/main/character/compositor");
-    return listFounderChoices(6);
+    return await listFounderChoices(6);
   },
   hasAuth: async () => ({ ok: await agentDriver.hasAnyRunner() }),
   killBet: ({ betId, reason }) => killBet(betId, reason),
@@ -171,7 +171,7 @@ const ipcHandlers = {
 } satisfies IpcHandlers;
 
 const appUrl = (): string => {
-  const dev = isDev ? process.env["ELECTRON_RENDERER_URL"] : undefined;
+  const dev = isDev ? process.env.ELECTRON_RENDERER_URL : undefined;
   return dev ?? pathToFileURL(path.join(moduleDir, "../renderer/index.html")).toString();
 };
 
@@ -313,7 +313,7 @@ const boot = async (): Promise<void> => {
       metricsPulse.now();
       scheduler.resumeIntegrationAsks("stripe");
     },
-    openExternal: shell.openExternal,
+    openExternal: (url) => shell.openExternal(url),
   });
   initVercelConnect({
     onConnected: () => {

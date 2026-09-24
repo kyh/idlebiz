@@ -243,7 +243,7 @@ interface InFlight extends Placement {
 }
 
 class Scheduler {
-  private runs = new Map<string, InFlight>();
+  private readonly runs = new Map<string, InFlight>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly driver: EmployeeRunner;

@@ -9,7 +9,7 @@ export default defineConfig({
   main: {
     build: {
       outDir: ".output/app/main",
-      rollupOptions: {
+      rolldownOptions: {
         // On Vite 8, electron-vite's own externals (electron, `dependencies`) never
         // apply, so main bundles whatever is not named here: electron would become
         // its npm path stub, and sharp is native and must load from node_modules.
@@ -28,7 +28,7 @@ export default defineConfig({
         formats: ["cjs"],
       },
       outDir: ".output/app/preload",
-      rollupOptions: {
+      rolldownOptions: {
         external: ["electron"],
         output: { entryFileNames: "index.js" },
       },
@@ -40,7 +40,7 @@ export default defineConfig({
   renderer: {
     build: {
       outDir: ".output/app/renderer",
-      rollupOptions: {
+      rolldownOptions: {
         input: { index: path.resolve(configDir, "src/renderer/index.html") },
       },
     },

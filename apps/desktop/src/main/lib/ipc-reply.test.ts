@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isReply } from "@/shared/ipc-channels";
 import { RefusalError } from "@/shared/refusal";
 import { settle } from "./ipc-reply";
 
@@ -47,5 +48,16 @@ describe("IPC reply", () => {
 
     await expect(settle(fail, undefined)).resolves.toEqual({ message: fault.message, ok: false });
     expect(log).toHaveBeenCalledExactlyOnceWith("[ipc]", fault);
+  });
+
+  it("is always what the preload takes for a reply, and nothing else is", async () => {
+    const refused = await settle((): number => {
+      throw new RefusalError(seatCap);
+    }, undefined);
+    expect(isReply(refused)).toBe(true);
+    expect(isReply(await settle((n: number) => n, 1))).toBe(true);
+    expect(isReply(await settle(() => {}, undefined))).toBe(true);
+    const strays = [undefined, null, "ok", { value: 1 }, { ok: "yes" }, { ok: false }];
+    expect(strays.filter(isReply)).toEqual([]);
   });
 });

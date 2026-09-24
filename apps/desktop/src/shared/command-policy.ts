@@ -373,7 +373,7 @@ const shellScript = (words: Words, from: number): string | null => {
       at += SHELL_VALUED.has(word) ? 1 : 0;
     } else {
       command ||= word.startsWith("-") && word.includes("c");
-      at += [...word].filter((char) => char === "o" || char === "O").length;
+      at += word.match(/[oO]/gu)?.length ?? 0;
     }
   }
   return command ? (words[at] ?? null) : null;
@@ -510,7 +510,7 @@ const RESERVED = wordsOf("! { } always do done elif else esac fi if then until w
 /** Reserved words whose own operand comes before the command's name: `function NAME`, zsh's `repeat COUNT`. */
 const TAKES_OPERAND = wordsOf("function repeat");
 /** Arithmetic, which zsh's short forms run a command straight after: `while (( n-- )) git push`. */
-const ARITHMETIC = /^\(\(/u;
+const ARITHMETIC = "((";
 /**
  * Words zsh may start another command right after, within the same one: the `{`
  * opening a body past any number of function names (`function f g { git push }`),
@@ -527,8 +527,8 @@ const leadingWords = (words: Words, at: number): number => {
   if (TAKES_OPERAND.has(word)) {
     return 2;
   }
-  const arithmeticFor = word === "for" && ARITHMETIC.test(words[at + 1] ?? "");
-  return arithmeticFor || ASSIGNMENT.test(word) || RESERVED.has(word) || ARITHMETIC.test(word)
+  const arithmeticFor = word === "for" && (words[at + 1] ?? "").startsWith(ARITHMETIC);
+  return arithmeticFor || ASSIGNMENT.test(word) || RESERVED.has(word) || word.startsWith(ARITHMETIC)
     ? 1
     : 0;
 };

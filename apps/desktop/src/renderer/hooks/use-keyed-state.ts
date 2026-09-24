@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
 
-interface Keyed<K, T> {
-  key: K;
+interface Keyed<T> {
+  key: string;
   value: T;
 }
 
 /** What a render under `key` holds: the stored value if it was stored under that key, else `initial`. */
-export const keyedAt = <K, T>(stored: Keyed<K, T>, key: K, initial: T): Keyed<K, T> =>
-  Object.is(stored.key, key) ? stored : { key, value: initial };
+export const keyedAt = <T>(stored: Keyed<T>, key: string, initial: T): Keyed<T> =>
+  stored.key === key ? stored : { key, value: initial };
 
 /**
  * State that starts over whenever `key` changes, without an effect: the value
@@ -16,12 +16,12 @@ export const keyedAt = <K, T>(stored: Keyed<K, T>, key: K, initial: T): Keyed<K,
  * reads as `initial` on its very first render. Setting the value it already
  * has is a no-op.
  */
-export const useKeyedState = <K, T>(key: K, initial: T): [T, (v: T) => void] => {
-  const [stored, setStored] = useState<Keyed<K, T>>({ key, value: initial });
+export const useKeyedState = <T>(key: string, initial: T): [T, (v: T) => void] => {
+  const [stored, setStored] = useState<Keyed<T>>({ key, value: initial });
   const set = useCallback(
     (v: T) =>
       setStored((prev) =>
-        Object.is(prev.key, key) && Object.is(prev.value, v) ? prev : { key, value: v },
+        prev.key === key && Object.is(prev.value, v) ? prev : { key, value: v },
       ),
     [key],
   );

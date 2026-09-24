@@ -19,7 +19,7 @@ const fromOurWindow = (frame: WebFrameMain | null): boolean =>
   frame !== null && frame.parent === null;
 
 // Generic so handlers[method] narrows to IpcHandler<M>; over the union it would not.
-const handle = <M extends InvokeMethod>(handlers: IpcHandlers, method: M): void => {
+const handle = <M extends InvokeMethod>(handlers: Pick<IpcHandlers, M>, method: M): void => {
   const fn = handlers[method];
   ipcMain.handle(CHANNELS[method].channel, (event, raw: WireValue) => {
     if (!fromOurWindow(event.senderFrame)) {

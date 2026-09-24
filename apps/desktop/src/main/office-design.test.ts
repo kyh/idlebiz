@@ -9,8 +9,8 @@ import { RefusalError } from "@/shared/refusal";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-office-"));
 const officeFile = path.join(root, "office-design.json");
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const { loadOfficeDesign, saveOfficeDesign } = await import("./office-design");
 
 const layout = officeLayoutSchema.parse(bundled);
@@ -56,9 +56,9 @@ beforeEach(() => rmSync(officeFile, { force: true }));
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
 
@@ -74,13 +74,11 @@ describe("loading the saved office", () => {
 
   it("says why a broken file can't be read instead of passing it off as absent", () => {
     writeFileSync(officeFile, '{"version":2,');
-    expect(loadOfficeDesign()).toEqual({ kind: "unreadable", reason: expect.any(String) });
+    expect(loadOfficeDesign().kind).toBe("unreadable");
 
     writeFileSync(officeFile, JSON.stringify({ ...bundled, tile: "big" }));
-    expect(loadOfficeDesign()).toEqual({
-      kind: "unreadable",
-      reason: expect.stringMatching(/tile/u),
-    });
+    const design = loadOfficeDesign();
+    expect(design.kind === "unreadable" ? design.reason : design.kind).toMatch(/tile/u);
   });
 
   it("refuses a file naming art this build lacks, so neither scene nor builder draws it", () => {

@@ -126,7 +126,7 @@ export const toolAskOf = (request: {
   }
   const network = NetworkInput.safeParse(request.rawInput);
   if (network.success) {
-    return { host: URL.parse(network.data.url)?.host || null, kind: "network" };
+    return { host: URL.parse(network.data.url)?.host ?? null, kind: "network" };
   }
   return { kind: "unknown", title: request.title ?? "" };
 };

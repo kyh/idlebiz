@@ -53,7 +53,7 @@ const readJsonBody = async (req: IncomingMessage): Promise<JsonValue> => {
 class ControlPlane {
   private server: Server | null = null;
   private port = 0;
-  private runs = new Map<string, ToolCaller>();
+  private readonly runs = new Map<string, ToolCaller>();
 
   async start(): Promise<void> {
     if (this.server) {

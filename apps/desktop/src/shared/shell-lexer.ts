@@ -129,7 +129,7 @@ const LEADS: Record<Parser, ReadonlyMap<string, Place>> = {
 };
 
 /** Arithmetic, which zsh's short forms run a command straight after: `while (( n-- )) case`. */
-const ARITHMETIC = /^\(\(/u;
+const ARITHMETIC = "((";
 const TIME_OPTIONS = new Set(["-p", "--"]);
 /** What ends a `case` item, after which the next word is a pattern: `case a in b) :;; case) …` opens nothing. */
 const ITEM_ENDS = new Set([";;", ";;&", ";&", ";|"]);
@@ -138,7 +138,7 @@ const nameAt = (word: string, bare: boolean, parser: Parser): Place => {
   if (!bare) {
     return "argument";
   }
-  if (parser === "zsh" && ARITHMETIC.test(word)) {
+  if (parser === "zsh" && word.startsWith(ARITHMETIC)) {
     return "name";
   }
   return LEADS[parser].get(word) ?? "argument";
@@ -153,7 +153,7 @@ const STEPS: Record<Place, (word: string, bare: boolean, parser: Parser) => Plac
     const next = nameAt(word, bare, parser);
     return next === "argument" ? "name" : next;
   },
-  for: (word, bare) => (bare && ARITHMETIC.test(word) ? "name" : "argument"),
+  for: (word, bare) => (bare && word.startsWith(ARITHMETIC) ? "name" : "argument"),
   name: nameAt,
   names: (word, bare) => (bare && word === "{" ? "name" : "names"),
   operand: () => "name",

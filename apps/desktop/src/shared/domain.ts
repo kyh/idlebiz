@@ -345,8 +345,10 @@ export type TaskState =
 // the state kinds and the status vocabulary (TASK.md, the IPC filter, status events) are one set
 type _AssertStatesAreStatuses = TaskState["kind"] extends TaskStatus ? true : never;
 type _AssertStatusesAreStates = TaskStatus extends TaskState["kind"] ? true : never;
-const taskStatesInSync: _AssertStatesAreStatuses & _AssertStatusesAreStates = true;
-void taskStatesInSync;
+const statesAreStatuses: _AssertStatesAreStatuses = true;
+const statusesAreStates: _AssertStatusesAreStates = true;
+void statesAreStatuses;
+void statusesAreStates;
 
 /** Entering a state, stamped: a run's start, or the moment it settled. Every change of state goes through here, so the timestamps cannot disagree with it. */
 export const entering = (

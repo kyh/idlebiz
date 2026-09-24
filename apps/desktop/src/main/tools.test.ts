@@ -8,8 +8,8 @@ import { BadRequestError } from "@/shared/errors";
 import type { RunContext } from "./tools";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-tools-"));
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
@@ -29,9 +29,9 @@ afterEach(() => {
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
 

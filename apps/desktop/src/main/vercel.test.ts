@@ -4,9 +4,9 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-api-"));
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-const previousToken = process.env["VERCEL_TOKEN"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+const previousToken = process.env.VERCEL_TOKEN;
+process.env.IDLEBIZ_ROOT_DIR = root;
 
 const { setSecret } = await import("@/main/secrets");
 const { latestDeployment, visitQuery } = await import("./vercel");
@@ -14,14 +14,14 @@ const { latestDeployment, visitQuery } = await import("./vercel");
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
   if (previousToken === undefined) {
-    delete process.env["VERCEL_TOKEN"];
+    delete process.env.VERCEL_TOKEN;
   } else {
-    process.env["VERCEL_TOKEN"] = previousToken;
+    process.env.VERCEL_TOKEN = previousToken;
   }
 });
 

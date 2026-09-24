@@ -27,7 +27,7 @@ const knownBinDirs = (): string[] => {
 const execFileAsync = promisify(execFile);
 
 const loginShellPath = async (): Promise<string | null> => {
-  const shell = process.env["SHELL"] || "/bin/zsh";
+  const shell = process.env.SHELL ?? "/bin/zsh";
   try {
     const { stdout } = await execFileAsync(
       shell,
@@ -55,7 +55,7 @@ const dedupe = (parts: readonly string[]): string[] => {
 };
 
 export const adoptShellPath = async (): Promise<void> => {
-  const current = (process.env["PATH"] ?? "").split(path.delimiter);
+  const current = (process.env.PATH ?? "").split(path.delimiter);
   const shell = ((await loginShellPath()) ?? "").split(path.delimiter);
-  process.env["PATH"] = dedupe([...shell, ...knownBinDirs(), ...current]).join(path.delimiter);
+  process.env.PATH = dedupe([...shell, ...knownBinDirs(), ...current]).join(path.delimiter);
 };

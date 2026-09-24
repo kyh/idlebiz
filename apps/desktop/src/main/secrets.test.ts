@@ -6,13 +6,13 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-secrets-"));
 const secretsFile = path.join(root, "secrets.json");
 const previous = {
-  A: process.env["A"],
-  B: process.env["B"],
-  IDLEBIZ_ROOT_DIR: process.env["IDLEBIZ_ROOT_DIR"],
-  STRIPE_CONNECT_TOKEN: process.env["STRIPE_CONNECT_TOKEN"],
-  STRIPE_SECRET_KEY: process.env["STRIPE_SECRET_KEY"],
+  A: process.env.A,
+  B: process.env.B,
+  IDLEBIZ_ROOT_DIR: process.env.IDLEBIZ_ROOT_DIR,
+  STRIPE_CONNECT_TOKEN: process.env.STRIPE_CONNECT_TOKEN,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
 };
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const { deleteSecret, exportSecretsToEnv, getSecret, setSecret } = await import("./secrets");
 
 const restore = (key: keyof typeof previous): void => {
@@ -50,7 +50,7 @@ describe("a secrets.json the founder broke by hand", () => {
   it("refuses to set a key over it", () => {
     expect(() => setSecret("B", "2")).toThrow("it will not be overwritten");
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
-    expect(process.env["B"]).toBe(previous.B);
+    expect(process.env.B).toBe(previous.B);
   });
 
   it("refuses to delete a key from it", () => {
@@ -59,7 +59,9 @@ describe("a secrets.json the founder broke by hand", () => {
   });
 
   it("is reported at boot instead of exporting nothing silently", () => {
-    expect(exportSecretsToEnv()).toEqual({ cause: expect.any(Error), file: secretsFile });
+    const failure = exportSecretsToEnv();
+    expect(failure?.file).toBe(secretsFile);
+    expect(failure?.cause).toBeInstanceOf(Error);
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
     expect(getSecret("A")).toBeNull();
   });
@@ -87,18 +89,18 @@ describe("a readable secrets.json", () => {
     writeFileSync(secretsFile, '{"A":"1","_readme":"docs"}');
 
     expect(exportSecretsToEnv()).toBeNull();
-    expect(process.env["A"]).toBe("1");
+    expect(process.env.A).toBe("1");
   });
 
   it("keeps the Connect token in the file, out of every run's env", () => {
     writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"connected","STRIPE_SECRET_KEY":"own"}');
 
     expect(exportSecretsToEnv()).toBeNull();
-    expect(process.env["STRIPE_SECRET_KEY"]).toBe("own");
-    expect(process.env["STRIPE_CONNECT_TOKEN"]).toBe(previous.STRIPE_CONNECT_TOKEN);
+    expect(process.env.STRIPE_SECRET_KEY).toBe("own");
+    expect(process.env.STRIPE_CONNECT_TOKEN).toBe(previous.STRIPE_CONNECT_TOKEN);
 
     setSecret("STRIPE_CONNECT_TOKEN", "reconnected");
     expect(getSecret("STRIPE_CONNECT_TOKEN")).toBe("reconnected");
-    expect(process.env["STRIPE_CONNECT_TOKEN"]).toBe(previous.STRIPE_CONNECT_TOKEN);
+    expect(process.env.STRIPE_CONNECT_TOKEN).toBe(previous.STRIPE_CONNECT_TOKEN);
   });
 });

@@ -22,7 +22,7 @@ import type { StripeStatus } from "@/shared/integrations";
 // The web callback exchanges the OAuth code and seals the read-only token for
 // this loopback flow. The platform secret stays on the web server.
 
-const WEB_BASE = process.env["IDLEBIZ_WEB_URL"] ?? "https://idlebiz.com";
+const WEB_BASE = process.env.IDLEBIZ_WEB_URL ?? "https://idlebiz.com";
 const FLOW_TIMEOUT_MS = 5 * 60_000;
 
 type Revocation = { kind: "revoked" } | { kind: "unconfirmed"; reason: string };

@@ -28,7 +28,7 @@ import { mkdirSync } from "node:fs";
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
 export const ROOT_DIR = path.resolve(
-  process.env["IDLEBIZ_ROOT_DIR"] ?? path.join(homedir(), ".idlebiz"),
+  process.env.IDLEBIZ_ROOT_DIR ?? path.join(homedir(), ".idlebiz"),
 );
 /** The player's saved office layout (built in #/ui). Overrides the bundled default. */
 export const OFFICE_DESIGN_PATH = path.join(ROOT_DIR, "office-design.json");

@@ -242,7 +242,7 @@ allocator and the replay.
 - **Verify**: `pnpm verify` (typecheck · lint · format · check:office · test · build). CI
   (`.github/workflows/ci.yml`) runs the same six steps on every push to main and every PR;
   keep the two lists in step.
-- **`pnpm lint` is a clean gate.** `oxlint.config.ts` extends the ultracite presets (core, react, anti-slop; next for `apps/web`); every rule is an error. Fix the code, don't add config overrides; a `// oxlint-disable-next-line rule -- why` needs a stated reason.
+- **`pnpm lint` is a clean gate.** `oxlint.config.ts` extends the ultracite presets (core, react, anti-slop; next for `apps/web`), type-aware through `oxlint-tsgolint` so the promise, exhaustiveness and `no-unsafe-*` rules see types; every rule is an error. Fix the code, don't add config overrides (the few there are listed in `AGENTS.md` with their reasons); a `// oxlint-disable-next-line rule -- why` needs a stated reason.
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.
 - **CLI-free surfaces**: `apps/web`, the onboarding modal, and the two hash routes `#/ui`

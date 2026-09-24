@@ -470,7 +470,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           flushMessage();
           opts.onEvent({
             kind: update.kind ?? undefined,
-            toolName: titleLine(update.title) || update.kind || "tool",
+            toolName: titleLine(update.title) || (update.kind ?? "tool"),
             type: "tool_start",
           });
           return;

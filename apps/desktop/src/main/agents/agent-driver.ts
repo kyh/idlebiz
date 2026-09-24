@@ -258,7 +258,7 @@ class AgentDriver {
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
   // runner -> epoch its limit lifts
-  private restingUntil = new Map<AgentRunner, number>();
+  private readonly restingUntil = new Map<AgentRunner, number>();
 
   init(): void {
     this.probing = this.probe();

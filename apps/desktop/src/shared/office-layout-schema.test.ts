@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import bundled from "@/renderer/game/office-design.json";
+import { parseJson } from "./json";
 import type { JsonValue } from "./json";
 import {
   MAX_FLOOR_LINE,
@@ -149,7 +150,7 @@ describe("canonicalOfficeLayout", () => {
     // in key order would land as a diff over every row of the bundled file
     const file = path.resolve(import.meta.dirname, "../renderer/game/office-design.json");
     const text = readFileSync(file, "utf-8");
-    const raw: JsonValue = JSON.parse(text);
+    const raw = parseJson(text);
     const saved = `${JSON.stringify(canonicalOfficeLayout(parseOfficeLayout(raw)), null, 2)}\n`;
     expect(saved).toBe(text);
   });

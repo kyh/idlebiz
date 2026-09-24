@@ -11,7 +11,7 @@ const appRoot = path.resolve(__dirname, "..");
 const outDir = path.join(appRoot, "public/workspace-kit/room-builder/32");
 const catalogPath = path.join(appRoot, "src/renderer/game/room-builder-tiles.generated.ts");
 
-(async () => {
+const main = async () => {
   const img = await sharp(SRC).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const W = img.info.width;
   const H = img.info.height;
@@ -62,4 +62,6 @@ const catalogPath = path.join(appRoot, "src/renderer/game/room-builder-tiles.gen
   console.log(
     `sliced ${tiles.length} tiles from ${cols}x${rows} grid -> ${outDir} + room-builder-tiles.generated.ts`,
   );
-})();
+};
+
+void main();

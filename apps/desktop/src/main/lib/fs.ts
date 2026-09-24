@@ -54,7 +54,8 @@ export const moveDir = (from: string, to: string): void => {
 };
 
 /** Append one JSON row. Loss is acceptable: these are logs, not the save. */
-export const appendJsonl = <Row extends object>(file: string, row: Row): void => {
+// oxlint-disable-next-line anti-slop/no-object-parameters -- a sink, not an input: any row JSON.stringify can write
+export const appendJsonl = (file: string, row: object): void => {
   if (writesSuspended) {
     return;
   }

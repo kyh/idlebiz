@@ -180,15 +180,15 @@ const applyDepth = (npc: Npc): void => {
  * walking (see office-placement.ts).
  */
 export class NpcManager {
-  private npcs = new Map<string, Npc>();
-  private roster = new Map<string, Employee>();
+  private readonly npcs = new Map<string, Npc>();
+  private readonly roster = new Map<string, Employee>();
   private seatPlan: SeatPlan = new Map();
   private arrivals: string[] = [];
   private nextArrivalAt = 0;
   // Phaser's loader is single-batch; serialize spawns so concurrent hires don't race it.
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
-  private released = new Set<string>();
+  private readonly released = new Set<string>();
   // a restart reuses this scene: a spawn still queued must not land in the next one's office
   private disposed = false;
   private readonly scene: Phaser.Scene;
@@ -533,7 +533,7 @@ export class NpcManager {
     }
 
     const settled = this.settled().filter((n) => n.id !== employeeId);
-    const target = (to !== null && settled.find((n) => n.id === to)) || settled[0];
+    const target = (to === null ? undefined : settled.find((n) => n.id === to)) ?? settled[0];
 
     // already busy walking (or nobody to visit) → just speak in place
     if (!target || npc.plan) {

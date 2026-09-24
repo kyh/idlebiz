@@ -48,7 +48,7 @@ const agree = async (
   );
   const shared = await subtle.deriveBits({ name: "ECDH", public: peer }, privateKey, 256);
   const material = await subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
-  return subtle.deriveKey(
+  return await subtle.deriveKey(
     { hash: "SHA-256", info: INFO, name: "HKDF", salt: new Uint8Array(0) },
     material,
     { length: 256, name: "AES-GCM" },

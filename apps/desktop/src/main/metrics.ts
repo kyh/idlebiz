@@ -159,8 +159,8 @@ export const sumCharges = async (
       ) {
         const kept = (ch.amount_captured ?? 0) - (ch.amount_refunded ?? 0);
         cents += kept;
-        credit(byProduct, ch.metadata?.["product"], kept);
-        fileCharge(byBet, ch.metadata?.["bet"], { cents: kept, created: ch.created * 1000 });
+        credit(byProduct, ch.metadata?.product, kept);
+        fileCharge(byBet, ch.metadata?.bet, { cents: kept, created: ch.created * 1000 });
       }
     }
     after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
@@ -228,7 +228,7 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
     }
     /* search unsupported on this account — paginate below */
   }
-  return countPages((after) =>
+  return await countPages((after) =>
     stripeGet(`/v1/customers?limit=100${after ? `&starting_after=${after}` : ""}`, key),
   );
 };
@@ -266,7 +266,7 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
 };
 
 /** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
-const countsTestMoney = (): boolean => process.env["IDLEBIZ_COUNT_TEST_MONEY"] === "1";
+const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
 
 /** A test-mode key sees only test-mode charges, so while those do not count, nothing it reads does. */
 const countsNoMoney = (credential: StripeCredential): boolean =>
@@ -382,11 +382,9 @@ const stripeSnapshot = async (
 const productVisitors = async (
   products: readonly Product[],
 ): Promise<{ each: Map<string, number | null>; total: number | null }> => {
-  const bound = products.filter((p) => p.vercel !== null);
-  const counts = await Promise.all(
-    bound.map((p) => (p.vercel ? webAnalyticsVisitors(p.vercel) : null)),
-  );
-  const each = new Map(bound.map((p, i) => [p.id, counts[i] ?? null]));
+  const bound = products.flatMap(({ id, vercel }) => (vercel ? [{ id, vercel }] : []));
+  const counts = await Promise.all(bound.map(({ vercel }) => webAnalyticsVisitors(vercel)));
+  const each = new Map(bound.map(({ id }, i) => [id, counts[i] ?? null]));
   const known = counts.filter((n): n is number => n !== null);
   return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
 };

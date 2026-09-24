@@ -262,6 +262,31 @@ describe("store", () => {
     expect(read(store, roster)).toBe("lead:working mae:idle");
   });
 
+  it("logs an event it could not apply, never leaving its failure unhandled", async () => {
+    const { bridge, emit, main } = fakeMain([]);
+    const store = await freshStore(bridge);
+    const fault = new Error("the scene is gone");
+    store.setGame({
+      events: {
+        emit: (message) => {
+          if (message === "spawn-employee") {
+            throw fault;
+          }
+        },
+        off: () => {},
+        on: () => {},
+      },
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      main.employees = [employee("lead"), employee("mae")];
+      await emit(hired("mae"));
+      expect(logged).toHaveBeenCalledWith("Could not apply an activity event", fault);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it("opens the office once a login finishes, though the launch probe found no CLI", async () => {
     const { bridge, login, main } = fakeMain([]);
     main.authed = false;

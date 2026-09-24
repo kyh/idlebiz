@@ -8,8 +8,8 @@ import { z } from "zod";
 import type { BlockedAsk } from "@/shared/domain";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("@/main/store/store");
 const { PAGE_URLS, agentDriver, decidePermission, memoryAfter, outcomeOf } =
   await import("./agent-driver");
@@ -22,9 +22,9 @@ beforeEach(() => {
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
 
@@ -103,7 +103,7 @@ interface FakeParts {
 }
 
 const ownWindow = (href: string, parts: FakeParts = {}): FakeWindow => ({
-  ...(parts.frames ?? []),
+  ...Object.fromEntries((parts.frames ?? []).entries()),
   document: { querySelectorAll: () => parts.elements ?? [] },
   length: parts.length ?? (parts.frames ?? []).length,
   location: { href },

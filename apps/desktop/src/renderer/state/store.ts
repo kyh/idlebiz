@@ -524,6 +524,15 @@ const onActivity = async (e: ActivityEvent): Promise<void> => {
   }
 };
 
+/** For main's event stream, which awaits nothing: a failure is logged, and the next event or refresh catches up. */
+const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
+  try {
+    await onActivity(e);
+  } catch (error) {
+    console.error("Could not apply an activity event", error);
+  }
+};
+
 // ---- lifecycle -------------------------------------------------------------
 
 const loadAuth = async (): Promise<void> => {
@@ -550,7 +559,9 @@ export const initStore = (): void => {
   void refreshInBackground();
   void loadAuth();
   void loadStripeStatus();
-  bridge().onActivity(onActivity);
+  bridge().onActivity((e) => {
+    void onActivityInBackground(e);
+  });
   bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
   bridge().onAuthEvent((e: AuthFlowEvent) => {
     if (e.type === "done") {

@@ -14,10 +14,10 @@ import { listenLoopback } from "./lib/http";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-stripe-"));
 const previous = {
-  IDLEBIZ_ROOT_DIR: process.env["IDLEBIZ_ROOT_DIR"],
-  IDLEBIZ_WEB_URL: process.env["IDLEBIZ_WEB_URL"],
+  IDLEBIZ_ROOT_DIR: process.env.IDLEBIZ_ROOT_DIR,
+  IDLEBIZ_WEB_URL: process.env.IDLEBIZ_WEB_URL,
 };
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+process.env.IDLEBIZ_ROOT_DIR = root;
 let holdRevocation: ((res: ServerResponse) => void) | null = null;
 const web = createServer((req, res) => {
   req.resume();
@@ -28,7 +28,7 @@ const web = createServer((req, res) => {
   }
 });
 const port = await listenLoopback(web);
-process.env["IDLEBIZ_WEB_URL"] = `http://127.0.0.1:${port}`;
+process.env.IDLEBIZ_WEB_URL = `http://127.0.0.1:${port}`;
 const stripe = await import("./stripe-connect");
 const store = await import("./store/store");
 const { getSecret } = await import("./secrets");
@@ -189,10 +189,10 @@ describe("Stripe connect", () => {
       const response = await fetch(await callbackUrl(latestState(), "token-unbound"));
       expect(await response.text()).toContain("Stripe connection failed");
       expect(readFileSync(secretsFile, "utf-8")).toBe(secrets);
-      expect(stripe.getStripeStatus(company.id)).toEqual({
-        message: expect.stringContaining("it will not be overwritten"),
-        state: "error",
-      });
+      const status = stripe.getStripeStatus(company.id);
+      expect(status.state === "error" ? status.message : status.state).toContain(
+        "it will not be overwritten",
+      );
       expect(connected).toEqual([]);
     } finally {
       rmSync(metricsFile, { force: true });

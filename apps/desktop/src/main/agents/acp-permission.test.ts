@@ -200,7 +200,7 @@ describe("answering a permission ask", () => {
           });
         }),
     });
-    expect(end).toMatchObject({ error: expect.stringContaining("session limit"), kind: "failed" });
+    expect(end.kind === "failed" ? end.error : end.kind).toContain("session limit");
     expect(toldOver).toBe(true);
   });
 });

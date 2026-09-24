@@ -81,7 +81,7 @@ export const buildWalkSheet = async (sheetPath: string): Promise<Buffer> => {
       data.copy(out, dst, src, src + OUT_W * 4);
     }
   }
-  return sharp(out, { raw: { channels: 4, height: OUT_H, width: OUT_W } })
+  return await sharp(out, { raw: { channels: 4, height: OUT_H, width: OUT_W } })
     .png()
     .toBuffer();
 };
@@ -136,5 +136,5 @@ export const composeCharacter = async (seed: string): Promise<CharacterAssets> =
   if (!sheetPath) {
     throw new Error(`no employee sheet at index ${idx}`);
   }
-  return composeSheet(sheetPath);
+  return await composeSheet(sheetPath);
 };

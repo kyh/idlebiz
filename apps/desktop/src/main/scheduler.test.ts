@@ -12,8 +12,8 @@ import type { RunResult, RunTools } from "./agents/agent-driver";
 import type { EmployeeRunner } from "./scheduler";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
-const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
-process.env["IDLEBIZ_ROOT_DIR"] = root;
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { activityEvents } = await import("./activity");
@@ -28,9 +28,9 @@ afterAll(() => {
   scheduler.stop();
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
-    delete process.env["IDLEBIZ_ROOT_DIR"];
+    delete process.env.IDLEBIZ_ROOT_DIR;
   } else {
-    process.env["IDLEBIZ_ROOT_DIR"] = previousRoot;
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
 

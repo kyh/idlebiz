@@ -1417,14 +1417,12 @@ export const queryTasks = (query: {
 export const listShippedTasks = (): Task[] => {
   const active = current();
   const companyId = active.company.id;
-  if (active.shipped === null) {
-    active.shipped = loadPackages(
-      "task",
-      shippedDir(companyId),
-      (slug) => shippedTaskFile(companyId, slug),
-      (doc) => docToTask(doc, companyId),
-    );
-  }
+  active.shipped ??= loadPackages(
+    "task",
+    shippedDir(companyId),
+    (slug) => shippedTaskFile(companyId, slug),
+    (doc) => docToTask(doc, companyId),
+  );
   return active.shipped.toSorted(newestFirst);
 };
 

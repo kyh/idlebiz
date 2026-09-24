@@ -33,7 +33,7 @@ writeFileSync(path.join(root, "Bare/Contents/PkgInfo"), "APPL????");
 execFileSync("/usr/bin/xattr", [
   "-wx",
   "com.apple.FinderInfo",
-  `0000000000000000${"2000"}${"0".repeat(44)}`,
+  `00000000000000002000${"0".repeat(44)}`,
   path.join(root, "Bare"),
 ]);
 writeFileSync(path.join(outside, "secret.md"), "# not yours\n");

@@ -57,7 +57,17 @@ PR, as named steps; Vercel's build of `apps/web` is a second remote check):
 pnpm verify
 ```
 
-**Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. `no-await-in-loop` is the one deliberate override (sequential awaits are intentional). Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
+**Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by the `oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`, `no-misused-promises`, `switch-exhaustiveness-check`, `no-deprecated` and `no-unsafe-*` are skipped without a word. The deliberate overrides, each with its reason beside it in the config:
+
+- `no-await-in-loop` off: sequential awaits are intentional (ordered agent turns, paced writes).
+- `switch-exhaustiveness-check` takes a `default` as exhaustive: it is how a consumer says every other kind means nothing to it. A switch that must name every kind (the activity reducer) has none.
+- `no-confusing-void-expression` off: `() => set(x)` is the house style.
+- `strict-boolean-expressions` off: truthiness checks on optionals are idiomatic here.
+- `promise-function-async` and `strict-void-return` off: taste; a dropped or misplaced promise is still `no-floating-promises`' and `no-misused-promises`' to catch.
+- `consistent-return` off: a bare `return` in a `T | undefined` helper is deliberate.
+- `no-unsafe-*` off under `apps/desktop/scripts/**`: untyped .mjs/.cjs scripts reading JSON and pixel data.
+
+Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 

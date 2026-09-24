@@ -5,7 +5,7 @@ const sharp = require("sharp");
 const repoRoot = path.resolve(__dirname, "../../..");
 const defaultSource =
   "/Users/kyh/Desktop/vg/office/Modern_Office_Revamped_v1.2/4_Modern_Office_singles";
-const sourceDir = process.env.OFFICE_OBJECT_SOURCE || defaultSource;
+const sourceDir = process.env.OFFICE_OBJECT_SOURCE ?? defaultSource;
 const publicDir = path.join(repoRoot, "apps/desktop/public/workspace-kit/office-objects");
 const generatedPath = path.join(
   repoRoot,

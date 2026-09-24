@@ -124,7 +124,7 @@ describe("how a turn ends", () => {
   it("fails, never rests, when the watchdog ends it, though its text names a session limit", async () => {
     const { end } = await turn(scriptedAgent(null), 200);
     expect(end.kind).toBe("failed");
-    expect(end).toMatchObject({ error: expect.stringContaining("session limit") });
+    expect(end.kind === "failed" ? end.error : end.kind).toContain("session limit");
   });
 
   it("leads with the agent's stop reason, then what it said on stderr", async () => {

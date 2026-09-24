@@ -51,7 +51,7 @@ describe("run-scoped control-plane requests", () => {
       try {
         const status = await post(
           `${controlPlane.baseUrl()}/v1/create-product`,
-          handle.env["IDLEBIZ_RUN_TOKEN"] ?? "",
+          handle.env.IDLEBIZ_RUN_TOKEN ?? "",
           JSON.stringify({ description: "Ships widgets", name: "Widget" }),
           () => {
             if (released) {
@@ -76,7 +76,7 @@ describe("run-scoped control-plane requests", () => {
     expect(() => controlPlane.registerRun(() => null)).toThrow("control plane not started");
     await controlPlane.start();
     const handle = controlPlane.registerRun(() => null);
-    expect(handle.env["IDLEBIZ_API_URL"]).toBe(controlPlane.baseUrl());
+    expect(handle.env.IDLEBIZ_API_URL).toBe(controlPlane.baseUrl());
     handle.release();
   });
 });
