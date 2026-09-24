@@ -172,6 +172,8 @@ const ProgressSchema = z.object({
 });
 const DeploymentSchema = ProgressSchema.extend({
   id: z.string(),
+  // the account the deployment landed in: a team's id, or the founder's own user id
+  ownerId: z.string().optional(),
   projectId: z.string(),
   url: z.string(),
 });
@@ -322,7 +324,12 @@ const isLive = (d: Deployment): boolean =>
 const projectOf = (target: DeployTarget, d: Deployment): VercelBinding =>
   target.kind === "bound"
     ? target.binding
-    : { projectId: d.projectId, projectName: target.name, teamId: null };
+    : {
+        projectId: d.projectId,
+        projectName: target.name,
+        // a new project lands in the token's default scope; bind that scope, not whichever is default later
+        teamId: d.ownerId?.startsWith("team_") ? d.ownerId : null,
+      };
 
 const deployed = (target: DeployTarget, d: Deployment): DeployResult => ({
   alias: d.aliasAssigned && d.alias?.[0] !== undefined ? `https://${d.alias[0]}` : null,

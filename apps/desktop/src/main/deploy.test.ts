@@ -47,6 +47,7 @@ interface State {
   alias?: string[];
   aliasAssigned?: number;
   errorMessage?: string;
+  ownerId?: string;
 }
 
 interface FakeVercel {
@@ -281,6 +282,18 @@ describe("deploying through Vercel's API", () => {
     expect(vercel.created[0]).not.toHaveProperty("project");
     expect(vercel.created[0]?.name).toBe("acme");
     expect(vercel.calls.every((c) => c.query.teamId === undefined)).toBe(true);
+  });
+
+  it("binds a new project to the team Vercel put it in", async () => {
+    put("index.html", "hi");
+    fakeVercel({ states: [{ ...LIVE, ownerId: "team_kai" }] });
+
+    await expect(
+      deployToVercel({ cwd: workspace, target: { kind: "new", name: "acme" }, token: TOKEN }),
+    ).resolves.toMatchObject({
+      kind: "deployed",
+      project: { projectId: "prj_new", projectName: "acme", teamId: "team_kai" },
+    });
   });
 
   it("deploys nothing into a project that already holds the name", async () => {
