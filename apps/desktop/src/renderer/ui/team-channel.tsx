@@ -1,9 +1,42 @@
 import { useEffect, useRef, useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, sendFounderChat } from "@/renderer/state/store";
+import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
+import { Failure } from "@/renderer/ui/failure";
 import type { ActivityEvent } from "@/shared/activity";
 import { formatTime } from "@/shared/format";
+import { describeRule } from "@/shared/hold-rules";
+import { cn } from "cn";
+
+// The teammate says in the room that a command waits on the founder, so the answer sits beside it.
+const HeldCommand = ({
+  taskId,
+  by,
+  command,
+  rule,
+}: {
+  taskId: string;
+  by: string;
+  command: string;
+  rule: string;
+}) => {
+  const { submission, decided, decide } = useApproval(taskId);
+  return (
+    <div className={cn("px-inset p-2 text-xs leading-snug", decided && "opacity-50")}>
+      <div className="text-warn">
+        🔐 {by} · <span className="text-fg-dim">{describeRule(rule)}</span>
+      </div>
+      <code className="px-code mt-1 block truncate" title={command}>
+        {command}
+      </code>
+      <div className="mt-1.5 flex justify-end">
+        <ApprovalButtons decided={decided} decide={decide} />
+      </div>
+      <Failure submission={submission} />
+    </div>
+  );
+};
 
 const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => string }) => {
   switch (e.kind) {
@@ -52,6 +85,7 @@ const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => stri
 export const TeamChannel = () => {
   const employees = useStore((s) => s.employees);
   const feed = useStore((s) => s.feed);
+  const pendingAsks = useStore((s) => s.pendingAsks);
   const company = useStore((s) => s.company);
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
@@ -82,6 +116,11 @@ export const TeamChannel = () => {
   }
 
   const nameOf = (id: string): string => employeeName(employees, id, "team");
+  const held = pendingAsks.flatMap((t) =>
+    t.state.ask.type === "approval"
+      ? [{ command: t.state.ask.command, rule: t.state.ask.rule, t }]
+      : [],
+  );
 
   const send = () => {
     const text = draft.trim();
@@ -108,6 +147,19 @@ export const TeamChannel = () => {
           feed.map((e) => <FeedRow key={e.id} e={e} nameOf={nameOf} />)
         )}
       </div>
+      {held.length > 0 ? (
+        <div className="px-scroll max-h-40 space-y-1 overflow-y-auto px-1.5 pt-1.5">
+          {held.map(({ t, command, rule }) => (
+            <HeldCommand
+              key={t.id}
+              taskId={t.id}
+              by={employeeName(employees, t.assigneeId, "someone")}
+              command={command}
+              rule={rule}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="flex gap-1 p-1.5">
         <input
           value={draft}

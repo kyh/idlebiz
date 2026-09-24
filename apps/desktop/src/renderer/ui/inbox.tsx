@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, resolveApproval, retryTask } from "@/renderer/state/store";
+import { useStore, retryTask } from "@/renderer/state/store";
 import { AnswerForm } from "@/renderer/ui/answer-form";
+import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
@@ -64,10 +65,7 @@ const ApprovalRow = ({
   command: string;
   rule: string;
 }) => {
-  const { submission, submit } = useSubmission((approved: boolean) =>
-    resolveApproval(t.id, approved),
-  );
-  const decided = submission.kind === "sending" || submission.kind === "sent";
+  const { submission, decided, decide } = useApproval(t.id);
   return (
     <div className={cn("px-inset p-3", decided && "opacity-50")}>
       <div className="text-xs text-warn">
@@ -77,19 +75,7 @@ const ApprovalRow = ({
       <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-fg-dim">Approving covers this exact command, once.</span>
-        <span className="flex gap-2">
-          <button type="button" onClick={() => submit(false)} disabled={decided} className="px-btn">
-            Deny
-          </button>
-          <button
-            type="button"
-            onClick={() => submit(true)}
-            disabled={decided}
-            className="px-btn-accent px-btn"
-          >
-            Approve
-          </button>
-        </span>
+        <ApprovalButtons decided={decided} decide={decide} />
       </div>
       <Failure submission={submission} />
     </div>
