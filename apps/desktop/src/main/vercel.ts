@@ -22,11 +22,6 @@ const apiGet = (
   );
 };
 
-/** 401/403: Vercel refused the token, as opposed to being down or out of reach. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
-const refused = (error: unknown): boolean =>
-  error instanceof HttpError && (error.status === 401 || error.status === 403);
-
 /** `apiGet`'s answer, or null when Vercel refuses the token this call; anything else still throws. */
 const apiGetUnlessRefused = async (
   path: string,
@@ -36,7 +31,7 @@ const apiGetUnlessRefused = async (
   try {
     return await apiGet(path, token, params);
   } catch (error) {
-    if (refused(error)) {
+    if (error instanceof HttpError && error.refused) {
       return null;
     }
     throw error;
@@ -227,7 +222,7 @@ export const latestDeployment = async (projectId: string, teamId?: string): Prom
   } catch (error) {
     // Unreachable reads as no deployment, retried after the TTL; only a refusal
     // needs the founder.
-    if (refused(error)) {
+    if (error instanceof HttpError && error.refused) {
       read = { kind: "refused" };
     }
   }

@@ -12,6 +12,11 @@ export class HttpError extends Error {
     this.name = "HttpError";
     this.status = status;
   }
+
+  /** 401/403: the credential was turned away, as opposed to the service being down. */
+  get refused(): boolean {
+    return this.status === 401 || this.status === 403;
+  }
 }
 
 /** GET a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */

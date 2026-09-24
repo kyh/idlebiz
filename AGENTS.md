@@ -153,10 +153,11 @@ rather than crashing boot.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`.
   `main/secrets.ts` exports them into the process env at boot so both the metrics providers
   and every employee's shell inherit them: `STRIPE_SECRET_KEY`, `VERCEL_TOKEN`. Employees
-  charge with `STRIPE_SECRET_KEY`, and it always feeds revenue. `STRIPE_CONNECT_TOKEN` is
-  read-only and stays out of the env: metrics reads it only for the company whose
-  `metrics.json` holds the connected account (`stripeCredential` in `main/metrics.ts`). A
-  key Stripe refuses shows in the HUD — a Connect token as revoked, the own key by name —
+  charge with `STRIPE_SECRET_KEY`, and metrics reads revenue with it for every company but
+  the one whose `metrics.json` holds the connected account: that one reads through
+  `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
+  on (`stripeCredential` in `main/metrics.ts`). The Connect token is read-only and stays
+  out of the env. A key Stripe refuses shows in the HUD — a Connect token as revoked, the own key by name —
   until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one, and a refused one shows on
@@ -250,10 +251,10 @@ rather than crashing boot.
 - **Prose an employee reads lives in `main/prompts/`.** The store persists it and the
   scheduler gathers what it is grounded in; neither authors text.
 - **`apps/desktop` `dependencies` is exactly what the app ships.** electron-builder unpacks
-  it into node_modules: the ACP adapters main spawns, sharp (native, kept out of the bundle
-  in `electron.vite.config.ts`), and zod and the ACP sdk main imports. Everything Vite
-  bundles — renderer libs, `@repo/*` — goes in `devDependencies`, or the app ships it
-  unpacked for nothing. `pnpm add` defaults to `dependencies`.
+  it into node_modules: the ACP adapters main spawns (they bring their own zod and ACP sdk)
+  and sharp (native, kept out of the bundle in `electron.vite.config.ts`). Everything Vite
+  bundles — zod, the ACP sdk, renderer libs, `@repo/*` — goes in `devDependencies`, or the
+  app ships it unpacked for nothing. `pnpm add` defaults to `dependencies`.
 
 ## Map
 

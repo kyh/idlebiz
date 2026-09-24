@@ -11,16 +11,16 @@ import type { Company, Product, ProductDraft, Speaker, Task } from "@/shared/dom
 
 /**
  * A line in the team room, the only way one is written, so the room agents read
- * and the founder's #team feed hear the same lines. `to` names the teammate it
- * is handed to, if any.
+ * and the founder's #team feed hear the same lines. The room keeps it whole, since
+ * agents act on it; only the feed's event is capped. `to` names the teammate it is
+ * handed to, if any.
  */
 export const postToRoom = (from: Speaker, text: string, to: string | null = null): void => {
-  const line = text.slice(0, 400);
-  store.postTeamMessage(from, line);
+  store.postTeamMessage(from, text);
   publishActivity({
     employeeId: from.kind === "employee" ? from.id : null,
     kind: "chat",
-    message: line,
+    message: text.slice(0, 400),
     payload: { from, to },
   });
 };

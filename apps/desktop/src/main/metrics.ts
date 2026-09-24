@@ -34,32 +34,16 @@ interface BetRead {
 /** Stripe took the key, turned it away (401/403), or never answered, which says nothing either way. */
 type StripeAnswer = "accepted" | "refused" | "unanswered";
 
-/** 401/403 from Stripe — credentials revoked or invalid. */
-class StripeAuthError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StripeAuthError";
-  }
-}
-
 // Pinned, since an unpinned read answers in the account's default version and a
 // charge's fields change meaning across it: before basil a partial capture booked
 // its uncaptured rest in amount_refunded, so captured less refunded undercounts.
 const STRIPE_VERSION = "2025-03-31.basil";
 
-const stripeGet = async (endpoint: string, key: string): Promise<JsonValue> => {
-  try {
-    return await getJson(`https://api.stripe.com${endpoint}`, {
-      Authorization: `Bearer ${key}`,
-      "Stripe-Version": STRIPE_VERSION,
-    });
-  } catch (error) {
-    if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
-      throw new StripeAuthError(`stripe ${error.status}`);
-    }
-    throw error;
-  }
-};
+const stripeGet = (endpoint: string, key: string): Promise<JsonValue> =>
+  getJson(`https://api.stripe.com${endpoint}`, {
+    Authorization: `Bearer ${key}`,
+    "Stripe-Version": STRIPE_VERSION,
+  });
 
 const StripeChargePageSchema = z.object({
   data: z
@@ -223,7 +207,7 @@ const stripeCustomers = async (key: string): Promise<number | null> => {
       return counted.data.total_count;
     }
   } catch (error) {
-    if (error instanceof StripeAuthError) {
+    if (error instanceof HttpError && error.refused) {
       throw error;
     }
     /* search unsupported on this account — paginate below */
@@ -252,9 +236,10 @@ export interface StripeCredential {
 
 /**
  * secrets.json is shared by every company and a Connect token outlives the
- * company that connected it, so only that company reads it; the founder's own
- * key is the one employees charge with, so it always counts. A key left blank
- * in the file is no key.
+ * company that connected it, so only that company reads it, in place of the
+ * founder's own key: the connected account is taken as the one that key charges
+ * on, and reading both would count every charge twice. Every other company reads
+ * the own key. A key left blank in the file is no key.
  */
 export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | null => {
   const token = cfg?.stripeAccount ? getSecret(STRIPE_CONNECT_TOKEN) : null;
@@ -318,9 +303,12 @@ let stripeRead: {
 const settled = <T>(read: PromiseSettledResult<T | null>): T | null =>
   read.status === "fulfilled" ? read.value : null;
 
+const refusedRead = (read: PromiseSettledResult<unknown>): boolean =>
+  read.status === "rejected" && read.reason instanceof HttpError && read.reason.refused;
+
 /** Any refusal refuses the key; any read that came back means Stripe took it. */
 const answerOf = (reads: readonly PromiseSettledResult<unknown>[]): StripeAnswer => {
-  if (reads.some((read) => read.status === "rejected" && read.reason instanceof StripeAuthError)) {
+  if (reads.some(refusedRead)) {
     return "refused";
   }
   return reads.some((read) => read.status === "fulfilled") ? "accepted" : "unanswered";
@@ -370,9 +358,7 @@ const stripeSnapshot = async (
     charges: settled(charges),
     customers: settled(customers),
   };
-  if (
-    reads.every((read) => read.status === "fulfilled" || read.reason instanceof StripeAuthError)
-  ) {
+  if (reads.every((read) => read.status === "fulfilled" || refusedRead(read))) {
     stripeRead = { countTest, key, since, snapshot };
   }
   return snapshot;

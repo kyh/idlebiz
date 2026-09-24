@@ -148,7 +148,8 @@ const TOOLS = {
     return "Your question was sent to the founder. Note it and continue with anything you can still do.";
   }),
   message_team: define(TOOL_SPECS.message_team, (ctx, { text }) => {
-    post(ctx, text);
+    // Free-form chat is capped here, not in the room: every teammate's brief reads it.
+    post(ctx, text.slice(0, 400));
     return "Posted to the team room.";
   }),
   read_team_chat: define(TOOL_SPECS.read_team_chat, () =>

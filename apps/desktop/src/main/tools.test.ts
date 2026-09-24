@@ -438,4 +438,25 @@ describe("company tools", () => {
     expect(heard.map((e) => ({ from: e.payload.from, text: e.message }))).toEqual(lines);
     expect(heard.map((e) => e.employeeId)).toEqual([null, "mae"]);
   });
+
+  it("keeps a long bet whole in the room, capping only the feed and free-form chat", () => {
+    const { ctx } = runAs("mae");
+    const hypothesis = "h".repeat(600);
+    const heard: string[] = [];
+    const listen = (e: ActivityEvent): void => {
+      if (e.kind === "chat") {
+        heard.push(e.message);
+      }
+    };
+    activityEvents.on("activity", listen);
+    try {
+      callTool(ctx, "POST /v1/open-bet", { ...BET, hypothesis });
+      callTool(ctx, "POST /v1/message-team", { text: "m".repeat(500) });
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+    const news = `🎲 New bet: ${BET.title} — ${hypothesis}`;
+    expect(store.recentTeamMessages().map(({ text }) => text)).toEqual([news, "m".repeat(400)]);
+    expect(heard).toEqual([news.slice(0, 400), "m".repeat(400)]);
+  });
 });
