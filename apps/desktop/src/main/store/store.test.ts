@@ -26,7 +26,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store");
-const { scheduler } = await import("@/main/scheduler");
+const { createScheduler, scheduler } = await import("@/main/scheduler");
 const {
   alumniDir,
   betFile,
@@ -254,6 +254,13 @@ describe("products", () => {
 });
 
 describe("scheduler queue admission", () => {
+  const sealed = createScheduler({
+    pickRunner: () => "claude",
+    restingRunner: () => null,
+    runTask: () => Promise.reject(new Error("no run starts past the cap")),
+    runsSealed: () => true,
+  });
+
   it("leaves capped work queued without spinning on its first task", () => {
     found({ capUsd: 0, mode: "capped" });
     const employee = store.createEmployee({ ...hire("Priya") });
@@ -263,7 +270,7 @@ describe("scheduler queue admission", () => {
     store.claimTask(task.id, employee.id);
     store.claimTask(next.id, teammate.id);
 
-    scheduler.tick();
+    sealed.tick();
 
     expect(store.getCompany()?.autopilot).toBe(false);
     expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([task.id, next.id]);

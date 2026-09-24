@@ -10,8 +10,8 @@ export type ToolAsk =
   | { kind: "sandbox"; network: boolean; paths: readonly string[] }
   /** A file edit by the agent's own tool that names its file (claude's Write and Edit). */
   | { kind: "edit"; paths: readonly [string, ...string[]] }
-  /** codex's patch, as the files it changes: its approval names each change's own path, never where a `Move to:` takes it. */
-  | { kind: "patch"; sources: readonly string[] }
+  /** codex's patch, as every path it writes: each change's own, and where a `Move to:` takes one (the app's codex-acp patch names that too). */
+  | { kind: "patch"; paths: readonly string[] }
   /** codex asking to let a command it does not name reach an http(s) host; it gives no other protocol a URL. `host` is null when the URL will not parse. */
   | { kind: "network"; host: string | null }
   /** A read of the web by the agent's own tool (claude's WebFetch and WebSearch). */
@@ -116,7 +116,7 @@ export const toolAskOf = (request: {
     const named = EditInput.safeParse(request.rawInput);
     if (!named.success) {
       // codex's patch approval carries no input
-      return { kind: "patch", sources: located };
+      return { kind: "patch", paths: located };
     }
     const file = named.data.file_path;
     return { kind: "edit", paths: [file, ...located.filter((other) => other !== file)] };

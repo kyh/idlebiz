@@ -27,12 +27,13 @@ describe("runEnv", () => {
       "GITHUB_PAT",
       "SENTRY_DSN",
       "SLACK_WEBHOOK_URL",
+      "SSH_AUTH_SOCK",
     ];
     const env = runEnv(Object.fromEntries(dropped.map((name) => [name, "secret"])), PROVIDERS);
     expect(env).toEqual({});
   });
 
-  it("keeps the rest, the runner's own login and the ssh agent", () => {
+  it("keeps the rest and the runner's own login", () => {
     const base = {
       ANTHROPIC_API_KEY: "sk-ant",
       API_URL: "https://api.example.com/v1",
@@ -42,7 +43,6 @@ describe("runEnv", () => {
       LANG: "en_US.UTF-8",
       OPENAI_API_KEY: "sk-openai",
       PATH: "/usr/bin",
-      SSH_AUTH_SOCK: "/tmp/agent.sock",
       TOKENIZERS_PARALLELISM: "false",
     };
     expect(runEnv(base, PROVIDERS)).toEqual(base);

@@ -7,10 +7,11 @@ import { jsonRecordSchema } from "@/shared/json";
 import type { JsonRecord } from "@/shared/json";
 
 // Founder secrets use mode 0600 and stay in main: IdleBiz reads each where it uses it, and
-// no employee's environment ever carries one. Employees still run as the founder's OS user
-// and can read the file, so each value is sealed with a key the Keychain keeps for this app.
+// no employee's environment ever carries one. Employees run as the founder's OS user; their
+// sandbox keeps them from the file, and each value is also sealed with a key the Keychain keeps
+// for this app, since a claude run can still reach the Keychain.
 
-const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
+export const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
 export const STRIPE_CONNECT_TOKEN = "STRIPE_CONNECT_TOKEN";
 export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";

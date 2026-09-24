@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@/shared/activity";
+import { MAX_TASK_ATTEMPTS } from "@/shared/domain";
 import type { Budget, BusinessTypeId, Task, TaskOrigin } from "@/shared/domain";
 import { RefusalError } from "@/shared/refusal";
 import type { RunResult, RunTools } from "./agents/agent-driver";
@@ -71,6 +72,7 @@ const scripted = () => {
   const running = new Map<string, (result: RunResult) => void>();
   const tools = new Map<string, RunTools>();
   const resting = new Set<string>();
+  const seal = { holds: true };
   let started = 0;
   const driver: EmployeeRunner = {
     pickRunner: () => "claude",
@@ -83,8 +85,9 @@ const scripted = () => {
         tools.set(emp.id, runTools);
         signal.addEventListener("abort", () => resolve(interrupted), { once: true });
       }),
+    runsSealed: () => seal.holds,
   };
-  return { driver, resting, running, started: () => started, tools };
+  return { driver, resting, running, seal, started: () => started, tools };
 };
 
 const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
@@ -214,6 +217,32 @@ describe("draining the queue", () => {
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
+  });
+});
+
+describe("a seal the boot check refuses", () => {
+  it("starts and files nothing, so no task spends an attempt, until the seal holds", () => {
+    found();
+    const { driver, seal, started } = scripted();
+    seal.holds = false;
+    const drain = createScheduler(driver);
+    const task = queue("priya");
+
+    drain.start();
+    for (let tick = 0; tick <= MAX_TASK_ATTEMPTS; tick += 1) {
+      drain.tick();
+    }
+    drain.stop();
+
+    expect(started()).toBe(0);
+    expect(store.getTask(task.id)).toMatchObject({ attempts: 0, state: { kind: "queued" } });
+    expect(store.listOpenTasks()).toHaveLength(1);
+
+    seal.holds = true;
+    drain.start();
+    drain.stop();
+
+    expect(kindOf(task)).toBe("running");
   });
 });
 

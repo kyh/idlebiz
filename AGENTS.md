@@ -177,8 +177,10 @@ rather than crashing boot.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`. They are
   IdleBiz's own: main reads each where it uses it (`getSecret` in `main/secrets.ts`) and
   exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
-  Employees still run as the founder's OS user, so each value is sealed with Electron's
-  `safeStorage` (the macOS Keychain, `setSealer` at boot) as `sealed:v1:<base64>`. Enter
+  Employees run as the founder's OS user: every run's seal (below) keeps it from the file,
+  and each value is also sealed with Electron's `safeStorage` (the macOS Keychain,
+  `setSealer` at boot) as `sealed:v1:<base64>`, since a claude run can still reach the
+  Keychain. Enter
   keys in the app: `VERCEL_TOKEN` through a product's Vercel button (under users), Stripe in
   the Budget panel (under revenue). A key pasted into the file as plain text is sealed the
   next time main reads it. One the Keychain can't open (another build sealed it, or access
@@ -210,12 +212,33 @@ rather than crashing boot.
   project's env vars or domains, or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
-  whole `_` segments — and every URL with a login in it but a `*_PROXY`, except its runner's
-  own login (`providerEnv` in `packages/agent-driver/src/registry.ts`) and `SSH_AUTH_SOCK`
-  (`runEnv` in `main/agents/run-env.ts`). AWS access keys sign for the whole account, so neither runner
-  keeps them: a founder on Bedrock signs in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
-  The founder's logins kept under HOME (git, ssh, `gh`, npm, the Vercel CLI, `~/.aws`) still
-  reach every run.
+  whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a
+  `*_PROXY`, except its runner's own login (`providerEnv` in
+  `packages/agent-driver/src/registry.ts`; `runEnv` in `main/agents/run-env.ts`). AWS access
+  keys sign for the whole account, so neither runner keeps them: a founder on Bedrock signs
+  in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
+- Every employee run starts sealed, inside the Seatbelt profile `main/agents/seal.ts` renders
+  and hands `sandbox-exec -p`: the
+  founder's logins kept under HOME (ssh, `gh`, npm, netrc, git credentials, `~/.aws`, docker,
+  gnupg, gcloud, the Stripe, Wrangler, Netlify and Vercel CLIs, Chrome's and Brave's
+  profiles), the other runner's login and `secrets.json` are unreadable and unwritable; shell
+  rc files, `~/.gitconfig`, `~/.config` and LaunchAgents are unwritable; git's Keychain
+  helper cannot run and no ssh agent answers, so no run can sign a push as the founder. Each
+  of those paths is sealed where a symlink leads as well as where it is named, and no folder
+  above one can be renamed or removed. A
+  codex run also cannot run `/usr/bin/security`; a claude run can, since claude reads its own
+  login with it. Network stays open. Boot checks the seal without a model call; until it
+  holds, no run starts and no task spends an attempt, and if it fails, or this Mac has no
+  `/usr/bin/sandbox-exec`, Settings lists why beside what boot skipped; a CLI sign-in retry
+  checks again. sandbox-exec cannot nest, so claude's own sandbox is forced off and
+  codex runs in `external-sandbox`, a mode
+  `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own,
+  and it asks before every command and patch. A codex-acp upgrade must carry that patch.
+  Runs start Chrome for agent-browser without its own sandbox
+  (`AGENT_BROWSER_ARGS=--no-sandbox`), in a daemon namespace of the save's own
+  (`AGENT_BROWSER_NAMESPACE`) that neither the founder's agent-browser nor main's live-page
+  read starts unsealed, and install packages into the save's `cache/` (`TOOL_CACHE_ENV` in
+  `main/agents/agent-driver.ts`).
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).
@@ -265,7 +288,10 @@ rather than crashing boot.
   spots, once closed, cut a seat, point of interest or the door off, or close in the spawn.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
-  requests. Command policy
+  requests. On macOS it also runs the seal on canary files under a stand-in home
+  (`seal.test.ts`), and, where a `codex` CLI is installed, the real codex through the app's
+  codex-acp against a stand-in model on loopback, billing nothing (`codex-gate.test.ts`);
+  both skip elsewhere. Command policy
   rules each need a matching example; everyday commands must remain allowed. Drive anything
   requiring a window live instead, or cover it in the e2e suite.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
@@ -315,6 +341,7 @@ rather than crashing boot.
   every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
   domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
+  `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
   (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),

@@ -118,10 +118,10 @@ allocator and the replay.
   policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
-- **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`, each
-  sealed with the macOS Keychain, since employees run as the founder's OS user; dev seals
-  with the mock keychain, and nothing on the real save, so it strands none) never
-  reach an employee's process: main reads each where it uses it, and a run starts from the
+- **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`, which every
+  run's seal keeps from it, each value also sealed with the macOS Keychain, which a claude run
+  can still reach; dev seals with the mock keychain, and nothing on the real save, so it
+  strands none) never reach an employee's process: main reads each where it uses it, and a run starts from the
   founder's env less every credential-shaped name, and every URL with a login in it, but its
   runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward step that needs
   those keys is a signed tool main runs: `deploy` uploads the product's folder through
@@ -166,29 +166,66 @@ allocator and the replay.
   it under its other name: "default" is the unnamed session unless `AGENT_BROWSER_SESSION`
   says otherwise), or inside one whose page or steps no read can see (`batch`, `chat`, an init
   script, an extension, an empty `--session`, a word the shell fills in), is signed for once,
-  exactly, like a shell rule. Only the command line's own options count: an `AGENT_BROWSER_*`
+  exactly, like a shell rule. A page opened from disk is no build of the team's: an act on a
+  `file:` page is held, and so is a command naming a `file:` URL outside the run's own dirs,
+  whatever verb opens it. Only the command line's own options count: an `AGENT_BROWSER_*`
   variable or an `agent-browser.json` goes unread, so either can still reroute or script a
   session unseen.
   Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
   as the founder, are held too. Every turn sets the runner's asking mode, and claude's
   session carries flag-tier ask rules (shell, edits, MCP) that outrank any allow rule in the
   founder's claude settings; codex still honours `allow` decisions in the founder's
-  ~/.codex/rules, which run a command outside the sandbox unasked. A site or a server is
+  ~/.codex/rules, which run a command unasked (inside the seal). A site or a server is
   leased for the rest of the run; a page or a server nothing can name never is. codex asking
   to widen its own sandbox is held every time, never leased: once widened, nothing else in
   the run asks. A signature only ever picks the runner's one-time option, never an "always"
   one. An edit by claude's Write/Edit outside a run's own dirs (its working directory, memory
   folder, the shared workspace, the tool cache) is held, under `save-edit` when it lands in
-  the save. codex's patch is held every time it asks: codex asks only past its own roots, and
-  its ask names each file the patch changes but never where a move takes one, so a patch
-  naming only the workspace can still write the save. A shell write is not judged by path, so
+  the save. codex asks before every patch and its ask names each file the patch writes,
+  where a move lands included, so a patch is judged like claude's edit; one naming no file is
+  held. A shell write is not judged by path, so
   `cp x ../approvals.json` still runs. A web read by the agent's own tool runs, as a bare
   `curl` does; an ask IdleBiz cannot recognise is held once, exactly, and so is a codex
   `execute` approval that names no command. Both runners' wire formats end in
   `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
+- **Every employee run starts sealed.** `acpAgentFor` starts each ACP session, a task's or
+  the hiring one-shot's, under `/usr/bin/sandbox-exec -p`, a profile `main/agents/seal.ts`
+  renders per runner with every path a `-D` parameter. Everything is allowed
+  but reading or writing the founder's logins (ssh, gh, npm, netrc, git credentials, aws,
+  docker, gnupg, gcloud, stripe, wrangler, netlify, the Vercel CLI, Chrome's and Brave's
+  profiles, cookies), the other runner's login and `secrets.json`; writing what runs as the
+  founder later (shell rc files, `~/.gitconfig`, `~/.config`, LaunchAgents); running git's
+  Keychain helper; and reaching an ssh agent (`SSH_AUTH_SOCK` is dropped from the env too), so
+  no run can sign a push as the founder. Seatbelt matches the path a symlink leads to, never
+  the link, so boot seals each path where it is named and where it resolves (a dotfile
+  manager's `~/.zshrc`), and no folder above a sealed path can be renamed or removed, which
+  would carry it out from under its rule. A symlink inside a sealed folder is not followed.
+  codex runs also lose `/usr/bin/security`; claude
+  reads its own login with it, so on a claude run the Keychain (the founder's gh token, the
+  safeStorage key) is guarded only by the `read-credentials` rule. Network stays open:
+  `holdFor` judges sends. Boot checks the seal for free (`checkSeal`: under each runner's
+  profile a canary must be unreadable and the runtime must start). Until it holds the
+  scheduler starts nothing and autopilot files nothing, so no task spends an attempt on it;
+  a refusal (sandbox-exec missing, a nested sandbox, a probe timed out on a loaded boot) is
+  listed in Settings beside what boot skipped, and a CLI sign-in retry checks again. Runs
+  drive agent-browser in a daemon namespace of the save's own (`BROWSER_NAMESPACE`), since
+  whoever starts a daemon decides whether its Chrome is sealed: the live-page read asks
+  `session info` before `eval`, which would start one, and runs sealed as the run would.
+  Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session but the
+  first out. The login probes and every place the founder enters a key run in main, unsealed.
 
 ## Two traps that fail silently
 
+- **sandbox-exec cannot nest.** Once a profile denies anything, applying another inside it
+  fails (`sandbox_apply: Operation not permitted`), so a CLI's own sandbox inside the seal
+  makes every command it runs fail. claude's is forced off in its flag-tier settings
+  (`packages/agent-driver/src/registry.ts`); codex runs in `external-sandbox`, a mode the
+  app's patch of codex-acp adds (`patches/`): no sandbox of codex's own and approval
+  `untrusted`, so codex asks before every command and patch it does not know is safe, and
+  its patch ask names where a move lands. codex-acp's own modes either sandbox or never ask,
+  so an upgrade must carry the patch; `main/agents/codex-gate.test.ts` drives the real codex
+  against a stand-in model (macOS with codex installed) and fails once a push stops reaching
+  `holdFor`. Chrome's sandbox is off in runs too (`AGENT_BROWSER_ARGS=--no-sandbox`).
 - **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
   stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
   layered, and unlayered CSS wins regardless of specificity. So a utility on the same

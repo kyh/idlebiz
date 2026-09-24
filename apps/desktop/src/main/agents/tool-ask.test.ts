@@ -56,18 +56,25 @@ describe("toolAskOf", () => {
     const locations = [{ path: "/save/acme/bets/b/BET.md" }, { path: "/save/acme/workspace/a.ts" }];
     expect(ask({ kind: "edit", locations, title: "Edit files" })).toEqual({
       kind: "patch",
-      sources: ["/save/acme/bets/b/BET.md", "/save/acme/workspace/a.ts"],
+      paths: ["/save/acme/bets/b/BET.md", "/save/acme/workspace/a.ts"],
     });
-    expect(ask({ kind: "edit", title: "Edit files" })).toEqual({ kind: "patch", sources: [] });
+    expect(ask({ kind: "edit", title: "Edit files" })).toEqual({ kind: "patch", paths: [] });
   });
 
-  it("holds codex's patch that names only the workspace: it asks for a move out of it", async () => {
-    const tool = ask({ kind: "edit", locations: [{ path: "/w/notes.md" }], title: "Edit files" });
+  it("judges codex's patch by every path it locates, a move's destination too", async () => {
     const room = { cwd: "/w", save: "/save", writable: ["/w"] };
-    expect(await holdFor(tool, new Set(), () => Promise.resolve(null), room)).toEqual({
-      key: "edit: /w/notes.md, a file the ask does not name",
+    const judge = (locations: { path: string }[]) =>
+      holdFor(
+        ask({ kind: "edit", locations, title: "Edit files" }),
+        new Set(),
+        () => Promise.resolve(null),
+        room,
+      );
+    expect(await judge([{ path: "/w/notes.md" }])).toBeNull();
+    expect(await judge([{ path: "/w/notes.md" }, { path: "/save/acme/approvals.json" }])).toEqual({
+      key: "edit: /w/notes.md, /save/acme/approvals.json",
       leasable: false,
-      rule: "write-outside",
+      rule: "save-edit",
     });
   });
 

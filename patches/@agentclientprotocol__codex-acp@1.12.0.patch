@@ -1,0 +1,42 @@
+diff --git a/dist/index.js b/dist/index.js
+index c134fd36ed44f4dccb510f8ac7971f0f7e26aba4..680de321d43726547f782f9cf9c8b844e06750ab 100755
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -26024,7 +26024,8 @@ function commandActionPaths(actions) {
+   }));
+ }
+ function fileChangePaths(item) {
+-  return unique(item?.changes.map((change) => change.path) ?? []);
++  // a move's destination too: a client judging where a patch writes must see where it lands
++  return unique(item?.changes.flatMap((change) => change.kind.type === "update" && change.kind.move_path ? [change.path, change.kind.move_path] : [change.path]) ?? []);
+ }
+ function permissionProfilePaths(permissions) {
+   const fileSystem = permissions?.fileSystem;
+@@ -27745,6 +27746,18 @@ var AgentMode = class _AgentMode {
+     { "type": "dangerFullAccess" },
+     "danger-full-access"
+   );
++  // For a client that sandboxes this process itself: codex's own Seatbelt cannot nest inside
++  // another, so it adds none, and asks before every command and edit it does not know is safe.
++  static ExternalSandbox = new _AgentMode(
++    "external-sandbox",
++    "Ask for everything",
++    "Ask before every command and edit; the client sandboxes the process",
++    "standard",
++    "untrusted",
++    "user",
++    { type: "externalSandbox", networkAccess: "enabled" },
++    "external-sandbox"
++  );
+   static DEFAULT_AGENT_MODE = _AgentMode.Agent;
+   toSessionMode() {
+     return {
+@@ -27777,7 +27790,7 @@ var AgentMode = class _AgentMode {
+     };
+   }
+   static all() {
+-    return [_AgentMode.ReadOnly, _AgentMode.Agent, _AgentMode.AgentFullAccess];
++    return [_AgentMode.ReadOnly, _AgentMode.Agent, _AgentMode.AgentFullAccess, _AgentMode.ExternalSandbox];
+   }
+   static find(modeId) {
+     const match = _AgentMode.all().find((m) => m.id === modeId);

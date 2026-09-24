@@ -1,15 +1,10 @@
 /**
  * Whole underscore-separated segments: `GH_TOKEN`, `X_AUTH` and `STRIPE_KEY` match,
- * `GIT_AUTHOR_NAME` and `PATH` do not. A webhook's or a DSN's URL is its own credential.
+ * `GIT_AUTHOR_NAME` and `PATH` do not. A webhook's or a DSN's URL is its own credential, and
+ * `SSH_AUTH_SOCK` is the founder's ssh agent, which signs as them with no key file.
  */
 const CREDENTIAL =
   /(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|KEY|PAT|DSN|WEBHOOK|CREDENTIALS?|AUTH)(?:_|$)/iu;
-
-/**
- * A path to the founder's ssh agent, not a key: ambient logins are not this filter's to
- * withhold, and dropping it would only break a push the founder signed for.
- */
-const SSH_AGENT = "SSH_AUTH_SOCK";
 
 /** A proxy's login is how every request out, the runner's to its model included, gets through. */
 const PROXY = /(?:^|_)PROXY$/iu;
@@ -21,7 +16,6 @@ const hasLogin = (value: string): boolean => {
 };
 
 const reaches = (name: string, value: string, keep: readonly string[]): boolean =>
-  name === SSH_AGENT ||
   keep.some((prefix) => name.startsWith(prefix)) ||
   (!CREDENTIAL.test(name) && (PROXY.test(name) || !hasLogin(value)));
 

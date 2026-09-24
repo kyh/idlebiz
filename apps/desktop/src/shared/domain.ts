@@ -441,9 +441,18 @@ export type AuthFlowEvent =
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
 export type RestingRunners = Partial<Record<AgentRunner, number>>;
 
-/** A file on disk boot could not read, and why. */
+/** What boot could not use, and why: a file on disk it could not read, or the sandbox every run starts in. */
 export interface LoadSkip {
-  kind: "company" | "employee" | "task" | "routine" | "product" | "bet" | "team" | "secrets";
+  kind:
+    | "company"
+    | "employee"
+    | "task"
+    | "routine"
+    | "product"
+    | "bet"
+    | "team"
+    | "secrets"
+    | "seal";
   path: string;
   error: string;
 }

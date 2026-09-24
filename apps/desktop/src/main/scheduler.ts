@@ -226,7 +226,10 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
 };
 
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
-export type EmployeeRunner = Pick<typeof agentDriver, "runTask" | "restingRunner" | "pickRunner">;
+export type EmployeeRunner = Pick<
+  typeof agentDriver,
+  "runTask" | "restingRunner" | "pickRunner" | "runsSealed"
+>;
 
 /** Every run on a product shares its workspace; the company's own work runs in the company's. */
 const workspaceOf = (task: Task, company: Company): string => {
@@ -352,7 +355,7 @@ class Scheduler {
       return;
     }
     const company = store.getCompany();
-    if (!company || !company.autopilot || !admit(company)) {
+    if (!company || !company.autopilot || !admit(company) || !this.driver.runsSealed()) {
       return;
     }
     const employees = store.listEmployees();
@@ -553,9 +556,13 @@ class Scheduler {
     return queued;
   }
 
+  /**
+   * Nothing starts until the seal holds: a run that cannot start sealed would fail, and spend one
+   * of its task's attempts, for nothing the task did. The work waits on the queue meanwhile.
+   */
   tick(): void {
     const company = store.getCompany();
-    if (this.stopped || !company) {
+    if (this.stopped || !company || !this.driver.runsSealed()) {
       return;
     }
     const queued = store.listQueuedTasks();

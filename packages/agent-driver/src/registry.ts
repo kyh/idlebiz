@@ -72,8 +72,10 @@ const claudeSessionMeta = {
       allowDangerouslySkipPermissions: false,
       settings: {
         permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit", "mcp__*"] },
-        // a sandboxed command otherwise runs without the Bash ask
-        sandbox: { autoAllowBashIfSandboxed: false },
+        // Off whatever the player's settings say: the run is already inside a Seatbelt profile,
+        // and one cannot apply inside another. On, every command would fail, and a sandboxed
+        // one would skip the Bash ask.
+        sandbox: { autoAllowBashIfSandboxed: false, enabled: false },
       },
     },
   },
@@ -110,7 +112,10 @@ export const RUNNERS = {
     loginArgs: ["login"],
     // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY
     providerEnv: ["OPENAI_", "CODEX_", "AWS_BEARER_TOKEN_BEDROCK", "AZURE_OPENAI_"],
-    sessionModeId: "read-only",
+    // Added by the app's patch of codex-acp (patches/): no sandbox of codex's own, which cannot
+    // start inside the run's, and approval "untrusted", so codex asks before every command and
+    // patch it does not know is safe. codex-acp's own modes either sandbox or never ask.
+    sessionModeId: "external-sandbox",
     typedFailures: true,
     usagePerRequest: true,
   },

@@ -560,7 +560,7 @@ const ROOM: Confinement = {
 };
 const edit = (file: string, ...more: string[]) =>
   ({ kind: "edit", paths: [file, ...more] }) as const;
-const patch = (...sources: string[]) => ({ kind: "patch", sources }) as const;
+const patch = (...paths: string[]) => ({ kind: "patch", paths }) as const;
 
 describe("holdFor", () => {
   it("holds an outward-facing command for one run of exactly it", async () => {
@@ -600,6 +600,47 @@ describe("holdFor", () => {
     ]) {
       expect(await holdFor(shell(command), NONE, live, ROOM)).toBeNull();
     }
+  });
+
+  it.each([
+    "agent-browser open file:///Users/me/.ssh/id_ed25519",
+    "agent-browser goto FILE:///etc/hosts",
+    "agent-browser navigate file://localhost/Users/me/.idlebiz/secrets.json",
+    "agent-browser tab new file:///Users/me/Documents/taxes.pdf",
+    "agent-browser --namespace other open file:///etc/passwd",
+    "agent-browser open file:///Users/me/%2Essh/id_ed25519",
+    `agent-browser open file://${WORKSPACE}/../../../.ssh/id_ed25519`,
+    "agent-browser open file://files.example/share/x.html",
+    "agent-browser open file:///%E0%A4%A",
+  ])(
+    "holds a file opened from outside the run's dirs, whatever verb opens it: %s",
+    async (command) => {
+      expect(await holdFor(shell(command), NONE, at({}), ROOM)).toEqual({
+        key: command,
+        leasable: false,
+        rule: "browser-file",
+      });
+    },
+  );
+
+  it("lets a run open its own files", async () => {
+    for (const command of [
+      `agent-browser open file://${WORKSPACE}/dist/index.html`,
+      `agent-browser --session qa goto file://${MEMORY}/notes.html`,
+    ]) {
+      expect(await holdFor(shell(command), NONE, at({}), ROOM)).toBeNull();
+    }
+  });
+
+  it("does not take a page opened from disk for the team's build", async () => {
+    const live = at({ "": `file://${WORKSPACE}/dist/index.html` });
+    expect(await holdFor(shell("agent-browser click @e1"), NONE, live, ROOM)).toMatchObject({
+      rule: "browser-unseen",
+    });
+    const opened = `agent-browser open file://${WORKSPACE}/dist/index.html && agent-browser click @e1`;
+    expect(await holdFor(shell(opened), NONE, at({}), ROOM)).toMatchObject({
+      rule: "browser-unseen",
+    });
   });
 
   it("holds an act on a remote site until the founder leases it", async () => {
@@ -938,12 +979,11 @@ describe("holdFor", () => {
     expect(hold?.rule).toBe("save-edit");
   });
 
-  it("holds codex's patch even when every file it names is the run's own: a move goes unnamed", async () => {
-    expect(await holdFor(patch("notes.md", `${MEMORY}/log.md`), NONE, at({}), ROOM)).toEqual({
-      key: `edit: ${WORKSPACE}/notes.md, ${MEMORY}/log.md, a file the ask does not name`,
-      leasable: false,
-      rule: "write-outside",
-    });
+  it("lets codex's patch through when every path it writes is the run's own", async () => {
+    expect(await holdFor(patch("notes.md", `${MEMORY}/log.md`), NONE, at({}), ROOM)).toBeNull();
+  });
+
+  it("holds codex's patch that names no path: it could write anywhere", async () => {
     expect(await holdFor(patch(), NONE, at({}), ROOM)).toEqual({
       key: "edit: a file the ask does not name",
       leasable: false,
@@ -951,10 +991,19 @@ describe("holdFor", () => {
     });
   });
 
-  it("holds codex's patch that names the save as an edit of it", async () => {
-    expect(await holdFor(patch("../bets/b/BET.md"), NONE, at({}), ROOM)).toMatchObject({
-      key: `edit: ${SAVE}/acme/bets/b/BET.md, a file the ask does not name`,
+  it("holds codex's patch that moves a file into the save as an edit of it", async () => {
+    expect(await holdFor(patch("notes.md", "../bets/b/BET.md"), NONE, at({}), ROOM)).toEqual({
+      key: `edit: ${WORKSPACE}/notes.md, ${SAVE}/acme/bets/b/BET.md`,
+      leasable: false,
       rule: "save-edit",
+    });
+  });
+
+  it("holds codex's patch that moves a file out of the run's dirs", async () => {
+    expect(await holdFor(patch("notes.md", "/Users/me/notes.md"), NONE, at({}), ROOM)).toEqual({
+      key: `edit: ${WORKSPACE}/notes.md, /Users/me/notes.md`,
+      leasable: false,
+      rule: "write-outside",
     });
   });
 

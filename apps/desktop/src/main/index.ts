@@ -10,6 +10,7 @@ import { suspendWrites } from "@/main/lib/fs";
 import * as store from "@/main/store/store";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
+import { notingSeal } from "@/main/agents/seal";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { controlPlane } from "@/main/control-plane";
 import { employeeSheetDir } from "@/main/character/employee-sheets";
@@ -36,7 +37,7 @@ import {
 } from "@/main/vercel-connect";
 import { adoptShellPath } from "@/main/lib/shell-path";
 import { bootFailed, initLog } from "@/main/lib/log";
-import { report } from "@/main/lib/report";
+import { guarded, report } from "@/main/lib/report";
 import { checkSecrets, setSealer } from "@/main/secrets";
 import {
   initStripeConnect,
@@ -136,7 +137,11 @@ const ipcHandlers = {
   listProducts: store.listProducts,
   listTasks: store.queryTasks,
   loadOfficeDesign,
-  loadReport: store.loadReport,
+  // the first report waits on the seal's check, so a refusal is in it
+  loadReport: async () => {
+    const refusal = await agentDriver.sealRefusal();
+    return notingSeal(store.loadReport(), refusal);
+  },
   openCompanyPath: ({ rel }) => openWorkspacePath(rel),
   openProduct: async ({ productId }) => ({ opened: await openProduct(productId) }),
   openSaveFolder: async () => {
@@ -369,6 +374,10 @@ const boot = async (): Promise<void> => {
   });
 
   app.on("activate", ensureWindow);
+
+  // the queue waits on the seal's check: drain it the moment that settles, not a tick later
+  await agentDriver.sealRefusal();
+  guarded("drain queue", () => scheduler.tick());
 };
 
 void (async () => {

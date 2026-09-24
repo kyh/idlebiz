@@ -28,6 +28,8 @@ import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import { runEnv } from "@/main/agents/run-env";
+import { SANDBOX_EXEC, sealRuns, sealedCommand } from "@/main/agents/seal";
+import type { Seal, SealState } from "@/main/agents/seal";
 import { report } from "@/main/lib/report";
 import type { ToolCaller } from "@/main/control-plane";
 import type {
@@ -42,6 +44,7 @@ import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeMemoryDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
 import type { Confinement, LivePage } from "@/shared/command-policy";
+import { RefusalError } from "@/shared/refusal";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
@@ -54,10 +57,34 @@ const unpacked = (file: string): string =>
 const runnerEnv = (runner: AgentRunner): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
 
-export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
+/**
+ * The agent-browser daemon runs drive, apart from the founder's own. Whoever starts a daemon
+ * decides whether its Chrome is sealed, and only a run, or a read made the way a run would make
+ * it, ever starts this one. Short: the daemon's socket path under it must fit in 103 bytes.
+ */
+export const BROWSER_NAMESPACE = `idlebiz-${createHash("sha256").update(ROOT_DIR).digest("hex").slice(0, 8)}`;
+
+/**
+ * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:
+ * unset, each session's Chrome gets a fresh profile under TMPDIR, never the founder's, while one
+ * fixed profile would keep every session but the first from starting, since Chrome locks it.
+ */
+const BROWSER_ENV = {
+  AGENT_BROWSER_ARGS: "--no-sandbox",
+  AGENT_BROWSER_NAMESPACE: BROWSER_NAMESPACE,
+};
+
+/**
+ * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
+ * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
+ * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
+ * command they run fails.
+ */
+export const acpAgentFor = (runner: AgentRunner, seal: Seal): AcpAgent => {
   const adapter: RunnerAdapter = RUNNERS[runner];
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
+    ...BROWSER_ENV,
     // The packaged executable is Electron; child agents need its Node mode.
     ELECTRON_RUN_AS_NODE: "1",
   };
@@ -65,7 +92,10 @@ export const acpAgentFor = (runner: AgentRunner): AcpAgent => {
     env[adapter.binEnvVar] = runnerBin(runner);
   }
   return {
-    command: [process.execPath, unpacked(resolveFromApp.resolve(adapter.acpEntry))],
+    command: sealedCommand(seal, runner, [
+      process.execPath,
+      unpacked(resolveFromApp.resolve(adapter.acpEntry)),
+    ]),
     env,
     sessionMeta: adapter.sessionMeta,
     sessionModeId: adapter.sessionModeId,
@@ -121,32 +151,69 @@ export const PAGE_URLS = `(() => {
   return urls;
 })()`;
 
+/** agent-browser's answer to these words: what it printed. */
+export type BrowserCli = (args: readonly string[]) => Promise<string>;
+
+/** agent-browser as a `runner` run starts it: under its seal, in its env. */
+const sealedBrowser =
+  (seal: Seal, runner: AgentRunner): BrowserCli =>
+  async (args) => {
+    const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
+    const env = { ...runnerEnv(runner), ...BROWSER_ENV };
+    const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
+    return stdout;
+  };
+
+const SessionInfo = z.object({ data: z.object({ active: z.boolean() }) });
+
 const LivePageOutput = z.object({ data: z.object({ result: z.array(z.string().nullable()) }) });
 
-/** Ask the browser itself: the session is the agent's, but any process of this user can read it. */
-const liveBrowserPage: LivePage = async (session) => {
-  const scope = session === "" ? [] : ["--session", session];
-  const args = [...scope, "eval", PAGE_URLS, "--json"];
+/** The page `session` shows, read through `browser`; null when nothing could say. */
+const readPage = async (browser: BrowserCli, session: string): ReturnType<LivePage> => {
+  const scope = [
+    "--namespace",
+    BROWSER_NAMESPACE,
+    ...(session === "" ? [] : ["--session", session]),
+  ];
   try {
-    const { stdout } = await execFileAsync("agent-browser", args, { timeout: 8000 });
-    const parsed = LivePageOutput.safeParse(parseJson(stdout));
-    const [url = null, ...frames] = parsed.success ? parsed.data.data.result : [];
+    const info = SessionInfo.safeParse(
+      parseJson(await browser([...scope, "session", "info", "--json"])),
+    );
+    if (!info.success || !info.data.data.active) {
+      return null;
+    }
+    const page = LivePageOutput.safeParse(
+      parseJson(await browser([...scope, "eval", PAGE_URLS, "--json"])),
+    );
+    const [url = null, ...frames] = page.success ? page.data.data.result : [];
     return url === null ? null : { frames, url };
   } catch {
     return null;
   }
 };
 
+/**
+ * Ask the browser itself: the session is the run's, but any process of this user can read it.
+ * Only a daemon already running is read, since `eval` starts one where none runs: a session with
+ * no daemon shows no page, so an act on it waits on the founder. `browser` is agent-browser as
+ * the run starts it, so a daemon that stops between the two reads comes back sealed all the same.
+ */
+export const livePageOf =
+  (browser: BrowserCli): LivePage =>
+  (session) =>
+    readPage(browser, session);
+
 /** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
 export const decidePermission = async (
   task: { companyId: string; id: string },
   request: PermissionRequest,
   leases: Set<string>,
+  livePage: LivePage,
   confinement: Confinement,
   hold: (ask: BlockedAsk) => void,
   signal: AbortSignal,
 ): Promise<PermissionDecision> => {
-  const held = await holdFor(request.tool, leases, liveBrowserPage, confinement);
+  const held = await holdFor(request.tool, leases, livePage, confinement);
   // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
   if (signal.aborted) {
     return { allow: false };
@@ -175,12 +242,14 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
   return priceUsage(RUNNERS[emp.runner].fallbackRates, usage);
 };
 
-// Codex cannot write ~/.npm. Grant a shared cache outside the agents' working trees.
+// One cache the runs share, outside their working trees and apart from the founder's: a package
+// a run installs never lands in a store the founder's own projects link from.
 const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
 
 const TOOL_CACHE_ENV = {
   XDG_CACHE_HOME: TOOL_CACHE_DIR,
   npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
+  pnpm_config_store_dir: path.join(TOOL_CACHE_DIR, "pnpm-store"),
 };
 
 /**
@@ -265,11 +334,34 @@ class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
+  private sealing: Promise<SealState> = Promise.resolve({
+    kind: "refused",
+    reason: "IdleBiz has not sealed employee runs yet, so none will start.",
+  });
+  /** What the latest settled check found; null before the first settles. */
+  private sealed: SealState | null = null;
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<AgentRunner, number>();
+  private readonly checkSeal: () => Promise<SealState>;
 
+  constructor(checkSeal: () => Promise<SealState>) {
+    this.checkSeal = checkSeal;
+  }
+
+  /** Runs wait on the seal's check, and never start unsealed. */
   init(): void {
+    this.sealing = this.settleSeal();
     this.probing = this.probe();
+  }
+
+  /** A refusal is written to main's log as well as told to the founder. */
+  private async settleSeal(): Promise<SealState> {
+    const state = await this.checkSeal();
+    if (state.kind === "refused") {
+      report("seal", state.reason);
+    }
+    this.sealed = state;
+    return state;
   }
 
   private async probe(): Promise<RunnerProbe[]> {
@@ -278,9 +370,32 @@ class AgentDriver {
     return probes;
   }
 
+  /** Look for the CLIs again, and check again a seal that refused runs: its probe can time out on a loaded boot. */
   refresh(): Promise<RunnerProbe[]> {
-    this.init();
+    if (this.sealed?.kind === "refused") {
+      this.sealing = this.settleSeal();
+    }
+    this.probing = this.probe();
     return this.probing;
+  }
+
+  /** Whether a run may start now: only once a check found the seal holding, which it then always does. */
+  runsSealed(): boolean {
+    return this.sealed?.kind === "sealed";
+  }
+
+  /** Why no run starts, once the latest check settles; null when runs start sealed. */
+  async sealRefusal(): Promise<string | null> {
+    const state = await this.sealing;
+    return state.kind === "refused" ? state.reason : null;
+  }
+
+  private async seal(): Promise<Seal> {
+    const state = await this.sealing;
+    if (state.kind === "refused") {
+      throw new RefusalError(state.reason);
+    }
+    return state.seal;
   }
 
   async hasAnyRunner(): Promise<boolean> {
@@ -338,7 +453,7 @@ class AgentDriver {
   async completeOneShot(prompt: string): Promise<string> {
     const runner = this.pickRunner(0);
     const res = await runAcpTurn({
-      agent: acpAgentFor(runner),
+      agent: acpAgentFor(runner, await this.seal()),
       cwd: tmpdir(),
       idleTimeoutMs: 3 * 60_000,
       maxSessionMs: 5 * 60_000,
@@ -415,6 +530,8 @@ class AgentDriver {
     turn: AcpTurnResult;
     sawOutput: boolean;
   }> {
+    const seal = await this.seal();
+    const livePage = livePageOf(sealedBrowser(seal, emp.runner));
     const handle = controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;
@@ -432,7 +549,7 @@ class AgentDriver {
       };
       const res = await runAcpTurn({
         addDirs,
-        agent: acpAgentFor(emp.runner),
+        agent: acpAgentFor(emp.runner, seal),
         cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
@@ -452,6 +569,7 @@ class AgentDriver {
             { companyId: company.id, id: run.taskId },
             request,
             leases,
+            livePage,
             confinement,
             tools.asks.raise,
             turnEnded,
@@ -474,4 +592,8 @@ class AgentDriver {
   }
 }
 
-export const agentDriver = new AgentDriver();
+/** A driver whose runs start only once `checkSeal` finds the seal holding: tests script the check, the app runs it. */
+export const createAgentDriver = (checkSeal: () => Promise<SealState> = sealRuns): AgentDriver =>
+  new AgentDriver(checkSeal);
+
+export const agentDriver = createAgentDriver();

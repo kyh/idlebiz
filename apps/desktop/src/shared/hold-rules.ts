@@ -5,6 +5,9 @@ const HOLD_RULES = {
   // Leased for the rest of a run: what the founder signs is the site, not the keystroke.
   "browser-act":
     "Act in a real browser on this site — log in, type, click, submit — for the rest of this run.",
+  // Signed for once and exactly: the page is a file, and the next could be any other.
+  "browser-file":
+    "Open a file from outside the workspace in a real browser — one run of exactly this command.",
   // Signed for like a shell command, once and exactly: no site can be named, so there is nothing to lease.
   "browser-unseen":
     "Act in a real browser on a page nobody could check first — one run of exactly this command.",

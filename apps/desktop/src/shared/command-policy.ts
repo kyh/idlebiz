@@ -4,8 +4,9 @@ import { lexFlat, lexLine } from "./shell-lexer";
 import type { Command, Pipeline, Words } from "./shell-lexer";
 
 // IdleBiz answers every permission ask both runners raise, so an unmatched command runs
-// with the founder's privileges: the CLIs' own sandboxes do not stand behind it. Persist
-// rule ids so approval cards can explain them.
+// with the founder's privileges, less what the run's Seatbelt profile seals (their logins,
+// IdleBiz's keys): the CLIs' own sandboxes are off. Persist rule ids so approval cards can
+// explain them.
 // A command line is split as bash would split it, read loosely as well where another
 // shell may split it apart, and seen through every wrapper that runs another command, so a
 // rule reads a program's own words and never the text of a quoted argument. Heredoc
@@ -1107,7 +1108,8 @@ const pipelinesOf = (
 };
 
 const LOOPBACK_HOST = String.raw`https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)`;
-const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|file:|about:)`, "u");
+// Not file:, which is no build of the team's: a page opened from disk reads the disk.
+const LOOPBACK_URL = new RegExp(`^(?:${LOOPBACK_HOST}|about:)`, "u");
 const onLoopback = (url: string | null): boolean => url !== null && LOOPBACK_URL.test(url);
 
 /**
@@ -1331,6 +1333,50 @@ const landing = (page: BrowserPage | null): string | null => {
   return page.frames.every(own) ? page.url : null;
 };
 
+/** A path as the OS reads it from `cwd`, POSIX since the app ships for macOS only. `~` stays as named: no root is under a home this cannot see. */
+const resolvePath = (cwd: string, file: string): string => {
+  if (file === "~" || file.startsWith("~/")) {
+    return file;
+  }
+  const parts: string[] = [];
+  for (const part of (file.startsWith("/") ? file : `${cwd}/${file}`).split("/")) {
+    if (part === "..") {
+      parts.pop();
+    } else if (part !== "" && part !== ".") {
+      parts.push(part);
+    }
+  }
+  return `/${parts.join("/")}`;
+};
+
+const within = (file: string, root: string): boolean =>
+  file === root || file.startsWith(`${root}/`);
+
+// agent-browser hands a URL of this scheme, in any case, to the browser as written.
+const FILE_URL = /^file:/iu;
+
+const decoded = (text: string): string | null => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return null;
+  }
+};
+
+/** Whether `word` is a `file:` URL for anything outside the run's own dirs, or one nobody can place. */
+const opensOutside = (word: string, room: Confinement): boolean => {
+  if (!FILE_URL.test(word)) {
+    return false;
+  }
+  const url = URL.parse(word);
+  const file = url === null ? null : decoded(url.pathname);
+  if (url === null || file === null || (url.host !== "" && url.host !== "localhost")) {
+    return true;
+  }
+  const opened = resolvePath("/", file);
+  return !room.writable.some((root) => within(opened, root));
+};
+
 const unseen = (command: string): Hold => ({
   key: command,
   leasable: false,
@@ -1359,12 +1405,15 @@ const actHold = (url: string | null, leases: ReadonlySet<string>, command: strin
  * act after a step that may have moved the page lands somewhere nobody could read.
  * An `open` earlier in the same chained command names the site a remote act waits
  * on, but opening the team's build names only its top page: its frames are unread.
+ * A file outside the run's own dirs is held wherever it is named, since any verb
+ * that takes a URL (`open`, `tab new`, `diff url`) reads it into a page.
  */
 const heldBrowserAct = async (
   line: string,
   key: string,
   leases: ReadonlySet<string>,
   livePage: LivePage,
+  room: Confinement,
 ): Promise<Hold | null> => {
   // Per session, where the page will be when the next step runs: absent is where the live page says, null is anywhere.
   const pages = new Map<string, string | null>();
@@ -1378,6 +1427,9 @@ const heldBrowserAct = async (
   const calls = pipelinesOf(line)
     .pipelines.flat()
     .filter((call) => call.program === "agent-browser");
+  if (calls.some((call) => call.args.some((word) => opensOutside(word, room)))) {
+    return { key, leasable: false, rule: "browser-file" };
+  }
   for (const step of calls.flatMap(browserSteps)) {
     switch (step.does) {
       case "blind": {
@@ -1466,25 +1518,6 @@ export interface Confinement {
   save: string;
 }
 
-/** A path as the OS reads it from `cwd`, POSIX since the app ships for macOS only. `~` stays as named: no root is under a home this cannot see. */
-const resolvePath = (cwd: string, file: string): string => {
-  if (file === "~" || file.startsWith("~/")) {
-    return file;
-  }
-  const parts: string[] = [];
-  for (const part of (file.startsWith("/") ? file : `${cwd}/${file}`).split("/")) {
-    if (part === "..") {
-      parts.pop();
-    } else if (part !== "" && part !== ".") {
-      parts.push(part);
-    }
-  }
-  return `/${parts.join("/")}`;
-};
-
-const within = (file: string, root: string): boolean =>
-  file === root || file.startsWith(`${root}/`);
-
 /** One line, so the key reads back the same from the task's saved ask. */
 const oneLine = (text: string): string => text.replaceAll(/\s+/gu, " ").trim();
 
@@ -1502,18 +1535,13 @@ const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
 };
 
 /**
- * codex asks for a patch only when it reaches past its writable roots (or into a
- * path it protects inside them, like .git), so its ask is held whatever it names:
- * the files listed may all be the run's own while a move takes one into the save.
+ * codex asks before every patch, naming every path it writes, a move's destination too, so
+ * it is judged as an edit of them all. One that names none could write anywhere.
  */
-const patchHold = (sources: readonly string[], room: Confinement): Hold => {
-  const files = sources.map((file) => resolvePath(room.cwd, file));
-  return {
-    key: oneLine(`edit: ${[...files, "a file the ask does not name"].join(", ")}`),
-    leasable: false,
-    rule: editHold(sources, room)?.rule ?? "write-outside",
-  };
-};
+const patchHold = (paths: readonly string[], room: Confinement): Hold | null =>
+  paths.length === 0
+    ? { key: "edit: a file the ask does not name", leasable: false, rule: "write-outside" }
+    : editHold(paths, room);
 
 /**
  * The one judgement every tool call passes through; null lets it run. `leases` is
@@ -1542,7 +1570,7 @@ export const holdFor = async (
     return editHold(tool.paths, confinement);
   }
   if (tool.kind === "patch") {
-    return patchHold(tool.sources, confinement);
+    return patchHold(tool.paths, confinement);
   }
   if (tool.kind === "network") {
     // the command behind it goes unseen, so nothing tells a read from a send
@@ -1563,5 +1591,5 @@ export const holdFor = async (
   if (verdict.decision === "ask") {
     return { key, leasable: false, rule: verdict.rule.id };
   }
-  return await heldBrowserAct(tool.command, key, leases, livePage);
+  return await heldBrowserAct(tool.command, key, leases, livePage, confinement);
 };

@@ -4,17 +4,30 @@ import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { LivePage } from "@/shared/command-policy";
 import type { BlockedAsk } from "@/shared/domain";
 import { parseJson } from "@/shared/json";
+import type { BrowserCli } from "./agent-driver";
+import type { Seal, SealState } from "./seal";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("@/main/store/store");
-const { PAGE_URLS, acpAgentFor, agentDriver, decidePermission, memoryAfter, outcomeOf } =
-  await import("./agent-driver");
+const {
+  BROWSER_NAMESPACE,
+  PAGE_URLS,
+  acpAgentFor,
+  agentDriver,
+  createAgentDriver,
+  decidePermission,
+  livePageOf,
+  memoryAfter,
+  outcomeOf,
+} = await import("./agent-driver");
+const { sealedCommand } = await import("./seal");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -29,6 +42,16 @@ afterAll(() => {
     process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
+
+const SEAL: Seal = {
+  otherLogin: {
+    claude: [{ match: "prefix", path: "/Users/me/.codex" }],
+    codex: [{ match: "prefix", path: "/Users/me/.claude" }],
+  },
+  sshAgent: "/private/var/run/com.apple.launchd.x/Listeners",
+  unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/secrets.json" }],
+  unwritable: [{ match: "subpath", path: "/Users/me/.zshrc" }],
+};
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
 const limited = { error: "You've hit your session limit", kind: "limited", resetsAt: 99 } as const;
@@ -228,6 +251,8 @@ const found = () =>
     name: "Acme",
   });
 
+const noPage: LivePage = () => Promise.resolve(null);
+
 describe("decidePermission", () => {
   const push = { tool: { command: "git push", kind: "shell" } } as const;
   const workspace = path.join(root, "acme", "workspace");
@@ -243,6 +268,7 @@ describe("decidePermission", () => {
         { companyId: company.id, id: "deploy" },
         push,
         new Set(),
+        noPage,
         room,
         (ask) => asked.push(ask),
         signal,
@@ -265,6 +291,7 @@ describe("decidePermission", () => {
       { companyId: company.id, id: "deploy" },
       request,
       new Set(),
+      noPage,
       room,
       (ask) => asked.push(ask),
       new AbortController().signal,
@@ -284,6 +311,125 @@ describe("decidePermission", () => {
     expect(await decide(AbortSignal.abort())).toEqual({ allow: false });
     expect(asked).toEqual([]);
     expect(store.consumeApproval("deploy", "git push")).toBe(true);
+  });
+});
+
+describe("acpAgentFor", () => {
+  it.each([
+    ["claude", "claude-agent-acp"],
+    ["codex", "codex-acp"],
+  ] as const)("starts a %s session inside that runner's seal", (runner, adapter) => {
+    const { command } = acpAgentFor(runner, SEAL);
+    expect(command.slice(0, -2)).toEqual(sealedCommand(SEAL, runner, []));
+    expect(command.slice(-2)).toEqual([process.execPath, expect.stringContaining(adapter)]);
+  });
+
+  it("starts agent-browser's Chrome without a sandbox of its own, in the runs' own daemon", () => {
+    const { env } = acpAgentFor("codex", SEAL);
+    expect(env.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
+    expect(env.AGENT_BROWSER_NAMESPACE).toBe(BROWSER_NAMESPACE);
+  });
+
+  it("runs codex in the mode that asks for everything and sandboxes nothing itself", () => {
+    expect(acpAgentFor("codex", SEAL).sessionModeId).toBe("external-sandbox");
+  });
+
+  it("keeps claude's own sandbox off, whatever the founder's settings say", () => {
+    expect(acpAgentFor("claude", SEAL).sessionMeta).toMatchObject({
+      claudeCode: { options: { settings: { sandbox: { enabled: false } } } },
+    });
+  });
+});
+
+/** agent-browser as a daemon that is running or not, on the page `urls` names; what it was asked, in order. */
+const browserAt = (running: boolean, urls: readonly (string | null)[]) => {
+  const asked: string[][] = [];
+  const browser: BrowserCli = (args) => {
+    asked.push([...args]);
+    const data = args.includes("info") ? { active: running } : { result: urls };
+    return Promise.resolve(JSON.stringify({ data, success: true }));
+  };
+  return { asked, browser };
+};
+
+describe("livePageOf", () => {
+  it("reads the session in the daemon the runs drive", async () => {
+    const { asked, browser } = browserAt(true, ["http://localhost:3000/", null]);
+    expect(await livePageOf(browser)("mae")).toEqual({
+      frames: [null],
+      url: "http://localhost:3000/",
+    });
+    const scope = ["--namespace", BROWSER_NAMESPACE, "--session", "mae"];
+    expect(asked).toEqual([
+      [...scope, "session", "info", "--json"],
+      [...scope, "eval", PAGE_URLS, "--json"],
+    ]);
+  });
+
+  it("starts no daemon: a session with none shows no page", async () => {
+    const { asked, browser } = browserAt(false, ["about:blank"]);
+    expect(await livePageOf(browser)("")).toBeNull();
+    expect(asked).toEqual([["--namespace", BROWSER_NAMESPACE, "session", "info", "--json"]]);
+  });
+
+  it("shows no page when agent-browser cannot answer", async () => {
+    expect(await livePageOf(() => Promise.reject(new Error("ENOENT")))("")).toBeNull();
+  });
+});
+
+/** Point both CLIs at nothing, so looking for them spawns no real one. */
+const withoutClis = () => {
+  const touched = ["CLAUDE_BIN", "CODEX_BIN"];
+  const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
+  beforeEach(() => {
+    for (const key of touched) {
+      process.env[key] = path.join(root, `no-${key}`);
+    }
+  });
+  afterEach(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+};
+
+describe("a seal the boot check refuses", () => {
+  withoutClis();
+  const refused: SealState = {
+    kind: "refused",
+    reason: "sandbox-exec timed out, so none will start.",
+  };
+  const holding: SealState = { kind: "sealed", seal: SEAL };
+
+  it("starts no run and says why, then checks again when the CLIs are looked for again", async () => {
+    const verdicts = [refused, holding];
+    let checks = 0;
+    const driver = createAgentDriver(() => {
+      checks += 1;
+      return Promise.resolve(verdicts[checks - 1] ?? holding);
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      driver.init();
+      expect(driver.runsSealed()).toBe(false);
+      expect(await driver.sealRefusal()).toBe("sandbox-exec timed out, so none will start.");
+      expect(driver.runsSealed()).toBe(false);
+      expect(logged).toHaveBeenCalledWith("[seal]", "sandbox-exec timed out, so none will start.");
+
+      await driver.refresh();
+
+      expect(await driver.sealRefusal()).toBeNull();
+      expect(driver.runsSealed()).toBe(true);
+      await driver.refresh();
+      expect(checks).toBe(2);
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 
@@ -332,7 +478,7 @@ describe("the environment an agent is spawned with", () => {
   });
 
   it("holds none of IdleBiz's keys, even when main's own env has them", async () => {
-    const agent = acpAgentFor("claude");
+    const agent = acpAgentFor("claude", SEAL);
     const { end, summary } = await runAcpTurn({
       agent: { ...agent, command: [process.execPath, "-e", ENV_NAMING_AGENT] },
       cwd,

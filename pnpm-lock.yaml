@@ -141,6 +141,9 @@ catalogs:
       specifier: ^4.6.5
       version: 4.6.5
 
+patchedDependencies:
+  '@agentclientprotocol/codex-acp@1.12.0': 1c7c3bd12b7a715b80beefa85d9866987f67ab3e294a8c38d4c41db49228e297
+
 importers:
 
   .:
@@ -174,7 +177,7 @@ importers:
         version: 0.79.0(@anthropic-ai/sdk@0.127.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@7.2.0)(zod@4.6.5))
       '@agentclientprotocol/codex-acp':
         specifier: ^1.12.0
-        version: 1.12.0
+        version: 1.12.0(patch_hash=1c7c3bd12b7a715b80beefa85d9866987f67ab3e294a8c38d4c41db49228e297)
       sharp:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@24.13.6)
@@ -271,7 +274,7 @@ importers:
         version: 0.3.2
       next:
         specifier: ^16.3.5
-        version: 16.3.5(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@24.13.6)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 16.3.5(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.63.0)(@types/node@24.13.6)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react:
         specifier: 'catalog:'
         version: 19.3.0
@@ -4175,7 +4178,7 @@ snapshots:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
-  '@agentclientprotocol/codex-acp@1.12.0':
+  '@agentclientprotocol/codex-acp@1.12.0(patch_hash=1c7c3bd12b7a715b80beefa85d9866987f67ab3e294a8c38d4c41db49228e297)':
     dependencies:
       '@agentclientprotocol/sdk': 1.5.0(zod@4.6.5)
       '@openai/codex': 0.154.0
@@ -6654,7 +6657,7 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  next@16.3.5(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@24.13.6)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  next@16.3.5(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.63.0)(@types/node@24.13.6)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       '@next/env': 16.3.5
       '@swc/helpers': 0.5.23
@@ -6673,6 +6676,7 @@ snapshots:
       '@next/swc-linux-x64-musl': 16.3.5
       '@next/swc-win32-arm64-msvc': 16.3.5
       '@next/swc-win32-x64-msvc': 16.3.5
+      '@playwright/test': 1.63.0
       sharp: 0.35.4(@types/node@24.13.6)
     transitivePeerDependencies:
       - '@babel/core'
