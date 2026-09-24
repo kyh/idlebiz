@@ -167,8 +167,10 @@ allocator and the replay.
   stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
   layered, and unlayered CSS wins regardless of specificity. So a utility on the same
   element that sets a property its kit class also sets does _nothing_ — `text-[12px]` on a
-  `.px-btn` never applied (23 such declarations had accumulated). Classes that set
-  font-size/color: `.px-btn` `.px-opt` `.px-field` `.px-chip` `.px-cmd` `.px-badge`. Size
+  `.px-btn` never applied (23 such declarations had accumulated). Before putting a utility on
+  an element with a `.px-*` class, check px-kit.css for the same property: many set
+  font-size, colour, background or padding (`.px-btn`, `.px-opt`, `.px-hint`, `.px-inset`…).
+  A variant is a kit modifier (`.px-hint-danger`, `.px-inset-hover`), never a utility. Size
   and colour belong in the kit as a class, never per-component. Cursors are the opposite:
   no kit class sets one, each app does by element. Icons are font glyphs, so "icon size" is
   font-size: use `.px-icon`.
@@ -192,8 +194,10 @@ allocator and the replay.
   `version` is never replaced.
 - **A sprite is its resolved path, never its id.** `objectSpritePath` picks the PNG; the
   scene keys its texture by that path, and the builder sizes, hits and anchors the object
-  by that path's entry in `sprite-bounds.generated.ts`, one scan of the shipped art. Run
-  `pnpm --filter @repo/desktop generate:sprite-bounds` after adding or changing a PNG:
+  by that path's entry in `sprite-bounds.generated.ts`, one scan of the shipped art. That
+  scan is also the office kit's catalog: kit PNG NNN is `office-object-NNN`. Run
+  `pnpm --filter @repo/desktop generate:sprite-bounds` after adding or changing a PNG
+  (`import:office-objects` runs it after copying in the kit):
   the scene throws on an id with no sprite and the builder on a sprite never measured, so
   main opens a saved office naming either (`unresolvedArt`) as the bundled office and
   refuses to save one, and `check:office` fails on both and on a sprite measured from

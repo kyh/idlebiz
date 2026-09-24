@@ -13,7 +13,6 @@ import { Inspector } from "@/renderer/ui/office-builder/inspector";
 import {
   ALL_OBJECT_IDS,
   addSelected,
-  assetSrc,
   blockFootprint,
   duplicates,
   flipObject,
@@ -35,6 +34,7 @@ import type { Placing } from "@/renderer/ui/office-builder/stage";
 import { layoutIssues } from "@/shared/office-grid";
 import { schemaIssues } from "@/shared/office-layout-schema";
 import type { OfficeDesign } from "@/shared/office-layout-schema";
+import { objectSpritePath } from "@/shared/office-object-sprite";
 
 type PaletteMode = "objects" | "tiles";
 
@@ -109,7 +109,7 @@ const PaletteView = ({
         onChange={onMode}
         label="Palette"
         className="flex flex-1 gap-1"
-        itemClassName="flex-1 px-2 py-1"
+        itemClassName="flex-1"
       />
     </div>
     <input
@@ -126,7 +126,7 @@ const PaletteView = ({
           onClick={() => onPick(it.id)}
           title={it.id}
           data-pressed={picked === it.id ? "" : undefined}
-          className="px-opt flex h-12 items-center justify-center overflow-hidden p-1"
+          className="px-opt flex h-12 items-center justify-center overflow-hidden"
         >
           <img
             src={it.src}
@@ -180,7 +180,6 @@ const Toolbar = ({
         onChange={onTool}
         label="Tool"
         className="flex gap-2"
-        itemClassName="px-2.5 py-1.5"
       />
       <span className="mx-1 opacity-40">|</span>
       <span className="text-fg-dim">snap</span>
@@ -190,28 +189,23 @@ const Toolbar = ({
         onChange={(key) => onSnap(Number(key))}
         label="Snap"
         className="flex gap-2"
-        itemClassName="px-2 py-1.5"
       />
       <span className="mx-1 opacity-40">|</span>
-      <button type="button" onClick={onZoomOut} className="px-btn px-2 py-1.5">
+      <button type="button" onClick={onZoomOut} className="px-btn">
         −
       </button>
       <span className="w-8 text-center">{zoom}×</span>
-      <button type="button" onClick={onZoomIn} className="px-btn px-2 py-1.5">
+      <button type="button" onClick={onZoomIn} className="px-btn">
         +
       </button>
-      <Toggle
-        pressed={showCollision}
-        onPressedChange={onToggleCollision}
-        className="px-opt px-2.5 py-1.5"
-      >
+      <Toggle pressed={showCollision} onPressedChange={onToggleCollision} className="px-opt">
         Collision
       </Toggle>
       <button
         type="button"
         onClick={onBlockFootprint}
         disabled={!canBlockFootprint}
-        className="px-btn px-2.5 py-1.5"
+        className="px-btn"
         title="Close the collision cells under the selected objects; floor and overhead pieces block nothing (then Save)"
       >
         Block footprint
@@ -219,16 +213,16 @@ const Toolbar = ({
       <button
         type="button"
         onClick={onSealPockets}
-        className="px-btn px-2.5 py-1.5"
+        className="px-btn"
         title="Close open floor no body can stand on (then Save)"
       >
         Seal pockets
       </button>
       <span className="ml-auto flex items-center gap-2">
-        <a href="#/office-assets" className="px-btn px-2.5 py-1.5">
+        <a href="#/office-assets" className="px-btn">
           Assets
         </a>
-        <a href="#/" className="px-btn px-2.5 py-1.5">
+        <a href="#/" className="px-btn">
           Game
         </a>
         <button
@@ -289,11 +283,7 @@ const SelectionSummary = ({
         <p className="text-xs text-fg-dim">
           Drag to move them together; arrows nudge; Delete removes all.
         </p>
-        <button
-          type="button"
-          onClick={() => onDelete(selection)}
-          className="px-btn px-btn-danger py-1.5"
-        >
+        <button type="button" onClick={() => onDelete(selection)} className="px-btn px-btn-danger">
           Delete {selection.length}
         </button>
       </div>
@@ -531,7 +521,7 @@ export const OfficeBuilder = ({ design }: { design: OfficeDesign }) => {
       return tiles.map((t) => ({ id: t.id, src: t.path }));
     }
     const ids = q ? ALL_OBJECT_IDS.filter((id) => id.includes(q)) : ALL_OBJECT_IDS;
-    return ids.map((id) => ({ id, src: assetSrc(id) }));
+    return ids.map((id) => ({ id, src: objectSpritePath({ id }) }));
   }, [query, paletteMode]);
 
   const placing = useMemo<Placing | null>(() => {

@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
-    "generate:office-objects": "node scripts/generate-office-object-catalog.cjs",
+    "import:office-objects": "node scripts/import-office-objects.cjs && node scripts/generate-sprite-bounds.cjs",
     "generate:room-tiles": "node scripts/generate-room-builder-tiles.cjs",
     "generate:sprite-bounds": "node scripts/generate-sprite-bounds.cjs",
     "check:office": "node scripts/check-office.mjs",

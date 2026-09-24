@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
-import { OFFICE_OBJECT_ASSETS } from "@/shared/office-object-catalog.generated";
-import { spriteBounds } from "@/shared/office-object-sprite";
+import { OFFICE_OBJECT_ASSETS, spriteBounds } from "@/shared/office-object-sprite";
 
 const SIZED_ASSETS = OFFICE_OBJECT_ASSETS.map((asset) => {
   const { w, h } = spriteBounds(asset.path);
@@ -103,10 +102,10 @@ export const OfficeObjectCatalog = () => {
                 placeholder="Search id, source, size"
                 className="px-field w-full min-w-0 sm:w-56"
               />
-              <a href="#/ui" className="px-btn px-3 py-2 text-center">
+              <a href="#/ui" className="px-btn text-center">
                 Builder
               </a>
-              <a href="#/" className="px-btn px-3 py-2 text-center">
+              <a href="#/" className="px-btn text-center">
                 Game
               </a>
             </div>

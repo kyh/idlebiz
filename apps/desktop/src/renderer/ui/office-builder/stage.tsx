@@ -12,10 +12,10 @@ import {
   moveObjects,
   paintCell,
   paintOrder,
-  srcForObject,
   withLayout,
   withSelection,
 } from "@/renderer/ui/office-builder/office-builder-model";
+import { objectSpritePath } from "@/shared/office-object-sprite";
 import type {
   BuilderDoc,
   EditableLayout,
@@ -121,7 +121,7 @@ const ObjectLayerView = ({
         return (
           <img
             key={o.uid}
-            src={srcForObject(o)}
+            src={objectSpritePath(o)}
             alt={o.id}
             draggable={false}
             style={{

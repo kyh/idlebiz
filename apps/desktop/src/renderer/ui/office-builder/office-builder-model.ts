@@ -12,8 +12,11 @@ import {
   clonePoi,
 } from "@/shared/office-layout-schema";
 import type { OfficeObjectDef } from "@/shared/office-layout-schema";
-import { OFFICE_OBJECT_ASSETS } from "@/shared/office-object-catalog.generated";
-import { objectSpritePath, spriteBounds } from "@/shared/office-object-sprite";
+import {
+  OFFICE_OBJECT_ASSETS,
+  objectSpritePath,
+  spriteBounds,
+} from "@/shared/office-object-sprite";
 import { ROOM_BUILDER_TILES } from "@/renderer/game/room-builder-tiles.generated";
 import type { RoomBuilderTile } from "@/renderer/game/room-builder-tiles.generated";
 import { sealedCollision } from "@/shared/office-grid";
@@ -112,9 +115,6 @@ const anchorFor = (o: Sprite, y: number): number => {
   const b = contentBounds(o);
   return y + b.y + b.h;
 };
-export const assetSrc = (id: string): string => objectSpritePath({ id });
-/** Image src for a placed object: the PNG the scene draws, relative to the page. */
-export const srcForObject = (o: Pick<EditableObject, "id" | "path">): string => objectSpritePath(o);
 /**
  * The objects in the order the game paints them, back to front — what the builder
  * renders and what it serializes. Sorts by the game's own comparator, so the builder

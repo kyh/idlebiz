@@ -8,9 +8,9 @@ import {
   flipTransform,
   moveObject,
   setLayer,
-  srcForObject,
 } from "@/renderer/ui/office-builder/office-builder-model";
 import type { EditableObject } from "@/renderer/ui/office-builder/office-builder-model";
+import { objectSpritePath } from "@/shared/office-object-sprite";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 
@@ -82,7 +82,7 @@ const AnchorFields = ({
       <button
         type="button"
         onClick={() => onChange(autoAnchor(obj))}
-        className="px-btn flex-1 py-1.5"
+        className="px-btn flex-1"
         title="Snap the anchor back to the sprite's floor line"
       >
         Auto anchor
@@ -97,7 +97,7 @@ const StackButtons = ({ onRestack }: { onRestack: (dir: 1 | -1) => void }) => (
     <button
       type="button"
       onClick={() => onRestack(-1)}
-      className="px-btn flex-1 py-1.5"
+      className="px-btn flex-1"
       title="Paint this one earlier — behind its neighbours in this layer"
     >
       Send back
@@ -105,7 +105,7 @@ const StackButtons = ({ onRestack }: { onRestack: (dir: 1 | -1) => void }) => (
     <button
       type="button"
       onClick={() => onRestack(1)}
-      className="px-btn flex-1 py-1.5"
+      className="px-btn flex-1"
       title="Paint this one later — in front of its neighbours in this layer"
     >
       Bring forward
@@ -124,7 +124,7 @@ export const Inspector = ({
   onRestack: (dir: 1 | -1) => void;
   onDelete: () => void;
 }) => {
-  const src = srcForObject(obj);
+  const src = objectSpritePath(obj);
   return (
     <div className="flex flex-col gap-2">
       <div className="px-inset flex items-center gap-2 p-2">
@@ -144,7 +144,7 @@ export const Inspector = ({
         onChange={(layer) => onChange(setLayer(obj, layer))}
         label="Layer"
         className="flex gap-1"
-        itemClassName="flex-1 py-1.5"
+        itemClassName="flex-1"
       />
       {obj.layer === "object" ? (
         <AnchorFields obj={obj} onChange={onChange} />
@@ -155,7 +155,7 @@ export const Inspector = ({
         <Toggle
           pressed={obj.flipX}
           onPressedChange={() => onChange(flipObject(obj, "x"))}
-          className="px-opt flex-1 py-1.5"
+          className="px-opt flex-1"
           title="Flip horizontal (⇧H)"
         >
           Flip H
@@ -163,13 +163,13 @@ export const Inspector = ({
         <Toggle
           pressed={obj.flipY}
           onPressedChange={() => onChange(flipObject(obj, "y"))}
-          className="px-opt flex-1 py-1.5"
+          className="px-opt flex-1"
           title="Flip vertical (⇧V)"
         >
           Flip V
         </Toggle>
       </div>
-      <button type="button" onClick={onDelete} className="px-btn px-btn-danger py-1.5">
+      <button type="button" onClick={onDelete} className="px-btn px-btn-danger">
         Delete
       </button>
     </div>

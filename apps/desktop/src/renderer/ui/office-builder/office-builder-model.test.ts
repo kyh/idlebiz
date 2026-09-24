@@ -6,7 +6,6 @@ import {
   ALL_OBJECT_IDS,
   ROOM_TILES,
   addSelected,
-  assetSrc,
   autoAnchor,
   blockFootprint,
   duplicates,
@@ -18,7 +17,6 @@ import {
   paintCell,
   sealPockets,
   setCollisionCell,
-  srcForObject,
   toLayoutData,
   withLayout,
   withSelection,
@@ -34,18 +32,16 @@ const missesPage = (src: string): boolean => !new URL(src, page).href.startsWith
 
 describe("builder sprite srcs", () => {
   it("resolve beside a file:// page for every catalog sprite", () => {
-    expect(ALL_OBJECT_IDS.filter((id) => missesPage(assetSrc(id)))).toEqual([]);
-    expect(ALL_OBJECT_IDS.filter((id) => missesPage(srcForObject({ id })))).toEqual([]);
+    expect(ALL_OBJECT_IDS.filter((id) => missesPage(objectSpritePath({ id })))).toEqual([]);
   });
 
   it("resolve beside a file:// page for every room tile", () => {
-    const placed = ROOM_TILES.map((t) => srcForObject({ id: t.id, path: t.path }));
+    const placed = ROOM_TILES.map((t) => objectSpritePath({ id: t.id, path: t.path }));
     expect(placed.filter(missesPage)).toEqual([]);
   });
 
   it("refuses an id the catalog does not know", () => {
-    expect(() => assetSrc("no-such-object")).toThrow(/no-such-object/u);
-    expect(() => srcForObject({ id: "no-such-object" })).toThrow(/no-such-object/u);
+    expect(() => objectSpritePath({ id: "no-such-object" })).toThrow(/no-such-object/u);
   });
 });
 
@@ -54,9 +50,9 @@ const unmeasured = (sprites: readonly string[]): string[] =>
 
 describe("builder sprite bounds", () => {
   it("are measured for everything the palette places and the shipped office draws", () => {
-    expect(unmeasured(ALL_OBJECT_IDS.map(assetSrc))).toEqual([]);
+    expect(unmeasured(ALL_OBJECT_IDS.map((id) => objectSpritePath({ id })))).toEqual([]);
     expect(unmeasured(ROOM_TILES.map((t) => t.path))).toEqual([]);
-    expect(unmeasured(loadLayout().objects.map(srcForObject))).toEqual([]);
+    expect(unmeasured(loadLayout().objects.map(objectSpritePath))).toEqual([]);
   });
 
   // d2-mirb-60-16 is a 32x32 canvas whose content is the bottom 6px: the box a click
@@ -72,7 +68,7 @@ describe("builder sprite bounds", () => {
   it("follow an object's own path over its id's catalog sprite", () => {
     const fix = { id: "office-object-001", path: "workspace-kit/design2/d2-fix-0.png" };
     const placed = { ...fix, flipX: false, flipY: false, x: 10, y: 20 };
-    expect(srcForObject(fix)).toBe(fix.path);
+    expect(objectSpritePath(fix)).toBe(fix.path);
     expect(worldRect(placed)).toEqual({ h: 6, w: 2, x: 10, y: 20 });
   });
 
