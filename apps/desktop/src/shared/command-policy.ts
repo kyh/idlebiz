@@ -1019,6 +1019,9 @@ const tailsOf = (flat: readonly Pipeline[]): Call[][] => {
 /** Past this many scripts inside scripts, which heredocs can nest without escaping, a script is read flat. */
 const MAX_SCRIPT_DEPTH = 8;
 
+/** A program word with a blank or an operator in it is a whole script someone quoted. */
+const SCRIPT_IN_A_WORD = /[\s;&|<>()`$]/u;
+
 /** What a command line runs, as calls, and whether any of it reads a script from its input. */
 interface Reading {
   pipelines: Call[][];
@@ -1077,14 +1080,24 @@ const pipelinesOf = (
       ...(fed || stages[index]?.runsPrinted === true ? command.printed.flat() : []),
     ]);
     const fedReadings = texts.map((text) => readOnce(text, false));
+    // codex shows an approval's script whole, quoted into one word when it holds a `'`:
+    // no program is named that, so it is the script the shell will run.
+    const quotedScripts = pipeline.flatMap((command) => {
+      const [program] = command.words;
+      return program !== undefined && SCRIPT_IN_A_WORD.test(program)
+        ? [readOnce(program, false)]
+        : [];
+    });
     reads ||=
       fed ||
       stages.some((stage) => stage.runsPrinted) ||
-      fedReadings.some((reading) => reading.reads);
+      fedReadings.some((reading) => reading.reads) ||
+      quotedScripts.some((reading) => reading.reads);
     return [
       stages.flatMap((stage) => stage.calls),
       ...scripts.flatMap((script) => script.pipelines),
       ...fedReadings.flatMap((reading) => reading.pipelines),
+      ...quotedScripts.flatMap((reading) => reading.pipelines),
     ];
   });
   return {
