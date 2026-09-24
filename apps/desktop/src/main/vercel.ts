@@ -117,8 +117,8 @@ const VisitsCountSchema = z.object({
 
 /** Which visits to count. Left empty, it is every visit the project has ever had. */
 export interface VisitWindow {
-  /** Only visits from this moment on. */
-  since?: number;
+  /** Only visits between these moments. */
+  span?: { since: number; until: number };
   /** Only visits to this path or anything under it. */
   under?: string;
 }
@@ -139,15 +139,14 @@ export interface VisitQuery {
 export const visitQuery = (
   project: { projectId: string; teamId: string | null },
   window: VisitWindow,
-  now: number,
 ): VisitQuery => {
   const params: VisitQuery = { projectId: project.projectId };
   if (project.teamId !== null) {
     params.teamId = project.teamId;
   }
-  if (window.since !== undefined) {
-    params.since = new Date(window.since).toISOString();
-    params.until = new Date(now).toISOString();
+  if (window.span !== undefined) {
+    params.since = new Date(window.span.since).toISOString();
+    params.until = new Date(window.span.until).toISOString();
   }
   if (window.under !== undefined) {
     const path = window.under.replaceAll("'", "''");
@@ -169,7 +168,7 @@ export const webAnalyticsVisitors = async (
   try {
     const parsed = VisitsCountSchema.safeParse(
       await apiGet("/v1/query/web-analytics/visits/count", token, {
-        ...visitQuery(project, window, Date.now()),
+        ...visitQuery(project, window),
       }),
     );
     return parsed.success ? (parsed.data.data.visitors ?? null) : null;

@@ -35,13 +35,15 @@ number (`users` | `revenue`) of one product, with a spend cap and a window.
   live product numbers: won when the number moved by the target, killed when its window
   closes short — on a reading taken after the close (the pulse reads at boot and re-reads
   Stripe past its cache for it), since a cached read can miss the money that decides it.
-  Without one, the last reading decides only once the pulse has asked for `KILL_GRACE_MS`
-  past the close without a break (`pulsingSince`): a window that closed while the app was
-  quit or asleep waits on a read, not the wall clock. Only the lead starts a window
-  (`measure_bet`): spending out the budget stops the work but not the clock, because the
-  step that moves the number may still be waiting on the founder and a window over nothing
-  shipped is a false verdict. A spent-out bet gets the lead a "settle" run: measure or
-  kill. No tool lets an agent declare a win.
+  A measuring bet's reading stops at its close — visits up to `until`, charges made by it —
+  so however late that read comes, nothing after the window counts. Without one, the last
+  reading decides only once the pulse has asked for `KILL_GRACE_MS` past the close without a
+  break (`pulsingSince`): a window that closed while the app was quit or asleep waits on a
+  read, not the wall clock. Only the lead starts a window (`measure_bet`): spending out the
+  budget stops the work but not the clock, because the step that moves the number may still
+  be waiting on the founder and a window over nothing shipped is a false verdict. A
+  spent-out bet gets the lead a "settle" run: measure or kill. No tool lets an agent declare
+  a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
   bet reads captured USD charges tagged `metadata[bet]=<slug>`. So any number of bets run on one

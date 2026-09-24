@@ -70,7 +70,7 @@ export interface Bet {
   claim: BetClaim;
   /** How much of what it claims the bet must bring in to win. */
   target: number;
-  /** What it has brought in so far, as the last pulse read it; null while no source reports it. */
+  /** What it has brought in so far — by its window's close, once measuring — as the last pulse read it; null while no source reports it. */
   reading: number | null;
   /** When `reading` was taken: stamped when it moves, and by the first read after its window closed. */
   readAt: number | null;

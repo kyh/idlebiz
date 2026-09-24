@@ -67,6 +67,7 @@ const StripeChargePageSchema = z.object({
         amount_captured: z.number().optional(),
         amount_refunded: z.number().optional(),
         captured: z.boolean().optional(),
+        created: z.number(),
         currency: z.string().optional(),
         id: z.string().optional(),
         metadata: z.record(z.string(), z.string()).optional(),
@@ -79,13 +80,19 @@ const StripeChargePageSchema = z.object({
 
 const MAX_CHARGE_PAGES = 100;
 
+/** Cents one charge kept, and when it was made (ms). */
+interface KeptCharge {
+  cents: number;
+  created: number;
+}
+
 export interface Revenue {
   /** Dollars kept across every captured USD charge. */
   total: number;
   /** The share of it tagged `metadata[product]=<id>`; untagged money belongs to the company alone. */
   byProduct: ReadonlyMap<string, number>;
-  /** The share of it tagged `metadata[bet]=<id>`: what a revenue bet may claim. */
-  byBet: ReadonlyMap<string, number>;
+  /** The charges tagged `metadata[bet]=<id>`: what a revenue bet may claim, each with when it was made, since a measuring bet claims only those inside its window. */
+  byBet: ReadonlyMap<string, readonly KeptCharge[]>;
 }
 
 /** Add a charge's kept cents, as dollars, to whatever its tag names. */
@@ -94,6 +101,29 @@ const credit = (bucket: Map<string, number>, tag: string | undefined, kept: numb
     bucket.set(tag, (bucket.get(tag) ?? 0) + kept / 100);
   }
 };
+
+/** File a charge under the bet its tag names. */
+const fileCharge = (
+  bucket: Map<string, KeptCharge[]>,
+  tag: string | undefined,
+  kept: KeptCharge,
+): void => {
+  if (tag === undefined) {
+    return;
+  }
+  const filed = bucket.get(tag);
+  if (filed) {
+    filed.push(kept);
+  } else {
+    bucket.set(tag, [kept]);
+  }
+};
+
+/** Dollars a bet's tagged charges kept, counting only those made by `until`. */
+const keptBy = (revenue: Revenue, betId: string, until: number): number =>
+  (revenue.byBet.get(betId) ?? [])
+    .filter((charge) => charge.created <= until)
+    .reduce((cents, charge) => cents + charge.cents, 0) / 100;
 
 /**
  * Money kept, in dollars, from one read of every charge: what USD charges
@@ -109,7 +139,7 @@ export const sumCharges = async (
 ): Promise<Revenue | null> => {
   let cents = 0;
   const byProduct = new Map<string, number>();
-  const byBet = new Map<string, number>();
+  const byBet = new Map<string, KeptCharge[]>();
   let after: string | null = null;
   for (let i = 0; i < MAX_CHARGE_PAGES; i += 1) {
     const page = StripeChargePageSchema.safeParse(await fetchPage(after));
@@ -121,7 +151,7 @@ export const sumCharges = async (
         const kept = (ch.amount_captured ?? 0) - (ch.amount_refunded ?? 0);
         cents += kept;
         credit(byProduct, ch.metadata?.["product"], kept);
-        credit(byBet, ch.metadata?.["bet"], kept);
+        fileCharge(byBet, ch.metadata?.["bet"], { cents: kept, created: ch.created * 1000 });
       }
     }
     after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
@@ -300,21 +330,31 @@ const productVisitors = async (
   return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
 };
 
-/** What one bet's claim has brought in, and when: visitors who landed on its path since it opened, as of `now`, or money carrying its tag, as of the Stripe read. */
+/**
+ * What one bet's claim has brought in, and when it was read: visitors who landed
+ * on its path since it opened, as of `now`, or money carrying its tag, as of the
+ * Stripe read. A measuring bet counts only up to its window's close, so a read
+ * that comes long after it — past a sleep, a quit or a source that was down —
+ * is still exactly the window's number.
+ */
 const betReading = async (
   bet: Bet,
   products: readonly Product[],
   stripe: StripeSnapshot,
   now: number,
 ): Promise<BetRead> => {
+  const closes = bet.state.kind === "measuring" ? bet.state.until : Infinity;
   if (bet.claim.metric === "revenue") {
-    return { at: stripe.at, reading: stripe.bets ? (stripe.bets.byBet.get(bet.id) ?? 0) : null };
+    return { at: stripe.at, reading: stripe.bets ? keptBy(stripe.bets, bet.id, closes) : null };
   }
   const deploy = products.find((p) => p.id === bet.productId)?.vercel;
   return {
     at: now,
     reading: deploy
-      ? await webAnalyticsVisitors(deploy, { since: bet.createdAt, under: bet.claim.landingPath })
+      ? await webAnalyticsVisitors(deploy, {
+          span: { since: bet.createdAt, until: Math.min(now, closes) },
+          under: bet.claim.landingPath,
+        })
       : null,
   };
 };

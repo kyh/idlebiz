@@ -29,11 +29,11 @@ const project = { projectId: "prj_1", teamId: "team_1" };
 
 describe("visitQuery", () => {
   it("asks for every visit when given no window", () => {
-    expect(visitQuery({ projectId: "prj_1", teamId: null }, {}, 0)).toEqual({ projectId: "prj_1" });
+    expect(visitQuery({ projectId: "prj_1", teamId: null }, {})).toEqual({ projectId: "prj_1" });
   });
 
-  it("never sends since without until: the API refuses one without the other", () => {
-    const query = visitQuery(project, { since: 0 }, 86_400_000);
+  it("sends since and until together: the API refuses one without the other", () => {
+    const query = visitQuery(project, { span: { since: 0, until: 86_400_000 } });
     expect(query).toMatchObject({
       since: "1970-01-01T00:00:00.000Z",
       teamId: "team_1",
@@ -42,10 +42,10 @@ describe("visitQuery", () => {
   });
 
   it("counts a path and what is under it, not its lookalike neighbours", () => {
-    expect(visitQuery(project, { under: "/b/launch" }, 0).filter).toBe(
+    expect(visitQuery(project, { under: "/b/launch" }).filter).toBe(
       "requestPath eq '/b/launch' or startswith(requestPath, '/b/launch/')",
     );
-    expect(visitQuery(project, { under: "/guides/" }, 0).filter).toBe(
+    expect(visitQuery(project, { under: "/guides/" }).filter).toBe(
       "requestPath eq '/guides/' or startswith(requestPath, '/guides/')",
     );
   });
