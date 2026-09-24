@@ -3,7 +3,7 @@ import { zeroUsage } from "@repo/agent-driver/events";
 import type { AgentEvent } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
-import { report } from "@/main/lib/report";
+import { guarded, report } from "@/main/lib/report";
 import { agentDriver, askBox } from "@/main/agents/agent-driver";
 import type { RunResult, RunTools } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-actions";
@@ -48,15 +48,6 @@ const isWorking = (employeeId: string): boolean =>
   store.getEmployee(employeeId)?.status === "working";
 
 const empName = (id: string): string => store.getEmployee(id)?.name ?? "someone";
-
-/** Run a step nothing above can catch: a fault is reported, and the work after it goes on. */
-const guarded = (where: string, step: () => void): void => {
-  try {
-    step();
-  } catch (error) {
-    report(where, error);
-  }
-};
 
 const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
@@ -310,7 +301,13 @@ class Scheduler {
       if (!assignee) {
         continue;
       }
-      store.markRoutineRun(r.id);
+      try {
+        store.markRoutineRun(r.id);
+      } catch (error) {
+        // unmarked it stays due, so briefing it anyway would file it again every tick
+        report(`mark routine ${r.id}`, error);
+        continue;
+      }
       // a routine is about the company, but its work lands on a product:
       // the one waited on longest, like autopilot's own turn
       this.brief(assignee, routineBrief(r), {

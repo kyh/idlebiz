@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@/shared/activity";
-import type { Budget, Task, TaskOrigin } from "@/shared/domain";
+import type { Budget, BusinessTypeId, Task, TaskOrigin } from "@/shared/domain";
 import { RefusalError } from "@/shared/refusal";
 import type { RunResult, RunTools } from "./agents/agent-driver";
 import type { EmployeeRunner } from "./scheduler";
@@ -15,7 +15,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env["IDLEBIZ_ROOT_DIR"];
 process.env["IDLEBIZ_ROOT_DIR"] = root;
 const store = await import("./store/store");
-const { companyDir, tasksDir } = await import("./paths");
+const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { activityEvents } = await import("./activity");
 const { createScheduler, scheduler } = await import("./scheduler");
 
@@ -38,10 +38,10 @@ const NAMES = ["Priya", "Mae", "Sam", "Ana"];
 
 const UNCAPPED: Budget = { mode: "infinite" };
 
-const found = (budget: Budget = UNCAPPED) =>
+const found = (budget: Budget = UNCAPPED, businessType: BusinessTypeId = "software") =>
   store.foundCompany({
     budget,
-    businessType: "software",
+    businessType,
     founderName: "Kai",
     founderSpriteSeed: "seed",
     hires: NAMES.map((name) => ({
@@ -529,6 +529,54 @@ describe("asking the lead for the next bet", () => {
     drain.stop();
 
     expect(proposing()).toEqual([]);
+  });
+});
+
+describe("a file the save refuses on every tick", () => {
+  it("judges the other bets and still starts queued work past a verdict that cannot write", () => {
+    const company = found();
+    const stuck = openBet(5);
+    const other = openBet(5);
+    for (const bet of [stuck, other]) {
+      store.setBetReading(bet.id, 60, Date.now());
+    }
+    const task = queue("priya");
+    const drain = createScheduler(scripted().driver);
+    const dir = path.dirname(betFile(company.id, stuck.id));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => drain.start()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(`[judge bet ${stuck.id}]`, expect.anything());
+    } finally {
+      drain.stop();
+      chmodSync(dir, 0o755);
+      logged.mockRestore();
+    }
+    expect(store.getBet(stuck.id)?.state.kind).toBe("open");
+    expect(store.getBet(other.id)?.state.kind).toBe("won");
+    expect(kindOf(task)).toBe("running");
+  });
+
+  it("still sends idle hands to work past a due routine that cannot be marked run", () => {
+    const company = found(UNCAPPED, "game-studio");
+    const [routine] = store.listRoutines();
+    const drain = createScheduler(scripted().driver);
+    const dir = path.dirname(routineFile(company.id, routine?.id ?? ""));
+    vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => drain.start()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(`[mark routine ${routine?.id}]`, expect.anything());
+    } finally {
+      drain.stop();
+      chmodSync(dir, 0o755);
+      logged.mockRestore();
+      vi.useRealTimers();
+    }
+    expect(proposing()).toHaveLength(1);
+    expect(store.listOpenTasks().filter((t) => t.origin === "routine")).toEqual([]);
   });
 });
 

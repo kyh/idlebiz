@@ -6,3 +6,12 @@
 export const report = (where: string, error: unknown): void => {
   console.error(`[${where}]`, error);
 };
+
+/** Run a step whose fault must not stop the work after it: the fault is reported, and the caller goes on. */
+export const guarded = (where: string, step: () => void): void => {
+  try {
+    step();
+  } catch (error) {
+    report(where, error);
+  }
+};

@@ -1219,14 +1219,23 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
   return killed;
 };
 
-/** Judge every live bet against the real numbers (see `judge` for `pulsingSince`); returns the ones whose state changed. */
+/**
+ * Judge every live bet against the real numbers (see `judge` for `pulsingSince`); returns the ones
+ * whose state changed. A verdict the save refuses is reported and leaves that bet as the disk has
+ * it, to be judged again on the next tick, without holding back the others'.
+ */
 export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   const active = current();
   const changed: Bet[] = [];
   for (const bet of active.bets) {
     const state = judge(bet, now, pulsingSince);
-    if (state !== bet.state) {
+    if (state === bet.state) {
+      continue;
+    }
+    try {
       changed.push(patchBet(bet.id, { state }));
+    } catch (error) {
+      report(`judge bet ${bet.id}`, error);
     }
   }
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));

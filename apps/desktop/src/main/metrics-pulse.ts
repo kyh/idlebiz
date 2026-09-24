@@ -1,6 +1,6 @@
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
-import { report } from "@/main/lib/report";
+import { guarded, report } from "@/main/lib/report";
 import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
 import { readMetricsConfig } from "@/main/store/metrics-config";
 import { noteStripeRead } from "@/main/stripe-connect";
@@ -38,15 +38,19 @@ const read = async (): Promise<void> => {
   }
   const bets = store.listBets().filter((b) => !isClosed(b));
   const snap = await fetchRealMetrics(credential, products, bets);
-  store.setRealMetrics(snap);
+  // Each number is its own write: one file the save refuses keeps only its own number out, and
+  // the next pulse writes it again.
+  guarded("company metrics", () => store.setRealMetrics(snap));
   for (const product of products) {
-    store.setProductMetrics(product.id, {
-      revenue: snap.productRevenue.get(product.id) ?? null,
-      users: snap.productUsers.get(product.id) ?? null,
+    guarded(`metrics of ${product.id}`, () => {
+      store.setProductMetrics(product.id, {
+        revenue: snap.productRevenue.get(product.id) ?? null,
+        users: snap.productUsers.get(product.id) ?? null,
+      });
     });
   }
   for (const [betId, { reading, at }] of snap.betReadings) {
-    store.setBetReading(betId, reading, at);
+    guarded(`reading of ${betId}`, () => store.setBetReading(betId, reading, at));
   }
   noteStripeRead(company.id, snap.stripe);
   publishActivity(
