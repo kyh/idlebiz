@@ -128,11 +128,14 @@ allocator and the replay.
   Vercel's API with the founder's token, and Vercel builds it on its own machines
   (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link
   with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
-  tagging each payment for its product and a named open revenue bet on it. Each runs once
-  the founder signs off on the action it names:
+  tagging each payment for its product and a named open revenue bet on it; `push` pushes a
+  committed branch of the product's repository with the founder's own git credentials
+  (`main/git-push.ts`). Each runs once the founder signs off on the action it names:
   `deploy <product> to production on Vercel project <name>`, or
   `on a new Vercel project named <product>` for a product bound to none;
-  `payment link "<name>" at $<amount> on <product> for bet <slug>`. That action is the
+  `payment link "<name>" at $<amount> on <product> for bet <slug>`;
+  `push <branch> (<sha>) of <product> to <url>`, the whole sha, since a commit sharing a
+  short one is minutes of hashing away. That action is the
   approval's key, so it takes the same one-time grant a held command does
   (`requireSignOff` in `main/tools.ts`).
   The deploy never runs the Vercel CLI: the CLI runs code a folder holds (`vercel.ts`, a
@@ -143,6 +146,23 @@ allocator and the replay.
   makes it; a name another project holds asks the founder to bind instead. So no file in
   the folder (`.vercel/project.json`, a `name` in vercel.json) picks which of the founder's
   projects is overwritten.
+  The push never runs git in the workspace's repository: an employee writes its config and
+  hooks (`core.sshCommand`, `credential.helper`, `url.*.insteadOf`, `core.hooksPath`…), and
+  git obeys them there, in main, with the founder's credentials. Main reads the remote's URL
+  from the file (`git config --file`, which applies no rewrite) and takes only https with no
+  login in it, ssh or `user@host:path`; fetches the branch through upload-pack into a fresh
+  repository under the save's `.push/`; and pushes that commit from there, with only https
+  and ssh allowed, no hooks, and the founder's global and system git config (their
+  credential helper) and ssh agent. That fetch is safe only because upload-pack, git's side
+  for serving an untrusted repository, runs nothing its config names, and that holds only
+  since git refused to lazy-fetch a partial clone's missing objects (2.45.1; 2.39.4 and the
+  other backports): an older `/usr/bin/git` is refused before anything runs, and the env
+  sets `GIT_NO_LAZY_FETCH=1`. A partial clone is refused too, but that read is not the guard,
+  since a run can rewrite the file after it. `.push/` is sealed from runs: a staging
+  repository a run could write is one whose config it could rewrite mid-push. Main runs
+  `/usr/bin/git`, never one from PATH, with PATH cut to the system folders, since the rest
+  are ones a run can write: a credential helper or `core.sshCommand` of the founder's named
+  without an absolute path is looked up only there.
   Everything an agent runs itself meets one judgement, the tripwire `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
   A signature pins a command, not the tree it ships, and runs on one product share its
@@ -193,7 +213,7 @@ allocator and the replay.
   renders per runner with every path a `-D` parameter. Everything is allowed
   but reading or writing the founder's logins (ssh, gh, npm, netrc, git credentials, aws,
   docker, gnupg, gcloud, stripe, wrangler, netlify, the Vercel CLI, Chrome's and Brave's
-  profiles, cookies), the other runner's login and `secrets.json`; writing what runs as the
+  profiles, cookies), the other runner's login, `secrets.json` and `.push/`; writing what runs as the
   founder later (shell rc files, `~/.gitconfig`, `~/.config`, LaunchAgents); running git's
   Keychain helper; and reaching an ssh agent (`SSH_AUTH_SOCK` is dropped from the env too), so
   no run can sign a push as the founder. Seatbelt matches the path a symlink leads to, never

@@ -10,6 +10,7 @@ import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-act
 import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { deployToVercel } from "@/main/deploy";
+import { gitPush } from "@/main/git-push";
 import { stripePaymentLink } from "@/main/payment-links";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
@@ -431,6 +432,7 @@ class Scheduler {
       deploy: deployToVercel,
       driver: this.driver,
       employee,
+      push: gitPush,
       run,
     };
     return { asks, call: (route, raw) => callTool(ctx, route, raw) };

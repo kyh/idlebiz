@@ -60,6 +60,7 @@ describe("tool specs", () => {
     expect(toolDocs(false)).not.toContain("**open_bet**");
     expect(toolDocs(false)).toContain("**delegate**");
     expect(toolDocs(false)).toContain("**deploy**");
+    expect(toolDocs(false)).toContain("**push**");
     expect(toolDocs(false)).toContain("**create_payment_link**");
     expect(toolDocs(true)).toContain("**open_bet**");
   });

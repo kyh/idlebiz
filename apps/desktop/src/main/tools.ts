@@ -4,6 +4,7 @@ import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
 import type { DeployTarget, Deployer } from "@/main/deploy";
+import type { PushTarget, Pusher } from "@/main/git-push";
 import {
   announceBet,
   killBet,
@@ -44,6 +45,8 @@ export interface RunContext {
   assign: (taskId: string, employeeId: string) => void;
   /** Deploy with the founder's Vercel key, which the run itself never holds. */
   deploy: Deployer;
+  /** Push with the founder's own git credentials, which the run itself never holds. */
+  push: Pusher;
   /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
   createPaymentLink: PaymentLinker;
 }
@@ -110,6 +113,13 @@ const deployAction = (productId: string, target: DeployTarget): string =>
   target.kind === "bound"
     ? `deploy ${productId} to production on Vercel project ${target.binding.projectName}`
     : `deploy ${productId} to production on a new Vercel project named ${target.name}`;
+
+/**
+ * What the founder signs for a push: the commit, whole, and where it goes. A prefix of the sha
+ * would not do: a commit sharing one is minutes of hashing away.
+ */
+const pushAction = (productId: string, { branch, sha, url }: PushTarget): string =>
+  `push ${branch} (${sha}) of ${productId} to ${url}`;
 
 /** Why a bet takes no more work, in the words the agent should act on. */
 const noRoomIn = (bet: Bet, inFlight: number): string => {
@@ -266,6 +276,24 @@ const TOOLS = {
         ? deployed.url
         : `${deployed.alias} (this deployment: ${deployed.url})`;
     return `Deployed ${product.name} to production: ${live}${bindNote}`;
+  }),
+  push: define(TOOL_SPECS.push, async (ctx, { branch, product: named, remote }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to push — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    const pushed = await ctx.push(
+      { branch: branch ?? null, remote, repo: product.workspaceDir },
+      (target) => requireSignOff(ctx, pushAction(product.id, target), "git-push"),
+    );
+    const { branch: sent } = pushed.target;
+    return pushed.kind === "pushed"
+      ? `Pushed ${sent} of ${product.name}. git said:\n${pushed.said}`
+      : `git did not push ${sent} of ${product.name}, and the sign-off is spent: the next push asks the founder again. git said:\n${pushed.said}`;
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,

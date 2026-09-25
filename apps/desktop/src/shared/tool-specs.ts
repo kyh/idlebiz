@@ -114,6 +114,21 @@ export const TOOL_SPECS = {
     method: "POST",
     path: "/v1/deploy",
   }),
+  push: tool({
+    body: z.strictObject({
+      branch: z.string().min(1).optional(),
+      product: z.string().min(1).optional(),
+      remote: z
+        .string()
+        .regex(/^[\w.-]+$/u, "remote is a remote's name, like origin")
+        .default("origin"),
+    }),
+    doc: 'push the product workspace\'s git branch to its remote with the founder\'s own git credentials; your run holds none, so a plain `git push` cannot. It pushes your run\'s product (name another with `"product":"<slug>"`), the branch checked out there unless you name one with `"branch":"<name>"`, to the URL its remote (`"remote"`, default `"origin"`) names: `https://host/path` with no login in it, `ssh://host/path` or `git@host:path`. It pushes commits, never the working tree, so commit first; it never forces. The founder signs off on each push of one commit to one URL: the first call is held, and calling again once they answer runs it, unless the branch has moved since, which asks again. It answers with what git said; a push git rejects spends the sign-off too.',
+    example: {},
+    leadOnly: null,
+    method: "POST",
+    path: "/v1/push",
+  }),
   create_payment_link: tool({
     body: z.strictObject({
       amountUsd: z.number().min(0.5).max(10_000),

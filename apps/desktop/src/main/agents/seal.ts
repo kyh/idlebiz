@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { z } from "zod";
+import { PUSH_STAGING_DIR } from "@/main/git-push";
 import { SECRETS_PATH } from "@/main/secrets";
 import type { AgentRunner, LoadReport } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
@@ -71,7 +72,7 @@ interface Reach {
  * leads to, not the link, so a path reached through one is sealed at both ends.
  */
 export interface Seal {
-  /** No run reads or writes these: the founder's logins and IdleBiz's own keys. */
+  /** No run reads or writes these: the founder's logins, IdleBiz's own keys and where main stages a push. */
   unreadable: readonly Reach[];
   /** A run reads these but never writes them. */
   unwritable: readonly Reach[];
@@ -221,6 +222,11 @@ const reachOf = async (named: string): Promise<Reach[]> => {
   }));
 };
 
+const reachesOf = async (paths: readonly string[]): Promise<Reach[]> => {
+  const reaches = await Promise.all(paths.map(reachOf));
+  return reaches.flat();
+};
+
 /** Every name in `home` starting with `login`, and where any of them leads. */
 const loginOf = async (home: string, login: string): Promise<Reach[]> => {
   const prefix = path.join(home, login);
@@ -237,25 +243,24 @@ const loginOf = async (home: string, login: string): Promise<Reach[]> => {
 /** The seal of runs under `home`, resolved as it stands on disk now. */
 export const sealFor = async ({
   home,
-  secretsFile,
+  mainOnly,
   sshAgent,
 }: {
   home: string;
-  secretsFile: string;
+  /** What only main touches: its keys, where it stages a push. */
+  mainOnly: readonly string[];
   sshAgent: string | null;
 }): Promise<Seal> => {
   const realHome = await real(home);
-  const under = async (names: readonly string[]): Promise<Reach[]> => {
-    const reaches = await Promise.all(names.map((name) => reachOf(path.join(realHome, name))));
-    return reaches.flat();
-  };
+  const under = (names: readonly string[]): Promise<Reach[]> =>
+    reachesOf(names.map((name) => path.join(realHome, name)));
   return {
     otherLogin: {
       claude: await loginOf(realHome, RUNNER_SEALS.claude.otherLogin),
       codex: await loginOf(realHome, RUNNER_SEALS.codex.otherLogin),
     },
     sshAgent: sshAgent === null ? null : await real(sshAgent),
-    unreadable: [...(await under(LOGINS)), ...(await reachOf(secretsFile))],
+    unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly))],
     unwritable: await under(RUN_LATER),
   };
 };
@@ -269,7 +274,7 @@ export const sealRuns = async (): Promise<SealState> => {
   try {
     const seal = await sealFor({
       home: homedir(),
-      secretsFile: SECRETS_PATH,
+      mainOnly: [SECRETS_PATH, PUSH_STAGING_DIR],
       sshAgent: agent === undefined || agent === "" ? null : agent,
     });
     const refusal = await checkSeal(seal);

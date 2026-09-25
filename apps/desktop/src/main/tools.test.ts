@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
@@ -15,6 +16,7 @@ const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
 const { stripePaymentLink } = await import("./payment-links");
+const { pusherOver } = await import("./git-push");
 const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
 
@@ -76,6 +78,7 @@ const runAs = (employeeId: string) => {
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
     driver: { pickRunner: () => "claude" },
     employee,
+    push: () => Promise.reject(new Error("pushed without a test asking for it")),
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
   };
   return { asked, assigned, company, ctx };
@@ -614,6 +617,127 @@ describe("deploy", () => {
       { integration: "vercel", reason: "to deploy Acme", type: "integration" },
     ]);
     expect(deploys).toEqual([]);
+  });
+});
+
+const gitIn = (cwd: string, ...args: string[]): string =>
+  execFileSync("/usr/bin/git", args, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
+
+const commitIn = (repo: string, message: string, ...args: string[]): string => {
+  gitIn(
+    repo,
+    "-c",
+    "user.name=Priya",
+    "-c",
+    "user.email=priya@acme.test",
+    "commit",
+    "--quiet",
+    "--allow-empty",
+    "-m",
+    message,
+    ...args,
+  );
+  return gitIn(repo, "rev-parse", "HEAD");
+};
+
+describe("push", () => {
+  let remotes = "";
+
+  beforeAll(() => {
+    remotes = mkdtempSync(path.join(tmpdir(), "idlebiz-remotes-"));
+  });
+
+  beforeEach(() => {
+    // the push reads the founder's own git config; this machine's must not steer the tests
+    vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
+    vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  afterAll(() => rmSync(remotes, { force: true, recursive: true }));
+
+  /** A run of Priya's on Acme, whose workspace is a repository with origin at a bare one on disk. */
+  const pushingRun = () => {
+    const run = runAs("priya");
+    const workspace = store.getProduct("acme")?.workspaceDir ?? "";
+    const remote = mkdtempSync(path.join(remotes, "acme-"));
+    gitIn(remote, "init", "--quiet", "--bare");
+    gitIn(workspace, "init", "--quiet", "--initial-branch=main");
+    gitIn(workspace, "remote", "add", "origin", `file://${remote}`);
+    const ctx: RunContext = {
+      ...run.ctx,
+      push: pusherOver(["file"]),
+      run: { ...run.ctx.run, productId: "acme" },
+    };
+    const tip = (): string | null => {
+      try {
+        return gitIn(remote, "rev-parse", "--verify", "--quiet", "refs/heads/main");
+      } catch {
+        return null;
+      }
+    };
+    const actionFor = (sha: string) => `push main (${sha}) of acme to file://${remote}`;
+    return { ...run, actionFor, ctx, tip, workspace };
+  };
+
+  it("holds the first call for the founder's sign-off on the commit, whole, and where it goes", async () => {
+    const { ctx, asked, actionFor, tip, workspace } = pushingRun();
+    const sha = commitIn(workspace, "landing page");
+    expect(await callTool(ctx, "POST /v1/push", {})).toBe(
+      `Held for the founder's sign-off on "${actionFor(sha)}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    );
+    expect(asked).toEqual([{ command: actionFor(sha), rule: "git-push", type: "approval" }]);
+    expect(tip()).toBeNull();
+  });
+
+  it("pushes once signed off, says what git said, and spends the sign-off", async () => {
+    const { ctx, actionFor, tip, workspace } = pushingRun();
+    const sha = commitIn(workspace, "landing page");
+    store.grantApproval(ctx.run.taskId, actionFor(sha));
+
+    const answer = await callTool(ctx, "POST /v1/push", {});
+    expect(answer).toContain("Pushed main of Acme. git said:");
+    expect(answer).toContain("main -> main");
+    expect(tip()).toBe(sha);
+    expect(await callTool(ctx, "POST /v1/push", {})).toContain("Held for the founder's sign-off");
+  });
+
+  it("pushes no commit but the one signed for", async () => {
+    const { ctx, asked, actionFor, tip, workspace } = pushingRun();
+    const signed = commitIn(workspace, "landing page");
+    store.grantApproval(ctx.run.taskId, actionFor(signed));
+    const moved = commitIn(workspace, "and one more thing");
+
+    expect(await callTool(ctx, "POST /v1/push", {})).toContain(`sign-off on "${actionFor(moved)}"`);
+    expect(asked).toEqual([{ command: actionFor(moved), rule: "git-push", type: "approval" }]);
+    expect(tip()).toBeNull();
+    expect(store.consumeApproval(ctx.run.taskId, actionFor(signed))).toBe(true);
+  });
+
+  it("answers a push git rejects with git's words, and spends the sign-off", async () => {
+    const { ctx, actionFor, tip, workspace } = pushingRun();
+    const first = commitIn(workspace, "landing page");
+    store.grantApproval(ctx.run.taskId, actionFor(first));
+    await callTool(ctx, "POST /v1/push", {});
+    const rewritten = commitIn(workspace, "landing page, reworded", "--amend");
+    store.grantApproval(ctx.run.taskId, actionFor(rewritten));
+
+    const answer = await callTool(ctx, "POST /v1/push", {});
+    expect(answer).toContain("git did not push main of Acme, and the sign-off is spent");
+    expect(answer).toContain("[rejected]");
+    expect(tip()).toBe(first);
+    expect(store.consumeApproval(ctx.run.taskId, actionFor(rewritten))).toBe(false);
+  });
+
+  it("refuses a remote it would not reach before asking the founder anything", async () => {
+    const { ctx, asked, workspace } = pushingRun();
+    commitIn(workspace, "landing page");
+    gitIn(workspace, "remote", "set-url", "origin", "ext::sh");
+    expect(await callTool(ctx, "POST /v1/push", {})).toContain(
+      "which the push tool does not reach",
+    );
+    expect(asked).toEqual([]);
   });
 });
 

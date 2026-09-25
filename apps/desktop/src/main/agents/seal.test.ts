@@ -214,7 +214,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     return at(target);
   };
   const seal = (): Promise<Seal> =>
-    sealFor({ home, secretsFile: at(".idlebiz/secrets.json"), sshAgent: null });
+    sealFor({
+      home,
+      mainOnly: [at(".idlebiz/secrets.json"), at(".idlebiz/.push")],
+      sshAgent: null,
+    });
   const tryAs = async (
     runner: "claude" | "codex",
     files: { moves?: [string, string][]; reads?: string[]; writes?: string[]; runs?: string[] },
@@ -262,10 +266,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     "Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies",
     "Library/Cookies/Cookies.binarycookies",
     ".idlebiz/secrets.json",
+    ".idlebiz/.push/repo-1/config",
   ];
 
   it.each(["claude", "codex"] as const)(
-    "keeps the founder's logins and IdleBiz's keys from a %s run, reads and writes alike",
+    "keeps the founder's logins, IdleBiz's keys and where it stages a push from a %s run, reads and writes alike",
     async (runner) => {
       const files = LOGINS.map(plant);
       const outcomes = await tryAs(runner, { reads: files });
@@ -416,7 +421,11 @@ socket.on("error", (error) => { console.log(error.code); process.exit(0); });
 `;
     const connect = async (sshAgent: string | null): Promise<string> => {
       const socket = path.join(dir, "agent.sock");
-      const sealed = await sealFor({ home, secretsFile: at(".idlebiz/secrets.json"), sshAgent });
+      const sealed = await sealFor({
+        home,
+        mainOnly: [at(".idlebiz/secrets.json"), at(".idlebiz/.push")],
+        sshAgent,
+      });
       const argv = sealedCommand(sealed, "claude", [process.execPath, "-e", CONNECT, socket]);
       const [bin = "", ...args] = argv;
       return spawnSync(bin, args, { encoding: "utf-8" }).stdout.trim();
@@ -472,9 +481,11 @@ describe.skipIf(!onMac)("sealRuns", () => {
         { match: "subpath", path: path.join(box, "dotfiles/zshrc") },
       ]),
     );
-    expect(state.seal.unreadable).toContainEqual({
-      match: "subpath",
-      path: path.join(realpathSync(root), "secrets.json"),
-    });
+    expect(state.seal.unreadable).toEqual(
+      expect.arrayContaining([
+        { match: "subpath", path: path.join(realpathSync(root), "secrets.json") },
+        { match: "subpath", path: path.join(realpathSync(root), ".push") },
+      ]),
+    );
   });
 });
