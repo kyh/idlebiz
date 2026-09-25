@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
@@ -21,6 +29,7 @@ const {
   PAGE_URLS,
   acpAgentFor,
   agentDriver,
+  askBox,
   createAgentDriver,
   decidePermission,
   livePageOf,
@@ -44,13 +53,15 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
+  agents: [{ match: "subpath", path: "/private/var/run/com.apple.launchd.x/Listeners" }],
+  guarded: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
   otherLogin: {
     claude: [{ match: "prefix", path: "/Users/me/.codex" }],
     codex: [{ match: "prefix", path: "/Users/me/.claude" }],
   },
-  sshAgent: "/private/var/run/com.apple.launchd.x/Listeners",
-  unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/secrets.json" }],
+  unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/secrets.json" }],
   unwritable: [{ match: "subpath", path: "/Users/me/.zshrc" }],
+  writable: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace" }],
 };
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
@@ -466,13 +477,64 @@ describe("a seal the boot check refuses", () => {
   });
 });
 
-describe("the seal a run starts under", () => {
+const onMac = process.platform === "darwin";
+
+/** Whether a driver whose check holds finds a CLI ready, each probe under the seal `resolveSeal` gives. */
+const anyRunnerUnder = async (resolveSeal: () => Promise<Seal>): Promise<boolean> => {
+  const driver = createAgentDriver(() => Promise.resolve({ kind: "sealed" }), resolveSeal);
+  driver.init();
+  return await driver.hasAnyRunner();
+};
+
+describe.skipIf(!onMac)("the seal a run starts under", () => {
   withoutClis();
+  // a claude that reads as installed only while the canary it tries is sealed from it
+  let canary = "";
   beforeEach(() => {
+    canary = path.join(realpathSync(root), "canary");
+    writeFileSync(canary, "canary");
     const cli = path.join(root, "claude");
-    const script = `[ "$1" = --version ] && echo 1.0.0 || echo '{"loggedIn": true}'`;
+    const script = `[ "$1" = --version ] && { cat "${canary}" && exit 3; echo 1.0.0; } || echo '{"loggedIn": true}'`;
     writeFileSync(cli, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
     process.env.CLAUDE_BIN = cli;
+  });
+  const sealing = (): Seal => ({ ...SEAL, unreadable: [{ match: "subpath", path: canary }] });
+
+  it("finds a CLI only under its seal, and none with no seal", async () => {
+    expect(await anyRunnerUnder(() => Promise.resolve(sealing()))).toBe(true);
+    expect(await anyRunnerUnder(() => Promise.resolve({ ...SEAL, unreadable: [] }))).toBe(false);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await anyRunnerUnder(() => Promise.reject(new Error("no seal")))).toBe(false);
+      expect(logged).toHaveBeenCalledWith("[probe]", new Error("no seal"));
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("signs a CLI in under its runner's seal, and not at all while the seal is refused", async () => {
+    const sealed = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => Promise.resolve(sealing()),
+    );
+    sealed.init();
+    expect(await sealed.sealedCli("codex", ["codex", "login"])).toEqual(
+      sealedCommand(sealing(), "codex", ["codex", "login"]),
+    );
+    const refused = createAgentDriver(
+      () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
+      () => Promise.resolve(sealing()),
+    );
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      refused.init();
+      await expect(refused.sealedCli("claude", ["claude", "auth", "login"])).rejects.toThrow(
+        "no sandbox-exec here.",
+      );
+      expect(await refused.hasAnyRunner()).toBe(false);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("is resolved again for every run, and none starts without one", async () => {
@@ -481,13 +543,52 @@ describe("the seal a run starts under", () => {
       () => Promise.resolve({ kind: "sealed" }),
       () => {
         resolved += 1;
-        return Promise.reject(new Error(`no seal ${resolved}`));
+        return resolved === 1
+          ? Promise.resolve(sealing())
+          : Promise.reject(new Error(`no seal ${resolved}`));
       },
     );
     driver.init();
     expect(await driver.hasAnyRunner()).toBe(true);
-    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 1");
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 2");
+    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 3");
+  });
+
+  it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {
+    const asked: (readonly string[])[] = [];
+    const driver = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      (writable) => {
+        asked.push(writable);
+        return asked.length === 1
+          ? Promise.resolve(sealing())
+          : Promise.reject(new Error("no seal"));
+      },
+    );
+    driver.init();
+    await driver.hasAnyRunner();
+    const company = found();
+    const [emp] = store.listEmployees();
+    const [product] = store.listProducts();
+    if (emp === undefined || product === undefined) {
+      throw new Error("founded without a hire or a product");
+    }
+    const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
+    const tools = { asks: askBox(() => {}), call: () => Promise.resolve(null) };
+    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal");
+    await expect(
+      driver.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
+    ).rejects.toThrow("no seal");
+    expect(asked).toEqual([
+      [],
+      [],
+      [
+        product.workspaceDir,
+        company.workspaceDir,
+        path.join(root, company.id, "agents", emp.id, "memory"),
+        path.join(root, "cache"),
+      ],
+    ]);
   });
 });
 
@@ -557,7 +658,7 @@ describe("the environment an agent is spawned with", () => {
     );
   });
 
-  it("probes a CLI's login in the env its runs get", async () => {
+  it.skipIf(!onMac)("probes a CLI's login in the env its runs get", async () => {
     const seen = path.join(cwd, "seen.json");
     const cli = path.join(cwd, "claude");
     const script = `require("node:fs").writeFileSync(${JSON.stringify(seen)}, JSON.stringify(Object.keys(process.env)));`;
@@ -565,7 +666,12 @@ describe("the environment an agent is spawned with", () => {
     process.env.CLAUDE_BIN = cli;
     process.env.CODEX_BIN = path.join(cwd, "no-codex");
 
-    await agentDriver.refresh();
+    const driver = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => Promise.resolve(SEAL),
+    );
+    driver.init();
+    await driver.hasAnyRunner();
     const probedWith = names.parse(parseJson(readFileSync(seen, "utf-8")));
     expect(probedWith).not.toContain("VERCEL_TOKEN");
     expect(probedWith).toContain("ANTHROPIC_API_KEY");

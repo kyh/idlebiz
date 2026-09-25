@@ -17,9 +17,11 @@ export const isReady = (p: RunnerProbe): boolean => p.installed && p.authed;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
+/** `argv` as the caller starts a runner's CLI: itself, or inside whatever confines it. */
+type CliLaunch = (id: RunnerId, argv: readonly string[]) => readonly string[];
+
 const run = (
-  bin: string,
-  args: string[],
+  [bin = "", ...args]: readonly string[],
   env: Record<string, string>,
 ): Promise<{ ok: boolean; output: string }> =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process events)
@@ -61,15 +63,19 @@ const run = (
     });
   });
 
-// Probe the player's CLI login in the env its runs get, so signed in means a run can sign in.
-const probeRunner = async (id: RunnerId, env: Record<string, string>): Promise<RunnerProbe> => {
+// Probe the player's CLI login as its runs start it, so signed in means a run can sign in.
+const probeRunner = async (
+  id: RunnerId,
+  env: Record<string, string>,
+  launch: CliLaunch,
+): Promise<RunnerProbe> => {
   const bin = runnerBin(id);
-  const version = await run(bin, ["--version"], env);
+  const version = await run(launch(id, [bin, "--version"]), env);
   if (!version.ok) {
     return { bin, id, installed: false };
   }
   const { authProbe } = RUNNERS[id];
-  const auth = await run(bin, authProbe.args, env);
+  const auth = await run(launch(id, [bin, ...authProbe.args]), env);
   return {
     authed: auth.ok && authProbe.loggedIn(auth.output),
     bin,
@@ -81,4 +87,6 @@ const probeRunner = async (id: RunnerId, env: Record<string, string>): Promise<R
 
 export const probeRunners = (
   envOf: (id: RunnerId) => Record<string, string>,
-): Promise<RunnerProbe[]> => Promise.all(RUNNER_IDS.map((id) => probeRunner(id, envOf(id))));
+  launch: CliLaunch,
+): Promise<RunnerProbe[]> =>
+  Promise.all(RUNNER_IDS.map((id) => probeRunner(id, envOf(id), launch)));

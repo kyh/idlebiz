@@ -5,6 +5,7 @@ import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { agentDriver } from "@/main/agents/agent-driver";
+import { SANDBOX_EXEC } from "@/main/agents/seal";
 import { foundingTeamPrompt } from "@/main/prompts/onboarding";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
@@ -64,6 +65,12 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
   setupRunning = true;
   try {
     let probes = await agentDriver.refresh();
+    // no CLI is found without the seal, so installing one would not help
+    const refusal = await agentDriver.sealRefusal();
+    if (refusal !== null) {
+      emit({ message: refusal, type: "error" });
+      return;
+    }
     for (const p of probes) {
       emit({
         message: p.installed
@@ -75,7 +82,8 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
 
     if (probes.every((p) => !p.installed)) {
       emit({ message: "No coding CLI found — installing Claude Code…", type: "progress" });
-      const code = await streamCommand("bash", ["-lc", CLAUDE_INSTALL_CMD], emit);
+      // not a login shell: whatever its startup files source, a run could have written
+      const code = await streamCommand("/bin/bash", ["-c", CLAUDE_INSTALL_CMD], emit);
       if (code !== 0) {
         emit({
           message: "Install failed — install Claude Code or Codex manually, then retry.",
@@ -92,7 +100,11 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
         continue;
       }
       emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
-      const code = await streamCommand(p.bin, RUNNERS[p.id].loginArgs, emit);
+      const [cmd = SANDBOX_EXEC, ...args] = await agentDriver.sealedCli(p.id, [
+        p.bin,
+        ...RUNNERS[p.id].loginArgs,
+      ]);
+      const code = await streamCommand(cmd, args, emit);
       if (code !== 0) {
         emit({
           message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.`,

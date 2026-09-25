@@ -1,14 +1,27 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  access,
+  lstat,
+  mkdtemp,
+  readdir,
+  readlink,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { runnerBin } from "@repo/agent-driver/detect";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { z } from "zod";
 import { PUSH_STAGING_DIR } from "@/main/git-push";
+import { ROOT_DIR } from "@/main/paths";
 import { SECRETS_PATH } from "@/main/secrets";
 import type { AgentRunner, LoadReport } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
+import { RefusalError } from "@/shared/refusal";
 
 // macOS's own: one found on PATH could be anything.
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
@@ -45,10 +58,29 @@ const RUN_LATER = [
   ".zshenv",
   ".zprofile",
   ".zlogin",
+  ".zlogout",
+  ".zsh_sessions",
   ".bashrc",
   ".bash_profile",
+  ".bash_login",
+  ".bash_logout",
+  ".bash_sessions",
   ".profile",
+  ".inputrc",
   ".gitconfig",
+];
+
+// zsh reads its startup files, or their compiled .zwc when newer, from wherever ZDOTDIR points,
+// and ~/.zshenv can set it where main never looks; Terminal sources .zsh_sessions/ on a restore.
+const ZSH_STARTUP = [
+  String.raw`(regex #"/\.z(shenv|profile|shrc|login|logout)(\.zwc)?$")`,
+  String.raw`(regex #"/\.zsh_sessions(/|$)")`,
+];
+
+/** Agents under HOME that sign as the founder over a socket: 1Password's and Secretive's. */
+const AGENT_SOCKETS = [
+  "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
+  "Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh",
 ];
 
 /**
@@ -68,29 +100,52 @@ interface Reach {
 }
 
 /**
- * What every employee run is sealed with, on this machine. Seatbelt matches the path a symlink
+ * What an employee run is sealed with, on this machine. Seatbelt matches the path a symlink
  * leads to, not the link, so a path reached through one is sealed at both ends.
  */
 export interface Seal {
   /** No run reads or writes these: the founder's logins, IdleBiz's own keys and where main stages a push. */
   unreadable: readonly Reach[];
-  /** A run reads these but never writes them. */
+  /** A run reads these but never writes them: what runs as the founder later. */
   unwritable: readonly Reach[];
+  /**
+   * A run writes these only inside `writable`: the save, every folder on main's PATH, there yet
+   * or not, the tree each symlink in one and each runner CLI on it lands in, and IdleBiz's own,
+   * which the founder runs unsealed. A shim that picks its program when it runs is not followed.
+   */
+  guarded: readonly Reach[];
+  /**
+   * The run's own folders, where the save resolves: its workspace, the shared one, its memory and
+   * the tool cache. A run writes inside each but cannot remove, move or replace one.
+   */
+  writable: readonly Reach[];
   /** Per runner, the other runner's login, which its runs cannot read or write either. */
   otherLogin: Record<AgentRunner, readonly Reach[]>;
-  /** The founder's ssh agent, when main's env names one. */
-  sshAgent: string | null;
+  /** Sockets of agents that sign as the founder, which no run reaches, moves or links. */
+  agents: readonly Reach[];
 }
 
-// git's Keychain helper and macOS's own ssh agent sign as the founder with no file to seal.
+/**
+ * Whose process a profile seals: a runner's run, or main's probe of the founder's login shell,
+ * which keeps neither runner's login nor the Keychain.
+ */
+export type Sealed = AgentRunner | "shell";
+
+// git's Keychain helper and macOS's own ssh agent sign as the founder with no file to seal, and
+// the agent's folder stays put: renamed, its socket would leave the rule behind.
 const BASE_PROFILE = String.raw`(version 1)
 (allow default)
 (deny process-exec (regex #"/git-credential-osxkeychain$"))
-(deny network-outbound (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+/Listeners$"))`;
+(deny network-outbound (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+/Listeners$"))
+(deny file-write* (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+(/Listeners)?$"))`;
 
-// A deny with no filter denies everything, so a rule with nothing to reach is left out.
-const deny = (operations: string, filters: readonly string[]): string[] =>
-  filters.length === 0 ? [] : [`(deny ${operations} ${filters.join(" ")})`];
+// A rule with no filter reaches everything, so one with nothing to reach is left out.
+const rule =
+  (action: "allow" | "deny") =>
+  (operations: string, filters: readonly string[]): string[] =>
+    filters.length === 0 ? [] : [`(${action} ${operations} ${filters.join(" ")})`];
+const allow = rule("allow");
+const deny = rule("deny");
 
 /** Every folder above `paths` but the root. */
 const foldersAbove = (paths: readonly string[]): string[] => {
@@ -103,33 +158,45 @@ const foldersAbove = (paths: readonly string[]): string[] => {
   return [...folders];
 };
 
-/** `argv` as a `runner` run starts it: under the profile, with this machine's paths. */
-export const sealedCommand = (
-  seal: Seal,
-  runner: AgentRunner,
-  argv: readonly string[],
-): string[] => {
+/** `argv` as a process `sealed` names starts it: under the profile, with this machine's paths. */
+export const sealedCommand = (seal: Seal, sealed: Sealed, argv: readonly string[]): string[] => {
   // Each path is a parameter, never quoted into the profile's source.
   const params: string[] = [];
   const param = (value: string): string => `(param "P${params.push(value) - 1}")`;
   const reach = ({ match, path: at }: Reach): string => `(${match} ${param(at)})`;
-  const unreadable = [...seal.unreadable, ...seal.otherLogin[runner]];
-  const sealed = [...unreadable, ...seal.unwritable].map(({ path: at }) => at);
+  const logins =
+    sealed === "shell"
+      ? RUNNER_IDS.flatMap((runner) => seal.otherLogin[runner])
+      : seal.otherLogin[sealed];
+  const unreadable = [...seal.unreadable, ...logins];
+  const unwritable = [...seal.unwritable, ...seal.agents];
+  const kept = [...unreadable, ...unwritable, ...seal.guarded].map(({ path: at }) => at);
+  const keychain = sealed === "shell" ? "sealed" : RUNNER_SEALS[sealed].keychain;
+  const literal = (at: string): string => `(literal ${param(at)})`;
   const profile = [
     BASE_PROFILE,
-    ...deny("file-read* file-write*", unreadable.map(reach)),
-    ...deny("file-write*", seal.unwritable.map(reach)),
-    // Renaming a folder above a sealed path would carry it out from under its rule.
+    ...deny("file-write*", seal.guarded.map(reach)),
+    // Seatbelt obeys the last rule a path matches: this reopens the run's own folders, and every
+    // rule after it holds inside them too.
+    ...allow("file-write*", seal.writable.map(reach)),
+    // A subpath reaches the folder itself, which a run could otherwise remove and leave a link
+    // in place of, for the next run to write through.
     ...deny(
-      "file-write-unlink",
-      foldersAbove(sealed).map((dir) => `(literal ${param(dir)})`),
+      "file-write-create file-write-unlink",
+      seal.writable.map(({ path: at }) => literal(at)),
     ),
-    ...(RUNNER_SEALS[runner].keychain === "sealed"
-      ? ['(deny process-exec (literal "/usr/bin/security"))']
-      : []),
-    ...(seal.sshAgent === null
-      ? []
-      : deny("network-outbound", [`(literal ${param(seal.sshAgent)})`])),
+    ...deny("file-read* file-write*", unreadable.map(reach)),
+    ...deny("file-write*", [...unwritable.map(reach), ...ZSH_STARTUP]),
+    // Moving a folder above a sealed path would carry it out from under its rule, and making one
+    // that is not there yet, as a link or a folder moved in, would put the run's own files under it.
+    ...deny("file-write-create file-write-unlink", foldersAbove(kept).map(literal)),
+    ...(keychain === "sealed" ? ['(deny process-exec (literal "/usr/bin/security"))'] : []),
+    // A socket answers connect() whatever the file rules say, so an agent listening under a
+    // sealed path is sealed here too.
+    ...deny(
+      "network-outbound",
+      [...unreadable, ...seal.agents].map((at) => `(remote unix-socket ${reach(at)})`),
+    ),
   ].join("\n");
   const defines = params.flatMap((value, at) => ["-D", `P${at}=${value}`]);
   return [SANDBOX_EXEC, "-p", profile, ...defines, ...argv];
@@ -214,17 +281,203 @@ export const realPathOf = async (file: string): Promise<string> => {
 };
 
 /** `named`, and where it leads when a symlink on its way points somewhere else. */
-const reachOf = async (named: string): Promise<Reach[]> => {
+const reachOf = async (named: string, match: Reach["match"] = "subpath"): Promise<Reach[]> => {
   const resolved = await realPathOf(named);
   return [named, ...(resolved === named ? [] : [resolved])].map((at): Reach => ({
-    match: "subpath",
+    match,
     path: at,
   }));
 };
 
-const reachesOf = async (paths: readonly string[]): Promise<Reach[]> => {
-  const reaches = await Promise.all(paths.map(reachOf));
+const reachesOf = async (
+  paths: readonly string[],
+  match: Reach["match"] = "subpath",
+): Promise<Reach[]> => {
+  const reaches = await Promise.all(paths.map((at) => reachOf(at, match)));
   return reaches.flat();
+};
+
+/**
+ * What spawning `command` with `pathDirs` as PATH may run: itself when it names a path, else
+ * every copy on PATH, not just the first, since a shim found first can run the next one.
+ */
+const foundOn = async (command: string, pathDirs: readonly string[]): Promise<string[]> => {
+  if (command.includes(path.sep)) {
+    return [path.resolve(command)];
+  }
+  const files = pathDirs.map((dir) => path.join(dir, command));
+  const runs = await Promise.all(
+    files.map((file) =>
+      access(file, constants.X_OK).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  );
+  return files.filter((_file, at) => runs[at] === true);
+};
+
+// as the kernel gives up on a chain of symlinks
+const MAX_LINKS = 32;
+
+/** `file`, then each path its symlinks lead through, as each link names it. */
+const linkChain = async (file: string): Promise<string[]> => {
+  const chain = [file];
+  let at = file;
+  while (chain.length <= MAX_LINKS) {
+    const target = await readlink(at).catch(() => null);
+    if (target === null) {
+      break;
+    }
+    at = path.resolve(path.dirname(at), target);
+    chain.push(at);
+  }
+  return chain;
+};
+
+/**
+ * The outermost app bundle or node_modules `file` sits in, where a program loads the rest of
+ * itself and its dependencies from, or null when it sits in neither.
+ */
+const bundleOf = (file: string): string | null => {
+  const parts = file.split(path.sep);
+  const at = parts.findIndex((part) => part === "node_modules" || part.endsWith(".app"));
+  return at === -1 ? null : parts.slice(0, at + 1).join(path.sep);
+};
+
+/**
+ * The Homebrew prefix `file` sits in, when it sits in a keg or a cask: `opt/` links, libraries,
+ * site-packages and config span the whole prefix, and a keg's programs load any of it.
+ */
+const homebrewOf = (file: string): string | null => {
+  const parts = file.split(path.sep);
+  const at = parts.findIndex((part) => part === "Cellar" || part === "Caskroom");
+  return at <= 1 ? null : parts.slice(0, at).join(path.sep);
+};
+
+/** What a program on PATH at `file` runs from: its Homebrew prefix, else its bundle, else its own folder. */
+const programTree = (file: string): string =>
+  homebrewOf(file) ?? bundleOf(file) ?? path.dirname(file);
+
+/** Whether `at` is `home` or a folder above it. */
+const atOrAbove = (at: string, home: string): boolean =>
+  path.relative(at, home).split(path.sep)[0] !== "..";
+
+/**
+ * What IdleBiz's own program at `file` runs from: the bundle it sits in, else the nearest folder
+ * above it with a package.json, which in dev is the app Electron loaded main's code, preload and
+ * page from.
+ */
+const appTree =
+  (home: string) =>
+  async (file: string): Promise<string> => {
+    const bundle = bundleOf(file);
+    if (bundle !== null) {
+      return bundle;
+    }
+    const above: string[] = [];
+    for (let dir = path.dirname(file); !atOrAbove(dir, home); dir = path.dirname(dir)) {
+      above.push(dir);
+    }
+    const holds = await Promise.all(
+      above.map((dir) =>
+        access(path.join(dir, "package.json")).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    return above.find((_dir, at) => holds[at] === true) ?? path.dirname(file);
+  };
+
+/**
+ * Each program at `files`: every folder its symlinks pass through, and the tree it lands in.
+ * Never `home` or above, which would keep a run from its own login: there, only the path itself.
+ */
+const treesOf = async (
+  home: string,
+  files: readonly string[],
+  treeOf: (file: string) => string | Promise<string>,
+): Promise<string[]> => {
+  const shortOfHome = (folder: string, at: string): string[] => {
+    if (!atOrAbove(folder, home)) {
+      return [folder];
+    }
+    return atOrAbove(at, home) ? [] : [at];
+  };
+  const trees = await Promise.all(
+    files.map(async (file) => {
+      const chain = await linkChain(file);
+      const lands = await realPathOf(chain.at(-1) ?? file);
+      return [
+        ...chain.flatMap((at) => shortOfHome(path.dirname(at), at)),
+        ...shortOfHome(await treeOf(lands), lands),
+      ];
+    }),
+  );
+  return trees.flat();
+};
+
+/** Every symlink in `folders`: a program on PATH, wherever it leads. */
+const linksIn = async (folders: readonly string[]): Promise<string[]> => {
+  const links = await Promise.all(
+    folders.map(async (folder) => {
+      const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+      return entries
+        .filter((entry) => entry.isSymbolicLink())
+        .map((entry) => path.join(folder, entry.name));
+    }),
+  );
+  return links.flat();
+};
+
+/** Whether one of `subpaths` above `at` already reaches it. */
+const reachedFrom = (subpaths: ReadonlySet<string>, at: string): boolean => {
+  const up = path.dirname(at);
+  return up !== at && (subpaths.has(up) || reachedFrom(subpaths, up));
+};
+
+/** `reaches` once each, less any a subpath among them already reaches: the profile stays small. */
+const outermost = (reaches: readonly Reach[]): Reach[] => {
+  const subpaths = new Set(
+    reaches.filter(({ match }) => match === "subpath").map(({ path: at }) => at),
+  );
+  const kept = new Map(
+    reaches
+      .filter(({ path: at }) => !reachedFrom(subpaths, at))
+      .map((reach) => [`${reach.match} ${reach.path}`, reach]),
+  );
+  return [...kept.values()];
+};
+
+/**
+ * The run's own `folders`, each where the save resolves. Each must sit in the save with no
+ * symlink from the save down to it: the seal allows the path it names, never where a link a run
+ * could have left there leads.
+ */
+const ownFolders = async (save: string, folders: readonly string[]): Promise<Reach[]> => {
+  const realSave = await realPathOf(save);
+  return await Promise.all(
+    folders.map(async (folder): Promise<Reach> => {
+      const inSave = path.relative(save, folder);
+      const parts = inSave.split(path.sep);
+      if (inSave === "" || path.isAbsolute(inSave) || parts[0] === "..") {
+        throw new RefusalError(
+          `${folder} is no folder inside the save, so IdleBiz starts no run that writes it.`,
+        );
+      }
+      for (let depth = 1; depth <= parts.length; depth += 1) {
+        const at = path.join(save, ...parts.slice(0, depth));
+        const stats = await lstat(at).catch(() => null);
+        if (stats?.isSymbolicLink() === true) {
+          throw new RefusalError(
+            `IdleBiz starts no run that writes ${folder} while ${at} is a symlink, which would let it write where the link leads. Remove the link to go on.`,
+          );
+        }
+      }
+      return { match: "subpath", path: path.join(realSave, inSave) };
+    }),
+  );
 };
 
 /** Every name in `home` starting with `login`, and where any of them leads. */
@@ -240,41 +493,76 @@ const loginOf = async (home: string, login: string): Promise<Reach[]> => {
   ];
 };
 
-/** The seal of runs under `home`, resolved as it stands on disk now. */
+/** The seal of a run under `home`, resolved as it stands on disk now. */
 export const sealFor = async ({
+  clis,
   home,
   mainOnly,
+  pathDirs,
+  programs,
+  save,
   sshAgent,
+  writable,
 }: {
   home: string;
-  /** What only main touches: its keys, where it stages a push. */
+  /** What only main touches, with every name that starts with it: main writes a file through `<file>.tmp`. */
   mainOnly: readonly string[];
+  /** The founder's ssh agent, when main's env names one. */
   sshAgent: string | null;
+  /** The save, which a run writes only inside `writable`. */
+  save: string;
+  /** Main's PATH, the login shell's folders on it whether they exist yet or not, each symlink in one followed. */
+  pathDirs: readonly string[];
+  /** The runner CLIs as main names them, a command on PATH or a path, which the founder runs unsealed. */
+  clis: readonly string[];
+  /** IdleBiz's own executable and main's own code, which the founder relaunches unsealed. */
+  programs: readonly string[];
+  /** The run's own folders, each in the save. */
+  writable: readonly string[];
 }): Promise<Seal> => {
   const realHome = await realPathOf(home);
   const under = (names: readonly string[]): Promise<Reach[]> =>
     reachesOf(names.map((name) => path.join(realHome, name)));
+  // a relative folder names no fixed place to seal
+  const onPath = [...new Set(pathDirs.filter((dir) => path.isAbsolute(dir)))];
+  const found = await Promise.all(clis.map((cli) => foundOn(cli, onPath)));
+  const onPathRuns = [...new Set([...found.flat(), ...(await linksIn(onPath))])];
+  const trees = [
+    ...(await treesOf(realHome, onPathRuns, programTree)),
+    ...(await treesOf(realHome, programs, appTree(realHome))),
+  ];
   return {
+    agents: [
+      ...(await under(AGENT_SOCKETS)),
+      ...(sshAgent === null ? [] : await reachOf(sshAgent)),
+    ],
+    guarded: outermost(await reachesOf([...new Set([save, ...onPath, ...trees])])),
     otherLogin: {
       claude: await loginOf(realHome, RUNNER_SEALS.claude.otherLogin),
       codex: await loginOf(realHome, RUNNER_SEALS.codex.otherLogin),
     },
-    sshAgent: sshAgent === null ? null : await realPathOf(sshAgent),
-    unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly))],
+    unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly, "prefix"))],
     unwritable: await under(RUN_LATER),
+    writable: await ownFolders(save, writable),
   };
 };
 
 /**
- * This machine's seal, resolved as its home stands now. Each run resolves its own: a login that
- * turns into a symlink after boot is sealed where it leads from the next run on.
+ * The seal of a run that writes `writable`, resolved as this machine stands now: its home, main's
+ * PATH, the CLIs on it and IdleBiz itself. Each run resolves its own: a login that turns into a
+ * symlink after boot is sealed where it leads from the next run on.
  */
-export const machineSeal = (): Promise<Seal> => {
+export const machineSeal = (writable: readonly string[]): Promise<Seal> => {
   const agent = process.env.SSH_AUTH_SOCK;
   return sealFor({
+    clis: RUNNER_IDS.map(runnerBin),
     home: homedir(),
     mainOnly: [SECRETS_PATH, PUSH_STAGING_DIR],
+    pathDirs: (process.env.PATH ?? "").split(path.delimiter),
+    programs: [process.execPath, import.meta.filename],
+    save: ROOT_DIR,
     sshAgent: agent === undefined || agent === "" ? null : agent,
+    writable,
   });
 };
 
@@ -284,7 +572,7 @@ export type SealState = { kind: "sealed" } | { kind: "refused"; reason: string }
 /** Whether this machine can seal runs at all, checked before any run starts. */
 export const sealRuns = async (): Promise<SealState> => {
   try {
-    const refusal = await checkSeal(await machineSeal());
+    const refusal = await checkSeal(await machineSeal([]));
     return refusal === null ? { kind: "sealed" } : { kind: "refused", reason: refusal };
   } catch (error) {
     const reason = `IdleBiz could not check the sandbox employee runs start inside (${errorMessage(error)}), so none will start.`;

@@ -1,9 +1,18 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readJsonFileForUpdate, readJsonlTail } from "./fs";
+import { atomicWrite, readJsonFileForUpdate, readJsonlTail } from "./fs";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-jsonl-"));
 const file = path.join(root, "activity.jsonl");
@@ -62,4 +71,32 @@ describe("JSON file read for an update", () => {
       expect(() => readJsonFileForUpdate(json, RowSchema)).toThrow(`IdleBiz can't read ${json}`);
     },
   );
+});
+
+describe("atomicWrite", () => {
+  const secrets = path.join(root, "secrets.json");
+  const leak = path.join(root, "leak");
+
+  it.each([
+    ["a symlink", symlinkSync],
+    ["a hard link", linkSync],
+  ] as const)("never writes through %s planted as its tmp", (_kind, plantLink) => {
+    rmSync(`${secrets}.tmp`, { force: true });
+    writeFileSync(leak, "");
+    plantLink(leak, `${secrets}.tmp`);
+
+    atomicWrite(secrets, "CANARY-NEW-KEY", { mode: 0o600 });
+
+    expect(readFileSync(leak, "utf-8")).toBe("");
+    expect(readFileSync(secrets, "utf-8")).toBe("CANARY-NEW-KEY");
+    expect(existsSync(`${secrets}.tmp`)).toBe(false);
+  });
+
+  it("gives the file its mode over a tmp a crash left with another", () => {
+    writeFileSync(`${secrets}.tmp`, "stale", { mode: 0o644 });
+
+    atomicWrite(secrets, "{}", { mode: 0o600 });
+
+    expect(statSync(secrets).mode.toString(8)).toMatch(/600$/u);
+  });
 });

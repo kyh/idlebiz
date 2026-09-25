@@ -160,8 +160,8 @@ allocator and the replay.
   sets `GIT_NO_LAZY_FETCH=1`. A partial clone is refused too, but that read is not the guard,
   since a run can rewrite the file after it. `.push/` is sealed from runs: a staging
   repository a run could write is one whose config it could rewrite mid-push. Main runs
-  `/usr/bin/git`, never one from PATH, with PATH cut to the system folders, since the rest
-  are ones a run can write: a credential helper or `core.sshCommand` of the founder's named
+  `/usr/bin/git`, never one from PATH, with PATH cut to the system folders, which SIP keeps
+  whatever the seal misses: a credential helper or `core.sshCommand` of the founder's named
   without an absolute path is looked up only there.
   Everything an agent runs itself meets one judgement, the tripwire `holdFor` in
   `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
@@ -188,7 +188,10 @@ allocator and the replay.
   script, an extension, an empty `--session`, a word the shell fills in), is signed for once,
   exactly, like a shell rule. A page opened from disk is no build of the team's: an act on a
   `file:` page is held, and so is a command naming a `file:` URL outside the run's own dirs,
-  whatever verb opens it, judged where its symlinks lead (`Confinement.real`). Only the
+  whatever verb opens it, judged where its symlinks lead (`Confinement.real`). That
+  judgement is a tripwire, not the boundary: a link made earlier on the same command line is
+  judged before it exists. The boundary is the daemon's own seal, that of the run that started
+  it: a page it opens holds only what that run could read. Only the
   command line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json`
   goes unread, so either can still reroute or script a session unseen.
   Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
@@ -201,26 +204,54 @@ allocator and the replay.
   the run asks. A signature only ever picks the runner's one-time option, never an "always"
   one. An edit by claude's Write/Edit outside a run's own dirs (its working directory, memory
   folder, the shared workspace, the tool cache) is held, under `save-edit` when it lands in
-  the save. codex asks before every patch and its ask names each file the patch writes,
-  where a move lands included, so a patch is judged like claude's edit; one naming no file is
-  held. A shell write is not judged by path, so
-  `cp x ../approvals.json` still runs. A web read by the agent's own tool runs, as a bare
-  `curl` does; an ask IdleBiz cannot recognise is held once, exactly, and so is a codex
-  `execute` approval that names no command. Both runners' wire formats end in
-  `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
+  the save, where the seal refuses it even once signed for. codex asks before every patch
+  and its ask names each file the patch writes, where a move lands included, so a patch is
+  judged like claude's edit; one naming no file is held. A shell write is not judged by
+  path: the seal is what keeps `cp x ../approvals.json` from landing. A web read by the
+  agent's own tool runs, as a bare `curl` does; an ask IdleBiz cannot recognise is held
+  once, exactly, and so is a codex `execute` approval that names no command. Both runners'
+  wire formats end in `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a
+  `ToolAsk`.
 - **Every employee run starts sealed.** `acpAgentFor` starts each ACP session, a task's or
   the hiring one-shot's, under `/usr/bin/sandbox-exec -p`, a profile `main/agents/seal.ts`
-  renders per runner with every path a `-D` parameter. Everything is allowed
+  renders per run with every path a `-D` parameter. Everything is allowed
   but reading or writing the founder's logins (ssh, gh, npm, netrc, git credentials, aws,
   docker, gnupg, gcloud, stripe, wrangler, netlify, the Vercel CLI, Chrome's and Brave's
-  profiles, cookies), the other runner's login, `secrets.json` and `.push/`; writing what runs as the
-  founder later (shell rc files, `~/.gitconfig`, `~/.config`, LaunchAgents); running git's
-  Keychain helper; and reaching an ssh agent (`SSH_AUTH_SOCK` is dropped from the env too), so
-  no run can sign a push as the founder. Seatbelt matches the path a symlink leads to, never
-  the link, so each run seals each path where it is named and where it resolves as the run
-  starts (a dotfile manager's `~/.zshrc`, a login linked away mid-session), and no folder above
-  a sealed path can be renamed or removed, which would carry it out from under its rule. A
-  symlink inside a sealed folder is not followed.
+  profiles, cookies), the other runner's login, `.push/`, and `secrets.json` with every name
+  that starts with it (main writes it through `secrets.json.tmp`); writing what runs as the
+  founder later: every shell startup file in HOME (zsh's, bash's, `.inputrc`, Terminal's
+  `.zsh_sessions`/`.bash_sessions`), zsh's wherever ZDOTDIR puts them and their compiled
+  `.zwc`, which zsh prefers when newer, `~/.gitconfig`, `~/.config`, LaunchAgents, every folder
+  on main's PATH (the login shell's kept there whether they exist yet or not, so a run cannot
+  be the one to make them), whatever each symlink in one leads to and each runner CLI (every
+  copy on PATH), each followed through its symlinks: every folder it passes, and the tree it
+  lands in (the whole Homebrew prefix for a keg or cask, whose `opt/` links, libraries,
+  site-packages and `etc/` its programs load; else the outermost `.app` or `node_modules`;
+  else its folder; never HOME itself, where only the path is kept), and IdleBiz itself (the
+  `.app` its executable sits in; in dev, the `node_modules` Electron runs from and
+  `apps/desktop`, the app Electron loads), which the founder runs unsealed; writing
+  the save but for the run's own folders (`Confinement.writable`: its workspace, the shared
+  one, its memory, the tool cache), so no shell command forges `approvals.json`, a `BET.md`,
+  a teammate's `AGENTS.md` or a `TASK.md`; removing, moving or replacing one of those folders
+  itself; running git's Keychain helper; and reaching an agent's socket: any under a
+  sealed path (an ssh or gpg agent in `~/.ssh` or `~/.gnupg`), 1Password's, Secretive's,
+  launchd's and main's `SSH_AUTH_SOCK` (dropped from the env too), none of which a run can
+  move or link out from under its rule, so no run can sign a push as the founder. Seatbelt
+  obeys the last rule a path matches: the profile closes the save, PATH, the CLIs and IdleBiz,
+  then reopens the run's own folders (a PATH folder inside one with them), and every seal
+  after that holds inside them too. Seatbelt
+  matches the path a symlink leads to, never the link, so each run seals each path where it
+  is named and where it resolves as the run starts (a dotfile manager's `~/.zshrc`, a login
+  linked away mid-session), and no folder above a sealed path can be renamed, removed or
+  made, which would carry it out from under its rule or put a folder of the run's own there.
+  A symlink inside a sealed folder is not followed. The run's own folders are the exception:
+  each is allowed where the save resolves, never where a link leads, and a run whose folder,
+  or any folder between it and the save, is a symlink does not start (`ownFolders`), since
+  a run that had swapped one for a link would have the next reopen the save. Main makes
+  them before it seals a run, which cannot. Main's boot probe of the login shell's PATH (`adoptShellPath`) runs under the
+  same profile, holding neither runner's login nor the Keychain, so whatever startup file it
+  runs or sources runs sealed; and `atomicWrite` removes a stale `.tmp` and makes it anew
+  (`wx`), so a file main writes never lands through a link a run planted.
   codex runs also lose `/usr/bin/security`; claude
   reads its own login with it, so on a claude run the Keychain (the founder's gh token, the
   safeStorage key) is guarded only by the `read-credentials` rule. Network stays open:
@@ -230,10 +261,23 @@ allocator and the replay.
   a refusal (sandbox-exec missing, a nested sandbox, a probe timed out on a loaded boot) is
   listed in Settings beside what boot skipped, and a CLI sign-in retry checks again. Runs
   drive agent-browser in a daemon namespace of the save's own (`BROWSER_NAMESPACE`), since
-  whoever starts a daemon decides whether its Chrome is sealed: the live-page read asks
-  `session info` before `eval`, which would start one, and runs sealed as the run would.
-  Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session but the
-  first out. The login probes and every place the founder enters a key run in main, unsealed.
+  whoever starts a daemon decides whether its Chrome is sealed, with that run's own folders:
+  the live-page read asks `session info` before `eval`, which would start one, and runs
+  sealed as the run would. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile
+  locks every session but the first out. Main starts a runner's CLI itself only under that
+  runner's seal, with no folders of its own: the probes of its version and login and the
+  sign-in (`sealedCli`), since the CLI on PATH could be one a run planted. With no seal no
+  CLI is found, and onboarding says why rather than install one; the installer runs in
+  `/bin/bash -c`, never a login shell. Every place the founder enters a key runs in main,
+  unsealed. The founder's own terminal is only as sound as what the login shell sources. A
+  run can still write a file it sources that is no startup file (a plugin dir such as
+  oh-my-zsh's `custom/`, a version manager's env script, zsh's `~/.zcompdump`), which then
+  runs as the founder, unsealed. Main's own probe runs such a file sealed. Nor is every
+  program the founder runs guarded, only what PATH reaches by folder or symlink: a shim or
+  wrapper script that picks its program when it runs (pyenv's, rbenv's, asdf's, mise's,
+  Volta's), and a library, plugin or config a program loads from outside its tree (outside
+  Homebrew's prefix), stay writable, and so does anything the founder starts other than
+  from PATH (an editor's extensions, an app in `~/Applications`).
 
 ## Two traps that fail silently
 

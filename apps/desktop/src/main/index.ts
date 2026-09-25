@@ -10,7 +10,7 @@ import { suspendWrites } from "@/main/lib/fs";
 import * as store from "@/main/store/store";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
-import { notingSeal } from "@/main/agents/seal";
+import { machineSeal, notingSeal } from "@/main/agents/seal";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { controlPlane } from "@/main/control-plane";
 import { employeeSheetDir } from "@/main/character/employee-sheets";
@@ -340,7 +340,7 @@ const boot = async (): Promise<void> => {
   if (unreadableSecrets) {
     store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
   }
-  await adoptShellPath();
+  await adoptShellPath(await machineSeal([]));
   agentDriver.init();
   await controlPlane.start();
   registerIpcHandlers(ipcHandlers);

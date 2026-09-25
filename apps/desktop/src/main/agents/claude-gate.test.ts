@@ -223,8 +223,8 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(FOUNDER_SETTINGS));
     remote = path.join(base, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", remote]);
-    workspace = path.join(base, "workspace");
-    mkdirSync(workspace);
+    // a run's own folders are always in the save
+    workspace = mkdtempSync(path.join(root, "workspace-"));
     const git = (...args: string[]) =>
       execFileSync("git", ["-c", "user.email=a@b.c", "-c", "user.name=a", ...args], {
         cwd: workspace,
@@ -239,7 +239,9 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   // an ended turn's claude may still be writing its session into its config dir
   afterEach(async () => {
     await endAllAgents(1000);
-    rmSync(base, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 });
+    for (const dir of [base, workspace]) {
+      rmSync(dir, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 });
+    }
   });
 
   /** One turn running `next`, every ask answered `allow`, and what holdFor made of each. */
@@ -253,7 +255,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
     const { port } = Listening.parse(model?.address());
     const result = await runAcpTurn({
-      agent: standInAgent(acpAgentFor("claude", await machineSeal())),
+      agent: standInAgent(acpAgentFor("claude", await machineSeal([workspace]))),
       cwd: workspace,
       env: {
         ANTHROPIC_API_KEY: "stand-in",

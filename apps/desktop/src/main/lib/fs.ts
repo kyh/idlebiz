@@ -1,6 +1,5 @@
 import {
   appendFileSync,
-  chmodSync,
   closeSync,
   existsSync,
   fstatSync,
@@ -9,6 +8,7 @@ import {
   readFileSync,
   readSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -25,7 +25,11 @@ export const suspendWrites = (): void => {
   writesSuspended = true;
 };
 
-/** Write the whole file via tmp + rename, so a reader never sees half of it. */
+/**
+ * Write the whole file via tmp + rename, so a reader never sees half of it. The tmp is always
+ * made new: one already there, left by a crash or planted as a link to where a reader waits,
+ * is removed, and `wx` (O_EXCL) never opens through a link, not even a dangling one.
+ */
 export const atomicWrite = (
   file: string,
   content: string,
@@ -36,11 +40,8 @@ export const atomicWrite = (
   }
   mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, content, options);
-  // a tmp file left by a crash keeps its old mode through writeFileSync
-  if (options.mode !== undefined) {
-    chmodSync(tmp, options.mode);
-  }
+  rmSync(tmp, { force: true });
+  writeFileSync(tmp, content, { flag: "wx", mode: options.mode });
   renameSync(tmp, file);
 };
 

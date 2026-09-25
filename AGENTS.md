@@ -231,12 +231,32 @@ rather than crashing boot.
   and hands `sandbox-exec -p`: the
   founder's logins kept under HOME (ssh, `gh`, npm, netrc, git credentials, `~/.aws`, docker,
   gnupg, gcloud, the Stripe, Wrangler, Netlify and Vercel CLIs, Chrome's and Brave's
-  profiles), the other runner's login, `secrets.json` and `.push/` (where main stages a push)
-  are unreadable and unwritable; shell
-  rc files, `~/.gitconfig`, `~/.config` and LaunchAgents are unwritable; git's Keychain
-  helper cannot run and no ssh agent answers, so no run can sign a push as the founder. Each
-  of those paths is sealed where a symlink leads as well as where it is named, as they stand
-  when each run starts, and no folder above one can be renamed or removed. A
+  profiles), the other runner's login, `.push/` (where main stages a push) and `secrets.json`
+  with every name that starts with it (main writes it through `secrets.json.tmp`) are
+  unreadable and unwritable; every shell startup file in HOME (zsh's, bash's, `.inputrc`,
+  Terminal's session files), zsh's wherever ZDOTDIR puts them and their compiled `.zwc`,
+  `~/.gitconfig`, `~/.config`, LaunchAgents, every folder on main's PATH (the login shell's
+  whether they exist yet or not), the tree each symlink in one and each runner CLI (every
+  copy on PATH) lands in, followed through its symlinks (a keg's or cask's whole Homebrew
+  prefix, else the `.app` or `node_modules`, else the folder), and IdleBiz itself (the `.app`
+  its executable sits in; in dev, the `node_modules` Electron runs from and `apps/desktop`)
+  are unwritable; the save is
+  unwritable but for the run's own
+  folders (its workspace, the shared one, its memory and the tool cache), which it cannot
+  remove, move or replace, so no shell command forges an approval, a bet's verdict, a
+  teammate or a task; git's Keychain helper cannot run and no agent's socket answers (any under a sealed
+  path, 1Password's, Secretive's, launchd's, main's `SSH_AUTH_SOCK`), so no run can sign a
+  push as the founder. Each of those paths is sealed where a symlink leads as well as where
+  it is named, as they stand when each run starts, and no folder above one can be renamed,
+  removed or made; the run's own folders are allowed only where the save resolves, and a run
+  whose folder is reached through a symlink does not start. Main's boot probe of the login
+  shell's PATH runs under the same profile, holding neither runner's login nor the Keychain,
+  so whatever startup file it runs or sources runs sealed, and main probes and signs in a
+  runner's CLI only under that runner's seal. Still writable, and run by the founder
+  unsealed: a file the login shell sources that is no startup file (oh-my-zsh's `custom/`, a
+  version manager's env script), a shim that picks its program when it runs (pyenv's,
+  rbenv's, asdf's, mise's, Volta's), a library or config a program loads from outside its
+  tree (outside Homebrew's prefix), and whatever the founder starts other than from PATH. A
   codex run also cannot run `/usr/bin/security`; a claude run can, since claude reads its own
   login with it. Network stays open. Boot checks the seal without a model call; until it
   holds, no run starts and no task spends an attempt, and if it fails, or this Mac has no
@@ -300,7 +320,8 @@ rather than crashing boot.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
   requests and real `/usr/bin/git` pushes to bare repositories on disk. On macOS it also runs the seal on canary files under a stand-in home
-  (`seal.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
+  (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
+  (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
   its login (`claude-gate.test.ts`, `codex-gate.test.ts`); all skip elsewhere. Command policy
   rules each need a matching example; everyday commands must remain allowed. Drive anything

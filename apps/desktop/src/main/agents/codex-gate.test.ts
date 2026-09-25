@@ -155,8 +155,8 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     );
     remote = path.join(base, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", remote]);
-    workspace = path.join(base, "workspace");
-    mkdirSync(workspace);
+    // a run's own folders are always in the save
+    workspace = mkdtempSync(path.join(root, "workspace-"));
     const git = (...args: string[]) =>
       execFileSync("git", ["-c", "user.email=a@b.c", "-c", "user.name=a", ...args], {
         cwd: workspace,
@@ -171,7 +171,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   // an ended turn's codex may still be writing its session into its home
   afterEach(async () => {
     await endAllAgents(1000);
-    rmSync(base, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 });
+    for (const dir of [base, workspace]) {
+      rmSync(dir, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 });
+    }
   });
 
   /** One turn of `next`, every ask answered `allow`, and what holdFor made of each. */
@@ -184,7 +186,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
     const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
     const result = await runAcpTurn({
-      agent: acpAgentFor("codex", await machineSeal()),
+      agent: acpAgentFor("codex", await machineSeal([workspace])),
       cwd: workspace,
       env: { CODEX_HOME: codexHome },
       idleTimeoutMs: 60_000,

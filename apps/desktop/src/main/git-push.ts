@@ -13,11 +13,11 @@ import { RefusalError } from "@/shared/refusal";
 // upload-pack (git's server side, built to serve an untrusted repository) into a repository of
 // its own, and pushes from that one, with the founder's own credentials.
 
-// macOS's own: one found on PATH could be one a run wrote there.
+// macOS's own, which SIP keeps whatever the seal misses.
 const GIT = "/usr/bin/git";
 
-// PATH puts folders a run can write (~/.local/bin, /opt/homebrew/bin) ahead of these, and git
-// looks up ssh and any helper named without a path on it. Its own helpers it finds first anyway.
+// git looks up ssh and any helper named without a path on PATH, and of its folders only these
+// are kept by SIP rather than by the seal. Its own helpers it finds first anyway.
 const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 // Serving a partial clone, upload-pack fetched what it lacked, obeying that repository's config

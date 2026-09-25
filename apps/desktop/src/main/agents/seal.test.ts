@@ -35,13 +35,15 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
+  agents: [],
+  guarded: [],
   otherLogin: {
     claude: [{ match: "prefix", path: "/Users/me/.codex" }],
     codex: [{ match: "prefix", path: "/Users/me/.claude" }],
   },
-  sshAgent: null,
   unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/secrets.json" }],
   unwritable: [{ match: "subpath", path: "/Users/me/.zshrc" }],
+  writable: [],
 };
 
 /** A sealed command read back: its profile, the paths it hands over, and what it runs. */
@@ -53,14 +55,24 @@ const readBack = (argv: readonly string[]) => {
     const define = rest[at + 1] ?? "";
     params.set(define.slice(0, define.indexOf("=")), define.slice(define.indexOf("=") + 1));
   }
-  /** The paths the profile's `(deny <operations> …)` rules name, in order. */
-  const denied = (operations: string): string[] =>
+  /** The paths the profile's `(<action> <operations> …)` rules name, in order. */
+  const named = (action: "allow" | "deny", operations: string): string[] =>
     profile
       .split("\n")
-      .filter((line) => line.startsWith(`(deny ${operations} (`))
+      .filter((line) => line.startsWith(`(${action} ${operations} (`))
       .flatMap((rule) => [...rule.matchAll(/\(param "(?<name>P\d+)"\)/gu)])
       .map(({ groups }) => params.get(groups?.name ?? "") ?? "");
-  return { bin, denied, flag, params: [...params.values()], profile, runs: rest.slice(at) };
+  const denied = (operations: string): string[] => named("deny", operations);
+  const allowed = (operations: string): string[] => named("allow", operations);
+  return {
+    allowed,
+    bin,
+    denied,
+    flag,
+    params: [...params.values()],
+    profile,
+    runs: rest.slice(at),
+  };
 };
 
 describe("sealedCommand", () => {
@@ -92,21 +104,83 @@ describe("sealedCommand", () => {
     expect(claude.profile).toMatch(/\(prefix \(param "P\d+"\)\)/u);
   });
 
-  it("keeps every folder above a sealed path from moving, and only those", () => {
+  it("keeps every folder above a sealed path from moving or being made, and only those", () => {
     const { denied } = readBack(sealedCommand(SEAL, "codex", []));
-    expect(denied("file-write-unlink")).toEqual(["/Users/me/.idlebiz", "/Users/me", "/Users"]);
+    expect(denied("file-write-create file-write-unlink")).toEqual([
+      "/Users/me/.idlebiz",
+      "/Users/me",
+      "/Users",
+    ]);
   });
 
-  it("names the ssh agent only when main's env had one", () => {
+  it("keeps each of the run's own folders in place once it reopens them", () => {
+    const workspace = "/Users/me/.idlebiz/acme/workspace";
+    const { denied, profile } = readBack(
+      sealedCommand({ ...SEAL, writable: [{ match: "subpath", path: workspace }] }, "claude", []),
+    );
+    expect(denied("file-write-create file-write-unlink")).toEqual(
+      expect.arrayContaining([workspace]),
+    );
+    const lines = profile.split("\n");
+    const reopened = lines.findIndex((line) => line.startsWith("(allow file-write* ("));
+    const kept = lines.findIndex((line) =>
+      line.startsWith("(deny file-write-create file-write-unlink (literal"),
+    );
+    expect(reopened).toBeGreaterThan(-1);
+    expect(reopened).toBeLessThan(kept);
+  });
+
+  it("keeps every agent's socket out of reach and in place, and every socket under a sealed path", () => {
     const agent = "/private/tmp/com.apple.launchd.x/Listeners";
-    const named = readBack(sealedCommand({ ...SEAL, sshAgent: agent }, "claude", []));
-    expect(named.denied("network-outbound")).toEqual([agent]);
-    expect(readBack(sealedCommand(SEAL, "claude", [])).denied("network-outbound")).toEqual([]);
+    const named = readBack(
+      sealedCommand({ ...SEAL, agents: [{ match: "subpath", path: agent }] }, "claude", []),
+    );
+    expect(named.denied("network-outbound")).toEqual([
+      "/Users/me/.idlebiz/secrets.json",
+      "/Users/me/.codex",
+      agent,
+    ]);
+    expect(named.profile).toMatch(/^\(deny network-outbound \(remote unix-socket \(/mu);
+    expect(named.denied("file-write*")).toContain(agent);
   });
 
-  it("leaves out a rule with nothing to reach, which would deny everything", () => {
-    const bare: Seal = { ...SEAL, unwritable: [] };
-    expect(readBack(sealedCommand(bare, "claude", [])).profile).not.toMatch(/\(deny [\w* -]+\)/u);
+  it("closes the save and the programs, reopens the run's own folders, then seals the rest inside them too", () => {
+    const seal: Seal = {
+      ...SEAL,
+      guarded: [
+        { match: "subpath", path: "/Users/me/.idlebiz" },
+        { match: "subpath", path: "/Users/me/.local/bin" },
+      ],
+      writable: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace" }],
+    };
+    const { allowed, denied, profile } = readBack(sealedCommand(seal, "codex", []));
+    expect(denied("file-write*")).toEqual(
+      expect.arrayContaining(["/Users/me/.idlebiz", "/Users/me/.local/bin"]),
+    );
+    expect(allowed("file-write*")).toEqual(["/Users/me/.idlebiz/acme/workspace"]);
+    const lines = profile.split("\n");
+    const reopened = lines.findIndex((line) => line.startsWith("(allow file-write* ("));
+    const closed = lines.findIndex((line) => line.startsWith("(deny file-write* (subpath"));
+    const sealed = lines.findIndex((line) => line.startsWith("(deny file-read* file-write* ("));
+    expect(closed).toBeGreaterThan(-1);
+    expect(closed).toBeLessThan(reopened);
+    expect(reopened).toBeLessThan(sealed);
+  });
+
+  it("seals the login shell's probe off from both runners' logins and the Keychain", () => {
+    const { denied, profile } = readBack(sealedCommand(SEAL, "shell", []));
+    expect(denied("file-read* file-write*")).toEqual(
+      expect.arrayContaining(["/Users/me/.codex", "/Users/me/.claude"]),
+    );
+    expect(profile).toContain('(deny process-exec (literal "/usr/bin/security"))');
+  });
+
+  it("leaves out a rule with nothing to reach, which would reach everything", () => {
+    const bare: Seal = { ...SEAL, unreadable: [], unwritable: [] };
+    const lines = readBack(sealedCommand(bare, "claude", [])).profile.split("\n");
+    expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
+      "(allow default)",
+    ]);
   });
 });
 
@@ -178,20 +252,40 @@ const under =
       spawnSync(argv[0] ?? "", [argv[1] ?? "", profile, ...argv.slice(3)], { env }).status,
     );
 
-/** What each file came to under the profile: "moved", "read", "written" or "ran", or the error that stopped it. */
+/**
+ * What each file came to under the profile: "removed", "moved", "made", "linked", "read",
+ * "written" or "ran", or the error that stopped it.
+ */
 const Outcomes = z.record(z.string(), z.string());
 
 const TRY_FILES = `
 const fs = require("node:fs");
 const { spawnSync } = require("node:child_process");
-const [moves, reads, writes, runs] = JSON.parse(process.argv[1]);
+const { removes = [], moves = [], dirs = [], symlinks = [], links = [], reads = [], writes = [], runs = [] } = JSON.parse(process.argv[1]);
 const out = {};
-for (const [from, to] of moves) { try { fs.renameSync(from, to); out[from] = "moved"; } catch (e) { out[from] = e.code; } }
-for (const file of reads) { try { fs.readFileSync(file); out[file] = "read"; } catch (e) { out[file] = e.code; } }
-for (const file of writes) { try { fs.appendFileSync(file, "x"); out[file] = "written"; } catch (e) { out[file] = e.code; } }
+const attempt = (key, done, act) => { try { act(); out[key] = done; } catch (e) { out[key] = e.code; } };
+for (const dir of removes) attempt(dir, "removed", () => fs.rmSync(dir, { recursive: true }));
+for (const [from, to] of moves) attempt(from, "moved", () => fs.renameSync(from, to));
+for (const dir of dirs) attempt(dir, "made", () => fs.mkdirSync(dir, { recursive: true }));
+for (const [target, to] of symlinks) attempt(to, "linked", () => fs.symlinkSync(target, to));
+for (const [from, to] of links) attempt(to, "linked", () => fs.linkSync(from, to));
+for (const file of reads) attempt(file, "read", () => fs.readFileSync(file));
+for (const file of writes) attempt(file, "written", () => fs.appendFileSync(file, "x"));
 for (const bin of runs) { const r = spawnSync(bin, ["help"]); out[bin] = r.error ? r.error.code : "ran"; }
 console.log(JSON.stringify(out));
 `;
+
+/** What a run tries, each kind in this order: a key names each `[from, to]` by `to`, but a move by `from`. */
+interface Attempts {
+  removes?: string[];
+  moves?: [string, string][];
+  dirs?: string[];
+  symlinks?: [string, string][];
+  links?: [string, string][];
+  reads?: string[];
+  writes?: string[];
+  runs?: string[];
+}
 
 describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => {
   // home sits in a box of its own, so a rename the seal failed to stop is still cleaned up
@@ -214,21 +308,34 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     symlinkSync(at(target), at(name));
     return at(target);
   };
-  const seal = (): Promise<Seal> =>
+  /** The folders a run on acme's workspace writes, as the driver hands them over. */
+  const own = () => [
+    at(".idlebiz/acme/workspace"),
+    at(".idlebiz/acme/agents/ann/memory"),
+    at(".idlebiz/cache"),
+  ];
+  const seal = (more: Partial<Parameters<typeof sealFor>[0]> = {}): Promise<Seal> =>
     sealFor({
+      clis: [],
       home,
       mainOnly: [at(".idlebiz/secrets.json"), at(".idlebiz/.push")],
+      pathDirs: [],
+      programs: [],
+      save: at(".idlebiz"),
       sshAgent: null,
+      writable: own(),
+      ...more,
     });
   const tryAs = async (
     runner: "claude" | "codex",
-    files: { moves?: [string, string][]; reads?: string[]; writes?: string[]; runs?: string[] },
+    files: Attempts,
+    sealed: Promise<Seal> = seal(),
   ) => {
-    const argv = sealedCommand(await seal(), runner, [
+    const argv = sealedCommand(await sealed, runner, [
       process.execPath,
       "-e",
       TRY_FILES,
-      JSON.stringify([files.moves ?? [], files.reads ?? [], files.writes ?? [], files.runs ?? []]),
+      JSON.stringify(files),
     ]);
     const [bin = "", ...args] = argv;
     const { stdout } = spawnSync(bin, args, { encoding: "utf-8", env: { HOME: home } });
@@ -308,9 +415,15 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ".zshenv",
       ".zprofile",
       ".zlogin",
+      ".zlogout",
+      ".zsh_sessions/A1B2.session",
       ".bashrc",
       ".bash_profile",
+      ".bash_login",
+      ".bash_logout",
+      ".bash_sessions/A1B2.session",
       ".profile",
+      ".inputrc",
       ".gitconfig",
       ".config/git/config",
       "Library/LaunchAgents/com.example.agent.plist",
@@ -319,6 +432,21 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(Object.values(await tryAs("claude", { writes: later }))).toEqual(
       later.map(() => "EPERM"),
     );
+  });
+
+  it("keeps zsh's startup files, compiled or not, wherever ZDOTDIR puts them", async () => {
+    const zdotdir = [
+      "dots/zsh/.zshrc",
+      "dots/zsh/.zshenv",
+      "dots/zsh/.zlogout",
+      "dots/zsh/.zsh_sessions/A1B2.session",
+    ].map(plant);
+    const compiled = [".zshrc.zwc", "dots/zsh/.zprofile.zwc"].map(at);
+    const notes = [at("dots/zsh/zshrc.md"), at("dots/zsh/.zsh_history")];
+    expect(await tryAs("codex", { writes: [...zdotdir, ...compiled, ...notes] })).toEqual({
+      ...Object.fromEntries([...zdotdir, ...compiled].map((file) => [file, "EPERM"])),
+      ...Object.fromEntries(notes.map((file) => [file, "written"])),
+    });
   });
 
   it("seals a symlinked dotfile where it leads, as a dotfile manager sets them up", async () => {
@@ -352,6 +480,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const secrets = plant(".idlebiz/secrets.json");
     plant(".idlebiz/acme/workspace/index.html");
     plant("Library/Application Support/Google/Chrome/Default/Cookies");
+    plant("projects/app/index.html");
     const moved = at("work/ib/secrets.json");
     mkdirSync(at("work"));
     const moves: [string, string][] = [
@@ -360,28 +489,362 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       [at("Library"), at("work/library")],
       [home, path.join(box, "moved-home")],
       [at(".idlebiz/acme"), at(".idlebiz/acme-renamed")],
+      [at("projects/app"), at("projects/app-renamed")],
     ];
     expect(await tryAs("codex", { moves, reads: [moved, secrets] })).toEqual({
       [at(".idlebiz")]: "EPERM",
-      [at(".idlebiz/acme")]: "moved",
+      [at(".idlebiz/acme")]: "EPERM",
       [at("Library")]: "EPERM",
       [at("Library/Application Support/Google")]: "EPERM",
+      [at("projects/app")]: "moved",
       [home]: "EPERM",
       [moved]: "ENOENT",
       [secrets]: "EPERM",
     });
   });
 
-  it("leaves the run its workspace and the rest of home", async () => {
-    const own = [
+  it("leaves the run its own folders in the save and the rest of home", async () => {
+    const mine = [
       plant(".idlebiz/acme/workspace/index.html"),
+      plant(".idlebiz/acme/workspace/node_modules/.bin/vite"),
+      plant(".idlebiz/acme/agents/ann/memory/notes.md"),
       plant(".idlebiz/cache/npm/_cacache/x"),
+      plant(".idlebiz/cache/pnpm-store/v10/x"),
       plant(".agent-browser/default.sock.lock"),
       plant("Library/pnpm/store/x"),
     ];
-    expect(await tryAs("codex", { reads: own, writes: own })).toEqual(
-      Object.fromEntries(own.map((file) => [file, "written"])),
+    expect(await tryAs("codex", { reads: mine, writes: mine })).toEqual(
+      Object.fromEntries(mine.map((file) => [file, "written"])),
     );
+  });
+
+  it("keeps the rest of the save from a run, so it forges no approval, verdict or teammate", async () => {
+    const workspace = plant(".idlebiz/acme/workspace/index.html");
+    const memory = plant(".idlebiz/acme/agents/ann/memory/notes.md");
+    const forged = [
+      plant(".idlebiz/acme/approvals.json"),
+      plant(".idlebiz/acme/bets/more-users/BET.md"),
+      plant(".idlebiz/acme/agents/ann/AGENTS.md"),
+      plant(".idlebiz/acme/agents/bob/AGENTS.md"),
+      plant(".idlebiz/acme/agents/bob/memory/notes.md"),
+      plant(".idlebiz/acme/tasks/landing/TASK.md"),
+      plant(".idlebiz/acme/shared/brief.md"),
+      at(".idlebiz/acme/tasks/landing/PLAN.md"),
+      at(".idlebiz/office-design.json"),
+    ];
+    const linked = at(".idlebiz/acme/workspace/approvals.json");
+    expect(
+      await tryAs("claude", {
+        links: [[at(".idlebiz/acme/approvals.json"), linked]],
+        writes: [workspace, memory, ...forged],
+      }),
+    ).toEqual({
+      ...Object.fromEntries(forged.map((file) => [file, "EPERM"])),
+      [linked]: "EPERM",
+      [memory]: "written",
+      [workspace]: "written",
+    });
+    expect(await tryAs("claude", { writes: [workspace, memory] }, seal({ writable: [] }))).toEqual({
+      [memory]: "EPERM",
+      [workspace]: "EPERM",
+    });
+  });
+
+  it("keeps a run from making or reading a sibling of secrets.json, where the save is named and where it leads", async () => {
+    link(".idlebiz", "elsewhere/idlebiz/");
+    const stale = plant("elsewhere/idlebiz/secrets.json.tmp");
+    const named = [at(".idlebiz/secrets.json.tmp")];
+    const resolved = [stale];
+    const fresh = [at(".idlebiz/secrets.json.old"), at("elsewhere/idlebiz/secrets.json.new")];
+    expect(await tryAs("codex", { reads: [...named, ...resolved] })).toEqual({
+      [at(".idlebiz/secrets.json.tmp")]: "EPERM",
+      [stale]: "EPERM",
+    });
+    expect(
+      Object.values(
+        await tryAs("codex", { writes: fresh }, seal({ save: at("unused"), writable: [] })),
+      ),
+    ).toEqual(fresh.map(() => "EPERM"));
+  });
+
+  it("keeps a run from changing a program main or the founder runs later, through any link to it", async () => {
+    const claude = link(".local/bin/claude", ".local/share/claude/versions/1.0.0");
+    const node = "fnm/v24/installation";
+    mkdirSync(at(`${node}/bin`), { recursive: true });
+    mkdirSync(at("multishells"));
+    symlinkSync(at(node), at("multishells/42"));
+    const codexJs = plant(`${node}/lib/node_modules/@openai/codex/bin/codex.js`);
+    const vendored = plant(
+      `${node}/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/codex`,
+    );
+    const otherPackage = plant(`${node}/lib/node_modules/typescript/bin/tsc`);
+    symlinkSync("../lib/node_modules/@openai/codex/bin/codex.js", at(`${node}/bin/codex`));
+    // a shim first on PATH that runs the next codex, as a version manager's does
+    const shim = plant(".local/bin/codex");
+    spawnSync("chmod", ["+x", claude, codexJs, shim]);
+    const sealed = seal({
+      clis: ["claude", "codex"],
+      pathDirs: [at(".local/bin"), at("multishells/42/bin"), "node_modules/.bin"],
+    });
+    const writes = [
+      at(".local/bin/rg"),
+      shim,
+      claude,
+      at(".local/share/claude/versions/9.9.9"),
+      at("multishells/42/bin/codex"),
+      at("multishells/42/bin/npm"),
+      at(`${node}/bin/npx`),
+      codexJs,
+      vendored,
+      otherPackage,
+    ];
+    const moves: [string, string][] = [
+      [at(".local/bin/claude"), at(".local/bin/claude-old")],
+      [at("multishells/42"), at("multishells/43")],
+      [at(".local/share/claude"), at(".local/share/claude-old")],
+      [at(`${node}/lib`), at(`${node}/lib-old`)],
+    ];
+    const outcomes = await tryAs("claude", { moves, writes }, sealed);
+    expect(outcomes).toEqual(
+      Object.fromEntries(
+        [...writes, ...moves.map(([from]) => from)].map((file) => [file, "EPERM"]),
+      ),
+    );
+    const mine = [
+      plant(".idlebiz/acme/workspace/node_modules/.bin/vite"),
+      plant(".idlebiz/cache/npm/_cacache/index-v5/x"),
+      plant(".local/share/other-tool/state.json"),
+    ];
+    expect(Object.values(await tryAs("claude", { writes: mine }, sealed))).toEqual(
+      mine.map(() => "written"),
+    );
+  });
+
+  it("keeps a run from changing whatever a PATH folder links to, as Homebrew and npm set them up", async () => {
+    const gh = plant("brew/Cellar/gh/1.0/bin/gh");
+    mkdirSync(at("brew/bin"), { recursive: true });
+    symlinkSync("../Cellar/gh/1.0/bin/gh", at("brew/bin/gh"));
+    const pcre = plant("brew/Cellar/pcre2/10.0/lib/libpcre2.dylib");
+    mkdirSync(at("brew/opt"));
+    symlinkSync("../Cellar/pcre2/10.0", at("brew/opt/pcre2"));
+    const tsc = plant("node/v24/lib/node_modules/typescript/bin/tsc");
+    mkdirSync(at("node/v24/bin"), { recursive: true });
+    symlinkSync("../lib/node_modules/typescript/bin/tsc", at("node/v24/bin/tsc"));
+    symlinkSync("../share/later/bin/later", at("node/v24/bin/later"));
+    mkdirSync(at("node/v24/share"));
+    const script = link(".local/bin/hello", "hello.sh");
+    mkdirSync(at("brew/etc"));
+    const sealed = await seal({
+      pathDirs: [at("brew/bin"), at("node/v24/bin"), at(".local/bin")],
+    });
+    const dirs = [at("node/v24/share/later/bin"), at("brew/lib/python3.13/site-packages")];
+    const symlinks: [string, string][] = [
+      [at(".idlebiz/acme/workspace"), at("brew/opt/pcre2-next")],
+    ];
+    const writes = [
+      at("brew/bin/new"),
+      at("brew/bin/gh"),
+      gh,
+      at("brew/opt/pcre2/lib/libpcre2.dylib"),
+      pcre,
+      at("brew/etc/gitconfig"),
+      at("node/v24/bin/tsc"),
+      tsc,
+      at("node/v24/lib/node_modules/evil.js"),
+      at(".local/bin/hello"),
+      script,
+    ];
+    expect(await tryAs("codex", { dirs, symlinks, writes }, Promise.resolve(sealed))).toEqual(
+      Object.fromEntries(
+        [...dirs, ...symlinks.map(([, to]) => to), ...writes].map((file) => [file, "EPERM"]),
+      ),
+    );
+    expect(sealed.guarded).toContainEqual({ match: "subpath", path: at("brew") });
+    expect(sealed.guarded.filter(({ path: kept }) => kept.startsWith(at("brew/")))).toEqual([]);
+    expect(sealed.guarded).not.toContainEqual({ match: "subpath", path: home });
+    const mine = [
+      plant(".idlebiz/acme/workspace/node_modules/typescript/bin/tsc"),
+      plant(".idlebiz/cache/npm/_cacache/index-v5/x"),
+      plant(".idlebiz/cache/pnpm-store/v10/x"),
+      plant("Library/pnpm/store/x"),
+      plant(".local/share/other-tool/state.json"),
+      at("notes.md"),
+    ];
+    expect(Object.values(await tryAs("codex", { writes: mine }, Promise.resolve(sealed)))).toEqual(
+      mine.map(() => "written"),
+    );
+  });
+
+  it.each(["claude", "codex"] as const)(
+    "keeps a %s run from changing IdleBiz itself, which the founder relaunches unsealed",
+    async (runner) => {
+      const bundle = path.join(box, "Applications/IdleBiz.app");
+      const inBundle = (file: string): string => path.join(bundle, "Contents", file);
+      for (const file of [
+        "MacOS/IdleBiz",
+        "Resources/app.asar",
+        "Resources/app.asar.unpacked/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js",
+        "Frameworks/Electron Framework.framework/Electron Framework",
+      ]) {
+        mkdirSync(path.dirname(inBundle(file)), { recursive: true });
+        writeFileSync(inBundle(file), "canary");
+      }
+      const sealed = seal({
+        programs: [
+          inBundle("MacOS/IdleBiz"),
+          inBundle("Resources/app.asar/.output/app/main/index.js"),
+        ],
+      });
+      const writes = [
+        inBundle("MacOS/IdleBiz"),
+        inBundle("Resources/app.asar"),
+        inBundle(
+          "Resources/app.asar.unpacked/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js",
+        ),
+        inBundle("Frameworks/Electron Framework.framework/Electron Framework"),
+        inBundle("Resources/app.asar.new"),
+      ];
+      const replaced = inBundle("Resources/app.asar");
+      const outcomes = await tryAs(
+        runner,
+        {
+          moves: [
+            [bundle, path.join(box, "Applications/Old.app")],
+            [inBundle("MacOS/IdleBiz"), inBundle("MacOS/IdleBiz.old")],
+          ],
+          removes: [replaced],
+          writes,
+        },
+        sealed,
+      );
+      expect(outcomes).toEqual(
+        Object.fromEntries(
+          [bundle, inBundle("MacOS/IdleBiz"), ...writes].map((file) => [file, "EPERM"]),
+        ),
+      );
+      expect(existsSync(replaced)).toBe(true);
+    },
+  );
+
+  it("keeps a run from changing IdleBiz in dev: the node_modules Electron runs from and the app's folder", async () => {
+    const checkout = path.join(box, "checkout");
+    const inCheckout = (file: string): string => path.join(checkout, file);
+    const electron = inCheckout(
+      "node_modules/.pnpm/electron@1.0.0/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+    );
+    const sharp = inCheckout("node_modules/.pnpm/sharp@1.0.0/node_modules/sharp/lib/index.js");
+    const app = [
+      "apps/desktop/package.json",
+      "apps/desktop/.output/app/main/index.js",
+      "apps/desktop/.output/app/preload/index.js",
+      "apps/desktop/.output/app/renderer/index.html",
+      "apps/desktop/src/main/index.ts",
+    ].map(inCheckout);
+    for (const file of [electron, sharp, ...app]) {
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, "canary");
+    }
+    mkdirSync(inCheckout("apps/desktop/node_modules"));
+    symlinkSync(path.dirname(path.dirname(sharp)), inCheckout("apps/desktop/node_modules/sharp"));
+    const linked = inCheckout("apps/desktop/node_modules/sharp/lib/index.js");
+    const main = inCheckout("apps/desktop/.output/app/main/index.js");
+    const writes = [electron, sharp, linked, ...app];
+    const outcomes = await tryAs("codex", { writes }, seal({ programs: [electron, main] }));
+    expect(outcomes).toEqual(Object.fromEntries(writes.map((file) => [file, "EPERM"])));
+  });
+
+  it("never guards home itself for a program with no package above it short of home", async () => {
+    plant("package.json");
+    const main = plant("tools/idlebiz/main/index.js");
+    const sealed = await seal({ programs: [main] });
+    expect(sealed.guarded).toContainEqual({ match: "subpath", path: at("tools/idlebiz/main") });
+    expect(sealed.guarded).not.toContainEqual({ match: "subpath", path: home });
+  });
+
+  it("keeps a run from swapping a folder of its own for a link, so the next run's seal holds too", async () => {
+    const forged = [
+      plant(".idlebiz/acme/approvals.json"),
+      plant(".idlebiz/acme/bets/more-users/BET.md"),
+      plant(".local/bin/claude"),
+    ];
+    const memory = path.dirname(plant(".idlebiz/acme/agents/ann/memory/notes.md"));
+    const cache = at(".idlebiz/cache");
+    plant(".idlebiz/cache/npm/x");
+    const swap = at(".idlebiz/acme/workspace/swap");
+    plant(".idlebiz/acme/workspace/swap/bin/claude");
+    const more = { pathDirs: [at(".local/bin")] };
+    const first = seal(more);
+    expect(await tryAs("codex", { removes: [memory, cache] }, first)).toEqual({
+      [cache]: "EPERM",
+      [memory]: "EPERM",
+    });
+    expect(existsSync(at(".idlebiz/cache/npm"))).toBe(false);
+    const moves: [string, string][] = [
+      [memory, at(".idlebiz/acme/workspace/memory")],
+      [swap, cache],
+    ];
+    expect(await tryAs("codex", { moves }, first)).toEqual({
+      [memory]: "EPERM",
+      [swap]: "EPERM",
+    });
+    const symlinks: [string, string][] = [
+      [at(".idlebiz"), path.join(memory, "save")],
+      [at(".local/bin"), path.join(cache, "bin")],
+    ];
+    expect(Object.values(await tryAs("codex", { symlinks }, first))).toEqual(["linked", "linked"]);
+    const next = seal(more);
+    expect(
+      await tryAs("codex", { writes: [...forged, path.join(memory, "notes.md")] }, next),
+    ).toEqual({
+      ...Object.fromEntries(forged.map((file) => [file, "EPERM"])),
+      [path.join(memory, "notes.md")]: "written",
+    });
+    expect(
+      await tryAs("codex", { writes: [path.join(memory, "save/acme/approvals.json")] }, next),
+    ).toEqual({ [path.join(memory, "save/acme/approvals.json")]: "EPERM" });
+  });
+
+  it("starts no run whose folder is a link or lies outside the save", async () => {
+    mkdirSync(at(".idlebiz/acme/workspace"), { recursive: true });
+    mkdirSync(at(".idlebiz/cache"));
+    mkdirSync(at("elsewhere/ann"), { recursive: true });
+    await expect(seal()).resolves.toBeDefined();
+    const ann = at(".idlebiz/acme/agents/ann");
+    const memory = path.join(ann, "memory");
+    mkdirSync(ann, { recursive: true });
+    symlinkSync(at(".idlebiz"), memory);
+    await expect(seal()).rejects.toThrow(`while ${memory} is a symlink`);
+    rmSync(ann, { recursive: true });
+    symlinkSync(at("elsewhere/ann"), ann);
+    await expect(seal()).rejects.toThrow(`while ${ann} is a symlink`);
+    for (const folder of [at("projects/app"), at(".idlebiz")]) {
+      await expect(seal({ writable: [folder] })).rejects.toThrow("no folder inside the save");
+    }
+  });
+
+  it("keeps a run from making a folder the founder's PATH names before it exists", async () => {
+    const bun = at(".bun/bin");
+    const sealed = seal({ pathDirs: [bun] });
+    const made = path.dirname(path.dirname(plant(".idlebiz/acme/workspace/made/bin/claude")));
+    expect(
+      await tryAs(
+        "codex",
+        {
+          dirs: [bun, at(".cache/tool")],
+          moves: [[made, at(".bun")]],
+          symlinks: [[made, at(".bun")]],
+          writes: [path.join(bun, "claude")],
+        },
+        sealed,
+      ),
+    ).toEqual({
+      [at(".bun")]: "EPERM",
+      [at(".cache/tool")]: "made",
+      [bun]: "EPERM",
+      [path.join(bun, "claude")]: "ENOENT",
+      [made]: "EPERM",
+    });
+    expect(existsSync(at(".bun"))).toBe(false);
   });
 
   it("stops the Keychain's git helper for every run and the Keychain's CLI for codex's", async () => {
@@ -398,43 +861,107 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
-  describe("an ssh agent", () => {
-    let dir = "";
-    let agent: Server | null = null;
+  describe("an agent's socket", () => {
     // a socket's path must fit in 104 bytes: tmpdir() on macOS alone takes half of that
-    beforeEach(async () => {
-      dir = realpathSync(mkdtempSync("/tmp/ib-"));
-      const listening = createServer();
-      agent = listening;
-      listening.listen(path.join(dir, "agent.sock"));
-      await once(listening, "listening");
+    let short = "";
+    let launchd = "";
+    const servers: Server[] = [];
+    const listen = async (socket: string): Promise<string> => {
+      mkdirSync(path.dirname(socket), { recursive: true });
+      const server = createServer();
+      servers.push(server);
+      server.listen(socket);
+      await once(server, "listening");
+      return socket;
+    };
+    beforeEach(() => {
+      short = realpathSync(mkdtempSync("/tmp/ib-"));
+      launchd = realpathSync(mkdtempSync("/tmp/com.apple.launchd.ib-"));
     });
     afterEach(() => {
-      agent?.close();
-      rmSync(dir, { force: true, recursive: true });
+      for (const server of servers.splice(0)) {
+        server.close();
+      }
+      rmSync(short, { force: true, recursive: true });
+      rmSync(launchd, { force: true, recursive: true });
     });
 
     // "connect" fires once the kernel queues it: this process, blocked in spawnSync, never accepts
     const CONNECT = `
-const socket = require("node:net").connect(process.argv[1]);
-socket.on("connect", () => { console.log("reached"); process.exit(0); });
-socket.on("error", (error) => { console.log(error.code); process.exit(0); });
+const net = require("node:net");
+const fs = require("node:fs");
+const [sockets, moves] = JSON.parse(process.argv[1]);
+const out = {};
+for (const [from, to] of moves) { try { fs.renameSync(from, to); out[from] = "moved"; } catch (e) { out[from] = e.code; } }
+let left = sockets.length;
+const done = (socket, outcome) => { out[socket] = outcome; if (--left === 0) { console.log(JSON.stringify(out)); process.exit(0); } };
+for (const socket of sockets) {
+  const connection = net.connect(socket);
+  connection.on("connect", () => done(socket, "reached"));
+  connection.on("error", (error) => done(socket, error.code));
+}
 `;
-    const connect = async (sshAgent: string | null): Promise<string> => {
-      const socket = path.join(dir, "agent.sock");
+    const connect = async (
+      sshAgent: string | null,
+      sockets: readonly string[],
+      moves: readonly [string, string][] = [],
+    ) => {
       const sealed = await sealFor({
-        home,
-        mainOnly: [at(".idlebiz/secrets.json"), at(".idlebiz/.push")],
+        clis: [],
+        home: short,
+        mainOnly: [],
+        pathDirs: [],
+        programs: [],
+        save: path.join(short, ".idlebiz"),
         sshAgent,
+        writable: [],
       });
-      const argv = sealedCommand(sealed, "claude", [process.execPath, "-e", CONNECT, socket]);
+      const argv = sealedCommand(sealed, "claude", [
+        process.execPath,
+        "-e",
+        CONNECT,
+        JSON.stringify([sockets, moves]),
+      ]);
       const [bin = "", ...args] = argv;
-      return spawnSync(bin, args, { encoding: "utf-8" }).stdout.trim();
+      return Outcomes.parse(parseJson(spawnSync(bin, args, { encoding: "utf-8" }).stdout));
     };
 
-    it("is out of reach when main's env names it", async () => {
-      expect(await connect(path.join(dir, "agent.sock"))).toBe("EPERM");
-      expect(await connect(null)).toBe("reached");
+    it("is out of reach under a sealed folder, while one in the workspace answers", async () => {
+      const sockets = await Promise.all(
+        [
+          ".ssh/agent.sock",
+          ".gnupg/S.gpg-agent.ssh",
+          "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
+          "work/app.sock",
+        ].map((name) => listen(path.join(short, name))),
+      );
+      const [ssh = "", gpg = "", onePassword = "", workspace = ""] = sockets;
+      expect(await connect(null, sockets)).toEqual({
+        [gpg]: "EPERM",
+        [onePassword]: "EPERM",
+        [ssh]: "EPERM",
+        [workspace]: "reached",
+      });
+    });
+
+    it("is out of reach where main's env names it, and stays where it is", async () => {
+      const agent = await listen(path.join(short, "agent/ssh.sock"));
+      const listeners = await listen(path.join(launchd, "Listeners"));
+      const away = path.join(short, "work/moved.sock");
+      mkdirSync(path.dirname(away));
+      expect(await connect(agent, [agent])).toEqual({ [agent]: "EPERM" });
+      expect(await connect(null, [agent])).toEqual({ [agent]: "reached" });
+      expect(
+        await connect(
+          agent,
+          [listeners],
+          [
+            [agent, away],
+            [listeners, path.join(short, "work/listeners.sock")],
+            [launchd, path.join(short, "work/launchd")],
+          ],
+        ),
+      ).toEqual({ [agent]: "EPERM", [launchd]: "EPERM", [listeners]: "EPERM" });
     });
   });
 
@@ -452,15 +979,20 @@ socket.on("error", (error) => { console.log(error.code); process.exit(0); });
 
 describe.skipIf(!onMac)("sealRuns", () => {
   let box = "";
-  const previousHome = process.env.HOME;
+  const touched = ["HOME", "PATH", "CLAUDE_BIN", "CODEX_BIN"];
+  const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
   beforeEach(() => {
     box = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-home-")));
+    process.env.PATH = path.join(box, "no-bin");
   });
   afterEach(() => {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
     rmSync(box, { force: true, recursive: true });
   });
@@ -473,7 +1005,7 @@ describe.skipIf(!onMac)("sealRuns", () => {
     symlinkSync(path.join(box, "dotfiles/zshrc"), path.join(home, ".zshrc"));
     process.env.HOME = home;
     expect(await sealRuns()).toEqual({ kind: "sealed" });
-    const seal = await machineSeal();
+    const seal = await machineSeal([]);
     expect(seal.unwritable).toEqual(
       expect.arrayContaining([
         { match: "subpath", path: path.join(home, ".zshrc") },
@@ -482,10 +1014,45 @@ describe.skipIf(!onMac)("sealRuns", () => {
     );
     expect(seal.unreadable).toEqual(
       expect.arrayContaining([
-        { match: "subpath", path: path.join(realpathSync(root), "secrets.json") },
-        { match: "subpath", path: path.join(realpathSync(root), ".push") },
+        { match: "prefix", path: path.join(realpathSync(root), "secrets.json") },
+        { match: "prefix", path: path.join(realpathSync(root), ".push") },
       ]),
     );
+  });
+
+  it("guards main's PATH, the CLIs it finds there, IdleBiz itself and the save, but for the run's own folders", async () => {
+    const bin = path.join(box, "bin");
+    const versions = path.join(box, "claude/versions");
+    mkdirSync(path.join(box, "home"));
+    mkdirSync(bin);
+    mkdirSync(versions, { recursive: true });
+    writeFileSync(path.join(versions, "1.0.0"), "", { mode: 0o755 });
+    symlinkSync(path.join(versions, "1.0.0"), path.join(bin, "claude"));
+    process.env.HOME = path.join(box, "home");
+    process.env.PATH = [bin, "node_modules/.bin"].join(path.delimiter);
+    delete process.env.CLAUDE_BIN;
+    delete process.env.CODEX_BIN;
+    const workspace = path.join(root, "acme/workspace");
+    const seal = await machineSeal([workspace]);
+    expect(seal.guarded).toEqual(
+      expect.arrayContaining([
+        { match: "subpath", path: root },
+        { match: "subpath", path: bin },
+        { match: "subpath", path: versions },
+      ]),
+    );
+    expect(seal.guarded).not.toContainEqual({ match: "subpath", path: "node_modules/.bin" });
+    expect(seal.guarded).toContainEqual({
+      match: "subpath",
+      path: path.resolve(import.meta.dirname, "../../.."),
+    });
+    const executable = realpathSync(process.execPath);
+    expect(seal.guarded.some(({ path: at }) => executable.startsWith(`${at}${path.sep}`))).toBe(
+      true,
+    );
+    expect(seal.writable).toEqual([
+      { match: "subpath", path: path.join(realpathSync(root), "acme/workspace") },
+    ]);
   });
 
   it("resolves the home as it stands each time, so a login linked away since is sealed where it leads", async () => {
@@ -494,9 +1061,9 @@ describe.skipIf(!onMac)("sealRuns", () => {
     mkdirSync(home);
     mkdirSync(away, { recursive: true });
     process.env.HOME = home;
-    const before = await machineSeal();
+    const before = await machineSeal([]);
     symlinkSync(away, path.join(home, ".aws"));
-    const after = await machineSeal();
+    const after = await machineSeal([]);
     expect(before.unreadable).not.toContainEqual({ match: "subpath", path: away });
     expect(after.unreadable).toContainEqual({ match: "subpath", path: away });
   });

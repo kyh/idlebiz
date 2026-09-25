@@ -343,9 +343,12 @@ class AgentDriver {
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<AgentRunner, number>();
   private readonly checkSeal: () => Promise<SealState>;
-  private readonly resolveSeal: () => Promise<Seal>;
+  private readonly resolveSeal: (writable: readonly string[]) => Promise<Seal>;
 
-  constructor(checkSeal: () => Promise<SealState>, resolveSeal: () => Promise<Seal>) {
+  constructor(
+    checkSeal: () => Promise<SealState>,
+    resolveSeal: (writable: readonly string[]) => Promise<Seal>,
+  ) {
     this.checkSeal = checkSeal;
     this.resolveSeal = resolveSeal;
   }
@@ -366,10 +369,28 @@ class AgentDriver {
     return state;
   }
 
+  /**
+   * Each CLI is looked for under its runner's seal, as a run starts it, since the one on PATH
+   * could be a run's plant: with no seal, none is found.
+   */
   private async probe(): Promise<RunnerProbe[]> {
-    const probes = await probeRunners(runnerEnv);
+    let probes: RunnerProbe[] = [];
+    try {
+      const seal = await this.seal([]);
+      probes = await probeRunners(runnerEnv, (runner, argv) => sealedCommand(seal, runner, argv));
+    } catch (error) {
+      // a refusal is reported where the check settles
+      if (!(error instanceof RefusalError)) {
+        report("probe", error);
+      }
+    }
     this.probes = probes;
     return probes;
+  }
+
+  /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a seal of no folders. */
+  async sealedCli(runner: AgentRunner, argv: readonly string[]): Promise<string[]> {
+    return sealedCommand(await this.seal([]), runner, argv);
   }
 
   /** Look for the CLIs again, and check again a seal that refused runs: its probe can time out on a loaded boot. */
@@ -392,13 +413,13 @@ class AgentDriver {
     return state.kind === "refused" ? state.reason : null;
   }
 
-  /** The seal a run starts under, resolved for that run once the check holds. */
-  private async seal(): Promise<Seal> {
+  /** The seal a run writing `writable` starts under, resolved for that run once the check holds. */
+  private async seal(writable: readonly string[]): Promise<Seal> {
     const state = await this.sealing;
     if (state.kind === "refused") {
       throw new RefusalError(state.reason);
     }
-    return await this.resolveSeal();
+    return await this.resolveSeal(writable);
   }
 
   async hasAnyRunner(): Promise<boolean> {
@@ -456,7 +477,7 @@ class AgentDriver {
   async completeOneShot(prompt: string): Promise<string> {
     const runner = this.pickRunner(0);
     const res = await runAcpTurn({
-      agent: acpAgentFor(runner, await this.seal()),
+      agent: acpAgentFor(runner, await this.seal([])),
       cwd: tmpdir(),
       idleTimeoutMs: 3 * 60_000,
       maxSessionMs: 5 * 60_000,
@@ -533,24 +554,26 @@ class AgentDriver {
     turn: AcpTurnResult;
     sawOutput: boolean;
   }> {
-    const seal = await this.seal();
+    // the product's workspace is the cwd; the company workspace stays reachable
+    // for what is shared across products
+    const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
+    const memory = employeeMemoryDir(company.id, emp.id);
+    const addDirs = [...shared, memory, TOOL_CACHE_DIR];
+    const confinement = {
+      cwd: run.workspace,
+      real: realPathOf,
+      save: ROOT_DIR,
+      writable: [run.workspace, ...addDirs],
+    };
+    // a run cannot make its own folders, only write in them
+    mkdirSync(memory, { recursive: true });
+    mkdirSync(TOOL_CACHE_DIR, { recursive: true });
+    const seal = await this.seal(confinement.writable);
     const livePage = livePageOf(sealedBrowser(seal, emp.runner));
     const handle = controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;
     try {
-      // the product's workspace is the cwd; the company workspace stays reachable
-      // for what is shared across products
-      const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
-      const memory = employeeMemoryDir(company.id, emp.id);
-      mkdirSync(memory, { recursive: true });
-      const addDirs = [...shared, memory, TOOL_CACHE_DIR];
-      const confinement = {
-        cwd: run.workspace,
-        real: realPathOf,
-        save: ROOT_DIR,
-        writable: [run.workspace, ...addDirs],
-      };
       const res = await runAcpTurn({
         addDirs,
         agent: acpAgentFor(emp.runner, seal),
@@ -598,11 +621,12 @@ class AgentDriver {
 
 /**
  * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
- * `resolveSeal` gives it then: tests script both, the app checks and resolves this machine's.
+ * `resolveSeal` gives its own folders then: tests script both, the app checks and resolves this
+ * machine's.
  */
 export const createAgentDriver = (
   checkSeal: () => Promise<SealState> = sealRuns,
-  resolveSeal: () => Promise<Seal> = machineSeal,
+  resolveSeal: (writable: readonly string[]) => Promise<Seal> = machineSeal,
 ): AgentDriver => new AgentDriver(checkSeal, resolveSeal);
 
 export const agentDriver = createAgentDriver();
