@@ -13,6 +13,7 @@ import { createServer } from "node:net";
 import type { Server } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { LoadReport } from "@/shared/domain";
@@ -22,8 +23,16 @@ import type { Seal, SealProbe } from "./seal";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-seal-root-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { checkSeal, machineSeal, notingSeal, realPathOf, sealFor, sealRuns, sealedCommand } =
-  await import("./seal");
+const {
+  checkSeal,
+  machineSeal,
+  notingSeal,
+  realPathOf,
+  sealFor,
+  sealRuns,
+  sealedCommand,
+  signInCommand,
+} = await import("./seal");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -130,6 +139,19 @@ describe("sealedCommand", () => {
     expect(reopened).toBeLessThan(kept);
   });
 
+  it("lets no run or probe open anything through LaunchServices, and only a sign-in open the browser", () => {
+    const opensNothing = "(deny lsopen)";
+    for (const sealed of ["claude", "codex", "shell"] as const) {
+      expect(readBack(sealedCommand(SEAL, sealed, [])).profile.split("\n")).toContain(opensNothing);
+    }
+    expect(readBack(signInCommand(SEAL, "claude", [])).profile.split("\n")).not.toContain(
+      opensNothing,
+    );
+    expect(signInCommand(SEAL, "codex", []).slice(0, 2)).toEqual(
+      sealedCommand(SEAL, "codex", []).slice(0, 2),
+    );
+  });
+
   it("keeps every agent's socket out of reach and in place, and every socket under a sealed path", () => {
     const agent = "/private/tmp/com.apple.launchd.x/Listeners";
     const named = readBack(
@@ -178,8 +200,10 @@ describe("sealedCommand", () => {
   it("leaves out a rule with nothing to reach, which would reach everything", () => {
     const bare: Seal = { ...SEAL, unreadable: [], unwritable: [] };
     const lines = readBack(sealedCommand(bare, "claude", [])).profile.split("\n");
+    // lsopen is denied whole on purpose: an app LaunchServices starts runs unsealed
     expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
       "(allow default)",
+      "(deny lsopen)",
     ]);
   });
 });
@@ -243,6 +267,12 @@ describe("checkSeal", () => {
 });
 
 const onMac = process.platform === "darwin";
+
+/** How `argv` exited, run as it stands. */
+const exitOf = (argv: readonly string[]): number | null => {
+  const [bin = "", ...args] = argv;
+  return spawnSync(bin, args, { encoding: "utf-8" }).status;
+};
 
 /** A real probe of the checked command, its profile swapped for `profile`. */
 const under =
@@ -726,7 +756,44 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     },
   );
 
-  it("keeps a run from changing IdleBiz in dev: the node_modules Electron runs from and the app's folder", async () => {
+  it("keeps a run from starting an app through LaunchServices, which would run it unsealed", async () => {
+    const app = at("work/Canary.app");
+    const launched = at("work/launched");
+    mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
+    writeFileSync(
+      path.join(app, "Contents/Info.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>canary</string>
+<key>CFBundleIdentifier</key><string>io.idlebiz.seal-canary.${process.pid}.${Date.now()}</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>
+`,
+    );
+    writeFileSync(path.join(app, "Contents/MacOS/canary"), `#!/bin/sh\ntouch '${launched}'\n`, {
+      mode: 0o755,
+    });
+    const sealed = await seal();
+    const argv = ["/usr/bin/open", "-g", "-n", app];
+    expect(exitOf(sealedCommand(sealed, "claude", argv))).not.toBe(0);
+    await sleep(1500);
+    expect(existsSync(launched)).toBe(false);
+    // the control: the same open from a sign-in, which may open the browser, does start it
+    expect(exitOf(signInCommand(sealed, "claude", argv))).toBe(0);
+    for (let waited = 0; waited < 50 && !existsSync(launched); waited += 1) {
+      await sleep(100);
+    }
+    expect(existsSync(launched)).toBe(true);
+  });
+
+  it("keeps a run from the CLIs that drive other apps, which a sign-in may still run", async () => {
+    const sealed = await seal();
+    const script = ["/usr/bin/osascript", "-e", "return 1"];
+    expect(exitOf(sealedCommand(sealed, "codex", script))).not.toBe(0);
+    expect(exitOf(signInCommand(sealed, "codex", script))).toBe(0);
+  });
+
+  it("keeps a run from changing IdleBiz in dev: the whole checkout main is built and relaunched from", async () => {
     const checkout = path.join(box, "checkout");
     const inCheckout = (file: string): string => path.join(checkout, file);
     const electron = inCheckout(
@@ -739,16 +806,26 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       "apps/desktop/.output/app/preload/index.js",
       "apps/desktop/.output/app/renderer/index.html",
       "apps/desktop/src/main/index.ts",
+      "packages/agent-driver/package.json",
+      "packages/agent-driver/src/detect.ts",
+      "package.json",
+      "pnpm-workspace.yaml",
+      "turbo.json",
     ].map(inCheckout);
     for (const file of [electron, sharp, ...app]) {
       mkdirSync(path.dirname(file), { recursive: true });
       writeFileSync(file, "canary");
     }
-    mkdirSync(inCheckout("apps/desktop/node_modules"));
+    mkdirSync(inCheckout("apps/desktop/node_modules/@repo"), { recursive: true });
     symlinkSync(path.dirname(path.dirname(sharp)), inCheckout("apps/desktop/node_modules/sharp"));
+    symlinkSync(
+      inCheckout("packages/agent-driver"),
+      inCheckout("apps/desktop/node_modules/@repo/agent-driver"),
+    );
     const linked = inCheckout("apps/desktop/node_modules/sharp/lib/index.js");
+    const linkedSource = inCheckout("apps/desktop/node_modules/@repo/agent-driver/src/detect.ts");
     const main = inCheckout("apps/desktop/.output/app/main/index.js");
-    const writes = [electron, sharp, linked, ...app];
+    const writes = [electron, sharp, linked, linkedSource, ...app];
     const outcomes = await tryAs("codex", { writes }, seal({ programs: [electron, main] }));
     expect(outcomes).toEqual(Object.fromEntries(writes.map((file) => [file, "EPERM"])));
   });
@@ -944,6 +1021,15 @@ for (const socket of sockets) {
       });
     });
 
+    it("is out of reach where an ssh-agent started from a terminal names it, wherever its TMPDIR is", async () => {
+      const agent = await listen(path.join(short, "ssh-AbC123/agent.4242"));
+      const other = await listen(path.join(short, "work/agent.4242"));
+      expect(await connect(null, [agent, other])).toEqual({
+        [agent]: "EPERM",
+        [other]: "reached",
+      });
+    });
+
     it("is out of reach where main's env names it, and stays where it is", async () => {
       const agent = await listen(path.join(short, "agent/ssh.sock"));
       const listeners = await listen(path.join(launchd, "Listeners"));
@@ -1042,9 +1128,10 @@ describe.skipIf(!onMac)("sealRuns", () => {
       ]),
     );
     expect(seal.guarded).not.toContainEqual({ match: "subpath", path: "node_modules/.bin" });
+    // in dev, the whole checkout: main is built from every package in it
     expect(seal.guarded).toContainEqual({
       match: "subpath",
-      path: path.resolve(import.meta.dirname, "../../.."),
+      path: path.resolve(import.meta.dirname, "../../../../.."),
     });
     const executable = realpathSync(process.execPath);
     expect(seal.guarded.some(({ path: at }) => executable.startsWith(`${at}${path.sep}`))).toBe(

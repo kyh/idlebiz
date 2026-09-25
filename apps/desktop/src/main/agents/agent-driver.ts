@@ -28,7 +28,14 @@ import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import { runEnv } from "@/main/agents/run-env";
-import { SANDBOX_EXEC, machineSeal, realPathOf, sealRuns, sealedCommand } from "@/main/agents/seal";
+import {
+  machineSeal,
+  realPathOf,
+  SANDBOX_EXEC,
+  sealedCommand,
+  sealRuns,
+  signInCommand,
+} from "@/main/agents/seal";
 import type { Seal, SealState } from "@/main/agents/seal";
 import { report } from "@/main/lib/report";
 import type { ToolCaller } from "@/main/control-plane";
@@ -388,9 +395,9 @@ class AgentDriver {
     return probes;
   }
 
-  /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a seal of no folders. */
-  async sealedCli(runner: AgentRunner, argv: readonly string[]): Promise<string[]> {
-    return sealedCommand(await this.seal([]), runner, argv);
+  /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a seal of no folders, free to open the browser. */
+  async sealedSignIn(runner: AgentRunner, argv: readonly string[]): Promise<string[]> {
+    return signInCommand(await this.seal([]), runner, argv);
   }
 
   /** Look for the CLIs again, and check again a seal that refused runs: its probe can time out on a loaded boot. */

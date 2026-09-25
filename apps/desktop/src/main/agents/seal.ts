@@ -132,12 +132,24 @@ export interface Seal {
 export type Sealed = AgentRunner | "shell";
 
 // git's Keychain helper and macOS's own ssh agent sign as the founder with no file to seal, and
-// the agent's folder stays put: renamed, its socket would leave the rule behind.
+// the agent's folder stays put: renamed, its socket would leave the rule behind. An ssh-agent
+// started from a terminal names its socket `ssh-*/agent.<pid>` wherever its TMPDIR is.
 const BASE_PROFILE = String.raw`(version 1)
 (allow default)
 (deny process-exec (regex #"/git-credential-osxkeychain$"))
 (deny network-outbound (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+/Listeners$"))
+(deny network-outbound (remote unix-socket (regex #"/ssh-[^/]+/agent\.[0-9]+$")))
 (deny file-write* (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+(/Listeners)?$"))`;
+
+// The CLIs that drive other apps by Apple Event: one told to run a command runs it unsealed. A
+// program a run builds can still send one; macOS asks the founder before IdleBiz controls an app.
+const SCRIPTING_CLIS = String.raw`(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/osacompile") (literal "/usr/bin/automator") (literal "/usr/bin/shortcuts"))`;
+
+/**
+ * What a sealed process may ask LaunchServices to open. An app LaunchServices starts runs outside
+ * the seal as the founder, so a run opens nothing; only the founder's CLI sign-in opens the browser.
+ */
+type Opens = "nothing" | "the browser";
 
 // A rule with no filter reaches everything, so one with nothing to reach is left out.
 const rule =
@@ -158,8 +170,12 @@ const foldersAbove = (paths: readonly string[]): string[] => {
   return [...folders];
 };
 
-/** `argv` as a process `sealed` names starts it: under the profile, with this machine's paths. */
-export const sealedCommand = (seal: Seal, sealed: Sealed, argv: readonly string[]): string[] => {
+const commandUnder = (
+  seal: Seal,
+  sealed: Sealed,
+  opens: Opens,
+  argv: readonly string[],
+): string[] => {
   // Each path is a parameter, never quoted into the profile's source.
   const params: string[] = [];
   const param = (value: string): string => `(param "P${params.push(value) - 1}")`;
@@ -175,6 +191,7 @@ export const sealedCommand = (seal: Seal, sealed: Sealed, argv: readonly string[
   const literal = (at: string): string => `(literal ${param(at)})`;
   const profile = [
     BASE_PROFILE,
+    ...(opens === "nothing" ? ["(deny lsopen)", SCRIPTING_CLIS] : []),
     ...deny("file-write*", seal.guarded.map(reach)),
     // Seatbelt obeys the last rule a path matches: this reopens the run's own folders, and every
     // rule after it holds inside them too.
@@ -201,6 +218,14 @@ export const sealedCommand = (seal: Seal, sealed: Sealed, argv: readonly string[
   const defines = params.flatMap((value, at) => ["-D", `P${at}=${value}`]);
   return [SANDBOX_EXEC, "-p", profile, ...defines, ...argv];
 };
+
+/** `argv` as a process `sealed` names starts it: under the profile, with this machine's paths. */
+export const sealedCommand = (seal: Seal, sealed: Sealed, argv: readonly string[]): string[] =>
+  commandUnder(seal, sealed, "nothing", argv);
+
+/** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through. */
+export const signInCommand = (seal: Seal, runner: AgentRunner, argv: readonly string[]): string[] =>
+  commandUnder(seal, runner, "the browser", argv);
 
 /** How a program run under the profile ended: its exit code, or null when it never ran or was killed. */
 export type SealProbe = (
@@ -301,19 +326,22 @@ const reachesOf = async (
  * What spawning `command` with `pathDirs` as PATH may run: itself when it names a path, else
  * every copy on PATH, not just the first, since a shim found first can run the next one.
  */
+/** Whether `file` is there, and can be run when `mode` asks for that. */
+const reachable = async (file: string, mode?: number): Promise<boolean> => {
+  try {
+    await access(file, mode);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const foundOn = async (command: string, pathDirs: readonly string[]): Promise<string[]> => {
   if (command.includes(path.sep)) {
     return [path.resolve(command)];
   }
   const files = pathDirs.map((dir) => path.join(dir, command));
-  const runs = await Promise.all(
-    files.map((file) =>
-      access(file, constants.X_OK).then(
-        () => true,
-        () => false,
-      ),
-    ),
-  );
+  const runs = await Promise.all(files.map((file) => reachable(file, constants.X_OK)));
   return files.filter((_file, at) => runs[at] === true);
 };
 
@@ -364,9 +392,9 @@ const atOrAbove = (at: string, home: string): boolean =>
   path.relative(at, home).split(path.sep)[0] !== "..";
 
 /**
- * What IdleBiz's own program at `file` runs from: the bundle it sits in, else the nearest folder
- * above it with a package.json, which in dev is the app Electron loaded main's code, preload and
- * page from.
+ * What IdleBiz's own program at `file` runs from: the bundle it sits in, else, in dev, the whole
+ * checkout: the workspace root, whose every package is built into main and whose scripts rebuild
+ * and relaunch it, else the outermost folder short of home with a package.json.
  */
 const appTree =
   (home: string) =>
@@ -379,15 +407,17 @@ const appTree =
     for (let dir = path.dirname(file); !atOrAbove(dir, home); dir = path.dirname(dir)) {
       above.push(dir);
     }
-    const holds = await Promise.all(
-      above.map((dir) =>
-        access(path.join(dir, "package.json")).then(
-          () => true,
-          () => false,
-        ),
-      ),
+    const holding = (name: string): Promise<boolean[]> =>
+      Promise.all(above.map((dir) => reachable(path.join(dir, name))));
+    const [workspaceRoots, packages] = await Promise.all([
+      holding("pnpm-workspace.yaml"),
+      holding("package.json"),
+    ]);
+    return (
+      above.find((_dir, at) => workspaceRoots[at] === true) ??
+      above.findLast((_dir, at) => packages[at] === true) ??
+      path.dirname(file)
     );
-    return above.find((_dir, at) => holds[at] === true) ?? path.dirname(file);
   };
 
 /**

@@ -36,7 +36,7 @@ const {
   memoryAfter,
   outcomeOf,
 } = await import("./agent-driver");
-const { realPathOf, sealedCommand } = await import("./seal");
+const { realPathOf, sealedCommand, signInCommand } = await import("./seal");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -512,14 +512,14 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     }
   });
 
-  it("signs a CLI in under its runner's seal, and not at all while the seal is refused", async () => {
+  it("signs a CLI in under its runner's seal, free to open the browser, and not at all while the seal is refused", async () => {
     const sealed = createAgentDriver(
       () => Promise.resolve({ kind: "sealed" }),
       () => Promise.resolve(sealing()),
     );
     sealed.init();
-    expect(await sealed.sealedCli("codex", ["codex", "login"])).toEqual(
-      sealedCommand(sealing(), "codex", ["codex", "login"]),
+    expect(await sealed.sealedSignIn("codex", ["codex", "login"])).toEqual(
+      signInCommand(sealing(), "codex", ["codex", "login"]),
     );
     const refused = createAgentDriver(
       () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
@@ -528,7 +528,7 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       refused.init();
-      await expect(refused.sealedCli("claude", ["claude", "auth", "login"])).rejects.toThrow(
+      await expect(refused.sealedSignIn("claude", ["claude", "auth", "login"])).rejects.toThrow(
         "no sandbox-exec here.",
       );
       expect(await refused.hasAnyRunner()).toBe(false);

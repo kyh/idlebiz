@@ -100,7 +100,7 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
         continue;
       }
       emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
-      const [cmd = SANDBOX_EXEC, ...args] = await agentDriver.sealedCli(p.id, [
+      const [cmd = SANDBOX_EXEC, ...args] = await agentDriver.sealedSignIn(p.id, [
         p.bin,
         ...RUNNERS[p.id].loginArgs,
       ]);

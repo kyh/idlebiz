@@ -228,15 +228,21 @@ allocator and the replay.
   lands in (the whole Homebrew prefix for a keg or cask, whose `opt/` links, libraries,
   site-packages and `etc/` its programs load; else the outermost `.app` or `node_modules`;
   else its folder; never HOME itself, where only the path is kept), and IdleBiz itself (the
-  `.app` its executable sits in; in dev, the `node_modules` Electron runs from and
-  `apps/desktop`, the app Electron loads), which the founder runs unsealed; writing
+  `.app` its executable sits in; in dev, the `node_modules` Electron runs from and the whole
+  checkout main is built and relaunched from), which the founder runs unsealed; writing
   the save but for the run's own folders (`Confinement.writable`: its workspace, the shared
   one, its memory, the tool cache), so no shell command forges `approvals.json`, a `BET.md`,
   a teammate's `AGENTS.md` or a `TASK.md`; removing, moving or replacing one of those folders
-  itself; running git's Keychain helper; and reaching an agent's socket: any under a
-  sealed path (an ssh or gpg agent in `~/.ssh` or `~/.gnupg`), 1Password's, Secretive's,
-  launchd's and main's `SSH_AUTH_SOCK` (dropped from the env too), none of which a run can
-  move or link out from under its rule, so no run can sign a push as the founder. Seatbelt
+  itself; running git's Keychain helper; asking LaunchServices to open anything (an app it
+  opens runs outside the seal as the founder; only the CLI sign-in may open the browser);
+  running the CLIs that drive other apps by Apple Event (`osascript`, `osacompile`,
+  `automator`, `shortcuts`) — a program a run builds can still send one, and macOS then asks
+  the founder whether IdleBiz may control that app, which they should refuse;
+  and reaching an agent's socket: any under a sealed path (an ssh or gpg agent in `~/.ssh`
+  or `~/.gnupg`), 1Password's, Secretive's, launchd's, main's `SSH_AUTH_SOCK` (dropped from
+  the env too) and any an ssh-agent started from a terminal names (`ssh-*/agent.<pid>`),
+  none of which a run can move or link out from under its rule. An agent listening under
+  another name elsewhere is not covered. Seatbelt
   obeys the last rule a path matches: the profile closes the save, PATH, the CLIs and IdleBiz,
   then reopens the run's own folders (a PATH folder inside one with them), and every seal
   after that holds inside them too. Seatbelt
@@ -266,7 +272,7 @@ allocator and the replay.
   sealed as the run would. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile
   locks every session but the first out. Main starts a runner's CLI itself only under that
   runner's seal, with no folders of its own: the probes of its version and login and the
-  sign-in (`sealedCli`), since the CLI on PATH could be one a run planted. With no seal no
+  sign-in (`sealedSignIn`, which alone may open the browser), since the CLI on PATH could be one a run planted. With no seal no
   CLI is found, and onboarding says why rather than install one; the installer runs in
   `/bin/bash -c`, never a login shell. Every place the founder enters a key runs in main,
   unsealed. The founder's own terminal is only as sound as what the login shell sources. A

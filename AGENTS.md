@@ -239,14 +239,18 @@ rather than crashing boot.
   whether they exist yet or not), the tree each symlink in one and each runner CLI (every
   copy on PATH) lands in, followed through its symlinks (a keg's or cask's whole Homebrew
   prefix, else the `.app` or `node_modules`, else the folder), and IdleBiz itself (the `.app`
-  its executable sits in; in dev, the `node_modules` Electron runs from and `apps/desktop`)
+  its executable sits in; in dev, the `node_modules` Electron runs from and the whole checkout)
   are unwritable; the save is
   unwritable but for the run's own
   folders (its workspace, the shared one, its memory and the tool cache), which it cannot
   remove, move or replace, so no shell command forges an approval, a bet's verdict, a
-  teammate or a task; git's Keychain helper cannot run and no agent's socket answers (any under a sealed
-  path, 1Password's, Secretive's, launchd's, main's `SSH_AUTH_SOCK`), so no run can sign a
-  push as the founder. Each of those paths is sealed where a symlink leads as well as where
+  teammate or a task; git's Keychain helper cannot run, LaunchServices opens nothing for a
+  run (an app it opened would run unsealed; only the CLI sign-in may open the browser), the
+  CLIs that drive other apps by Apple Event cannot run (a program a run builds still can
+  send one, and macOS asks the founder before IdleBiz controls another app: refuse it), and
+  no agent's socket answers: any under a sealed path, 1Password's, Secretive's, launchd's,
+  main's `SSH_AUTH_SOCK`, and any an ssh-agent started from a terminal names
+  (`ssh-*/agent.<pid>`). An agent listening under another name elsewhere is not covered. Each of those paths is sealed where a symlink leads as well as where
   it is named, as they stand when each run starts, and no folder above one can be renamed,
   removed or made; the run's own folders are allowed only where the save resolves, and a run
   whose folder is reached through a symlink does not start. Main's boot probe of the login
