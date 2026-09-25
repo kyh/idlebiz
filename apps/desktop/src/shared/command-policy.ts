@@ -1363,8 +1363,11 @@ const decoded = (text: string): string | null => {
   }
 };
 
-/** Whether `word` is a `file:` URL for anything outside the run's own dirs, or one nobody can place. */
-const opensOutside = (word: string, room: Confinement): boolean => {
+/**
+ * Whether `word` is a `file:` URL for anything outside the run's own dirs, or one nobody can
+ * place. Judged where it leads, as the browser opens it: a run can link its workspace anywhere.
+ */
+const opensOutside = async (word: string, room: Confinement): Promise<boolean> => {
   if (!FILE_URL.test(word)) {
     return false;
   }
@@ -1373,8 +1376,9 @@ const opensOutside = (word: string, room: Confinement): boolean => {
   if (url === null || file === null || (url.host !== "" && url.host !== "localhost")) {
     return true;
   }
-  const opened = resolvePath("/", file);
-  return !room.writable.some((root) => within(opened, root));
+  const opened = await room.real(resolvePath("/", file));
+  const roots = await Promise.all(room.writable.map(room.real));
+  return !roots.some((root) => within(opened, root));
 };
 
 const unseen = (command: string): Hold => ({
@@ -1427,7 +1431,10 @@ const heldBrowserAct = async (
   const calls = pipelinesOf(line)
     .pipelines.flat()
     .filter((call) => call.program === "agent-browser");
-  if (calls.some((call) => call.args.some((word) => opensOutside(word, room)))) {
+  const opened = await Promise.all(
+    calls.flatMap((call) => call.args).map((word) => opensOutside(word, room)),
+  );
+  if (opened.includes(true)) {
     return { key, leasable: false, rule: "browser-file" };
   }
   for (const step of calls.flatMap(browserSteps)) {
@@ -1516,6 +1523,8 @@ export interface Confinement {
   writable: readonly string[];
   /** The save root: tasks, bets, approvals and instructions IdleBiz reads back as the company's truth. */
   save: string;
+  /** Where an absolute path leads on disk, every symlink on its way followed. */
+  real: (file: string) => Promise<string>;
 }
 
 /** One line, so the key reads back the same from the task's saved ask. */

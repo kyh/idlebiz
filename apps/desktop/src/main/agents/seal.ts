@@ -204,18 +204,18 @@ export const checkSeal = async (
 };
 
 /** The path Seatbelt sees for `file`: the real path of the deepest part that exists, the rest after it. */
-const real = async (file: string): Promise<string> => {
+export const realPathOf = async (file: string): Promise<string> => {
   try {
     return await realpath(file);
   } catch {
     const parent = path.dirname(file);
-    return parent === file ? file : path.join(await real(parent), path.basename(file));
+    return parent === file ? file : path.join(await realPathOf(parent), path.basename(file));
   }
 };
 
 /** `named`, and where it leads when a symlink on its way points somewhere else. */
 const reachOf = async (named: string): Promise<Reach[]> => {
-  const resolved = await real(named);
+  const resolved = await realPathOf(named);
   return [named, ...(resolved === named ? [] : [resolved])].map((at): Reach => ({
     match: "subpath",
     path: at,
@@ -251,7 +251,7 @@ export const sealFor = async ({
   mainOnly: readonly string[];
   sshAgent: string | null;
 }): Promise<Seal> => {
-  const realHome = await real(home);
+  const realHome = await realPathOf(home);
   const under = (names: readonly string[]): Promise<Reach[]> =>
     reachesOf(names.map((name) => path.join(realHome, name)));
   return {
@@ -259,26 +259,33 @@ export const sealFor = async ({
       claude: await loginOf(realHome, RUNNER_SEALS.claude.otherLogin),
       codex: await loginOf(realHome, RUNNER_SEALS.codex.otherLogin),
     },
-    sshAgent: sshAgent === null ? null : await real(sshAgent),
+    sshAgent: sshAgent === null ? null : await realPathOf(sshAgent),
     unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly))],
     unwritable: await under(RUN_LATER),
   };
 };
 
-/** Whether employee runs start sealed, and with what; a refusal is the sentence the founder reads. */
-export type SealState = { kind: "sealed"; seal: Seal } | { kind: "refused"; reason: string };
-
-/** This machine's seal, checked before any run may use it. */
-export const sealRuns = async (): Promise<SealState> => {
+/**
+ * This machine's seal, resolved as its home stands now. Each run resolves its own: a login that
+ * turns into a symlink after boot is sealed where it leads from the next run on.
+ */
+export const machineSeal = (): Promise<Seal> => {
   const agent = process.env.SSH_AUTH_SOCK;
+  return sealFor({
+    home: homedir(),
+    mainOnly: [SECRETS_PATH, PUSH_STAGING_DIR],
+    sshAgent: agent === undefined || agent === "" ? null : agent,
+  });
+};
+
+/** Whether employee runs start sealed; a refusal is the sentence the founder reads. */
+export type SealState = { kind: "sealed" } | { kind: "refused"; reason: string };
+
+/** Whether this machine can seal runs at all, checked before any run starts. */
+export const sealRuns = async (): Promise<SealState> => {
   try {
-    const seal = await sealFor({
-      home: homedir(),
-      mainOnly: [SECRETS_PATH, PUSH_STAGING_DIR],
-      sshAgent: agent === undefined || agent === "" ? null : agent,
-    });
-    const refusal = await checkSeal(seal);
-    return refusal === null ? { kind: "sealed", seal } : { kind: "refused", reason: refusal };
+    const refusal = await checkSeal(await machineSeal());
+    return refusal === null ? { kind: "sealed" } : { kind: "refused", reason: refusal };
   } catch (error) {
     const reason = `IdleBiz could not check the sandbox employee runs start inside (${errorMessage(error)}), so none will start.`;
     return { kind: "refused", reason };

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
@@ -27,7 +27,7 @@ const {
   memoryAfter,
   outcomeOf,
 } = await import("./agent-driver");
-const { sealedCommand } = await import("./seal");
+const { realPathOf, sealedCommand } = await import("./seal");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -256,7 +256,7 @@ const noPage: LivePage = () => Promise.resolve(null);
 describe("decidePermission", () => {
   const push = { tool: { command: "git push", kind: "shell" } } as const;
   const workspace = path.join(root, "acme", "workspace");
-  const room = { cwd: workspace, save: root, writable: [workspace] };
+  const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
 
   /** A company whose founder signed for one `git push` on task "deploy". */
   const signedFor = () => {
@@ -301,6 +301,39 @@ describe("decidePermission", () => {
       {
         command: `edit: ${path.join(root, "acme", "approvals.json")}`,
         rule: "save-edit",
+        type: "approval",
+      },
+    ]);
+  });
+
+  it("holds a file the run linked in from outside, judged where the link leads", async () => {
+    const company = found();
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(path.join(workspace, "index.html"), "own");
+    writeFileSync(path.join(root, "outside.html"), "outside");
+    symlinkSync(path.join(root, "outside.html"), path.join(workspace, "linked.html"));
+    const asked: BlockedAsk[] = [];
+    const open = (file: string) =>
+      decidePermission(
+        { companyId: company.id, id: "qa" },
+        {
+          tool: {
+            command: `agent-browser open file://${path.join(workspace, file)}`,
+            kind: "shell",
+          },
+        },
+        new Set(),
+        noPage,
+        room,
+        (ask) => asked.push(ask),
+        new AbortController().signal,
+      );
+    expect(await open("index.html")).toEqual({ allow: true });
+    expect(await open("linked.html")).toEqual({ allow: false });
+    expect(asked).toEqual([
+      {
+        command: `agent-browser open file://${path.join(workspace, "linked.html")}`,
+        rule: "browser-file",
         type: "approval",
       },
     ]);
@@ -404,7 +437,7 @@ describe("a seal the boot check refuses", () => {
     kind: "refused",
     reason: "sandbox-exec timed out, so none will start.",
   };
-  const holding: SealState = { kind: "sealed", seal: SEAL };
+  const holding: SealState = { kind: "sealed" };
 
   it("starts no run and says why, then checks again when the CLIs are looked for again", async () => {
     const verdicts = [refused, holding];
@@ -430,6 +463,31 @@ describe("a seal the boot check refuses", () => {
     } finally {
       logged.mockRestore();
     }
+  });
+});
+
+describe("the seal a run starts under", () => {
+  withoutClis();
+  beforeEach(() => {
+    const cli = path.join(root, "claude");
+    const script = `[ "$1" = --version ] && echo 1.0.0 || echo '{"loggedIn": true}'`;
+    writeFileSync(cli, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    process.env.CLAUDE_BIN = cli;
+  });
+
+  it("is resolved again for every run, and none starts without one", async () => {
+    let resolved = 0;
+    const driver = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => {
+        resolved += 1;
+        return Promise.reject(new Error(`no seal ${resolved}`));
+      },
+    );
+    driver.init();
+    expect(await driver.hasAnyRunner()).toBe(true);
+    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 1");
+    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 2");
   });
 });
 

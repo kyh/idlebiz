@@ -22,7 +22,8 @@ import type { Seal, SealProbe } from "./seal";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-seal-root-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { checkSeal, notingSeal, sealFor, sealRuns, sealedCommand } = await import("./seal");
+const { checkSeal, machineSeal, notingSeal, realPathOf, sealFor, sealRuns, sealedCommand } =
+  await import("./seal");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -471,21 +472,53 @@ describe.skipIf(!onMac)("sealRuns", () => {
     writeFileSync(path.join(box, "dotfiles/zshrc"), "canary");
     symlinkSync(path.join(box, "dotfiles/zshrc"), path.join(home, ".zshrc"));
     process.env.HOME = home;
-    const state = await sealRuns();
-    if (state.kind !== "sealed") {
-      throw new Error(state.reason);
-    }
-    expect(state.seal.unwritable).toEqual(
+    expect(await sealRuns()).toEqual({ kind: "sealed" });
+    const seal = await machineSeal();
+    expect(seal.unwritable).toEqual(
       expect.arrayContaining([
         { match: "subpath", path: path.join(home, ".zshrc") },
         { match: "subpath", path: path.join(box, "dotfiles/zshrc") },
       ]),
     );
-    expect(state.seal.unreadable).toEqual(
+    expect(seal.unreadable).toEqual(
       expect.arrayContaining([
         { match: "subpath", path: path.join(realpathSync(root), "secrets.json") },
         { match: "subpath", path: path.join(realpathSync(root), ".push") },
       ]),
     );
+  });
+
+  it("resolves the home as it stands each time, so a login linked away since is sealed where it leads", async () => {
+    const home = path.join(box, "home");
+    const away = path.join(box, "external/aws");
+    mkdirSync(home);
+    mkdirSync(away, { recursive: true });
+    process.env.HOME = home;
+    const before = await machineSeal();
+    symlinkSync(away, path.join(home, ".aws"));
+    const after = await machineSeal();
+    expect(before.unreadable).not.toContainEqual({ match: "subpath", path: away });
+    expect(after.unreadable).toContainEqual({ match: "subpath", path: away });
+  });
+});
+
+describe("realPathOf", () => {
+  let box = "";
+  beforeEach(() => {
+    box = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-real-")));
+  });
+  afterEach(() => {
+    rmSync(box, { force: true, recursive: true });
+  });
+
+  it("follows every symlink on the way, and keeps what does not exist yet as named", async () => {
+    mkdirSync(path.join(box, "elsewhere"));
+    symlinkSync(path.join(box, "elsewhere"), path.join(box, "link"));
+    expect(await realPathOf(path.join(box, "link"))).toBe(path.join(box, "elsewhere"));
+    expect(await realPathOf(path.join(box, "link/new/file.html"))).toBe(
+      path.join(box, "elsewhere/new/file.html"),
+    );
+    const linkedTmp = path.join(tmpdir(), path.basename(box));
+    expect(await realPathOf(linkedTmp)).toBe(box);
   });
 });

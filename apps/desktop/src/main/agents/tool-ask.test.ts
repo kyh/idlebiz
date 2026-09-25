@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toolAskOf } from "@repo/agent-driver/tool-ask";
 import { holdFor } from "@/shared/command-policy";
+import type { Confinement } from "@/shared/command-policy";
 
 const ask = (request: {
   rawInput?: unknown;
@@ -17,6 +18,21 @@ const ask = (request: {
     title: request.title,
   });
 
+const ROOM: Confinement = {
+  cwd: "/w",
+  real: (file) => Promise.resolve(file),
+  save: "/save",
+  writable: ["/w"],
+};
+
+const judgePatch = (locations: { path: string }[]) =>
+  holdFor(
+    ask({ kind: "edit", locations, title: "Edit files" }),
+    new Set(),
+    () => Promise.resolve(null),
+    ROOM,
+  );
+
 describe("toolAskOf", () => {
   it("reads a shell command from the call's input", () => {
     expect(ask({ rawInput: { command: "git push" }, title: "Push" })).toEqual({
@@ -30,8 +46,7 @@ describe("toolAskOf", () => {
     async (title) => {
       const tool = ask({ kind: "execute", rawInput: { cwd: "/w" }, title });
       expect(tool).toEqual({ kind: "unknown", title });
-      const room = { cwd: "/w", save: "/save", writable: ["/w"] };
-      expect(await holdFor(tool, new Set(), () => Promise.resolve(null), room)).toEqual({
+      expect(await holdFor(tool, new Set(), () => Promise.resolve(null), ROOM)).toEqual({
         key: `ask: ${title}`,
         leasable: false,
         rule: "unknown-ask",
@@ -62,16 +77,10 @@ describe("toolAskOf", () => {
   });
 
   it("judges codex's patch by every path it locates, a move's destination too", async () => {
-    const room = { cwd: "/w", save: "/save", writable: ["/w"] };
-    const judge = (locations: { path: string }[]) =>
-      holdFor(
-        ask({ kind: "edit", locations, title: "Edit files" }),
-        new Set(),
-        () => Promise.resolve(null),
-        room,
-      );
-    expect(await judge([{ path: "/w/notes.md" }])).toBeNull();
-    expect(await judge([{ path: "/w/notes.md" }, { path: "/save/acme/approvals.json" }])).toEqual({
+    expect(await judgePatch([{ path: "/w/notes.md" }])).toBeNull();
+    expect(
+      await judgePatch([{ path: "/w/notes.md" }, { path: "/save/acme/approvals.json" }]),
+    ).toEqual({
       key: "edit: /w/notes.md, /save/acme/approvals.json",
       leasable: false,
       rule: "save-edit",
@@ -133,8 +142,7 @@ describe("toolAskOf", () => {
       title: "MCP server requests to open a URL",
     });
     expect(url).toEqual({ kind: "mcp", server: "stripe" });
-    const room = { cwd: "/w", save: "/save", writable: ["/w"] };
-    expect(await holdFor(url, new Set(), () => Promise.resolve(null), room)).not.toBeNull();
+    expect(await holdFor(url, new Set(), () => Promise.resolve(null), ROOM)).not.toBeNull();
     expect(
       ask({
         kind: "other",

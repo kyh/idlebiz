@@ -22,7 +22,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const { acpAgentFor } = await import("./agent-driver");
-const { sealRuns } = await import("./seal");
+const { machineSeal, realPathOf, sealRuns } = await import("./seal");
 
 const codexRuns =
   process.platform === "darwin" && spawnSync(runnerBin("codex"), ["--version"]).status === 0;
@@ -182,9 +182,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       throw new Error(state.reason);
     }
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
-    const room = { cwd: workspace, save: root, writable: [workspace] };
+    const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
     const result = await runAcpTurn({
-      agent: acpAgentFor("codex", state.seal),
+      agent: acpAgentFor("codex", await machineSeal()),
       cwd: workspace,
       env: { CODEX_HOME: codexHome },
       idleTimeoutMs: 60_000,

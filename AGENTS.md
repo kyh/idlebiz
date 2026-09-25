@@ -235,8 +235,8 @@ rather than crashing boot.
   are unreadable and unwritable; shell
   rc files, `~/.gitconfig`, `~/.config` and LaunchAgents are unwritable; git's Keychain
   helper cannot run and no ssh agent answers, so no run can sign a push as the founder. Each
-  of those paths is sealed where a symlink leads as well as where it is named, and no folder
-  above one can be renamed or removed. A
+  of those paths is sealed where a symlink leads as well as where it is named, as they stand
+  when each run starts, and no folder above one can be renamed or removed. A
   codex run also cannot run `/usr/bin/security`; a claude run can, since claude reads its own
   login with it. Network stays open. Boot checks the seal without a model call; until it
   holds, no run starts and no task spends an attempt, and if it fails, or this Mac has no
@@ -300,9 +300,9 @@ rather than crashing boot.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
   requests and real `/usr/bin/git` pushes to bare repositories on disk. On macOS it also runs the seal on canary files under a stand-in home
-  (`seal.test.ts`), and, where a `codex` CLI is installed, the real codex through the app's
-  codex-acp against a stand-in model on loopback, billing nothing (`codex-gate.test.ts`);
-  both skip elsewhere. Command policy
+  (`seal.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
+  app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
+  its login (`claude-gate.test.ts`, `codex-gate.test.ts`); all skip elsewhere. Command policy
   rules each need a matching example; everyday commands must remain allowed. Drive anything
   requiring a window live instead, or cover it in the e2e suite.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth

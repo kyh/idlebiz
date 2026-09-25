@@ -28,7 +28,7 @@ import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import { runEnv } from "@/main/agents/run-env";
-import { SANDBOX_EXEC, sealRuns, sealedCommand } from "@/main/agents/seal";
+import { SANDBOX_EXEC, machineSeal, realPathOf, sealRuns, sealedCommand } from "@/main/agents/seal";
 import type { Seal, SealState } from "@/main/agents/seal";
 import { report } from "@/main/lib/report";
 import type { ToolCaller } from "@/main/control-plane";
@@ -343,9 +343,11 @@ class AgentDriver {
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<AgentRunner, number>();
   private readonly checkSeal: () => Promise<SealState>;
+  private readonly resolveSeal: () => Promise<Seal>;
 
-  constructor(checkSeal: () => Promise<SealState>) {
+  constructor(checkSeal: () => Promise<SealState>, resolveSeal: () => Promise<Seal>) {
     this.checkSeal = checkSeal;
+    this.resolveSeal = resolveSeal;
   }
 
   /** Runs wait on the seal's check, and never start unsealed. */
@@ -390,12 +392,13 @@ class AgentDriver {
     return state.kind === "refused" ? state.reason : null;
   }
 
+  /** The seal a run starts under, resolved for that run once the check holds. */
   private async seal(): Promise<Seal> {
     const state = await this.sealing;
     if (state.kind === "refused") {
       throw new RefusalError(state.reason);
     }
-    return state.seal;
+    return await this.resolveSeal();
   }
 
   async hasAnyRunner(): Promise<boolean> {
@@ -544,6 +547,7 @@ class AgentDriver {
       const addDirs = [...shared, memory, TOOL_CACHE_DIR];
       const confinement = {
         cwd: run.workspace,
+        real: realPathOf,
         save: ROOT_DIR,
         writable: [run.workspace, ...addDirs],
       };
@@ -592,8 +596,13 @@ class AgentDriver {
   }
 }
 
-/** A driver whose runs start only once `checkSeal` finds the seal holding: tests script the check, the app runs it. */
-export const createAgentDriver = (checkSeal: () => Promise<SealState> = sealRuns): AgentDriver =>
-  new AgentDriver(checkSeal);
+/**
+ * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
+ * `resolveSeal` gives it then: tests script both, the app checks and resolves this machine's.
+ */
+export const createAgentDriver = (
+  checkSeal: () => Promise<SealState> = sealRuns,
+  resolveSeal: () => Promise<Seal> = machineSeal,
+): AgentDriver => new AgentDriver(checkSeal, resolveSeal);
 
 export const agentDriver = createAgentDriver();

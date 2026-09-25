@@ -555,6 +555,7 @@ const WORKSPACE = `${SAVE}/acme/workspace`;
 const MEMORY = `${SAVE}/acme/agents/mae/memory`;
 const ROOM: Confinement = {
   cwd: WORKSPACE,
+  real: (file) => Promise.resolve(file),
   save: SAVE,
   writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],
 };
@@ -629,6 +630,26 @@ describe("holdFor", () => {
       `agent-browser --session qa goto file://${MEMORY}/notes.html`,
     ]) {
       expect(await holdFor(shell(command), NONE, at({}), ROOM)).toBeNull();
+    }
+  });
+
+  it("judges a file where it leads, as the browser opens it", async () => {
+    const linked: Confinement = {
+      ...ROOM,
+      real: (file) =>
+        Promise.resolve(
+          file === `${WORKSPACE}/hosts`
+            ? "/etc/hosts"
+            : file.replace(SAVE, "/Volumes/ext/.idlebiz"),
+        ),
+    };
+    expect(
+      await holdFor(shell(`agent-browser open file://${WORKSPACE}/hosts`), NONE, at({}), linked),
+    ).toMatchObject({ rule: "browser-file" });
+    for (const opened of [`${WORKSPACE}/dist/index.html`, "/Volumes/ext/.idlebiz/cache/x.html"]) {
+      expect(
+        await holdFor(shell(`agent-browser open file://${opened}`), NONE, at({}), linked),
+      ).toBeNull();
     }
   });
 

@@ -188,9 +188,9 @@ allocator and the replay.
   script, an extension, an empty `--session`, a word the shell fills in), is signed for once,
   exactly, like a shell rule. A page opened from disk is no build of the team's: an act on a
   `file:` page is held, and so is a command naming a `file:` URL outside the run's own dirs,
-  whatever verb opens it. Only the command line's own options count: an `AGENT_BROWSER_*`
-  variable or an `agent-browser.json` goes unread, so either can still reroute or script a
-  session unseen.
+  whatever verb opens it, judged where its symlinks lead (`Confinement.real`). Only the
+  command line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json`
+  goes unread, so either can still reroute or script a session unseen.
   Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
   as the founder, are held too. Every turn sets the runner's asking mode, and claude's
   session carries flag-tier ask rules (shell, edits, MCP) that outrank any allow rule in the
@@ -217,9 +217,10 @@ allocator and the replay.
   founder later (shell rc files, `~/.gitconfig`, `~/.config`, LaunchAgents); running git's
   Keychain helper; and reaching an ssh agent (`SSH_AUTH_SOCK` is dropped from the env too), so
   no run can sign a push as the founder. Seatbelt matches the path a symlink leads to, never
-  the link, so boot seals each path where it is named and where it resolves (a dotfile
-  manager's `~/.zshrc`), and no folder above a sealed path can be renamed or removed, which
-  would carry it out from under its rule. A symlink inside a sealed folder is not followed.
+  the link, so each run seals each path where it is named and where it resolves as the run
+  starts (a dotfile manager's `~/.zshrc`, a login linked away mid-session), and no folder above
+  a sealed path can be renamed or removed, which would carry it out from under its rule. A
+  symlink inside a sealed folder is not followed.
   codex runs also lose `/usr/bin/security`; claude
   reads its own login with it, so on a claude run the Keychain (the founder's gh token, the
   safeStorage key) is guarded only by the `read-credentials` rule. Network stays open:
@@ -245,7 +246,10 @@ allocator and the replay.
   its patch ask names where a move lands. codex-acp's own modes either sandbox or never ask,
   so an upgrade must carry the patch; `main/agents/codex-gate.test.ts` drives the real codex
   against a stand-in model (macOS with codex installed) and fails once a push stops reaching
-  `holdFor`. Chrome's sandbox is off in runs too (`AGENT_BROWSER_ARGS=--no-sandbox`).
+  `holdFor`. `main/agents/claude-gate.test.ts` does the same for the real claude, under
+  settings that turn its own sandbox on, and fails once a command nests or runs unasked: the
+  boot check runs plain node, so it cannot see a runner's own sandbox. Chrome's sandbox is off
+  in runs too (`AGENT_BROWSER_ARGS=--no-sandbox`).
 - **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
   stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
   layered, and unlayered CSS wins regardless of specificity. So a utility on the same
