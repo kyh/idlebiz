@@ -134,8 +134,12 @@ export type Sealed = AgentRunner | "shell";
 // git's Keychain helper and macOS's own ssh agent sign as the founder with no file to seal, and
 // the agent's folder stays put: renamed, its socket would leave the rule behind. An ssh-agent
 // started from a terminal names its socket `ssh-*/agent.<pid>` wherever its TMPDIR is.
+// A sealed process cannot exec a setuid program, and /bin/ps is one: version managers (fnm) walk
+// the process tree with it, so without it the founder's login shell loses their node and CLIs.
+// It only reads, and /bin is the system's, which no run can change.
 const BASE_PROFILE = String.raw`(version 1)
 (allow default)
+(allow process-exec (literal "/bin/ps") (with no-sandbox))
 (deny process-exec (regex #"/git-credential-osxkeychain$"))
 (deny network-outbound (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+/Listeners$"))
 (deny network-outbound (remote unix-socket (regex #"/ssh-[^/]+/agent\.[0-9]+$")))

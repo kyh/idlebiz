@@ -235,7 +235,8 @@ allocator and the replay.
   a teammate's `AGENTS.md` or a `TASK.md`; removing, moving or replacing one of those folders
   itself; running git's Keychain helper; asking LaunchServices to open anything (an app it
   opens runs outside the seal as the founder; only the CLI sign-in may open the browser);
-  running the CLIs that drive other apps by Apple Event (`osascript`, `osacompile`,
+  running a setuid program but `/bin/ps`, which version managers such as fnm need to find
+  their shell and which only reads; running the CLIs that drive other apps by Apple Event (`osascript`, `osacompile`,
   `automator`, `shortcuts`) — a program a run builds can still send one, and macOS then asks
   the founder whether IdleBiz may control that app, which they should refuse;
   and reaching an agent's socket: any under a sealed path (an ssh or gpg agent in `~/.ssh`

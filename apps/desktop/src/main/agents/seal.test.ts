@@ -786,6 +786,16 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(existsSync(launched)).toBe(true);
   });
 
+  it("lets a run and the shell probe list processes, as version managers do to find their shell", async () => {
+    const sealed = await seal();
+    for (const command of [
+      sealedCommand(sealed, "claude", ["/bin/ps", "-p", "1", "-o", "pid="]),
+      sealedCommand(sealed, "shell", ["/bin/ps", "-p", "1", "-o", "pid="]),
+    ]) {
+      expect(exitOf(command)).toBe(0);
+    }
+  });
+
   it("keeps a run from the CLIs that drive other apps, which a sign-in may still run", async () => {
     const sealed = await seal();
     const script = ["/usr/bin/osascript", "-e", "return 1"];
