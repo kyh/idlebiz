@@ -145,8 +145,9 @@ third boundary.
     again what the founder's own tools load or run later: what the runner's CLI or desktop app
     loads from its home (`RUNNER_HOMES`: settings, instructions, rules, hooks, skills, plugins,
     shell snapshots, daemons…), claude's transcripts and memory of every folder but the run's
-    own (`projects/`, which the founder's sessions there resume and load), a PATH folder inside
-    one of them with every folder above it there, and, anywhere, what the founder's tools run
+    own (`projects/`, which the founder's sessions there resume and load), a folder the founder
+    runs programs from inside one of them (on main's PATH, where its links lead, or a terminal's
+    shims in TMPDIR: `TERMINAL_SHIMS`, cmux's) with every folder above it there, and, anywhere, what the founder's tools run
     on opening a folder: in `.git/` everything but what git writes as it stages,
     commits, branches, stashes, merges, rebases and gcs (so no config, hooks, `commondir`,
     `worktrees/`, `modules/` or alternates), `.claude/settings*.json`, `.mcp.json`, `.codex/`,
@@ -278,8 +279,11 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
     claude run, with the Keychain and claude's login;
   - a program a run builds can still send Apple Events (macOS asks the founder first: refuse
     it), and a debugger listening on a port other than 9222 or 9229 takes its orders;
-  - the founder's git run inside a workspace (push from a fresh clone), and anything the
-    founder runs from TMPDIR or `/private/tmp` that no PATH entry names.
+  - the founder's git run inside a workspace (push from a fresh clone);
+  - of the folders the founder's terminal runs programs from in TMPDIR or `/private/tmp`, only
+    those on main's PATH and the known terminal shims are sealed: any other (another terminal's
+    or version manager's shims, a folder added to their PATH after IdleBiz started) is writable
+    by runs.
 
 ## Two traps that fail silently
 

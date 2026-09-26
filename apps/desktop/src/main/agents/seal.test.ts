@@ -410,6 +410,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       pathDirs: [],
       save: at(".idlebiz"),
       scratch: [at("tmp")],
+      shims: [],
       sshAgent: null,
       writable: own(),
       ...more,
@@ -843,7 +844,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       "git diff --stat && git log --oneline",
       "git gc -q",
     ].join(" && ");
-    return seal().then((sealed) => {
+    // xcrun, which /usr/bin/git runs through, caches in macOS's per-user temp folder whatever
+    // TMPDIR says, and a run's seal lets it write there
+    const darwinTemp = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], {
+      encoding: "utf-8",
+    }).stdout.trim();
+    return seal({ scratch: [at("tmp"), darwinTemp] }).then((sealed) => {
       const run = (script: string) => {
         const [bin = "", ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
         return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
@@ -902,6 +908,29 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       expect.arrayContaining([shims, at("tmp/tools/bin"), later]),
     );
     expect(onPath.map(({ path: kept }) => kept)).not.toContain(at(".local/bin"));
+  });
+
+  it("keeps a run from a terminal's shims in TMPDIR, which main's PATH does not name", async () => {
+    const shim = plant("tmp/cmux-cli-shims/panel/claude");
+    const panel = at("tmp/cmux-cli-shims/other");
+    const sealed = seal({ shims: [at("tmp/cmux-cli-shims")] });
+    expect(
+      await tryAs(
+        "claude",
+        {
+          dirs: [panel],
+          moves: [[at("tmp/cmux-cli-shims"), at("tmp/shims-old")]],
+          writes: [shim, at("tmp/free.log")],
+        },
+        sealed,
+      ),
+    ).toEqual({
+      [at("tmp/cmux-cli-shims")]: "EPERM",
+      [at("tmp/free.log")]: "written",
+      [panel]: "EPERM",
+      [shim]: "EPERM",
+    });
+    expect(readFileSync(shim, "utf-8")).toBe("canary");
   });
 
   it("keeps a run from swapping a folder of its own for a link, so the next run's seal holds too", async () => {
@@ -1062,6 +1091,7 @@ for (const target of targets) {
         pathDirs: [],
         save: path.join(short, ".idlebiz"),
         scratch: [short, launchd],
+        shims: [],
         sshAgent: null,
         writable: [],
         ...more,
@@ -1262,6 +1292,7 @@ describe.skipIf(!onMac)("sealRuns", () => {
     const { onPath } = await machineSeal([]);
     const kept = onPath.map(({ path: at }) => at);
     expect(kept).toContain(shims);
+    expect(kept).toContain(path.join(realpathSync(tmpdir()), "cmux-cli-shims"));
     expect(kept).not.toContain("/usr/bin");
     expect(kept).not.toContain("node_modules/.bin");
   });

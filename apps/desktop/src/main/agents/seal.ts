@@ -206,6 +206,12 @@ const SCRATCH_SOCKETS = [
   "/private/tmp/com.openai.sky.CUAService",
 ];
 
+/**
+ * Where a terminal keeps, in the founder's TMPDIR, the shims it puts first on its own PATH: cmux's
+ * `claude` and `codex` wrappers, one folder per panel. Main's PATH names none of them.
+ */
+const TERMINAL_SHIMS = ["cmux-cli-shims"];
+
 // IdleBiz's own renderer in dev (`--remoteDebuggingPort 9222`) and node's inspector: either
 // answers anyone on loopback, and the renderer holds the founder's approve button.
 const DEBUG_PORTS = [9222, 9229];
@@ -245,7 +251,10 @@ export interface Seal {
    * the tool cache. A run writes inside each but cannot remove, move or replace one.
    */
   writable: readonly Reach[];
-  /** Folders on main's PATH, and where their links lead, that fall inside a folder a run writes. */
+  /**
+   * Folders the founder runs programs from that fall inside a folder a run writes: those on main's
+   * PATH and where their links lead, and a terminal's shims in TMPDIR.
+   */
   onPath: readonly Reach[];
   /** Sockets in a folder a run writes, of what acts as the founder: no run moves or replaces one. */
   sockets: readonly Reach[];
@@ -681,12 +690,15 @@ export const sealFor = async ({
   pathDirs,
   save,
   scratch,
+  shims,
   sshAgent,
   writable,
 }: {
   home: string;
   /** Where every run writes besides its own folders. */
   scratch: readonly string[];
+  /** Folders a terminal runs the founder's programs from that main's PATH need not name. */
+  shims: readonly string[];
   /** Loopback ports whose listener would take orders from anyone, as the founder. */
   debugPorts: readonly number[];
   /** Main's env, where a runner's home may have been moved. */
@@ -733,7 +745,7 @@ export const sealFor = async ({
   const runs = [...new Set([...found.flat(), ...(await linksIn(onPathDirs))])];
   const chains = await Promise.all(runs.map(linkChain));
   const programs = chains.flat().map((at) => path.dirname(at));
-  const candidates = await reachesOf([...new Set([...onPathDirs, ...programs])]);
+  const candidates = await reachesOf([...new Set([...onPathDirs, ...programs, ...shims])]);
   const inRoot = ({ path: at }: Reach): boolean =>
     roots.some((root) =>
       root.match === "prefix" ? at.startsWith(root.path) : inside(root.path, at),
@@ -772,6 +784,8 @@ export const sealFor = async ({
 export const machineSeal = async (writable: readonly string[]): Promise<Seal> => {
   const agent = process.env.SSH_AUTH_SOCK;
   const cache = await darwinUserCacheDir();
+  // macOS's own libraries write its per-user temp folder whatever TMPDIR says
+  const temps = [tmpdir(), path.join(path.dirname(cache), "T")];
   return await sealFor({
     clis: RUNNER_IDS.map(runnerBin),
     debugPorts: DEBUG_PORTS,
@@ -780,8 +794,8 @@ export const machineSeal = async (writable: readonly string[]): Promise<Seal> =>
     mainOnly: [SECRETS_PATH],
     pathDirs: (process.env.PATH ?? "").split(path.delimiter),
     save: ROOT_DIR,
-    // macOS's own libraries write its per-user temp folder whatever TMPDIR says
-    scratch: [tmpdir(), path.join(path.dirname(cache), "T"), cache, "/private/tmp"],
+    scratch: [...temps, cache, "/private/tmp"],
+    shims: temps.flatMap((temp) => TERMINAL_SHIMS.map((name) => path.join(temp, name))),
     sshAgent: agent === undefined || agent === "" ? null : agent,
     writable,
   });
