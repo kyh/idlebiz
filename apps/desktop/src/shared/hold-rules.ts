@@ -13,9 +13,8 @@ const HOLD_RULES = {
     "Act in a real browser on a page nobody could check first — one run of exactly this command.",
   deploy: "Deploy the product to a live, public URL.",
   "destructive-outside": "Irreversibly delete or overwrite files outside the workspace.",
-  // Leased for the rest of a run, like a site. Employee sessions load the founder's
-  // own CLI settings, so every MCP server the founder connected for themselves — a
-  // browser, a mailbox, a chat workspace — is in the employee's hands too, already signed in.
+  // Leased for the rest of a run, like a site. No run loads the founder's MCP servers,
+  // so this holds only one that slipped past that, signed in as the founder.
   "external-tool":
     "Use a tool connected in your own CLI settings (an MCP server, signed in as you) for the rest of this run.",
   "git-push": "Push commits to a remote repository.",

@@ -174,12 +174,16 @@ allocator and the replay.
   it: a page it opens holds only what that run could read. Only the
   command line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json`
   goes unread, so either can still reroute or script a session unseen.
-  Employee sessions also load the founder's own CLI settings, so their MCP servers, signed in
-  as the founder, are held too. Every turn sets the runner's asking mode, and claude's
-  session carries flag-tier ask rules (shell, edits, MCP) that outrank any allow rule in the
-  founder's claude settings; codex still honours `allow` decisions in the founder's
-  ~/.codex/rules, which run a command unasked (inside the seal). A site or a server is
-  leased for the rest of the run; a page or a server nothing can name never is. codex asking
+  Employee sessions also load the founder's own CLI settings, but none of their MCP servers
+  or claude.ai connectors, which act signed in as the founder: claude's session options load
+  none (`strictMcpConfig`, `disableClaudeAiConnectors`, a flag-tier deny of `mcp__*`), and
+  codex's are turned off one by one by the names `codex mcp list` gives them, apps and plugins
+  whole (`codexMcpOff` in `main/agents/agent-driver.ts`). Every turn sets the runner's asking
+  mode, and claude's session carries flag-tier ask rules (shell, edits) that outrank any allow
+  rule in the founder's claude settings; codex still honours `allow` decisions in the founder's
+  ~/.codex/rules, which run a command unasked (inside the seal). A site, or an MCP server
+  that asks anyway, is leased for the rest of the run; a page or a server nothing can name
+  never is. codex asking
   to widen its own sandbox is held every time, never leased: once widened, nothing else in
   the run asks. A signature only ever picks the runner's one-time option, never an "always"
   one. An edit by claude's Write/Edit outside a run's own dirs (its working directory, memory

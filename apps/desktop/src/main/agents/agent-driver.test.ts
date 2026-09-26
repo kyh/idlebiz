@@ -378,6 +378,22 @@ describe("acpAgentFor", () => {
     expect(acpAgentFor("codex", SEAL).sessionModeId).toBe("external-sandbox");
   });
 
+  it("loads none of the founder's MCP servers or claude.ai connectors into a claude session", () => {
+    expect(acpAgentFor("claude", SEAL).sessionMeta).toMatchObject({
+      claudeCode: {
+        options: {
+          settings: { disableClaudeAiConnectors: true, permissions: { deny: ["mcp__*"] } },
+          strictMcpConfig: true,
+        },
+      },
+    });
+  });
+
+  it("hands codex the founder's MCP servers to turn off", () => {
+    const off = { CODEX_CONFIG: '{"mcp_servers":{"gmail":{"enabled":false}}}' };
+    expect(acpAgentFor("codex", SEAL, off).env).toMatchObject(off);
+  });
+
   it("keeps claude's own sandbox off, whatever the founder's settings say", () => {
     expect(acpAgentFor("claude", SEAL).sessionMeta).toMatchObject({
       claudeCode: { options: { settings: { sandbox: { enabled: false } } } },

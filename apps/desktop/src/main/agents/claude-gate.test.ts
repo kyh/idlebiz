@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -18,7 +18,7 @@ import { parseJson } from "@/shared/json";
 // model on loopback: nothing is billed, and claude's config dir is a scratch one whose settings
 // turn claude's own sandbox on, as a founder's may. It proves the session's flag-tier settings
 // keep that sandbox off, so a command runs inside the seal instead of failing to nest, and
-// still asks IdleBiz first, so holdFor still judges it.
+// still asks IdleBiz first, so holdFor still judges it; and that no MCP server of the founder's starts.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -221,6 +221,16 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     configDir = path.join(base, "claude-config");
     mkdirSync(configDir);
     writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(FOUNDER_SETTINGS));
+    // a server of the founder's, which leaves a mark if a run starts it
+    const founderServer = {
+      args: ["-c", `touch ${path.join(base, "mcp-started")}; exec cat`],
+      command: "/bin/sh",
+      type: "stdio",
+    };
+    writeFileSync(
+      path.join(configDir, ".claude.json"),
+      JSON.stringify({ mcpServers: { founder: founderServer } }),
+    );
     remote = path.join(base, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", remote]);
     // a run's own folders are always in the save
@@ -276,7 +286,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       teardownGraceMs: 500,
     });
     const pushed = execFileSync("git", ["for-each-ref"], { cwd: remote }).toString();
-    return { asks, pushed, result };
+    return { asks, mcpStarted: existsSync(path.join(base, "mcp-started")), pushed, result };
   };
 
   it(
@@ -303,6 +313,12 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       expect(pushed).toContain("refs/heads/main");
     },
   );
+
+  it("starts none of the founder's MCP servers", { timeout: 60_000 }, async () => {
+    const { mcpStarted, result } = await turn("true", true);
+    expect(result.end).toEqual({ kind: "completed" });
+    expect(mcpStarted).toBe(false);
+  });
 
   it("runs each command inside the seal", { timeout: 60_000 }, async () => {
     const secrets = path.join(root, "secrets.json");

@@ -64,19 +64,23 @@ const claudeLoggedIn = (output: string): boolean => {
 /**
  * With bypass off, no settings tier can start a session in it. `settings` is the flag tier:
  * its ask rules beat allow rules from any tier, and its values outrank the player's user,
- * project and local settings, which stay loaded for their MCP servers.
+ * project and local settings, which stay loaded for their instructions, skills and plugins.
+ * None of their MCP servers or claude.ai connectors load: those act as the player, signed in
+ * as them, and a run reaches the company with curl, not MCP.
  */
 const claudeSessionMeta = {
   claudeCode: {
     options: {
       allowDangerouslySkipPermissions: false,
       settings: {
-        permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit", "mcp__*"] },
+        disableClaudeAiConnectors: true,
+        permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit"], deny: ["mcp__*"] },
         // Off whatever the player's settings say: the run is already inside a Seatbelt profile,
         // and one cannot apply inside another. On, every command would fail, and a sandboxed
         // one would skip the Bash ask.
         sandbox: { autoAllowBashIfSandboxed: false, enabled: false },
       },
+      strictMcpConfig: true,
     },
   },
 };

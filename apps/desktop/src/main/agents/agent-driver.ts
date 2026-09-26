@@ -85,13 +85,19 @@ const BROWSER_ENV = {
  * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
  * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
  * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails.
+ * command they run fails. `more` joins the adapter's env: for codex, the founder's MCP servers
+ * `codexMcpOff` turns off.
  */
-export const acpAgentFor = (runner: AgentRunner, seal: Seal): AcpAgent => {
+export const acpAgentFor = (
+  runner: AgentRunner,
+  seal: Seal,
+  more: Record<string, string> = {},
+): AcpAgent => {
   const adapter: RunnerAdapter = RUNNERS[runner];
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
     ...BROWSER_ENV,
+    ...more,
     // The packaged executable is Electron; child agents need its Node mode.
     ELECTRON_RUN_AS_NODE: "1",
   };
@@ -121,6 +127,41 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
 };
 
 const execFileAsync = promisify(execFile);
+
+const CodexMcpServers = z.array(z.object({ name: z.string() }));
+
+/**
+ * The adapter env that keeps every MCP server of the founder's out of a codex run: they act as
+ * the founder, signed in as them. codex has no switch that loads none, and a session's config is
+ * merged over theirs, so each is turned off by the name `codex mcp list` gives it, listed as the
+ * run would load them (`env` is the run's own, a CODEX_HOME in it included). Apps and plugins,
+ * which bring servers of their own, go off whole.
+ */
+export const codexMcpOff = async (
+  seal: Seal,
+  env: Record<string, string> = {},
+): Promise<Record<string, string>> => {
+  const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, "codex", [
+    runnerBin("codex"),
+    "mcp",
+    "list",
+    "--json",
+  ]);
+  const { stdout } = await execFileAsync(bin, rest, {
+    env: { ...runnerEnv("codex"), ...env },
+    timeout: 15_000,
+  });
+  const servers = CodexMcpServers.parse(parseJson(stdout));
+  const config = {
+    features: { apps: false, plugins: false },
+    mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
+  };
+  return { CODEX_CONFIG: JSON.stringify(config) };
+};
+
+/** `runner`'s session under `seal`, loading none of the founder's MCP servers. */
+const sessionAgent = async (runner: AgentRunner, seal: Seal): Promise<AcpAgent> =>
+  acpAgentFor(runner, seal, runner === "codex" ? await codexMcpOff(seal) : {});
 
 /**
  * The URL of the top page, then of every frame found under it; null where the
@@ -484,7 +525,7 @@ class AgentDriver {
   async completeOneShot(prompt: string): Promise<string> {
     const runner = this.pickRunner(0);
     const res = await runAcpTurn({
-      agent: acpAgentFor(runner, await this.seal([])),
+      agent: await sessionAgent(runner, await this.seal([])),
       cwd: tmpdir(),
       idleTimeoutMs: 3 * 60_000,
       maxSessionMs: 5 * 60_000,
@@ -583,7 +624,7 @@ class AgentDriver {
     try {
       const res = await runAcpTurn({
         addDirs,
-        agent: acpAgentFor(emp.runner, seal),
+        agent: await sessionAgent(emp.runner, seal),
         cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,

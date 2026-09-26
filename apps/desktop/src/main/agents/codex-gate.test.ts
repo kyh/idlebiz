@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -16,12 +16,13 @@ import { parseJson } from "@/shared/json";
 
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
-// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it.
+// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it, and
+// starts no MCP server of the founder's.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { acpAgentFor } = await import("./agent-driver");
+const { acpAgentFor, codexMcpOff } = await import("./agent-driver");
 const { machineSeal, realPathOf, sealRuns } = await import("./seal");
 
 const codexRuns =
@@ -151,6 +152,10 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         'name = "stand-in"',
         `base_url = "http://127.0.0.1:${port}/v1"`,
         'wire_api = "responses"',
+        // a server of the founder's, which leaves a mark if a run starts it
+        "[mcp_servers.founder]",
+        'command = "/bin/sh"',
+        `args = ["-c", "touch ${path.join(base, "mcp-started")}; exec cat"]`,
       ].join("\n"),
     );
     remote = path.join(base, "remote.git");
@@ -185,8 +190,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     }
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
     const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
+    const seal = await machineSeal([workspace]);
     const result = await runAcpTurn({
-      agent: acpAgentFor("codex", await machineSeal([workspace])),
+      agent: acpAgentFor("codex", seal, await codexMcpOff(seal, { CODEX_HOME: codexHome })),
       cwd: workspace,
       env: { CODEX_HOME: codexHome },
       idleTimeoutMs: 60_000,
@@ -202,7 +208,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       teardownGraceMs: 500,
     });
     const pushed = execFileSync("git", ["for-each-ref"], { cwd: remote }).toString();
-    return { asks, pushed, result };
+    return { asks, mcpStarted: existsSync(path.join(base, "mcp-started")), pushed, result };
   };
 
   it(
@@ -237,6 +243,12 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       expect(pushed).toContain("refs/heads/main");
     },
   );
+
+  it("starts none of the founder's MCP servers", { timeout: 60_000 }, async () => {
+    const { mcpStarted, result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+    expect(result.end).toEqual({ kind: "completed" });
+    expect(mcpStarted).toBe(false);
+  });
 
   it("asks before every patch, naming where a move lands", { timeout: 60_000 }, async () => {
     const patch = [
