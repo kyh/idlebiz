@@ -435,7 +435,6 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           kind: toolCall.kind ?? undefined,
           tool: toolAskOf({
             kind: toolCall.kind,
-            locations: toolCall.locations,
             meta: ctx.params._meta,
             rawInput: toolCall.rawInput,
             title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),

@@ -296,6 +296,9 @@ export const decidePermission = async (
   hold: (ask: BlockedAsk) => void,
   signal: AbortSignal,
 ): Promise<PermissionDecision> => {
+  if (request.tool.kind === "sandbox") {
+    return { allow: false };
+  }
   const held = await holdFor(request.tool, leases, livePage, confinement);
   // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
   if (signal.aborted) {
@@ -695,7 +698,6 @@ class AgentDriver {
     const confinement = {
       cwd: run.workspace,
       real: realPathOf,
-      save: ROOT_DIR,
       writable: [run.workspace, ...addDirs],
     };
     // a run cannot make its own folders, only write in them

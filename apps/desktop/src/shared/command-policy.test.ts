@@ -30,17 +30,6 @@ const MUST_ASK = {
     "cat <<EOF\n$(echo '\nEOF\nvercel deploy --prod\n')\nEOF",
     "function f g h { vercel deploy }",
   ],
-  "destructive-outside": [
-    "rm -rf ~/Documents",
-    "rm -rf /Users/kyh/Projects/other-repo",
-    "shred -u ~/.bash_history",
-    "rm -rf $HOME/x",
-    `rm -rf \${HOME}/x`,
-    'rm -rf "$HOME/x"',
-    `rm -rf "\${HOME}/x"`,
-    'rm -rf "$HOME"/x',
-    'rm -rf "/Users/kyh/Projects/other-repo"',
-  ],
   "git-push": [
     `"git commit -am 'ship' && git push"`,
     `'git push origin main'`,
@@ -318,17 +307,6 @@ const MUST_ASK = {
     "ssh deploy@example.com 'rm -rf /var/www'",
     "coproc scp done deploy@example.com:/tmp",
   ],
-  "write-outside": [
-    "chmod -R 777 /etc/hosts",
-    "mv ./thing ~/Library/LaunchAgents/x.plist",
-    "mv --target-directory=/Users/kyh/elsewhere ./thing",
-    "dd if=/dev/zero of=~/x",
-    "mv ./thing ../../../Library/LaunchAgents/x.plist",
-    "chmod -R 777 ../../etc/hosts",
-    "tee ./a/../../etc/hosts",
-    "mv -t/Users/kyh/x ./y",
-    "dd if=/dev/zero of=../../etc/x",
-  ],
 } satisfies Record<RuleId, readonly string[]>;
 
 const MUST_ALLOW = [
@@ -517,7 +495,7 @@ describe("classifyCommand", () => {
   );
 
   it("is not laundered by a loopback call elsewhere in the line", () => {
-    const laundered = "rm -rf ~/Documents && curl -s $IDLEBIZ_API_URL/v1/team-chat";
+    const laundered = "git push origin main && curl -s $IDLEBIZ_API_URL/v1/team-chat";
     expect(classifyCommand(laundered).decision).toBe("ask");
   });
 });
@@ -556,12 +534,8 @@ const MEMORY = `${SAVE}/acme/agents/mae/memory`;
 const ROOM: Confinement = {
   cwd: WORKSPACE,
   real: (file) => Promise.resolve(file),
-  save: SAVE,
   writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],
 };
-const edit = (file: string, ...more: string[]) =>
-  ({ kind: "edit", paths: [file, ...more] }) as const;
-const patch = (...paths: string[]) => ({ kind: "patch", paths }) as const;
 
 describe("holdFor", () => {
   it("holds an outward-facing command for one run of exactly it", async () => {
@@ -954,78 +928,8 @@ describe("holdFor", () => {
     expect(hold?.leasable).toBe(false);
   });
 
-  it("holds every widening of codex's sandbox, even one signed before", async () => {
-    const tool = { kind: "sandbox", network: true, paths: ["/Users/me/.npm"] } as const;
-    const hold = {
-      key: "sandbox: widen to network, /Users/me/.npm",
-      leasable: false,
-      rule: "sandbox-widen",
-    };
-    expect(await holdFor(tool, NONE, at({}), ROOM)).toEqual(hold);
-    expect(await holdFor(tool, new Set([hold.key]), at({}), ROOM)).toEqual(hold);
-  });
-
-  it.each([
-    "../approvals.json",
-    "../bets/b/BET.md",
-    "../agents/x/AGENTS.md",
-    "../agents/mae/AGENTS.md",
-  ])("holds an edit to the save the run was not granted: %s", async (file) => {
-    expect(await holdFor(edit("src/app.ts", file), NONE, at({}), ROOM)).toEqual({
-      key: `edit: ${WORKSPACE}/src/app.ts, ${SAVE}/acme/${file.slice(3)}`,
-      leasable: false,
-      rule: "save-edit",
-    });
-  });
-
-  it("holds an edit outside the save and the run's dirs as a write outside", async () => {
-    expect(await holdFor(edit("~/.zshrc"), NONE, at({}), ROOM)).toEqual({
-      key: "edit: ~/.zshrc",
-      leasable: false,
-      rule: "write-outside",
-    });
-    expect(await holdFor(edit("../../../../Library/x.plist"), NONE, at({}), ROOM)).toMatchObject({
-      key: "edit: /Users/Library/x.plist",
-      rule: "write-outside",
-    });
-  });
-
-  it("lets an edit inside the run's own dirs through", async () => {
-    const tool = edit("src/app.ts", `${MEMORY}/notes.md`, `${WORKSPACE}/./docs/../README.md`);
-    expect(await holdFor(tool, NONE, at({}), ROOM)).toBeNull();
-  });
-
-  it("does not take a sibling that shares a root's prefix for the root", async () => {
-    const hold = await holdFor(edit(`${WORKSPACE}-old/x.ts`), NONE, at({}), ROOM);
-    expect(hold?.rule).toBe("save-edit");
-  });
-
-  it("lets codex's patch through when every path it writes is the run's own", async () => {
-    expect(await holdFor(patch("notes.md", `${MEMORY}/log.md`), NONE, at({}), ROOM)).toBeNull();
-  });
-
-  it("holds codex's patch that names no path: it could write anywhere", async () => {
-    expect(await holdFor(patch(), NONE, at({}), ROOM)).toEqual({
-      key: "edit: a file the ask does not name",
-      leasable: false,
-      rule: "write-outside",
-    });
-  });
-
-  it("holds codex's patch that moves a file into the save as an edit of it", async () => {
-    expect(await holdFor(patch("notes.md", "../bets/b/BET.md"), NONE, at({}), ROOM)).toEqual({
-      key: `edit: ${WORKSPACE}/notes.md, ${SAVE}/acme/bets/b/BET.md`,
-      leasable: false,
-      rule: "save-edit",
-    });
-  });
-
-  it("holds codex's patch that moves a file out of the run's dirs", async () => {
-    expect(await holdFor(patch("notes.md", "/Users/me/notes.md"), NONE, at({}), ROOM)).toEqual({
-      key: `edit: ${WORKSPACE}/notes.md, /Users/me/notes.md`,
-      leasable: false,
-      rule: "write-outside",
-    });
+  it("lets an edit through: the seal, not the policy, judges where a run writes", async () => {
+    expect(await holdFor({ kind: "edit" }, NONE, at({}), ROOM)).toBeNull();
   });
 
   it("holds a host reached by a command nobody saw, naming the host", async () => {
@@ -1050,10 +954,5 @@ describe("holdFor", () => {
     expect(await holdFor({ kind: "unknown", title: "" }, NONE, at({}), ROOM)).toMatchObject({
       key: "ask: a tool call nothing named",
     });
-  });
-
-  it("names a widening it cannot itemise", async () => {
-    const hold = await holdFor({ kind: "sandbox", network: false, paths: [] }, NONE, at({}), ROOM);
-    expect(hold?.key).toBe("sandbox: widen to more access");
   });
 });

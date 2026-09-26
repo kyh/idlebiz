@@ -141,9 +141,9 @@ describe("a blocked task's ask in TASK.md", () => {
     expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
   });
 
-  it("reads an approval without a rule id as held by the broadest rule", () => {
+  it("reads an approval without a rule id as an ask nothing recognised", () => {
     expect(askSavedAs("[approve] git push origin main")).toEqual(
-      blocked({ command: "git push origin main", rule: "write-outside", type: "approval" }).state,
+      blocked({ command: "git push origin main", rule: "unknown-ask", type: "approval" }).state,
     );
   });
 

@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { toolAskOf } from "@repo/agent-driver/tool-ask";
+import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { holdFor } from "@/shared/command-policy";
 import type { Confinement } from "@/shared/command-policy";
 
-const ask = (request: {
-  rawInput?: unknown;
-  meta?: unknown;
-  title?: string;
-  kind?: string;
-  locations?: { path: string }[];
-}) =>
+const ask = (request: { rawInput?: unknown; meta?: unknown; title?: string; kind?: string }) =>
   toolAskOf({
     kind: request.kind,
-    locations: request.locations,
     meta: request.meta,
     rawInput: request.rawInput,
     title: request.title,
@@ -21,17 +15,16 @@ const ask = (request: {
 const ROOM: Confinement = {
   cwd: "/w",
   real: (file) => Promise.resolve(file),
-  save: "/save",
   writable: ["/w"],
 };
 
-const judgePatch = (locations: { path: string }[]) =>
-  holdFor(
-    ask({ kind: "edit", locations, title: "Edit files" }),
-    new Set(),
-    () => Promise.resolve(null),
-    ROOM,
-  );
+/** A widening never reaches the policy: the run refuses it first. */
+const judge = async (tool: ToolAsk) => {
+  if (tool.kind === "sandbox") {
+    throw new Error("a widening is refused before it is judged");
+  }
+  return await holdFor(tool, new Set(), () => Promise.resolve(null), ROOM);
+};
 
 describe("toolAskOf", () => {
   it("reads a shell command from the call's input", () => {
@@ -46,7 +39,7 @@ describe("toolAskOf", () => {
     async (title) => {
       const tool = ask({ kind: "execute", rawInput: { cwd: "/w" }, title });
       expect(tool).toEqual({ kind: "unknown", title });
-      expect(await holdFor(tool, new Set(), () => Promise.resolve(null), ROOM)).toEqual({
+      expect(await judge(tool)).toEqual({
         key: `ask: ${title}`,
         leasable: false,
         rule: "unknown-ask",
@@ -54,37 +47,17 @@ describe("toolAskOf", () => {
     },
   );
 
-  it("reads claude's Write by the file it names, and any other path it locates", () => {
-    const rawInput = { content: "{}", file_path: "../approvals.json" };
-    expect(ask({ kind: "edit", rawInput, title: "Write ../approvals.json" })).toEqual({
+  it("lets claude's Write and codex's patch through wherever they write: the seal decides", async () => {
+    const write = ask({
       kind: "edit",
-      paths: ["../approvals.json"],
+      rawInput: { content: "{}", file_path: "../approvals.json" },
+      title: "Write ../approvals.json",
     });
-    const locations = [{ path: "../approvals.json" }, { path: "/save/acme/approvals.json" }];
-    expect(ask({ kind: "edit", locations, rawInput, title: "Write ../approvals.json" })).toEqual({
-      kind: "edit",
-      paths: ["../approvals.json", "/save/acme/approvals.json"],
-    });
-  });
-
-  it("reads codex's patch by its locations: the approval has no input", () => {
-    const locations = [{ path: "/save/acme/bets/b/BET.md" }, { path: "/save/acme/workspace/a.ts" }];
-    expect(ask({ kind: "edit", locations, title: "Edit files" })).toEqual({
-      kind: "patch",
-      paths: ["/save/acme/bets/b/BET.md", "/save/acme/workspace/a.ts"],
-    });
-    expect(ask({ kind: "edit", title: "Edit files" })).toEqual({ kind: "patch", paths: [] });
-  });
-
-  it("judges codex's patch by every path it locates, a move's destination too", async () => {
-    expect(await judgePatch([{ path: "/w/notes.md" }])).toBeNull();
-    expect(
-      await judgePatch([{ path: "/w/notes.md" }, { path: "/save/acme/approvals.json" }]),
-    ).toEqual({
-      key: "edit: /w/notes.md, /save/acme/approvals.json",
-      leasable: false,
-      rule: "save-edit",
-    });
+    const patch = ask({ kind: "edit", title: "Edit files" });
+    for (const tool of [write, patch]) {
+      expect(tool).toEqual({ kind: "edit" });
+      expect(await judge(tool)).toBeNull();
+    }
   });
 
   it("names the host codex asks a command it does not show to reach", () => {
@@ -142,7 +115,7 @@ describe("toolAskOf", () => {
       title: "MCP server requests to open a URL",
     });
     expect(url).toEqual({ kind: "mcp", server: "stripe" });
-    expect(await holdFor(url, new Set(), () => Promise.resolve(null), ROOM)).not.toBeNull();
+    expect(await judge(url)).not.toBeNull();
     expect(
       ask({
         kind: "other",
@@ -156,54 +129,20 @@ describe("toolAskOf", () => {
     expect(ask({ meta: { is_mcp_tool_approval: true } })).toEqual({ kind: "mcp", server: null });
   });
 
-  it("knows codex widening its own sandbox by the input, not the title", () => {
-    const rawInput = {
+  it.each([
+    {
       cwd: "/work",
       environmentId: "env-1",
       permissions: {
         fileSystem: { read: null, write: ["/Users/me/.npm"] },
         network: { enabled: true },
       },
-    };
-    expect(ask({ rawInput, title: "Additional sandbox permissions" })).toEqual({
-      kind: "sandbox",
-      network: true,
-      paths: ["/Users/me/.npm"],
-    });
-    expect(
-      ask({ rawInput: { cwd: "/work", permissions: { network: { enabled: true } } } }),
-    ).toEqual({ kind: "sandbox", network: true, paths: [] });
-  });
-
-  it("still knows a widening whose fields changed type", () => {
-    const rawInput = { permissions: { fileSystem: { read: "/etc" }, network: { enabled: "yes" } } };
-    expect(ask({ rawInput, title: "Additional sandbox permissions" })).toEqual({
-      kind: "sandbox",
-      network: true,
-      paths: [],
-    });
-  });
-
-  it("lists the paths and patterns a widening names only in its entries", () => {
-    const entries = [
-      { access: "write", path: { path: "/Users/me/.npm", type: "path" } },
-      { access: "read", path: { pattern: "/Users/me/**/.env", type: "glob_pattern" } },
-      { access: "write", path: { type: "special", value: { kind: "tmpdir" } } },
-    ];
-    const rawInput = { permissions: { fileSystem: { entries } } };
+    },
+    { permissions: { fileSystem: { read: "/etc" }, network: { enabled: "yes" } } },
+    { permissions: { fileSystem: { entries: [] }, network: null } },
+  ])("knows codex widening its own sandbox by the input, whatever it asks for: %j", (rawInput) => {
     expect(ask({ kind: "other", rawInput, title: "Additional sandbox permissions" })).toEqual({
       kind: "sandbox",
-      network: false,
-      paths: ["/Users/me/.npm", "/Users/me/**/.env"],
-    });
-  });
-
-  it("knows a widening that names nothing it can list", () => {
-    const rawInput = { permissions: { fileSystem: { entries: [] }, network: null } };
-    expect(ask({ rawInput, title: "Additional sandbox permissions" })).toEqual({
-      kind: "sandbox",
-      network: false,
-      paths: [],
     });
   });
 

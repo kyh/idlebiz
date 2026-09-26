@@ -289,7 +289,7 @@ const noPage: LivePage = () => Promise.resolve(null);
 describe("decidePermission", () => {
   const push = { tool: { command: "git push", kind: "shell" } } as const;
   const workspace = path.join(root, "acme", "workspace");
-  const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
+  const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
 
   /** A company whose founder signed for one `git push` on task "deploy". */
   const signedFor = () => {
@@ -316,28 +316,27 @@ describe("decidePermission", () => {
     expect(asked).toEqual([]);
   });
 
-  it("asks the founder before a run edits the save behind the store", async () => {
-    const company = found();
-    const asked: BlockedAsk[] = [];
-    const request = { tool: { kind: "edit", paths: ["../approvals.json"] } } as const;
-    const decision = await decidePermission(
-      { companyId: company.id, id: "deploy" },
-      request,
-      new Set(),
-      noPage,
-      room,
-      (ask) => asked.push(ask),
-      new AbortController().signal,
-    );
-    expect(decision).toEqual({ allow: false });
-    expect(asked).toEqual([
-      {
-        command: `edit: ${path.join(root, "acme", "approvals.json")}`,
-        rule: "save-edit",
-        type: "approval",
-      },
-    ]);
-  });
+  it.each([
+    { allow: true, tool: { kind: "edit" } },
+    { allow: false, tool: { kind: "sandbox" } },
+  ] as const)(
+    "answers a $tool.kind ask with no card: the seal judges edits, and no widening is signed",
+    async ({ allow, tool }) => {
+      const company = found();
+      const asked: BlockedAsk[] = [];
+      const decision = await decidePermission(
+        { companyId: company.id, id: "deploy" },
+        { tool },
+        new Set(),
+        noPage,
+        room,
+        (ask) => asked.push(ask),
+        new AbortController().signal,
+      );
+      expect(decision).toEqual({ allow });
+      expect(asked).toEqual([]);
+    },
+  );
 
   it("holds a file the run linked in from outside, judged where the link leads", async () => {
     const company = found();

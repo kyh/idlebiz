@@ -7,11 +7,9 @@ export type ToolAsk =
   /** A tool from an MCP server in the player's own CLI settings, or that server asking something of its own (codex's elicitations: a question, a URL to open). `server` is null when nothing names it. */
   | { kind: "mcp"; server: string | null }
   /** codex asking to widen its own sandbox (request_permissions): once widened, later commands run inside it without asking. */
-  | { kind: "sandbox"; network: boolean; paths: readonly string[] }
-  /** A file edit by the agent's own tool that names its file (claude's Write and Edit). */
-  | { kind: "edit"; paths: readonly [string, ...string[]] }
-  /** codex's patch, as every path it writes: each change's own, and where a `Move to:` takes one (the app's codex-acp patch names that too). */
-  | { kind: "patch"; paths: readonly string[] }
+  | { kind: "sandbox" }
+  /** A file edit by the agent's own tool: claude's Write and Edit, codex's patch. The run's seal decides where it may write. */
+  | { kind: "edit" }
   /** codex asking to let a command it does not name reach an http(s) host; it gives no other protocol a URL. `host` is null when the URL will not parse. */
   | { kind: "network"; host: string | null }
   /** A read of the web by the agent's own tool (claude's WebFetch and WebSearch). */
@@ -25,50 +23,11 @@ const RawInput = z.object({
   serverName: z.string().optional(),
 });
 
-/** claude's Write and Edit name their file here. */
-const EditInput = z.object({ file_path: z.string() });
-
 /** codex's network approval, when no command comes with it. */
 const NetworkInput = z.object({ url: z.string() });
 
-/** codex's request_permissions, known by `permissions` alone. Each part is read on its own, so a field whose type changed still leaves a sandbox ask. */
+/** codex's request_permissions, known by `permissions` alone, whatever it asks for. */
 const SandboxWiden = z.object({ permissions: z.looseObject({}) });
-const WidenNetwork = z.object({ network: z.object({ enabled: z.unknown() }) });
-const WidenRead = z.object({ fileSystem: z.object({ read: z.array(z.string()) }) });
-const WidenWrite = z.object({ fileSystem: z.object({ write: z.array(z.string()) }) });
-const WidenEntries = z.object({ fileSystem: z.object({ entries: z.array(z.unknown()) }) });
-/** An entry names a path or a glob pattern; a special scope names neither. */
-const WidenEntry = z.object({
-  path: z.union([z.object({ path: z.string() }), z.object({ pattern: z.string() })]),
-});
-
-const sandboxAskOf = ({ permissions }: z.infer<typeof SandboxWiden>): ToolAsk => {
-  const network = WidenNetwork.safeParse(permissions);
-  const read = WidenRead.safeParse(permissions);
-  const write = WidenWrite.safeParse(permissions);
-  const entries = WidenEntries.safeParse(permissions);
-  const named = (entries.success ? entries.data.fileSystem.entries : []).flatMap((entry) => {
-    const parsed = WidenEntry.safeParse(entry);
-    if (!parsed.success) {
-      return [];
-    }
-    const { path } = parsed.data;
-    return ["path" in path ? path.path : path.pattern];
-  });
-  const enabled = network.success ? network.data.network.enabled : undefined;
-  return {
-    kind: "sandbox",
-    // an `enabled` of a type nobody expected still shows on the card
-    network: enabled !== undefined && enabled !== null && enabled !== false,
-    paths: [
-      ...new Set([
-        ...(read.success ? read.data.fileSystem.read : []),
-        ...(write.success ? write.data.fileSystem.write : []),
-        ...named,
-      ]),
-    ],
-  };
-};
 
 /** codex marks an MCP tool approval in the request's `_meta`; its tool call may carry no title at all. */
 const McpApprovalMeta = z.object({ is_mcp_tool_approval: z.literal(true) });
@@ -91,7 +50,6 @@ export const toolAskOf = (request: {
   title: string | undefined;
   /** ACP tool kind — "execute", "edit", "fetch", … */
   kind: string | null | undefined;
-  locations: readonly { path: string }[] | null | undefined;
 }): ToolAsk => {
   const parsed = RawInput.safeParse(request.rawInput);
   const input = parsed.success ? parsed.data : {};
@@ -107,19 +65,11 @@ export const toolAskOf = (request: {
   ) {
     return { kind: "mcp", server: input.serverName ?? titled };
   }
-  const widen = SandboxWiden.safeParse(request.rawInput);
-  if (widen.success) {
-    return sandboxAskOf(widen.data);
+  if (SandboxWiden.safeParse(request.rawInput).success) {
+    return { kind: "sandbox" };
   }
   if (request.kind === "edit") {
-    const located = (request.locations ?? []).map((location) => location.path);
-    const named = EditInput.safeParse(request.rawInput);
-    if (!named.success) {
-      // codex's patch approval carries no input
-      return { kind: "patch", paths: located };
-    }
-    const file = named.data.file_path;
-    return { kind: "edit", paths: [file, ...located.filter((other) => other !== file)] };
+    return { kind: "edit" };
   }
   if (request.kind === "fetch") {
     return { kind: "fetch" };

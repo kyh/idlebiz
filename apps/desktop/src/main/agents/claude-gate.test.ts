@@ -286,7 +286,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       throw new Error(state.reason);
     }
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
-    const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
+    const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const { port } = Listening.parse(model?.address());
     const agent = await asFounderAt(home, async () =>
       standInAgent(acpAgentFor("claude", await machineSeal([workspace]))),
@@ -304,7 +304,10 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       maxSessionMs: 90_000,
       onEvent: () => {},
       onPermission: async (request) => {
-        const held = await holdFor(request.tool, new Set(), () => Promise.resolve(null), room);
+        const held =
+          request.tool.kind === "sandbox"
+            ? null
+            : await holdFor(request.tool, new Set(), () => Promise.resolve(null), room);
         asks.push({ held, request });
         return { allow };
       },

@@ -12,7 +12,6 @@ const HOLD_RULES = {
   "browser-unseen":
     "Act in a real browser on a page nobody could check first — one run of exactly this command.",
   deploy: "Deploy the product to a live, public URL.",
-  "destructive-outside": "Irreversibly delete or overwrite files outside the workspace.",
   // Leased for the rest of a run, like a site. No run loads the founder's MCP servers,
   // so this holds only one that slipped past that, signed in as the founder.
   "external-tool":
@@ -25,14 +24,7 @@ const HOLD_RULES = {
   "publish-package": "Publish a package to a public registry.",
   "read-credentials": "Read your stored credentials.",
   "remote-copy": "Copy files to another machine over the network.",
-  // Signed for once and exactly, never leased: a widened sandbox already lets every later command in the run skip asking.
-  "sandbox-widen":
-    "Let this run reach the internet or write outside its workspace without asking again, for every command until the run ends.",
-  // Never leased: the save is what IdleBiz reads back as the company's truth.
-  "save-edit":
-    "Edit the company's save files directly — tasks, bets, approvals, teammates' instructions.",
   "unknown-ask": "A tool call IdleBiz could not recognise — one run of exactly this.",
-  "write-outside": "Change files or permissions outside the workspace.",
 } satisfies Record<string, string>;
 
 export type HoldRuleId = keyof typeof HOLD_RULES;

@@ -5,7 +5,8 @@ import type { Command, Pipeline, Words } from "./shell-lexer";
 
 // IdleBiz answers every permission ask both runners raise, so an unmatched command runs
 // with the founder's privileges, less what the run's Seatbelt profile seals (their logins,
-// IdleBiz's keys): the CLIs' own sandboxes are off. Persist rule ids so approval cards can
+// IdleBiz's keys, every write outside the run's own folders): the CLIs' own sandboxes are
+// off, and no rule judges where a run writes. Persist rule ids so approval cards can
 // explain them.
 // A command line is split as bash would split it, read loosely as well where another
 // shell may split it apart, and seen through every wrapper that runs another command, so a
@@ -23,8 +24,6 @@ const RULE_IDS = [
   "remote-copy",
   "pipe-to-shell",
   "read-credentials",
-  "destructive-outside",
-  "write-outside",
 ] as const satisfies readonly HoldRuleId[];
 export type RuleId = (typeof RULE_IDS)[number];
 
@@ -865,16 +864,10 @@ const INTERPRETERS = wordsOf("bash dash python python3 sh zsh");
 
 /** A path argument that leaves the workspace behind. */
 const ESCAPES = String.raw`(?:~|\$(?:HOME\b|\{HOME\})|/(?:Users|home|etc|var|opt|System)\b|/Library\b)`;
-/** Only where a deleter's word starts, bare or after an option's `=`: `rm notes.md~` clears an editor backup. */
-const OUTSIDE = new RegExp(String.raw`^(?:--[\w-]+=)?${ESCAPES}`, "u");
-/** Anywhere in a word: `../../../Library/LaunchAgents` from the workspace, or `-t/Users/me/x`. */
-const NAMES_OUTSIDE = new RegExp(ESCAPES, "u");
 const CREDENTIALS = new RegExp(String.raw`${ESCAPES}/\.(?:ssh|aws|gnupg|config/gh|netrc)\b`, "u");
 
 const CREDENTIAL_READERS = wordsOf("base64 cat cp grep head less more openssl strings tail");
 const KEYCHAIN_READS = new Set(["find-generic-password", "find-internet-password"]);
-const DELETERS = new Set(["rm", "shred", "truncate"]);
-const WRITERS = new Set(["chmod", "chown", "mv", "tee"]);
 
 const RULES: readonly Rule[] = [
   {
@@ -947,21 +940,6 @@ const RULES: readonly Rule[] = [
     ),
     id: "read-credentials",
   },
-  {
-    holds: anyCall(
-      (call) => DELETERS.has(call.program) && call.args.some((arg) => OUTSIDE.test(arg)),
-    ),
-    id: "destructive-outside",
-  },
-  {
-    holds: anyCall(
-      (call) =>
-        (WRITERS.has(call.program) && call.args.some((arg) => NAMES_OUTSIDE.test(arg))) ||
-        (call.program === "dd" &&
-          call.args.some((arg) => arg.startsWith("of=") && NAMES_OUTSIDE.test(arg))),
-    ),
-    id: "write-outside",
-  },
 ];
 
 /** Every program whose words a rule reads. A rule reading another names it here too, or a line shells read apart can hand that program a word unseen. */
@@ -970,10 +948,7 @@ const RULE_PROGRAMS = new Set([
   ...PACKAGE_MANAGERS.keys(),
   ...COPIERS,
   ...CREDENTIAL_READERS,
-  ...DELETERS,
   ...FETCHERS,
-  ...WRITERS,
-  "dd",
   "gh",
   "git",
   "security",
@@ -1515,14 +1490,12 @@ export interface Hold {
   leasable: boolean;
 }
 
-/** Where a run may write without asking. Absolute paths. */
+/** The run's own folders, which a page opened from disk is judged against. Absolute paths. */
 export interface Confinement {
   /** The run's working directory: a relative path is read from here. */
   cwd: string;
   /** Its cwd and every directory the run was granted. */
   writable: readonly string[];
-  /** The save root: tasks, bets, approvals and instructions IdleBiz reads back as the company's truth. */
-  save: string;
   /** Where an absolute path leads on disk, every symlink on its way followed. */
   real: (file: string) => Promise<string>;
 }
@@ -1530,34 +1503,18 @@ export interface Confinement {
 /** One line, so the key reads back the same from the task's saved ask. */
 const oneLine = (text: string): string => text.replaceAll(/\s+/gu, " ").trim();
 
-const editHold = (paths: readonly string[], room: Confinement): Hold | null => {
-  const files = paths.map((file) => resolvePath(room.cwd, file));
-  const loose = files.filter((file) => !room.writable.some((root) => within(file, root)));
-  if (loose.length === 0) {
-    return null;
-  }
-  return {
-    key: oneLine(`edit: ${files.join(", ")}`),
-    leasable: false,
-    rule: loose.some((file) => within(file, room.save)) ? "save-edit" : "write-outside",
-  };
-};
-
 /**
- * codex asks before every patch, naming every path it writes, a move's destination too, so
- * it is judged as an edit of them all. One that names none could write anywhere.
+ * What the founder may be asked to sign. A widening of codex's own sandbox never is: once
+ * signed, every later command in the run would stop asking, so the run refuses it unasked.
  */
-const patchHold = (paths: readonly string[], room: Confinement): Hold | null =>
-  paths.length === 0
-    ? { key: "edit: a file the ask does not name", leasable: false, rule: "write-outside" }
-    : editHold(paths, room);
+export type JudgedAsk = Exclude<ToolAsk, { kind: "sandbox" }>;
 
 /**
  * The one judgement every tool call passes through; null lets it run. `leases` is
- * what this run was already signed for, `confinement` where it may write.
+ * what this run was already signed for, `confinement` its own folders.
  */
 export const holdFor = async (
-  tool: ToolAsk,
+  tool: JudgedAsk,
   leases: ReadonlySet<string>,
   livePage: LivePage,
   confinement: Confinement,
@@ -1567,19 +1524,9 @@ export const holdFor = async (
     const key = `mcp: use ${tool.server ?? "a tool nothing could name"}`;
     return leases.has(key) ? null : { key, leasable: tool.server !== null, rule: "external-tool" };
   }
-  if (tool.kind === "sandbox") {
-    const reach = [...(tool.network ? ["network"] : []), ...tool.paths].join(", ");
-    return {
-      key: `sandbox: widen to ${reach || "more access"}`,
-      leasable: false,
-      rule: "sandbox-widen",
-    };
-  }
   if (tool.kind === "edit") {
-    return editHold(tool.paths, confinement);
-  }
-  if (tool.kind === "patch") {
-    return patchHold(tool.paths, confinement);
+    // the seal refuses a write outside the run's own folders, whichever tool makes it
+    return null;
   }
   if (tool.kind === "network") {
     // the command behind it goes unseen, so nothing tells a read from a send

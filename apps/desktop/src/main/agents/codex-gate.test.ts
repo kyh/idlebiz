@@ -203,7 +203,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       throw new Error(state.reason);
     }
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
-    const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
+    const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
       return acpAgentFor("codex", seal, await codexMcpOff(seal, { CODEX_HOME: codexHome }));
@@ -216,7 +216,10 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       maxSessionMs: 90_000,
       onEvent: () => {},
       onPermission: async (request) => {
-        const held = await holdFor(request.tool, new Set(), () => Promise.resolve(null), room);
+        const held =
+          request.tool.kind === "sandbox"
+            ? null
+            : await holdFor(request.tool, new Set(), () => Promise.resolve(null), room);
         asks.push({ held, request });
         return { allow };
       },
@@ -279,23 +282,29 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     expect(existsSync(outside)).toBe(false);
   });
 
-  it("asks before every patch, naming where a move lands", { timeout: 60_000 }, async () => {
-    const patch = [
-      "*** Begin Patch",
-      "*** Update File: notes.md",
-      `*** Move to: ${path.join(root, "acme", "approvals.json")}`,
-      "@@",
-      "-a",
-      "+b",
-      "*** End Patch",
-    ].join("\n");
-    const { asks } = await turn({ patch, tool: "apply_patch" }, false);
-    expect(asks.map(({ held }) => held?.rule)).toEqual(["save-edit"]);
-    expect(asks[0]?.request.tool).toEqual({
-      kind: "patch",
-      paths: [path.join(workspace, "notes.md"), path.join(root, "acme", "approvals.json")],
-    });
-  });
+  it(
+    "lets a patch through unheld, and the seal refuses one that moves a file into the save",
+    { timeout: 60_000 },
+    async () => {
+      const approvals = path.join(root, "acme", "approvals.json");
+      mkdirSync(path.dirname(approvals), { recursive: true });
+      const patch = [
+        "*** Begin Patch",
+        "*** Update File: notes.md",
+        `*** Move to: ${approvals}`,
+        "@@",
+        "-a",
+        "+b",
+        "*** End Patch",
+      ].join("\n");
+      const { asks } = await turn({ patch, tool: "apply_patch" }, true);
+      expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
+        { held: null, tool: { kind: "edit" } },
+      ]);
+      expect(existsSync(approvals)).toBe(false);
+      expect(readFileSync(path.join(workspace, "notes.md"), "utf-8")).toBe("a\n");
+    },
+  );
 
   it(
     "runs with its founder's config unwritable, and cannot rewrite it",

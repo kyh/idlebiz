@@ -31,7 +31,7 @@ const parseBlockedAsk = (s: string): BlockedAsk => {
   const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
   if (approval) {
     const command = (approval.groups?.command ?? "").trim();
-    const rule = approval.groups?.rule ?? "write-outside";
+    const rule = approval.groups?.rule ?? "unknown-ask";
     return { command, rule, type: "approval" };
   }
   const m = /^\[connect:(?<kind>[a-z]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);

@@ -264,12 +264,11 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
     outside the run's own dirs, judged where its symlinks lead (`Confinement.real`). Only the
     command line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json`
     goes unread.
-  - An edit by claude's Write/Edit outside a run's own dirs is held, under `save-edit` when it
-    lands in the save, where the seal refuses it even once signed for. codex asks before every
-    patch, naming each file it writes and where a move lands, so a patch is judged like an
-    edit; one naming no file is held. codex asking to widen its own sandbox is held every time,
-    never leased: once widened, nothing else in the run asks. An MCP server that asks anyway is
-    leased for the run; one nothing can name never is. A web read by the agent's own tool runs,
+  - No rule judges where a run writes: an edit by claude's Write/Edit, a codex patch and a
+    shell `rm` or `mv` all run unheld, and the seal refuses whatever lands outside the run's
+    own folders. codex asking to widen its own sandbox is refused with no card: once widened,
+    nothing else in the run would ask. An MCP server that asks anyway is leased for the run;
+    one nothing can name never is. A web read by the agent's own tool runs,
     as a bare `curl` does; an ask IdleBiz cannot recognise is held once, exactly. A signature
     only ever picks the runner's one-time option. Both runners' wire formats end in
     `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
@@ -301,7 +300,7 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
   settings (`packages/agent-driver/src/registry.ts`), whatever the founder's say. codex runs in
   `external-sandbox`, a mode the app's patch of codex-acp adds (`patches/`): no sandbox of
   codex's own and approval `untrusted`, so codex asks before every command and patch it does
-  not know is safe, and its patch ask names where a move lands. codex-acp's own modes either
+  not know is safe. codex-acp's own modes either
   sandbox or never ask, so an upgrade must carry the patch. Chrome's sandbox is off in runs
   (`AGENT_BROWSER_ARGS=--no-sandbox`). The boot check runs plain node, so it cannot see a
   runner's own sandbox; the gate tests can. `main/agents/claude-gate.test.ts` and
@@ -309,7 +308,8 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
   stand-in model on loopback (nothing billed, a scratch config), and fail once a command nests
   or runs unasked (a push must reach `holdFor`), a founder's MCP server starts, a command
   escapes the seal, or a run rewrites the founder's config; claude's runs under founder
-  settings that turn its sandbox on, codex's checks that a patch names where a move lands.
+  settings that turn its sandbox on, codex's checks that the seal refuses a patch moving a
+  file into the save.
   They run in `pnpm --filter @repo/desktop test` on a Mac with that CLI installed and skip
   elsewhere, CI included.
 - **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
