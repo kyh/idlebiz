@@ -209,7 +209,8 @@ rather than crashing boot.
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
   `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool pushes
-  code: the founder pushes by hand. A run cannot use their ssh keys or agents, and git's
+  code: the founder pushes by hand from a fresh `git clone --no-local` of the workspace, never
+  with git inside it, where a run's config and hooks would run as them (CLAUDE.md). A run cannot use their ssh keys or agents, and git's
   Keychain helper cannot run, but a claude run keeps `/usr/bin/security` for its own login, so
   a token the founder's `gh` keeps in the Keychain is guarded only by the command policy's
   `read-credentials` and `git-push` holds. No tool

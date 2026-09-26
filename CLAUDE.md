@@ -129,7 +129,14 @@ allocator and the replay.
   (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link
   with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
   tagging each payment for its product and a named open revenue bet on it. Nothing pushes
-  code: the founder pushes by hand. Each runs once the founder signs off on the action it names:
+  code: the founder pushes by hand, from a fresh clone (`git clone --no-local <workspace>`),
+  never with git inside the workspace. A run writes that repository's config and hooks
+  (`core.fsmonitor`, `core.hooksPath`, `core.sshCommand`, `credential.helper`…), and git obeys
+  them there, unsealed, as the founder — so does a git-aware shell prompt or editor opened on
+  the folder. A clone runs only upload-pack there, which runs nothing its config names since
+  git stopped lazy-fetching a partial clone's missing objects (2.45.1; 2.39.4 and the other
+  backports). The prompts and the questions IdleBiz asks the founder say so.
+  Each signed tool runs once the founder signs off on the action it names:
   `deploy <product> to production on Vercel project <name>`, or
   `on a new Vercel project named <product>` for a product bound to none;
   `payment link "<name>" at $<amount> on <product> for bet <slug>`. That action is the

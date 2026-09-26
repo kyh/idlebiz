@@ -1741,8 +1741,9 @@ describe("the save format", () => {
   it("turns a format 6 push sign-off into a question, takes its grant back and clears .push/", () => {
     const co = found();
     const pushed = "push main (0123abcd) of acme to https://github.com/a/b.git";
+    const [product] = store.listProducts();
     const signOff = (title: string, command: string, rule: string) => {
-      const t = store.createTask({ origin: "founder", title });
+      const t = store.createTask({ origin: "founder", productId: product?.id, title });
       const ask = { command, rule, type: "approval" } as const;
       writeFileSync(
         path.join(tasksDir(co.id), t.id, "TASK.md"),
@@ -1762,7 +1763,7 @@ describe("the save format", () => {
 
     expect(store.getTask(push)?.state).toEqual({
       ask: {
-        question: `The team no longer pushes code, so this waits on you instead: ${pushed}. Push it by hand if you want it there, then answer to let the task go on.`,
+        question: `The team no longer pushes code, so this waits on you instead: ${pushed}. To push it, clone it fresh with \`git clone --no-local ${product?.workspaceDir} <new folder>\` and push from that clone, never with git inside the workspace: the team writes its git config and hooks, and git there would run them as you. Then answer to let the task go on.`,
         type: "question",
       },
       kind: "blocked",

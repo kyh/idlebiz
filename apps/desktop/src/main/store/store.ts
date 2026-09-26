@@ -1869,7 +1869,8 @@ const PUSH_SIGN_OFF = /^push \S+ \(/u;
  * Format 6 and older could hold a task on a sign-off for the push tool, which is gone: approved,
  * it would send the agent to a route that no longer answers. Each becomes a question the founder
  * can answer once they have pushed by hand, a granted one is taken back, and the repositories
- * the tool staged pushes in are removed.
+ * the tool staged pushes in are removed. The question says to push from a fresh clone: git run
+ * inside the workspace obeys the config and hooks the team writes there, as the founder.
  */
 const adoptRetiredPush = (active: ActiveCompany): void => {
   for (const t of active.tasks) {
@@ -1879,7 +1880,9 @@ const adoptRetiredPush = (active: ActiveCompany): void => {
       state.ask.type === "approval" &&
       PUSH_SIGN_OFF.test(state.ask.command)
     ) {
-      const question = `The team no longer pushes code, so this waits on you instead: ${state.ask.command}. Push it by hand if you want it there, then answer to let the task go on.`;
+      const workspace =
+        active.products.find((p) => p.id === t.productId)?.workspaceDir ?? "the workspace";
+      const question = `The team no longer pushes code, so this waits on you instead: ${state.ask.command}. To push it, clone it fresh with \`git clone --no-local ${workspace} <new folder>\` and push from that clone, never with git inside the workspace: the team writes its git config and hooks, and git there would run them as you. Then answer to let the task go on.`;
       recordIn(
         active.tasks,
         t.id,
