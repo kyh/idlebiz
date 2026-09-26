@@ -10,6 +10,8 @@ import { MAX_TASK_ATTEMPTS } from "@/shared/domain";
 import type { Budget, BusinessTypeId, Task, TaskOrigin } from "@/shared/domain";
 import { RefusalError } from "@/shared/refusal";
 import type { RunResult, RunTools } from "./agents/agent-driver";
+import { keepAwake } from "./keep-awake";
+import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
@@ -18,7 +20,7 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { activityEvents } = await import("./activity");
-const { createScheduler, scheduler } = await import("./scheduler");
+const { createScheduler } = await import("./scheduler");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -26,7 +28,6 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  scheduler.stop();
   rmSync(root, { force: true, recursive: true });
   if (previousRoot === undefined) {
     delete process.env.IDLEBIZ_ROOT_DIR;
@@ -36,6 +37,23 @@ afterAll(() => {
 });
 
 const NAMES = ["Priya", "Mae", "Sam", "Ana"];
+
+const asleep: KeepAwake = { hold: () => {} };
+
+/** A power blocker that only keeps count: the ids held now, and how many were ever started. */
+const fakeBlocker = () => {
+  const held = new Set<number>();
+  let started = 0;
+  const blocker: PowerBlocker = {
+    start: () => {
+      started += 1;
+      held.add(started);
+      return started;
+    },
+    stop: (id) => held.delete(id),
+  };
+  return { blocker, held, started: () => started };
+};
 
 const UNCAPPED: Budget = { mode: "infinite" };
 
@@ -120,26 +138,70 @@ const runEnds = () => {
 it("ignores queue drains after stop and resumes admission only after start", () => {
   found({ capUsd: 0, mode: "capped" });
   const task = queue("priya");
+  const drain = createScheduler(scripted().driver, asleep);
 
-  scheduler.stop();
-  scheduler.tick();
+  drain.stop();
+  drain.tick();
 
   expect(store.getCompany()?.autopilot).toBe(true);
   expect(kindOf(task)).toBe("queued");
 
-  scheduler.start();
+  drain.start();
 
   expect(store.getCompany()?.autopilot).toBe(false);
   expect(kindOf(task)).toBe("queued");
   expect(store.getEmployee("priya")?.status).toBe("idle");
-  scheduler.stop();
+  drain.stop();
+});
+
+describe("keeping the Mac awake", () => {
+  it("holds one blocker while any run is in flight and lets go when the last ends", async () => {
+    found();
+    const { driver, running } = scripted();
+    const power = fakeBlocker();
+    const drain = createScheduler(driver, keepAwake(power.blocker));
+    queue("priya");
+    queue("mae");
+
+    drain.tick();
+    expect(running.size).toBe(2);
+    expect(power.held.size).toBe(1);
+
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    expect(power.held.size).toBe(1);
+
+    running.get("mae")?.(done());
+    await vi.waitFor(() => expect(power.held.size).toBe(0));
+    expect(power.started()).toBe(1);
+  });
+
+  it("lets go when a run throws, and when a shutdown aborts one", async () => {
+    found();
+    const power = fakeBlocker();
+    const broken: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: () => Promise.reject(new Error("spawn failed")),
+    };
+    queue("priya");
+    createScheduler(broken, keepAwake(power.blocker)).tick();
+    await vi.waitFor(() => expect(power.started()).toBe(1));
+    await vi.waitFor(() => expect(power.held.size).toBe(0));
+
+    const drain = createScheduler(scripted().driver, keepAwake(power.blocker));
+    queue("mae");
+    drain.tick();
+    expect(power.held.size).toBe(1);
+    await drain.shutdown();
+    expect(power.held.size).toBe(0);
+  });
 });
 
 describe("draining the queue", () => {
   it("keeps a slot back for the founder", () => {
     found();
     const { driver, running } = scripted();
-    const drain = createScheduler(driver);
+    const drain = createScheduler(driver, asleep);
     const background = ["priya", "mae", "sam"].map((id) => queue(id));
 
     drain.tick();
@@ -152,7 +214,7 @@ describe("draining the queue", () => {
   it("gives the reserved slot to the founder's request", () => {
     found();
     const { driver } = scripted();
-    const drain = createScheduler(driver);
+    const drain = createScheduler(driver, asleep);
     queue("priya");
     queue("mae");
     const urgent = queue("ana", "high");
@@ -166,7 +228,7 @@ describe("draining the queue", () => {
 
   it("starts the next task when one cannot be locked, and retries it next tick", () => {
     const company = found();
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
     const stuck = queue("priya", "high");
     const next = queue("mae");
     const taskDir = path.join(tasksDir(company.id), stuck.id);
@@ -190,12 +252,15 @@ describe("draining the queue", () => {
 
   it("runs every step of the timer's tick past a fault in one", () => {
     found();
-    const drain = createScheduler({
-      ...scripted().driver,
-      restingRunner: () => {
-        throw new Error("disk full");
+    const drain = createScheduler(
+      {
+        ...scripted().driver,
+        restingRunner: () => {
+          throw new Error("disk full");
+        },
       },
-    });
+      asleep,
+    );
     queue("priya");
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -215,7 +280,7 @@ describe("draining the queue", () => {
     const parked = queue("ana");
     const free = queue("priya");
 
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
@@ -228,7 +293,7 @@ describe("draining the queue", () => {
     const parked = queue("ana");
     const free = queue("priya");
 
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
@@ -240,7 +305,7 @@ describe("a seal the boot check refuses", () => {
     found();
     const { driver, seal, started } = scripted();
     seal.holds = false;
-    const drain = createScheduler(driver);
+    const drain = createScheduler(driver, asleep);
     const task = queue("priya");
 
     drain.start();
@@ -265,7 +330,7 @@ describe("assigning", () => {
   it("refuses a task that cannot be claimed", () => {
     found();
     const task = queue("priya");
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
 
     expect(() => drain.assign(task.id, "mae")).toThrow(RefusalError);
     expect(store.getTask(task.id)?.assigneeId).toBe("priya");
@@ -274,12 +339,15 @@ describe("assigning", () => {
   it("lets a fault while queuing reach the caller", () => {
     found();
     const { driver } = scripted();
-    const drain = createScheduler({
-      ...driver,
-      restingRunner: () => {
-        throw new Error("disk full");
+    const drain = createScheduler(
+      {
+        ...driver,
+        restingRunner: () => {
+          throw new Error("disk full");
+        },
       },
-    });
+      asleep,
+    );
 
     expect(() => drain.directEmployee("priya", "ship it")).toThrow("disk full");
   });
@@ -295,7 +363,7 @@ const runOne = async (result: RunResult, betId: string | null = null) => {
     title: "Work",
   });
   store.claimTask(task.id, "priya");
-  createScheduler(driver).tick();
+  createScheduler(driver, asleep).tick();
   running.get("priya")?.(result);
   await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
   return { company, task };
@@ -332,7 +400,7 @@ describe("settling a run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
     running.get("priya")?.(done(1.25));
     await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
   });
@@ -341,7 +409,7 @@ describe("settling a run", () => {
     const company = found();
     const { driver, running } = scripted();
     const task = queue("priya");
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
     const taskDir = path.join(tasksDir(company.id), task.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const runs = runEnds();
@@ -364,7 +432,7 @@ describe("settling a run", () => {
     const company = found();
     const { driver, running } = scripted();
     const task = queue("priya");
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
     const dir = companyDir(company.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
@@ -416,7 +484,7 @@ describe("settling a run", () => {
   it("requeues runs cut short by a quit, no attempt spent, and starts nothing after them", async () => {
     found();
     const { driver, started } = scripted();
-    const drain = createScheduler(driver);
+    const drain = createScheduler(driver, asleep);
     const cut = [queue("priya"), queue("mae")];
     const waiting = queue("sam");
     drain.tick();
@@ -446,7 +514,7 @@ describe("settling a run", () => {
         return interrupted;
       },
     };
-    const drain = createScheduler(slow);
+    const drain = createScheduler(slow, asleep);
     const task = queue("priya");
     drain.tick();
 
@@ -462,7 +530,7 @@ describe("settling a run", () => {
       ...scripted().driver,
       runTask: () => Promise.withResolvers<RunResult>().promise,
     };
-    const drain = createScheduler(stuck);
+    const drain = createScheduler(stuck, asleep);
     const task = queue("priya");
     drain.tick();
 
@@ -487,7 +555,7 @@ describe("settling a run", () => {
       runTask: () => Promise.reject(new Error("no CLI")),
     };
     queue("priya");
-    createScheduler(broken).tick();
+    createScheduler(broken, asleep).tick();
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.getEmployee("priya")).toMatchObject({
       instructionsDigest: "told",
@@ -500,7 +568,7 @@ describe("settling a run", () => {
     const { driver, running } = scripted();
     const task = queue("priya");
     store.grantApproval(task.id, "git push");
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
     running.get("priya")?.(done());
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.consumeApproval(task.id, "git push")).toBe(false);
@@ -524,7 +592,7 @@ const twoProducts = () => {
   const home = store.listProducts()[0]?.id ?? "";
   const side = store.createProduct({ description: "a side project", name: "Side" }).id;
   const { driver, resting, running } = scripted();
-  return { drain: createScheduler(driver), home, resting, running, side };
+  return { drain: createScheduler(driver, asleep), home, resting, running, side };
 };
 
 /** Run the employee's work on the product until it asks the founder to deploy it. */
@@ -641,7 +709,7 @@ describe("asking the lead for the next bet", () => {
     (origin) => {
       found();
       blockOnLead(origin);
-      const drain = createScheduler(scripted().driver);
+      const drain = createScheduler(scripted().driver, asleep);
 
       drain.start();
       drain.stop();
@@ -653,7 +721,7 @@ describe("asking the lead for the next bet", () => {
   it("hands the proposal tools that fund nothing but the bet it opens", async () => {
     found();
     const { driver, tools } = scripted();
-    const drain = createScheduler(driver);
+    const drain = createScheduler(driver, asleep);
 
     drain.start();
     drain.stop();
@@ -668,7 +736,7 @@ describe("asking the lead for the next bet", () => {
   it("waits while the lead's last proposal does", () => {
     found();
     blockOnLead("propose");
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
 
     drain.start();
     drain.stop();
@@ -686,7 +754,7 @@ describe("a file the save refuses on every tick", () => {
       store.setBetReading(bet.id, 60, Date.now());
     }
     const task = queue("priya");
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
     const dir = path.dirname(betFile(company.id, stuck.id));
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
@@ -706,7 +774,7 @@ describe("a file the save refuses on every tick", () => {
   it("still sends idle hands to work past a due routine that cannot be marked run", () => {
     const company = found(UNCAPPED, "game-studio");
     const [routine] = store.listRoutines();
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
     const dir = path.dirname(routineFile(company.id, routine?.id ?? ""));
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -737,7 +805,7 @@ describe("a bet that stops taking work mid-run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
     store.measureBet(bet.id, Date.now());
     const heard: ActivityEvent[] = [];
     const listen = (e: ActivityEvent) => heard.push(e);
@@ -771,7 +839,7 @@ describe("a bet that stops taking work mid-run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver).tick();
+    createScheduler(driver, asleep).tick();
     store.killBet(bet.id, "dud", Date.now());
     const heard: ActivityEvent[] = [];
     const listen = (e: ActivityEvent) => heard.push(e);
@@ -801,7 +869,7 @@ describe("a bet that stops taking work mid-run", () => {
     const bet = openBet(5);
     store.createTask({ assigneeId: "mae", betId: bet.id, origin: "work", title: "Post it" });
     store.killBet(bet.id, "dud", Date.now());
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
 
     drain.start();
     drain.stop();
@@ -823,7 +891,7 @@ describe("a release", () => {
     });
     store.claimTask(task.id, "mae");
     store.archiveEmployee("mae");
-    const drain = createScheduler(scripted().driver);
+    const drain = createScheduler(scripted().driver, asleep);
 
     drain.start();
     drain.stop();
@@ -840,7 +908,7 @@ describe("a release", () => {
     found();
     const bet = openBet(5);
     const { driver, running } = scripted();
-    const drain = createScheduler(driver);
+    const drain = createScheduler(driver, asleep);
     const task = store.createTask({
       assigneeId: "mae",
       betId: bet.id,

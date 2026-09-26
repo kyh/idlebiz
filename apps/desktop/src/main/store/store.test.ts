@@ -26,7 +26,11 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store");
-const { createScheduler, scheduler } = await import("@/main/scheduler");
+const { createScheduler } = await import("@/main/scheduler");
+const { agentDriver } = await import("@/main/agents/agent-driver");
+const asleep = { hold: () => {} };
+/** The app's own runner, whose seal no test has checked: its ticks start nothing. */
+const scheduler = createScheduler(agentDriver, asleep);
 const {
   alumniDir,
   betFile,
@@ -254,13 +258,16 @@ describe("products", () => {
 });
 
 describe("scheduler queue admission", () => {
-  const sealed = createScheduler({
-    pickRunner: () => "claude",
-    restingRunner: () => null,
-    runTask: () => Promise.reject(new Error("no run starts past the cap")),
-    runsSealed: () => true,
-    signedIn: () => true,
-  });
+  const sealed = createScheduler(
+    {
+      pickRunner: () => "claude",
+      restingRunner: () => null,
+      runTask: () => Promise.reject(new Error("no run starts past the cap")),
+      runsSealed: () => true,
+      signedIn: () => true,
+    },
+    asleep,
+  );
 
   it("leaves capped work queued without spinning on its first task", () => {
     found({ capUsd: 0, mode: "capped" });

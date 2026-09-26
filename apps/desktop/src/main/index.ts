@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, safeStorage, session, shell } from "electron";
+import { app, BrowserWindow, powerSaveBlocker, safeStorage, session, shell } from "electron";
 import { registerIpcHandlers } from "@/main/lib/ipc-handler";
 import type { IpcHandlers } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
@@ -22,7 +22,8 @@ import {
   setAutopilot,
   startProduct,
 } from "@/main/company-actions";
-import { scheduler } from "@/main/scheduler";
+import { keepAwake } from "@/main/keep-awake";
+import { createScheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
 import { metricsPulse } from "@/main/metrics-pulse";
@@ -49,6 +50,8 @@ import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 const moduleDir = import.meta.dirname;
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
+
+const scheduler = createScheduler(agentDriver, keepAwake(powerSaveBlocker));
 
 // An ended turn's agent is left to shut down, with a timer to kill its process group if it
 // does not; that timer never fires once the app exits, so every exit waits the agents out.

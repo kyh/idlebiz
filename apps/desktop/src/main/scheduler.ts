@@ -4,13 +4,14 @@ import type { AgentEvent } from "@repo/agent-driver/events";
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { guarded, report } from "@/main/lib/report";
-import { agentDriver, askBox } from "@/main/agents/agent-driver";
-import type { RunResult, RunTools } from "@/main/agents/agent-driver";
+import { askBox } from "@/main/agents/agent-driver";
+import type { RunResult, RunTools, agentDriver } from "@/main/agents/agent-driver";
 import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-actions";
 import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { deployToVercel } from "@/main/deploy";
 import { stripePaymentLink } from "@/main/payment-links";
+import type { KeepAwake } from "@/main/keep-awake";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
 import { RUN_COST_ESTIMATE_USD, allocate } from "@/shared/bets";
@@ -254,9 +255,11 @@ class Scheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly driver: EmployeeRunner;
+  private readonly awake: KeepAwake;
 
-  constructor(driver: EmployeeRunner) {
+  constructor(driver: EmployeeRunner, awake: KeepAwake) {
     this.driver = driver;
+    this.awake = awake;
   }
 
   start(): void {
@@ -650,6 +653,7 @@ class Scheduler {
       settled: Promise.withResolvers(),
     };
     this.runs.set(runId, inFlight);
+    this.awake.hold(true);
     const at = { employeeId, runId, taskId: task.id };
     publishActivity({ ...at, kind: "run.start" });
     publishActivity({ ...at, kind: "status", message: "running" });
@@ -682,8 +686,12 @@ class Scheduler {
     // fault instead of rejecting, and the tick guards each start.
     guarded(`book run ${runId}`, () => book(task, result.usage.costUsd));
     const status = guarded(`settle run ${runId}`, () => finish(runId, task, employee, result));
-    store.setEmployeeStatus(employee.id, "idle");
-    this.runs.delete(runId);
+    try {
+      store.setEmployeeStatus(employee.id, "idle");
+    } finally {
+      this.runs.delete(runId);
+      this.awake.hold(this.runs.size > 0);
+    }
     // sent even when the settle threw before its status: the office and HUD free the employee on it
     guarded(`end run ${runId}`, () => {
       publishActivity({
@@ -734,7 +742,9 @@ class Scheduler {
   }
 }
 
-/** A scheduler over any runner: tests script the runs, the app hands it the CLIs. */
-export const createScheduler = (driver: EmployeeRunner): Scheduler => new Scheduler(driver);
-
-export const scheduler = createScheduler(agentDriver);
+/**
+ * A scheduler over any runner: tests script the runs, the app hands it the CLIs. It holds the Mac
+ * awake exactly while a run is in flight, so it is the blocker's only owner.
+ */
+export const createScheduler = (driver: EmployeeRunner, awake: KeepAwake): Scheduler =>
+  new Scheduler(driver, awake);

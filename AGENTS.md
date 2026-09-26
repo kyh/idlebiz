@@ -323,7 +323,8 @@ rather than crashing boot.
 - `apps/desktop/src/main` — the control plane. `store/store.ts` (the one company in memory,
   every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
   domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
-  idle loop), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
+  idle loop; it alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is
+  in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
