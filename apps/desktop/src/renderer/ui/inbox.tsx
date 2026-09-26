@@ -173,7 +173,8 @@ export const Inbox = ({
         return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} question={ask.question} />;
       }
       case "action": {
-        return <ActionCard key={t.id} t={t} by={nameOf(t.assigneeId)} ask={ask} />;
+        const by = t.origin === "order" ? "Orders" : nameOf(t.assigneeId);
+        return <ActionCard key={t.id} t={t} by={by} ask={ask} />;
       }
       // no default
     }

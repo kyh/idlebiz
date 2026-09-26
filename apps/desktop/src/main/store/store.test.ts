@@ -1229,6 +1229,79 @@ describe("listings", () => {
   });
 });
 
+const saleOf = (productId: string, id: string) =>
+  ({
+    collectedCents: 3599,
+    costCents: null,
+    createdAt: 2,
+    email: null,
+    id,
+    kind: "sale",
+    listingId: "launch-tee",
+    livemode: true,
+    paymentIntent: null,
+    printfulStatus: null,
+    productId,
+    quantity: 1,
+    recipient: {
+      address1: "1 Main St",
+      address2: null,
+      city: "Springfield",
+      countryCode: "US",
+      name: "Ada Buyer",
+      phone: null,
+      stateCode: "IL",
+      zip: "62701",
+    },
+    sessionId: `cs_${id}`,
+    stage: { kind: "received", tries: 0 },
+    variant: { id: 4012, label: "Black / S" },
+  }) as const;
+
+describe("orders", () => {
+  it("keeps each order in its product's ledger across a restart, and a retired product's go with it", () => {
+    const co = found();
+    const first = firstProduct();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    store.recordOrder(saleOf(first.id, "order-a"));
+    store.recordOrder(saleOf(side.id, "order-b"));
+    store.updateSale("order-a", { stage: { checks: 0, kind: "pricing", printfulId: 9001 } });
+    expect(() => store.recordOrder(saleOf(first.id, "order-a"))).toThrow("already kept");
+    const broken = path.join(productsDir(co.id), first.id, "orders", "broken.json");
+    writeFileSync(broken, "{");
+
+    expect(store.initStore().skipped).toMatchObject([{ kind: "order", path: broken }]);
+    expect(store.listOrders()).toMatchObject([
+      { id: "order-a", stage: { kind: "pricing", printfulId: 9001 } },
+      { id: "order-b" },
+    ]);
+    store.killProduct(side.id, "dud", null);
+    expect(store.listOrders().map((o) => o.id)).toEqual(["order-a"]);
+    expect(() => store.updateSale("order-b", { printfulStatus: "pending" })).toThrow("no sale");
+    expect(existsSync(path.join(retiredDir(co.id), side.id, "orders", "order-b.json"))).toBe(true);
+  });
+
+  it("raises one card per trouble, which no teammate can claim and only the founder settles", () => {
+    found();
+    const hired = store.createEmployee({ ...hire("Priya"), deskIndex: 0 });
+    const ask = { action: "Settle it", draft: null, instructions: "why", type: "action" } as const;
+    const card = store.raiseOrderCard("Order 1: trouble", ask);
+    expect(store.raiseOrderCard("Order 1: trouble", ask)).toBeNull();
+    expect(card).toMatchObject({ assigneeId: null, origin: "order", productId: null });
+    expect(store.claimTask(card?.id ?? "", hired.id)).toBeNull();
+    store.initStore();
+    expect(store.listOpenTasks()).toMatchObject([
+      { origin: "order", state: { ask, kind: "blocked" } },
+    ]);
+
+    expect(store.closeOrderCard(card?.id ?? "")).toMatchObject({
+      state: { by: null, kind: "superseded" },
+    });
+    expect(store.listOpenTasks()).toEqual([]);
+    expect(store.raiseOrderCard("Order 1: trouble", ask)).not.toBeNull();
+  });
+});
+
 describe("archives", () => {
   it("keep a released employee's slug, so a namesake's release sticks across a restart", () => {
     const co = found();

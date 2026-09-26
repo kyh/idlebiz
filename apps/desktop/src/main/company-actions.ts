@@ -2,7 +2,16 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { betNews } from "@/main/prompts/briefs";
 import type { Bet } from "@/shared/bets";
-import type { Company, Product, ProductDraft, Speaker, Task } from "@/shared/domain";
+import type {
+  ActionAsk,
+  ActionReply,
+  Company,
+  Product,
+  ProductDraft,
+  Speaker,
+  Task,
+} from "@/shared/domain";
+import { RefusalError } from "@/shared/refusal";
 
 // A change to the company that everyone should hear about: the store mutation,
 // the activity event and the team-room line, together. The scheduler, the
@@ -103,4 +112,42 @@ export const haltForBudget = (company: Company, spentUsd = company.spentUsd): vo
     kind: "budget.exhausted",
     payload: { budget: company.budget, spentUsd },
   });
+};
+
+/**
+ * Hand the founder a card about a paid order: the Inbox shows it beside the team's asks, and
+ * the digest counts it. None when one with this title still waits.
+ */
+export const raiseOrderCard = (title: string, ask: Omit<ActionAsk, "type">): Task | null => {
+  const card = store.raiseOrderCard(title, { ...ask, type: "action" });
+  if (card) {
+    publishActivity({
+      kind: "order.card",
+      message: title,
+      payload: { open: true, taskId: card.id },
+    });
+  }
+  return card;
+};
+
+/**
+ * The founder settled an order card. No run carries it on, so what they said goes to the room,
+ * where whoever answers the buyer reads it.
+ */
+export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
+  const card = store.closeOrderCard(taskId);
+  if (!card) {
+    throw new RefusalError("that order card is already settled");
+  }
+  const said =
+    reply.kind === "cant"
+      ? `couldn't — ${reply.reason}`
+      : `done${reply.note === "" ? "" : ` — ${reply.note}`}`;
+  postToRoom({ kind: "founder" }, `📦 ${card.title}: ${said}`);
+  publishActivity({
+    kind: "order.card",
+    message: card.title,
+    payload: { open: false, taskId: card.id },
+  });
+  return card;
 };

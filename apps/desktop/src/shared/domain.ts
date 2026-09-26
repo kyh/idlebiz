@@ -106,6 +106,7 @@ export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded", "drop
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+/** `order` is main's card about a paid order, which the founder settles and no run carries on. */
 export const TASK_ORIGINS = [
   "work",
   "settle",
@@ -113,6 +114,7 @@ export const TASK_ORIGINS = [
   "routine",
   "founder",
   "delegated",
+  "order",
 ] as const;
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
@@ -358,7 +360,7 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
-  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for one an older save answered. */
+  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for an order card, which no run carries on, or one an older save answered. */
   | { kind: "superseded"; by: string | null }
   /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
   | { kind: "dropped"; reason: string }
@@ -401,7 +403,7 @@ export const taskIn =
 export interface Task {
   id: string;
   companyId: string;
-  /** The product this work is for; null only for a propose run no product has room for (and saves from before products). */
+  /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
   betId: string | null;
@@ -472,6 +474,7 @@ export interface LoadSkip {
     | "routine"
     | "product"
     | "listing"
+    | "order"
     | "bet"
     | "team"
     | "secrets"

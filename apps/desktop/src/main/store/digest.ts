@@ -31,6 +31,9 @@ export const foldDigest = (d: Digest, e: PersistedActivity): Digest | null => {
     case "run.ask": {
       return e.payload.ask.type === "action" ? { ...d, actions: d.actions + 1 } : null;
     }
+    case "order.card": {
+      return e.payload.open ? { ...d, actions: d.actions + 1 } : null;
+    }
     case "task.dead": {
       return { ...d, dead: d.dead + 1 };
     }

@@ -998,4 +998,24 @@ describe("an action only the founder can take", () => {
     expect(() => drain.resolveAction(task.id, { kind: "done", note: "" })).toThrow(RefusalError);
     expect(kindOf(task)).toBe("blocked");
   });
+
+  it("settles an order card with no run, telling the room what the founder did", () => {
+    found();
+    const drain = createScheduler(scripted().driver, asleep);
+    const card = store.raiseOrderCard("Order 1: Printful marked it failed", {
+      action: "Check Ada's order",
+      draft: null,
+      instructions: "…",
+      type: "action",
+    });
+
+    const settled = drain.resolveAction(card?.id ?? "", { kind: "cant", reason: "on holiday" });
+
+    expect(settled).toMatchObject({ assigneeId: null, state: { by: null, kind: "superseded" } });
+    expect(store.listOpenTasks()).toEqual([]);
+    expect(store.recentTeamMessages().at(-1)).toMatchObject({
+      from: { kind: "founder" },
+      text: "📦 Order 1: Printful marked it failed: couldn't — on holiday",
+    });
+  });
 });

@@ -61,7 +61,7 @@ pnpm verify
 **Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by the `oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`, `no-misused-promises`, `switch-exhaustiveness-check`, `no-deprecated` and `no-unsafe-*` are skipped without a word. The deliberate overrides, each with its reason beside it in the config:
 
 - `no-await-in-loop` off: sequential awaits are intentional (ordered agent turns, paced writes).
-- `switch-exhaustiveness-check` takes a `default` as exhaustive: it is how a consumer says every other kind means nothing to it. A switch that must name every kind (the activity reducer) has none.
+- `switch-exhaustiveness-check` takes a `default` as exhaustive: it is how a consumer says every other kind means nothing to it. A switch that must name every kind has none; the activity reducer's table of slices is typed over every kind instead (`satisfies Record<ActivityKind, …>`).
 - `no-confusing-void-expression` off: `() => set(x)` is the house style.
 - `strict-boolean-expressions` off: truthiness checks on optionals are idiomatic here.
 - `promise-function-async` and `strict-void-return` off: taste; a dropped or misplaced promise is still `no-floating-promises`' and `no-misused-promises`' to catch.
@@ -177,16 +177,21 @@ rather than crashing boot.
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
   waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
   and Read on Charges and Customers for the revenue read below, and Write on Shipping Rates
-  to list a print, which `sell_print` checks by reading shipping rates before it asks for the
-  sign-off. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
+  and Read on Checkout Sessions to sell a print, which `sell_print` checks by reading both
+  (`stripeListingAccess`) before it asks for the sign-off. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
   `main/printful.ts`) and list a print with `sell_print` (`main/print-listing.ts`): main checks
   the print files against the product's verified production domains (`productionHosts` in
   `main/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates
   (`main/printful.ts`, polled every 3s and backing off on a 429), refuses a price under the
   floor, and once signed off makes the shipped payment link (`stripeShippedLink` in
   `main/payment-links.ts`, each POST with an idempotency key) and saves the listing under
-  `products/<slug>/listings/`. Until paid orders are sent to Printful it refuses a live Stripe
-  key. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  `products/<slug>/listings/`. Paid orders reach Printful through the order pump
+  (`main/order-pump.ts`), which the metrics pulse runs: it reads Stripe's checkouts
+  (`main/stripe-checkouts.ts`) every 10 minutes, keeps each paid one under
+  `products/<slug>/orders/`, and drafts, prices and confirms it on Printful
+  (`main/printful-orders.ts`); anything it cannot settle is an order card in the Inbox, and
+  `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
+  at `fetch` (`main/order-pump.test.ts`). The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key
@@ -351,6 +356,9 @@ rather than crashing boot.
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make),
   `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
+  `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
+  checkout sessions), `order-pump.ts` (each paid print order to Printful, and the founder's
+  order cards),
   `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
   `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only

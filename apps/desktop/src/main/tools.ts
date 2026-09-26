@@ -41,6 +41,7 @@ import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
 import { CATALOG_PAGE } from "@/shared/listing";
 import type { ListedPlacement, ListingVariant, PrintPlacement } from "@/shared/listing";
+import type { Order } from "@/shared/order";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
 
@@ -319,9 +320,9 @@ const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuot
   }
 };
 
-/** End the call unless the founder's Stripe key can make the listing's shipping rate. */
-const requireShippingAccess = async (ctx: RunContext, key: string): Promise<void> => {
-  const access = await ctx.printListing.shippingAccess(key);
+/** End the call unless the founder's Stripe key can make the listing's shipping rate and read its paid orders. */
+const requireStripeAccess = async (ctx: RunContext, key: string): Promise<void> => {
+  const access = await ctx.printListing.stripeAccess(key);
   switch (access.kind) {
     case "granted": {
       return;
@@ -330,22 +331,19 @@ const requireShippingAccess = async (ctx: RunContext, key: string): Promise<void
       return needIntegration(
         ctx,
         "stripe",
-        `Stripe won't let IdleBiz's key make shipping rates, which listing a print needs (${access.said}): remove the key and paste one whose restricted permissions include Write on Shipping Rates, or your secret key`,
-        "Stripe won't let IdleBiz's key make shipping rates: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.",
-        "Stripe won't let IdleBiz's key make shipping rates.",
+        `Stripe won't let IdleBiz's key make shipping rates or read checkouts, which selling a print needs (${access.said}): remove the key and paste one whose restricted permissions include Write on Shipping Rates and Read on Checkout Sessions, or your secret key`,
+        "Stripe won't let IdleBiz's key make shipping rates or read checkouts: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.",
+        "Stripe won't let IdleBiz's key make shipping rates or read checkouts.",
       );
     }
     case "unreachable": {
       throw new RefusalError(
-        `Stripe could not be asked about shipping rates (${access.reason}); try again.`,
+        `Stripe could not be asked about shipping rates and checkouts (${access.reason}); try again.`,
       );
     }
     // no default
   }
 };
-
-const NO_FULFILMENT =
-  "IdleBiz does not send paid orders to Printful yet, so sell_print lists only on a test-mode Stripe key, and the founder's is live: a live link would take a buyer's money for an item nobody ships. Sell what create_payment_link can for now.";
 
 /** One page of Printful's catalog, a product a line, with how to read the next. */
 const catalogPage = ({
@@ -377,6 +375,63 @@ const catalogProduct = (product: CatalogProduct, variants: readonly ListingVaria
 Placements, as sell_print's placement (technique): ${placements.join(", ") || "none listed"}
 Variants, as sell_print's variantIds (id: colour / size):
 ${variants.map((v) => `${v.id}: ${v.label}`).join("\n")}`;
+};
+
+/** How many orders read_orders shows: enough to find the buyer who wrote in, few enough to read. */
+const RECENT_ORDERS = 20;
+
+/** Where an order stands, as support should read it. */
+const orderStanding = (order: Order): string => {
+  if (order.kind === "unreadable") {
+    return `not sent to Printful: ${order.why}; the founder handles it`;
+  }
+  const { stage } = order;
+  switch (stage.kind) {
+    case "received": {
+      return "paid, not at Printful yet";
+    }
+    case "pricing": {
+      return `a draft at Printful (order ${stage.printfulId}), being priced`;
+    }
+    case "confirmed": {
+      return `at Printful (order ${stage.printfulId}): ${order.printfulStatus ?? "submitted"}`;
+    }
+    case "held": {
+      return `waiting on the founder: ${stage.why}`;
+    }
+    case "test": {
+      return `paid in test mode, so left a Printful draft (order ${stage.printfulId})`;
+    }
+    // no default
+  }
+};
+
+/** One order as read_orders lists it: when, what, for how much, where it stands, and who to ship it to. */
+const orderEntry = (order: Order): string => {
+  const listing =
+    store.listListings().find((l) => l.productId === order.productId && l.id === order.listingId)
+      ?.name ?? order.listingId;
+  const day = new Date(order.createdAt).toISOString().slice(0, 10);
+  const lines = [`- ${day} · ${listing}`];
+  if (order.kind === "sale") {
+    const { recipient: to } = order;
+    lines[0] += ` (${order.variant.label}) × ${order.quantity}`;
+    const address = [
+      to.address1,
+      to.address2,
+      to.city,
+      `${to.stateCode} ${to.zip}`,
+      to.countryCode,
+    ];
+    lines.push(
+      `  ${[to.name, order.email, to.phone].filter(Boolean).join(", ")}`,
+      `  ${address.filter(Boolean).join(", ")}`,
+    );
+  } else if (order.email !== null) {
+    lines.push(`  ${order.email}`);
+  }
+  lines[0] += ` · paid ${formatUsd(order.collectedCents / 100)} · ${orderStanding(order)}`;
+  return lines.join("\n");
 };
 
 /** Why a bet takes no more work, in the words the agent should act on. */
@@ -693,9 +748,6 @@ const TOOLS = {
     const priceCents = Math.round(priceUsd * 100);
     const price = formatUsd(priceCents / 100);
     const keys = sellingKeys(ctx, product, name, price);
-    if (!isTestKey(keys.stripe)) {
-      return NO_FULFILMENT;
-    }
     const placements = await servedFiles(ctx, product, product.vercel, keys.vercel, urls);
     const quote = await quotePrint(ctx, { credential: keys.printful, placements, variantIds });
     const floor = priceFloorCents(quote);
@@ -703,7 +755,7 @@ const TOOLS = {
     if (priceCents < floor) {
       return `${price} would lose money on every sale: Printful charges up to ${formatUsd(quote.costCents / 100)} to print one and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is ${formatUsd(floor / 100)}: price it above that, with the margin the bet needs.`;
     }
-    await requireShippingAccess(ctx, keys.stripe);
+    await requireStripeAccess(ctx, keys.stripe);
     // the digest pins the design the founder signs for: a later deploy can change what the URL serves
     const printed = placements
       .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl} sha256:${p.sha256}`)
@@ -740,7 +792,27 @@ const TOOLS = {
       variants: quote.variants,
     });
     post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
-    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatUsd(quote.costCents / 100)} for each one it prints and ships.${TEST_MODE}`;
+    const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
+    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatUsd(quote.costCents / 100)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
+  }),
+  read_orders: define(TOOL_SPECS.read_orders, (ctx, { product: named }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product yet — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    const orders = store
+      .listOrders()
+      .filter((o) => o.productId === product.id)
+      .toSorted((a, b) => b.createdAt - a.createdAt);
+    if (orders.length === 0) {
+      return `${product.name} has no paid orders yet.`;
+    }
+    const shown = orders.slice(0, RECENT_ORDERS);
+    return `${product.name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}`;
   }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);

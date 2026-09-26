@@ -9,7 +9,8 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
   get products/<slug>/workspace/), products/<slug>/listings/<id>.json for each print it
-  sells through Printful (runs read it, never write it), shared/ for what teammates share across products,
+  sells through Printful and products/<slug>/orders/<id>.json for each paid order of one (runs
+  read both, never write them), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
   activity.jsonl).
 - COMPANY.md carries `format`. A save stamped higher than this build writes is refused
@@ -220,8 +221,7 @@ third boundary.
   prices each variant with them to California, Alaska and Hawaii, and a price below the floor
   is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus Stripe's
   4.4% + 30Â¢, less the shipping the buyer pays), as is a Stripe key that cannot read shipping
-  rates. Nothing sends a paid order to Printful yet, so it lists only on a test-mode Stripe key.
-  Signed, it makes a Stripe price, a fixed shipping rate at Printful's dearest shipping and a
+  rates or checkout sessions. Signed, it makes a Stripe price, a fixed shipping rate at Printful's dearest shipping and a
   payment link collecting US addresses only, a dropdown for the variant when there are
   several, tagged like `create_payment_link`'s and with `metadata[listing]`, each POST under an
   idempotency key of its fields, so a retry after a timeout gets back what Stripe made; and
@@ -229,7 +229,26 @@ third boundary.
   ids, placements and techniques with `printful_catalog`, which main reads with the token (v2
   serves the catalog only to a signed-in caller). The Printful token and its one store are the
   founder's, pasted in the Budget panel (`main/printful-token.ts`), and a token Printful turns
-  away asks for a new one, pasted over it there. Each
+  away asks for a new one, pasted over it there. Each paid order then goes to Printful unsigned,
+  run by main on the metrics pulse (`main/order-pump.ts`), since the founder signed the listing
+  and its price floor: every 10 minutes one account-wide read of Stripe's checkout sessions
+  (`main/stripe-checkouts.ts`, line items expanded; a list per link would spend the reads Stripe
+  allows) from a `created[gt]` cursor in `state/orders-cursor.json`, held behind any checkout
+  that may still be paid and re-reading the last 10 minutes. A session on a listing's link with
+  `payment_status` `paid` (complete alone is not paid) is kept as an order, on disk before
+  Printful hears of it; its Printful `external_id` is the session id's hash, looked up
+  (`/v2/orders/@<id>`) before a draft is made (`main/printful-orders.ts`), so a restart never
+  makes one twice. The design is read again and must hash as signed. A draft charges nothing;
+  it is polled every pulse until priced (a bounded number of reads) and confirmed only on a
+  read that shows it still a draft costing no more than Stripe collected, so no restart
+  confirms twice or over that guard; test-mode checkouts are priced and left drafts. Sent
+  orders' Printful status is read with each Stripe read. What the pump cannot settle (a draft
+  dearer than the payment, a changed design, a refusal, a status of failed, canceled or onhold,
+  a refused key) is an order card: a blocked task of origin `order`, no assignee, no product,
+  so no bet stalls, no retirement drops it and no teammate can claim it. The founder's Done or
+  Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes to the
+  room, where support reads it. Refunds are the founder's. Agents read orders, buyers'
+  addresses included, with the unsigned `read_orders`. Each tool above
   runs once the founder signs off on the action it names, which is the approval's key (`requireSignOff` in
   `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
 Vercel project named <product>` for a product bound to none), `payment link "<name>" at

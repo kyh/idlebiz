@@ -12,7 +12,8 @@ import { RefusalError } from "@/shared/refusal";
 
 // Printful's v2 API, called here in main with the founder's token, which no run holds. v2 is
 // still labelled beta, but Printful supports it in production, and only v2 builds an order
-// straight from catalog variants, with no store products to keep in step.
+// straight from catalog variants, with no store products to keep in step. Orders are in
+// main/printful-orders.ts.
 
 const PRINTFUL_API = "https://api.printful.com";
 
@@ -113,26 +114,29 @@ export const printfulGet = (
 ): Promise<JsonValue> =>
   printfulCall(path, { headers: printfulHeaders(token, storeId) }, backoffMs);
 
-const printfulPost = (
+/** POST `body` as JSON, or nothing when it is null. */
+export const printfulPost = (
   path: string,
   { token, storeId }: PrintfulCredential,
-  body: JsonValue,
-  backoffMs: number,
+  body: JsonValue | null,
+  backoffMs = PACING.backoffMs,
 ): Promise<JsonValue> =>
   printfulCall(
     path,
-    {
-      body: JSON.stringify(body),
-      headers: { ...printfulHeaders(token, storeId), "Content-Type": "application/json" },
-      method: "POST",
-    },
+    body === null
+      ? { headers: printfulHeaders(token, storeId), method: "POST" }
+      : {
+          body: JSON.stringify(body),
+          headers: { ...printfulHeaders(token, storeId), "Content-Type": "application/json" },
+          method: "POST",
+        },
     backoffMs,
   );
 
 /** What a failed Printful read leaves the caller: `refused` is the token turned away, which only a new one fixes; `failed` says why, to the agent. */
 type PrintfulFailure = { kind: "refused" } | { kind: "failed"; reason: string };
 
-const UNREADABLE_ANSWER =
+export const UNREADABLE_ANSWER =
   "Printful answered in a shape IdleBiz does not read, which a change on Printful's side causes; try again later";
 
 /**

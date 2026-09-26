@@ -15,6 +15,7 @@ import { mkdirSync } from "node:fs";
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product's is workspace/)
 //     products/<slug>/listings/<id>.json  a print-on-demand item on sale: the Printful variants and design, its payment link
+//     products/<slug>/orders/<id>.json    a paid checkout on one of its listings, and what became of it at Printful
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
 //     workspace/            the first product's code
@@ -25,6 +26,7 @@ import { mkdirSync } from "node:fs";
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
+//       orders-cursor.json    where the next read of Stripe's checkouts starts
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -51,6 +53,9 @@ export const recentShipsFile = (companySlug: string): string =>
 /** The founder's digest-in-progress: what has happened since they last looked. */
 export const sinceLastLookFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "since-last-look.json");
+/** Where the next read of Stripe's checkouts starts; deleted, it reads again from the oldest listing and finds each order already kept. */
+export const ordersCursorFile = (companySlug: string): string =>
+  path.join(stateDir(companySlug), "orders-cursor.json");
 export const activityFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "activity.jsonl");
 
@@ -98,6 +103,11 @@ export const listingsDir = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "listings");
 export const listingFile = (companySlug: string, productSlug: string, listingId: string): string =>
   path.join(listingsDir(companySlug, productSlug), `${listingId}.json`);
+/** Beside the listings, so a run can read its product's orders, buyers' addresses included, but never write one. */
+export const ordersDir = (companySlug: string, productSlug: string): string =>
+  path.join(productsDir(companySlug), productSlug, "orders");
+export const orderFile = (companySlug: string, productSlug: string, orderId: string): string =>
+  path.join(ordersDir(companySlug, productSlug), `${orderId}.json`);
 
 /** Killed products are archived here (package and workspace preserved, never deleted). */
 export const retiredDir = (companySlug: string): string =>

@@ -24,7 +24,8 @@ const Draft = ({ text }: { text: string }) => {
 /**
  * A step only the founder can take, as the teammate wrote it up. Done carries whatever they
  * type back to the run as written, a product's key included, into the continuation's TASK.md,
- * which every run can read; Can't carries why.
+ * which every run can read; Can't carries why. An order card is main's: no run carries it on,
+ * so what they type goes to the team room.
  */
 export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk }) => {
   const [text, setText] = useState("");
@@ -51,8 +52,9 @@ export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk
       />
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-fg-dim">
-          {by}&apos;s run gets what you type, as written, and it stays in the task, where any
-          teammate can read it.
+          {t.origin === "order"
+            ? "What you type goes to the team room, where whoever answers the buyer reads it."
+            : `${by}'s run gets what you type, as written, and it stays in the task, where any teammate can read it.`}
         </span>
         <span className="flex gap-2">
           <button

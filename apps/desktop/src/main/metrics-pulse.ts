@@ -2,16 +2,20 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { guarded, report } from "@/main/lib/report";
 import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
+import { ORDER_READ_MS, pumpOrders } from "@/main/order-pump";
 import { readMetricsConfig } from "@/main/store/metrics-config";
 import { noteStripeRead } from "@/main/stripe-connect";
 import { isClosed } from "@/shared/bets";
 
 // The real numbers, read on a beat and written where they belong: the company,
 // each product, and each live bet's reading — which, with how long the pulse
-// has been asking, is all the evaluator ever judges a bet by.
+// has been asking, is all the evaluator ever judges a bet by. Paid print orders
+// ride the same beat to Printful.
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
+/** When Stripe's checkouts were last read for orders; null reads on the next pulse. */
+let ordersReadAt: number | null = null;
 
 // A beat later than this after the last one means the machine slept in
 // between, so nothing asked the sources: the streak starts again.
@@ -69,6 +73,16 @@ const now = async (): Promise<void> => {
     await read();
   } catch (error) {
     report("pulse", error);
+  }
+  try {
+    const at = Date.now();
+    const readNow = ordersReadAt === null || at - ordersReadAt >= ORDER_READ_MS;
+    if (readNow) {
+      ordersReadAt = at;
+    }
+    await pumpOrders(at, readNow);
+  } catch (error) {
+    report("orders", error);
   } finally {
     inFlight = false;
   }
@@ -100,5 +114,6 @@ export const metricsPulse = {
     }
     timer = null;
     streak = null;
+    ordersReadAt = null;
   },
 };

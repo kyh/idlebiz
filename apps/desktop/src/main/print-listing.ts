@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { printfulCatalog, printfulQuote } from "@/main/printful";
 import type { CatalogReader, PrintQuote, PrintQuoter } from "@/main/printful";
-import { stripeShippedLink, stripeShippingAccess } from "@/main/payment-links";
+import { stripeShippedLink, stripeListingAccess } from "@/main/payment-links";
 import type { ShippedLinker, StripeAccess } from "@/main/payment-links";
 import { productionHosts } from "@/main/vercel";
 import { errorMessage } from "@/shared/errors";
@@ -70,7 +70,7 @@ export interface PrintListing {
   readFile: (url: string) => Promise<PrintFileRead>;
   catalog: CatalogReader;
   quote: PrintQuoter;
-  shippingAccess: (key: string) => Promise<StripeAccess>;
+  stripeAccess: (key: string) => Promise<StripeAccess>;
   publish: ShippedLinker;
 }
 
@@ -80,5 +80,5 @@ export const printListing: PrintListing = {
   publish: stripeShippedLink,
   quote: printfulQuote,
   readFile: readPrintFile,
-  shippingAccess: stripeShippingAccess,
+  stripeAccess: stripeListingAccess,
 };

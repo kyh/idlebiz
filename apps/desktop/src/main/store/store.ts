@@ -28,6 +28,9 @@ import {
   productWorkspace,
   listingsDir,
   listingFile,
+  ordersDir,
+  orderFile,
+  ordersCursorFile,
   retiredDir,
   betsDir,
   betFile,
@@ -71,11 +74,14 @@ import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
 import { ListingSchema } from "@/shared/listing";
 import type { Listing } from "@/shared/listing";
+import { OrderSchema } from "@/shared/order";
+import type { Order, Sale } from "@/shared/order";
 import { RefusalError } from "@/shared/refusal";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
 import { DigestSchema } from "@/shared/digest";
 import type { Digest } from "@/shared/digest";
 import type {
+  ActionAsk,
   AgentRunner,
   Budget,
   BusinessTypeId,
@@ -91,6 +97,7 @@ import type {
   ShipLine,
   Speaker,
   Task,
+  TaskIn,
   TaskOrigin,
   TaskPriority,
   TaskState,
@@ -125,6 +132,8 @@ interface ActiveCompany {
   products: Product[];
   /** The print-on-demand items on sale, every live product's. */
   listings: Listing[];
+  /** Every live product's paid orders. */
+  orders: Order[];
   /** Sign-offs the founder gave that no run has used yet. */
   grants: Grant[];
   bets: Bet[];
@@ -178,6 +187,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   employees: [],
   grants: [],
   listings: [],
+  orders: [],
   policy: DEFAULT_POLICY,
   products: [],
   recentShips: [],
@@ -407,24 +417,34 @@ const loadPackages = <T extends { id: string }>(
   return rows;
 };
 
-const loadListings = (product: Product): Listing[] => {
-  const dir = listingsDir(product.companyId, product.id);
-  return safeReaddir(dir)
+/** Each `<id>.json` of a product's folder that `schema` reads; one naming another id or product is skipped. */
+const loadProductRecords = <T extends { id: string; productId: string }>(
+  product: Product,
+  kind: LoadSkip["kind"],
+  dir: string,
+  schema: z.ZodType<T>,
+): T[] =>
+  safeReaddir(dir)
     .filter((name) => name.endsWith(".json"))
     .flatMap((name) => {
       const file = path.join(dir, name);
       try {
-        const listing = ListingSchema.parse(parseJson(readFileSync(file, "utf-8")));
-        if (`${listing.id}.json` !== name || listing.productId !== product.id) {
-          throw new Error("listing does not match its file's name or product");
+        const record = schema.parse(parseJson(readFileSync(file, "utf-8")));
+        if (`${record.id}.json` !== name || record.productId !== product.id) {
+          throw new Error(`${kind} does not match its file's name or product`);
         }
-        return [listing];
+        return [record];
       } catch (error) {
-        skip("listing", file, error);
+        skip(kind, file, error);
         return [];
       }
     });
-};
+
+const loadListings = (product: Product): Listing[] =>
+  loadProductRecords(product, "listing", listingsDir(product.companyId, product.id), ListingSchema);
+
+const loadOrders = (product: Product): Order[] =>
+  loadProductRecords(product, "order", ordersDir(product.companyId, product.id), OrderSchema);
 
 const TEAM_CHAT_RING = 200;
 
@@ -952,6 +972,63 @@ export const recordListing = (listing: Listing): void => {
   );
 };
 
+// ---- orders -----------------------------------------------------------------
+export const listOrders = (): Order[] => [...current().orders];
+
+const saveOrder = (order: Order): void => {
+  atomicWrite(
+    orderFile(current().company.id, order.productId, order.id),
+    `${JSON.stringify(order, null, 2)}\n`,
+  );
+};
+
+/**
+ * A paid checkout, kept before Printful hears of it: a save that throws leaves it unkept, and
+ * nothing is sent for it, so a restart always finds what it may already have sent.
+ */
+export const recordOrder = (order: Order): void => {
+  requireProduct(order.productId);
+  const { orders } = current();
+  if (orders.some((o) => o.id === order.id)) {
+    throw new Error(`order ${order.id} is already kept`);
+  }
+  saveOrder(order);
+  orders.push(order);
+};
+
+/**
+ * What Printful did with a sale. It happened, so the cache keeps it even when the save throws,
+ * and the next write carries it; a sale whose product was retired meanwhile is gone, and throws.
+ */
+export const updateSale = (
+  id: string,
+  patch: Partial<Pick<Sale, "costCents" | "printfulStatus" | "stage">>,
+): Sale => {
+  const { orders } = current();
+  const idx = orders.findIndex((o) => o.id === id);
+  const sale = orders[idx];
+  if (sale?.kind !== "sale") {
+    throw new Error(`no sale ${id} is kept`);
+  }
+  const next: Sale = { ...sale, ...patch };
+  orders[idx] = next;
+  saveOrder(next);
+  return next;
+};
+
+const OrdersCursorSchema = z.object({ createdAfter: z.number().int() });
+
+/** Stripe's `created[gt]` for the next read of checkouts, in seconds; null before the first. */
+export const ordersCursor = (): number | null =>
+  readJsonFile(ordersCursorFile(current().company.id), OrdersCursorSchema)?.createdAfter ?? null;
+
+export const setOrdersCursor = (createdAfter: number): void => {
+  atomicWrite(
+    ordersCursorFile(current().company.id),
+    JSON.stringify(OrdersCursorSchema.parse({ createdAfter })),
+  );
+};
+
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
 export const attentionProduct = (): Product | null => {
   const products = current().products ?? [];
@@ -1230,7 +1307,7 @@ export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
 };
 
 // ---- tasks -----------------------------------------------------------------
-export const createTask = (brief: {
+interface NewTask {
   productId?: string | null;
   betId?: string | null;
   origin: TaskOrigin;
@@ -1238,9 +1315,12 @@ export const createTask = (brief: {
   description?: string | null;
   priority?: TaskPriority;
   assigneeId?: string | null;
-}): Task => {
+}
+
+const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Task => {
   const { company, tasks: list } = current();
   const t = { ...brief, companyId: company.id };
+  const now = Date.now();
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
@@ -1253,20 +1333,22 @@ export const createTask = (brief: {
     betId: t.betId ?? null,
     companyId: t.companyId,
     completedAt: null,
-    createdAt: Date.now(),
+    createdAt: now,
     description: t.description ?? null,
     id,
     origin: t.origin,
     priority: t.priority ?? "medium",
     productId: t.productId ?? null,
     startedAt: null,
-    state: { kind: "todo" },
     title: t.title,
+    ...entering(state, now),
   };
   saveTask(task);
   list.push(task);
   return task;
 };
+
+export const createTask = (brief: NewTask): Task => addTask(brief, { kind: "todo" });
 
 /** An open task by id. Shipped work is history, not something to act on. */
 export const getTask = (id: string): Task | null =>
@@ -1391,7 +1473,8 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
     return null;
   }
   const { kind } = t.state;
-  const claimable = kind === "todo" || kind === "blocked" || kind === "dead";
+  const claimable =
+    t.origin !== "order" && (kind === "todo" || kind === "blocked" || kind === "dead");
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) {
     return null;
   }
@@ -1537,6 +1620,33 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
   return next;
 };
 
+/**
+ * Main's card to the founder about an order, in the Inbox beside the team's asks. Null when one
+ * with the same title still waits, so a pump that finds the same trouble again raises no second.
+ */
+export const raiseOrderCard = (title: string, ask: ActionAsk): Task | null => {
+  const waiting = current().tasks.some(
+    (t) => t.origin === "order" && t.title === title && t.state.kind === "blocked",
+  );
+  return waiting
+    ? null
+    : addTask(
+        { description: null, origin: "order", priority: "high", title },
+        { ask, kind: "blocked", summary: null },
+      );
+};
+
+/** The founder settled an order card: history, which no run carries on. Null for any other task. */
+export const closeOrderCard = (taskId: string): Task | null => {
+  const t = getTask(taskId);
+  if (t?.origin !== "order" || t.state.kind !== "blocked") {
+    return null;
+  }
+  const closed = recordTask(taskId, entering({ by: null, kind: "superseded" }, Date.now()));
+  shelveClosed(closed);
+  return closed;
+};
+
 /** The product an employee is on: their latest task's, else the company's first. */
 export const productOfEmployee = (employeeId: string): Product | null => {
   const emp = getEmployee(employeeId);
@@ -1597,6 +1707,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
   active.products.splice(active.products.indexOf(product), 1);
   active.listings = active.listings.filter((l) => l.productId !== productId);
+  active.orders = active.orders.filter((o) => o.productId !== productId);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
   }
@@ -1787,6 +1898,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (doc) => docToProduct(doc, company.id),
   ).toSorted(byAge);
   active.listings = active.products.flatMap(loadListings).toSorted(byAge);
+  active.orders = active.products.flatMap(loadOrders).toSorted(byAge);
   active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
   active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];
   active.routines = loadPackages(

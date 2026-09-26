@@ -218,7 +218,7 @@ export const TOOL_SPECS = {
         .max(MAX_PRINT_VARIANTS)
         .refine((ids) => new Set(ids).size === ids.length, "name each variant once"),
     }),
-    doc: `sell a physical item that Printful prints on demand and ships to US addresses only. \`variantIds\` are up to ${MAX_PRINT_VARIANTS} variants of one product in Printful's catalog (its sizes or colours; the buyer picks one on the payment page), and each placement's \`placement\` and \`technique\` are ones that product offers: read them with printful_catalog, never guess. Each of \`placements\` says where a design goes (\`placement\`, such as \`front\`), how it is printed (\`technique\`, such as \`dtg\`), and \`fileUrl\`: the print file's public https URL on this product's own production domain, since Printful fetches the file from there. Deploy the file first (a PNG at print size), under a name that changes whenever the design does: the founder signs off on the file's exact bytes. \`priceUsd\` is the retail price, which the packing slip shows; the buyer also pays Printful's standard US shipping as a fixed rate. The app prices it with Printful first and refuses a price that would lose money once Printful's cost, the shipping and Stripe's fee are paid, naming the lowest it takes. It then makes a Stripe payment link, tagged like create_payment_link's: for your run's product (name another with \`"product":"<slug>"\`) and, with \`"bet":"<slug>"\`, for that open revenue bet on it. IdleBiz does not send paid orders to Printful yet, so it lists only while the founder's Stripe key is a test-mode one, and refuses a live key. The founder signs off on each listing: the first call is held, and calling again once they answer lists it.`,
+    doc: `sell a physical item that Printful prints on demand and ships to US addresses only. \`variantIds\` are up to ${MAX_PRINT_VARIANTS} variants of one product in Printful's catalog (its sizes or colours; the buyer picks one on the payment page), and each placement's \`placement\` and \`technique\` are ones that product offers: read them with printful_catalog, never guess. Each of \`placements\` says where a design goes (\`placement\`, such as \`front\`), how it is printed (\`technique\`, such as \`dtg\`), and \`fileUrl\`: the print file's public https URL on this product's own production domain, since Printful fetches the file from there. Deploy the file first (a PNG at print size), under a name that changes whenever the design does: the founder signs off on the file's exact bytes. \`priceUsd\` is the retail price, which the packing slip shows; the buyer also pays Printful's standard US shipping as a fixed rate. The app prices it with Printful first and refuses a price that would lose money once Printful's cost, the shipping and Stripe's fee are paid, naming the lowest it takes. It then makes a Stripe payment link, tagged like create_payment_link's: for your run's product (name another with \`"product":"<slug>"\`) and, with \`"bet":"<slug>"\`, for that open revenue bet on it. Each paid order goes to Printful on its own, which prints and ships it; read_orders shows them. The founder signs off on each listing: the first call is held, and calling again once they answer lists it.`,
     example: {
       bet: "bet-slug",
       name: "...",
@@ -235,6 +235,14 @@ export const TOOL_SPECS = {
     leadOnly: null,
     method: "POST",
     path: "/v1/sell-print",
+  }),
+  read_orders: tool({
+    body: z.strictObject({ product: z.string().min(1).optional() }),
+    doc: 'the latest paid orders of what sell_print listed on your run\'s product (name another with `"product":"<slug>"`): each buyer\'s name, email and shipping address, what they bought and paid, and where it stands at Printful, so you can answer a buyer. IdleBiz sends each order to Printful itself; refunds, and anything Printful needs a person for, are the founder\'s, who has a card for each order that needs them.',
+    example: {},
+    leadOnly: null,
+    method: "POST",
+    path: "/v1/orders",
   }),
   create_product: tool({
     body: ProductDraftSchema,

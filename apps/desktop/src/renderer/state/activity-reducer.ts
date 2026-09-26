@@ -41,64 +41,43 @@ export interface ActivityStep {
   roster: { employeeId: string; hired: boolean } | null;
 }
 
-const reloadFor = (e: ActivityEvent): readonly Slice[] => {
-  switch (e.kind) {
-    case "autopilot.changed":
-    case "budget.exhausted": {
-      return ["company"];
-    }
-    // the pulse writes each product's numbers and each live bet's reading too
-    case "metrics.pulse": {
-      return ["company", "products", "bets"];
-    }
-    case "product.created": {
-      return ["products"];
-    }
-    // retiring a product drops its waiting work
-    case "product.killed": {
-      return ["products", "bets", "tasks"];
-    }
-    // a bet that stops taking work drops the work it had waiting
-    case "bet.changed": {
-      return ["bets", "tasks"];
-    }
-    // An ask exists the moment it is raised, and a dead letter the moment it dies.
-    // Every way back out (answered, approved, retried, resumed on connect) goes
-    // through the scheduler's assign, which says `status: queued`. The inbox must
-    // not wait for the run to end to agree with the office.
-    case "run.ask":
-    case "task.dead":
-    case "status": {
-      return ["tasks"];
-    }
-    case "org.hired":
-    case "org.released":
-    case "run.end": {
-      return ["all"];
-    }
-    // A patch outranks any answer for its slice still in flight, so the store
-    // refuses that answer, and whatever else it carried (a hire) with it.
-    case "run.start": {
-      return ["employees"];
-    }
-    case "runner.resting": {
-      return ["resting"];
-    }
-    case "tool_call":
-    case "message":
-    case "chat":
-    case "ship":
-    case "task.retry": {
-      return [];
-    }
-    // no default
-  }
-};
+/** The slices each kind of event moves; a kind missing here is a compile error, not a silent default. */
+const RELOAD_FOR = {
+  "autopilot.changed": ["company"],
+  "bet.changed": ["bets", "tasks"],
+  "budget.exhausted": ["company"],
+  chat: [],
+  message: [],
+  // the pulse writes each product's numbers and each live bet's reading too
+  "metrics.pulse": ["company", "products", "bets"],
+  // an order card is a task no run touches, so its own event says it came or went
+  "order.card": ["tasks"],
+  "org.hired": ["all"],
+  "org.released": ["all"],
+  "product.created": ["products"],
+  // retiring a product drops its waiting work
+  "product.killed": ["products", "bets", "tasks"],
+  // An ask exists the moment it is raised, and a dead letter the moment it dies.
+  // Every way back out (answered, approved, retried, resumed on connect) goes
+  // through the scheduler's assign, which says `status: queued`. The inbox must
+  // not wait for the run to end to agree with the office.
+  "run.ask": ["tasks"],
+  "run.end": ["all"],
+  // A patch outranks any answer for its slice still in flight, so the store
+  // refuses that answer, and whatever else it carried (a hire) with it.
+  "run.start": ["employees"],
+  "runner.resting": ["resting"],
+  ship: [],
+  status: ["tasks"],
+  "task.dead": ["tasks"],
+  "task.retry": [],
+  tool_call: [],
+} satisfies Record<ActivityKind, readonly Slice[]>;
 
 export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
   const ring = held.activity;
   const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
-  const step: ActivityStep = { patch: { activity }, reload: reloadFor(e), roster: null };
+  const step: ActivityStep = { patch: { activity }, reload: RELOAD_FOR[e.kind], roster: null };
   if (FEED_KINDS.has(e.kind)) {
     step.patch.feed = [...held.feed, e].slice(-FEED_LINES);
   }

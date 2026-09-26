@@ -6,7 +6,13 @@ import { publishActivity } from "@/main/activity";
 import { guarded, report } from "@/main/lib/report";
 import { askBox } from "@/main/agents/agent-driver";
 import type { RunResult, RunTools, agentDriver } from "@/main/agents/agent-driver";
-import { announceBet, haltForBudget, postToRoom, ship } from "@/main/company-actions";
+import {
+  announceBet,
+  haltForBudget,
+  postToRoom,
+  settleOrderCard,
+  ship,
+} from "@/main/company-actions";
 import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { deployToVercel } from "@/main/deploy";
@@ -490,6 +496,9 @@ class Scheduler {
     const task = store.getTask(taskId);
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "action") {
       throw new RefusalError("task is not awaiting an action");
+    }
+    if (task.origin === "order") {
+      return settleOrderCard(taskId, reply);
     }
     return this.resumeBlocked(taskId, actionAnswer(reply), "could not resume the task");
   }

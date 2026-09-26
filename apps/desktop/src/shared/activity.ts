@@ -108,6 +108,11 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
     payload: z.object({ revenue: z.number().nullable(), users: z.number().nullable() }),
   }),
   event("autopilot.changed", nobody, { payload: z.object({ on: z.boolean() }) }),
+  /** Main handed the founder a card about a paid order (`open`), or they settled one; no run carries it. The message is its title. */
+  event("order.card", nobody, {
+    message: z.string(),
+    payload: z.object({ open: z.boolean(), taskId: z.string() }),
+  }),
 ]);
 
 /** What a publisher hands in; the publisher stamps the time and the id. */

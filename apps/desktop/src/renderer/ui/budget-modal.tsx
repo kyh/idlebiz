@@ -331,7 +331,8 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
             <div className="pt-2 text-sm leading-snug text-fg">
               Charging key: lets the team create payment links, each one you sign off. Without
               Connect it also reads revenue, so a restricted key needs Read on Charges and Customers
-              too.
+              too, and selling prints needs Write on Shipping Rates and Read on Checkout Sessions,
+              which is how paid orders are found.
             </div>
             <ChargingKey stripeKey={stripeKey} />
           </div>
@@ -343,10 +344,11 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
           </div>
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm leading-snug text-fg">
-              A private token lets the team sell printed goods, each listing you sign off, printed
-              by Printful and billed to your Printful account. Paid orders are not sent to Printful
-              yet, so listings are made only on a test-mode Stripe key. Make one at
-              developers.printful.com/tokens for a single store, with View and manage orders.
+              A private token lets the team sell printed goods, each listing you sign off. IdleBiz
+              sends each paid order to Printful, which prints, ships and bills it to your Printful
+              account; one that costs more than the buyer paid, or goes wrong, lands in your inbox.
+              Make one at developers.printful.com/tokens for a single store, with View and manage
+              orders.
             </div>
             <PrintfulToken />
           </div>

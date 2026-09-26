@@ -37,7 +37,7 @@ const Lines = ({ d }: { d: DigestSummary }) => (
     {d.released.length > 0 ? <li>Released {formatNames(d.released)}</li> : null}
     {d.actions > 0 ? (
       <li className="text-warn">
-        The team handed you {plural(d.actions, "step")} only you can take
+        {plural(d.actions, "step")} only you can take, waiting in the inbox
       </li>
     ) : null}
     {d.dead > 0 ? (

@@ -91,8 +91,8 @@ const runAs = (employeeId: string) => {
         Promise.reject(new Error("asked Printful for a price without a test asking for it")),
       readFile: () =>
         Promise.reject(new Error("fetched a print file without a test asking for it")),
-      shippingAccess: () =>
-        Promise.reject(new Error("asked Stripe about shipping without a test asking for it")),
+      stripeAccess: () =>
+        Promise.reject(new Error("asked Stripe about its grants without a test asking for it")),
     },
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
     setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
@@ -1080,8 +1080,8 @@ interface Sent {
   idempotencyKey: string | null;
 }
 
-/** Stripe's answer to a key reading shipping rates, one it grants or turned away with `status`. */
-const shippingRatesAnswer = (status: number): Response =>
+/** Stripe's answer to a key reading a list, one it grants or turned away with `status`. */
+const listAnswer = (status: number): Response =>
   status === 200
     ? Response.json({ data: [] })
     : Response.json(
@@ -1093,6 +1093,10 @@ const shippingRatesAnswer = (status: number): Response =>
         { status },
       );
 
+/** Stripe's answer to a key reading checkouts or shipping rates, as the key's grants have it. */
+const stripeRead = (pathname: string, grants: { checkouts: number; shippingRates: number }) =>
+  listAnswer(pathname === "/v1/checkout/sessions" ? grants.checkouts : grants.shippingRates);
+
 /**
  * Vercel, the product's own site, Printful and Stripe, as far as listing a print goes. Printful
  * charges $16.40 to California and $18.20 elsewhere, $4.75 and $7.99 of it shipping, and
@@ -1102,6 +1106,7 @@ const fakeSellers = ({
   fileType = "image/png",
   linkTimesOut = false,
   shippingRates = 200,
+  checkouts = 200,
 } = {}) => {
   const sent: Sent[] = [];
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
@@ -1123,7 +1128,7 @@ const fakeSellers = ({
       return Promise.resolve(new Response(DESIGN, { headers: { "content-type": fileType } }));
     }
     if (host === "api.stripe.com" && method === "GET") {
-      return Promise.resolve(shippingRatesAnswer(shippingRates));
+      return Promise.resolve(stripeRead(pathname, { checkouts, shippingRates }));
     }
     if (host === "api.printful.com" && pathname.startsWith("/v2/catalog-variants/")) {
       const id = Number(pathname.split("/").at(-1));
@@ -1198,7 +1203,7 @@ describe("sell_print", () => {
     expect(outward(sent)).toHaveLength(6);
     expect(
       sent.filter((s) => s.host === "api.stripe.com" && s.method === "GET").map((s) => s.path),
-    ).toEqual(["/v1/shipping_rates"]);
+    ).toEqual(["/v1/shipping_rates", "/v1/checkout/sessions"]);
   });
 
   it("once signed off, lists it on a US-only link at Printful's shipping, tagged and saved", async () => {
@@ -1210,7 +1215,7 @@ describe("sell_print", () => {
     const answer = await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id });
 
     expect(answer).toBe(
-      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 for each one it prints and ships. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
+      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
     );
     const tags = { bet: bet.id, listing: "launch-tee", product: "acme" };
     const stripe = outward(sent).filter((s) => s.host === "api.stripe.com");
@@ -1325,8 +1330,8 @@ describe("sell_print", () => {
     ]);
   });
 
-  it("lists nothing on a live key, since no paid order reaches Printful yet", async () => {
-    const { ctx, asked } = sellingRun();
+  it("lists on a live key, since each paid order reaches Printful", async () => {
+    const { ctx } = sellingRun();
     writeFileSync(
       path.join(root, "secrets.json"),
       JSON.stringify({
@@ -1336,26 +1341,31 @@ describe("sell_print", () => {
         VERCEL_TOKEN: TOKEN,
       }),
     );
-    const sent = fakeSellers();
+    fakeSellers();
     store.grantApproval(ctx.run.taskId, PRINT_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
-      "IdleBiz does not send paid orders to Printful yet",
-    );
-    expect(asked).toEqual([]);
-    expect(sent).toEqual([]);
-    expect(store.listListings()).toEqual([]);
+    const answer = await callTool(ctx, "POST /v1/sell-print", PRINT);
+
+    expect(answer).toContain(`Listed "Launch tee" on Acme at $28.00`);
+    expect(answer).not.toContain("test mode");
+    expect(store.listListings()).toMatchObject([{ id: "launch-tee", livemode: true }]);
   });
 
-  it("asks the founder to fix a Stripe key that cannot make shipping rates before they sign", async () => {
-    const { ctx, asked, sent } = sellingRun({}, { shippingRates: 403 });
+  it.each([
+    { grants: { shippingRates: 403 }, why: "make shipping rates" },
+    { grants: { checkouts: 403 }, why: "read the checkouts that find each paid order" },
+  ])(
+    "asks the founder to fix a Stripe key that cannot $why before they sign",
+    async ({ grants }) => {
+      const { ctx, asked, sent } = sellingRun({}, grants);
 
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
-      "Stripe won't let IdleBiz's key make shipping rates: the founder has a Stripe card waiting",
-    );
-    expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
-    expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
-  });
+      expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+        "Stripe won't let IdleBiz's key make shipping rates or read checkouts: the founder has a Stripe card waiting",
+      );
+      expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
+      expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
+    },
+  );
 
   it("asks again once the design behind the signed URL has changed", async () => {
     const { ctx, asked, sent } = sellingRun();
@@ -1567,5 +1577,87 @@ describe("printful_catalog", () => {
       "Printful turned IdleBiz's token away",
     );
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
+  });
+});
+
+describe("read_orders", () => {
+  const paid = {
+    collectedCents: 3599,
+    email: "ada@example.com",
+    listingId: "launch-tee",
+    livemode: true,
+    paymentIntent: "pi_1",
+    productId: "acme",
+  };
+
+  it("lists the product's orders newest first, with who to ship to and where each stands", async () => {
+    const { ctx } = runAs("priya");
+    store.recordListing({
+      betId: null,
+      costCents: 1820,
+      createdAt: 1,
+      id: "launch-tee",
+      livemode: true,
+      name: "Launch tee",
+      paymentLink: { id: "plink_1", url: LISTED_URL },
+      placements: [
+        { fileUrl: LISTED_URL, placement: "front", sha256: DESIGN_SHA, technique: "dtg" },
+      ],
+      priceCents: 2800,
+      productId: "acme",
+      shippingCents: 799,
+      variants: [{ id: 4013, label: "Black / M" }],
+    });
+    store.recordOrder({
+      ...paid,
+      costCents: 2410,
+      createdAt: Date.UTC(2026, 8, 20),
+      id: "order-ada",
+      kind: "sale",
+      printfulStatus: "pending",
+      quantity: 1,
+      recipient: {
+        address1: "1 Main St",
+        address2: null,
+        city: "Springfield",
+        countryCode: "US",
+        name: "Ada Buyer",
+        phone: null,
+        stateCode: "IL",
+        zip: "62701",
+      },
+      sessionId: "cs_ada",
+      stage: { kind: "confirmed", printfulId: 9001 },
+      variant: { id: 4013, label: "Black / M" },
+    });
+    store.recordOrder({
+      ...paid,
+      createdAt: Date.UTC(2026, 8, 21),
+      email: "bo@example.com",
+      id: "order-bo",
+      kind: "unreadable",
+      sessionId: "cs_bo",
+      why: "Stripe's checkout carries no whole US shipping address",
+    });
+
+    expect(
+      await callTool({ ...ctx, run: { ...ctx.run, productId: "acme" } }, "POST /v1/orders", {}),
+    ).toBe(
+      [
+        "Acme's paid orders, newest first (2 of 2):",
+        "- 2026-09-21 · Launch tee · paid $35.99 · not sent to Printful: Stripe's checkout carries no whole US shipping address; the founder handles it",
+        "  bo@example.com",
+        "- 2026-09-20 · Launch tee (Black / M) × 1 · paid $35.99 · at Printful (order 9001): pending",
+        "  Ada Buyer, ada@example.com",
+        "  1 Main St, Springfield, IL 62701, US",
+      ].join("\n"),
+    );
+  });
+
+  it("says when a product has sold nothing yet", async () => {
+    const { ctx } = runAs("priya");
+    expect(await callTool(ctx, "POST /v1/orders", { product: "acme" })).toBe(
+      "Acme has no paid orders yet.",
+    );
   });
 });

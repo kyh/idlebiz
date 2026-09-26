@@ -30,20 +30,20 @@ const Refusal = z.object({ error: z.object({ message: z.string() }) });
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [`${prefix}[${key}]`, value]));
 
-const headersFor = (key: string) => ({
+export const stripeHeaders = (key: string) => ({
   Authorization: `Bearer ${key}`,
   "Stripe-Version": STRIPE_VERSION,
 });
 
 /** Why Stripe refused, in its words when it gave any. */
-const stripeSays = (error: HttpError): string => {
+export const stripeSays = (error: HttpError): string => {
   const said = Refusal.safeParse(error.answer);
   return said.success ? said.data.error.message : error.message;
 };
 
 /** A payment link made on Stripe here in main, so an employee's process never holds the key. */
 export const stripePaymentLink: PaymentLinker = async ({ key, name, cents, product, bet }) => {
-  const headers = headersFor(key);
+  const headers = stripeHeaders(key);
   const tags: Record<string, string> = bet === null ? { product } : { bet, product };
   try {
     const price = Created.parse(
@@ -108,21 +108,23 @@ const variantChoice = (variants: readonly ListingVariant[]): Record<string, stri
         ),
       };
 
-/** Whether a key may make shipping rates, which a restricted key needs granted on its own. */
+/** Whether a key may make shipping rates and read checkouts, which a restricted key needs granted on their own. */
 export type StripeAccess =
   | { kind: "granted" }
   | { kind: "refused"; said: string }
   | { kind: "unreachable"; reason: string };
 
 /**
- * Ask Stripe whether `key` reaches shipping rates before the founder signs off on a listing,
- * so a restricted key made before prints were sold is fixed first rather than failing after
- * the sign-off, halfway through. Only a read can be asked without making one: write implies
- * read, so this catches a key with no grant there, not one granted Read alone.
+ * Ask Stripe whether `key` reaches shipping rates, which a listing makes, and checkout sessions,
+ * which is how each paid order is found, before the founder signs off on a listing: a restricted
+ * key made before prints were sold is fixed first, rather than fail after the sign-off or leave
+ * paid orders unsent. Only a read can be asked without making anything: write implies read, so
+ * this catches a key with no grant on shipping rates, not one granted Read alone.
  */
-export const stripeShippingAccess = async (key: string): Promise<StripeAccess> => {
+export const stripeListingAccess = async (key: string): Promise<StripeAccess> => {
   try {
-    await getJson(`${API}/v1/shipping_rates?limit=1`, headersFor(key));
+    await getJson(`${API}/v1/shipping_rates?limit=1`, stripeHeaders(key));
+    await getJson(`${API}/v1/checkout/sessions?limit=1`, stripeHeaders(key));
     return { kind: "granted" };
   } catch (error) {
     if (error instanceof HttpError && error.refused) {
@@ -162,7 +164,7 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
   const post = (path: string, form: Record<string, string>) =>
     postForm(
       `${API}${path}`,
-      { ...headersFor(key), "Idempotency-Key": idempotencyKey(listing, product, path, form) },
+      { ...stripeHeaders(key), "Idempotency-Key": idempotencyKey(listing, product, path, form) },
       form,
     );
   try {
