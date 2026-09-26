@@ -30,7 +30,7 @@ const Lines = ({ d }: { d: DigestSummary }) => (
     ) : null}
     {d.runs > 0 ? (
       <li>
-        {plural(d.runs, "run")} · {formatUsd(d.spentUsd)} spent
+        {plural(d.runs, "run")} · {formatUsd(d.spentUsd)} usage at API prices
       </li>
     ) : null}
     {d.hired.length > 0 ? <li>Hired {formatNames(d.hired)}</li> : null}

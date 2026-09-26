@@ -167,7 +167,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   return (
     <Modal
       title="Budget"
-      subtitle="AI tokens cost real money — set how much the office may burn"
+      subtitle="Every run is metered at API prices, whatever your plan bills — cap how much the office uses"
       onClose={onClose}
     >
       <div className="space-y-4">
@@ -182,7 +182,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
         ) : null}
 
         <div>
-          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Spending cap</div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Usage cap</div>
           <Picker
             options={BUDGET_MODES}
             value={budget.mode}
@@ -193,7 +193,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
                 setCap();
               }
             }}
-            label="Spending cap"
+            label="Usage cap"
             className="grid grid-cols-2 gap-2"
           />
           <div className="mt-2 flex items-center gap-2">
@@ -214,7 +214,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
 
         <div className="px-inset flex items-center justify-between p-3">
           <div>
-            <div className="text-xs uppercase tracking-wide text-fg-dim">Spent so far</div>
+            <div className="text-xs uppercase tracking-wide text-fg-dim">Usage (at API prices)</div>
             <div className="text-base tabular-nums text-fg">{formatUsd(company.spentUsd)}</div>
             {budget.mode === "capped" ? (
               <div className="text-xs tabular-nums text-fg-dim">

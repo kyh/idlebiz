@@ -2,7 +2,7 @@ import { Menu, Notification, Tray, app, nativeImage } from "electron";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import * as store from "@/main/store/store";
-import { earliestReset, napLabel, spentLabel } from "@/shared/format";
+import { earliestReset, napLabel, usageLabel } from "@/shared/format";
 
 // macOS template images use black and alpha; the system recolors them for the menu bar.
 
@@ -43,14 +43,14 @@ const statusLine = (s: OfficeStatus): string => {
   if (!s.company) {
     return "No company yet";
   }
-  const spent = spentLabel(s.company.spentUsd);
+  const usage = usageLabel(s.company.spentUsd);
   if (s.working > 0) {
-    return `${s.working} working · ${spent}`;
+    return `${s.working} working · ${usage}`;
   }
   if (s.napUntil !== undefined) {
     return napLabel(s.napUntil);
   }
-  return `${s.company.autopilot ? "idle" : "paused"} · ${spent}`;
+  return `${s.company.autopilot ? "idle" : "paused"} · ${usage}`;
 };
 
 const badge = (s: OfficeStatus, windowless: boolean): string => {

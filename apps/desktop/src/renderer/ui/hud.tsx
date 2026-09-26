@@ -9,7 +9,7 @@ import type { Company, Employee, Product } from "@/shared/domain";
 import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { ProductStatus } from "@/shared/integrations";
-import { earliestReset, formatCompact, napLabel, spentLabel } from "@/shared/format";
+import { earliestReset, formatCompact, napLabel, usageLabel } from "@/shared/format";
 import { cn } from "cn";
 
 // VG5000 has no alert glyph; the colored emoji is intentional.
@@ -64,7 +64,7 @@ const Scoreboard = ({
   onOpen: (overlay: Overlay) => void;
 }) => {
   const out = isOutOfBudget(company);
-  const spent = spentLabel(company.spentUsd);
+  const usage = usageLabel(company.spentUsd);
   return (
     <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
       <Stat
@@ -73,8 +73,8 @@ const Scoreboard = ({
           company.revenueUsd === null ? "—" : `$${formatCompact(Math.floor(company.revenueUsd))}`
         }
         accent={out ? "var(--danger)" : "#9fe6b0"}
-        sub={company.revenueUsd === null ? `${spent} · connect` : `${spent}${out ? " · OUT" : ""}`}
-        title="Real Stripe revenue vs real AI spend — budget & Stripe live here"
+        sub={company.revenueUsd === null ? `${usage} · connect` : `${usage}${out ? " · OUT" : ""}`}
+        title="Real Stripe revenue vs AI usage at API prices — budget & Stripe live here"
         onClick={() => onOpen({ kind: "budget" })}
       />
       <Stat

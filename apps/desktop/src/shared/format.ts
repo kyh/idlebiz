@@ -30,7 +30,11 @@ export const earliestReset = (
     .filter((t): t is number => t !== undefined && t > now)
     .toSorted((a, b) => a - b)[0];
 
-export const spentLabel = (spentUsd: number): string => `spent ${formatUsd(spentUsd)}`;
+/**
+ * "usage $3.20": what the runs would have cost at API prices. It is not a bill: a subscription
+ * pays for the same runs with its own limits.
+ */
+export const usageLabel = (usd: number): string => `usage ${formatUsd(usd)}`;
 
 /** "3 runs", "1 question" — a count with its noun, the locale's plural rules. */
 export const plural = (n: number, noun: string): string =>

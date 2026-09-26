@@ -99,7 +99,7 @@ type Team =
 const CAPS: readonly (number | null)[] = [5, 20, 50, null];
 const CAP_ITEMS: readonly MenuItem[] = CAPS.map((cap) =>
   cap === null
-    ? { hint: "No ceiling — the office spends whatever it needs", label: "No cap" }
+    ? { hint: "No ceiling — the office uses whatever it needs", label: "No cap" }
     : { label: `$${cap}` },
 );
 const DEFAULT_CAP_INDEX = 1;
@@ -150,7 +150,7 @@ const scriptFor = (
       return [
         "Hey! Welcome to the world of IDLEBIZ!",
         "Chad Runwayson. I write checks. That office down the street? I own the building — and tonight it's yours, every floor of it, if you've got a pitch.",
-        "This world runs on employees. They live in your coding CLI — Claude Code or Codex — and they write real code, in a real folder, on your computer. Real burn, too.",
+        "This world runs on employees. They live in your coding CLI — Claude Code or Codex — and they write real code, in a real folder, on your computer. Real usage, too.",
       ];
     }
     case "auth": {
@@ -180,8 +180,8 @@ const scriptFor = (
     }
     case "budget": {
       return [
-        "Last thing, and it's the one I care about. Employees think with real AI, and that bills your account for real.",
-        "Set the burn ceiling. They down tools when they hit it, and you can move it any time.",
+        "Last thing, and it's the one I care about. Employees think with real AI, and I meter every run at API prices. Your plan may bill you less, but that's the number I watch.",
+        "Set the usage ceiling. They down tools when they hit it, and you can move it any time.",
       ];
     }
     case "finalize": {
@@ -437,8 +437,8 @@ const hintFor = (step: Step, look: number, looks: number, capUsd: number | null)
     }
     case "budget": {
       return capUsd === null
-        ? "⚠ Uncapped. The office keeps spending while it works."
-        : `New work stops at $${capUsd}; whatever is already running still finishes.`;
+        ? "⚠ Uncapped. Usage keeps climbing while the office works."
+        : `New work stops at $${capUsd} of usage; whatever is already running still finishes.`;
     }
     case "title":
     case "intro":
