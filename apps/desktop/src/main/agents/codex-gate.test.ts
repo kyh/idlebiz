@@ -8,7 +8,7 @@ import path from "node:path";
 import { runnerBin } from "@repo/agent-driver/detect";
 import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
 import type { PermissionRequest } from "@repo/agent-driver/acp-session";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { holdFor } from "@/shared/command-policy";
 import type { Hold } from "@/shared/command-policy";
@@ -116,12 +116,11 @@ const standInModel = (move: () => Move): Server =>
 
 /** `make` with HOME at `home`, where the seal and the run's env look for the founder's files. */
 const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> => {
-  const previous = process.env.HOME;
-  process.env.HOME = home;
+  vi.stubEnv("HOME", home);
   try {
     return await make();
   } finally {
-    process.env.HOME = previous;
+    vi.unstubAllEnvs();
   }
 };
 

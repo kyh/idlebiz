@@ -166,7 +166,8 @@ third boundary.
     resolves: a run whose folder, or any folder between it and the save, is a symlink does not
     start (`ownFolders`), and no run removes, moves or replaces one of its own folders. Main
     makes them before the run: a product's workspace as a git repository (`ensureRepository`,
-    macOS's git) and claude's `projects/` folder. A run writes no git config, so its commits are
+    macOS's git; without Apple's command line tools the run goes on in a plain folder) and
+    claude's `projects/` folder. A run writes no git config, so its commits are
     named by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
   - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders' and its
     runner's agent-browser namespace (`browserNamespace`, keyed by save and runner): no ssh,
@@ -223,7 +224,9 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
     a `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there, which
     runs nothing its config names since git stopped lazy-fetching a partial clone's missing
     objects (2.45.1; 2.39.4 and the other backports). The prompts and the questions IdleBiz asks
-    the founder say so.
+    the founder say so. A shell `git push` is still held under `git-push`, and signed it runs as
+    any command does: on a claude run git reaches a credential helper that reads the Keychain
+    (gh's), so it can push over https as the founder. Refuse it.
 - **A run loads the founder's CLI setup, less their MCP.** A claude session loads the
   founder's user, project and local settings (CLAUDE.md, skills, plugins, hooks), under the
   flag tier its session options set (`packages/agent-driver/src/registry.ts`), which outranks
@@ -232,10 +235,11 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
   `disableClaudeAiConnectors`, a deny of `mcp__*`), which act signed in as the founder; the
   company is reached with curl. A codex session loads the founder's codex config with every
   MCP server turned off by the name `codex mcp list` gives it, apps and plugins whole
-  (`codexMcpOff` in `main/agents/agent-driver.ts`). A codex whose login lives in the Keychain
-  (`cli_auth_credentials_store`, or the profile its config selects) is refused: onboarding says
-  so, and every codex run is refused with the same sentence before it starts
-  (`main/agents/codex-keychain.ts`).
+  (`codexMcpOff` in `main/agents/agent-driver.ts`); one it cannot list refuses the run with
+  codex's reason. A runner is signed in only if its login probe, run sealed as its runs are,
+  says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
+  keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt
+  (`signedIn` in the driver), until a sign-in finds it again.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
   judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that

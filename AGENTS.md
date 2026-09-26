@@ -233,7 +233,7 @@ rather than crashing boot.
   `.mcp.json` or `.codex/`.
   It connects to no unix socket but its own folders' and its namespace's, to no loopback
   debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there
-  is refused with a sentence the founder reads. Main makes a product's workspace a repository
+  reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
   `TOOL_CACHE_ENV` in `main/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
   `cache/`, so a tool that writes elsewhere in HOME fails with `EPERM` until its cache is

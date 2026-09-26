@@ -72,6 +72,7 @@ const scripted = () => {
   const running = new Map<string, (result: RunResult) => void>();
   const tools = new Map<string, RunTools>();
   const resting = new Set<string>();
+  const signedOut = new Set<string>();
   const seal = { holds: true };
   let started = 0;
   const driver: EmployeeRunner = {
@@ -86,8 +87,9 @@ const scripted = () => {
         signal.addEventListener("abort", () => resolve(interrupted), { once: true });
       }),
     runsSealed: () => seal.holds,
+    signedIn: (runner) => !signedOut.has(runner),
   };
-  return { driver, resting, running, seal, started: () => started, tools };
+  return { driver, resting, running, seal, signedOut, started: () => started, tools };
 };
 
 const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
@@ -210,6 +212,19 @@ describe("draining the queue", () => {
     found();
     const { driver, resting } = scripted();
     resting.add("codex");
+    const parked = queue("ana");
+    const free = queue("priya");
+
+    createScheduler(driver).tick();
+
+    expect(kindOf(parked)).toBe("queued");
+    expect(kindOf(free)).toBe("running");
+  });
+
+  it("starts nothing on a runner no sign-in found, so its work spends no attempt", () => {
+    found();
+    const { driver, signedOut } = scripted();
+    signedOut.add("codex");
     const parked = queue("ana");
     const free = queue("priya");
 

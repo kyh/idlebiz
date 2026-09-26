@@ -17,7 +17,7 @@ import { KILL_GRACE_MS, windowEnd } from "@/shared/bets";
 import type { BetState } from "@/shared/bets";
 import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
-import { runPreamble } from "@/main/prompts/briefs";
+import { approvalAnswer, runPreamble } from "@/main/prompts/briefs";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 import { betToDoc } from "./bet-codec";
 import { taskToDoc } from "./task-codec";
@@ -259,6 +259,7 @@ describe("scheduler queue admission", () => {
     restingRunner: () => null,
     runTask: () => Promise.reject(new Error("no run starts past the cap")),
     runsSealed: () => true,
+    signedIn: () => true,
   });
 
   it("leaves capped work queued without spinning on its first task", () => {
@@ -1738,12 +1739,18 @@ describe("the save format", () => {
     );
   });
 
-  it("turns a format 6 push sign-off into a question, takes its grant back and clears .push/", () => {
-    const co = found();
+  it("turns a format 6 push sign-off, or its approved continuation, into a question, takes its grant back and clears .push/", () => {
+    const co = foundTeam();
     const pushed = "push main (0123abcd) of acme to https://github.com/a/b.git";
     const [product] = store.listProducts();
+    const [lead] = store.listEmployees();
     const signOff = (title: string, command: string, rule: string) => {
-      const t = store.createTask({ origin: "founder", productId: product?.id, title });
+      const t = store.createTask({
+        assigneeId: lead?.id,
+        origin: "founder",
+        productId: product?.id,
+        title,
+      });
       const ask = { command, rule, type: "approval" } as const;
       writeFileSync(
         path.join(tasksDir(co.id), t.id, "TASK.md"),
@@ -1752,7 +1759,10 @@ describe("the save format", () => {
       return t.id;
     };
     const push = signOff("Push", pushed, "git-push");
+    const approved = signOff("Push again", pushed, "git-push");
     const deploy = signOff("Deploy", "deploy acme to production on Vercel project acme", "deploy");
+    store.initStore();
+    const continuation = store.resolveBlockedWithAnswer(approved, approvalAnswer(true, pushed));
     store.grantApproval("continue-push", pushed);
     store.grantApproval("continue-deploy", "deploy acme to production on Vercel project acme");
     mkdirSync(path.join(root, ".push", "repo-1"), { recursive: true });
@@ -1761,14 +1771,16 @@ describe("the save format", () => {
     store.initStore();
     expect(stampOf(co.id)).toBe(7);
 
-    expect(store.getTask(push)?.state).toEqual({
+    const pushedByHand = {
       ask: {
         question: `The team no longer pushes code, so this waits on you instead: ${pushed}. To push it, clone it fresh with \`git clone --no-local ${product?.workspaceDir} <new folder>\` and push from that clone, never with git inside the workspace: it holds what the team wrote, and git there could run it as you. Then answer to let the task go on.`,
         type: "question",
       },
       kind: "blocked",
       summary: null,
-    });
+    };
+    expect(store.getTask(push)?.state).toEqual(pushedByHand);
+    expect(store.getTask(continuation?.id ?? "")?.state).toEqual(pushedByHand);
     expect(store.getTask(deploy)?.state).toMatchObject({ ask: { rule: "deploy" } });
     expect(store.consumeApproval("continue-push", pushed)).toBe(false);
     expect(

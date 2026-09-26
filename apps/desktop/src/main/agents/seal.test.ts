@@ -1137,8 +1137,8 @@ for (const target of targets) {
       const [inWorkspace, claude, codex, ...founders] = await Promise.all(
         [
           ".idlebiz/acme/workspace/tmp/tsx-501/1.pipe",
-          `.agent-browser/namespaces/${browserNamespace("claude")}/run/d.sock`,
-          `.agent-browser/namespaces/${browserNamespace("codex")}/run/d.sock`,
+          `.agent-browser/namespaces/${browserNamespace(path.join(short, ".idlebiz"), "claude")}/run/d.sock`,
+          `.agent-browser/namespaces/${browserNamespace(path.join(short, ".idlebiz"), "codex")}/run/d.sock`,
           ".agent-browser/default.sock",
           ".ssh/agent.sock",
           "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
@@ -1150,7 +1150,7 @@ for (const target of targets) {
         ].map((name) => listen(path.join(short, name))),
       );
       expect(path.dirname(path.dirname(claude ?? ""))).toBe(
-        path.join(namespaces, browserNamespace("claude")),
+        path.join(namespaces, browserNamespace(path.join(short, ".idlebiz"), "claude")),
       );
       const blocked = [...founders, codex ?? ""];
       expect(

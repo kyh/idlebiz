@@ -28,7 +28,6 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
-import { CODEX_IN_KEYCHAIN, codexLoginInKeychain } from "@/main/agents/codex-keychain";
 import { runEnv } from "@/main/agents/run-env";
 import {
   browserNamespace,
@@ -77,13 +76,13 @@ const runnerEnv = (runner: AgentRunner): Record<string, string> =>
  */
 const browserEnv = (runner: AgentRunner) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
-  AGENT_BROWSER_NAMESPACE: browserNamespace(runner),
+  AGENT_BROWSER_NAMESPACE: browserNamespace(ROOT_DIR, runner),
   AGENT_BROWSER_SOCKET_DIR: browserSocketDir(),
 });
 
 /** The folder `runner`'s daemons listen in, which a run cannot make: only write inside it. */
 const makeBrowserNamespace = (runner: AgentRunner): void => {
-  mkdirSync(path.join(browserSocketDir(), "namespaces", browserNamespace(runner)), {
+  mkdirSync(path.join(browserSocketDir(), "namespaces", browserNamespace(ROOT_DIR, runner)), {
     recursive: true,
   });
 };
@@ -137,12 +136,37 @@ const execFileAsync = promisify(execFile);
 
 const CodexMcpServers = z.array(z.object({ name: z.string() }));
 
+const ExecFailure = z.object({ stderr: z.string() });
+
+/** Why codex could not list its servers, in words the founder can act on. */
+const unlisted = (why: string): RefusalError =>
+  new RefusalError(
+    `IdleBiz could not list your codex MCP servers to keep them out of the run (${why}), so it did not start.`,
+  );
+
+/**
+ * The session config that turns off every server `listed` (what `codex mcp list --json` printed)
+ * names, and the apps and plugins that bring servers of their own.
+ */
+export const mcpOffConfig = (listed: string) => {
+  let servers: z.infer<typeof CodexMcpServers>;
+  try {
+    servers = CodexMcpServers.parse(parseJson(listed));
+  } catch {
+    throw unlisted("codex answered in a shape IdleBiz does not read");
+  }
+  const config = {
+    features: { apps: false, plugins: false },
+    mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
+  };
+  return { CODEX_CONFIG: JSON.stringify(config) };
+};
+
 /**
  * The adapter env that keeps every MCP server of the founder's out of a codex run: they act as
  * the founder, signed in as them. codex has no switch that loads none, and a session's config is
  * merged over theirs, so each is turned off by the name `codex mcp list` gives it, listed as the
- * run would load them (`env` is the run's own, a CODEX_HOME in it included). Apps and plugins,
- * which bring servers of their own, go off whole.
+ * run would load them (`env` is the run's own, a CODEX_HOME in it included).
  */
 export const codexMcpOff = async (
   seal: Seal,
@@ -154,32 +178,25 @@ export const codexMcpOff = async (
     "list",
     "--json",
   ]);
-  const { stdout } = await execFileAsync(bin, rest, {
-    env: { ...runnerEnv("codex"), ...env },
-    timeout: 15_000,
-  });
-  const servers = CodexMcpServers.parse(parseJson(stdout));
-  const config = {
-    features: { apps: false, plugins: false },
-    mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
-  };
-  return { CODEX_CONFIG: JSON.stringify(config) };
+  let listed: string;
+  try {
+    ({ stdout: listed } = await execFileAsync(bin, rest, {
+      env: { ...runnerEnv("codex"), ...env },
+      timeout: 15_000,
+    }));
+  } catch (error) {
+    const failed = ExecFailure.safeParse(error);
+    const [said = ""] = failed.success ? failed.data.stderr.trim().split("\n", 1) : [];
+    throw unlisted(said === "" ? "codex did not answer" : said);
+  }
+  return mcpOffConfig(listed);
 };
 
-/**
- * `runner`'s session under `seal`, loading none of the founder's MCP servers. A codex whose login
- * is in the Keychain, which the seal closes to it, is refused before it spends an attempt failing
- * to sign in.
- */
-const sessionAgent = async (runner: AgentRunner, seal: Seal): Promise<AcpAgent> => {
-  if (runner === "claude") {
-    return acpAgentFor(runner, seal);
-  }
-  if (await codexLoginInKeychain()) {
-    throw new RefusalError(CODEX_IN_KEYCHAIN);
-  }
-  return acpAgentFor(runner, seal, await codexMcpOff(seal));
-};
+/** `runner`'s session under `seal`, loading none of the founder's MCP servers. */
+const sessionAgent = async (runner: AgentRunner, seal: Seal): Promise<AcpAgent> =>
+  runner === "claude"
+    ? acpAgentFor(runner, seal)
+    : acpAgentFor(runner, seal, await codexMcpOff(seal));
 
 /**
  * The URL of the top page, then of every frame found under it; null where the
@@ -334,12 +351,17 @@ const TOOL_CACHE_ENV = {
 /**
  * A product's workspace as a repository, made by main when it is none yet: a run cannot write a
  * repository's config or hooks, which the founder's own git would run. macOS's git, whose `init`
- * runs nothing the folder holds.
+ * runs nothing the folder holds. Without Apple's command line tools it has no git to run, and the
+ * run goes on in a plain folder rather than fail every attempt.
  */
 export const ensureRepository = async (workspace: string): Promise<void> => {
   const stats = await lstat(path.join(workspace, ".git")).catch(() => null);
   if (stats === null) {
-    await execFileAsync("/usr/bin/git", ["init", "--quiet"], { cwd: workspace });
+    try {
+      await execFileAsync("/usr/bin/git", ["init", "--quiet"], { cwd: workspace });
+    } catch (error) {
+      report("repository", error);
+    }
   }
 };
 
@@ -529,6 +551,15 @@ class AgentDriver {
     return this.availableRunners().length > 0;
   }
 
+  /**
+   * Whether `runner`'s CLI was last found signed in as its runs sign in, under its seal: one that
+   * is not (a codex login in the Keychain, which the seal closes to codex runs, reads so) would
+   * only fail each attempt, so its employees' work waits until a sign-in finds it again.
+   */
+  signedIn(runner: AgentRunner): boolean {
+    return this.availableRunners().includes(runner);
+  }
+
   availableRunners(): AgentRunner[] {
     // A signed-in CLI still needs its separately packaged ACP adapter.
     return this.probes.filter((p) => isReady(p) && acpAgentInstalled(p.id)).map((p) => p.id);
@@ -679,7 +710,10 @@ class AgentDriver {
     if (run.workspace !== company.workspaceDir) {
       await ensureRepository(run.workspace);
     }
-    const livePage = livePageOf(sealedBrowser(seal, emp.runner), browserNamespace(emp.runner));
+    const livePage = livePageOf(
+      sealedBrowser(seal, emp.runner),
+      browserNamespace(ROOT_DIR, emp.runner),
+    );
     const handle = controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;

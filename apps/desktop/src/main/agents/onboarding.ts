@@ -5,7 +5,6 @@ import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { agentDriver } from "@/main/agents/agent-driver";
-import { CODEX_IN_KEYCHAIN, codexLoginInKeychain } from "@/main/agents/codex-keychain";
 import { SANDBOX_EXEC } from "@/main/agents/seal";
 import { foundingTeamPrompt } from "@/main/prompts/onboarding";
 import { errorMessage } from "@/shared/errors";
@@ -58,6 +57,10 @@ const streamCommand = (
 
 const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
 
+// A login codex keeps in the Keychain reads as none, to its runs and to the sign-in alike.
+const CODEX_FILE_LOGIN =
+  'If Codex keeps its login in your Keychain, which IdleBiz\'s sandbox closes to codex runs, first set cli_auth_credentials_store = "file" in ~/.codex/config.toml.';
+
 export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void> => {
   if (setupRunning) {
     emit({ message: "Setup already in progress…", type: "progress" });
@@ -100,10 +103,6 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
       if (!p.installed || p.authed) {
         continue;
       }
-      if (p.id === "codex" && (await codexLoginInKeychain())) {
-        emit({ message: CODEX_IN_KEYCHAIN, type: "progress" });
-        continue;
-      }
       emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
       const [cmd = SANDBOX_EXEC, ...args] = await agentDriver.sealedSignIn(p.id, [
         p.bin,
@@ -112,7 +111,7 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
       const code = await streamCommand(cmd, args, emit);
       if (code !== 0) {
         emit({
-          message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.`,
+          message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.${p.id === "codex" ? ` ${CODEX_FILE_LOGIN}` : ""}`,
           type: "progress",
         });
       }

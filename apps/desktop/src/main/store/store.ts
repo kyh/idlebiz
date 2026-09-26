@@ -1865,28 +1865,44 @@ const adoptStoppedBetWork = (active: ActiveCompany): void => {
 /** What the retired push tool asked the founder to sign: `push <branch> (<sha>) of <product> to <url>`. */
 const PUSH_SIGN_OFF = /^push \S+ \(/u;
 
+/** A continuation's brief quoting a push sign-off the founder approved, which it would go on to run. */
+const APPROVED_PUSH =
+  /^> permission to run `(?<command>push \S+ \(.+)`\n\nThe founder answered:\n> Approved\./mu;
+
+/** The push sign-off `t` waits on or would go on to run, if any. */
+const pushSignOffOf = (t: Task): string | null => {
+  const { state } = t;
+  if (state.kind === "blocked") {
+    return state.ask.type === "approval" && PUSH_SIGN_OFF.test(state.ask.command)
+      ? state.ask.command
+      : null;
+  }
+  if (state.kind === "todo" || state.kind === "queued" || state.kind === "running") {
+    return APPROVED_PUSH.exec(t.description ?? "")?.groups?.command ?? null;
+  }
+  return null;
+};
+
 /**
- * Format 6 and older could hold a task on a sign-off for the push tool, which is gone: approved,
- * it would send the agent to a route that no longer answers. Each becomes a question the founder
- * can answer once they have pushed by hand, a granted one is taken back, and the repositories
- * the tool staged pushes in are removed. The question says to push from a fresh clone: git run
- * inside the workspace obeys the config and hooks the team writes there, as the founder.
+ * Format 6 and older could hold a task on a sign-off for the push tool, which is gone, or queue
+ * the continuation of one the founder approved: either would send the agent to a route that no
+ * longer answers. Each becomes a question the founder can answer once they have pushed by hand,
+ * a granted one is taken back, and the repositories the tool staged pushes in are removed. The
+ * question says to push from a fresh clone: git run inside the workspace obeys the config and
+ * hooks the team writes there, as the founder.
  */
 const adoptRetiredPush = (active: ActiveCompany): void => {
   for (const t of active.tasks) {
-    const { state } = t;
-    if (
-      state.kind === "blocked" &&
-      state.ask.type === "approval" &&
-      PUSH_SIGN_OFF.test(state.ask.command)
-    ) {
+    const command = pushSignOffOf(t);
+    if (command !== null) {
       const workspace =
         active.products.find((p) => p.id === t.productId)?.workspaceDir ?? "the workspace";
-      const question = `The team no longer pushes code, so this waits on you instead: ${state.ask.command}. To push it, clone it fresh with \`git clone --no-local ${workspace} <new folder>\` and push from that clone, never with git inside the workspace: it holds what the team wrote, and git there could run it as you. Then answer to let the task go on.`;
+      const question = `The team no longer pushes code, so this waits on you instead: ${command}. To push it, clone it fresh with \`git clone --no-local ${workspace} <new folder>\` and push from that clone, never with git inside the workspace: it holds what the team wrote, and git there could run it as you. Then answer to let the task go on.`;
+      const summary = t.state.kind === "blocked" ? t.state.summary : null;
       recordIn(
         active.tasks,
         t.id,
-        { state: { ...state, ask: { question, type: "question" } } },
+        { state: { ask: { question, type: "question" }, kind: "blocked", summary } },
         saveTask,
       );
     }

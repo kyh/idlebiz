@@ -228,7 +228,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
 /** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
 export type EmployeeRunner = Pick<
   typeof agentDriver,
-  "runTask" | "restingRunner" | "pickRunner" | "runsSealed"
+  "runTask" | "restingRunner" | "signedIn" | "pickRunner" | "runsSealed"
 >;
 
 /** Every run on a product shares its workspace; the company's own work runs in the company's. */
@@ -367,7 +367,7 @@ class Scheduler {
       if (emp.status !== "idle") {
         continue;
       }
-      if (this.driver.restingRunner(emp.runner) !== null) {
+      if (!this.driver.signedIn(emp.runner) || this.driver.restingRunner(emp.runner) !== null) {
         continue;
       }
       const open = store
@@ -597,7 +597,11 @@ class Scheduler {
       return false;
     }
     const employee = store.getEmployee(task.assigneeId);
-    return employee !== null && this.driver.restingRunner(employee.runner) === null;
+    return (
+      employee !== null &&
+      this.driver.signedIn(employee.runner) &&
+      this.driver.restingRunner(employee.runner) === null
+    );
   }
 
   /**

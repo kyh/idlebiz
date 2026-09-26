@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { LivePage } from "@/shared/command-policy";
 import type { BlockedAsk } from "@/shared/domain";
 import { parseJson } from "@/shared/json";
+import { RefusalError } from "@/shared/refusal";
 import type { BrowserCli } from "./agent-driver";
 import type { Seal, SealState } from "./seal";
 
@@ -30,10 +31,12 @@ const {
   acpAgentFor,
   agentDriver,
   askBox,
+  codexMcpOff,
   createAgentDriver,
   decidePermission,
   ensureRepository,
   livePageOf,
+  mcpOffConfig,
   memoryAfter,
   outcomeOf,
 } = await import("./agent-driver");
@@ -391,9 +394,9 @@ describe("acpAgentFor", () => {
     const codex = acpAgentFor("codex", SEAL).env;
     const claude = acpAgentFor("claude", SEAL).env;
     expect(codex.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
-    expect(codex.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace("codex"));
-    expect(claude.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace("claude"));
-    expect(browserNamespace("claude")).not.toBe(browserNamespace("codex"));
+    expect(codex.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace(root, "codex"));
+    expect(claude.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace(root, "claude"));
+    expect(browserNamespace(root, "claude")).not.toBe(browserNamespace(root, "codex"));
     expect(codex.AGENT_BROWSER_SOCKET_DIR).toBe(path.join(homedir(), ".agent-browser"));
   });
 
@@ -413,8 +416,24 @@ describe("acpAgentFor", () => {
   });
 
   it("hands codex the founder's MCP servers to turn off", () => {
-    const off = { CODEX_CONFIG: '{"mcp_servers":{"gmail":{"enabled":false}}}' };
+    const off = mcpOffConfig('[{"name":"gmail","enabled":true},{"name":"linear"}]');
+    expect(parseJson(off.CODEX_CONFIG)).toEqual({
+      features: { apps: false, plugins: false },
+      mcp_servers: { gmail: { enabled: false }, linear: { enabled: false } },
+    });
     expect(acpAgentFor("codex", SEAL, off).env).toMatchObject(off);
+  });
+
+  it("starts no codex run whose MCP servers it could not list, and says why", async () => {
+    expect(() => mcpOffConfig("Error: unknown flag --json")).toThrow(RefusalError);
+    vi.stubEnv("CODEX_BIN", path.join(root, "no-codex"));
+    try {
+      await expect(codexMcpOff(SEAL)).rejects.toThrow(
+        /could not list your codex MCP servers to keep them out of the run \(.+\)/u,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("keeps claude's own sandbox off, whatever the founder's settings say", () => {
@@ -473,6 +492,16 @@ describe("ensureRepository", () => {
       );
     } finally {
       rmSync(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("goes on without one where git cannot make it", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(ensureRepository(path.join(root, "no-such-workspace"))).resolves.toBeUndefined();
+      expect(logged).toHaveBeenCalledWith("[repository]", expect.any(Error));
+    } finally {
+      logged.mockRestore();
     }
   });
 });

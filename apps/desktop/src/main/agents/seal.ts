@@ -653,12 +653,12 @@ const darwinUserCacheDir = async (): Promise<string> => {
 };
 
 /**
- * The agent-browser namespace a `runner`'s runs start their daemons in, apart from the founder's
- * own and the other runner's: a daemon reads what the run that started it can. Short: the
- * daemon's socket path under it must fit in 103 bytes.
+ * The agent-browser namespace a `runner`'s runs on `save` start their daemons in, apart from the
+ * founder's own and the other runner's: a daemon reads what the run that started it can. Short:
+ * the daemon's socket path under it must fit in 103 bytes.
  */
-export const browserNamespace = (runner: AgentRunner): string =>
-  `idlebiz-${createHash("sha256").update(`${ROOT_DIR}\0${runner}`).digest("hex").slice(0, 8)}`;
+export const browserNamespace = (save: string, runner: AgentRunner): string =>
+  `idlebiz-${createHash("sha256").update(`${save}\0${runner}`).digest("hex").slice(0, 8)}`;
 
 /** Where agent-browser keeps its daemons' sockets for a run, whatever the founder's env says. */
 export const browserSocketDir = (): string => path.join(homedir(), ".agent-browser");
@@ -710,7 +710,7 @@ export const sealFor = async ({
   const scratchReaches = await reachesOf([...new Set(scratch)]);
   const namespaceOf = (runner: AgentRunner): Reach => ({
     match: "subpath",
-    path: path.join(realHome, ".agent-browser", "namespaces", browserNamespace(runner)),
+    path: path.join(realHome, ".agent-browser", "namespaces", browserNamespace(save, runner)),
   });
   const namespaces = { claude: namespaceOf("claude"), codex: namespaceOf("codex") };
   const own = await ownFolders(save, writable);
