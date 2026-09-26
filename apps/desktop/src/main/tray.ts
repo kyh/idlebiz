@@ -109,6 +109,12 @@ class AppTray {
     this.rebuild();
   }
 
+  /** Opened at login, into the menu bar: the founder asked for that, so nothing announces it. */
+  startWindowless(): void {
+    this.windowless = true;
+    this.rebuild();
+  }
+
   private scheduleRebuild(): void {
     if (this.rebuildTimer) {
       return;

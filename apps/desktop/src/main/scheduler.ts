@@ -686,12 +686,11 @@ class Scheduler {
     // fault instead of rejecting, and the tick guards each start.
     guarded(`book run ${runId}`, () => book(task, result.usage.costUsd));
     const status = guarded(`settle run ${runId}`, () => finish(runId, task, employee, result));
-    try {
-      store.setEmployeeStatus(employee.id, "idle");
-    } finally {
-      this.runs.delete(runId);
-      this.awake.hold(this.runs.size > 0);
-    }
+    guarded(`free ${employee.id} after ${runId}`, () =>
+      store.setEmployeeStatus(employee.id, "idle"),
+    );
+    this.runs.delete(runId);
+    this.awake.hold(this.runs.size > 0);
     // sent even when the settle threw before its status: the office and HUD free the employee on it
     guarded(`end run ${runId}`, () => {
       publishActivity({

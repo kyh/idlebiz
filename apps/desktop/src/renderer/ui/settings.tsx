@@ -16,6 +16,15 @@ const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
   { label: "On", value: "on" },
 ];
 
+// Registered but switched off, or never registered: neither choice is pressed, so Off can
+// still take the registration away.
+const LOGIN_PRESSED: Record<Exclude<LaunchAtLogin, "unavailable">, "off" | "on" | null> = {
+  "not-found": null,
+  off: "off",
+  on: "on",
+  "requires-approval": null,
+};
+
 const LOGIN_LINES: Record<LaunchAtLogin, string> = {
   "not-found":
     "macOS could not register IdleBiz. Add it under System Settings → General → Login Items.",
@@ -48,8 +57,9 @@ const LaunchAtLoginSetting = () => {
           {state === "unavailable" ? null : (
             <Picker
               options={LOGIN_CHOICES}
-              value={state === "on" ? "on" : "off"}
+              value={LOGIN_PRESSED[state]}
               onChange={(choice) => setting.submit(choice === "on")}
+              disabled={setting.submission.kind === "sending"}
               label="Open at login"
               className="mt-2 grid grid-cols-2 gap-2"
             />

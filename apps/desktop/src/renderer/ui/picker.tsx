@@ -11,7 +11,8 @@ export interface PickerOption<T extends string> {
 
 /** One-of-many as a row of pressed/unpressed toggles. Base UI's ToggleGroup
  *  owns the roving focus and the pressed state; deselecting the pressed one is
- *  not a choice, so it is ignored. */
+ *  not a choice, so it is ignored. A null value presses none, so every option
+ *  stays a choice. */
 export const Picker = <T extends string>({
   options,
   value,
@@ -19,16 +20,18 @@ export const Picker = <T extends string>({
   label,
   className,
   itemClassName,
+  disabled = false,
 }: {
   options: readonly PickerOption<T>[];
-  value: T;
+  value: T | null;
   onChange: (value: T) => void;
   label: string;
   className?: string;
   itemClassName?: string;
+  disabled?: boolean;
 }) => (
   <ToggleGroup
-    value={[value]}
+    value={value === null ? [] : [value]}
     onValueChange={([key]) => {
       const picked = options.find((o) => o.value === key);
       if (picked) {
@@ -37,6 +40,7 @@ export const Picker = <T extends string>({
     }}
     aria-label={label}
     className={className}
+    disabled={disabled}
   >
     {options.map((o) => (
       <Toggle key={o.value} value={o.value} title={o.title} className={cn("px-opt", itemClassName)}>

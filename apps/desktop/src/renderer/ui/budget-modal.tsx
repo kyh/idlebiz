@@ -195,6 +195,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
             }}
             label="Usage cap"
             className="grid grid-cols-2 gap-2"
+            disabled={saving.submission.kind === "sending"}
           />
           <div className="mt-2 flex items-center gap-2">
             <span className="text-sm text-fg">$</span>
@@ -205,7 +206,12 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
               inputMode="decimal"
               className="px-field w-28"
             />
-            <button type="button" onClick={setCap} disabled={!capValid} className="px-btn">
+            <button
+              type="button"
+              onClick={setCap}
+              disabled={!capValid || saving.submission.kind === "sending"}
+              className="px-btn"
+            >
               Set cap
             </button>
           </div>

@@ -365,7 +365,7 @@ const boot = async (): Promise<void> => {
 
   if (openedAtLogin()) {
     app.dock?.hide();
-    appTray.setWindowless(true);
+    appTray.startWindowless();
   } else {
     mainWindow = createWindow();
   }
