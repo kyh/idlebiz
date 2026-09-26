@@ -9,10 +9,6 @@
   "scripts": {
     "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
-    "import:office-objects": "node scripts/import-office-objects.cjs && node scripts/generate-sprite-bounds.cjs",
-    "generate:room-tiles": "node scripts/generate-room-builder-tiles.cjs",
-    "generate:sprite-bounds": "node scripts/generate-sprite-bounds.cjs",
-    "check:office": "node scripts/check-office.mjs",
     "start": "electron-vite preview",
     "release": "pnpm with-env electron-vite build && pnpm with-env electron-builder --mac --publish never",
     "release:publish": "bash scripts/publish-release.sh",

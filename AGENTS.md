@@ -15,7 +15,7 @@ tool-agnostic guide for coding agents — meant to be run, not just read. Claude
 
 ```sh
 pnpm install
-pnpm verify        # static gate: typecheck · lint · format · check:office · test · build
+pnpm verify        # static gate: typecheck · lint · format · test · build
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:desktop   # Electron window + CDP on :9222
 pnpm e2e           # builds the desktop app, then drives it (macOS, local only)
@@ -46,7 +46,7 @@ codex --version
 agent-browser --version   # missing ⇒ npm i -g agent-browser && agent-browser install
 ```
 
-A sandbox without those CLIs can still do the full static gate and can still drive the two
+A sandbox without those CLIs can still do the full static gate and can still drive the
 CLI-free surfaces below; it cannot reach a populated office.
 
 ## Verify a change end-to-end
@@ -66,13 +66,12 @@ pnpm verify
 - `strict-boolean-expressions` off: truthiness checks on optionals are idiomatic here.
 - `promise-function-async` and `strict-void-return` off: taste; a dropped or misplaced promise is still `no-floating-promises`' and `no-misused-promises`' to catch.
 - `consistent-return` off: a bare `return` in a `T | undefined` helper is deliberate.
-- `no-unsafe-*` off under `apps/desktop/scripts/**`: untyped .mjs/.cjs scripts reading JSON and pixel data.
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
 
 End-to-end suite — `pnpm e2e` builds the desktop app, then drives the build with
 Playwright's Electron support (`apps/desktop/e2e/`); `pnpm -F @repo/desktop e2e` reruns it on
-the last build. It covers the title screen, the builder and the catalog, a founded company's
+the last build. It covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
 shown as set and, for Stripe, removable; a key refused is never saved), a key pasted into
 secrets.json being sealed, and a held command denied from #team. It is local only, not part
@@ -81,7 +80,7 @@ of `pnpm verify` or CI:
 - It needs a macOS desktop session: each launch shows the window and takes focus.
 - Every test that founds a company (the office, the #team approval, Vercel and Stripe key
   entry, sealing) needs a signed-in `claude` or `codex` CLI and skips without one; only the
-  title screen and the builder and catalog run without it. The refusal tests send made-up
+  title screen runs without it. The refusal tests send made-up
   keys to the real Vercel and Stripe APIs, so they need the network; where a key is taken,
   main's `fetch` answers both APIs from canned JSON (`stubStripeAndVercel`), so no real
   account or key is needed.
@@ -111,30 +110,12 @@ Runtime, desktop — attach to the Electron renderer over CDP.
 > terminal launch. Isolation protects the real save, but onboarding and employee runs still
 > bill the signed-in CLI.
 
-**(a) CLI-free routes** — the office builder and the object catalog render with no company,
-so no scheduler work is required to see them. They contain no Phaser; skip the block below.
-
-```sh
-idlebiz_test_root=$(mktemp -d /tmp/idlebiz-ui.XXXXXX)
-lsof -ti tcp:9222 || true       # must be free
-IDLEBIZ_ROOT_DIR="$idlebiz_test_root" pnpm dev:desktop &
-agent-browser connect 9222
-agent-browser eval 'location.hash = "#/ui"'   # or "#/office-assets"
-agent-browser screenshot /tmp/builder.png
-agent-browser close
-pnpm dev:kill                   # tear the session down
-rm -rf "$idlebiz_test_root"
-```
-
-**(b) The office scene** — only on the default route (`#/`), and only with a finished
-onboarding, i.e. a signed-in CLI. Do not navigate away from `#/` first: `#/ui` and
-`#/office-assets` unmount `<PhaserGame>` and clear its debug handle. Under headless automation
-Phaser's boot also stalls (`document.hidden` never
-flips), so the canvas stays blank until you step it:
+**The office scene** — only with a finished onboarding, i.e. a signed-in CLI. Under headless
+automation Phaser's boot stalls (`document.hidden` never flips), so the canvas stays blank
+until you step it:
 
 ```sh
 agent-browser connect 9222
-agent-browser eval 'location.hash'                          # expect "" or "#/"
 agent-browser eval 'window.__game.scene.start("office")'
 agent-browser eval 'window.__game.loop.step(performance.now())'
 agent-browser screenshot /tmp/office.png
@@ -147,8 +128,6 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 | Surface                                | How to reach it                       | CLI needed? |
 | -------------------------------------- | ------------------------------------- | ----------- |
 | `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                        | no          |
-| Office builder (`#/ui`)                | `location.hash = "#/ui"`              | no          |
-| Object catalog (`#/office-assets`)     | `location.hash = "#/office-assets"`   | no          |
 | Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
@@ -281,17 +260,14 @@ rather than crashing boot.
   stay in the active queue because the Inbox can retry them and employees use them to
   identify unresolved problems. `listTasks` answers open work only; the one
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
-- **Office art and collision are independent sections of `office-design.json`.** After any
-  layout edit run `pnpm --filter @repo/desktop check:office` (already part of `pnpm verify`).
-  Six passes: every seat, point of interest and the door reachable from spawn; no open
-  floor cell no body can stand on; no reachable spot with the player's art (facing right)
-  over the void; no reachable spot with the player's face painted over; no placed object
-  naming art this build lacks; every placed sprite measured from its PNG (run
-  `generate:sprite-bounds` after adding art). The walker seals the second and the scene
-  seals the fourth at boot (`shared/office-grid.ts`, `shared/office-sight.ts`), so a saved
-  layout is safe to walk even when its data would fail the gate; main opens one failing
-  the fifth as the bundled office and refuses to save it, and refuses one whose fourth-pass
-  spots, once closed, cut a seat, point of interest or the door off, or close in the spawn.
+- **The office is frozen data.** `renderer/game/office-design.json` is the one office:
+  placed sprites, each naming its PNG under `public/`, over a 16px collision grid, with the
+  seats, points of interest, door and spawn. No tool authors it; `office-layout.test.ts`
+  checks its schema, its art paths and that spawn reaches every seat, POI and door. Its art and its
+  collision are independent sections, and the 32x64 sprite overhangs the 16x12 body probe,
+  so a hand edit to either can stand a character over the void or behind furniture. The
+  walker makes each seat's cell solid and seals open floor no body can reach
+  (`walkGridOf` in `shared/office-grid.ts`).
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
   requests. On macOS it also runs the seal on canary files under a stand-in home
@@ -362,11 +338,9 @@ rather than crashing boot.
   line as bash would, read loosely as well where another shell may split it apart),
   `hold-rules.ts` (what an approval card says each rule holds; data only, for the renderer),
   `format.ts`, `errors.ts`, `character-frame.ts` (the
-  sprite box every process slices by), `office-depth.ts` (draw bands + paint order),
-  `office-layout-schema.ts` (office-design.json, versioned and migrated), `office-grid.ts`
-  (walking as pure math), `office-sight.ts` (where the room hides a face) and
-  `office-object-sprite.ts` (the PNG each placed object draws); the scene, the save
-  handler and `check:office` all use the last four.
+  sprite box every process slices by), `office-depth.ts` (draw bands),
+  `office-layout-schema.ts` (the shape of office-design.json) and `office-grid.ts`
+  (walking as pure math).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
   prices usage, and tracks rate limits. Source-only, no build step.

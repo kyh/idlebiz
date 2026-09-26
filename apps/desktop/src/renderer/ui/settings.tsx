@@ -91,18 +91,6 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
 
-        <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Tools</div>
-          <div className="mt-2 flex gap-2">
-            <a href="#/ui" className="px-btn inline-block">
-              Open office builder
-            </a>
-            <a href="#/office-assets" className="px-btn inline-block">
-              Asset catalog
-            </a>
-          </div>
-        </div>
-
         <div className="px-inset p-3" style={{ borderColor: "var(--danger)" }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: "var(--danger)" }}>
             Danger zone

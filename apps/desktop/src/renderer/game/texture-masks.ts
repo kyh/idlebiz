@@ -1,8 +1,14 @@
 import type Phaser from "phaser";
-import { opaqueMask } from "@/shared/office-sight";
-import type { OpaqueMask } from "@/shared/office-sight";
+import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 
-export { type OpaqueMask } from "@/shared/office-sight";
+/** Any alpha at all is paint. */
+const opaqueMask = (data: Uint8ClampedArray, w: number, h: number): OpaqueMask => {
+  const opaque = new Uint8Array(w * h);
+  for (let i = 0; i < opaque.length; i += 1) {
+    opaque[i] = (data[i * 4 + 3] ?? 0) > 0 ? 1 : 0;
+  }
+  return { h, opaque, w };
+};
 
 const opaqueMaskOf = (
   source: ReturnType<Phaser.Textures.Texture["getSourceImage"]>,
@@ -19,7 +25,7 @@ const opaqueMaskOf = (
   }
   ctx.drawImage(source, 0, 0);
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  return opaqueMask({ data, h: canvas.height, w: canvas.width });
+  return opaqueMask(data, canvas.width, canvas.height);
 };
 
 /**

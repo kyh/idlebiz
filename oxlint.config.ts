@@ -8,20 +8,7 @@ export default defineConfig({
   extends: [core, react, antiSlop],
   ignorePatterns: [...(core.ignorePatterns ?? []), "dist-electron", ".claude", "*.tsbuildinfo"],
   options: { typeAware: true },
-  overrides: [
-    { files: ["apps/web/**"], plugins: next.plugins, rules: next.rules },
-    {
-      // Untyped .mjs/.cjs scripts reading JSON and pixel data: there is no type to check.
-      files: ["apps/desktop/scripts/**"],
-      rules: {
-        "typescript/no-unsafe-argument": "off",
-        "typescript/no-unsafe-assignment": "off",
-        "typescript/no-unsafe-call": "off",
-        "typescript/no-unsafe-member-access": "off",
-        "typescript/no-unsafe-return": "off",
-      },
-    },
-  ],
+  overrides: [{ files: ["apps/web/**"], plugins: next.plugins, rules: next.rules }],
   rules: {
     // Sequential awaits in loops are deliberate here (ordered agent turns, paced writes).
     "no-await-in-loop": "off",

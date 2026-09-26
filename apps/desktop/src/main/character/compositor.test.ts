@@ -1,28 +1,24 @@
 import path from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { SOURCE_STANDING_FRAME, WALK_STANDING_FRAME } from "@/shared/character-frame";
-import { opaqueMask, standingSilhouette } from "@/shared/office-sight";
-import type { OpaqueMask } from "@/shared/office-sight";
+import { FRAME_H, FRAME_W, SOURCE_STANDING_FRAME } from "@/shared/character-frame";
 import { buildWalkSheet } from "./compositor";
 
-const decode = async (png: string | Buffer): Promise<OpaqueMask> => {
-  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  return opaqueMask({ data, h: info.height, w: info.width });
-};
+const frame = (png: string | Buffer, at: { x: number; y: number }): Promise<Buffer> =>
+  sharp(png)
+    .extract({ height: FRAME_H, left: at.x, top: at.y, width: FRAME_W })
+    .ensureAlpha()
+    .raw()
+    .toBuffer();
 
 describe("the walk sheet", () => {
-  it("stands the character in the pose main judges sight by", async () => {
+  it("opens on the standing pose, walk-down's first frame", async () => {
     const source = path.resolve(
       import.meta.dirname,
       "../../../resources/employee-sheets/employee-sheet-01.png",
     );
-    const judged = standingSilhouette(await decode(source), SOURCE_STANDING_FRAME);
-    const drawn = standingSilhouette(
-      await decode(await buildWalkSheet(source)),
-      WALK_STANDING_FRAME,
-    );
-    expect(judged.opaque).toContain(1);
-    expect(judged).toEqual(drawn);
+    const standing = await frame(source, SOURCE_STANDING_FRAME);
+    expect(standing.some((byte) => byte > 0)).toBe(true);
+    expect(await frame(await buildWalkSheet(source), { x: 0, y: 0 })).toEqual(standing);
   });
 });

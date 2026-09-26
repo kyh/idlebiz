@@ -13,9 +13,6 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import { notingSeal } from "@/main/agents/seal";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { controlPlane } from "@/main/control-plane";
-import { employeeSheetDir } from "@/main/character/employee-sheets";
-import { loadOfficeDesign, saveOfficeDesign } from "@/main/office-design";
-import type { OfficeArt } from "@/main/office-design";
 import { openProduct, openWorkspacePath, productStatus } from "@/main/product";
 import { chatOptions } from "@/main/prompts/chat-options";
 import {
@@ -77,15 +74,6 @@ const resetGame = async (): Promise<void> => {
   }
 };
 
-/** The PNGs the save handler judges sight from: public/ as the page is served it, and check:office's sheet. */
-const officeArt = (): OfficeArt => ({
-  publicDir:
-    isDev && process.env.ELECTRON_RENDERER_URL
-      ? path.join(app.getAppPath(), "public")
-      : path.join(moduleDir, "../renderer"),
-  sheet: path.join(employeeSheetDir(), "employee-sheet-01.png"),
-});
-
 /** Stripe takes a key now: read it at once, and resume the work that waited on it. */
 const stripeReady = (): void => {
   metricsPulse.now();
@@ -136,7 +124,6 @@ const ipcHandlers = {
   listEmployees: store.listEmployees,
   listProducts: store.listProducts,
   listTasks: store.queryTasks,
-  loadOfficeDesign,
   // the first report waits on the seal's check, so a refusal is in it
   loadReport: async () => {
     const refusal = await agentDriver.sealRefusal();
@@ -156,7 +143,6 @@ const ipcHandlers = {
   resetSpend: store.resetSpend,
   resolveApproval: ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved),
   restingRunners: () => agentDriver.restingRunners(),
-  saveOfficeDesign: ({ layout }) => saveOfficeDesign(layout, officeArt()),
   setAutopilot: ({ running }) => setAutopilot(running),
   setBudget: ({ budget }) => {
     const company = store.setBudget(budget);

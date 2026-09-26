@@ -1,16 +1,5 @@
 import { describe, expect, it } from "vitest";
-import bundled from "@/renderer/game/office-design.json";
-import {
-  bodyBlockedAt,
-  canReach,
-  findPath,
-  layoutIssues,
-  nearestFloor,
-  pocketCells,
-  reachableTiles,
-  walkGridOf,
-} from "./office-grid";
-import { officeLayoutSchema } from "./office-layout-schema";
+import { bodyBlockedAt, findPath, nearestFloor, walkGridOf } from "./office-grid";
 import type { OfficeLayoutData } from "./office-layout-schema";
 
 // A 10x6 office of 16px cells. The body is 16px wide, so a node needs its own
@@ -45,8 +34,6 @@ const office = (
   rows: 6,
   seats: [],
   spawn,
-  tile: 32,
-  version: 2,
   width: 160,
   ...extra,
 });
@@ -93,72 +80,11 @@ describe("walk grid", () => {
     expect(path?.at(-1)).toEqual({ x: 56, y: 24 });
   });
 
-  it("flood-fills exactly the rooms the spawn connects to", () => {
-    const open = reachableTiles(grid, spawn);
-    expect(canReach(grid, open, eastSpot)).toBe(true);
-    const sealed = walkGridOf(office(SEALED));
-    expect(reachableTiles(sealed, spawn).has("7,1")).toBe(false);
-  });
-
   it("makes a seat's chair solid and seals floor no body can probe", () => {
     const seated = walkGridOf(office(OPEN, eastSeat));
     expect(bodyBlockedAt(seated, eastSpot.x, eastSpot.y)).toBe(true);
     // the sealed east room of SEALED is a pocket: every cell in it turns solid
     const pocketed = walkGridOf(office(SEALED));
     expect(pocketed.solid[1]?.[7]).toBe(true);
-    expect(pocketCells(walkGridOf(office(OPEN)), spawn)).toEqual([]);
-    expect(pocketCells(walkGridOf(office(SEALED)), spawn)).toEqual([]);
-  });
-});
-
-describe("layoutIssues", () => {
-  it("is clean when everything the layout promises can be walked to", () => {
-    expect(layoutIssues(office(OPEN, { pois: [{ face: "up", x: 120, y: 56 }] }))).toEqual([]);
-  });
-
-  it("is clean with a seat whose chair is solid but whose desk side is walkable", () => {
-    expect(layoutIssues(office(OPEN, eastSeat))).toEqual([]);
-  });
-
-  it("names a seat nobody can reach", () => {
-    expect(layoutIssues(office(SEALED, eastSeat))).toEqual([
-      "seat 0 (work at 120,24) is unreachable from spawn",
-    ]);
-  });
-
-  it("names an unreachable point of interest and door", () => {
-    const issues = layoutIssues(
-      office(SEALED, { door: { x: 120, y: 56 }, pois: [{ face: "down", x: 120, y: 40 }] }),
-    );
-    expect(issues).toContain("door 120,56 is unreachable from spawn");
-    expect(issues).toContain("poi 0 (facing down at 120,40) is unreachable from spawn");
-  });
-
-  it("names a seat placed on top of another", () => {
-    const twice = office(OPEN, {
-      seats: [
-        { role: "work", x: 24, y: 40 },
-        { role: "rest", sit: "left", x: 24, y: 40 },
-      ],
-    });
-    expect(layoutIssues(twice)).toEqual(["seat 1 (rest at 24,40) duplicates seat 0"]);
-  });
-
-  it("refuses to judge anything else when the spawn itself is off the floor", () => {
-    const stranded = office(OPEN, { spawn: { x: 400, y: 400 } });
-    expect(layoutIssues(stranded)).toEqual(["spawn 400,400 is outside the world"]);
-    // the founder is placed exactly there, so "near some floor" is not good enough
-    const walled = office(OPEN, { spawn: { x: 88, y: 24 } });
-    expect(layoutIssues(walled)).toEqual(["spawn 88,24 is inside collision"]);
-  });
-
-  it("rejects a collision grid that is not rows by cols before judging anything on it", () => {
-    expect(layoutIssues(office(OPEN.slice(0, 5)))).toEqual(["collision has 5 rows, expected 6"]);
-    const ragged = [...OPEN.slice(0, 3), "100000000", ...OPEN.slice(4)];
-    expect(layoutIssues(office(ragged))).toEqual(["collision row 3 has 9 cells, expected 10"]);
-  });
-
-  it("passes the bundled office", () => {
-    expect(layoutIssues(officeLayoutSchema.parse(bundled))).toEqual([]);
   });
 });

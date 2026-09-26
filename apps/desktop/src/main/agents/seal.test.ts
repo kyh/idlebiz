@@ -738,7 +738,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       plant(".idlebiz/acme/tasks/landing/TASK.md"),
       plant(".idlebiz/acme/shared/brief.md"),
       at(".idlebiz/acme/tasks/landing/PLAN.md"),
-      at(".idlebiz/office-design.json"),
+      at(".idlebiz/notes.json"),
     ];
     const linked = at(".idlebiz/acme/workspace/approvals.json");
     expect(
