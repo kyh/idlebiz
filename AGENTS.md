@@ -210,11 +210,12 @@ rather than crashing boot.
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
   `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool pushes
   code: the founder pushes by hand from a fresh `git clone --no-local` of the workspace, never
-  with git inside it, where a run's config and hooks would run as them (CLAUDE.md). A run cannot use their ssh keys or agents, git's
-  Keychain helper cannot run and a codex run reaches no Keychain, but a claude run shares the
-  founder's login, which claude reads from the Keychain, so a token the founder's `gh` keeps
-  there is guarded only by the command policy's `read-credentials` and `git-push` holds. No tool
-  sets a project's env vars or domains, or sells a subscription: those stay the founder's.
+  with git inside it, which obeys what the team left there, as the founder (CLAUDE.md). A run
+  cannot use their ssh keys or agents, git's Keychain helper cannot run and a codex run reaches
+  no Keychain, but a claude run shares the founder's login, which claude reads from the
+  Keychain, so a token the founder's `gh` keeps there is guarded only by the command policy's
+  `read-credentials` and `git-push` holds. No tool sets a project's env vars or domains, or
+  sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
   whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a
@@ -222,35 +223,26 @@ rather than crashing boot.
   `packages/agent-driver/src/registry.ts`; `runEnv` in `main/agents/run-env.ts`). AWS access
   keys sign for the whole account, so neither runner keeps them: a founder on Bedrock signs
   in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
-- Every employee run starts sealed, inside the Seatbelt profile `main/agents/seal.ts` renders
-  and hands `sandbox-exec -p`. Writes are denied by default: a run writes its own folders
-  (workspace, shared, memory, the save's `cache/`), its runner's home (`~/.claude` and
-  `~/.claude.json*`, or `~/.codex`), TMPDIR, the per-user cache, `/private/tmp`, its runner's
-  agent-browser namespace and node CLIs' `~/Library/Preferences/*-nodejs`, and nothing else
-  in HOME or the save. Inside those it still cannot write what the founder's own CLI or
-  desktop app loads from the runner's home (`RUNNER_HOMES`), claude's auto-memory of other
-  folders or the folders it sits in, a PATH folder there, or, anywhere, what the founder's
-  tools run on opening a folder: `.git/` but what git writes as it works (objects, refs, logs,
-  the index, merge and rebase state), `.claude/settings*.json`, `.mcp.json` and `.codex/`
-  (a moved folder is checked where it lands, not for what it carries, so none is built in
-  TMPDIR and moved in). Reads are open but for the founder's logins (`LOGINS`),
-  `secrets.json` and the other runner's home. A run connects to no unix socket but DNS's,
-  syslog's, its own folders' and its runner's agent-browser namespace, and to no loopback
-  debug port (9222, 9229); LaunchServices opens nothing for it, and codex runs reach no
-  Keychain: a codex whose login is there is refused with a sentence the founder reads. Main
-  makes a product's workspace a repository and claude's `projects/` before a run and sets
-  the run's git identity by env; toolchain caches and TMPDIR go to `cache/` by env
-  (`TOOL_CACHE_ENV` in `main/agents/agent-driver.ts`). Boot checks the seal without a model
-  call (a read canary and a write canary per runner); until it holds, no run starts, and a
-  refusal is listed in Settings. sandbox-exec cannot nest, so claude's own sandbox is forced
-  off and codex runs in `external-sandbox`, a mode
-  `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own,
-  and it asks before every command and patch. A codex-acp upgrade must carry that patch.
-  Runs start Chrome for agent-browser without its own sandbox
-  (`AGENT_BROWSER_ARGS=--no-sandbox`). Open by design: the network, reads across HOME outside
-  the login stores, and, through the shared login, the Keychain and `~/.claude.json` to
-  claude runs, which also run whatever a codex run leaves in the tool cache or a shared
-  workspace; CLAUDE.md lists every residual.
+- Every employee run starts sealed, under the Seatbelt profile `main/agents/seal.ts` renders
+  and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
+  what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`
+  and the other runner's home. Writes are denied but for the run's own folders (workspace,
+  shared, memory, the save's `cache/`), its runner's home less what that CLI loads
+  (`RUNNER_HOMES`), temp and per-user cache folders and its agent-browser namespace; nowhere
+  does a run write git's config or hooks, `.claude/settings*.json`, `.mcp.json` or `.codex/`.
+  It connects to no unix socket but its own folders' and its namespace's, to no loopback
+  debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there
+  is refused with a sentence the founder reads. Main makes a product's workspace a repository
+  and claude's `projects/` before a run and sets the run's git identity by env;
+  `TOOL_CACHE_ENV` in `main/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
+  `cache/`, so a tool that writes elsewhere in HOME fails with `EPERM` until its cache is
+  moved there too. Boot checks
+  the seal without a model call (a read and a write canary per runner); until it holds, no run
+  starts, and a refusal is listed in Settings. sandbox-exec cannot nest, so claude's own
+  sandbox is forced off, runs start Chrome without its own (`AGENT_BROWSER_ARGS=--no-sandbox`),
+  and codex runs in `external-sandbox`, a mode
+  `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own, and
+  it asks before every command and patch. A codex-acp upgrade must carry that patch.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

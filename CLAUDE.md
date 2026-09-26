@@ -118,180 +118,184 @@ allocator and the replay.
   policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
-- **Outward-facing stays founder-gated.** The keys IdleBiz holds (`secrets.json`, which every
-  run's seal keeps from it, each value also sealed with the macOS Keychain, which a claude run
-  can still reach; dev seals with the mock keychain, and nothing on the real save, so it
-  strands none) never reach an employee's process: main reads each where it uses it, and a run starts from the
-  founder's env less every credential-shaped name, and every URL with a login in it, but its
-  runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward step that needs
-  those keys is a signed tool main runs: `deploy` uploads the product's folder through
-  Vercel's API with the founder's token, and Vercel builds it on its own machines
-  (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link
-  with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
-  tagging each payment for its product and a named open revenue bet on it. Nothing pushes
-  code: the founder pushes by hand, from a fresh clone (`git clone --no-local <workspace>`),
-  never with git inside the workspace. The seal keeps a run from git's config and hooks there,
-  but git run in the folder still obeys what a run leaves in it (a rebase's todo list, a
-  `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there, which runs nothing its config names since
-  git stopped lazy-fetching a partial clone's missing objects (2.45.1; 2.39.4 and the other
-  backports). The prompts and the questions IdleBiz asks the founder say so.
-  Each signed tool runs once the founder signs off on the action it names:
-  `deploy <product> to production on Vercel project <name>`, or
-  `on a new Vercel project named <product>` for a product bound to none;
-  `payment link "<name>" at $<amount> on <product> for bet <slug>`. That action is the
-  approval's key, so it takes the same one-time grant a held command does
-  (`requireSignOff` in `main/tools.ts`).
-  The deploy never runs the Vercel CLI: the CLI runs code a folder holds (`vercel.ts`, a
-  `vercel` npx finds first, what a repo's config tells git to run) with the token in its
-  env, and any release can add a way. Main only reads the files, a symlink as the path it
-  holds (as the CLI uploads it), never what it names. Main names the project too: the
-  bound one, or for an unbound product a new one named after it, bound as soon as Vercel
-  makes it; a name another project holds asks the founder to bind instead. So no file in
-  the folder (`.vercel/project.json`, a `name` in vercel.json) picks which of the founder's
-  projects is overwritten.
-  Everything an agent runs itself meets one judgement, the tripwire `holdFor` in
-  `shared/command-policy.ts`. A shell command matching a rule is signed for once, exactly.
-  A signature pins a command, not the tree it ships, and runs on one product share its
-  workspace, so a run carrying one has that workspace to itself: the scheduler's `tick` starts
-  it only once no other run is live there, and starts nobody new there while it waits on
-  them or runs. The agents are told the folder is shared. An
-  `agent-browser` verb is read where agent-browser reads it, the first word its global options
-  leave, and any verb but a listed page read is held unless the session's live page (read from
-  the browser, since a click can land anywhere) is loopback, every frame found in it of the top
-  page's own origin (or about:) — a frame from any other origin, another localhost port
-  included, reads as nobody's: a ref from `snapshot`, a `frame` switch or `webmcp --frame` acts
-  inside a frame while the URL stays the top page's, so a localhost build framing Stripe (its
-  buy button and pricing table sit in shadow roots) is a page nobody can read. Frames are found
-  through `window.frames`, every readable document's open shadow roots and its resource timing;
-  one in a closed shadow root is known only by the URL it first asked for, and only once it has
-  finished loading: not while it loads, not where a redirect or later navigation took it, not
-  any frame inside it, and not at all once the page has filled or cleared its resource-timing
-  buffer. That page is read before the command runs,
-  so an act chained after a step that may move the page (opening a loopback page, whose frames
-  are unread until it loads; pointing the session at another browser or namespace, or moving
-  it under its other name: "default" is the unnamed session unless `AGENT_BROWSER_SESSION`
-  says otherwise), or inside one whose page or steps no read can see (`batch`, `chat`, an init
-  script, an extension, an empty `--session`, a word the shell fills in), is signed for once,
-  exactly, like a shell rule. A page opened from disk is no build of the team's: an act on a
-  `file:` page is held, and so is a command naming a `file:` URL outside the run's own dirs,
-  whatever verb opens it, judged where its symlinks lead (`Confinement.real`). That
-  judgement is a tripwire, not the boundary: a link made earlier on the same command line is
-  judged before it exists. The boundary is the daemon's own seal, that of the run that started
-  it: a page it opens holds only what that run could read. Only the
-  command line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json`
-  goes unread, so either can still reroute or script a session unseen.
-  Employee sessions also load the founder's own CLI settings, but none of their MCP servers
-  or claude.ai connectors, which act signed in as the founder: claude's session options load
-  none (`strictMcpConfig`, `disableClaudeAiConnectors`, a flag-tier deny of `mcp__*`), and
-  codex's are turned off one by one by the names `codex mcp list` gives them, apps and plugins
-  whole (`codexMcpOff` in `main/agents/agent-driver.ts`). Every turn sets the runner's asking
-  mode, and claude's session carries flag-tier ask rules (shell, edits) that outrank any allow
-  rule in the founder's claude settings; codex still honours `allow` decisions in the founder's
-  ~/.codex/rules, which run a command unasked (inside the seal). A site, or an MCP server
-  that asks anyway, is leased for the rest of the run; a page or a server nothing can name
-  never is. codex asking
-  to widen its own sandbox is held every time, never leased: once widened, nothing else in
-  the run asks. A signature only ever picks the runner's one-time option, never an "always"
-  one. An edit by claude's Write/Edit outside a run's own dirs (its working directory, memory
-  folder, the shared workspace, the tool cache) is held, under `save-edit` when it lands in
-  the save, where the seal refuses it even once signed for. codex asks before every patch
-  and its ask names each file the patch writes, where a move lands included, so a patch is
-  judged like claude's edit; one naming no file is held. A shell write is not judged by
-  path: the seal is what keeps `cp x ../approvals.json` from landing. A web read by the
-  agent's own tool runs, as a bare `curl` does; an ask IdleBiz cannot recognise is held
-  once, exactly, and so is a codex `execute` approval that names no command. Both runners'
-  wire formats end in `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a
-  `ToolAsk`.
-- **Every employee run starts sealed.** `acpAgentFor` starts each ACP session, a task's or
-  the hiring one-shot's, under `/usr/bin/sandbox-exec -p`, a profile `main/agents/seal.ts`
-  renders per run with every path a `-D` parameter. A run reads everything but the founder's
-  logins (`LOGINS`: ssh, gh, npm, netrc, git credentials, cloud and deploy CLIs, browser and
-  chat app profiles, agent-browser's saved logins), `secrets.json` with every name that
-  starts with it, and the other runner's home. It writes nothing but its own folders
-  (`Confinement.writable`: its workspace, the shared one, its memory, the tool cache), its
-  runner's home (`~/.claude` and `~/.claude.json*`, or `~/.codex`: no other name that starts
-  like them), TMPDIR and macOS's per-user temp and cache folders, `/private/tmp`, its
-  runner's agent-browser namespace, node CLIs' `~/Library/Preferences/*-nodejs` and the
-  `/dev` nodes a toolchain writes. Every cache a toolchain would keep in HOME, and TMPDIR,
-  are moved into the tool cache by env (`TOOL_CACHE_ENV` in `agent-driver.ts`), and CLI
-  updaters are off. Seatbelt obeys the last rule a path matches, so the profile denies every
-  write, allows those roots, closes the save again (a test's sits in TMPDIR), reopens the
-  run's own folders, then re-denies: what the runner's CLI or desktop app loads or runs in
-  the founder's own sessions (`RUNNER_HOMES`: claude's settings, instructions, rules, hooks,
-  skills, agents, commands, plugins, shell snapshots, its daemon and jobs…; codex's
-  `config.toml`, hooks, `AGENTS*`, rules, prompts, skills, plugins, packages, `.env*`,
-  keybindings, shell snapshots, memories, the per-session helper links in `tmp/arg0`, and the
-  desktop app's computer-use app, worktrees, state, database, plugin staging and the registry
-  its Chrome native host starts programs from; claude's Chrome native host, IDE lock files and
-  auto-memory of every folder but the run's own, nor any folder that memory sits in), a PATH
-  folder that lies in a root (a shim folder in TMPDIR) with every folder above it there, and,
-  anywhere a run writes, what the founder's tools run on opening a folder: in `.git/`
-  everything but what git writes as it stages, commits, branches, stashes, merges, rebases and
-  gcs (so no config, hooks, `commondir`, `worktrees/`, `modules/` or alternates),
-  `.claude/settings*.json`, `.mcp.json`, `.codex/`, and the `.git`/`.claude` folders
-  themselves. Seatbelt checks a moved folder where it lands, never what it carries, so these
-  hold in TMPDIR and the tool cache too, or a tree built there could be moved into a
-  workspace whole. Main makes a product's workspace a repository before its run
-  (`ensureRepository`, macOS's git), makes claude's `projects/` folder, and names the run's
-  commits by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, since no run writes git config. Seatbelt
-  matches the path a symlink leads to, so each path is sealed where it is named and where it
-  resolves as the run starts; a run's own folders are allowed only where the save resolves,
-  and a run whose folder, or any folder between it and the save, is a symlink does not start
-  (`ownFolders`). A run cannot remove, move or replace one of its own folders; main makes
-  them first. A run connects to no unix socket but DNS's, syslog's, its own folders' and its
-  runner's agent-browser namespace (`browserNamespace`, keyed by save and runner, under
-  `AGENT_BROWSER_SOCKET_DIR`): no ssh, gpg or 1Password agent, container engine, Chromium or
-  Electron app's `SingletonSocket` (which hands the running app a URL), claude's or the codex
-  app's sockets, nor the founder's own agent-browser daemons or the other runner's. Those in
-  a folder it writes (launchd's, an ssh-agent's, main's `SSH_AUTH_SOCK`, claude's
-  `/tmp/cc-socks`, the codex app's `ipc` and `/tmp/codex-browser-use`, OpenAI's
-  `CUAService`) stay put. Nor does it reach loopback's 9222 and 9229 (the dev renderer's
-  debug port holds the founder's approve button); LaunchServices opens nothing (only the CLI
-  sign-in may open the browser); `osascript` and the other Apple Event CLIs and git's
-  Keychain helper do not run; a setuid program does not run but `/bin/ps`, which fnm needs;
-  and a codex run reaches no Keychain (`mach-lookup` of securityd, which holds against a
-  copied binary too). A codex whose login lives in the Keychain (`cli_auth_credentials_store`,
-  or the profile its config selects) is refused: onboarding says so, and every codex run is
-  refused with the same sentence before it starts (`main/agents/codex-keychain.ts`). Boot
-  checks the seal for free (`checkSeal`: under each runner's profile a canary must be
-  unreadable, a file where no rule allows a write must not be made, and the runtime must
-  start); until it holds the scheduler starts nothing and autopilot files nothing, and a
-  refusal is listed in Settings beside what boot skipped. Main starts a runner's CLI itself
-  only under that runner's seal: its version and login probes and its sign-in
-  (`sealedSignIn`). The login-shell PATH probe runs unsealed: a run writes no file it
-  sources. Every place the founder enters a key runs in main, and `atomicWrite` makes each
-  `.tmp` anew (`wx`), so a file main writes never lands through a planted link. Never set
-  `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session but the first out.
-  What stays open, on purpose or for want of a rule: the network; reads across HOME outside
-  the login stores (another project's `.env`, transcripts); the Keychain and
-  `~/.claude.json` to claude runs, which share the founder's login (claude reads its login
-  from the Keychain and rewrites `~/.claude.json`, whose `mcpServers` load in the founder's
-  sessions), and the rest of each runner's state (session logs and transcripts, which codex's
-  own memory pass reads, claude's session registry, codex's thread and queue databases); the
-  runners' shared ground: every run writes the tool cache and a product's workspace, so code
-  a codex run leaves there (a package script, a `node_modules/.bin` shim) runs in the next
-  claude run, with the Keychain and claude's login, and codex runs are kept from those only
-  directly; a git dependency, which npm and pnpm clone into a `.git` no run may make; a
-  program a run builds can still send Apple Events (macOS asks the founder first: refuse
-  it); a debugger listening on another port; the founder's git run inside a workspace laid
-  out other than as `.git/` (push from a fresh clone); and anything the founder runs from
-  TMPDIR or `/private/tmp` that no PATH entry names.
+
+## Two boundaries hold a run
+
+An employee run is a real CLI session running as the founder's OS user. Two boundaries hold
+it: the Seatbelt seal it starts under, which decides what it reads, writes and reaches on this
+machine, and custody, which keeps IdleBiz's keys in main and runs every step that spends them
+there, once the founder signs off. The command policy in front of both is a tripwire, not a
+third boundary.
+
+- **Every run starts sealed.** `acpAgentFor` starts each ACP session, a task's or the hiring
+  one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `main/agents/seal.ts` renders per
+  run, every path a `-D` parameter. Each run resolves its own (`machineSeal`), so a path that
+  became a symlink since boot is sealed where it leads from the next run on.
+  - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
+    credentials, cloud and deploy CLIs, browser and chat-app profiles, agent-browser's saved
+    logins), `secrets.json` with every name that starts with it, and the other runner's home.
+  - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its
+    workspace, the shared one, its memory, the save's `cache/`), its runner's home (`~/.claude`
+    and `~/.claude.json*`, or `~/.codex`), TMPDIR, macOS's per-user temp and cache folders,
+    `/private/tmp`, its runner's agent-browser namespace, node CLIs'
+    `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `TOOL_CACHE_ENV`
+    (`agent-driver.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
+    and turns CLI updaters off.
+  - Seatbelt obeys the last rule a path matches, so inside those folders the profile denies
+    again what the founder's own tools load or run later: what the runner's CLI or desktop app
+    loads from its home (`RUNNER_HOMES`: settings, instructions, rules, hooks, skills, plugins,
+    shell snapshots, daemons…), claude's memory of every folder but the run's own, a PATH folder
+    inside one of them with every folder above it there, and, anywhere, what the founder's
+    tools run on opening a folder: in `.git/` everything but what git writes as it stages,
+    commits, branches, stashes, merges, rebases and gcs (so no config, hooks, `commondir`,
+    `worktrees/`, `modules/` or alternates), `.claude/settings*.json`, `.mcp.json`, `.codex/`,
+    and the `.git`/`.claude` folders themselves. Seatbelt checks a moved folder where it lands,
+    never what it carries, so these hold in TMPDIR and `cache/` too.
+  - Seatbelt matches the path a symlink leads to, never the link, so each sealed path is named
+    where it is and where it resolves. A run's own folders are allowed only where the save
+    resolves: a run whose folder, or any folder between it and the save, is a symlink does not
+    start (`ownFolders`), and no run removes, moves or replaces one of its own folders. Main
+    makes them before the run: a product's workspace as a git repository (`ensureRepository`,
+    macOS's git) and claude's `projects/` folder. A run writes no git config, so its commits are
+    named by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
+  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders' and its
+    runner's agent-browser namespace (`browserNamespace`, keyed by save and runner): no ssh,
+    gpg or 1Password agent, container engine, app `SingletonSocket` (which hands the running
+    app a URL), claude's or the codex app's sockets, the founder's own agent-browser daemons or
+    the other runner's. Those of them in a folder it writes (launchd's, an ssh-agent's, main's
+    `SSH_AUTH_SOCK`, `/tmp/cc-socks`, the codex app's) cannot be moved or replaced either.
+    Loopback 9222 and 9229 are closed: the dev renderer's debug port holds the founder's
+    approve button. LaunchServices opens nothing; the Apple Event CLIs (`osascript`,
+    `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
+    program runs but `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a
+    `mach-lookup` deny of securityd, which holds against a copied binary too).
+  - _Checked before use._ Boot runs `checkSeal`, no model call: under each runner's profile a
+    canary must be unreadable, a file where no rule allows a write must not be made, and the
+    runtime must start. Until it holds the scheduler starts nothing and autopilot files nothing; a
+    refusal is listed in Settings beside what boot skipped, and a CLI sign-in retry checks
+    again. Main starts a runner's CLI itself only sealed as that runner: its version and login
+    probes, `codex mcp list`, and the sign-in (`sealedSignIn`, the only one that may open the
+    browser). The installer runs in `/bin/bash -c`, never a login shell. The login-shell PATH
+    probe (`adoptShellPath`) runs unsealed: no run writes the founder's shell startup files.
+    `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands through a planted
+    link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session
+    but the first out.
+- **Keys stay in main; what spends them runs there.** The keys IdleBiz holds live in
+  `secrets.json`, which the seal keeps from every run, each value also sealed with the macOS
+  Keychain (`safeStorage`), which a claude run can still reach; dev seals with the mock
+  keychain, and nothing on the real save, so it strands none. Main reads each where it uses
+  it. A run starts from the founder's env less every credential-shaped name and every URL with
+  a login in it, but its runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward
+  step that needs a key is a signed tool main runs: `deploy` uploads the product's folder
+  through Vercel's API with the founder's token, and Vercel builds it on its own machines
+  (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
+  the founder's own key (`main/payment-links.ts`; a Connect grant is read-only), tagging each
+  payment for its product and a named open revenue bet on it. Each runs once the founder signs
+  off on the action it names, which is the approval's key (`requireSignOff` in
+  `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
+Vercel project named <product>` for a product bound to none), and `payment link "<name>" at
+$<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation task, is spent
+  once and goes with the task.
+  - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
+    workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
+    starts it only once no other run is live there, and starts nobody new there while it waits
+    or runs. The agents are told the folder is shared.
+  - The deploy never runs the Vercel CLI, which runs code a folder holds (`vercel.ts`, a
+    `vercel` npx finds first, what a repo's config tells git to run) with the token in its env.
+    Main only reads the files, a symlink as the path it holds (as the CLI uploads it), never
+    what it names. Main names the project too: the bound one, or for an unbound product a new
+    one named after it, bound as soon as Vercel makes it; a name another project holds asks the
+    founder to bind instead. So no file in the folder (`.vercel/project.json`, a `name` in
+    vercel.json) picks which of the founder's projects is overwritten.
+  - Nothing pushes code. The founder pushes by hand from a fresh clone (`git clone --no-local
+<workspace>`), never with git inside the workspace: the seal keeps a run from git's config
+    and hooks there, but git still obeys what a run leaves in the folder (a rebase's todo list,
+    a `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there, which
+    runs nothing its config names since git stopped lazy-fetching a partial clone's missing
+    objects (2.45.1; 2.39.4 and the other backports). The prompts and the questions IdleBiz asks
+    the founder say so.
+- **A run loads the founder's CLI setup, less their MCP.** A claude session loads the
+  founder's user, project and local settings (CLAUDE.md, skills, plugins, hooks), under the
+  flag tier its session options set (`packages/agent-driver/src/registry.ts`), which outranks
+  them: claude's own sandbox off, ask rules for shell and edits that beat any allow rule, no
+  bypass mode, and none of their MCP servers or claude.ai connectors (`strictMcpConfig`,
+  `disableClaudeAiConnectors`, a deny of `mcp__*`), which act signed in as the founder; the
+  company is reached with curl. A codex session loads the founder's codex config with every
+  MCP server turned off by the name `codex mcp list` gives it, apps and plugins whole
+  (`codexMcpOff` in `main/agents/agent-driver.ts`). A codex whose login lives in the Keychain
+  (`cli_auth_credentials_store`, or the profile its config selects) is refused: onboarding says
+  so, and every codex run is refused with the same sentence before it starts
+  (`main/agents/codex-keychain.ts`).
+- **The command policy is a tripwire.** Every permission ask a runner raises meets one
+  judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
+  first (claude `default`, codex `external-sandbox`), since a session starts in a default that
+  may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
+  payments, sends, remote copies, pipe-to-shell, credential reads, writes and deletes outside
+  the workspace) is signed for once, exactly, with the same grant a signed tool takes. It is
+  not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk), and codex
+  still honours `allow` decisions in the founder's `~/.codex/rules`, which run a command
+  unasked (inside the seal).
+  - An `agent-browser` verb is read where agent-browser reads it, the first word its global
+    options leave, and any verb but a listed page read is held unless the session's live page,
+    read from the browser before the command runs (a click can land anywhere), is loopback with
+    every frame found in it of the top page's own origin (or about:). A frame from any other
+    origin, another localhost port included, makes the page nobody's: a ref, a `frame` switch or
+    `webmcp --frame` acts inside a frame while the URL stays the top page's. Frames are found
+    through `window.frames`, open shadow roots and resource timing, so one in a closed shadow
+    root is known only by the URL it first asked for, once loaded. A remote site, once signed
+    for, is leased for the rest of the run. An act chained
+    after a step that may move the page, or inside one no read can see (`batch`, `chat`, an
+    init script, an extension, an empty `--session`, a word the shell fills in), is signed for
+    once, exactly. An act on a `file:` page is held, and so is a command naming a `file:` URL
+    outside the run's own dirs, judged where its symlinks lead (`Confinement.real`). Only the
+    command line's own options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json`
+    goes unread.
+  - An edit by claude's Write/Edit outside a run's own dirs is held, under `save-edit` when it
+    lands in the save, where the seal refuses it even once signed for. codex asks before every
+    patch, naming each file it writes and where a move lands, so a patch is judged like an
+    edit; one naming no file is held. codex asking to widen its own sandbox is held every time,
+    never leased: once widened, nothing else in the run asks. An MCP server that asks anyway is
+    leased for the run; one nothing can name never is. A web read by the agent's own tool runs,
+    as a bare `curl` does; an ask IdleBiz cannot recognise is held once, exactly. A signature
+    only ever picks the runner's one-time option. Both runners' wire formats end in
+    `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
+- **What stays open**, on purpose or for want of a rule:
+  - the network: a run can send what it reads anywhere;
+  - reads across HOME outside the login stores (another project's `.env`, transcripts);
+  - to claude runs, which share the founder's login, the Keychain (claude reads its login
+    there, so a token the founder's `gh` or git keeps there is guarded only by the tripwire's
+    `read-credentials` and `git-push` holds) and `~/.claude.json` (claude rewrites it; its
+    `mcpServers` load in the founder's own sessions);
+  - the rest of each runner's state: session logs and transcripts (which codex's own memory
+    pass reads), claude's session registry, codex's thread and queue databases;
+  - the runners' shared ground: every run writes `cache/` and a product's workspace, so code a
+    codex run leaves there (a package script, a `node_modules/.bin` shim) runs in the next
+    claude run, with the Keychain and claude's login;
+  - a git dependency, which npm and pnpm clone into a `.git` no run may make, fails;
+  - a program a run builds can still send Apple Events (macOS asks the founder first: refuse
+    it), and a debugger listening on a port other than 9222 or 9229 takes its orders;
+  - the founder's git run inside a workspace (push from a fresh clone), and anything the
+    founder runs from TMPDIR or `/private/tmp` that no PATH entry names.
 
 ## Two traps that fail silently
 
 - **sandbox-exec cannot nest.** Once a profile denies anything, applying another inside it
-  fails (`sandbox_apply: Operation not permitted`), so a CLI's own sandbox inside the seal
-  makes every command it runs fail. claude's is forced off in its flag-tier settings
-  (`packages/agent-driver/src/registry.ts`); codex runs in `external-sandbox`, a mode the
-  app's patch of codex-acp adds (`patches/`): no sandbox of codex's own and approval
-  `untrusted`, so codex asks before every command and patch it does not know is safe, and
-  its patch ask names where a move lands. codex-acp's own modes either sandbox or never ask,
-  so an upgrade must carry the patch; `main/agents/codex-gate.test.ts` drives the real codex
-  against a stand-in model (macOS with codex installed) and fails once a push stops reaching
-  `holdFor`. `main/agents/claude-gate.test.ts` does the same for the real claude, under
-  settings that turn its own sandbox on, and fails once a command nests or runs unasked: the
-  boot check runs plain node, so it cannot see a runner's own sandbox. Chrome's sandbox is off
-  in runs too (`AGENT_BROWSER_ARGS=--no-sandbox`).
+  fails (`sandbox_apply: Operation not permitted`), so any sandbox a runner or its tools start
+  inside the seal makes every command fail. claude's own is forced off in its flag-tier
+  settings (`packages/agent-driver/src/registry.ts`), whatever the founder's say. codex runs in
+  `external-sandbox`, a mode the app's patch of codex-acp adds (`patches/`): no sandbox of
+  codex's own and approval `untrusted`, so codex asks before every command and patch it does
+  not know is safe, and its patch ask names where a move lands. codex-acp's own modes either
+  sandbox or never ask, so an upgrade must carry the patch. Chrome's sandbox is off in runs
+  (`AGENT_BROWSER_ARGS=--no-sandbox`). The boot check runs plain node, so it cannot see a
+  runner's own sandbox; the gate tests can. `main/agents/claude-gate.test.ts` and
+  `codex-gate.test.ts` drive the real CLI through the app's adapter, sealed, against a
+  stand-in model on loopback (nothing billed, a scratch config), and fail once a command nests
+  or runs unasked (a push must reach `holdFor`), a founder's MCP server starts, a command
+  escapes the seal, or a run rewrites the founder's config; claude's runs under founder
+  settings that turn its sandbox on, codex's checks that a patch names where a move lands.
+  They run in `pnpm --filter @repo/desktop test` on a Mac with that CLI installed and skip
+  elsewhere, CI included.
 - **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
   stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
   layered, and unlayered CSS wins regardless of specificity. So a utility on the same
@@ -395,4 +399,5 @@ founds a company (office, #team, key entry, sealing) skips without a signed-in C
 spends, not part of `verify` or CI (see `AGENTS.md`).
 Office layout: `pnpm --filter @repo/desktop check:office` (add `--layout <path>` for a save)
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
-and real loopback requests; no Electron or Phaser)
+real loopback requests and, on macOS, the seal and any installed CLI's gate; no Electron or
+Phaser)
