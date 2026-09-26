@@ -6,6 +6,7 @@ import {
   MIN_BET_TARGET,
 } from "@/shared/bets";
 import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@/shared/domain";
+import { EnvNameSchema } from "@/shared/env-name";
 import { formatUsd } from "@/shared/format";
 
 // Every company tool, described once: the route the control plane serves, the
@@ -134,11 +135,27 @@ export const TOOL_SPECS = {
   }),
   deploy: tool({
     body: z.strictObject({ product: z.string().min(1).optional() }),
-    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The folder's files go up as they are, less what \`.vercelignore\` and Vercel's defaults leave out (node_modules, .git, .env.local), and Vercel builds them on its own machines, with the settings in \`vercel.json\`. A product with no Vercel project gets a new one named after it. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. No tool sets the project's environment variables or domains: a product that needs one sends the founder an ask_boss action. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
+    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The folder's files go up as they are, less what \`.vercelignore\` and Vercel's defaults leave out (node_modules, .git, .env.local), and Vercel builds them on its own machines, with the settings in \`vercel.json\`. A product with no Vercel project gets a new one named after it. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. A key the product needs goes in with set_env, never in a file: a deploy refuses a folder holding a value set_env was given. No tool sets the project's domains: a product that needs one sends the founder an ask_boss action. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
     example: {},
     leadOnly: null,
     method: "POST",
     path: "/v1/deploy",
+  }),
+  set_env: tool({
+    body: z.strictObject({
+      name: EnvNameSchema,
+      product: z.string().min(1).optional(),
+      // Vercel's limit for every variable of a deployment together
+      value: z
+        .string()
+        .min(1)
+        .max(64 * 1024),
+    }),
+    doc: 'keep a secret the product needs at runtime (an API key, a signing secret) as an environment variable of its Vercel project, for production and preview, with no sign-off. It sets it on your run\'s product; name another with `"product":"<slug>"`. The product needs a project first, which its first deploy makes. `name` is an uppercase variable name: Vercel\'s own (`VERCEL_*`, `NODE_ENV`) are refused, and so are the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`), since what the browser may see belongs in the source. Setting a name again replaces its value. It takes effect on the next deploy: server code reads it as `process.env.NAME`. Never write the value into a file: deploy refuses a folder that holds it.',
+    example: { name: "OPENAI_API_KEY", value: "..." },
+    leadOnly: null,
+    method: "POST",
+    path: "/v1/set-env",
   }),
   create_payment_link: tool({
     body: z.strictObject({

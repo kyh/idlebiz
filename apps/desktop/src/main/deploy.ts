@@ -8,6 +8,7 @@ import type { Ignore } from "ignore";
 import { z } from "zod";
 import { HttpError, fetchOk } from "@/main/lib/http";
 import { VERCEL_API } from "@/main/vercel";
+import type { KeptEnvValue } from "@/main/vercel-env";
 import type { VercelBinding } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
@@ -21,11 +22,12 @@ export type DeployTarget =
   | { kind: "bound"; binding: VercelBinding }
   | { kind: "new"; name: string };
 
-/** A production deploy of one folder with the founder's token. */
+/** A production deploy of one folder with the founder's token, refused while a file holds a value in `unshippable`. */
 export interface DeployRequest {
   cwd: string;
   token: string;
   target: DeployTarget;
+  unshippable: readonly KeptEnvValue[];
 }
 
 /**
@@ -128,29 +130,61 @@ interface Entry {
   mode: number;
 }
 
-/** Every file the CLI would upload from `root`, read once here so nothing in it ever runs. */
-const entriesOf = async (root: string): Promise<Entry[]> => {
+/** A file of the deploy that holds a value set_env was given. */
+interface Leak {
+  kind: "leak";
+  file: string;
+  held: KeptEnvValue;
+}
+
+// a flag or a port turns up in any folder, and no key is this short
+const MIN_UNSHIPPABLE_LENGTH = 8;
+
+/**
+ * Every file the CLI would upload from `root`, read once here so nothing in it ever runs,
+ * or the first that holds a value no deploy may ship. What is uploaded is checked against
+ * this read, so a value written in after it is refused too.
+ */
+const entriesOf = async (
+  root: string,
+  unshippable: readonly KeptEnvValue[],
+): Promise<{ kind: "entries"; entries: Entry[] } | Leak> => {
   const rules = await ignoreRulesOf(root);
+  const guarded = unshippable.filter((held) => held.value.length >= MIN_UNSHIPPABLE_LENGTH);
   const entries: Entry[] = [];
-  const visit = async (dir: string): Promise<void> => {
+  const visit = async (dir: string): Promise<Leak | null> => {
     for (const item of await readdir(path.join(root, dir), { withFileTypes: true })) {
       const file = path.posix.join(dir, item.name);
       if (item.isDirectory()) {
-        if (!rules.ignores(`${file}/`)) {
-          await visit(file);
+        const leak = rules.ignores(`${file}/`) ? null : await visit(file);
+        if (leak !== null) {
+          return leak;
         }
       } else if (!rules.ignores(file)) {
         const contents = await contentsOf(path.join(root, file));
         if (contents !== null) {
           const { data, mode } = contents;
+          const held = guarded.find(({ value }) => data.includes(value));
+          if (held !== undefined) {
+            return { file, held, kind: "leak" };
+          }
           entries.push({ file, mode, sha: sha1(data), size: data.length });
         }
       }
     }
+    return null;
   };
-  await visit("");
-  return entries.toSorted((a, b) => (a.file < b.file ? -1 : 1));
+  return (
+    (await visit("")) ?? {
+      entries: entries.toSorted((a, b) => (a.file < b.file ? -1 : 1)),
+      kind: "entries",
+    }
+  );
 };
+
+/** What the agent reads for a leak: the file and the variable's name, never its value. */
+const leakReason = ({ file, held }: Leak): string =>
+  `Nothing was deployed: ${file} holds the value set_env set as ${held.name} on ${held.product}, and a deploy would publish it. Take it out of the folder, read it from process.env.${held.name} instead, then deploy again.`;
 
 /** Vercel's word on a call it turned down, and on a deploy the files it has yet to receive. */
 const VercelRefusal = z.object({
@@ -350,12 +384,16 @@ const refusalReason = (error: HttpError): string => {
  * never holds the token. Main reads the folder and Vercel builds it on its own machines:
  * nothing in the folder runs here, where the token is, whatever the files say.
  */
-export const deployToVercel: Deployer = async ({ cwd, target, token }) => {
+export const deployToVercel: Deployer = async ({ cwd, target, token, unshippable }) => {
   const deadline = AbortSignal.timeout(DEPLOY_TIMEOUT_MS);
   const call = callerFor(token, target.kind === "bound" ? target.binding.teamId : null, deadline);
   let latest: Deployment | null = null;
   try {
-    const entries = await entriesOf(cwd);
+    const read = await entriesOf(cwd, unshippable);
+    if (read.kind === "leak") {
+      return { kind: "failed", project: null, reason: leakReason(read) };
+    }
+    const { entries } = read;
     // a new project is made by the deploy, and one already named so would take it instead
     if (target.kind === "new" && (await hasProjectNamed(call, target.name))) {
       return { kind: "name-taken", name: target.name };

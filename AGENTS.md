@@ -191,8 +191,12 @@ rather than crashing boot.
   code: the founder pushes by hand from a fresh `git clone --no-local` of the workspace, never
   with git inside it, which obeys what the team left there, as the founder (CLAUDE.md). A run
   cannot use their ssh keys or agents; what it can still reach, the Keychain on a claude run
-  included, is CLAUDE.md's "What stays open". No tool sets a project's env vars or domains, or
-  sells a subscription: those stay the founder's.
+  included, is CLAUDE.md's "What stays open". A product's own keys go on its bound project
+  through `set_env`, unsigned: main upserts the variable with `VERCEL_TOKEN`, sensitive for
+  production and preview (`main/vercel-env.ts`), and keeps each value in `secrets.json` under
+  `ENV/<product>/<NAME>` (never the save, which runs read) so `deploy` refuses a folder whose
+  files hold any of them, naming the file and the variable, never the value. No tool sets a
+  project's domains or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
   whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a
@@ -330,6 +334,7 @@ rather than crashing boot.
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
   (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
+  `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `payment-links.ts` (the Stripe calls `create_payment_link` makes), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only
   record, only a packaged app registers one, and a launch at login starts in the menu bar).

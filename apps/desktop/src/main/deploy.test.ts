@@ -16,6 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
+import type { KeptEnvValue } from "./vercel-env";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "idlebiz-deploy-"));
 const workspace = path.join(scratch, "workspace");
@@ -140,8 +141,21 @@ const fakeVercel = ({
   return { calls, created, stored };
 };
 
-const deployBound = () =>
-  deployToVercel({ cwd: workspace, target: { binding: BINDING, kind: "bound" }, token: TOKEN });
+const deployBound = (unshippable: KeptEnvValue[] = []) =>
+  deployToVercel({
+    cwd: workspace,
+    target: { binding: BINDING, kind: "bound" },
+    token: TOKEN,
+    unshippable,
+  });
+
+const deployNew = () =>
+  deployToVercel({
+    cwd: workspace,
+    target: { kind: "new", name: "acme" },
+    token: TOKEN,
+    unshippable: [],
+  });
 
 beforeEach(() => mkdirSync(workspace, { recursive: true }));
 
@@ -272,9 +286,7 @@ describe("deploying through Vercel's API", () => {
     put("index.html", "hi");
     const vercel = fakeVercel();
 
-    await expect(
-      deployToVercel({ cwd: workspace, target: { kind: "new", name: "acme" }, token: TOKEN }),
-    ).resolves.toMatchObject({
+    await expect(deployNew()).resolves.toMatchObject({
       kind: "deployed",
       project: { projectId: "prj_new", projectName: "acme", teamId: null },
     });
@@ -288,9 +300,7 @@ describe("deploying through Vercel's API", () => {
     put("index.html", "hi");
     fakeVercel({ states: [{ ...LIVE, ownerId: "team_kai" }] });
 
-    await expect(
-      deployToVercel({ cwd: workspace, target: { kind: "new", name: "acme" }, token: TOKEN }),
-    ).resolves.toMatchObject({
+    await expect(deployNew()).resolves.toMatchObject({
       kind: "deployed",
       project: { projectId: "prj_new", projectName: "acme", teamId: "team_kai" },
     });
@@ -300,9 +310,7 @@ describe("deploying through Vercel's API", () => {
     put("index.html", "hi");
     const vercel = fakeVercel({ projectExists: true });
 
-    await expect(
-      deployToVercel({ cwd: workspace, target: { kind: "new", name: "acme" }, token: TOKEN }),
-    ).resolves.toEqual({ kind: "name-taken", name: "acme" });
+    await expect(deployNew()).resolves.toEqual({ kind: "name-taken", name: "acme" });
     expect(vercel.calls.map((c) => c.route)).toEqual(["GET /v9/projects/acme"]);
   });
 
@@ -315,14 +323,56 @@ describe("deploying through Vercel's API", () => {
       ],
     });
 
-    await expect(
-      deployToVercel({ cwd: workspace, target: { kind: "new", name: "acme" }, token: TOKEN }),
-    ).resolves.toEqual({
+    await expect(deployNew()).resolves.toEqual({
       kind: "failed",
       project: { projectId: "prj_new", projectName: "acme", teamId: null },
       reason:
         "Vercel's build failed: Command \"npm run build\" exited with 1. Run the build in the product's folder to see why, fix it, then deploy again.",
     });
+  });
+
+  it("ships no file holding a value set_env was given, naming the file and the variable, never the value", async () => {
+    const key = "sk-proj-acme-runtime";
+    put("index.html", "<h1>acme</h1>");
+    put("src/ai.js", `const key = "${key}";`);
+    const vercel = fakeVercel();
+
+    const result = await deployBound([{ name: "OPENAI_API_KEY", product: "acme", value: key }]);
+    expect(result).toEqual({
+      kind: "failed",
+      project: null,
+      reason:
+        "Nothing was deployed: src/ai.js holds the value set_env set as OPENAI_API_KEY on acme, and a deploy would publish it. Take it out of the folder, read it from process.env.OPENAI_API_KEY instead, then deploy again.",
+    });
+    expect(JSON.stringify(result)).not.toContain(key);
+    expect(vercel.calls).toEqual([]);
+  });
+
+  it("scans only what it uploads, and no value too short to be a key", async () => {
+    const key = "sk-proj-acme-runtime";
+    put("index.html", "<p>on</p>");
+    put(".env.local", `OPENAI_API_KEY=${key}`);
+    put("node_modules/cache/key.txt", key);
+    const vercel = fakeVercel();
+
+    await expect(
+      deployBound([
+        { name: "OPENAI_API_KEY", product: "acme", value: key },
+        { name: "FLAG", product: "acme", value: "on" },
+      ]),
+    ).resolves.toMatchObject({ kind: "deployed" });
+    expect(vercel.created[0]?.files.map((f) => f.file)).toEqual(["index.html"]);
+  });
+
+  it("refuses a value written into a file after the folder was read", async () => {
+    const key = "sk-proj-acme-runtime";
+    put("index.html", "v1");
+    const vercel = fakeVercel({ beforeAskingForFiles: () => put("index.html", key) });
+
+    await expect(
+      deployBound([{ name: "OPENAI_API_KEY", product: "acme", value: key }]),
+    ).resolves.toMatchObject({ kind: "failed" });
+    expect([...vercel.stored.values()].map(String)).not.toContain(key);
   });
 
   it("answers a call Vercel turns down with its reason, never the key", async () => {

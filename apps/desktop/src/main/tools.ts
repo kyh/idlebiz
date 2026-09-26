@@ -14,6 +14,8 @@ import {
 import { isTestKey, measureRefusal } from "@/main/metrics";
 import type { PaymentLinker } from "@/main/payment-links";
 import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
+import { keepEnvValue, keptEnvValues } from "@/main/vercel-env";
+import type { EnvSetter } from "@/main/vercel-env";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
@@ -46,6 +48,8 @@ export interface RunContext {
   deploy: Deployer;
   /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
   createPaymentLink: PaymentLinker;
+  /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
+  setEnv: EnvSetter;
 }
 
 /** A tool ready to be called with whatever the agent sent. */
@@ -271,7 +275,12 @@ const TOOLS = {
         ? { kind: "new", name: product.id }
         : { binding: product.vercel, kind: "bound" };
     requireSignOff(ctx, deployAction(product.id, target), "deploy");
-    const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token });
+    const deployed = await ctx.deploy({
+      cwd: product.workspaceDir,
+      target,
+      token,
+      unshippable: keptEnvValues(),
+    });
     if (deployed.kind === "name-taken") {
       const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
       return askFounder(
@@ -303,6 +312,35 @@ const TOOLS = {
         ? deployed.url
         : `${deployed.alias} (this deployment: ${deployed.url})`;
     return `Deployed ${product.name} to production: ${live}${bindNote}`;
+  }),
+  set_env: define(TOOL_SPECS.set_env, async (ctx, { name, value, product: named }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to set it on — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    if (product.vercel === null) {
+      return `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`;
+    }
+    const token = getSecret("VERCEL_TOKEN");
+    if (!token) {
+      return askFounder(
+        ctx,
+        { integration: "vercel", reason: `to set ${name} on ${product.name}`, type: "integration" },
+        "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.",
+        "Vercel is not connected.",
+      );
+    }
+    keepEnvValue(product.id, name, value);
+    const set = await ctx.setEnv({ binding: product.vercel, name, token, value });
+    if (!set.ok) {
+      return `${name} was not set on ${product.name}: ${set.error}`;
+    }
+    post(ctx, `🔑 set ${name} on ${product.name}`);
+    return `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview. It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`;
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,

@@ -20,7 +20,7 @@ export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
 const SEALED = "sealed:v1:";
 
 const README =
-  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys and payment links; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe: the Budget panel, under revenue). A key pasted here as plain text is sealed the next time IdleBiz reads this file.";
+  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys and payment links; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe: the Budget panel, under revenue). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<product>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
 
 /** Encrypts a value for the file and decrypts it back; main's wraps Electron's safeStorage. */
 export interface Sealer {
@@ -144,6 +144,19 @@ export const getSecret = (key: string): string | null => {
   sealPasted(secrets);
   const held = secrets.keys.get(key);
   return held ? opened(held) : null;
+};
+
+/** Every value this app can open under a name starting with `prefix`, keyed by the rest of the name. */
+export const secretsUnder = (prefix: string): Map<string, string> => {
+  const secrets = readJsonFile(SECRETS_PATH, secretsSchema);
+  const out = new Map<string, string>();
+  for (const [name, held] of secrets?.keys ?? []) {
+    const value = name.startsWith(prefix) ? opened(held) : null;
+    if (value !== null) {
+      out.set(name.slice(prefix.length), value);
+    }
+  }
+  return out;
 };
 
 export const setSecret = (key: string, value: string): void => {

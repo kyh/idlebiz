@@ -16,7 +16,8 @@ const previous = {
   VERCEL_TOKEN: process.env.VERCEL_TOKEN,
 };
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { checkSecrets, deleteSecret, getSecret, setSealer, setSecret } = await import("./secrets");
+const { checkSecrets, deleteSecret, getSecret, secretsUnder, setSealer, setSecret } =
+  await import("./secrets");
 
 const raw = (): JsonRecord => jsonRecordSchema.parse(parseJson(readFileSync(secretsFile, "utf-8")));
 
@@ -182,6 +183,23 @@ describe("keys sealed with the Keychain", () => {
 
     expect(getSecret("VERCEL_TOKEN")).toBeNull();
     expect(String(checkSecrets()?.cause)).toContain("isn't using the macOS Keychain");
+  });
+
+  it("opens every key under a prefix it can, by the rest of its name, and none it can't", () => {
+    setSealer(keychainItem(9));
+    setSecret("ENV/acme/OLD", "sealed_elsewhere");
+    setSealer(keychainItem(7));
+    setSecret("ENV/acme/OPENAI_API_KEY", "sk-proj-acme");
+    setSecret("ENV/beta/RESEND_API_KEY", "re_beta");
+    setSecret("VERCEL_TOKEN", "vercel_sealed");
+
+    expect(readFileSync(secretsFile, "utf-8")).not.toContain("sk-proj-acme");
+    expect(secretsUnder("ENV/")).toEqual(
+      new Map([
+        ["acme/OPENAI_API_KEY", "sk-proj-acme"],
+        ["beta/RESEND_API_KEY", "re_beta"],
+      ]),
+    );
   });
 
   it("keeps a key it can't open when another is set beside it", () => {

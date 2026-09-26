@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
 import type { RunContext } from "./tools";
+import type { EnvRequest, EnvResult } from "./vercel-env";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-tools-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -77,6 +78,7 @@ const runAs = (employeeId: string) => {
     driver: { pickRunner: () => "claude" },
     employee,
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
+    setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
   };
   return { asked, assigned, company, ctx };
 };
@@ -559,7 +561,12 @@ describe("deploy", () => {
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
     expect(deploys).toEqual([
-      { cwd: product.workspaceDir, target: { binding: VERCEL, kind: "bound" }, token: TOKEN },
+      {
+        cwd: product.workspaceDir,
+        target: { binding: VERCEL, kind: "bound" },
+        token: TOKEN,
+        unshippable: [],
+      },
     ]);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Held for the founder's sign-off");
     expect(deploys).toHaveLength(1);
@@ -645,6 +652,121 @@ describe("deploy", () => {
       { integration: "vercel", reason: "to deploy Acme", type: "integration" },
     ]);
     expect(deploys).toEqual([]);
+  });
+});
+
+const OPENAI = { name: "OPENAI_API_KEY", value: "sk-proj-acme-runtime" };
+
+const SET: EnvResult = { ok: true };
+
+/** A run of Priya's on Acme whose variables answer `result`, and what each was asked. */
+const settingRun = (result: EnvResult = SET) => {
+  const run = runAs("priya");
+  const sets: EnvRequest[] = [];
+  const ctx: RunContext = {
+    ...run.ctx,
+    run: { ...run.ctx.run, productId: "acme" },
+    setEnv: (req) => {
+      sets.push(req);
+      return Promise.resolve(result);
+    },
+  };
+  return { ...run, ctx, sets };
+};
+
+describe("set_env", () => {
+  it("sets the variable on the run's product's project with the founder's token, unsigned, and says when it takes effect", async () => {
+    connectVercel();
+    const { ctx, asked, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    const answer = await callTool(ctx, "POST /v1/set-env", OPENAI);
+    expect(answer).toBe(
+      "Set OPENAI_API_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy; server code reads it as process.env.OPENAI_API_KEY. Never write its value into a file: deploy refuses a folder that holds it.",
+    );
+    expect(sets).toEqual([
+      { binding: VERCEL, name: "OPENAI_API_KEY", token: TOKEN, value: OPENAI.value },
+    ]);
+    expect(asked).toEqual([]);
+    expect(store.recentTeamMessages().map(({ text }) => text)).toEqual([
+      "🔑 set OPENAI_API_KEY on Acme",
+    ]);
+  });
+
+  it("keeps the value in secrets.json, out of the save, and hands it to the next deploy to refuse", async () => {
+    connectVercel();
+    const { ctx } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+    await callTool(ctx, "POST /v1/set-env", OPENAI);
+    const deploys: DeployRequest[] = [];
+    const deploying: RunContext = {
+      ...ctx,
+      deploy: (req) => {
+        deploys.push(req);
+        return Promise.resolve(DEPLOYED);
+      },
+    };
+    store.grantApproval(ctx.run.taskId, BOUND_ACTION);
+
+    await callTool(deploying, "POST /v1/deploy", {});
+    expect(deploys[0]?.unshippable).toEqual([{ ...OPENAI, product: "acme" }]);
+    const saved = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
+      (entry) => entry.isFile() && entry.name !== "secrets.json",
+    );
+    expect(saved.length).toBeGreaterThan(0);
+    for (const entry of saved) {
+      expect(readFileSync(path.join(entry.parentPath, entry.name), "utf-8")).not.toContain(
+        OPENAI.value,
+      );
+    }
+  });
+
+  it("keeps the value even when Vercel turns it down, since it was handed over as a secret", async () => {
+    connectVercel();
+    const { ctx } = settingRun({
+      error: "Vercel turned it down (402): Payment required",
+      ok: false,
+    });
+    store.setProductVercel("acme", VERCEL);
+
+    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toBe(
+      "OPENAI_API_KEY was not set on Acme: Vercel turned it down (402): Payment required",
+    );
+    expect(store.recentTeamMessages()).toEqual([]);
+  });
+
+  it("tells a run whose product has no project yet to deploy first", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+
+    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toBe(
+      "Acme has no Vercel project yet: deploy it first, which makes one, then set OPENAI_API_KEY.",
+    );
+    expect(sets).toEqual([]);
+  });
+
+  it("asks for Vercel while no key is saved", async () => {
+    const { ctx, asked, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toContain("Vercel is not connected");
+    expect(asked).toEqual([
+      { integration: "vercel", reason: "to set OPENAI_API_KEY on Acme", type: "integration" },
+    ]);
+    expect(sets).toEqual([]);
+  });
+
+  it("refuses a name Vercel keeps, or one the page would show, as the caller's error", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    for (const name of ["VERCEL_URL", "NODE_ENV", "NEXT_PUBLIC_KEY", "openai_key"]) {
+      await expect(callTool(ctx, "POST /v1/set-env", { ...OPENAI, name })).rejects.toThrow(
+        BadRequestError,
+      );
+    }
+    expect(sets).toEqual([]);
   });
 });
 
