@@ -236,7 +236,7 @@ const reachableTiles = (grid: WalkGrid, from: PixelPoint): ReadonlySet<string> =
 };
 
 /** The authored collision with every seat's chair solid. */
-const authoredGrid = (layout: GridSource): WalkGrid => {
+export const authoredGrid = (layout: GridSource): WalkGrid => {
   const raw = rawGrid(layout);
   return withSolid(
     raw,

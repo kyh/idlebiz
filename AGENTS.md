@@ -291,7 +291,8 @@ rather than crashing boot.
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **The office is frozen data.** `renderer/game/office-design.json` is the one office:
   placed sprites, each naming its PNG under `public/`, over a 16px collision grid, with the
-  seats, points of interest, door and spawn. No tool authors or checks it. Its art and its
+  seats, points of interest, door and spawn. No tool authors it; `office-layout.test.ts`
+  checks its schema, its art paths and that spawn reaches every seat, POI and door. Its art and its
   collision are independent sections, and the 32x64 sprite overhangs the 16x12 body probe,
   so a hand edit to either can stand a character over the void or behind furniture. The
   walker makes each seat's cell solid and seals open floor no body can reach

@@ -145,8 +145,8 @@ export class ClickWalk {
     }
     const { x: wasX, y: wasY } = walker.position;
     walker.move(step.dx, step.dy);
-    // the path is walkable by construction, so being stuck means the world moved under
-    // us (a layout swap, a body wedged on a corner). Give up rather than shove forever.
+    // the path is walkable by construction, so being stuck means a body wedged on a
+    // corner. Give up rather than shove forever.
     if (walker.position.x === wasX && walker.position.y === wasY) {
       return false;
     }

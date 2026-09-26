@@ -313,8 +313,10 @@ allocator and the replay.
   no kit class sets one, each app does by element. Icons are font glyphs, so "icon size" is
   font-size: use `.px-icon`.
 - **The office is frozen data, and its art and its collision don't know about each
-  other.** `renderer/game/office-design.json` is the one office, and no tool authors or
-  checks it. `buildRoom` draws `objects`, each naming its PNG under `public/`; the walk
+  other.** `renderer/game/office-design.json` is the one office, and no tool authors it.
+  `office-layout.test.ts` checks only what would break the app: the schema (the renderer
+  parses it before React mounts, so a bad edit blanks it), art that exists, and every seat,
+  point of interest and door reachable from spawn. `buildRoom` draws `objects`, each naming its PNG under `public/`; the walk
   grid reads `collision`; nothing keeps the two in step. The body probe is 16x12 but the
   sprite is 32x64, so art overhangs the body by ~8px, and a hand edit to either section can
   render a character against the void or paint furniture over their face. The walker adds
