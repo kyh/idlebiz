@@ -348,7 +348,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     sealFor({
       clis: [],
       home,
-      mainOnly: [at(".idlebiz/secrets.json"), at(".idlebiz/.push")],
+      mainOnly: [at(".idlebiz/secrets.json")],
       pathDirs: [],
       programs: [],
       save: at(".idlebiz"),
@@ -404,11 +404,10 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     "Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies",
     "Library/Cookies/Cookies.binarycookies",
     ".idlebiz/secrets.json",
-    ".idlebiz/.push/repo-1/config",
   ];
 
   it.each(["claude", "codex"] as const)(
-    "keeps the founder's logins, IdleBiz's keys and where it stages a push from a %s run, reads and writes alike",
+    "keeps the founder's logins and IdleBiz's keys from a %s run, reads and writes alike",
     async (runner) => {
       const files = LOGINS.map(plant);
       const outcomes = await tryAs(runner, { reads: files });
@@ -1111,7 +1110,6 @@ describe.skipIf(!onMac)("sealRuns", () => {
     expect(seal.unreadable).toEqual(
       expect.arrayContaining([
         { match: "prefix", path: path.join(realpathSync(root), "secrets.json") },
-        { match: "prefix", path: path.join(realpathSync(root), ".push") },
       ]),
     );
   });

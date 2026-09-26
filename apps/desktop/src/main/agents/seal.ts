@@ -16,7 +16,6 @@ import { promisify } from "node:util";
 import { runnerBin } from "@repo/agent-driver/detect";
 import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { z } from "zod";
-import { PUSH_STAGING_DIR } from "@/main/git-push";
 import { ROOT_DIR } from "@/main/paths";
 import { SECRETS_PATH } from "@/main/secrets";
 import type { AgentRunner, LoadReport } from "@/shared/domain";
@@ -104,7 +103,7 @@ interface Reach {
  * leads to, not the link, so a path reached through one is sealed at both ends.
  */
 export interface Seal {
-  /** No run reads or writes these: the founder's logins, IdleBiz's own keys and where main stages a push. */
+  /** No run reads or writes these: the founder's logins and IdleBiz's own keys. */
   unreadable: readonly Reach[];
   /** A run reads these but never writes them: what runs as the founder later. */
   unwritable: readonly Reach[];
@@ -591,7 +590,7 @@ export const machineSeal = (writable: readonly string[]): Promise<Seal> => {
   return sealFor({
     clis: RUNNER_IDS.map(runnerBin),
     home: homedir(),
-    mainOnly: [SECRETS_PATH, PUSH_STAGING_DIR],
+    mainOnly: [SECRETS_PATH],
     pathDirs: (process.env.PATH ?? "").split(path.delimiter),
     programs: [process.execPath, import.meta.filename],
     save: ROOT_DIR,

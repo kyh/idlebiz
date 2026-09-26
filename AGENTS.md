@@ -208,17 +208,8 @@ rather than crashing boot.
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
-  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. They push code
-  through the `push` tool, which pushes a committed branch of the product's repository with
-  the founder's own git credentials (main's ssh agent, their global and system credential
-  helpers) once the founder signs off on that exact commit and URL (`main/git-push.ts`).
-  Main runs no git in the workspace's repository, whose config and hooks an employee
-  writes: it reads the remote's URL from the file, fetches the branch through upload-pack
-  into a repository of its own under the save's `.push/` and pushes from there. It refuses a
-  `/usr/bin/git` from before upload-pack stopped lazy-fetching a partial clone's objects
-  (2.39.4, 2.45.1), and runs git with PATH cut to `/usr/bin:/bin:/usr/sbin:/sbin`, so a
-  founder's credential helper or `core.sshCommand` named without an absolute path is looked
-  up only in those. No tool
+  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. Nothing pushes
+  code: a run holds no git credentials, and the founder pushes by hand. No tool
   sets a project's env vars or domains, or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
@@ -231,7 +222,7 @@ rather than crashing boot.
   and hands `sandbox-exec -p`: the
   founder's logins kept under HOME (ssh, `gh`, npm, netrc, git credentials, `~/.aws`, docker,
   gnupg, gcloud, the Stripe, Wrangler, Netlify and Vercel CLIs, Chrome's and Brave's
-  profiles), the other runner's login, `.push/` (where main stages a push) and `secrets.json`
+  profiles), the other runner's login and `secrets.json`
   with every name that starts with it (main writes it through `secrets.json.tmp`) are
   unreadable and unwritable; every shell startup file in HOME (zsh's, bash's, `.inputrc`,
   Terminal's session files), zsh's wherever ZDOTDIR puts them and their compiled `.zwc`,
@@ -323,7 +314,7 @@ rather than crashing boot.
   spots, once closed, cut a seat, point of interest or the door off, or close in the spawn.
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
-  requests and real `/usr/bin/git` pushes to bare repositories on disk. On macOS it also runs the seal on canary files under a stand-in home
+  requests. On macOS it also runs the seal on canary files under a stand-in home
   (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
@@ -381,8 +372,7 @@ rather than crashing boot.
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
   (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),
-  `deploy.ts` (the Vercel API calls the `deploy` tool makes), `git-push.ts` (the git
-  calls the `push` tool makes, none inside the workspace's repository),
+  `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `payment-links.ts` (the Stripe calls `create_payment_link` makes), `secrets.ts`,
   `metrics.ts`, `tray.ts`.
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a
