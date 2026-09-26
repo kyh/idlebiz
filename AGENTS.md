@@ -208,8 +208,11 @@ rather than crashing boot.
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
-  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. Nothing pushes
-  code: a run holds no git credentials, and the founder pushes by hand. No tool
+  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool pushes
+  code: the founder pushes by hand. A run cannot use their ssh keys or agents, and git's
+  Keychain helper cannot run, but a claude run keeps `/usr/bin/security` for its own login, so
+  a token the founder's `gh` keeps in the Keychain is guarded only by the command policy's
+  `read-credentials` and `git-push` holds. No tool
   sets a project's env vars or domains, or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as

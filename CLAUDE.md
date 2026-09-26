@@ -245,7 +245,9 @@ allocator and the replay.
   (`wx`), so a file main writes never lands through a link a run planted.
   codex runs also lose `/usr/bin/security`; claude
   reads its own login with it, so on a claude run the Keychain (the founder's gh token, the
-  safeStorage key) is guarded only by the `read-credentials` rule. Network stays open:
+  safeStorage key) is guarded only by the `read-credentials` rule. Both exec rules name a
+  path, so a copy of `security` or of git's helper still runs; whether the Keychain answers
+  one is untested. Network stays open:
   `holdFor` judges sends. Boot checks the seal for free (`checkSeal`: under each runner's
   profile a canary must be unreadable and the runtime must start). Until it holds the
   scheduler starts nothing and autopilot files nothing, so no task spends an attempt on it;

@@ -1862,6 +1862,39 @@ const adoptStoppedBetWork = (active: ActiveCompany): void => {
   }
 };
 
+/** What the retired push tool asked the founder to sign: `push <branch> (<sha>) of <product> to <url>`. */
+const PUSH_SIGN_OFF = /^push \S+ \(/u;
+
+/**
+ * Format 6 and older could hold a task on a sign-off for the push tool, which is gone: approved,
+ * it would send the agent to a route that no longer answers. Each becomes a question the founder
+ * can answer once they have pushed by hand, a granted one is taken back, and the repositories
+ * the tool staged pushes in are removed.
+ */
+const adoptRetiredPush = (active: ActiveCompany): void => {
+  for (const t of active.tasks) {
+    const { state } = t;
+    if (
+      state.kind === "blocked" &&
+      state.ask.type === "approval" &&
+      PUSH_SIGN_OFF.test(state.ask.command)
+    ) {
+      const question = `The team no longer pushes code, so this waits on you instead: ${state.ask.command}. Push it by hand if you want it there, then answer to let the task go on.`;
+      recordIn(
+        active.tasks,
+        t.id,
+        { state: { ...state, ask: { question, type: "question" } } },
+        saveTask,
+      );
+    }
+  }
+  const kept = active.grants.filter((g) => !PUSH_SIGN_OFF.test(g.key));
+  if (kept.length < active.grants.length) {
+    writeGrants(kept);
+  }
+  rmSync(path.join(ROOT_DIR, ".push"), { force: true, recursive: true });
+};
+
 /** An older save's lead proposal, by its fixed title behind any "Continue: " an answer added. */
 const PROPOSAL_TITLE = /^(?:Continue: )*Open the next bet for /u;
 
@@ -1961,6 +1994,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   if (from < 6) {
     adoptDroppedWork(active);
     adoptStoppedBetWork(active);
+  }
+  if (from < 7) {
+    adoptRetiredPush(active);
   }
   saveCompany(active.company);
 };

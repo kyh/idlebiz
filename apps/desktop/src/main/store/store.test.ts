@@ -1505,7 +1505,7 @@ const writeBetState = (companyId: string, betId: string, state: BetState): void 
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(6);
+    expect(stampOf(found().id)).toBe(7);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1529,7 +1529,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1547,7 +1547,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -1575,7 +1575,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -1594,7 +1594,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
@@ -1621,7 +1621,7 @@ describe("the save format", () => {
     ];
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
     expect(room()).toEqual(adopted);
 
     store.initStore();
@@ -1645,7 +1645,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
 
     store.initStore();
     expect(store.listOpenTasks()).toMatchObject([
@@ -1673,7 +1673,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
 
     store.initStore();
     const archived = path.join(retiredDir(co.id), first.id, "workspace", "index.html");
@@ -1697,7 +1697,7 @@ describe("the save format", () => {
     restamp(co.id, 3);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
 
     store.initStore();
     expect(proposals.map((id) => store.getTask(id)?.origin)).toEqual(["propose", "propose"]);
@@ -1718,7 +1718,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(6);
+    expect(stampOf(co.id)).toBe(7);
 
     store.initStore();
     expect(measuredWork()).toEqual(["dropped", "dropped", "dropped", "blocked"]);
@@ -1736,6 +1736,44 @@ describe("the save format", () => {
         [killed.id, "Asked", { kind: "dropped", reason: "bet closed" }],
       ]),
     );
+  });
+
+  it("turns a format 6 push sign-off into a question, takes its grant back and clears .push/", () => {
+    const co = found();
+    const pushed = "push main (0123abcd) of acme to https://github.com/a/b.git";
+    const signOff = (title: string, command: string, rule: string) => {
+      const t = store.createTask({ origin: "founder", title });
+      const ask = { command, rule, type: "approval" } as const;
+      writeFileSync(
+        path.join(tasksDir(co.id), t.id, "TASK.md"),
+        serializeDoc(taskToDoc({ ...t, state: { ask, kind: "blocked", summary: null } })),
+      );
+      return t.id;
+    };
+    const push = signOff("Push", pushed, "git-push");
+    const deploy = signOff("Deploy", "deploy acme to production on Vercel project acme", "deploy");
+    store.grantApproval("continue-push", pushed);
+    store.grantApproval("continue-deploy", "deploy acme to production on Vercel project acme");
+    mkdirSync(path.join(root, ".push", "repo-1"), { recursive: true });
+    restamp(co.id, 6);
+
+    store.initStore();
+    expect(stampOf(co.id)).toBe(7);
+
+    expect(store.getTask(push)?.state).toEqual({
+      ask: {
+        question: `The team no longer pushes code, so this waits on you instead: ${pushed}. Push it by hand if you want it there, then answer to let the task go on.`,
+        type: "question",
+      },
+      kind: "blocked",
+      summary: null,
+    });
+    expect(store.getTask(deploy)?.state).toMatchObject({ ask: { rule: "deploy" } });
+    expect(store.consumeApproval("continue-push", pushed)).toBe(false);
+    expect(
+      store.consumeApproval("continue-deploy", "deploy acme to production on Vercel project acme"),
+    ).toBe(true);
+    expect(existsSync(path.join(root, ".push"))).toBe(false);
   });
 
   it("leaves alone a package written in a schema it does not read", () => {
