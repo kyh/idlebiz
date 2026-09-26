@@ -230,7 +230,10 @@ rather than crashing boot.
   with every name that starts with it (main writes it through `secrets.json.tmp`) are
   unreadable and unwritable; every shell startup file in HOME (zsh's, bash's, `.inputrc`,
   Terminal's session files), zsh's wherever ZDOTDIR puts them and their compiled `.zwc`,
-  `~/.gitconfig`, `~/.config`, LaunchAgents, every folder on main's PATH (the login shell's
+  `~/.gitconfig`, `~/.config`, LaunchAgents, what each runner's CLI loads in the founder's own
+  sessions (claude's settings, `CLAUDE.md`, hooks, skills, agents, commands, plugins; codex's
+  `config.toml`, hooks, `AGENTS*`, rules, prompts, skills, plugins, packages: `RUNNER_CONFIG`
+  in `seal.ts`), every folder on main's PATH (the login shell's
   whether they exist yet or not), the tree each symlink in one and each runner CLI (every
   copy on PATH) lands in, followed through its symlinks (a keg's or cask's whole Homebrew
   prefix, else the `.app` or `node_modules`, else the folder), and IdleBiz itself (the `.app`
@@ -255,7 +258,10 @@ rather than crashing boot.
   unsealed: a file the login shell sources that is no startup file (oh-my-zsh's `custom/`, a
   version manager's env script), a shim that picks its program when it runs (pyenv's,
   rbenv's, asdf's, mise's, Volta's), a library or config a program loads from outside its
-  tree (outside Homebrew's prefix), and whatever the founder starts other than from PATH. A
+  tree (outside Homebrew's prefix), whatever the founder starts other than from PATH, and
+  the rest of a runner's own state (`~/.claude.json` and its `mcpServers`, claude's
+  per-project auto-memory, codex's memories; a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` outside
+  HOME is not sealed at all). A
   codex run also cannot run `/usr/bin/security`; a claude run can, since claude reads its own
   login with it. Network stays open. Boot checks the seal without a model call; until it
   holds, no run starts and no task spends an attempt, and if it fails, or this Mac has no

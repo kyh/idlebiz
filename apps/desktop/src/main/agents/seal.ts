@@ -69,6 +69,32 @@ const RUN_LATER = [
   ".gitconfig",
 ];
 
+/**
+ * What each runner's CLI loads and runs in the founder's own sessions, unsealed: its settings,
+ * hooks, instructions, skills, plugins and rules. A run still writes the rest of its runner's
+ * state (sessions, history, caches, ~/.claude.json, which claude rewrites as it goes). Each is a
+ * prefix: a CLI writes a file through a sibling it renames over it.
+ */
+const RUNNER_CONFIG = [
+  ".claude/settings",
+  ".claude/CLAUDE.md",
+  ".claude/hooks",
+  ".claude/skills",
+  ".claude/agents",
+  ".claude/commands",
+  ".claude/plugins",
+  ".claude/output-styles",
+  ".claude/scheduled-tasks",
+  ".codex/config.toml",
+  ".codex/hooks.json",
+  ".codex/AGENTS",
+  ".codex/rules",
+  ".codex/prompts",
+  ".codex/skills",
+  ".codex/plugins",
+  ".codex/packages",
+];
+
 // zsh reads its startup files, or their compiled .zwc when newer, from wherever ZDOTDIR points,
 // and ~/.zshenv can set it where main never looks; Terminal sources .zsh_sessions/ on a restore.
 const ZSH_STARTUP = [
@@ -105,7 +131,7 @@ interface Reach {
 export interface Seal {
   /** No run reads or writes these: the founder's logins and IdleBiz's own keys. */
   unreadable: readonly Reach[];
-  /** A run reads these but never writes them: what runs as the founder later. */
+  /** A run reads these but never writes them: what runs as the founder later, its runner's config included. */
   unwritable: readonly Reach[];
   /**
    * A run writes these only inside `writable`: the save, every folder on main's PATH, there yet
@@ -554,8 +580,11 @@ export const sealFor = async ({
   writable: readonly string[];
 }): Promise<Seal> => {
   const realHome = await realPathOf(home);
-  const under = (names: readonly string[]): Promise<Reach[]> =>
-    reachesOf(names.map((name) => path.join(realHome, name)));
+  const under = (names: readonly string[], match: Reach["match"] = "subpath"): Promise<Reach[]> =>
+    reachesOf(
+      names.map((name) => path.join(realHome, name)),
+      match,
+    );
   // a relative folder names no fixed place to seal
   const onPath = [...new Set(pathDirs.filter((dir) => path.isAbsolute(dir)))];
   const found = await Promise.all(clis.map((cli) => foundOn(cli, onPath)));
@@ -575,7 +604,7 @@ export const sealFor = async ({
       codex: await loginOf(realHome, RUNNER_SEALS.codex.otherLogin),
     },
     unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly, "prefix"))],
-    unwritable: await under(RUN_LATER),
+    unwritable: [...(await under(RUN_LATER)), ...(await under(RUNNER_CONFIG, "prefix"))],
     writable: await ownFolders(save, writable),
   };
 };

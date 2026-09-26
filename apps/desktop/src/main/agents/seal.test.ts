@@ -463,6 +463,53 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     );
   });
 
+  it.each(["claude", "codex"] as const)(
+    "keeps a %s run from rewriting what its runner's CLI runs in the founder's own sessions",
+    async (runner) => {
+      const config =
+        runner === "claude"
+          ? [
+              ".claude/settings.json",
+              ".claude/settings.local.json",
+              ".claude/settings.json.tmp.1",
+              ".claude/CLAUDE.md",
+              ".claude/hooks/pre.sh",
+              ".claude/skills/a/SKILL.md",
+              ".claude/agents/a.md",
+              ".claude/commands/a.md",
+              ".claude/plugins/installed_plugins.json",
+              ".claude/output-styles/a.md",
+              ".claude/scheduled-tasks/a.json",
+            ]
+          : [
+              ".codex/config.toml",
+              ".codex/hooks.json",
+              ".codex/AGENTS.md",
+              ".codex/AGENTS.override.md",
+              ".codex/rules/default.rules",
+              ".codex/prompts/a.md",
+              ".codex/skills/a/SKILL.md",
+              ".codex/plugins/a.json",
+              ".codex/packages/standalone/bin/zsh",
+            ];
+      const kept = config.map(plant);
+      const state = [
+        runner === "claude" ? ".claude/projects/a/session.jsonl" : ".codex/sessions/a.jsonl",
+        runner === "claude" ? ".claude.json" : ".codex/history.jsonl",
+      ].map(plant);
+      expect(Object.values(await tryAs(runner, { reads: kept }))).toEqual(kept.map(() => "read"));
+      expect(Object.values(await tryAs(runner, { writes: kept }))).toEqual(kept.map(() => "EPERM"));
+      expect(Object.values(await tryAs(runner, { writes: state }))).toEqual(
+        state.map(() => "written"),
+      );
+    },
+  );
+
+  it("keeps a runner's instructions where a symlink leads, as a dotfile manager sets them up", async () => {
+    const target = link(".claude/CLAUDE.md", "dots/CLAUDE.md");
+    expect(await tryAs("claude", { writes: [target] })).toEqual({ [target]: "EPERM" });
+  });
+
   it("keeps zsh's startup files, compiled or not, wherever ZDOTDIR puts them", async () => {
     const zdotdir = [
       "dots/zsh/.zshrc",

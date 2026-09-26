@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -18,7 +18,8 @@ import { parseJson } from "@/shared/json";
 // model on loopback: nothing is billed, and claude's config dir is a scratch one whose settings
 // turn claude's own sandbox on, as a founder's may. It proves the session's flag-tier settings
 // keep that sandbox off, so a command runs inside the seal instead of failing to nest, and
-// still asks IdleBiz first, so holdFor still judges it; and that no MCP server of the founder's starts.
+// still asks IdleBiz first, so holdFor still judges it; that no MCP server of the founder's starts;
+// and that a run cannot rewrite the settings the founder's own claude loads, and still runs.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -189,11 +190,23 @@ const standInAgent = (agent: AcpAgent): AcpAgent => {
   };
 };
 
+/** `make` with HOME at `home`, where the seal and the run's env look for the founder's files. */
+const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> => {
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    return await make();
+  } finally {
+    process.env.HOME = previous;
+  }
+};
+
 describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let model: Server | null = null;
   let command = "true";
   const outputs: string[] = [];
   let base = "";
+  let home = "";
   let configDir = "";
   let workspace = "";
   let remote = "";
@@ -218,8 +231,10 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   beforeEach(() => {
     outputs.length = 0;
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-run-"));
-    configDir = path.join(base, "claude-config");
-    mkdirSync(configDir);
+    home = path.join(base, "home");
+    // where the founder's claude keeps its config, so the seal treats it as theirs
+    configDir = path.join(home, ".claude");
+    mkdirSync(configDir, { recursive: true });
     writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(FOUNDER_SETTINGS));
     // a server of the founder's, which leaves a mark if a run starts it
     const founderServer = {
@@ -264,8 +279,11 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
     const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
     const { port } = Listening.parse(model?.address());
+    const agent = await asFounderAt(home, async () =>
+      standInAgent(acpAgentFor("claude", await machineSeal([workspace]))),
+    );
     const result = await runAcpTurn({
-      agent: standInAgent(acpAgentFor("claude", await machineSeal([workspace]))),
+      agent,
       cwd: workspace,
       env: {
         ANTHROPIC_API_KEY: "stand-in",
@@ -330,4 +348,16 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     expect(output).toContain("Operation not permitted");
     expect(output).not.toContain("sealed canary");
   });
+
+  it(
+    "runs with its founder's settings unwritable, and cannot rewrite them",
+    { timeout: 60_000 },
+    async () => {
+      const settings = path.join(configDir, "settings.json");
+      const { result } = await turn(`echo '{"hooks":{}}' > ${settings}`, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(outputs.join("\n")).toMatch(/operation not permitted/iu);
+      expect(readFileSync(settings, "utf-8")).toBe(JSON.stringify(FOUNDER_SETTINGS));
+    },
+  );
 });

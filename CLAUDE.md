@@ -212,7 +212,11 @@ allocator and the replay.
   that starts with it (main writes it through `secrets.json.tmp`); writing what runs as the
   founder later: every shell startup file in HOME (zsh's, bash's, `.inputrc`, Terminal's
   `.zsh_sessions`/`.bash_sessions`), zsh's wherever ZDOTDIR puts them and their compiled
-  `.zwc`, which zsh prefers when newer, `~/.gitconfig`, `~/.config`, LaunchAgents, every folder
+  `.zwc`, which zsh prefers when newer, `~/.gitconfig`, `~/.config`, LaunchAgents, what each
+  runner's CLI loads in the founder's own sessions (`RUNNER_CONFIG`: claude's settings,
+  `CLAUDE.md`, hooks, skills, agents, commands, plugins, output styles and scheduled tasks;
+  codex's `config.toml`, `hooks.json`, `AGENTS*`, rules, prompts, skills, plugins and
+  packages, each also where a symlink leads), every folder
   on main's PATH (the login shell's kept there whether they exist yet or not, so a run cannot
   be the one to make them), whatever each symlink in one leads to and each runner CLI (every
   copy on PATH), each followed through its symlinks: every folder it passes, and the tree it
@@ -277,7 +281,12 @@ allocator and the replay.
   wrapper script that picks its program when it runs (pyenv's, rbenv's, asdf's, mise's,
   Volta's), and a library, plugin or config a program loads from outside its tree (outside
   Homebrew's prefix), stay writable, and so does anything the founder starts other than
-  from PATH (an editor's extensions, an app in `~/Applications`).
+  from PATH (an editor's extensions, an app in `~/Applications`). A run also still writes the
+  rest of its runner's state, which the founder's own CLI reads: `~/.claude.json`, which
+  claude rewrites as it goes (its `mcpServers` load in the founder's sessions), claude's
+  per-project auto-memory under `~/.claude/projects`, and codex's memories. Both runners'
+  homes are found under HOME only: a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere is not
+  sealed.
 
 ## Two traps that fail silently
 

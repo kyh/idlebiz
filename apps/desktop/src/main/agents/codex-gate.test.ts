@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -16,8 +16,9 @@ import { parseJson } from "@/shared/json";
 
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
-// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it, and
-// starts no MCP server of the founder's.
+// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it,
+// starts no MCP server of the founder's, and runs, but cannot rewrite, the config their own
+// codex loads.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -113,10 +114,22 @@ const standInModel = (move: () => Move): Server =>
     });
   });
 
+/** `make` with HOME at `home`, where the seal and the run's env look for the founder's files. */
+const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> => {
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    return await make();
+  } finally {
+    process.env.HOME = previous;
+  }
+};
+
 describe.skipIf(!codexRuns)("codex inside the seal", () => {
   let model: Server | null = null;
   let move: Move = { cmd: "true", tool: "exec_command" };
   let base = "";
+  let home = "";
   let codexHome = "";
   let workspace = "";
   let remote = "";
@@ -141,8 +154,10 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   beforeEach(() => {
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-run-"));
     const { port } = Listening.parse(model?.address());
-    codexHome = path.join(base, "codex-home");
-    mkdirSync(codexHome);
+    home = path.join(base, "home");
+    // where the founder's codex keeps its config, so the seal treats it as theirs
+    codexHome = path.join(home, ".codex");
+    mkdirSync(codexHome, { recursive: true });
     writeFileSync(
       path.join(codexHome, "config.toml"),
       [
@@ -190,9 +205,12 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     }
     const asks: { request: PermissionRequest; held: Hold | null }[] = [];
     const room = { cwd: workspace, real: realPathOf, save: root, writable: [workspace] };
-    const seal = await machineSeal([workspace]);
+    const agent = await asFounderAt(home, async () => {
+      const seal = await machineSeal([workspace]);
+      return acpAgentFor("codex", seal, await codexMcpOff(seal, { CODEX_HOME: codexHome }));
+    });
     const result = await runAcpTurn({
-      agent: acpAgentFor("codex", seal, await codexMcpOff(seal, { CODEX_HOME: codexHome })),
+      agent,
       cwd: workspace,
       env: { CODEX_HOME: codexHome },
       idleTimeoutMs: 60_000,
@@ -267,4 +285,18 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       paths: [path.join(workspace, "notes.md"), path.join(root, "acme", "approvals.json")],
     });
   });
+
+  it(
+    "runs with its founder's config unwritable, and cannot rewrite it",
+    { timeout: 60_000 },
+    async () => {
+      const config = path.join(codexHome, "config.toml");
+      const before = readFileSync(config, "utf-8");
+      const cmd = `touch ran; echo 'notify = ["x"]' >> ${config}`;
+      const { result } = await turn({ cmd, tool: "exec_command" }, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(existsSync(path.join(workspace, "ran"))).toBe(true);
+      expect(readFileSync(config, "utf-8")).toBe(before);
+    },
+  );
 });
