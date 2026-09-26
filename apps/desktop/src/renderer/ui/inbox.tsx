@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, retryTask } from "@/renderer/state/store";
+import { ActionCard } from "@/renderer/ui/action-card";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { plural } from "@/shared/format";
 import { describeRule } from "@/shared/hold-rules";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
@@ -143,10 +143,46 @@ export const Inbox = ({
     onOpen(kind === "stripe" ? { kind: "budget" } : { kind: "vercel", productId: t.productId });
   };
 
+  const askRow = (t: TaskIn<"blocked">) => {
+    const { ask } = t.state;
+    switch (ask.type) {
+      case "integration": {
+        return (
+          <ConnectRow
+            key={t.id}
+            t={t}
+            by={nameOf(t.assigneeId)}
+            integration={ask.integration}
+            reason={ask.reason}
+            onConnect={(kind) => connect(kind, t)}
+          />
+        );
+      }
+      case "approval": {
+        return (
+          <ApprovalRow
+            key={t.id}
+            t={t}
+            by={nameOf(t.assigneeId)}
+            command={ask.command}
+            rule={ask.rule}
+          />
+        );
+      }
+      case "question": {
+        return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} question={ask.question} />;
+      }
+      case "action": {
+        return <ActionCard key={t.id} t={t} by={nameOf(t.assigneeId)} ask={ask} />;
+      }
+      // no default
+    }
+  };
+
   return (
     <Modal
       title="Inbox"
-      subtitle={`${plural(pendingAsks.length, "question")} · ${stuckTasks.length} stuck`}
+      subtitle={`${pendingAsks.length} waiting on you · ${stuckTasks.length} stuck`}
       width="2xl"
       onClose={onClose}
     >
@@ -154,40 +190,7 @@ export const Inbox = ({
         {pendingAsks.length === 0 && stuckTasks.length === 0 ? (
           <div className="text-sm text-fg-dim">All clear — nobody&apos;s waiting on you.</div>
         ) : null}
-        {pendingAsks.map((t) => {
-          const { ask } = t.state;
-          switch (ask.type) {
-            case "integration": {
-              return (
-                <ConnectRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  integration={ask.integration}
-                  reason={ask.reason}
-                  onConnect={(kind) => connect(kind, t)}
-                />
-              );
-            }
-            case "approval": {
-              return (
-                <ApprovalRow
-                  key={t.id}
-                  t={t}
-                  by={nameOf(t.assigneeId)}
-                  command={ask.command}
-                  rule={ask.rule}
-                />
-              );
-            }
-            case "question": {
-              return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} question={ask.question} />;
-            }
-            default: {
-              return null;
-            }
-          }
-        })}
+        {pendingAsks.map(askRow)}
         {stuckTasks.length > 0 ? (
           <div className="pt-1 text-xs uppercase tracking-wide text-fg-dim">
             Stuck — needs a retry

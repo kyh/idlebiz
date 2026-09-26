@@ -405,7 +405,8 @@ export const outcomeOf = (
 
 /** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
 export interface AskBox {
-  raise: (ask: BlockedAsk) => void;
+  /** False when the run had already asked, and this ask was dropped. */
+  raise: (ask: BlockedAsk) => boolean;
   current: () => BlockedAsk | null;
 }
 
@@ -414,10 +415,12 @@ export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
   return {
     current: () => first,
     raise: (ask) => {
-      if (first === null) {
-        first = ask;
-        onFirst(ask);
+      if (first !== null) {
+        return false;
       }
+      first = ask;
+      onFirst(ask);
+      return true;
     },
   };
 };

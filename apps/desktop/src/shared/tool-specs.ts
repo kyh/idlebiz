@@ -53,9 +53,20 @@ const tool = <B extends z.ZodType>(spec: ToolSpec<B>): ToolSpec<B> => spec;
 // oxlint-disable-next-line sort-keys -- the order agents read them in: everyone's tools, then the lead's
 export const TOOL_SPECS = {
   ask_boss: tool({
-    body: z.strictObject({ question: z.string().trim().min(1) }),
-    doc: "you are blocked or need a decision only the founder can make. Use sparingly; prefer making reasonable choices yourself. Note the answer arrives later — continue with whatever you can still do.",
-    example: { question: "..." },
+    body: z.union([
+      z.strictObject({ question: z.string().trim().min(1) }),
+      z.strictObject({
+        action: z.string().trim().min(1).max(120),
+        draft: z.string().trim().min(1).max(10_000).optional(),
+        instructions: z.string().trim().min(1).max(4000),
+      }),
+    ]),
+    doc: 'hand the founder something only they can do, in one of two kinds. An **action** is a step only a human can take: post this draft somewhere, sign up for a service, buy a domain, verify an email. `action` names it in a line, `instructions` say exactly where to go, what to do and what to send back, and `draft` is the text to paste, if there is one. Actions are how the team gets anything done that needs a human: when the next step is one, propose it rather than stall. The founder answers Done, with whatever you asked them to send back (a URL, a value, a key this product needs), or Can\'t, with why. A **question**, `{"question":"..."}`, is for a decision only the founder can make: use it sparingly and prefer making reasonable choices yourself. Either way the answer arrives in a later run, so continue with whatever you can still do. Only a run\'s first ask reaches the founder.',
+    example: {
+      action: "Post the launch thread on r/SideProject",
+      draft: "...",
+      instructions: "...",
+    },
     leadOnly: null,
     method: "POST",
     path: "/v1/ask-boss",
@@ -108,7 +119,7 @@ export const TOOL_SPECS = {
   }),
   deploy: tool({
     body: z.strictObject({ product: z.string().min(1).optional() }),
-    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The folder's files go up as they are, less what \`.vercelignore\` and Vercel's defaults leave out (node_modules, .git, .env.local), and Vercel builds them on its own machines, with the settings in \`vercel.json\`. A product with no Vercel project gets a new one named after it. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. No tool sets the project's environment variables or domains: a product that needs one asks the founder via ask_boss. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
+    doc: `publish the product's folder to production on Vercel and get its live URL back. It deploys your run's product; name another with \`"product":"<slug>"\`. The folder's files go up as they are, less what \`.vercelignore\` and Vercel's defaults leave out (node_modules, .git, .env.local), and Vercel builds them on its own machines, with the settings in \`vercel.json\`. A product with no Vercel project gets a new one named after it. The founder signs off on each deploy: the first call is held, and calling again once they answer runs it, so build and check it passes in that same run, right before the call. No tool sets the project's environment variables or domains: a product that needs one sends the founder an ask_boss action. It answers once Vercel is done, which can take up to ${DEPLOY_TIMEOUT_MS / 60_000} minutes: let the call run that long.`,
     example: {},
     leadOnly: null,
     method: "POST",

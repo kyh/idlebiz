@@ -4,6 +4,7 @@ import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import type { Digest } from "@/shared/digest";
 import {
+  ActionReplySchema,
   BudgetSchema,
   KillReasonSchema,
   MaxAgentsSchema,
@@ -47,6 +48,7 @@ export const SCHEMAS = {
   answerQuestion: z.object({ answer: z.string(), taskId: z.string() }),
   assignTask: z.object({ employeeId: z.string(), taskId: z.string() }),
   composeCharacter: z.object({ seed: z.string() }),
+  copyText: z.object({ text: z.string().max(20_000) }),
   createProduct: ProductDraftSchema,
   directEmployee: z.object({ employeeId: z.string(), instruction: z.string().min(1).max(2000) }),
   employeeOptions: z.object({ employeeId: z.string() }),
@@ -86,6 +88,7 @@ export const SCHEMAS = {
   productStatus: z.object({ productId: z.string() }),
   resetGame: z.void(),
   resetSpend: z.void(),
+  resolveAction: z.object({ reply: ActionReplySchema, taskId: z.string() }),
   resolveApproval: z.object({ approved: z.boolean(), taskId: z.string() }),
   restingRunners: z.void(),
   setAutopilot: z.object({ running: z.boolean() }),
@@ -163,6 +166,7 @@ interface Results {
 
   teamMessages: TeamMessage[];
   employeeOptions: ChatOption[];
+  copyText: Done;
   postTeamChat: Done;
   directEmployee: Done;
   setMaxAgents: Company;
@@ -171,6 +175,7 @@ interface Results {
   shippingLog: ShipLine[];
   assignTask: Task;
   answerQuestion: Task;
+  resolveAction: Task;
   resolveApproval: Task;
   openCompanyPath: Done;
   openProduct: { opened: string };

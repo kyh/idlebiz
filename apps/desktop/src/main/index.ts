@@ -2,7 +2,15 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, powerSaveBlocker, safeStorage, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  powerSaveBlocker,
+  safeStorage,
+  session,
+  shell,
+} from "electron";
 import { registerIpcHandlers } from "@/main/lib/ipc-handler";
 import type { IpcHandlers } from "@/main/lib/ipc-handler";
 import { broadcast } from "@/main/lib/broadcast";
@@ -91,6 +99,8 @@ const ipcHandlers = {
     const { composeCharacter } = await import("@/main/character/compositor");
     return await composeCharacter(seed);
   },
+  // the renderer is refused every permission, the clipboard's included
+  copyText: ({ text }) => clipboard.writeText(text),
   createProduct: (input) => startProduct(input, null),
   directEmployee: ({ employeeId, instruction }) =>
     scheduler.directEmployee(employeeId, instruction.trim()),
@@ -146,6 +156,7 @@ const ipcHandlers = {
   productStatus: ({ productId }) => productStatus(productId),
   resetGame,
   resetSpend: store.resetSpend,
+  resolveAction: ({ taskId, reply }) => scheduler.resolveAction(taskId, reply),
   resolveApproval: ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved),
   restingRunners: () => agentDriver.restingRunners(),
   setAutopilot: ({ running }) => setAutopilot(running),

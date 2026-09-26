@@ -18,6 +18,7 @@ const FEED_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
   "org.hired",
   "org.released",
   "runner.resting",
+  "run.ask",
 ]);
 const FEED_LINES = 30;
 

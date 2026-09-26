@@ -28,8 +28,19 @@ export const INTEGRATION_LABELS = {
   vercel: "Vercel",
 } satisfies Record<IntegrationKind, string>;
 
+/** A step only a human can take: `action` names it, `draft` is text to paste, if any. */
+export const ActionAskSchema = z.object({
+  action: z.string(),
+  draft: z.string().nullable(),
+  instructions: z.string(),
+  type: z.literal("action"),
+});
+
+export type ActionAsk = z.infer<typeof ActionAskSchema>;
+
 export const BlockedAskSchema = z.discriminatedUnion("type", [
   z.object({ question: z.string(), type: z.literal("question") }),
+  ActionAskSchema,
   z.object({
     integration: z.enum(INTEGRATION_KINDS),
     reason: z.string(),
@@ -43,6 +54,16 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
+
+/**
+ * The founder's reply to an action: they took the step, with anything it asked them to send
+ * back (a URL, a value, a key the product needs), or could not, and why.
+ */
+export const ActionReplySchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("done"), note: z.string().trim().max(4000) }),
+  z.object({ kind: z.literal("cant"), reason: z.string().trim().min(1).max(2000) }),
+]);
+export type ActionReply = z.infer<typeof ActionReplySchema>;
 
 /**
  * Resolve `@token` mentions against the roster: employee slug match first,

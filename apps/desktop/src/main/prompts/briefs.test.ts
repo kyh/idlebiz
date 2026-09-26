@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autonomousBrief, continuationBrief, roomTranscript } from "./briefs";
+import { actionAnswer, autonomousBrief, continuationBrief, roomTranscript } from "./briefs";
 import { RUN_COST_ESTIMATE_USD } from "@/shared/bets";
 import type {
   BlockedAsk,
@@ -231,9 +231,32 @@ describe("the brief that carries the founder's answer", () => {
       "> a Stripe connection: to take payments",
       "[connect:stripe]",
     ],
+    [
+      {
+        action: "Post the launch thread",
+        draft: "We built a thing.",
+        instructions: "Post it on r/SideProject.",
+        type: "action",
+      },
+      "> a step only a human could take: Post the launch thread. Post it on r/SideProject.",
+      "[action]",
+    ],
   ])("reads a %j ask in words, not as TASK.md stores it", (ask, words, stored) => {
     const text = briefOn(ask);
     expect(text).toContain(words);
     expect(text).not.toContain(stored);
+  });
+});
+
+describe("the founder's reply to an action", () => {
+  it.each([
+    [{ kind: "done", note: "" }, "Done."],
+    [
+      { kind: "done", note: "https://reddit.com/r/x/1" },
+      "Done. They sent back: https://reddit.com/r/x/1",
+    ],
+    [{ kind: "cant", reason: "no account there" }, "They could not: no account there."],
+  ] as const)("reads %j as %j", (reply, words) => {
+    expect(actionAnswer(reply)).toContain(words);
   });
 });

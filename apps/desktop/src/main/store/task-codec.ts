@@ -1,5 +1,12 @@
-import { INTEGRATION_KINDS, TASK_ORIGINS, TASK_PRIORITIES, TASK_STATUSES } from "@/shared/domain";
+import {
+  ActionAskSchema,
+  INTEGRATION_KINDS,
+  TASK_ORIGINS,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+} from "@/shared/domain";
 import type { BlockedAsk, Task, TaskOrigin, TaskState, TaskStatus } from "@/shared/domain";
+import { parseJson } from "@/shared/json";
 import {
   PACKAGE_SCHEMA,
   nullableNum,
@@ -11,22 +18,47 @@ import {
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 
 const QUESTION_ESCAPE = "[ask] ";
+const ACTION_PREFIX = "[action] ";
+
+/** An action's fields, kept as JSON behind its prefix: its instructions and draft are free text. */
+const ActionFieldsSchema = ActionAskSchema.omit({ type: true });
+
+const parseAction = (json: string): BlockedAsk | null => {
+  try {
+    const fields = ActionFieldsSchema.safeParse(parseJson(json));
+    return fields.success ? { ...fields.data, type: "action" } : null;
+  } catch {
+    return null;
+  }
+};
 
 // TASK.md stores a human-editable scalar. A question that starts with "[" is escaped so an
-// agent's text can never read back as an approval or connect ask.
+// agent's text can never read back as an approval, a connect ask or an action.
 const serializeBlockedAsk = (a: BlockedAsk): string => {
-  if (a.type === "question") {
-    return a.question.startsWith("[") ? `${QUESTION_ESCAPE}${a.question}` : a.question;
+  switch (a.type) {
+    case "question": {
+      return a.question.startsWith("[") ? `${QUESTION_ESCAPE}${a.question}` : a.question;
+    }
+    case "action": {
+      const { action, draft, instructions } = a;
+      return `${ACTION_PREFIX}${JSON.stringify({ action, draft, instructions })}`;
+    }
+    case "approval": {
+      return `[approve:${a.rule}] ${a.command}`;
+    }
+    case "integration": {
+      return `[connect:${a.integration}] ${a.reason}`;
+    }
+    // no default
   }
-  if (a.type === "approval") {
-    return `[approve:${a.rule}] ${a.command}`;
-  }
-  return `[connect:${a.integration}] ${a.reason}`;
 };
 
 const parseBlockedAsk = (s: string): BlockedAsk => {
   if (s.startsWith(QUESTION_ESCAPE)) {
     return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
+  }
+  if (s.startsWith(ACTION_PREFIX)) {
+    return parseAction(s.slice(ACTION_PREFIX.length)) ?? { question: s, type: "question" };
   }
   const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
   if (approval) {

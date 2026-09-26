@@ -52,6 +52,23 @@ describe("reduceActivity", () => {
     expect(reduceActivity(held, ask).reload).toEqual(["tasks"]);
   });
 
+  it("says in #team what a teammate waits on the founder for", () => {
+    const ask: ActivityEvent = {
+      ...stamp,
+      ...inRun,
+      kind: "run.ask",
+      payload: {
+        ask: {
+          action: "Buy acme.dev",
+          draft: null,
+          instructions: "Any registrar.",
+          type: "action",
+        },
+      },
+    };
+    expect(reduceActivity(held, ask).patch.feed).toEqual([ask]);
+  });
+
   it("clears a resolved ask from the inbox the moment it resumes", () => {
     const resumed: ActivityEvent = {
       ...stamp,

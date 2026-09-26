@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { emptyDigest, foldDigest } from "./digest";
+import { DigestSchema } from "@/shared/digest";
+import type { BlockedAsk } from "@/shared/domain";
 
 const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
+
+const asked = (ask: BlockedAsk) =>
+  foldDigest(emptyDigest(0), { ...inRun, createdAt: 1, kind: "run.ask", payload: { ask } });
 
 describe("folding the digest", () => {
   it("counts every ship but keeps only the lines its window lists", () => {
@@ -30,6 +35,23 @@ describe("folding the digest", () => {
         payload: { outcome: done, settled: "done", summary: "" },
       });
     expect(twice).toMatchObject({ runs: 2, spentUsd: 0.25 });
+  });
+
+  it("counts the actions handed to the founder, not their questions", () => {
+    expect(
+      asked({
+        action: "Buy acme.dev",
+        draft: null,
+        instructions: "Any registrar.",
+        type: "action",
+      }),
+    ).toMatchObject({ actions: 1 });
+    expect(asked({ question: "Monthly or yearly?", type: "question" })).toBeNull();
+  });
+
+  it("reads a digest from before it counted actions", () => {
+    const { actions: _, ...older } = emptyDigest(0);
+    expect(DigestSchema.parse(older)).toEqual(emptyDigest(0));
   });
 
   it("leaves alone what it does not count", () => {

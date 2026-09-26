@@ -47,6 +47,16 @@ describe("tool specs", () => {
     expect(body.safeParse({ ...example, amountUsd }).success).toBe(false);
   });
 
+  it.each([
+    [{ question: "Monthly or yearly?" }, true],
+    [{ action: "Buy acme.dev", instructions: "Any registrar; send me the account email." }, true],
+    [{ action: "Buy acme.dev", draft: "", instructions: "..." }, false],
+    [{ action: "Buy acme.dev" }, false],
+    [{ action: "Buy acme.dev", instructions: "...", question: "Or not?" }, false],
+  ])("takes %j as an ask: %s", (body, ok) => {
+    expect(TOOL_SPECS.ask_boss.body.safeParse(body).success).toBe(ok);
+  });
+
   it("tells the lead each metric's floor", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");
   });
@@ -66,7 +76,7 @@ describe("tool specs", () => {
 
   it("renders the call an agent can paste", () => {
     expect(toolDocs(false)).toContain(
-      `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"question":"..."}'`,
+      `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"action":"Post the launch thread on r/SideProject","draft":"...","instructions":"..."}'`,
     );
     expect(toolDocs(false)).toContain(
       `curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`,

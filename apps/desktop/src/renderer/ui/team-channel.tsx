@@ -5,6 +5,8 @@ import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import type { ActivityEvent } from "@/shared/activity";
+import { INTEGRATION_LABELS } from "@/shared/domain";
+import type { BlockedAsk } from "@/shared/domain";
 import { formatTime } from "@/shared/format";
 import { describeRule } from "@/shared/hold-rules";
 import { cn } from "cn";
@@ -38,6 +40,25 @@ const HeldCommand = ({
   );
 };
 
+/** What a teammate is waiting on the founder for, after their name; the card to answer it is in the inbox. */
+const askLine = (ask: BlockedAsk): string => {
+  switch (ask.type) {
+    case "question": {
+      return `asks: ${ask.question}`;
+    }
+    case "action": {
+      return `needs you to: ${ask.action}`;
+    }
+    case "integration": {
+      return `needs ${INTEGRATION_LABELS[ask.integration]} connected`;
+    }
+    case "approval": {
+      return `needs your sign-off: ${describeRule(ask.rule)}`;
+    }
+    // no default
+  }
+};
+
 const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => string }) => {
   switch (e.kind) {
     case "ship": {
@@ -59,6 +80,13 @@ const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => stri
     }
     case "org.released": {
       return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
+    }
+    case "run.ask": {
+      return (
+        <div className="line-clamp-2 text-fg-dim">
+          <span className="text-fg">{nameOf(e.employeeId)}</span> {askLine(e.payload.ask)}
+        </div>
+      );
     }
     case "chat": {
       const { from } = e.payload;

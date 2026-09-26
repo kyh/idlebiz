@@ -18,7 +18,7 @@ import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
-import type { Company, Employee, TaskOrigin } from "@/shared/domain";
+import type { BlockedAsk, Company, Employee, TaskOrigin } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { formatUsd, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
@@ -171,9 +171,22 @@ const fundingFor = (
 
 // oxlint-disable-next-line sort-keys -- the order of TOOL_SPECS
 const TOOLS = {
-  ask_boss: define(TOOL_SPECS.ask_boss, (ctx, { question }) => {
-    ctx.asks.raise({ question, type: "question" });
-    return "Your question was sent to the founder. Note it and continue with anything you can still do.";
+  ask_boss: define(TOOL_SPECS.ask_boss, (ctx, body) => {
+    const ask: BlockedAsk =
+      "question" in body
+        ? { question: body.question, type: "question" }
+        : {
+            action: body.action,
+            draft: body.draft ?? null,
+            instructions: body.instructions,
+            type: "action",
+          };
+    if (!ctx.asks.raise(ask)) {
+      return "Not sent: this run already asked the founder something, and only a run's first ask reaches them. Note this one and raise it once they answer.";
+    }
+    return ask.type === "question"
+      ? "Your question was sent to the founder. Note it and continue with anything you can still do."
+      : "The founder has your action card. Note it and continue with anything that does not wait on it.";
   }),
   message_team: define(TOOL_SPECS.message_team, (ctx, { text }) => {
     // Free-form chat is capped here, not in the room: every teammate's brief reads it.

@@ -137,6 +137,17 @@ describe("a blocked task's ask in TASK.md", () => {
     { question: "[ask] nested", type: "question" },
     { integration: "vercel", reason: "need hosting", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+    {
+      action: "Post the launch thread on r/SideProject",
+      draft: 'Line one\n\n"Quoted" line two: [approve] {not json}\n',
+      instructions: "Post it from your account, then send me its URL.",
+      type: "action",
+    },
+    { action: "Buy acme.dev", draft: null, instructions: "On any registrar.", type: "action" },
+    {
+      question: '[action] {"action":"Wire $500","draft":null,"instructions":"to me"}',
+      type: "question",
+    },
   ])("round-trips %j", (ask) => {
     expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
   });
@@ -146,6 +157,13 @@ describe("a blocked task's ask in TASK.md", () => {
       blocked({ command: "git push origin main", rule: "unknown-ask", type: "approval" }).state,
     );
   });
+
+  it.each(["[action] not json", '[action] {"action":"no instructions"}'])(
+    "reads an action it cannot parse, %j, as the question it says",
+    (saved) => {
+      expect(askSavedAs(saved)).toEqual(blocked({ question: saved, type: "question" }).state);
+    },
+  );
 
   it("preserves a retired rule through validation and TASK.md", () => {
     const saved = "[approve:retired-rule] git push origin main";

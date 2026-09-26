@@ -9,7 +9,7 @@ import type { Digest as DigestSummary } from "@/shared/digest";
 const AWAY_MS = 10 * 60_000;
 
 const eventful = (d: DigestSummary): boolean =>
-  d.shipped + d.runs + d.hired.length + d.released.length + d.dead > 0;
+  d.shipped + d.runs + d.hired.length + d.released.length + d.dead + d.actions > 0;
 
 const Lines = ({ d }: { d: DigestSummary }) => (
   <ul className="space-y-2 text-sm text-fg">
@@ -35,6 +35,11 @@ const Lines = ({ d }: { d: DigestSummary }) => (
     ) : null}
     {d.hired.length > 0 ? <li>Hired {formatNames(d.hired)}</li> : null}
     {d.released.length > 0 ? <li>Released {formatNames(d.released)}</li> : null}
+    {d.actions > 0 ? (
+      <li className="text-warn">
+        {plural(d.actions, "step")} only you can take — they wait in the inbox
+      </li>
+    ) : null}
     {d.dead > 0 ? (
       <li className="text-danger">{plural(d.dead, "task")} gave up — retry from the inbox</li>
     ) : null}

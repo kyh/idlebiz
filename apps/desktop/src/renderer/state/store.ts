@@ -3,6 +3,7 @@ import type { ActivityEvent } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import { taskIn } from "@/shared/domain";
 import type {
+  ActionReply,
   AuthFlowEvent,
   Budget,
   Company,
@@ -416,6 +417,15 @@ export const sendFounderChat = (text: string): Promise<void> =>
 /** Founder decides on a held outward-facing command; the task resumes either way. */
 export const resolveApproval = async (taskId: string, approved: boolean): Promise<void> => {
   await bridge().resolveApproval({ approved, taskId });
+};
+
+/** Founder took, or could not take, a step only they could; the task resumes either way. */
+export const resolveAction = async (taskId: string, reply: ActionReply): Promise<void> => {
+  await bridge().resolveAction({ reply, taskId });
+};
+
+export const copyText = async (text: string): Promise<void> => {
+  await bridge().copyText({ text });
 };
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */

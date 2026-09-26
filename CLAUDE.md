@@ -108,6 +108,15 @@ allocator and the replay.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
   or employee), so the room agents read and the #team feed hold the same lines and no
   office news reads as the founder's word.
+- **What only a human can do is an action card.** `ask_boss` takes a question or an action
+  (`{action, instructions, draft?}`): a step no tool takes, such as posting from the founder's
+  accounts, signing up, buying a domain or verifying an email. The founder answers Done, with
+  an optional note that reaches the run as written (a product's own key included, by the
+  founder's choice), or Can't, with why (`resolveAction`). The task blocks like a question's,
+  so its bet gets no hands meanwhile. The agents are told to propose actions rather than
+  stall, and to keep questions rare. TASK.md keeps an action behind `[action] ` as JSON, and
+  escapes any question starting with `[` behind `[ask] `, so no agent's text reads back as an
+  action, an approval or a connect ask.
 - **The policy is data, retuned by replay.** `dream` replays a fixed set of `explore`
   weights against the measured verdicts and swaps only to a strictly better scorer, so the
   incumbent never loses to a tie. A bet killed before any source reported its number

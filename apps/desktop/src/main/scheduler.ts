@@ -19,6 +19,7 @@ import type { Allocation } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { RefusalError } from "@/shared/refusal";
 import {
+  actionAnswer,
   approvalAnswer,
   autonomousBrief,
   founderPing,
@@ -35,7 +36,14 @@ import {
   isRoutineDue,
   resolveMentions,
 } from "@/shared/domain";
-import type { Company, Employee, IntegrationKind, Task, TaskStatus } from "@/shared/domain";
+import type {
+  ActionReply,
+  Company,
+  Employee,
+  IntegrationKind,
+  Task,
+  TaskStatus,
+} from "@/shared/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -467,6 +475,14 @@ class Scheduler {
 
   answerQuestion(taskId: string, answer: string): Task {
     return this.resumeBlocked(taskId, answer, "task is not awaiting an answer");
+  }
+
+  resolveAction(taskId: string, reply: ActionReply): Task {
+    const task = store.getTask(taskId);
+    if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "action") {
+      throw new RefusalError("task is not awaiting an action");
+    }
+    return this.resumeBlocked(taskId, actionAnswer(reply), "could not resume the task");
   }
 
   resolveApproval(taskId: string, approved: boolean): Task {

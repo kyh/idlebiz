@@ -318,6 +318,25 @@ describe("company tools", () => {
     expect(ctx.asks.current()).toEqual({ question: "Ship it?", type: "question" });
   });
 
+  it("hands the founder an action, and says when a second ask of the run went nowhere", async () => {
+    const { ctx, asked } = runAs("priya");
+    const card = await callTool(ctx, "POST /v1/ask-boss", {
+      action: "Post the launch thread",
+      instructions: "Post it on r/SideProject and send me its URL.",
+    });
+    const second = await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
+    expect(card).toContain("action card");
+    expect(second).toContain("Not sent");
+    expect(asked).toEqual([
+      {
+        action: "Post the launch thread",
+        draft: null,
+        instructions: "Post it on r/SideProject and send me its URL.",
+        type: "action",
+      },
+    ]);
+  });
+
   it("delegates to a teammate by role, against the run's bet", async () => {
     const { ctx, assigned } = runAs("mae");
     await callTool(ctx, "POST /v1/open-bet", BET);

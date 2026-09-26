@@ -6,6 +6,8 @@ export const DIGEST_SHIPS_SHOWN = 5;
 /** What happened while the founder was away: folded from each event as it
  *  is published, so an absence of any length is counted in full. */
 export const DigestSchema = z.object({
+  /** Actions teammates handed the founder: steps only a human can take. Older files lack it. */
+  actions: z.number().default(0),
   /** Tasks that gave up while they were away. */
   dead: z.number(),
   hired: z.array(z.string()),

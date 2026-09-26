@@ -7,7 +7,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@/shared/activity";
 import { MAX_TASK_ATTEMPTS } from "@/shared/domain";
-import type { Budget, BusinessTypeId, Task, TaskOrigin } from "@/shared/domain";
+import type { BlockedAsk, Budget, BusinessTypeId, Task, TaskOrigin } from "@/shared/domain";
 import { RefusalError } from "@/shared/refusal";
 import type { RunResult, RunTools } from "./agents/agent-driver";
 import { keepAwake } from "./keep-awake";
@@ -927,5 +927,75 @@ describe("a release", () => {
 
     expect(continuation.assigneeId).toBe("priya");
     expect(kindOf(continuation)).toBe("running");
+  });
+});
+
+const POST: BlockedAsk = {
+  action: "Post the launch thread",
+  draft: "We built a thing.",
+  instructions: "Post it on r/SideProject, then send me its URL.",
+  type: "action",
+};
+
+/** Mae's run on a funded bet hands the founder `ask`, and the office goes on ticking. */
+const blockedOn = async (ask: BlockedAsk) => {
+  found();
+  const bet = openBet(5);
+  const { driver, running } = scripted();
+  const drain = createScheduler(driver, asleep);
+  const task = store.createTask({
+    assigneeId: "mae",
+    betId: bet.id,
+    origin: "work",
+    title: "Launch",
+  });
+  drain.assign(task.id, "mae");
+  running.get("mae")?.({ ...done(), outcome: { ask, kind: "blocked" } });
+  await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+  drain.start();
+  drain.stop();
+  return { bet, drain, task };
+};
+
+const workOn = (betId: string): Task[] =>
+  store.listOpenTasks().filter((t) => t.betId === betId && t.state.kind !== "blocked");
+
+describe("an action only the founder can take", () => {
+  it("gives its bet no hands until the founder answers, then resumes with what they sent back", async () => {
+    const { bet, drain, task } = await blockedOn(POST);
+
+    expect(workOn(bet.id)).toEqual([]);
+
+    const continuation = drain.resolveAction(task.id, {
+      kind: "done",
+      note: "https://reddit.com/r/SideProject/1",
+    });
+
+    expect(continuation).toMatchObject({ assigneeId: "mae", betId: bet.id });
+    expect(continuation.description).toContain(
+      "> a step only a human could take: Post the launch thread.",
+    );
+    expect(continuation.description).toContain(
+      "Done. They sent back: https://reddit.com/r/SideProject/1",
+    );
+    expect(kindOf(continuation)).toBe("queued");
+  });
+
+  it("carries the founder's reason when they could not", async () => {
+    const { drain, task } = await blockedOn(POST);
+
+    const continuation = drain.resolveAction(task.id, {
+      kind: "cant",
+      reason: "no Reddit account",
+    });
+
+    expect(continuation.description).toContain("They could not: no Reddit account.");
+  });
+
+  it("answers only an action", async () => {
+    const { drain, task } = await blockedOn({ question: "Ship it?", type: "question" });
+
+    expect(() => drain.resolveAction(task.id, { kind: "done", note: "" })).toThrow(RefusalError);
+    expect(kindOf(task)).toBe("blocked");
   });
 });

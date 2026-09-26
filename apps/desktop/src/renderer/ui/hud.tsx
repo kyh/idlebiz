@@ -95,7 +95,7 @@ const InboxButton = ({ needsYou, onClick }: { needsYou: number; onClick: () => v
       type="button"
       onClick={onClick}
       className={cn("px-btn pointer-events-auto", hasCount ? "px-hot" : "px-btn-icon")}
-      title="Questions, connect requests and stuck tasks waiting on you"
+      title="Questions, steps only you can take and stuck tasks waiting on you"
     >
       {hasCount ? (
         <span className="px-live-dot">

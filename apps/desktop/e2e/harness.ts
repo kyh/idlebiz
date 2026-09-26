@@ -181,7 +181,7 @@ const HIRES: HireProposal[] = [
   },
 ];
 
-interface Founded {
+export interface Founded {
   company: Company;
   employees: Employee[];
   product: Product;

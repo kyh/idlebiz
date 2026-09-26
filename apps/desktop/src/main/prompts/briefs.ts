@@ -9,6 +9,7 @@ import {
 import type { Bet } from "@/shared/bets";
 import { INTEGRATION_LABELS, businessTypeById, isLead } from "@/shared/domain";
 import type {
+  ActionReply,
   BlockedAsk,
   Company,
   Employee,
@@ -317,7 +318,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     failures,
     ``,
     coordinate,
-    `Make it real: products should end up runnable, and when ready, deployed with the deploy tool (ask the founder via ask_boss before anything else outward-facing, like posting).`,
+    `Make it real: products should end up runnable, and when ready, deployed with the deploy tool (a step only a human can take, like posting from the founder's accounts or signing up for a service, goes to the founder as an ask_boss action).`,
     `When you finish, post a one-line update to the team room with message_team(text).`,
     `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
   ].join("\n");
@@ -351,6 +352,9 @@ const askInWords = (ask: BlockedAsk): string => {
     case "question": {
       return ask.question;
     }
+    case "action": {
+      return `a step only a human could take: ${ask.action}. ${ask.instructions}`;
+    }
     case "approval": {
       return `permission to run \`${ask.command}\``;
     }
@@ -378,6 +382,13 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
 
 export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
   `${INTEGRATION_LABELS[kind]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
+
+export const actionAnswer = (reply: ActionReply): string => {
+  if (reply.kind === "cant") {
+    return `They could not: ${reply.reason}. Do not hand them the same step again: find another way, or carry on without it.`;
+  }
+  return reply.note === "" ? "Done." : `Done. They sent back: ${reply.note}`;
+};
 
 export const approvalAnswer = (approved: boolean, command: string): string =>
   approved
