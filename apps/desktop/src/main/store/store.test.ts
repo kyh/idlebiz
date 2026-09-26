@@ -1763,7 +1763,7 @@ describe("the save format", () => {
 
     expect(store.getTask(push)?.state).toEqual({
       ask: {
-        question: `The team no longer pushes code, so this waits on you instead: ${pushed}. To push it, clone it fresh with \`git clone --no-local ${product?.workspaceDir} <new folder>\` and push from that clone, never with git inside the workspace: the team writes its git config and hooks, and git there would run them as you. Then answer to let the task go on.`,
+        question: `The team no longer pushes code, so this waits on you instead: ${pushed}. To push it, clone it fresh with \`git clone --no-local ${product?.workspaceDir} <new folder>\` and push from that clone, never with git inside the workspace: it holds what the team wrote, and git there could run it as you. Then answer to let the task go on.`,
         type: "question",
       },
       kind: "blocked",

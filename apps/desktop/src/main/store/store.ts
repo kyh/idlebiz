@@ -1882,7 +1882,7 @@ const adoptRetiredPush = (active: ActiveCompany): void => {
     ) {
       const workspace =
         active.products.find((p) => p.id === t.productId)?.workspaceDir ?? "the workspace";
-      const question = `The team no longer pushes code, so this waits on you instead: ${state.ask.command}. To push it, clone it fresh with \`git clone --no-local ${workspace} <new folder>\` and push from that clone, never with git inside the workspace: the team writes its git config and hooks, and git there would run them as you. Then answer to let the task go on.`;
+      const question = `The team no longer pushes code, so this waits on you instead: ${state.ask.command}. To push it, clone it fresh with \`git clone --no-local ${workspace} <new folder>\` and push from that clone, never with git inside the workspace: it holds what the team wrote, and git there could run it as you. Then answer to let the task go on.`;
       recordIn(
         active.tasks,
         t.id,

@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -7,7 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
@@ -25,18 +26,18 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("@/main/store/store");
 const {
-  BROWSER_NAMESPACE,
   PAGE_URLS,
   acpAgentFor,
   agentDriver,
   askBox,
   createAgentDriver,
   decidePermission,
+  ensureRepository,
   livePageOf,
   memoryAfter,
   outcomeOf,
 } = await import("./agent-driver");
-const { realPathOf, sealedCommand, signInCommand } = await import("./seal");
+const { browserNamespace, realPathOf, sealedCommand, signInCommand } = await import("./seal");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -53,14 +54,33 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
-  agents: [{ match: "subpath", path: "/private/var/run/com.apple.launchd.x/Listeners" }],
-  guarded: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
-  otherLogin: {
-    claude: [{ match: "prefix", path: "/Users/me/.codex" }],
-    codex: [{ match: "prefix", path: "/Users/me/.claude" }],
+  browser: {
+    namespaces: {
+      claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
+      codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },
+    },
+    root: { match: "subpath", path: "/Users/me/.agent-browser" },
   },
+  claudeMemory: { own: null, projects: "/Users/me/.claude/projects" },
+  debugPorts: [9222],
+  onPath: [],
+  preferences: "/Users/me/Library/Preferences",
+  runners: {
+    claude: {
+      config: [{ match: "prefix", path: "/Users/me/.claude/settings" }],
+      folder: "/Users/me/.claude",
+      state: [{ match: "prefix", path: "/Users/me/.claude" }],
+    },
+    codex: {
+      config: [{ match: "prefix", path: "/Users/me/.codex/config.toml" }],
+      folder: "/Users/me/.codex",
+      state: [{ match: "prefix", path: "/Users/me/.codex" }],
+    },
+  },
+  save: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
+  scratch: [{ match: "subpath", path: "/private/tmp" }],
+  sockets: [{ match: "subpath", path: "/private/var/run/com.apple.launchd.x/Listeners" }],
   unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/secrets.json" }],
-  unwritable: [{ match: "subpath", path: "/Users/me/.zshrc" }],
   writable: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace" }],
 };
 
@@ -368,10 +388,14 @@ describe("acpAgentFor", () => {
     expect(command.slice(-2)).toEqual([process.execPath, expect.stringContaining(adapter)]);
   });
 
-  it("starts agent-browser's Chrome without a sandbox of its own, in the runs' own daemon", () => {
-    const { env } = acpAgentFor("codex", SEAL);
-    expect(env.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
-    expect(env.AGENT_BROWSER_NAMESPACE).toBe(BROWSER_NAMESPACE);
+  it("starts agent-browser's Chrome without a sandbox of its own, in its runner's own daemons", () => {
+    const codex = acpAgentFor("codex", SEAL).env;
+    const claude = acpAgentFor("claude", SEAL).env;
+    expect(codex.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
+    expect(codex.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace("codex"));
+    expect(claude.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace("claude"));
+    expect(browserNamespace("claude")).not.toBe(browserNamespace("codex"));
+    expect(codex.AGENT_BROWSER_SOCKET_DIR).toBe(path.join(homedir(), ".agent-browser"));
   });
 
   it("runs codex in the mode that asks for everything and sandboxes nothing itself", () => {
@@ -415,11 +439,11 @@ const browserAt = (running: boolean, urls: readonly (string | null)[]) => {
 describe("livePageOf", () => {
   it("reads the session in the daemon the runs drive", async () => {
     const { asked, browser } = browserAt(true, ["http://localhost:3000/", null]);
-    expect(await livePageOf(browser)("mae")).toEqual({
+    expect(await livePageOf(browser, "idlebiz-x")("mae")).toEqual({
       frames: [null],
       url: "http://localhost:3000/",
     });
-    const scope = ["--namespace", BROWSER_NAMESPACE, "--session", "mae"];
+    const scope = ["--namespace", "idlebiz-x", "--session", "mae"];
     expect(asked).toEqual([
       [...scope, "session", "info", "--json"],
       [...scope, "eval", PAGE_URLS, "--json"],
@@ -428,12 +452,29 @@ describe("livePageOf", () => {
 
   it("starts no daemon: a session with none shows no page", async () => {
     const { asked, browser } = browserAt(false, ["about:blank"]);
-    expect(await livePageOf(browser)("")).toBeNull();
-    expect(asked).toEqual([["--namespace", BROWSER_NAMESPACE, "session", "info", "--json"]]);
+    expect(await livePageOf(browser, "idlebiz-x")("")).toBeNull();
+    expect(asked).toEqual([["--namespace", "idlebiz-x", "session", "info", "--json"]]);
   });
 
   it("shows no page when agent-browser cannot answer", async () => {
-    expect(await livePageOf(() => Promise.reject(new Error("ENOENT")))("")).toBeNull();
+    expect(await livePageOf(() => Promise.reject(new Error("ENOENT")), "idlebiz-x")("")).toBeNull();
+  });
+});
+
+describe("ensureRepository", () => {
+  it("makes a workspace a repository once, and leaves one that is", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "idlebiz-repo-"));
+    try {
+      await ensureRepository(workspace);
+      expect(existsSync(path.join(workspace, ".git/HEAD"))).toBe(true);
+      writeFileSync(path.join(workspace, ".git/HEAD"), "ref: refs/heads/kept\n");
+      await ensureRepository(workspace);
+      expect(readFileSync(path.join(workspace, ".git/HEAD"), "utf-8")).toBe(
+        "ref: refs/heads/kept\n",
+      );
+    } finally {
+      rmSync(workspace, { force: true, recursive: true });
+    }
   });
 });
 
@@ -682,9 +723,11 @@ describe("the environment an agent is spawned with", () => {
     process.env.CLAUDE_BIN = cli;
     process.env.CODEX_BIN = path.join(cwd, "no-codex");
 
+    // the stand-in CLI writes what it saw where a run may write
+    const scratch: Seal["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
     const driver = createAgentDriver(
       () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
+      () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
     );
     driver.init();
     await driver.hasAnyRunner();

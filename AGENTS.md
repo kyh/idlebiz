@@ -210,10 +210,10 @@ rather than crashing boot.
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
   `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool pushes
   code: the founder pushes by hand from a fresh `git clone --no-local` of the workspace, never
-  with git inside it, where a run's config and hooks would run as them (CLAUDE.md). A run cannot use their ssh keys or agents, and git's
-  Keychain helper cannot run, but a claude run keeps `/usr/bin/security` for its own login, so
-  a token the founder's `gh` keeps in the Keychain is guarded only by the command policy's
-  `read-credentials` and `git-push` holds. No tool
+  with git inside it, where a run's config and hooks would run as them (CLAUDE.md). A run cannot use their ssh keys or agents, git's
+  Keychain helper cannot run and a codex run reaches no Keychain, but a claude run shares the
+  founder's login, which claude reads from the Keychain, so a token the founder's `gh` keeps
+  there is guarded only by the command policy's `read-credentials` and `git-push` holds. No tool
   sets a project's env vars or domains, or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
@@ -223,58 +223,28 @@ rather than crashing boot.
   keys sign for the whole account, so neither runner keeps them: a founder on Bedrock signs
   in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
 - Every employee run starts sealed, inside the Seatbelt profile `main/agents/seal.ts` renders
-  and hands `sandbox-exec -p`: the
-  founder's logins kept under HOME (ssh, `gh`, npm, netrc, git credentials, `~/.aws`, docker,
-  gnupg, gcloud, the Stripe, Wrangler, Netlify and Vercel CLIs, Chrome's and Brave's
-  profiles), the other runner's login and `secrets.json`
-  with every name that starts with it (main writes it through `secrets.json.tmp`) are
-  unreadable and unwritable; every shell startup file in HOME (zsh's, bash's, `.inputrc`,
-  Terminal's session files), zsh's wherever ZDOTDIR puts them and their compiled `.zwc`,
-  `~/.gitconfig`, `~/.config`, LaunchAgents, what each runner's CLI loads in the founder's own
-  sessions (claude's settings, `CLAUDE.md`, hooks, skills, agents, commands, plugins; codex's
-  `config.toml`, hooks, `AGENTS*`, rules, prompts, skills, plugins, packages: `RUNNER_CONFIG`
-  in `seal.ts`), every folder on main's PATH (the login shell's
-  whether they exist yet or not), the tree each symlink in one and each runner CLI (every
-  copy on PATH) lands in, followed through its symlinks (a keg's or cask's whole Homebrew
-  prefix, else the `.app` or `node_modules`, else the folder), and IdleBiz itself (the `.app`
-  its executable sits in; in dev, the `node_modules` Electron runs from and the whole checkout)
-  are unwritable; the save is
-  unwritable but for the run's own
-  folders (its workspace, the shared one, its memory and the tool cache), which it cannot
-  remove, move or replace, so no shell command forges an approval, a bet's verdict, a
-  teammate or a task; git's Keychain helper cannot run, LaunchServices opens nothing for a
-  run (an app it opened would run unsealed; only the CLI sign-in may open the browser), the
-  CLIs that drive other apps by Apple Event cannot run (a program a run builds still can
-  send one, and macOS asks the founder before IdleBiz controls another app: refuse it), and
-  no agent's socket answers: any under a sealed path, 1Password's, Secretive's, launchd's,
-  main's `SSH_AUTH_SOCK`, and any an ssh-agent started from a terminal names
-  (`ssh-*/agent.<pid>`). An agent listening under another name elsewhere is not covered. Each of those paths is sealed where a symlink leads as well as where
-  it is named, as they stand when each run starts, and no folder above one can be renamed,
-  removed or made; the run's own folders are allowed only where the save resolves, and a run
-  whose folder is reached through a symlink does not start. Main's boot probe of the login
-  shell's PATH runs under the same profile, holding neither runner's login nor the Keychain,
-  so whatever startup file it runs or sources runs sealed, and main probes and signs in a
-  runner's CLI only under that runner's seal. Still writable, and run by the founder
-  unsealed: a file the login shell sources that is no startup file (oh-my-zsh's `custom/`, a
-  version manager's env script), a shim that picks its program when it runs (pyenv's,
-  rbenv's, asdf's, mise's, Volta's), a library or config a program loads from outside its
-  tree (outside Homebrew's prefix), whatever the founder starts other than from PATH, and
-  the rest of a runner's own state (`~/.claude.json` and its `mcpServers`, claude's
-  per-project auto-memory, codex's memories; a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` outside
-  HOME is not sealed at all). A
-  codex run also cannot run `/usr/bin/security`; a claude run can, since claude reads its own
-  login with it. Network stays open. Boot checks the seal without a model call; until it
-  holds, no run starts and no task spends an attempt, and if it fails, or this Mac has no
-  `/usr/bin/sandbox-exec`, Settings lists why beside what boot skipped; a CLI sign-in retry
-  checks again. sandbox-exec cannot nest, so claude's own sandbox is forced off and
-  codex runs in `external-sandbox`, a mode
-  `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own,
-  and it asks before every command and patch. A codex-acp upgrade must carry that patch.
-  Runs start Chrome for agent-browser without its own sandbox
-  (`AGENT_BROWSER_ARGS=--no-sandbox`), in a daemon namespace of the save's own
-  (`AGENT_BROWSER_NAMESPACE`) that neither the founder's agent-browser nor main's live-page
-  read starts unsealed, and install packages into the save's `cache/` (`TOOL_CACHE_ENV` in
-  `main/agents/agent-driver.ts`).
+  and hands `sandbox-exec -p`. Writes are denied by default: a run writes its own folders
+  (workspace, shared, memory, the save's `cache/`), its runner's home, TMPDIR, the per-user
+  cache, `/private/tmp`, its runner's agent-browser namespace and node CLIs'
+  `~/Library/Preferences/*-nodejs`, and nothing else in HOME or the save. Inside those it
+  still cannot write what the founder's own CLI loads from the runner's home (`RUNNER_HOMES`),
+  claude's auto-memory of other folders, a PATH folder there, or, in its own folders, git's
+  config and hooks, `.claude/settings*.json`, `.mcp.json` and `.codex/`. Reads are open but
+  for the founder's logins (`LOGINS`), `secrets.json` and the other runner's home. No socket
+  of the founder's (ssh, gpg and 1Password agents, container engines, the founder's own
+  agent-browser daemons or the other runner's) and no loopback debug port (9222, 9229)
+  answers a run; LaunchServices opens nothing for it, and codex runs reach no Keychain. Main
+  makes a product's workspace a repository before its run and sets the run's git identity by
+  env; toolchain caches go to `cache/` by env (`TOOL_CACHE_ENV` in
+  `main/agents/agent-driver.ts`). Boot checks the seal without a model call (a read canary
+  and a write canary per runner); until it holds, no run starts, and a refusal is listed in
+  Settings. sandbox-exec cannot nest, so claude's own sandbox is forced off and codex runs in
+  `external-sandbox`, a mode `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no
+  sandbox of codex's own, and it asks before every command and patch. A codex-acp upgrade
+  must carry that patch. Runs start Chrome for agent-browser without its own sandbox
+  (`AGENT_BROWSER_ARGS=--no-sandbox`). Open by design: the network, reads across HOME outside
+  the login stores, and, through the shared login, the Keychain and `~/.claude.json` to
+  claude runs; CLAUDE.md lists every residual.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

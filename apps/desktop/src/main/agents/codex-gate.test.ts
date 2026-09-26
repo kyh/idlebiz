@@ -268,6 +268,18 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     expect(mcpStarted).toBe(false);
   });
 
+  it("runs each command inside the seal", { timeout: 60_000 }, async () => {
+    const secrets = path.join(root, "secrets.json");
+    writeFileSync(secrets, "sealed canary");
+    const outside = path.join(root, "outside.txt");
+    const cmd = `cat ${secrets} > read.txt; echo x > ${outside}; touch ran`;
+    const { result } = await turn({ cmd, tool: "exec_command" }, true);
+    expect(result.end).toEqual({ kind: "completed" });
+    expect(existsSync(path.join(workspace, "ran"))).toBe(true);
+    expect(readFileSync(path.join(workspace, "read.txt"), "utf-8")).toBe("");
+    expect(existsSync(outside)).toBe(false);
+  });
+
   it("asks before every patch, naming where a move lands", { timeout: 60_000 }, async () => {
     const patch = [
       "*** Begin Patch",

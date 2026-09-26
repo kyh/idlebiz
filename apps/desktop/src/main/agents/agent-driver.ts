@@ -20,6 +20,7 @@ import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -29,6 +30,8 @@ import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import { runEnv } from "@/main/agents/run-env";
 import {
+  browserNamespace,
+  browserSocketDir,
   machineSeal,
   realPathOf,
   SANDBOX_EXEC,
@@ -65,20 +68,23 @@ const runnerEnv = (runner: AgentRunner): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
 
 /**
- * The agent-browser daemon runs drive, apart from the founder's own. Whoever starts a daemon
- * decides whether its Chrome is sealed, and only a run, or a read made the way a run would make
- * it, ever starts this one. Short: the daemon's socket path under it must fit in 103 bytes.
- */
-export const BROWSER_NAMESPACE = `idlebiz-${createHash("sha256").update(ROOT_DIR).digest("hex").slice(0, 8)}`;
-
-/**
  * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:
  * unset, each session's Chrome gets a fresh profile under TMPDIR, never the founder's, while one
  * fixed profile would keep every session but the first from starting, since Chrome locks it.
+ * The namespace is the runner's own, and so are its daemons: only its runs, or a read made the
+ * way one of them would make it, ever start one there.
  */
-const BROWSER_ENV = {
+const browserEnv = (runner: AgentRunner) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
-  AGENT_BROWSER_NAMESPACE: BROWSER_NAMESPACE,
+  AGENT_BROWSER_NAMESPACE: browserNamespace(runner),
+  AGENT_BROWSER_SOCKET_DIR: browserSocketDir(),
+});
+
+/** The folder `runner`'s daemons listen in, which a run cannot make: only write inside it. */
+const makeBrowserNamespace = (runner: AgentRunner): void => {
+  mkdirSync(path.join(browserSocketDir(), "namespaces", browserNamespace(runner)), {
+    recursive: true,
+  });
 };
 
 /**
@@ -96,7 +102,7 @@ export const acpAgentFor = (
   const adapter: RunnerAdapter = RUNNERS[runner];
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
-    ...BROWSER_ENV,
+    ...browserEnv(runner),
     ...more,
     // The packaged executable is Electron; child agents need its Node mode.
     ELECTRON_RUN_AS_NODE: "1",
@@ -207,7 +213,7 @@ const sealedBrowser =
   (seal: Seal, runner: AgentRunner): BrowserCli =>
   async (args) => {
     const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
-    const env = { ...runnerEnv(runner), ...BROWSER_ENV };
+    const env = { ...runnerEnv(runner), ...browserEnv(runner) };
     const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
     return stdout;
   };
@@ -216,13 +222,13 @@ const SessionInfo = z.object({ data: z.object({ active: z.boolean() }) });
 
 const LivePageOutput = z.object({ data: z.object({ result: z.array(z.string().nullable()) }) });
 
-/** The page `session` shows, read through `browser`; null when nothing could say. */
-const readPage = async (browser: BrowserCli, session: string): ReturnType<LivePage> => {
-  const scope = [
-    "--namespace",
-    BROWSER_NAMESPACE,
-    ...(session === "" ? [] : ["--session", session]),
-  ];
+/** The page `session` in `namespace` shows, read through `browser`; null when nothing could say. */
+const readPage = async (
+  browser: BrowserCli,
+  namespace: string,
+  session: string,
+): ReturnType<LivePage> => {
+  const scope = ["--namespace", namespace, ...(session === "" ? [] : ["--session", session])];
   try {
     const info = SessionInfo.safeParse(
       parseJson(await browser([...scope, "session", "info", "--json"])),
@@ -247,9 +253,9 @@ const readPage = async (browser: BrowserCli, session: string): ReturnType<LivePa
  * the run starts it, so a daemon that stops between the two reads comes back sealed all the same.
  */
 export const livePageOf =
-  (browser: BrowserCli): LivePage =>
+  (browser: BrowserCli, namespace: string): LivePage =>
   (session) =>
-    readPage(browser, session);
+    readPage(browser, namespace, session);
 
 /** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
 export const decidePermission = async (
@@ -291,13 +297,45 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
 };
 
 // One cache the runs share, outside their working trees and apart from the founder's: a package
-// a run installs never lands in a store the founder's own projects link from.
+// a run installs never lands in a store the founder's own projects link from. A run writes only
+// its own folders, so every cache a toolchain would keep in HOME is moved here, and updaters that
+// would rewrite a CLI the founder runs are off.
 const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
 
 const TOOL_CACHE_ENV = {
+  BUN_INSTALL_CACHE_DIR: path.join(TOOL_CACHE_DIR, "bun"),
+  COREPACK_HOME: path.join(TOOL_CACHE_DIR, "corepack"),
+  DISABLE_AUTOUPDATER: "1",
+  NEXT_TELEMETRY_DISABLED: "1",
+  PLAYWRIGHT_BROWSERS_PATH: path.join(TOOL_CACHE_DIR, "ms-playwright"),
   XDG_CACHE_HOME: TOOL_CACHE_DIR,
   npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
+  npm_config_devdir: path.join(TOOL_CACHE_DIR, "node-gyp"),
+  npm_config_update_notifier: "false",
   pnpm_config_store_dir: path.join(TOOL_CACHE_DIR, "pnpm-store"),
+};
+
+/**
+ * A product's workspace as a repository, made by main when it is none yet: a run cannot write a
+ * repository's config or hooks, which the founder's own git would run. macOS's git, whose `init`
+ * runs nothing the folder holds.
+ */
+export const ensureRepository = async (workspace: string): Promise<void> => {
+  const stats = await lstat(path.join(workspace, ".git")).catch(() => null);
+  if (stats === null) {
+    await execFileAsync("/usr/bin/git", ["init", "--quiet"], { cwd: workspace });
+  }
+};
+
+/** Who a run's commits name, since it cannot write git's config to say so. */
+const gitIdentity = (emp: Employee, company: Company) => {
+  const email = `${emp.id}@${company.id}.idlebiz.invalid`;
+  return {
+    GIT_AUTHOR_EMAIL: email,
+    GIT_AUTHOR_NAME: emp.name,
+    GIT_COMMITTER_EMAIL: email,
+    GIT_COMMITTER_NAME: emp.name,
+  };
 };
 
 /**
@@ -617,7 +655,11 @@ class AgentDriver {
     mkdirSync(memory, { recursive: true });
     mkdirSync(TOOL_CACHE_DIR, { recursive: true });
     const seal = await this.seal(confinement.writable);
-    const livePage = livePageOf(sealedBrowser(seal, emp.runner));
+    makeBrowserNamespace(emp.runner);
+    if (run.workspace !== company.workspaceDir) {
+      await ensureRepository(run.workspace);
+    }
+    const livePage = livePageOf(sealedBrowser(seal, emp.runner), browserNamespace(emp.runner));
     const handle = controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;
@@ -626,7 +668,7 @@ class AgentDriver {
         addDirs,
         agent: await sessionAgent(emp.runner, seal),
         cwd: run.workspace,
-        env: { ...handle.env, ...TOOL_CACHE_ENV },
+        env: { ...handle.env, ...TOOL_CACHE_ENV, ...gitIdentity(emp, company) },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         instructionsChanged: run.instructionsChanged,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
