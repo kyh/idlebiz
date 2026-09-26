@@ -33,7 +33,7 @@ const turnedAway = (status: number): string => {
       return "Stripe doesn't recognise this key — copy it again from the API keys page of your Stripe Dashboard.";
     }
     case 403: {
-      return "Stripe won't let this key make payment links — give the restricted key Write on Payment Links, Prices and Products and Read on Charges and Customers, or use your secret key.";
+      return "Stripe won't let this key make payment links — give the restricted key Write on Payment Links, Prices, Products and Shipping Rates and Read on Charges and Customers, or use your secret key.";
     }
     default: {
       return `Stripe answered ${status} — nothing was saved; try again.`;
