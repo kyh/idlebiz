@@ -135,19 +135,22 @@ third boundary.
     credentials, cloud and deploy CLIs, browser and chat-app profiles, agent-browser's saved
     logins), `secrets.json` with every name that starts with it, and the other runner's home.
   - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its
-    workspace, the shared one, its memory, the save's `cache/`), its runner's home (`~/.claude`
-    or `~/.codex`), TMPDIR, macOS's per-user temp and cache folders,
+    workspace, the shared one, its memory, the save's `cache/`), its runner's state in its home
+    (`state` in `RUNNER_HOMES`: sessions, logs, caches, databases, codex's refreshed login;
+    claude's transcripts and memory of the run's own folder only), TMPDIR, macOS's per-user temp and cache folders,
     `/private/tmp`, its runner's agent-browser namespace, node CLIs'
     `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `TOOL_CACHE_ENV`
     (`agent-driver.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
     and turns CLI updaters off.
+  - The rest of the runner's home is what the founder's own CLI and desktop app load and run:
+    settings, instructions, hooks, skills, plugins, and any script a setting names there (a
+    status line, a hook's, codex's `notify`); every other folder's claude transcripts and
+    memory, which the founder's sessions there resume and load. None of it is written.
   - Seatbelt obeys the last rule a path matches, so inside those folders the profile denies
-    again what the founder's own tools load or run later: what the runner's CLI or desktop app
-    loads from its home (`RUNNER_HOMES`: settings, instructions, rules, hooks, skills, plugins,
-    shell snapshots, daemons…), claude's transcripts and memory of every folder but the run's
-    own (`projects/`, which the founder's sessions there resume and load), a folder the founder
+    again what the founder's own tools load or run later: a folder the founder
     runs programs from inside one of them (on main's PATH, where its links lead, or a terminal's
-    shims in TMPDIR: `TERMINAL_SHIMS`, cmux's) with every folder above it there, and, anywhere, what the founder's tools run
+    shims in TMPDIR: `TERMINAL_SHIMS`, cmux's) or a link in the runner's home leads (a dotfile
+    manager's) with every folder above it there, and, anywhere, what the founder's tools run
     on opening a folder: in `.git/` everything but what git writes as it stages,
     commits, branches, stashes, merges, rebases and gcs (so no config, hooks, `commondir`,
     `worktrees/`, `modules/` or alternates), `.claude/settings*.json`, `.mcp.json`, `.codex/`,
@@ -272,8 +275,9 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
   - to claude runs, which share the founder's login, the Keychain: claude reads its login
     there, so a token the founder's `gh` or git keeps there is guarded only by the tripwire's
     `read-credentials` and `git-push` holds;
-  - the rest of each runner's state: claude's prompt history and session registry, codex's
-    session logs (which its own memory pass reads), thread and queue databases;
+  - each runner's state, which the founder's own sessions read as data: claude's prompt
+    history, session registry, todos and file backups (which a rewind restores), codex's
+    session logs and databases (its memory pass reads them into what later sessions load);
   - the runners' shared ground: every run writes `cache/` and a product's workspace, so code a
     codex run leaves there (a package script, a `node_modules/.bin` shim) runs in the next
     claude run, with the Keychain and claude's login;

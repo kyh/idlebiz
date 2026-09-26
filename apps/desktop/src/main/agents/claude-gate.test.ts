@@ -360,14 +360,20 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   });
 
   it(
-    "runs with its founder's settings unwritable, and cannot rewrite them",
+    "runs with its founder's settings unwritable, and cannot rewrite them or add a script beside them",
     { timeout: 60_000 },
     async () => {
       const settings = path.join(configDir, "settings.json");
-      const { result } = await turn(`echo '{"hooks":{}}' > ${settings}`, true);
+      // a script a setting could name, such as a status line
+      const script = path.join(configDir, "statusline.sh");
+      const { result } = await turn(
+        `echo '{"hooks":{}}' > ${settings}; echo 'id' > ${script}`,
+        true,
+      );
       expect(result.end).toEqual({ kind: "completed" });
       expect(outputs.join("\n")).toMatch(/operation not permitted/iu);
       expect(readFileSync(settings, "utf-8")).toBe(JSON.stringify(FOUNDER_SETTINGS));
+      expect(existsSync(script)).toBe(false);
     },
   );
 

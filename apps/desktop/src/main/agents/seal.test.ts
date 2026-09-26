@@ -52,22 +52,22 @@ const SEAL: Seal = {
     claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
     codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },
   },
-  onPath: [],
   preferences: "/Users/me/Library/Preferences",
   runners: {
     claude: {
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
-      config: [{ match: "prefix", path: "/Users/me/.claude/settings" }],
       folder: "/Users/me/.claude",
-      state: [{ match: "subpath", path: "/Users/me/.claude" }],
+      home: [{ match: "subpath", path: "/Users/me/.claude" }],
+      state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
       account: [],
-      config: [{ match: "prefix", path: "/Users/me/.codex/config.toml" }],
       folder: "/Users/me/.codex",
-      state: [{ match: "subpath", path: "/Users/me/.codex" }],
+      home: [{ match: "subpath", path: "/Users/me/.codex" }],
+      state: [{ match: "prefix", path: "/Users/me/.codex/auth.json" }],
     },
   },
+  runsAsFounder: [],
   save: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
   scratch: [{ match: "subpath", path: "/private/tmp" }],
   sockets: [],
@@ -132,7 +132,7 @@ describe("sealedCommand", () => {
     expect(denied("file-read* file-write*")).toEqual([odd, "/Users/me/.codex"]);
   });
 
-  it("denies every write, then allows each runner the scratch folders and its own home, never the other's", () => {
+  it("denies every write, then allows each runner the scratch folders and its own state, never the other's", () => {
     const claude = readBack(sealedCommand(SEAL, "claude", []));
     const codex = readBack(sealedCommand(SEAL, "codex", []));
     for (const { lines } of [claude, codex]) {
@@ -144,16 +144,22 @@ describe("sealedCommand", () => {
     expect(claude.allowed("file-write*")).toEqual(
       expect.arrayContaining([
         "/private/tmp",
-        "/Users/me/.claude",
+        "/Users/me/.claude/sessions",
         "/Users/me/.agent-browser/namespaces/idlebiz-c",
       ]),
     );
-    expect(claude.allowed("file-write*")).not.toContain("/Users/me/.codex");
+    expect(claude.allowed("file-write*")).not.toContain("/Users/me/.claude");
+    expect(claude.allowed("file-write*")).not.toContain("/Users/me/.codex/auth.json");
     expect(claude.denied("file-read* file-write*")).toContain("/Users/me/.codex");
-    expect(codex.allowed("file-write*")).toContain("/Users/me/.codex");
+    expect(codex.allowed("file-write*")).toContain("/Users/me/.codex/auth.json");
     expect(codex.denied("file-read* file-write*")).toContain("/Users/me/.claude");
-    expect(claude.denied("file-write*")).toContain("/Users/me/.claude/settings");
-    expect(codex.denied("file-write*")).toContain("/Users/me/.codex/config.toml");
+    // the home is closed before its state reopens, so a home in TMPDIR holds too
+    expect(claude.lineOf("deny", "file-write*", "/Users/me/.claude")).toBeLessThan(
+      claude.lineOf("allow", "file-write*", "/Users/me/.claude/sessions"),
+    );
+    expect(claude.lineOf("allow", "file-write*", "/private/tmp")).toBeLessThan(
+      claude.lineOf("deny", "file-write*", "/Users/me/.claude"),
+    );
   });
 
   it("closes the Keychain to codex runs whichever program asks, and leaves it to claude's", () => {
@@ -172,30 +178,31 @@ describe("sealedCommand", () => {
         own: "/Users/me/.claude/projects/-w",
         projects: "/Users/me/.claude/projects",
       },
+      runsAsFounder: [{ match: "subpath", path: "/private/tmp/shims" }],
       writable: [{ match: "subpath", path: WORKSPACE }],
     };
     const { lineOf, lines, denied } = readBack(sealedCommand(seal, "claude", []));
     const scratch = lineOf("allow", "file-write*", "/private/tmp");
     const save = lineOf("deny", "file-write*", "/Users/me/.idlebiz");
     const reopened = lineOf("allow", "file-write*", WORKSPACE);
-    const config = lineOf("deny", "file-write*", "/Users/me/.claude/settings");
+    const shim = lineOf("deny", "file-write*", "/private/tmp/shims");
     const opened = lines.findIndex((line) => line.includes('(require-not (regex #"/\\.git/'));
     const kept = lineOf("deny", "file-write-create file-write-unlink", WORKSPACE);
-    expect([scratch, save, reopened, config, opened, kept].every((at) => at > -1)).toBe(true);
+    expect([scratch, save, reopened, shim, opened, kept].every((at) => at > -1)).toBe(true);
     expect(scratch).toBeLessThan(save);
     expect(save).toBeLessThan(reopened);
-    expect(reopened).toBeLessThan(config);
+    expect(reopened).toBeLessThan(shim);
     expect(reopened).toBeLessThan(opened);
     expect(reopened).toBeLessThan(kept);
     expect(denied("file-write-create file-write-unlink")).toContain(WORKSPACE);
-    const others = lineOf("deny", "file-write*", "/Users/me/.claude/projects");
-    expect(others).toBeGreaterThan(-1);
+    const home = lineOf("deny", "file-write*", "/Users/me/.claude");
+    expect(home).toBeGreaterThan(-1);
     const ownProject = lineOf("allow", "file-write*", "/Users/me/.claude/projects/-w");
-    expect(ownProject).toBeGreaterThan(others);
+    expect(ownProject).toBeGreaterThan(home);
     // what the founder's tools run on opening a folder holds in the run's own project too
     expect(ownProject).toBeLessThan(opened);
     expect(readBack(sealedCommand(seal, "codex", [])).params).not.toContain(
-      "/Users/me/.claude/projects",
+      "/Users/me/.claude/projects/-w",
     );
   });
 
@@ -239,8 +246,8 @@ describe("sealedCommand", () => {
       ...SEAL,
       debugPorts: [],
       runners: {
-        claude: { account: [], config: [], folder: "/Users/me/.claude", state: [] },
-        codex: { account: [], config: [], folder: "/Users/me/.codex", state: [] },
+        claude: { account: [], folder: "/Users/me/.claude", home: [], state: [] },
+        codex: { account: [], folder: "/Users/me/.codex", home: [], state: [] },
       },
       save: [],
       scratch: [],
@@ -561,7 +568,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it.each(["claude", "codex"] as const)(
-    "lets a %s run write its runner's state but not what its CLI runs in the founder's own sessions",
+    "lets a %s run write its runner's state but nothing else in its home, which the founder's own sessions load and run",
     async (runner) => {
       const config =
         runner === "claude"
@@ -594,6 +601,9 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".claude/jobs/a/job.json",
               ".claude/bridge-spawn/a.json",
               ".claude/seed-admin/a.json",
+              // what a setting names by path: a status line, a hook's script
+              ".claude/statusline.sh",
+              ".claude/scripts/notify.sh",
             ]
           : [
               ".codex/config.toml",
@@ -621,12 +631,27 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".codex/browser/config.toml",
               ".codex/node_repl/active_execs",
               ".codex/sessions/a/.codex/config.toml",
+              // what `notify` names by path
+              ".codex/notify.py",
             ];
       const kept = config.map(plant);
       const state = (
         runner === "claude"
-          ? [".claude/todos/a.json", ".claude/file-history/a/b", ".claude/history.jsonl"]
-          : [".codex/sessions/a.jsonl", ".codex/history.jsonl", ".codex/memories_1.sqlite"]
+          ? [
+              ".claude/todos/a.json",
+              ".claude/file-history/a/b",
+              ".claude/history.jsonl",
+              ".claude/sessions/1.json",
+              ".claude/statsig/a",
+            ]
+          : [
+              ".codex/sessions/a.jsonl",
+              ".codex/history.jsonl",
+              ".codex/memories_1.sqlite",
+              ".codex/state_5.sqlite-wal",
+              ".codex/auth.json",
+              ".codex/log/codex-tui.log",
+            ]
       ).map(plant);
       // a name that only starts like the home's, such as the founder's worktrees of real repositories
       const beside = [
@@ -903,11 +928,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       [at("tmp/shims")]: "EPERM",
       [later]: "EPERM",
     });
-    const { onPath } = await sealed;
-    expect(onPath.map(({ path: kept }) => kept)).toEqual(
+    const { runsAsFounder } = await sealed;
+    expect(runsAsFounder.map(({ path: kept }) => kept)).toEqual(
       expect.arrayContaining([shims, at("tmp/tools/bin"), later]),
     );
-    expect(onPath.map(({ path: kept }) => kept)).not.toContain(at(".local/bin"));
+    expect(runsAsFounder.map(({ path: kept }) => kept)).not.toContain(at(".local/bin"));
   });
 
   it("keeps a run from a terminal's shims in TMPDIR, which main's PATH does not name", async () => {
@@ -1236,19 +1261,19 @@ describe.skipIf(!onMac)("sealRuns", () => {
     symlinkSync(path.join(box, "dotfiles/claude"), path.join(home, ".claude"));
     expect(await sealRuns()).toEqual({ kind: "sealed" });
     const seal = await machineSeal([path.join(root, "acme/workspace")]);
-    expect(seal.runners.claude.state).toEqual([
+    expect(seal.runners.claude.home).toEqual([
       { match: "subpath", path: path.join(home, ".claude") },
       { match: "subpath", path: path.join(box, "dotfiles/claude") },
     ]);
+    expect(seal.runners.claude.state).toContainEqual({
+      match: "subpath",
+      path: path.join(box, "dotfiles/claude/sessions"),
+    });
     expect(seal.runners.claude.account).toEqual([
       { match: "prefix", path: path.join(home, ".claude/.claude.json") },
       { match: "prefix", path: path.join(box, "dotfiles/claude/.claude.json") },
       { match: "prefix", path: path.join(home, ".claude.json") },
     ]);
-    expect(seal.runners.claude.config).toContainEqual({
-      match: "prefix",
-      path: path.join(box, "dotfiles/claude/settings"),
-    });
     expect(seal.unreadable).toContainEqual({
       match: "prefix",
       path: path.join(realpathSync(root), "secrets.json"),
@@ -1278,10 +1303,10 @@ describe.skipIf(!onMac)("sealRuns", () => {
     const moved = path.join(box, "codex-home");
     process.env.CODEX_HOME = moved;
     const seal = await machineSeal([]);
-    expect(seal.runners.codex.state).toEqual([{ match: "subpath", path: moved }]);
-    expect(seal.runners.codex.config).toContainEqual({
+    expect(seal.runners.codex.home).toEqual([{ match: "subpath", path: moved }]);
+    expect(seal.runners.codex.state).toContainEqual({
       match: "prefix",
-      path: path.join(moved, "config.toml"),
+      path: path.join(moved, "auth.json"),
     });
   });
 
@@ -1289,8 +1314,8 @@ describe.skipIf(!onMac)("sealRuns", () => {
     const shims = path.join(box, "shims");
     mkdirSync(shims);
     process.env.PATH = [shims, "/usr/bin", "node_modules/.bin"].join(path.delimiter);
-    const { onPath } = await machineSeal([]);
-    const kept = onPath.map(({ path: at }) => at);
+    const { runsAsFounder } = await machineSeal([]);
+    const kept = runsAsFounder.map(({ path: at }) => at);
     expect(kept).toContain(shims);
     expect(kept).toContain(path.join(realpathSync(tmpdir()), "cmux-cli-shims"));
     expect(kept).not.toContain("/usr/bin");

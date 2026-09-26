@@ -72,96 +72,75 @@ const LOGINS = [
 ];
 
 /**
- * Each runner's home: the state its runs write, what in it its CLI loads and runs in the
- * founder's own sessions, which they do not write, and the sockets there of what acts as the
- * founder. Each of `config` is a prefix, since a CLI writes a file through a sibling it renames
- * over it; one ending in a slash is only that folder, where a sibling shares its name's start.
- * `account` is where the CLI records the founder's account, in the home and beside it in HOME,
- * each with every name that starts with it: only the sign-in writes it.
+ * Each runner's home, and in it the state its runs write: sessions, logs, caches, databases, its
+ * refreshed login. Nothing else there is written, since the founder's own CLI loads and runs what
+ * the rest holds (settings, instructions, hooks, skills, plugins, and any script a setting names,
+ * a status line or a notifier). Each of `state` is a prefix, since a CLI writes a file through a
+ * sibling it renames over it; one ending in a slash is only that folder. `account` is where the
+ * CLI records the founder's account, in the home and beside it in HOME, each with every name that
+ * starts with it: only the sign-in writes it. claude's transcripts and memory are `projects/`,
+ * of which a run writes only its own folder's (`Seal.claudeProjects`).
  */
 const RUNNER_HOMES = {
   claude: {
     // its MCP servers, user-wide and per project, start in the founder's own sessions, unsealed
     account: [".claude.json"],
-    config: [
-      "settings",
-      // read in place of ~/.claude.json whenever it exists
-      ".config.json",
-      "backups",
-      "CLAUDE.md",
-      "rules",
-      "hooks",
-      "skills",
-      "agents",
-      "commands",
-      "workflows",
-      "plugins",
-      "output-styles",
-      "scheduled-tasks",
-      "local",
-      // sourced before each command the founder's own sessions run
-      "shell-snapshots",
-      "session-env",
-      // the native host Chrome runs for claude's extension
-      "chrome",
-      // each names an IDE's MCP server, which the founder's sessions connect to
-      "ide",
-      // the founder's background daemon and the jobs it dispatches and spawns
-      "daemon",
-      "jobs",
-      "bridge-spawn",
-      "seed-admin",
-    ],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
-    sockets: [],
+    state: [
+      "sessions/",
+      "todos/",
+      "tasks/",
+      "plans/",
+      "file-history/",
+      "history.jsonl",
+      "statsig/",
+      "telemetry/",
+      "debug/",
+      "cache/",
+      "paste-cache/",
+      "image-cache/",
+      "state/",
+      ".cc-writes/",
+      "stats-cache.json",
+      "mcp-needs-auth-cache.json",
+      ".last-cleanup",
+    ],
   },
   codex: {
     account: [],
-    config: [
-      "config.toml",
-      "hooks.json",
-      "AGENTS",
-      "rules",
-      "prompts",
-      "skills",
-      "plugins",
-      "packages",
-      "vendor_imports",
-      "keybindings.json",
-      // loaded into the env of every command codex runs
-      ".env",
-      "shell_snapshots",
-      "memories/",
-      // the desktop app runs its computer-use app from here, and works in its worktrees
-      "computer-use",
-      "worktrees",
-      // what the desktop app loads, stages plugins in and starts: its state, its database, its
-      // processes, and the programs Chrome's native host for it runs, which its registry names
-      ".codex-global-state",
-      "sqlite/",
-      ".tmp/",
-      "process_manager",
-      "chrome-native-hosts",
-      "browser",
-      "node_repl",
-      // each session's links to codex's own helpers, which its commands run through PATH
-      "tmp/arg0/",
-    ],
     dir: ".codex",
     override: "CODEX_HOME",
-    // the desktop app's, which starts threads for whoever asks
-    sockets: ["ipc"],
+    state: [
+      "sessions/",
+      "archived_sessions/",
+      "log/",
+      "cache/",
+      "generated_images/",
+      "thread-writer-locks/",
+      "rollout-migrations/",
+      "history.jsonl",
+      "session_index.jsonl",
+      // refreshed as a run signs in
+      "auth.json",
+      "installation_id",
+      "version.json",
+      "models_cache.json",
+      "internal_storage.json",
+      ".sandbox_migration",
+      ".personality_migration",
+      // its databases, each with its -wal and -shm
+      "state_",
+      "logs_",
+      "queue_",
+      "goals_",
+      "memories_",
+      "thread_history_",
+    ],
   },
 } as const satisfies Record<
   AgentRunner,
-  {
-    account: readonly string[];
-    config: readonly string[];
-    dir: string;
-    override: string;
-    sockets: readonly string[];
-  }
+  { account: readonly string[]; dir: string; override: string; state: readonly string[] }
 >;
 
 /**
@@ -225,12 +204,13 @@ interface Reach {
   path: string;
 }
 
-/** A runner's home: what its runs write, what in it they do not, and what only its sign-in writes. */
+/** A runner's home: the whole of it, what its runs write there, and what only its sign-in writes. */
 interface RunnerHome {
   /** The home's folder, where it resolves. */
   folder: string;
+  /** The folder where it is named and where it resolves: the other runner's runs read none of it. */
+  home: readonly Reach[];
   state: readonly Reach[];
-  config: readonly Reach[];
   account: readonly Reach[];
 }
 
@@ -244,7 +224,7 @@ export interface Seal {
   unreadable: readonly Reach[];
   /** Where every run writes besides its own folders: TMPDIR, the per-user cache, /private/tmp. */
   scratch: readonly Reach[];
-  /** Per runner, its own home, which the other runner's runs cannot read either. */
+  /** Per runner, its own home, which the other runner's runs cannot read. */
   runners: Record<AgentRunner, RunnerHome>;
   /**
    * The run's own folders, where the save resolves: its workspace, the shared one, its memory and
@@ -252,10 +232,11 @@ export interface Seal {
    */
   writable: readonly Reach[];
   /**
-   * Folders the founder runs programs from that fall inside a folder a run writes: those on main's
-   * PATH and where their links lead, and a terminal's shims in TMPDIR.
+   * What the founder runs or loads that falls inside a folder a run writes: the folders on main's
+   * PATH and where their links lead, a terminal's shims in TMPDIR, and where a link in a runner's
+   * home leads.
    */
-  onPath: readonly Reach[];
+  runsAsFounder: readonly Reach[];
   /** Sockets in a folder a run writes, of what acts as the founder: no run moves or replaces one. */
   sockets: readonly Reach[];
   /** The save, which a run writes only its own folders of, where it is named and where it resolves. */
@@ -331,13 +312,6 @@ const foldersUpTo = (root: string, at: string): string[] => {
   return folders;
 };
 
-/** The folders a `runner` run writes, besides its own. */
-const writeRootsOf = (seal: Seal, runner: AgentRunner): Reach[] => [
-  ...seal.scratch,
-  ...seal.runners[runner].state,
-  seal.namespaces[runner],
-];
-
 const commandUnder = (
   seal: Seal,
   runner: AgentRunner,
@@ -352,13 +326,17 @@ const commandUnder = (
   const other = RUNNER_IDS.filter((id) => id !== runner);
   const unreadable = [
     ...seal.unreadable,
-    ...other.flatMap((id) => [...seal.runners[id].state, ...seal.runners[id].account]),
+    ...other.flatMap((id) => [...seal.runners[id].home, ...seal.runners[id].account]),
   ];
-  const { account, config } = seal.runners[runner];
-  const signs = sealed === "sign-in" ? account : [];
-  const written = [...writeRootsOf(seal, runner), ...signs];
-  const roots = [...written, ...seal.writable];
-  const kept = [...config, ...(sealed === "run" ? account : []), ...seal.onPath];
+  const { account, home, state } = seal.runners[runner];
+  const { own } = seal.claudeProjects;
+  const ownProject: Reach[] =
+    runner === "claude" && own !== null ? [{ match: "subpath", path: own }] : [];
+  const scratch = [...seal.scratch, seal.namespaces[runner]];
+  // what the runner writes in its home; the sign-in records the login too
+  const inHome = [...state, ...ownProject, ...(sealed === "sign-in" ? account : [])];
+  const roots = [...scratch, ...inHome, ...seal.writable];
+  const kept = seal.runsAsFounder;
   // A folder above a kept path, moved, would carry it out from under its rule; made where there
   // is none yet, as a link or a folder moved in, it would put the run's own files under it.
   const above = [
@@ -373,26 +351,18 @@ const commandUnder = (
     path.basename(codexHome) === ".codex"
       ? `(require-all ${PROJECT_CODEX} (require-not (require-all ${reach({ match: "subpath", path: codexHome })} (require-not ${CODEX_IN_CODEX_HOME}))))`
       : PROJECT_CODEX;
-  const { own, projects } = seal.claudeProjects;
   const profile = [
     BASE_PROFILE,
     ...(sealed === "run" ? ["(deny lsopen)", SCRIPTING_CLIS] : []),
     ...(runner === "codex" ? [KEYCHAIN] : []),
     "(deny file-write*)",
     DEV_NODES,
-    ...allow("file-write*", written.map(reach)),
+    ...allow("file-write*", scratch.map(reach)),
     `(allow file-write* (require-all (prefix ${param(`${seal.preferences}${path.sep}`)}) ${NODE_PREFERENCES}))`,
-    // the save may sit in TMPDIR, as a test's does: a run writes only its own folders of it
-    ...deny("file-write*", seal.save.map(reach)),
-    ...allow("file-write*", seal.writable.map(reach)),
-    // Every other folder's transcripts and memory, which the founder's sessions there resume and
-    // load, unsealed.
-    ...(runner === "claude"
-      ? [
-          `(deny file-write* ${literal(projects)} (prefix ${param(`${projects}${path.sep}`)}))`,
-          ...allow("file-write*", own === null ? [] : [reach({ match: "subpath", path: own })]),
-        ]
-      : []),
+    // Either may sit in TMPDIR, as a test's do: of the save a run writes only its own folders, of
+    // its runner's home only the state.
+    ...deny("file-write*", [...seal.save, ...home].map(reach)),
+    ...allow("file-write*", [...seal.writable, ...inHome].map(reach)),
     // Seatbelt obeys the last rule a path matches: every rule from here on holds inside the
     // folders allowed above.
     ...deny("file-write*", [...kept.map(reach), ...seal.sockets.map(reach)]),
@@ -596,6 +566,20 @@ const linksIn = async (folders: readonly string[]): Promise<string[]> => {
 };
 
 /**
+ * Where each symlink in a runner's home, or in a folder there, leads: a dotfile manager links the
+ * founder's settings, instructions and skills in from elsewhere, maybe a folder a run writes.
+ */
+const homeLinkTargets = async (home: string): Promise<string[]> => {
+  const entries = await readdir(home, { withFileTypes: true }).catch(() => []);
+  const folders = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(home, entry.name));
+  const links = await linksIn([home, ...folders]);
+  const chains = await Promise.all(links.map(linkChain));
+  return chains.flatMap((chain) => chain.slice(1));
+};
+
+/**
  * The run's own `folders`, each where the save resolves. Each must sit in the save with no
  * symlink from the save down to it: the seal allows the path it names, never where a link a run
  * could have left there leads.
@@ -626,22 +610,21 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
 };
 
 /**
- * A runner's home and what in it runs as the founder. Its state is the folder, where it is named
- * and where it leads; moved by `override`, the account file sits only in it, else beside it in
- * HOME too. A dotfile manager may link anything in it in from elsewhere: each is kept where it
- * leads too.
+ * A runner's home, and the state in it its runs write, each where it is named and where it leads:
+ * a dotfile manager may link any of it in from elsewhere. Moved by `override`, the account file
+ * sits only in it, else beside it in HOME too.
  */
 const runnerHomeOf = async (
   home: string,
   runner: AgentRunner,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
-  const { account, config, dir, override } = RUNNER_HOMES[runner];
+  const { account, dir, override, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
-  const configs = await Promise.all(
-    config.map((name) =>
+  const states = await Promise.all(
+    state.map((name) =>
       name.endsWith("/")
         ? reachOf(path.join(folder, name.slice(0, -1)))
         : reachOf(path.join(folder, name), "prefix"),
@@ -653,9 +636,9 @@ const runnerHomeOf = async (
   ]);
   return {
     account: await reachesOf(accounts, "prefix"),
-    config: configs.flat(),
     folder: await realPathOf(folder),
-    state: await reachOf(folder),
+    home: await reachOf(folder),
+    state: states.flat(),
   };
 };
 
@@ -745,7 +728,10 @@ export const sealFor = async ({
   const runs = [...new Set([...found.flat(), ...(await linksIn(onPathDirs))])];
   const chains = await Promise.all(runs.map(linkChain));
   const programs = chains.flat().map((at) => path.dirname(at));
-  const candidates = await reachesOf([...new Set([...onPathDirs, ...programs, ...shims])]);
+  const linked = await Promise.all([claude.folder, codex.folder].map(homeLinkTargets));
+  const candidates = await reachesOf([
+    ...new Set([...onPathDirs, ...programs, ...shims, ...linked.flat()]),
+  ]);
   const inRoot = ({ path: at }: Reach): boolean =>
     roots.some((root) =>
       root.match === "prefix" ? at.startsWith(root.path) : inside(root.path, at),
@@ -757,17 +743,12 @@ export const sealFor = async ({
     },
     debugPorts,
     namespaces,
-    onPath: candidates.filter(inRoot),
     preferences: path.join(realHome, "Library", "Preferences"),
     runners: homes,
+    runsAsFounder: candidates.filter(inRoot),
     save: await reachOf(save),
     scratch: scratchReaches,
     sockets: [
-      ...(await reachesOf(
-        RUNNER_IDS.flatMap((id) =>
-          RUNNER_HOMES[id].sockets.map((name) => path.join(homes[id].folder, name)),
-        ),
-      )),
       ...(await reachesOf(SCRATCH_SOCKETS)),
       ...(sshAgent === null ? [] : await reachOf(sshAgent)),
     ],

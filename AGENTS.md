@@ -225,10 +225,11 @@ rather than crashing boot.
   and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
   what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`
   and the other runner's home. Writes are denied but for the run's own folders (workspace,
-  shared, memory, the save's `cache/`), its runner's home, temp and per-user cache folders and
-  its agent-browser namespace. In the runner's home it writes nothing that CLI loads
-  (`RUNNER_HOMES`, claude's `~/.claude.json` included) and no other folder's claude
-  `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
+  shared, memory, the save's `cache/`), its runner's state (`state` in `RUNNER_HOMES`, a list
+  of names in the home: a CLI upgrade that writes a new one fails with `EPERM` there until it is
+  added), temp and per-user cache folders and its agent-browser namespace. So in the runner's
+  home it writes nothing that CLI loads or runs (claude's `~/.claude.json` included) and no
+  other folder's claude `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
   `.mcp.json` or `.codex/`.
   It connects to no unix socket but its own folders' and its namespace's, to no loopback
   debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there

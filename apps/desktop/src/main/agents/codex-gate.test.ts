@@ -304,11 +304,14 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     async () => {
       const config = path.join(codexHome, "config.toml");
       const before = readFileSync(config, "utf-8");
-      const cmd = `touch ran; echo 'notify = ["x"]' >> ${config}`;
+      // a script `notify` could name
+      const script = path.join(codexHome, "notify.py");
+      const cmd = `touch ran; echo 'notify = ["x"]' >> ${config}; echo 'x' > ${script}`;
       const { result } = await turn({ cmd, tool: "exec_command" }, true);
       expect(result.end).toEqual({ kind: "completed" });
       expect(existsSync(path.join(workspace, "ran"))).toBe(true);
       expect(readFileSync(config, "utf-8")).toBe(before);
+      expect(existsSync(script)).toBe(false);
     },
   );
 });
