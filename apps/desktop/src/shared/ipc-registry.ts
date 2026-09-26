@@ -16,6 +16,7 @@ import type {
   ChatOption,
   Company,
   Employee,
+  LaunchAtLogin,
   LoadReport,
   Product,
   RestingRunners,
@@ -69,6 +70,7 @@ export const SCHEMAS = {
   hasAuth: z.void(),
   killBet: z.object({ betId: z.string(), reason: KillReasonSchema }),
   killProduct: z.object({ productId: z.string(), reason: KillReasonSchema }),
+  launchAtLogin: z.void(),
   listBets: z.void(),
   listEmployees: z.void(),
   listProducts: z.void(),
@@ -88,6 +90,7 @@ export const SCHEMAS = {
   restingRunners: z.void(),
   setAutopilot: z.object({ running: z.boolean() }),
   setBudget: z.object({ budget: BudgetSchema }),
+  setLaunchAtLogin: z.object({ on: z.boolean() }),
   setMaxAgents: z.object({ maxAgents: MaxAgentsSchema }),
   shippingLog: z.void(),
   startLogin: z.void(),
@@ -133,6 +136,8 @@ interface Results {
   resetSpend: Company;
 
   resetGame: Done;
+  launchAtLogin: LaunchAtLogin;
+  setLaunchAtLogin: LaunchAtLogin;
 
   stripeStatus: StripeStatus;
   stripeConnect: { started: boolean };

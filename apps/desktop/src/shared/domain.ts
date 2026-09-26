@@ -463,6 +463,12 @@ export interface LoadReport {
   skipped: LoadSkip[];
 }
 
+/**
+ * Whether macOS opens IdleBiz at login. `requires-approval` is the founder switching it off in
+ * System Settings, which only they can undo there; `unavailable` is a dev build.
+ */
+export type LaunchAtLogin = "on" | "off" | "requires-approval" | "not-found" | "unavailable";
+
 /** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
 export interface ChatOption {
   label: string;

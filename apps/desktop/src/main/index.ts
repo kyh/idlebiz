@@ -23,6 +23,7 @@ import {
   startProduct,
 } from "@/main/company-actions";
 import { keepAwake } from "@/main/keep-awake";
+import { launchAtLogin, openedAtLogin, setLaunchAtLogin } from "@/main/login-item";
 import { createScheduler } from "@/main/scheduler";
 import { appTray } from "@/main/tray";
 import { startLogin, generateCandidates } from "@/main/agents/onboarding";
@@ -123,6 +124,7 @@ const ipcHandlers = {
   hasAuth: async () => ({ ok: await agentDriver.hasAnyRunner() }),
   killBet: ({ betId, reason }) => killBet(betId, reason),
   killProduct: ({ productId, reason }) => retireProduct(productId, reason, null),
+  launchAtLogin,
   listBets: store.listBets,
   listEmployees: store.listEmployees,
   listProducts: store.listProducts,
@@ -154,6 +156,7 @@ const ipcHandlers = {
     }
     return store.requireCompany();
   },
+  setLaunchAtLogin: ({ on }) => setLaunchAtLogin(on),
   setMaxAgents: ({ maxAgents }) => store.setMaxAgents(maxAgents),
   shippingLog: store.shippingLog,
   startLogin: () => {
@@ -351,8 +354,6 @@ const boot = async (): Promise<void> => {
     },
   });
 
-  mainWindow = createWindow();
-
   appTray.init({
     openWindow: ensureWindow,
     setAutopilot: (on) => {
@@ -361,6 +362,13 @@ const boot = async (): Promise<void> => {
       }
     },
   });
+
+  if (openedAtLogin()) {
+    app.dock?.hide();
+    appTray.setWindowless(true);
+  } else {
+    mainWindow = createWindow();
+  }
 
   app.on("activate", ensureWindow);
 

@@ -331,7 +331,8 @@ rather than crashing boot.
   (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `payment-links.ts` (the Stripe calls `create_payment_link` makes), `secrets.ts`,
-  `metrics.ts`, `tray.ts`.
+  `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only
+  record, only a packaged app registers one, and a launch at login starts in the menu bar).
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a
   hand-rolled external store in `state/store.ts`.
 - `apps/desktop/src/shared` — `ipc-channels.ts`, `ipc-registry.ts`, `domain.ts`,

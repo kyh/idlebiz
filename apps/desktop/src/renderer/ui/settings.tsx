@@ -1,11 +1,65 @@
 import { useState } from "react";
 import { bridge } from "@/renderer/bridge";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, setMaxAgents } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
+import { Picker } from "@/renderer/ui/picker";
+import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import { MAX_AGENTS, MaxAgentsSchema } from "@/shared/domain";
+import type { LaunchAtLogin } from "@/shared/domain";
+
+const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
+  { label: "Off", value: "off" },
+  { label: "On", value: "on" },
+];
+
+const LOGIN_LINES: Record<LaunchAtLogin, string> = {
+  "not-found":
+    "macOS could not register IdleBiz. Add it under System Settings → General → Login Items.",
+  off: "IdleBiz opens only when you open it.",
+  on: "IdleBiz starts in the menu bar when you log in, and the office picks up where it left off.",
+  "requires-approval":
+    "IdleBiz is switched off under System Settings → General → Login Items. Only you can switch it back on there.",
+  unavailable: "Only the installed app can open at login.",
+};
+
+const LaunchAtLoginSetting = () => {
+  const read = useAsync(() => bridge().launchAtLogin(), []);
+  const [answered, setAnswered] = useState<LaunchAtLogin | null>(null);
+  const setting = useSubmission(async (on: boolean) => {
+    setAnswered(await bridge().setLaunchAtLogin({ on }));
+  });
+  const state = answered ?? (read.kind === "ready" ? read.value : null);
+
+  return (
+    <div className="px-inset p-3 text-sm text-fg">
+      <div className="text-xs uppercase tracking-wide text-fg-dim">Open at login</div>
+      {read.kind === "failed" ? (
+        <div role="alert" className="mt-1 text-xs text-danger">
+          Could not read the login item: {read.message}
+        </div>
+      ) : null}
+      {state === null ? null : (
+        <>
+          <div className="mt-1 text-xs text-fg-dim">{LOGIN_LINES[state]}</div>
+          {state === "unavailable" ? null : (
+            <Picker
+              options={LOGIN_CHOICES}
+              value={state === "on" ? "on" : "off"}
+              onChange={(choice) => setting.submit(choice === "on")}
+              label="Open at login"
+              className="mt-2 grid grid-cols-2 gap-2"
+            />
+          )}
+        </>
+      )}
+      <Failure submission={setting.submission} doing="change the login item" />
+    </div>
+  );
+};
 
 export const Settings = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
@@ -79,6 +133,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           </div>
           <Failure submission={savingCap.submission} doing="save the cap" />
         </div>
+
+        <LaunchAtLoginSetting />
 
         <div className="px-inset p-3 text-sm text-fg">
           <div className="text-xs uppercase tracking-wide text-fg-dim">Controls</div>
