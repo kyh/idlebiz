@@ -3,6 +3,7 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import type { AskBox, agentDriver } from "@/main/agents/agent-driver";
+import { unshippableIn } from "@/main/deploy";
 import type { DeployTarget, Deployer } from "@/main/deploy";
 import {
   announceBet,
@@ -14,7 +15,7 @@ import {
 import { isTestKey, measureRefusal } from "@/main/metrics";
 import type { PaymentLinker } from "@/main/payment-links";
 import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
-import { keepEnvValue, keptEnvValues } from "@/main/vercel-env";
+import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
@@ -274,13 +275,13 @@ const TOOLS = {
       product.vercel === null
         ? { kind: "new", name: product.id }
         : { binding: product.vercel, kind: "bound" };
+    const unshippable = keptEnvValues();
+    const leak = await unshippableIn(product.workspaceDir, unshippable);
+    if (leak !== null) {
+      return leak;
+    }
     requireSignOff(ctx, deployAction(product.id, target), "deploy");
-    const deployed = await ctx.deploy({
-      cwd: product.workspaceDir,
-      target,
-      token,
-      unshippable: keptEnvValues(),
-    });
+    const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token, unshippable });
     if (deployed.kind === "name-taken") {
       const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
       return askFounder(
@@ -334,11 +335,15 @@ const TOOLS = {
         "Vercel is not connected.",
       );
     }
-    keepEnvValue(product.id, name, value);
-    const set = await ctx.setEnv({ binding: product.vercel, name, token, value });
+    const replaces = teamSetEnv(product, name);
+    const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
     if (!set.ok) {
-      return `${name} was not set on ${product.name}: ${set.error}`;
+      const notOurs = replaces
+        ? ""
+        : `\nset_env only replaces a variable the team set: if ${product.vercel.projectName} already has ${name}, it is the founder's, so hand them an ask_boss action to change it.`;
+      return `${name} was not set on ${product.name}: ${set.error}${notOurs}`;
     }
+    keepEnvValue(product, name, value);
     post(ctx, `🔑 set ${name} on ${product.name}`);
     return `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview. It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`;
   }),

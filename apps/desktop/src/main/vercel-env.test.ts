@@ -8,7 +8,7 @@ import { parseJson } from "@/shared/json";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-env-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { keepEnvValue, keptEnvValues, setVercelEnv } = await import("./vercel-env");
+const { keepEnvValue, keptEnvValues, setVercelEnv, teamSetEnv } = await import("./vercel-env");
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -27,6 +27,7 @@ const TOKEN = "vercel-token";
 const REQUEST = {
   binding: { projectId: "prj_1", projectName: "acme", teamId: "team_1" },
   name: "OPENAI_API_KEY",
+  replaces: true,
   token: TOKEN,
   value: "sk-proj-acme",
 };
@@ -64,7 +65,7 @@ const created = () =>
   Response.json({ created: { key: "OPENAI_API_KEY" }, failed: [] }, { status: 201 });
 
 describe("setting a product's variable on Vercel", () => {
-  it("upserts it sensitive, for production and preview, in the bound project's team, as the founder", async () => {
+  it("upserts a name the team set, sensitive, for production and preview, in the bound project's team, as the founder", async () => {
     const calls = fakeVercel(created);
 
     await expect(setVercelEnv(REQUEST)).resolves.toEqual({ ok: true });
@@ -90,36 +91,60 @@ describe("setting a product's variable on Vercel", () => {
     expect(calls[0]?.query).toEqual({ upsert: "true" });
   });
 
-  it("reads a 201 that failed as a failure, and tries once more as a readable variable", async () => {
-    const calls = fakeVercel(
-      () =>
-        Response.json(
-          { created: [], failed: [{ error: { code: "bad_type", key: "OPENAI_API_KEY" } }] },
-          { status: 201 },
-        ),
-      created,
-    );
-
-    await expect(setVercelEnv(REQUEST)).resolves.toEqual({ ok: true });
-    expect(calls.map((c) => c.body.type)).toEqual(["sensitive", "encrypted"]);
-  });
-
-  it("answers with Vercel's reason when neither type is taken, never the value or the token", async () => {
+  it("only creates a name the team never set, so a variable already on the project stays the founder's", async () => {
     const calls = fakeVercel(() =>
       Response.json(
-        { error: { code: "bad_request", message: "The value is too large" } },
+        {
+          error: {
+            code: "ENV_ALREADY_EXISTS",
+            message: "A variable with this name already exists",
+          },
+        },
+        { status: 403 },
+      ),
+    );
+
+    await expect(setVercelEnv({ ...REQUEST, replaces: false })).resolves.toEqual({
+      error: "Vercel turned it down (403): A variable with this name already exists",
+      ok: false,
+    });
+    expect(calls.map((c) => c.query)).toEqual([{ teamId: "team_1" }]);
+  });
+
+  it("reads a 201 that failed as a failure, and never retries it as a readable variable", async () => {
+    const calls = fakeVercel(() =>
+      Response.json(
+        { created: [], failed: [{ error: { code: "bad_type", key: "OPENAI_API_KEY" } }] },
+        { status: 201 },
+      ),
+    );
+
+    await expect(setVercelEnv(REQUEST)).resolves.toEqual({
+      error: "Vercel turned it down: bad_type",
+      ok: false,
+    });
+    expect(calls.map((c) => c.body.type)).toEqual(["sensitive"]);
+  });
+
+  it("answers with Vercel's reason, less any value or token it quotes", async () => {
+    fakeVercel(() =>
+      Response.json(
+        {
+          error: {
+            code: "bad_request",
+            message: `Value ${REQUEST.value} is invalid for a request signed ${TOKEN}`,
+          },
+        },
         { status: 400 },
       ),
     );
 
     const result = await setVercelEnv(REQUEST);
     expect(result).toEqual({
-      error: "Vercel turned it down (400): The value is too large",
+      error:
+        "Vercel turned it down (400): Value [the value] is invalid for a request signed [the token]",
       ok: false,
     });
-    expect(calls).toHaveLength(2);
-    expect(JSON.stringify(result)).not.toContain(TOKEN);
-    expect(JSON.stringify(result)).not.toContain(REQUEST.value);
   });
 
   it("tries nothing more once the token or the plan is turned away", async () => {
@@ -142,14 +167,24 @@ describe("setting a product's variable on Vercel", () => {
 });
 
 describe("the values a deploy may not ship", () => {
-  it("keeps one value a name per product, replaced when the name is set again", () => {
-    keepEnvValue("acme", "OPENAI_API_KEY", "sk-proj-old");
-    keepEnvValue("acme", "OPENAI_API_KEY", "sk-proj-new");
-    keepEnvValue("beta", "RESEND_API_KEY", "re_beta_key");
+  const acme = { companyId: "co", id: "acme" };
+
+  it("keeps one value a name per product of each company, replaced when the name is set again", () => {
+    keepEnvValue(acme, "OPENAI_API_KEY", "sk-proj-old");
+    keepEnvValue(acme, "OPENAI_API_KEY", "sk-proj-new");
+    keepEnvValue({ companyId: "next-co", id: "acme" }, "RESEND_API_KEY", "re_next_key");
 
     expect(keptEnvValues()).toEqual([
-      { name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
-      { name: "RESEND_API_KEY", product: "beta", value: "re_beta_key" },
+      { company: "co", name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
+      { company: "next-co", name: "RESEND_API_KEY", product: "acme", value: "re_next_key" },
     ]);
+  });
+
+  it("owns a name only on the product of the company that set it", () => {
+    keepEnvValue(acme, "STRIPE_WEBHOOK_SECRET", "whsec_acme");
+
+    expect(teamSetEnv(acme, "STRIPE_WEBHOOK_SECRET")).toBe(true);
+    expect(teamSetEnv({ companyId: "next-co", id: "acme" }, "STRIPE_WEBHOOK_SECRET")).toBe(false);
+    expect(teamSetEnv(acme, "DATABASE_URL")).toBe(false);
   });
 });

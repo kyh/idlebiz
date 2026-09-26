@@ -148,10 +148,11 @@ export const TOOL_SPECS = {
       // Vercel's limit for every variable of a deployment together
       value: z
         .string()
+        .trim()
         .min(1)
         .max(64 * 1024),
     }),
-    doc: 'keep a secret the product needs at runtime (an API key, a signing secret) as an environment variable of its Vercel project, for production and preview, with no sign-off. It sets it on your run\'s product; name another with `"product":"<slug>"`. The product needs a project first, which its first deploy makes. `name` is an uppercase variable name: Vercel\'s own (`VERCEL_*`, `NODE_ENV`) are refused, and so are the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`), since what the browser may see belongs in the source. Setting a name again replaces its value. It takes effect on the next deploy: server code reads it as `process.env.NAME`. Never write the value into a file: deploy refuses a folder that holds it.',
+    doc: 'keep a secret the product needs at runtime (an API key, a signing secret) as an environment variable of its Vercel project, for production and preview, with no sign-off. It sets it on your run\'s product; name another with `"product":"<slug>"`. The product needs a project first, which its first deploy makes. `name` is an uppercase variable name: Vercel\'s own (`VERCEL_*`, `NODE_ENV`) are refused, and so are the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`), since what the browser may see belongs in the source. Setting a name again replaces the value set_env gave it; a variable already on the project that set_env never set is the founder\'s, and is left as it is. It takes effect on the next deploy: server code reads it as `process.env.NAME`. Never write the value into a file: deploy refuses a folder that holds it.',
     example: { name: "OPENAI_API_KEY", value: "..." },
     leadOnly: null,
     method: "POST",

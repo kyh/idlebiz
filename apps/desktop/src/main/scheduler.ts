@@ -19,6 +19,7 @@ import { RUN_COST_ESTIMATE_USD, allocate } from "@/shared/bets";
 import type { Allocation } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { RefusalError } from "@/shared/refusal";
+import { TOOL_SPECS } from "@/shared/tool-specs";
 import {
   actionAnswer,
   approvalAnswer,
@@ -62,6 +63,10 @@ const isWorking = (employeeId: string): boolean =>
 
 const empName = (id: string): string => store.getEmployee(id)?.name ?? "someone";
 
+/** A set_env call is titled with its curl line, value and all, and activity.jsonl keeps a title for good. */
+const loggedToolName = (title: string): string =>
+  title.includes(TOOL_SPECS.set_env.path) ? "set_env" : title;
+
 const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
   switch (ev.type) {
@@ -69,7 +74,7 @@ const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent):
       publishActivity({
         ...at,
         kind: "tool_call",
-        message: ev.toolName,
+        message: loggedToolName(ev.toolName),
         payload: { kind: ev.kind },
       });
       break;

@@ -218,15 +218,21 @@ third boundary.
   `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
 Vercel project named <product>` for a product bound to none), and `payment link "<name>" at
 $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation task, is spent
-  once and goes with the task. One such tool is unsigned: `set_env` upserts a variable on the
+  once and goes with the task. One such tool is unsigned: `set_env` sets a variable on the
   product's bound project, sensitive, for production and preview (`main/vercel-env.ts`), since
-  a key the founder handed back for that product may reach runs anyway. Main keeps each value
-  set so in `secrets.json` (`ENV/<product>/<NAME>`, never the save, which runs read), and a
-  deploy refuses a folder any of whose uploaded files holds one, from any product, naming the
-  file and the variable, never the value: a key in source ships publicly. Only values of 8
-  characters or more are scanned. It is a tripwire, not a boundary: an encoded or split key
-  passes. Vercel's own names and the prefixes a framework builds into the page (`NEXT_PUBLIC_`,
-  `VITE_`…) are refused as a name (`shared/env-name.ts`).
+  a key the founder handed back for that product has reached runs anyway: their reply sits in
+  the task. It only creates a name set_env never set there, and replaces only one it did: the
+  founder may bind a live project whose variables are theirs, and a sensitive one cannot be
+  read back. Nothing is retried as a readable type. Main keeps each value Vercel took in
+  `secrets.json` (`ENV/<company>/<product>/<NAME>`, main's own copy never in the save, which
+  runs read), and a deploy refuses a folder any of whose uploaded files holds one, from any
+  product or company, naming the file and the variable, never the value: a key in source ships
+  publicly. The deploy tool reads the folder for that before it asks for the sign-off, and the
+  deploy again over what it uploads. Only values of 8 characters or more are scanned. It is a
+  tripwire, not a boundary: an encoded or split key passes, and `push` does not scan. Vercel's
+  own names and the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`…) are
+  refused as a name (`shared/env-name.ts`), and a set_env call's title, its curl line, is
+  logged as `set_env` alone.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits

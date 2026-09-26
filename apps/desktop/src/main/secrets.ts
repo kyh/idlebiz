@@ -15,12 +15,14 @@ export const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
 export const STRIPE_CONNECT_TOKEN = "STRIPE_CONNECT_TOKEN";
 export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
+/** Where main keeps the values set_env set, one key each. */
+export const ENV_PREFIX = "ENV/";
 
 /** Marks a value the sealer encrypted, as base64; a different scheme takes a new version. */
 const SEALED = "sealed:v1:";
 
 const README =
-  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys and payment links; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe: the Budget panel, under revenue). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<product>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
+  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys and payment links; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe: the Budget panel, under revenue). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
 
 /** Encrypts a value for the file and decrypts it back; main's wraps Electron's safeStorage. */
 export interface Sealer {
@@ -128,9 +130,12 @@ export const checkSecrets = (): { file: string; cause: unknown } | null => {
   const why = sealer
     ? "sealed by another build of IdleBiz, or Keychain access was denied"
     : "this launch of IdleBiz isn't using the macOS Keychain";
+  const teamSet = shut.some((name) => name.startsWith(ENV_PREFIX))
+    ? ` Each ${ENV_PREFIX} value is one your team set with set_env, which sets it again.`
+    : "";
   return {
     cause: new Error(
-      `IdleBiz can't open ${shut.join(", ")} (${why}). Enter each again in the app, or paste it into this file as plain text.`,
+      `IdleBiz can't open ${shut.join(", ")} (${why}). Enter each again in the app, or paste it into this file as plain text.${teamSet}`,
     ),
     file: SECRETS_PATH,
   };
@@ -145,6 +150,10 @@ export const getSecret = (key: string): string | null => {
   const held = secrets.keys.get(key);
   return held ? opened(held) : null;
 };
+
+/** Whether the file holds `key` at all, opened or not. */
+export const hasSecret = (key: string): boolean =>
+  readJsonFile(SECRETS_PATH, secretsSchema)?.keys.has(key) ?? false;
 
 /** Every value this app can open under a name starting with `prefix`, keyed by the rest of the name. */
 export const secretsUnder = (prefix: string): Map<string, string> => {

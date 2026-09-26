@@ -186,6 +186,23 @@ const entriesOf = async (
 const leakReason = ({ file, held }: Leak): string =>
   `Nothing was deployed: ${file} holds the value set_env set as ${held.name} on ${held.product}, and a deploy would publish it. Take it out of the folder, read it from process.env.${held.name} instead, then deploy again.`;
 
+/**
+ * Why the folder may not ship, read before the founder is asked to sign off on a deploy
+ * that would only be refused; null when it may, or when it cannot be read, which the
+ * deploy's own read then reports.
+ */
+export const unshippableIn = async (
+  cwd: string,
+  unshippable: readonly KeptEnvValue[],
+): Promise<string | null> => {
+  try {
+    const read = await entriesOf(cwd, unshippable);
+    return read.kind === "leak" ? leakReason(read) : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Vercel's word on a call it turned down, and on a deploy the files it has yet to receive. */
 const VercelRefusal = z.object({
   error: z.object({

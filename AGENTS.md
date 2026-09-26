@@ -192,10 +192,11 @@ rather than crashing boot.
   with git inside it, which obeys what the team left there, as the founder (CLAUDE.md). A run
   cannot use their ssh keys or agents; what it can still reach, the Keychain on a claude run
   included, is CLAUDE.md's "What stays open". A product's own keys go on its bound project
-  through `set_env`, unsigned: main upserts the variable with `VERCEL_TOKEN`, sensitive for
-  production and preview (`main/vercel-env.ts`), and keeps each value in `secrets.json` under
-  `ENV/<product>/<NAME>` (never the save, which runs read) so `deploy` refuses a folder whose
-  files hold any of them, naming the file and the variable, never the value. No tool sets a
+  through `set_env`, unsigned: main sets the variable with `VERCEL_TOKEN`, sensitive for
+  production and preview (`main/vercel-env.ts`), replacing only a name set_env set, and keeps
+  each value Vercel took in `secrets.json` under `ENV/<company>/<product>/<NAME>` (never the
+  save, which runs read) so `deploy` refuses a folder whose files hold any of them, before the
+  sign-off is asked, naming the file and the variable, never the value. No tool sets a
   project's domains or sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as

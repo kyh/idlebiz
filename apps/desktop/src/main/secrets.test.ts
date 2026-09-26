@@ -16,7 +16,7 @@ const previous = {
   VERCEL_TOKEN: process.env.VERCEL_TOKEN,
 };
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { checkSecrets, deleteSecret, getSecret, secretsUnder, setSealer, setSecret } =
+const { checkSecrets, deleteSecret, getSecret, hasSecret, secretsUnder, setSealer, setSecret } =
   await import("./secrets");
 
 const raw = (): JsonRecord => jsonRecordSchema.parse(parseJson(readFileSync(secretsFile, "utf-8")));
@@ -199,6 +199,11 @@ describe("keys sealed with the Keychain", () => {
         ["acme/OPENAI_API_KEY", "sk-proj-acme"],
         ["beta/RESEND_API_KEY", "re_beta"],
       ]),
+    );
+    expect(hasSecret("ENV/acme/OLD")).toBe(true);
+    expect(hasSecret("ENV/acme/NEVER_SET")).toBe(false);
+    expect(String(checkSecrets()?.cause)).toContain(
+      "Each ENV/ value is one your team set with set_env, which sets it again.",
     );
   });
 

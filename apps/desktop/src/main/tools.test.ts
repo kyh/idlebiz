@@ -645,6 +645,27 @@ describe("deploy", () => {
     expect(store.getProduct("acme")?.vercel).toBeNull();
   });
 
+  it("refuses a folder holding a key set_env set before the founder is asked to sign off", async () => {
+    connectVercel();
+    const { ctx, asked, deploys } = deployingRun(DEPLOYED);
+    const product = store.setProductVercel("acme", VERCEL);
+    const key = "sk-proj-acme-runtime";
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({
+        [`ENV/${product.companyId}/acme/OPENAI_API_KEY`]: key,
+        VERCEL_TOKEN: TOKEN,
+      }),
+    );
+    writeFileSync(path.join(product.workspaceDir, "ai.js"), `const key = "${key}";`);
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      "Nothing was deployed: ai.js holds the value set_env set as OPENAI_API_KEY on acme, and a deploy would publish it. Take it out of the folder, read it from process.env.OPENAI_API_KEY instead, then deploy again.",
+    );
+    expect(asked).toEqual([]);
+    expect(deploys).toEqual([]);
+  });
+
   it("asks for Vercel, not a sign-off, while no key is saved", async () => {
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Vercel is not connected");
@@ -685,7 +706,13 @@ describe("set_env", () => {
       "Set OPENAI_API_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy; server code reads it as process.env.OPENAI_API_KEY. Never write its value into a file: deploy refuses a folder that holds it.",
     );
     expect(sets).toEqual([
-      { binding: VERCEL, name: "OPENAI_API_KEY", token: TOKEN, value: OPENAI.value },
+      {
+        binding: VERCEL,
+        name: "OPENAI_API_KEY",
+        replaces: false,
+        token: TOKEN,
+        value: OPENAI.value,
+      },
     ]);
     expect(asked).toEqual([]);
     expect(store.recentTeamMessages().map(({ text }) => text)).toEqual([
@@ -709,7 +736,9 @@ describe("set_env", () => {
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
     await callTool(deploying, "POST /v1/deploy", {});
-    expect(deploys[0]?.unshippable).toEqual([{ ...OPENAI, product: "acme" }]);
+    expect(deploys[0]?.unshippable).toEqual([
+      { ...OPENAI, company: store.requireCompany().id, product: "acme" },
+    ]);
     const saved = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
       (entry) => entry.isFile() && entry.name !== "secrets.json",
     );
@@ -721,18 +750,39 @@ describe("set_env", () => {
     }
   });
 
-  it("keeps the value even when Vercel turns it down, since it was handed over as a secret", async () => {
+  it("replaces only a name the team set, and keeps nothing Vercel turned down", async () => {
     connectVercel();
-    const { ctx } = settingRun({
-      error: "Vercel turned it down (402): Payment required",
+    const refused = settingRun({
+      error: "Vercel turned it down (403): A variable with this name already exists",
       ok: false,
     });
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toBe(
-      "OPENAI_API_KEY was not set on Acme: Vercel turned it down (402): Payment required",
+    expect(await callTool(refused.ctx, "POST /v1/set-env", OPENAI)).toBe(
+      "OPENAI_API_KEY was not set on Acme: Vercel turned it down (403): A variable with this name already exists\nset_env only replaces a variable the team set: if acme-site already has OPENAI_API_KEY, it is the founder's, so hand them an ask_boss action to change it.",
     );
     expect(store.recentTeamMessages()).toEqual([]);
+
+    const sets: EnvRequest[] = [];
+    const ctx: RunContext = {
+      ...refused.ctx,
+      setEnv: (req) => {
+        sets.push(req);
+        return Promise.resolve(SET);
+      },
+    };
+    await callTool(ctx, "POST /v1/set-env", OPENAI);
+    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    expect([...refused.sets, ...sets].map((req) => req.replaces)).toEqual([false, false, true]);
+  });
+
+  it("sends the value without the whitespace a paste carries", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: ` ${OPENAI.value}\n` });
+    expect(sets[0]?.value).toBe(OPENAI.value);
   });
 
   it("tells a run whose product has no project yet to deploy first", async () => {
