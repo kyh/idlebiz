@@ -26,6 +26,8 @@ import {
   productsDir,
   productFile,
   productWorkspace,
+  listingsDir,
+  listingFile,
   retiredDir,
   betsDir,
   betFile,
@@ -67,6 +69,8 @@ import {
 import type { Bet, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
+import { ListingSchema } from "@/shared/listing";
+import type { Listing } from "@/shared/listing";
 import { RefusalError } from "@/shared/refusal";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
 import { DigestSchema } from "@/shared/digest";
@@ -119,6 +123,8 @@ interface ActiveCompany {
   // Loaded only when the shipping log is opened.
   shipped: Task[] | null;
   products: Product[];
+  /** The print-on-demand items on sale, every live product's. */
+  listings: Listing[];
   /** Sign-offs the founder gave that no run has used yet. */
   grants: Grant[];
   bets: Bet[];
@@ -171,6 +177,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   company,
   employees: [],
   grants: [],
+  listings: [],
   policy: DEFAULT_POLICY,
   products: [],
   recentShips: [],
@@ -398,6 +405,25 @@ const loadPackages = <T extends { id: string }>(
     }
   }
   return rows;
+};
+
+const loadListings = (product: Product): Listing[] => {
+  const dir = listingsDir(product.companyId, product.id);
+  return safeReaddir(dir)
+    .filter((name) => name.endsWith(".json"))
+    .flatMap((name) => {
+      const file = path.join(dir, name);
+      try {
+        const listing = ListingSchema.parse(parseJson(readFileSync(file, "utf-8")));
+        if (`${listing.id}.json` !== name || listing.productId !== product.id) {
+          throw new Error("listing does not match its file's name or product");
+        }
+        return [listing];
+      } catch (error) {
+        skip("listing", file, error);
+        return [];
+      }
+    });
 };
 
 const TEAM_CHAT_RING = 200;
@@ -892,6 +918,38 @@ export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot):
   if (Object.keys(patch).length > 0) {
     patchProduct(productId, patch);
   }
+};
+
+// ---- listings ---------------------------------------------------------------
+export const listListings = (): Listing[] => [...current().listings];
+
+/** A new listing's id: its name's slug, free among the product's listings, skipped ones on disk too. */
+export const newListingId = (productId: string, name: string): string => {
+  const product = requireProduct(productId);
+  return uniqueSlug(
+    name,
+    current()
+      .listings.filter((l) => l.productId === product.id)
+      .map((l) => l.id),
+    (slug) => existsSync(listingFile(product.companyId, product.id, slug)),
+  );
+};
+
+/**
+ * A listing Stripe already sells through its link, so the cache keeps it even when the save
+ * throws: money may come through that link either way.
+ */
+export const recordListing = (listing: Listing): void => {
+  const product = requireProduct(listing.productId);
+  const { listings } = current();
+  if (listings.some((l) => l.productId === product.id && l.id === listing.id)) {
+    throw new Error(`${product.id} already has a listing ${listing.id}`);
+  }
+  listings.push(listing);
+  atomicWrite(
+    listingFile(product.companyId, product.id, listing.id),
+    `${JSON.stringify(listing, null, 2)}\n`,
+  );
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
@@ -1538,6 +1596,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   }
   dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
   active.products.splice(active.products.indexOf(product), 1);
+  active.listings = active.listings.filter((l) => l.productId !== productId);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
   }
@@ -1727,6 +1786,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (slug) => productFile(company.id, slug),
     (doc) => docToProduct(doc, company.id),
   ).toSorted(byAge);
+  active.listings = active.products.flatMap(loadListings).toSorted(byAge);
   active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
   active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];
   active.routines = loadPackages(

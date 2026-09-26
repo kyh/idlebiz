@@ -8,7 +8,8 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
-  get products/<slug>/workspace/), shared/ for what teammates share across products,
+  get products/<slug>/workspace/), products/<slug>/listings/<id>.json for each print it
+  sells through Printful (runs read it, never write it), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
   activity.jsonl).
 - COMPANY.md carries `format`. A save stamped higher than this build writes is refused
@@ -53,7 +54,7 @@ allocator and the replay.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
   bet reads captured live-mode USD charges tagged `metadata[bet]=<slug>`, the tag
-  `create_payment_link` sets on every payment of a link made for that bet. So any number of
+  `create_payment_link` and `sell_print` set on every payment of a link made for that bet. So any number of
   bets run on one product and none can claim another's result. A named path over the whole
   site or `/b` is refused (`namedPathRefusal`), and so is one overlapping a path a live bet
   covers or a closed one named (`holdsItsPath`): each counts visitors the bet did not bring.
@@ -213,11 +214,21 @@ third boundary.
   through Vercel's API with the founder's token, and Vercel builds it on its own machines
   (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
   the founder's own key (`main/payment-links.ts`; a Connect grant is read-only), tagging each
-  payment for its product and a named open revenue bet on it. Each runs once the founder signs
-  off on the action it names, which is the approval's key (`requireSignOff` in
+  payment for its product and a named open revenue bet on it; `sell_print` lists a Printful
+  print-on-demand item (`main/print-listing.ts`): its print files must be images the product's
+  own verified production domains serve now, Printful's estimate prices each variant with them
+  to California, Alaska and Hawaii, and a price below the floor is refused before the founder
+  is asked (`priceFloorCents`: the dearest estimate plus Stripe's 4.4% + 30¢, less the shipping
+  the buyer pays). Signed, it makes a Stripe price, a fixed shipping rate at Printful's dearest
+  shipping and a payment link collecting US addresses only, a dropdown for the variant when
+  there are several, tagged like `create_payment_link`'s and with `metadata[listing]`, and saves
+  the listing. The Printful token and its one store are the founder's, pasted in the Budget
+  panel (`main/printful-token.ts`), and a token Printful turns away asks for a new one. Each
+  runs once the founder signs off on the action it names, which is the approval's key (`requireSignOff` in
   `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
-Vercel project named <product>` for a product bound to none), and `payment link "<name>" at
-$<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation task, is spent
+Vercel project named <product>` for a product bound to none), `payment link "<name>" at
+$<amount> on <product> for bet <slug>`, and `sell "<name>" (variants <ids>) printing
+<placement> (<technique>) <file URL> at $<price> via Printful on <product> for bet <slug>`. A sign-off belongs to the continuation task, is spent
   once and goes with the task. One such tool is unsigned: `set_env` sets a variable on the
   product's bound project, sensitive, for production and preview (`main/vercel-env.ts`), since
   a key the founder handed back for that product has reached runs anyway: their reply sits in

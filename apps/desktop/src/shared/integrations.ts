@@ -10,6 +10,11 @@ export type StripeKeyStatus =
   | { state: "unset" }
   | { state: "set"; last4: string; livemode: boolean };
 
+/** The founder's Printful token as the renderer sees it: its last four and the store it sells through. */
+export type PrintfulTokenStatus =
+  | { state: "unset" }
+  | { state: "set"; last4: string; store: string };
+
 /** A Vercel project the founder can bind the company to. */
 export interface VercelProject {
   id: string;

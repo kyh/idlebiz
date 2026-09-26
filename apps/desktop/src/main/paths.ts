@@ -14,6 +14,7 @@ import { mkdirSync } from "node:fs";
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log), asks the founder answered, work the steering loop dropped
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product's is workspace/)
+//     products/<slug>/listings/<id>.json  a print-on-demand item on sale: the Printful variants and design, its payment link
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
 //     workspace/            the first product's code
@@ -92,6 +93,11 @@ export const productFile = (companySlug: string, productSlug: string): string =>
 /** A later product's own workspace, moved with its package when it retires. */
 export const productWorkspace = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "workspace");
+/** Outside the workspace, so a run can read its product's listings but never write one. */
+export const listingsDir = (companySlug: string, productSlug: string): string =>
+  path.join(productsDir(companySlug), productSlug, "listings");
+export const listingFile = (companySlug: string, productSlug: string, listingId: string): string =>
+  path.join(listingsDir(companySlug, productSlug), `${listingId}.json`);
 
 /** Killed products are archived here (package and workspace preserved, never deleted). */
 export const retiredDir = (companySlug: string): string =>

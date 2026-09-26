@@ -53,6 +53,7 @@ import {
   getStripeStatus,
 } from "@/main/stripe-connect";
 import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "@/main/stripe-key";
+import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "@/main/printful-token";
 import { ON_REAL_SAVE, ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 
@@ -153,6 +154,12 @@ const ipcHandlers = {
     }
   },
   postTeamChat: ({ text }) => scheduler.founderMessage(text.trim()),
+  printfulTokenRemove: removePrintfulToken,
+  printfulTokenSave: async ({ token }) => {
+    await savePrintfulToken(token);
+    scheduler.resumeIntegrationAsks("printful");
+  },
+  printfulTokenStatus,
   productStatus: ({ productId }) => productStatus(productId),
   resetGame,
   resetSpend: store.resetSpend,

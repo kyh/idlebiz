@@ -15,6 +15,9 @@ export const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
 export const STRIPE_CONNECT_TOKEN = "STRIPE_CONNECT_TOKEN";
 export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
+export const PRINTFUL_TOKEN = "PRINTFUL_TOKEN";
+/** The Printful store the token sells through, as JSON: not secret, but it goes where the token goes. */
+export const PRINTFUL_STORE = "PRINTFUL_STORE";
 /** Where main keeps the values set_env set, one key each. */
 export const ENV_PREFIX = "ENV/";
 
@@ -22,7 +25,7 @@ export const ENV_PREFIX = "ENV/";
 const SEALED = "sealed:v1:";
 
 const README =
-  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys and payment links; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe: the Budget panel, under revenue). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
+  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, PRINTFUL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys, payment links and print listings; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe and Printful: the Budget panel). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
 
 /** Encrypts a value for the file and decrypts it back; main's wraps Electron's safeStorage. */
 export interface Sealer {

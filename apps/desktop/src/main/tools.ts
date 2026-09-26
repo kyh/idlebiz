@@ -14,6 +14,10 @@ import {
 } from "@/main/company-actions";
 import { isTestKey, measureRefusal } from "@/main/metrics";
 import type { PaymentLinker } from "@/main/payment-links";
+import { priceFloorCents } from "@/main/print-listing";
+import type { PrintListing } from "@/main/print-listing";
+import { printfulCredential } from "@/main/printful";
+import type { PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
 import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
 import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
@@ -21,12 +25,21 @@ import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
 import { hasRole, isLead, spriteSeedFor } from "@/shared/domain";
-import type { BlockedAsk, Company, Employee, TaskOrigin } from "@/shared/domain";
+import type {
+  BlockedAsk,
+  Company,
+  Employee,
+  IntegrationKind,
+  Product,
+  TaskOrigin,
+  VercelBinding,
+} from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { formatUsd, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
 import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
+import type { PrintPlacement } from "@/shared/listing";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
 
@@ -51,6 +64,8 @@ export interface RunContext {
   createPaymentLink: PaymentLinker;
   /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
   setEnv: EnvSetter;
+  /** List a print-on-demand item with the founder's Vercel, Printful and Stripe keys, which the run itself never holds. */
+  printListing: PrintListing;
 }
 
 /** A tool ready to be called with whatever the agent sent. */
@@ -130,6 +145,167 @@ const deployAction = (productId: string, target: DeployTarget): string =>
   target.kind === "bound"
     ? `deploy ${productId} to production on Vercel project ${target.binding.projectName}`
     : `deploy ${productId} to production on a new Vercel project named ${target.name}`;
+
+/** Why money on `product` cannot be counted for `bet`, or null when it can. */
+const revenueBetRefusal = (bet: string, product: Product): string | null => {
+  const claimed = store.getBet(bet);
+  return claimed?.productId === product.id &&
+    claimed.claim.metric === "revenue" &&
+    claimed.state.kind === "open"
+    ? null
+    : `"${bet}" is not an open revenue bet on ${product.id} — read_bets lists every live bet, what it counts and its product.`;
+};
+
+const TEST_MODE =
+  " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.";
+
+const NO_STRIPE_KEY =
+  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
+
+const VERCEL_WAITING =
+  "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
+
+/** Why a print file's URL is not one Printful can fetch, or null when it is. */
+const fileUrlRefusal = (url: URL): string | null => {
+  if (url.protocol !== "https:") {
+    return `${url.href} is not https: Printful fetches a print file only from a public https URL on the product's own domain.`;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return `${url.href} carries a login: a print file has to be public, since Printful fetches it with none.`;
+  }
+  return null;
+};
+
+/**
+ * Each placement with its file's URL as Printful will fetch it, so the file named in the
+ * sign-off and the listing is that one; a URL Printful should not fetch ends the call.
+ */
+const printFileUrls = (placements: readonly PrintPlacement[]): PrintPlacement[] =>
+  placements.map((p) => {
+    const url = new URL(p.fileUrl);
+    const refusal = fileUrlRefusal(url);
+    if (refusal !== null) {
+      throw new RefusalError(refusal);
+    }
+    return { ...p, fileUrl: url.href };
+  });
+
+/** Ask the founder for an integration, ending the call with what the agent should read. */
+const needIntegration = (
+  ctx: RunContext,
+  integration: IntegrationKind,
+  reason: string,
+  sent: string,
+  why: string,
+): never => {
+  throw new RefusalError(askFounder(ctx, { integration, reason, type: "integration" }, sent, why));
+};
+
+/** The founder's keys a listing is made with. */
+interface SellingKeys {
+  vercel: string;
+  stripe: string;
+  printful: PrintfulCredential;
+}
+
+/** The keys a listing is made with; the first one missing is asked for, which ends the call. */
+const sellingKeys = (
+  ctx: RunContext,
+  product: Product,
+  name: string,
+  price: string,
+): SellingKeys => {
+  const vercel =
+    getSecret("VERCEL_TOKEN") ??
+    needIntegration(
+      ctx,
+      "vercel",
+      `to check where ${product.name} serves its print files`,
+      VERCEL_WAITING,
+      "Vercel is not connected.",
+    );
+  const stripe =
+    getSecret(STRIPE_SECRET_KEY) ??
+    needIntegration(
+      ctx,
+      "stripe",
+      `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
+      NO_STRIPE_KEY,
+      "IdleBiz has no Stripe key to charge with.",
+    );
+  const printful =
+    printfulCredential() ??
+    needIntegration(
+      ctx,
+      "printful",
+      `to print and ship ${JSON.stringify(name)}`,
+      "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.",
+      "IdleBiz has no Printful token.",
+    );
+  return { printful, stripe, vercel };
+};
+
+/** End the call unless every print file is an image the product serves on its production domains right now. */
+const requireServedFiles = async (
+  ctx: RunContext,
+  product: Product,
+  binding: VercelBinding,
+  token: string,
+  placements: readonly PrintPlacement[],
+): Promise<void> => {
+  const read = await ctx.printListing.hosts(binding, token);
+  if (read.kind === "refused") {
+    return needIntegration(
+      ctx,
+      "vercel",
+      `Vercel turned IdleBiz's token away while checking ${product.name}'s domains`,
+      "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting to connect it again. Continue with what you can — this task resumes automatically once connected.",
+      "Vercel turned IdleBiz's token away.",
+    );
+  }
+  if (read.kind === "unreachable") {
+    throw new RefusalError(
+      `Vercel could not say where ${product.name} is served (${read.reason}); try again.`,
+    );
+  }
+  for (const { fileUrl } of placements) {
+    if (!read.hosts.includes(new URL(fileUrl).hostname)) {
+      const domains = read.hosts.length === 0 ? "none yet" : read.hosts.join(", ");
+      throw new RefusalError(
+        `${fileUrl} is not on ${product.name}'s production domains (${domains}): Printful prints only a file the product itself serves, so deploy it there and name that URL.`,
+      );
+    }
+    const problem = await ctx.printListing.fileProblem(fileUrl);
+    if (problem !== null) {
+      throw new RefusalError(
+        `Printful could not fetch ${fileUrl}: ${problem}. Deploy the print file first, and check it loads as an image.`,
+      );
+    }
+  }
+};
+
+/** Printful's price for a listing; a token it turns away is asked for anew, which ends the call. */
+const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuote> => {
+  const quoted = await ctx.printListing.quote(req);
+  switch (quoted.kind) {
+    case "quoted": {
+      return quoted.quote;
+    }
+    case "refused": {
+      return needIntegration(
+        ctx,
+        "printful",
+        "Printful turned IdleBiz's token away (tokens expire): paste a new one",
+        "Printful turned IdleBiz's token away, which happens when it expires: the founder has a Printful card waiting to paste a new one. Continue with what you can — this task resumes automatically once it is saved.",
+        "Printful turned IdleBiz's token away.",
+      );
+    }
+    case "failed": {
+      throw new RefusalError(`Printful could not price it: ${quoted.reason}`);
+    }
+    // no default
+  }
+};
 
 /** Why a bet takes no more work, in the words the agent should act on. */
 const noRoomIn = (bet: Bet, inFlight: number): string => {
@@ -267,7 +443,7 @@ const TOOLS = {
       return askFounder(
         ctx,
         { integration: "vercel", reason: `to deploy ${product.name}`, type: "integration" },
-        "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.",
+        VERCEL_WAITING,
         "Vercel is not connected.",
       );
     }
@@ -331,7 +507,7 @@ const TOOLS = {
       return askFounder(
         ctx,
         { integration: "vercel", reason: `to set ${name} on ${product.name}`, type: "integration" },
-        "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.",
+        VERCEL_WAITING,
         "Vercel is not connected.",
       );
     }
@@ -358,15 +534,9 @@ const TOOLS = {
       if (!product) {
         return store.noSuchProduct(productId);
       }
-      if (bet !== undefined) {
-        const claimed = store.getBet(bet);
-        if (
-          claimed?.productId !== product.id ||
-          claimed.claim.metric !== "revenue" ||
-          claimed.state.kind !== "open"
-        ) {
-          return `"${bet}" is not an open revenue bet on ${product.id} — read_bets lists every live bet, what it counts and its product.`;
-        }
+      const notTheBet = bet === undefined ? null : revenueBetRefusal(bet, product);
+      if (notTheBet !== null) {
+        return notTheBet;
       }
       const cents = Math.round(amountUsd * 100);
       const price = formatUsd(cents / 100);
@@ -379,7 +549,7 @@ const TOOLS = {
             reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
             type: "integration",
           },
-          "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.",
+          NO_STRIPE_KEY,
           "IdleBiz has no Stripe key to charge with.",
         );
       }
@@ -396,12 +566,75 @@ const TOOLS = {
       if (!made.ok) {
         return `Stripe made no payment link: ${made.error}`;
       }
-      const testMode = isTestKey(key)
-        ? " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1."
-        : "";
+      const testMode = isTestKey(key) ? TEST_MODE : "";
       return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${testMode}`;
     },
   ),
+  sell_print: define(TOOL_SPECS.sell_print, async (ctx, body) => {
+    const { bet, name, priceUsd, variantIds, product: named } = body;
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to sell it on — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    const notTheBet = bet === undefined ? null : revenueBetRefusal(bet, product);
+    if (notTheBet !== null) {
+      return notTheBet;
+    }
+    const placements = printFileUrls(body.placements);
+    if (product.vercel === null) {
+      return `${product.name} has no Vercel project yet: deploy it with the print file, which makes one, then list it.`;
+    }
+    const priceCents = Math.round(priceUsd * 100);
+    const price = formatUsd(priceCents / 100);
+    const keys = sellingKeys(ctx, product, name, price);
+    await requireServedFiles(ctx, product, product.vercel, keys.vercel, placements);
+    const quote = await quotePrint(ctx, { credential: keys.printful, placements, variantIds });
+    const floor = priceFloorCents(quote);
+    const shipping = formatUsd(quote.shippingCents / 100);
+    if (priceCents < floor) {
+      return `${price} would lose money on every sale: Printful charges up to ${formatUsd(quote.costCents / 100)} to print one and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is ${formatUsd(floor / 100)}: price it above that, with the margin the bet needs.`;
+    }
+    const printed = placements
+      .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl}`)
+      .join(", ");
+    // quoted as JSON, so a name cannot pose as more of the action the founder signs
+    const action = `sell ${JSON.stringify(name)} (variants ${variantIds.join(", ")}) printing ${printed} at ${price} via Printful on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
+    requireSignOff(ctx, action, "payments");
+    const listingId = store.newListingId(product.id, name);
+    const made = await ctx.printListing.publish({
+      bet: bet ?? null,
+      key: keys.stripe,
+      listing: listingId,
+      name,
+      priceCents,
+      product: product.id,
+      shippingCents: quote.shippingCents,
+      variants: quote.variants,
+    });
+    if (!made.ok) {
+      return `Stripe made no payment link: ${made.error}`;
+    }
+    store.recordListing({
+      betId: bet ?? null,
+      costCents: quote.costCents,
+      createdAt: Date.now(),
+      id: listingId,
+      name,
+      paymentLink: { id: made.id, url: made.url },
+      placements,
+      priceCents,
+      productId: product.id,
+      shippingCents: quote.shippingCents,
+      variants: quote.variants,
+    });
+    post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
+    const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
+    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatUsd(quote.costCents / 100)} for each one it prints and ships; every paid order goes to Printful automatically.${testMode}`;
+  }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);
     post(ctx, `🆕 New product: ${product.name} — ${product.description}`);

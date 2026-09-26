@@ -1169,6 +1169,60 @@ describe("bets", () => {
   });
 });
 
+const listingOf = (productId: string, id: string) => ({
+  betId: null,
+  costCents: 1820,
+  createdAt: 1,
+  id,
+  name: "Launch tee",
+  paymentLink: { id: "plink_1", url: "https://buy.stripe.com/tee" },
+  placements: [
+    { fileUrl: "https://acme.vercel.app/tee.png", placement: "front", technique: "dtg" },
+  ],
+  priceCents: 2800,
+  productId,
+  shippingCents: 799,
+  variants: [{ id: 4012, label: "Black / S" }],
+});
+
+describe("listings", () => {
+  it("gives a namesake on the same product the next id, and loads each back", () => {
+    found();
+    const first = firstProduct();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const id = store.newListingId(first.id, "Launch tee");
+    store.recordListing(listingOf(first.id, id));
+    expect(store.newListingId(first.id, "Launch tee")).toBe(`${id}-2`);
+    expect(store.newListingId(side.id, "Launch tee")).toBe(id);
+    store.recordListing(listingOf(side.id, id));
+
+    store.initStore();
+
+    expect(store.listListings().map((l) => [l.productId, l.id])).toEqual([
+      [first.id, id],
+      [side.id, id],
+    ]);
+  });
+
+  it("skips a listing file it cannot read, and a retired product's go with it", () => {
+    const co = found();
+    const first = firstProduct();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    store.recordListing(listingOf(side.id, "launch-tee"));
+    const broken = path.join(productsDir(co.id), first.id, "listings", "broken.json");
+    mkdirSync(path.dirname(broken), { recursive: true });
+    writeFileSync(broken, "{");
+
+    expect(store.initStore().skipped).toMatchObject([{ kind: "listing", path: broken }]);
+    store.killProduct(side.id, "dud", null);
+
+    expect(store.listListings()).toEqual([]);
+    expect(existsSync(path.join(retiredDir(co.id), side.id, "listings", "launch-tee.json"))).toBe(
+      true,
+    );
+  });
+});
+
 describe("archives", () => {
   it("keep a released employee's slug, so a namesake's release sticks across a restart", () => {
     const co = found();

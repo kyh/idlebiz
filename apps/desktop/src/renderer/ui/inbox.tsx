@@ -138,9 +138,9 @@ export const Inbox = ({
     return null;
   }
   const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
-  // Stripe is the company's; Vercel binds the product the ask came from, or asks which
+  // Stripe and Printful are the company's; Vercel binds the product the ask came from, or asks which
   const connect = (kind: IntegrationKind, t: Task): void => {
-    onOpen(kind === "stripe" ? { kind: "budget" } : { kind: "vercel", productId: t.productId });
+    onOpen(kind === "vercel" ? { kind: "vercel", productId: t.productId } : { kind: "budget" });
   };
 
   const askRow = (t: TaskIn<"blocked">) => {

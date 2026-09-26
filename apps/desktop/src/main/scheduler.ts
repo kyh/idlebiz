@@ -11,6 +11,7 @@ import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { deployToVercel } from "@/main/deploy";
 import { stripePaymentLink } from "@/main/payment-links";
+import { printListing } from "@/main/print-listing";
 import { setVercelEnv } from "@/main/vercel-env";
 import type { KeepAwake } from "@/main/keep-awake";
 import { callTool } from "@/main/tools";
@@ -448,6 +449,7 @@ class Scheduler {
       deploy: deployToVercel,
       driver: this.driver,
       employee,
+      printListing,
       run,
       setEnv: setVercelEnv,
     };

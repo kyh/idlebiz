@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { bridge } from "@/renderer/bridge";
+import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { Failure } from "@/renderer/ui/failure";
 import {
@@ -16,7 +18,7 @@ import type { PickerOption } from "@/renderer/ui/picker";
 import { isOutOfBudget } from "@/shared/domain";
 import type { Budget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
-import type { StripeKeyStatus, StripeStatus } from "@/shared/integrations";
+import type { PrintfulTokenStatus, StripeKeyStatus, StripeStatus } from "@/shared/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },
@@ -132,6 +134,75 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
         </button>
       </div>
       <Failure submission={saving.submission} doing="save the key" />
+    </div>
+  );
+};
+
+const PrintfulToken = () => {
+  const read = useAsync(() => bridge().printfulTokenStatus(), []);
+  const [answered, setAnswered] = useState<PrintfulTokenStatus | null>(null);
+  const [draft, setDraft] = useState("");
+  const saving = useSubmission(async (token: string) => {
+    await bridge().printfulTokenSave({ token });
+    setDraft("");
+    setAnswered(await bridge().printfulTokenStatus());
+  });
+  const removing = useSubmission(async () => {
+    await bridge().printfulTokenRemove();
+    setAnswered(await bridge().printfulTokenStatus());
+  });
+  const status = answered ?? (read.kind === "ready" ? read.value : null);
+  if (read.kind === "failed" && answered === null) {
+    return (
+      <div role="alert" className="text-xs text-danger">
+        Could not read the Printful token: {read.message}
+      </div>
+    );
+  }
+  if (status === null) {
+    return null;
+  }
+  if (status.state === "set") {
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-fg">
+          ✓ token …{status.last4} · {status.store}
+        </span>
+        <button
+          type="button"
+          onClick={() => removing.submit()}
+          disabled={removing.submission.kind === "sending"}
+          className="px-btn"
+        >
+          Remove token
+        </button>
+        <Failure submission={removing.submission} doing="remove the token" />
+      </div>
+    );
+  }
+  const token = draft.trim();
+  const sending = saving.submission.kind === "sending";
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Private token"
+          type="password"
+          aria-label="Printful private token"
+          className="px-field flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => saving.submit(token)}
+          disabled={sending || token.length === 0}
+          className="px-btn-accent px-btn"
+        >
+          {sending ? "Checking…" : "Save token"}
+        </button>
+      </div>
+      <Failure submission={saving.submission} doing="save the token" />
     </div>
   );
 };
@@ -255,6 +326,20 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
               too.
             </div>
             <ChargingKey stripeKey={stripeKey} />
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">
+            Print on demand · Printful
+          </div>
+          <div className="px-inset space-y-2 p-3">
+            <div className="text-sm leading-snug text-fg">
+              A private token lets the team sell printed goods, each listing you sign off, and sends
+              every paid order to Printful, billed to your Printful account. Make one at
+              developers.printful.com/tokens for a single store, with View and manage orders.
+            </div>
+            <PrintfulToken />
           </div>
         </div>
       </div>

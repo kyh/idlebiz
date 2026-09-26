@@ -20,10 +20,11 @@ export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
-export const INTEGRATION_KINDS = ["vercel", "stripe"] as const;
+export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
+  printful: "Printful",
   stripe: "Stripe",
   vercel: "Vercel",
 } satisfies Record<IntegrationKind, string>;
@@ -470,6 +471,7 @@ export interface LoadSkip {
     | "task"
     | "routine"
     | "product"
+    | "listing"
     | "bet"
     | "team"
     | "secrets"

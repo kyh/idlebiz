@@ -78,12 +78,12 @@ secrets.json being sealed, and a held command denied from #team. It is local onl
 of `pnpm verify` or CI:
 
 - It needs a macOS desktop session: each launch shows the window and takes focus.
-- Every test that founds a company (the office, the #team approval, Vercel and Stripe key
-  entry, sealing) needs a signed-in `claude` or `codex` CLI and skips without one; only the
-  title screen runs without it. The refusal tests send made-up
+- Every test that founds a company (the office, the #team approval, Vercel, Stripe and
+  Printful key entry, sealing) needs a signed-in `claude` or `codex` CLI and skips without one;
+  only the title screen runs without it. The refusal tests send made-up
   keys to the real Vercel and Stripe APIs, so they need the network; where a key is taken,
-  main's `fetch` answers both APIs from canned JSON (`stubStripeAndVercel`), so no real
-  account or key is needed.
+  main's `fetch` answers those APIs and Printful's from canned JSON (`stubServices`), so no
+  real account or key is needed.
 - Quit `pnpm dev:desktop` first: an unpackaged launch shares its userData and so its
   single-instance lock, and the suite refuses to start while that is held.
 - It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds over the preload
@@ -176,7 +176,15 @@ rather than crashing boot.
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
   waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
-  and Read on Charges and Customers for the revenue read below. Metrics reads revenue with it
+  and Read on Charges and Customers for the revenue read below, and Write on Shipping Rates
+  to list a print. Employees list a Printful print with `sell_print` (`main/print-listing.ts`):
+  main checks the print files against the product's verified production domains
+  (`productionHosts` in `main/vercel.ts`), prices it with Printful's estimates
+  (`main/printful.ts`), refuses a price under the floor, and once signed off makes the shipped
+  payment link (`stripeShippedLink` in `main/payment-links.ts`) and saves the listing under
+  `products/<slug>/listings/`. The Printful token is pasted in the Budget panel, kept only once
+  Printful shows it can place orders in exactly one store (`main/printful-token.ts`); with none,
+  or one Printful refuses, the tool leaves a Printful card that opens that panel. Metrics reads revenue with it
   for every company but
   the one whose `metrics.json` holds the connected account: that one reads through
   `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
@@ -336,7 +344,10 @@ rather than crashing boot.
   (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
-  `payment-links.ts` (the Stripe calls `create_payment_link` makes), `secrets.ts`,
+  `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make),
+  `printful.ts` (Printful's API: the saved token, and pricing a print),
+  `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
+  `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only
   record, only a packaged app registers one, and a launch at login starts in the menu bar).
 - `apps/desktop/src/renderer` — React overlay (`ui/`) over a Phaser 4 scene (`game/`), with a

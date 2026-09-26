@@ -2,6 +2,8 @@ import { z } from "zod";
 import { getJson, HttpError } from "@/main/lib/http";
 import type { JsonValue } from "@/shared/json";
 import { getSecret } from "@/main/secrets";
+import type { VercelBinding } from "@/shared/domain";
+import { errorMessage } from "@/shared/errors";
 import type { DeployRead, VercelProject } from "@/shared/integrations";
 
 export const VERCEL_API = "https://api.vercel.com";
@@ -55,6 +57,42 @@ export const validateToken = async (
     account: parsed.success ? (parsed.data.user.name ?? parsed.data.user.username) : undefined,
     kind: "valid",
   };
+};
+
+const DomainsSchema = z.object({
+  domains: z.array(z.object({ name: z.string(), verified: z.boolean() })).default([]),
+});
+
+/** What asking for a project's production domains found; only a refusal needs a new token. */
+export type HostsRead =
+  | { kind: "listed"; hosts: string[] }
+  | { kind: "refused" }
+  | { kind: "unreachable"; reason: string };
+
+/**
+ * The hosts a product's production deploys answer on: its `.vercel.app` name and any domain
+ * the founder verified for it, lowercased as a URL's host is.
+ */
+export const productionHosts = async (
+  binding: VercelBinding,
+  token: string,
+): Promise<HostsRead> => {
+  try {
+    const answer = await apiGetUnlessRefused(
+      `/v9/projects/${encodeURIComponent(binding.projectId)}/domains`,
+      token,
+      { limit: "100", production: "true", teamId: binding.teamId ?? undefined },
+    );
+    if (answer === null) {
+      return { kind: "refused" };
+    }
+    const hosts = DomainsSchema.parse(answer)
+      .domains.filter((d) => d.verified)
+      .map((d) => d.name.toLowerCase());
+    return { hosts, kind: "listed" };
+  } catch (error) {
+    return { kind: "unreachable", reason: errorMessage(error) };
+  }
 };
 
 const ProjectsSchema = z.object({

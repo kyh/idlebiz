@@ -243,14 +243,22 @@ const canned = (host: string, route: string, body: JsonValue): Canned => ({
 
 const STRIPE = "api.stripe.com";
 const VERCEL = "api.vercel.com";
+const PRINTFUL = "api.printful.com";
 const NOTHING = { data: [], has_more: false, object: "list" };
 
-/** The Stripe and Vercel of an account that takes any key: one project, no money, no visitors. */
+/**
+ * The Stripe, Vercel and Printful of an account that takes any key: one project, no money, no
+ * visitors, one store that may place orders.
+ */
 const CANNED_APIS: Canned[] = [
   canned(STRIPE, "/v1/charges", NOTHING),
   canned(STRIPE, "/v1/customers", NOTHING),
   canned(STRIPE, "/v1/customers/search", { ...NOTHING, object: "search_result", total_count: 0 }),
   canned(STRIPE, "/v1/payment_links", NOTHING),
+  canned(PRINTFUL, "/v2/oauth-scopes", {
+    data: [{ name: "View and manage orders", value: "orders" }],
+  }),
+  canned(PRINTFUL, "/v2/stores", { data: [{ id: 7, name: "E2E Prints", type: "native" }] }),
   canned(VERCEL, "/v1/query/web-analytics/visits/count", { data: { visitors: 0 } }),
   canned(VERCEL, "/v2/teams", { teams: [] }),
   canned(VERCEL, "/v2/user", { user: { username: "e2e" } }),
@@ -259,11 +267,11 @@ const CANNED_APIS: Canned[] = [
 ];
 
 /**
- * Answer main's calls to Stripe and Vercel from `CANNED_APIS` for the rest of this launch, so a
+ * Answer main's calls to Stripe, Vercel and Printful from `CANNED_APIS` for the rest of this launch, so a
  * key being taken is tested with no real account; a route it lacks gets a 404, never the real
  * service. Main reads the global `fetch` on every request, so swapping it reaches them all.
  */
-export const stubStripeAndVercel = (app: ElectronApplication): Promise<void> =>
+export const stubServices = (app: ElectronApplication): Promise<void> =>
   app.evaluate((_electronModule, answers) => {
     const real = globalThis.fetch;
     const stub = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {

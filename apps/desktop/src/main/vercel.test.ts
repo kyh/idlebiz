@@ -8,7 +8,7 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 
 const { setSecret } = await import("@/main/secrets");
-const { latestDeployment, visitQuery } = await import("./vercel");
+const { latestDeployment, productionHosts, visitQuery } = await import("./vercel");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -110,5 +110,47 @@ describe("latestDeployment", () => {
     );
 
     await expect(latestDeployment("prj_reconnect")).resolves.toMatchObject({ kind: "deployed" });
+  });
+});
+
+describe("productionHosts", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const binding = { projectId: "prj_1", projectName: "acme", teamId: "team_1" };
+
+  it("lists the verified domains production answers on, as a URL's host reads", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(url);
+      return Promise.resolve(
+        Response.json({
+          domains: [
+            { name: "acme.vercel.app", verified: true },
+            { name: "Shop.Acme.dev", verified: true },
+            { name: "pending.acme.dev", verified: false },
+          ],
+          pagination: { count: 3, next: null, prev: null },
+        }),
+      );
+    });
+
+    await expect(productionHosts(binding, "tok")).resolves.toEqual({
+      hosts: ["acme.vercel.app", "shop.acme.dev"],
+      kind: "listed",
+    });
+    expect(asked).toEqual([
+      "https://api.vercel.com/v9/projects/prj_1/domains?limit=100&production=true&teamId=team_1",
+    ]);
+  });
+
+  it("tells a refused token apart from Vercel being out of reach", async () => {
+    vercel(status(403));
+    await expect(productionHosts(binding, "tok")).resolves.toEqual({ kind: "refused" });
+
+    vercel(() => Promise.reject(new TypeError("fetch failed")));
+    await expect(productionHosts({ ...binding, teamId: null }, "tok")).resolves.toEqual({
+      kind: "unreachable",
+      reason: "fetch failed",
+    });
   });
 });

@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
@@ -16,6 +17,7 @@ const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
 const { stripePaymentLink } = await import("./payment-links");
+const { printListing } = await import("./print-listing");
 const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
 
@@ -77,6 +79,15 @@ const runAs = (employeeId: string) => {
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
     driver: { pickRunner: () => "claude" },
     employee,
+    printListing: {
+      fileProblem: () =>
+        Promise.reject(new Error("fetched a print file without a test asking for it")),
+      hosts: () =>
+        Promise.reject(new Error("asked Vercel for domains without a test asking for it")),
+      publish: () => Promise.reject(new Error("listed a print without a test asking for it")),
+      quote: () =>
+        Promise.reject(new Error("asked Printful for a price without a test asking for it")),
+    },
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
     setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
   };
@@ -1034,5 +1045,332 @@ describe("create_payment_link", () => {
     expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toBe(
       "Stripe made no payment link: Your account cannot currently make live charges.",
     );
+  });
+});
+
+const PRINT = {
+  name: "Launch tee",
+  placements: [
+    {
+      fileUrl: "https://acme-site.vercel.app/print/tee-1.png",
+      placement: "front",
+      technique: "dtg",
+    },
+  ],
+  priceUsd: 28,
+  variantIds: [4012, 4013],
+};
+const PRINT_ACTION =
+  'sell "Launch tee" (variants 4012, 4013) printing front (dtg) https://acme-site.vercel.app/print/tee-1.png at $28.00 via Printful on acme';
+const LISTED_URL = "https://buy.stripe.com/tee";
+
+interface Sent {
+  host: string;
+  method: string;
+  path: string;
+  form: Record<string, string>;
+}
+
+/**
+ * Vercel, the product's own site, Printful and Stripe, as far as listing a print goes. Printful
+ * charges $16.40 to California and $18.20 elsewhere, $4.75 and $7.99 of it shipping, and
+ * finishes each estimate as soon as it is asked.
+ */
+const fakeSellers = ({ fileType = "image/png" } = {}) => {
+  const sent: Sent[] = [];
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    const { host, pathname } = new URL(url);
+    const method = init?.method ?? "GET";
+    sent.push({
+      form: init?.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
+      host,
+      method,
+      path: pathname,
+    });
+    if (host === "api.vercel.com") {
+      return Promise.resolve(
+        Response.json({ domains: [{ name: "acme-site.vercel.app", verified: true }] }),
+      );
+    }
+    if (host === "acme-site.vercel.app") {
+      return Promise.resolve(new Response(null, { headers: { "content-type": fileType } }));
+    }
+    if (host === "api.printful.com" && pathname.startsWith("/v2/catalog-variants/")) {
+      const id = Number(pathname.split("/").at(-1));
+      return Promise.resolve(
+        Response.json({
+          data: {
+            catalog_product_id: 71,
+            color: "Black",
+            id,
+            name: "Tee",
+            size: id === 4012 ? "S" : "M",
+          },
+        }),
+      );
+    }
+    if (host === "api.printful.com") {
+      const california = z.string().parse(init?.body).includes('"CA"');
+      const costs = california
+        ? { currency: "USD", shipping: "4.75", total: "16.40" }
+        : { currency: "USD", shipping: "7.99", total: "18.20" };
+      return Promise.resolve(
+        Response.json({ data: { costs, failure_reasons: [], id: "t", status: "completed" } }),
+      );
+    }
+    const made = new Map([
+      ["/v1/payment_links", { id: "plink_1", url: LISTED_URL }],
+      ["/v1/prices", { id: "price_1" }],
+      ["/v1/shipping_rates", { id: "shr_1" }],
+    ]).get(pathname);
+    return Promise.resolve(Response.json(made ?? {}, { status: made ? 200 : 404 }));
+  });
+  return sent;
+};
+
+type Keys = Partial<Record<"stripe" | "vercel" | "printful", boolean>>;
+
+/** A run of Priya's on Acme, bound to its Vercel project, with the founder's keys saved but those `missing`. */
+const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[0] = {}) => {
+  const secrets = new Map<string, string>();
+  if (!missing.stripe) {
+    secrets.set("STRIPE_SECRET_KEY", "sk_live_founder");
+  }
+  if (!missing.vercel) {
+    secrets.set("VERCEL_TOKEN", TOKEN);
+  }
+  if (!missing.printful) {
+    secrets.set("PRINTFUL_STORE", JSON.stringify({ id: 42, name: "Acme Prints" }));
+    secrets.set("PRINTFUL_TOKEN", "pf_founder_token");
+  }
+  writeFileSync(path.join(root, "secrets.json"), JSON.stringify(Object.fromEntries(secrets)));
+  const run = runAs("priya");
+  store.setProductVercel("acme", VERCEL);
+  const sent = fakeSellers(sellers);
+  const ctx: RunContext = { ...run.ctx, printListing, run: { ...run.ctx.run, productId: "acme" } };
+  return { ...run, ctx, sent };
+};
+
+const outward = (sent: readonly Sent[]) => sent.filter((s) => s.method === "POST");
+
+describe("sell_print", () => {
+  it("prices it with Printful, then holds it for the founder's sign-off before Stripe is asked", async () => {
+    const { ctx, asked, sent } = sellingRun();
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toBe(
+      `Held for the founder's sign-off on "${PRINT_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    );
+    expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
+    expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");
+    expect(outward(sent)).toHaveLength(6);
+  });
+
+  it("once signed off, lists it on a US-only link at Printful's shipping, tagged and saved", async () => {
+    const { ctx, sent } = sellingRun();
+    const bet = revenueBet();
+    const action = `${PRINT_ACTION} for bet ${bet.id}`;
+    store.grantApproval(ctx.run.taskId, action);
+
+    const answer = await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id });
+
+    expect(answer).toBe(
+      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 for each one it prints and ships; every paid order goes to Printful automatically.`,
+    );
+    const tags = { bet: bet.id, listing: "launch-tee", product: "acme" };
+    expect(sent.filter((s) => s.host === "api.stripe.com")).toEqual([
+      {
+        form: { currency: "usd", "product_data[name]": "Launch tee", unit_amount: "2800" },
+        host: "api.stripe.com",
+        method: "POST",
+        path: "/v1/prices",
+      },
+      {
+        form: {
+          display_name: "Standard shipping",
+          "fixed_amount[amount]": "799",
+          "fixed_amount[currency]": "usd",
+          type: "fixed_amount",
+        },
+        host: "api.stripe.com",
+        method: "POST",
+        path: "/v1/shipping_rates",
+      },
+      {
+        form: {
+          "custom_fields[0][dropdown][options][0][label]": "Black / S",
+          "custom_fields[0][dropdown][options][0][value]": "4012",
+          "custom_fields[0][dropdown][options][1][label]": "Black / M",
+          "custom_fields[0][dropdown][options][1][value]": "4013",
+          "custom_fields[0][key]": "variant",
+          "custom_fields[0][label][custom]": "Option",
+          "custom_fields[0][label][type]": "custom",
+          "custom_fields[0][type]": "dropdown",
+          "line_items[0][price]": "price_1",
+          "line_items[0][quantity]": "1",
+          ...Object.fromEntries(Object.entries(tags).map(([k, v]) => [`metadata[${k}]`, v])),
+          ...Object.fromEntries(
+            Object.entries(tags).map(([k, v]) => [`payment_intent_data[metadata][${k}]`, v]),
+          ),
+          "shipping_address_collection[allowed_countries][0]": "US",
+          "shipping_options[0][shipping_rate]": "shr_1",
+        },
+        host: "api.stripe.com",
+        method: "POST",
+        path: "/v1/payment_links",
+      },
+    ]);
+    const listing = {
+      betId: bet.id,
+      costCents: 1820,
+      id: "launch-tee",
+      name: "Launch tee",
+      paymentLink: { id: "plink_1", url: LISTED_URL },
+      placements: PRINT.placements,
+      priceCents: 2800,
+      productId: "acme",
+      shippingCents: 799,
+      variants: [
+        { id: 4012, label: "Black / S" },
+        { id: 4013, label: "Black / M" },
+      ],
+    };
+    expect(store.listListings()).toMatchObject([listing]);
+    store.initStore();
+    expect(store.listListings()).toMatchObject([listing]);
+    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id })).toContain(
+      "Held for the founder's sign-off",
+    );
+  });
+
+  it("gives one variant no choice on the payment page", async () => {
+    const { ctx, sent } = sellingRun();
+    store.grantApproval(
+      ctx.run.taskId,
+      PRINT_ACTION.replace("variants 4012, 4013", "variants 4012"),
+    );
+
+    await callTool(ctx, "POST /v1/sell-print", { ...PRINT, variantIds: [4012] });
+
+    const link = sent.find((s) => s.path === "/v1/payment_links");
+    expect(Object.keys(link?.form ?? {}).filter((k) => k.startsWith("custom_fields"))).toEqual([]);
+    expect(link?.form).not.toHaveProperty("metadata[bet]");
+  });
+
+  it("refuses a price that loses money, naming the lowest that does not, and asks nobody", async () => {
+    const { ctx, asked, sent } = sellingRun();
+
+    // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
+    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd: 11.35 })).toBe(
+      "$11.35 would lose money on every sale: Printful charges up to $18.20 to print one and ship it in the US, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is $11.37: price it above that, with the margin the bet needs.",
+    );
+    expect(asked).toEqual([]);
+    expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");
+  });
+
+  it.each([
+    {
+      said: "http://acme-site.vercel.app/print/tee-1.png is not https",
+      url: "http://acme-site.vercel.app/print/tee-1.png",
+    },
+    {
+      said: "carries a login",
+      url: "https://me:pw@acme-site.vercel.app/print/tee-1.png",
+    },
+    {
+      said: "https://cdn.example.com/tee.png is not on Acme's production domains (acme-site.vercel.app)",
+      url: "https://cdn.example.com/tee.png",
+    },
+  ])("refuses a print file Printful should not fetch: $said", async ({ said, url }) => {
+    const { ctx, asked, sent } = sellingRun();
+    const placements = [{ ...PRINT.placements[0], fileUrl: url }];
+    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, placements })).toContain(said);
+    expect(asked).toEqual([]);
+    expect(outward(sent)).toEqual([]);
+  });
+
+  it("refuses a file the site answers with its page rather than an image", async () => {
+    const { ctx, sent } = sellingRun({}, { fileType: "text/html" });
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toBe(
+      "Printful could not fetch https://acme-site.vercel.app/print/tee-1.png: it serves text/html, not an image. Deploy the print file first, and check it loads as an image.",
+    );
+    expect(outward(sent)).toEqual([]);
+  });
+
+  it.each([
+    {
+      ask: {
+        integration: "printful",
+        reason: 'to print and ship "Launch tee"',
+        type: "integration",
+      },
+      missing: { printful: true },
+      said: "a Printful card waiting that takes them to the Budget panel",
+    },
+    {
+      ask: {
+        integration: "stripe",
+        reason: 'to sell "Launch tee" at $28.00 through a payment link',
+        type: "integration",
+      },
+      missing: { stripe: true },
+      said: "a Stripe card waiting",
+    },
+    {
+      ask: {
+        integration: "vercel",
+        reason: "to check where Acme serves its print files",
+        type: "integration",
+      },
+      missing: { vercel: true },
+      said: "Vercel is not connected",
+    },
+  ])(
+    "leaves the founder a card for a missing $ask.integration key",
+    async ({ ask, missing, said }) => {
+      const { ctx, asked, sent } = sellingRun(missing);
+      expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(said);
+      expect(asked).toEqual([ask]);
+      expect(sent).toEqual([]);
+    },
+  );
+
+  it("asks for a new Printful token once Printful turns the saved one away", async () => {
+    const { ctx, asked } = sellingRun();
+    const answers = new Map([
+      ["api.printful.com", () => Response.json({ detail: "expired" }, { status: 401 })],
+      [
+        "api.vercel.com",
+        () => Response.json({ domains: [{ name: "acme-site.vercel.app", verified: true }] }),
+      ],
+      [
+        "acme-site.vercel.app",
+        () => new Response(null, { headers: { "content-type": "image/png" } }),
+      ],
+    ]);
+    vi.stubGlobal("fetch", (url: string) =>
+      Promise.resolve(answers.get(new URL(url).host)?.() ?? new Response(null, { status: 404 })),
+    );
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      "Printful turned IdleBiz's token away, which happens when it expires",
+    );
+    expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
+  });
+
+  it("refuses a bet whose money the listing could not be counted for", async () => {
+    const { ctx, sent } = sellingRun();
+    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: "no-such-bet" })).toContain(
+      '"no-such-bet" is not an open revenue bet on acme',
+    );
+    expect(sent).toEqual([]);
+  });
+
+  it("tells a product with no Vercel project to deploy the file first", async () => {
+    const { ctx, sent } = sellingRun();
+    store.setProductVercel("acme", null);
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toBe(
+      "Acme has no Vercel project yet: deploy it with the print file, which makes one, then list it.",
+    );
+    expect(sent).toEqual([]);
   });
 });

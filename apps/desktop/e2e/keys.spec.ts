@@ -5,7 +5,7 @@ import {
   foundCompany,
   readSecrets,
   secretsText,
-  stubStripeAndVercel,
+  stubServices,
   test,
   writeSecrets,
 } from "./harness";
@@ -21,7 +21,7 @@ test("a Vercel token Vercel takes binds the product's project and is kept sealed
   await closeFully(founding.app);
 
   const { app, page } = await launch();
-  await stubStripeAndVercel(app);
+  await stubServices(app);
   const users = page.getByRole("button", { name: /users/iu });
   await users.click();
   await page.getByRole("button", { name: "▲ Vercel" }).click();
@@ -93,7 +93,7 @@ test("a Stripe key Stripe takes is kept sealed, shown as set and removable", asy
   await closeFully(founding.app);
 
   const { app, page } = await launch();
-  await stubStripeAndVercel(app);
+  await stubServices(app);
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   const key = "sk_test_e2eGood1234";
@@ -132,4 +132,29 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
   expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
   // only a token main opened reaches Vercel, which refuses this one
   await expect(page.getByRole("button", { name: /vercel refused/iu })).toBeVisible();
+});
+
+test("a Printful token Printful takes is kept sealed, shown with its store and removable", async ({
+  launch,
+  root,
+}) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { app, page } = await launch();
+  await stubServices(app);
+  await page.getByRole("button", { name: /revenue/iu }).click();
+  const budget = page.getByRole("dialog", { name: "Budget" });
+  const token = "pf_e2e_private_token_9876";
+  await budget.getByLabel("Printful private token").fill(token);
+  await budget.getByRole("button", { name: "Save token" }).click();
+  await expect(budget.getByText("✓ token …9876 · E2E Prints")).toBeVisible();
+  expect(await secretsText(root)).not.toContain(token);
+  const secrets = await readSecrets(root);
+  expect(secrets.PRINTFUL_TOKEN).toMatch(SEALED);
+
+  await budget.getByRole("button", { name: "Remove token" }).click();
+  await expect(budget.getByLabel("Printful private token")).toBeVisible();
+  expect(await readSecrets(root)).not.toHaveProperty("PRINTFUL_TOKEN");
 });

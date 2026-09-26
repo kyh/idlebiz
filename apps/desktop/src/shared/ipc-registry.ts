@@ -29,6 +29,7 @@ import { BusinessTypeSchema, HireProposalSchema } from "@/shared/hire";
 import type { HireProposal } from "@/shared/hire";
 import type {
   ProductStatus,
+  PrintfulTokenStatus,
   StripeKeyStatus,
   StripeStatus,
   VercelListing,
@@ -85,6 +86,9 @@ export const SCHEMAS = {
   openProduct: z.object({ productId: z.string() }),
   openSaveFolder: z.void(),
   postTeamChat: z.object({ text: z.string().min(1).max(2000) }),
+  printfulTokenRemove: z.void(),
+  printfulTokenSave: z.object({ token: z.string().trim().min(1) }),
+  printfulTokenStatus: z.void(),
   productStatus: z.object({ productId: z.string() }),
   resetGame: z.void(),
   resetSpend: z.void(),
@@ -149,6 +153,9 @@ interface Results {
   stripeKeyStatus: StripeKeyStatus;
   stripeKeySave: Done;
   stripeKeyRemove: Done;
+  printfulTokenStatus: PrintfulTokenStatus;
+  printfulTokenSave: Done;
+  printfulTokenRemove: Done;
 
   takeDigest: Digest | null;
   vercelListProjects: VercelListing;
