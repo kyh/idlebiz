@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
-import { printfulQuote } from "./printful";
-import { priceFloorCents, printFileProblem } from "./print-listing";
+import { createHash } from "node:crypto";
+import { printfulCatalog, printfulQuote } from "./printful";
+import { priceFloorCents, readPrintFile } from "./print-listing";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -113,7 +114,7 @@ const printful = ({
 };
 
 const quote = (variantIds: number[], placements = [FRONT]) =>
-  printfulQuote({ credential: CREDENTIAL, placements, variantIds }, { pollMs: 0 });
+  printfulQuote({ credential: CREDENTIAL, placements, variantIds }, { backoffMs: 0, pollMs: 0 });
 
 describe("pricing a print with Printful", () => {
   it("estimates each variant with the design to every sampled US address, keeping the dearest", async () => {
@@ -232,6 +233,129 @@ describe("pricing a print with Printful", () => {
   });
 });
 
+describe("Printful's rate limit", () => {
+  it("is waited out, and the call tried again", async () => {
+    const asked = printful();
+    const answer = globalThis.fetch;
+    let limited = 2;
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      if (limited > 0) {
+        limited -= 1;
+        return Promise.resolve(Response.json({ detail: "Too Many Requests" }, { status: 429 }));
+      }
+      return answer(url, init);
+    });
+
+    expect(await quote([4012])).toMatchObject({ kind: "quoted", quote: { costCents: 1820 } });
+    expect(asked.filter((a) => a.method === "POST")).toHaveLength(3);
+  });
+
+  it("ends the call once it outlasts every retry", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", () => {
+      calls += 1;
+      return Promise.resolve(Response.json({ detail: "Too Many Requests" }, { status: 429 }));
+    });
+    expect(await quote([4012])).toEqual({
+      kind: "failed",
+      reason: "Printful answered 429: Too Many Requests",
+    });
+    expect(calls).toBe(4);
+  });
+});
+
+describe("an answer IdleBiz cannot read", () => {
+  it("is a sentence for the agent and a fault in main's log", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ data: { id: "4012" } })));
+    expect(await quote([4012])).toEqual({
+      kind: "failed",
+      reason:
+        "Printful answered in a shape IdleBiz does not read, which a change on Printful's side causes; try again later",
+    });
+    expect(logged).toHaveBeenCalledOnce();
+  });
+});
+
+const TEE = {
+  brand: "Bella + Canvas",
+  id: 71,
+  model: "3001",
+  name: "Unisex Staple T-Shirt",
+  placements: [
+    { layers: [], placement: "front", technique: "dtg" },
+    { layers: [], placement: "embroidery_chest_left", technique: "embroidery" },
+  ],
+  techniques: [{ display_name: "DTG", is_default: true, key: "dtg" }],
+  type: "T-SHIRT",
+};
+
+describe("reading Printful's catalog", () => {
+  it("lists a page of the products that ship to the US, leaving out the discontinued", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      asked.push(`${url} store=${new Headers(init?.headers).get("x-pf-store-id")}`);
+      return Promise.resolve(
+        Response.json({
+          data: [TEE, { ...TEE, id: 12, is_discontinued: true, name: "Old tee" }],
+          paging: { limit: 50, offset: 50, total: 120 },
+        }),
+      );
+    });
+
+    expect(await printfulCatalog({ offset: 50 }, CREDENTIAL)).toMatchObject({
+      kind: "products",
+      offset: 50,
+      products: [{ id: 71, name: "Unisex Staple T-Shirt" }],
+      total: 120,
+    });
+    expect(asked).toEqual([
+      "https://api.printful.com/v2/catalog-products?destination_country=US&limit=50&offset=50 store=42",
+    ]);
+  });
+
+  it("gives a product's placements and every variant, labelled as sell_print offers them", async () => {
+    vi.stubGlobal("fetch", (url: string) =>
+      Promise.resolve(
+        url.endsWith("/catalog-variants")
+          ? Response.json({
+              data: [
+                { catalog_product_id: 71, color: "Black", id: 4012, name: "Tee", size: "S" },
+                { catalog_product_id: 71, color: null, id: 4013, name: "Tee One Size", size: null },
+              ],
+            })
+          : Response.json({ data: TEE }),
+      ),
+    );
+
+    expect(await printfulCatalog({ product: 71 }, CREDENTIAL)).toMatchObject({
+      kind: "product",
+      product: {
+        placements: [
+          { placement: "front", technique: "dtg" },
+          { placement: "embroidery_chest_left", technique: "embroidery" },
+        ],
+      },
+      variants: [
+        { id: 4012, label: "Black / S" },
+        { id: 4013, label: "Tee One Size" },
+      ],
+    });
+  });
+
+  it("names a product the catalog does not have, and tells a token turned away", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json({ code: 404, result: "Not found" }, { status: 404 })),
+    );
+    expect(await printfulCatalog({ product: 9 }, CREDENTIAL)).toEqual({
+      kind: "failed",
+      reason: "Printful's catalog has no product 9.",
+    });
+    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({}, { status: 401 })));
+    expect(await printfulCatalog({ offset: 0 }, CREDENTIAL)).toEqual({ kind: "refused" });
+  });
+});
+
 describe("the price floor", () => {
   it("covers Printful's dearest cost and Stripe's share, less the shipping the buyer pays", () => {
     // (2110 + 30) / 0.956 = 2238.49…, so 2239 in all, 950 of it shipping
@@ -239,23 +363,32 @@ describe("the price floor", () => {
   });
 });
 
-/** The product's site answering a print file's URL with `status` and `type`. */
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+
+/** The product's site answering a print file's URL with `status` and `type`, and the file when it is found. */
 const serving = (status: number, type: string | null) => {
   const asked: { url: string; init: RequestInit | undefined }[] = [];
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     asked.push({ init, url });
     return Promise.resolve(
-      new Response(null, { headers: type === null ? {} : { "content-type": type }, status }),
+      new Response(status === 200 ? PNG : null, {
+        headers: type === null ? {} : { "content-type": type },
+        status,
+      }),
     );
   });
   return asked;
 };
 
 describe("a print file", () => {
-  it("is fine when it serves an image, asked without following a redirect", async () => {
+  it("is read whole and hashed when it serves an image, asked without following a redirect", async () => {
     const asked = serving(200, "image/png");
-    expect(await printFileProblem(FRONT.fileUrl)).toBeNull();
-    expect(asked[0]?.init).toMatchObject({ method: "HEAD", redirect: "manual" });
+    expect(await readPrintFile(FRONT.fileUrl)).toEqual({
+      kind: "image",
+      sha256: createHash("sha256").update(PNG).digest("hex"),
+    });
+    expect(asked[0]?.init).toMatchObject({ redirect: "manual" });
+    expect(asked[0]?.init?.method).toBeUndefined();
   });
 
   it.each([
@@ -264,6 +397,6 @@ describe("a print file", () => {
     { said: "it serves text/html, not an image", status: 200, type: "text/html" },
   ])("is refused when $said", async ({ said, status, type }) => {
     serving(status, type);
-    expect(await printFileProblem(FRONT.fileUrl)).toBe(said);
+    expect(await readPrintFile(FRONT.fileUrl)).toEqual({ kind: "unfit", reason: said });
   });
 });

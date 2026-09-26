@@ -216,19 +216,26 @@ third boundary.
   the founder's own key (`main/payment-links.ts`; a Connect grant is read-only), tagging each
   payment for its product and a named open revenue bet on it; `sell_print` lists a Printful
   print-on-demand item (`main/print-listing.ts`): its print files must be images the product's
-  own verified production domains serve now, Printful's estimate prices each variant with them
-  to California, Alaska and Hawaii, and a price below the floor is refused before the founder
-  is asked (`priceFloorCents`: the dearest estimate plus Stripe's 4.4% + 30¢, less the shipping
-  the buyer pays). Signed, it makes a Stripe price, a fixed shipping rate at Printful's dearest
-  shipping and a payment link collecting US addresses only, a dropdown for the variant when
-  there are several, tagged like `create_payment_link`'s and with `metadata[listing]`, and saves
-  the listing. The Printful token and its one store are the founder's, pasted in the Budget
-  panel (`main/printful-token.ts`), and a token Printful turns away asks for a new one. Each
+  own verified production domains serve now, each read whole and hashed, Printful's estimate
+  prices each variant with them to California, Alaska and Hawaii, and a price below the floor
+  is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus Stripe's
+  4.4% + 30¢, less the shipping the buyer pays), as is a Stripe key that cannot read shipping
+  rates. Nothing sends a paid order to Printful yet, so it lists only on a test-mode Stripe key.
+  Signed, it makes a Stripe price, a fixed shipping rate at Printful's dearest shipping and a
+  payment link collecting US addresses only, a dropdown for the variant when there are
+  several, tagged like `create_payment_link`'s and with `metadata[listing]`, each POST under an
+  idempotency key of its fields, so a retry after a timeout gets back what Stripe made; and
+  saves the listing with each file's sha256 and whether its link is live. Agents find variant
+  ids, placements and techniques with `printful_catalog`, which main reads with the token (v2
+  serves the catalog only to a signed-in caller). The Printful token and its one store are the
+  founder's, pasted in the Budget panel (`main/printful-token.ts`), and a token Printful turns
+  away asks for a new one, pasted over it there. Each
   runs once the founder signs off on the action it names, which is the approval's key (`requireSignOff` in
   `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
 Vercel project named <product>` for a product bound to none), `payment link "<name>" at
 $<amount> on <product> for bet <slug>`, and `sell "<name>" (variants <ids>) printing
-<placement> (<technique>) <file URL> at $<price> via Printful on <product> for bet <slug>`. A sign-off belongs to the continuation task, is spent
+<placement> (<technique>) <file URL> sha256:<digest> at $<price> via Printful on <product> for
+bet <slug>`, the file's whole digest, so a design deployed over the URL is signed for anew. A sign-off belongs to the continuation task, is spent
   once and goes with the task. One such tool is unsigned: `set_env` sets a variable on the
   product's bound project, sensitive, for production and preview (`main/vercel-env.ts`), since
   a key the founder handed back for that product has reached runs anyway: their reply sits in

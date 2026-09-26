@@ -177,14 +177,19 @@ rather than crashing boot.
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
   waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
   and Read on Charges and Customers for the revenue read below, and Write on Shipping Rates
-  to list a print. Employees list a Printful print with `sell_print` (`main/print-listing.ts`):
-  main checks the print files against the product's verified production domains
-  (`productionHosts` in `main/vercel.ts`), prices it with Printful's estimates
-  (`main/printful.ts`), refuses a price under the floor, and once signed off makes the shipped
-  payment link (`stripeShippedLink` in `main/payment-links.ts`) and saves the listing under
-  `products/<slug>/listings/`. The Printful token is pasted in the Budget panel, kept only once
-  Printful shows it can place orders in exactly one store (`main/printful-token.ts`); with none,
-  or one Printful refuses, the tool leaves a Printful card that opens that panel. Metrics reads revenue with it
+  to list a print, which `sell_print` checks by reading shipping rates before it asks for the
+  sign-off. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
+  `main/printful.ts`) and list a print with `sell_print` (`main/print-listing.ts`): main checks
+  the print files against the product's verified production domains (`productionHosts` in
+  `main/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates
+  (`main/printful.ts`, polled every 3s and backing off on a 429), refuses a price under the
+  floor, and once signed off makes the shipped payment link (`stripeShippedLink` in
+  `main/payment-links.ts`, each POST with an idempotency key) and saves the listing under
+  `products/<slug>/listings/`. Until paid orders are sent to Printful it refuses a live Stripe
+  key. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
+  refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
+  saved one. Metrics reads revenue with the Stripe key
   for every company but
   the one whose `metrics.json` holds the connected account: that one reads through
   `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
@@ -345,7 +350,7 @@ rather than crashing boot.
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make),
-  `printful.ts` (Printful's API: the saved token, and pricing a print),
+  `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
   `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
   `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only

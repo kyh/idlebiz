@@ -134,7 +134,7 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
   await expect(page.getByRole("button", { name: /vercel refused/iu })).toBeVisible();
 });
 
-test("a Printful token Printful takes is kept sealed, shown with its store and removable", async ({
+test("a Printful token Printful takes is kept sealed, shown with its store, replaceable and removable", async ({
   launch,
   root,
 }) => {
@@ -154,7 +154,12 @@ test("a Printful token Printful takes is kept sealed, shown with its store and r
   const secrets = await readSecrets(root);
   expect(secrets.PRINTFUL_TOKEN).toMatch(SEALED);
 
+  const renewed = "pf_e2e_private_token_5432";
+  await budget.getByLabel("New Printful private token").fill(renewed);
+  await budget.getByRole("button", { name: "Replace token" }).click();
+  await expect(budget.getByText("✓ token …5432 · E2E Prints")).toBeVisible();
+
   await budget.getByRole("button", { name: "Remove token" }).click();
-  await expect(budget.getByLabel("Printful private token")).toBeVisible();
+  await expect(budget.getByLabel("Printful private token", { exact: true })).toBeVisible();
   expect(await readSecrets(root)).not.toHaveProperty("PRINTFUL_TOKEN");
 });

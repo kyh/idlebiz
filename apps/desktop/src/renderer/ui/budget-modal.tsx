@@ -162,8 +162,40 @@ const PrintfulToken = () => {
   if (status === null) {
     return null;
   }
-  if (status.state === "set") {
-    return (
+  const token = draft.trim();
+  const sending = saving.submission.kind === "sending";
+  const set = status.state === "set";
+  const saveLabel = set ? "Replace token" : "Save token";
+  // Printful's tokens expire, and a card about one it turned away opens this panel while the
+  // dead token still reads as saved, so a new one can always be pasted over it
+  const entry = (
+    <div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={set ? "New private token" : "Private token"}
+          type="password"
+          aria-label={set ? "New Printful private token" : "Printful private token"}
+          className="px-field flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => saving.submit(token)}
+          disabled={sending || token.length === 0}
+          className="px-btn-accent px-btn"
+        >
+          {sending ? "Checking…" : saveLabel}
+        </button>
+      </div>
+      <Failure submission={saving.submission} doing="save the token" />
+    </div>
+  );
+  if (!set) {
+    return entry;
+  }
+  return (
+    <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-fg">
           ✓ token …{status.last4} · {status.store}
@@ -176,33 +208,9 @@ const PrintfulToken = () => {
         >
           Remove token
         </button>
-        <Failure submission={removing.submission} doing="remove the token" />
       </div>
-    );
-  }
-  const token = draft.trim();
-  const sending = saving.submission.kind === "sending";
-  return (
-    <div>
-      <div className="flex gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Private token"
-          type="password"
-          aria-label="Printful private token"
-          className="px-field flex-1"
-        />
-        <button
-          type="button"
-          onClick={() => saving.submit(token)}
-          disabled={sending || token.length === 0}
-          className="px-btn-accent px-btn"
-        >
-          {sending ? "Checking…" : "Save token"}
-        </button>
-      </div>
-      <Failure submission={saving.submission} doing="save the token" />
+      <Failure submission={removing.submission} doing="remove the token" />
+      {entry}
     </div>
   );
 };
@@ -335,8 +343,9 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
           </div>
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm leading-snug text-fg">
-              A private token lets the team sell printed goods, each listing you sign off, and sends
-              every paid order to Printful, billed to your Printful account. Make one at
+              A private token lets the team sell printed goods, each listing you sign off, printed
+              by Printful and billed to your Printful account. Paid orders are not sent to Printful
+              yet, so listings are made only on a test-mode Stripe key. Make one at
               developers.printful.com/tokens for a single store, with View and manage orders.
             </div>
             <PrintfulToken />

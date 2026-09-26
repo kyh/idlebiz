@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
 import { BadRequestError } from "@/shared/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
+import type { CatalogQuery, CatalogRead } from "./printful";
 import type { RunContext } from "./tools";
 import type { EnvRequest, EnvResult } from "./vercel-env";
 
@@ -80,13 +82,17 @@ const runAs = (employeeId: string) => {
     driver: { pickRunner: () => "claude" },
     employee,
     printListing: {
-      fileProblem: () =>
-        Promise.reject(new Error("fetched a print file without a test asking for it")),
+      catalog: () =>
+        Promise.reject(new Error("read Printful's catalog without a test asking for it")),
       hosts: () =>
         Promise.reject(new Error("asked Vercel for domains without a test asking for it")),
       publish: () => Promise.reject(new Error("listed a print without a test asking for it")),
       quote: () =>
         Promise.reject(new Error("asked Printful for a price without a test asking for it")),
+      readFile: () =>
+        Promise.reject(new Error("fetched a print file without a test asking for it")),
+      shippingAccess: () =>
+        Promise.reject(new Error("asked Stripe about shipping without a test asking for it")),
     },
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
     setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
@@ -1060,8 +1066,10 @@ const PRINT = {
   priceUsd: 28,
   variantIds: [4012, 4013],
 };
-const PRINT_ACTION =
-  'sell "Launch tee" (variants 4012, 4013) printing front (dtg) https://acme-site.vercel.app/print/tee-1.png at $28.00 via Printful on acme';
+/** The print file the product's site serves, and its digest, which the founder signs for. */
+const DESIGN = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 7]);
+const DESIGN_SHA = createHash("sha256").update(DESIGN).digest("hex");
+const PRINT_ACTION = `sell "Launch tee" (variants 4012, 4013) printing front (dtg) https://acme-site.vercel.app/print/tee-1.png sha256:${DESIGN_SHA} at $28.00 via Printful on acme`;
 const LISTED_URL = "https://buy.stripe.com/tee";
 
 interface Sent {
@@ -1069,14 +1077,32 @@ interface Sent {
   method: string;
   path: string;
   form: Record<string, string>;
+  idempotencyKey: string | null;
 }
+
+/** Stripe's answer to a key reading shipping rates, one it grants or turned away with `status`. */
+const shippingRatesAnswer = (status: number): Response =>
+  status === 200
+    ? Response.json({ data: [] })
+    : Response.json(
+        {
+          error: {
+            message: "The provided key does not have the required permissions for this endpoint.",
+          },
+        },
+        { status },
+      );
 
 /**
  * Vercel, the product's own site, Printful and Stripe, as far as listing a print goes. Printful
  * charges $16.40 to California and $18.20 elsewhere, $4.75 and $7.99 of it shipping, and
  * finishes each estimate as soon as it is asked.
  */
-const fakeSellers = ({ fileType = "image/png" } = {}) => {
+const fakeSellers = ({
+  fileType = "image/png",
+  linkTimesOut = false,
+  shippingRates = 200,
+} = {}) => {
   const sent: Sent[] = [];
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     const { host, pathname } = new URL(url);
@@ -1084,6 +1110,7 @@ const fakeSellers = ({ fileType = "image/png" } = {}) => {
     sent.push({
       form: init?.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
       host,
+      idempotencyKey: new Headers(init?.headers).get("idempotency-key"),
       method,
       path: pathname,
     });
@@ -1093,7 +1120,10 @@ const fakeSellers = ({ fileType = "image/png" } = {}) => {
       );
     }
     if (host === "acme-site.vercel.app") {
-      return Promise.resolve(new Response(null, { headers: { "content-type": fileType } }));
+      return Promise.resolve(new Response(DESIGN, { headers: { "content-type": fileType } }));
+    }
+    if (host === "api.stripe.com" && method === "GET") {
+      return Promise.resolve(shippingRatesAnswer(shippingRates));
     }
     if (host === "api.printful.com" && pathname.startsWith("/v2/catalog-variants/")) {
       const id = Number(pathname.split("/").at(-1));
@@ -1118,6 +1148,9 @@ const fakeSellers = ({ fileType = "image/png" } = {}) => {
         Response.json({ data: { costs, failure_reasons: [], id: "t", status: "completed" } }),
       );
     }
+    if (linkTimesOut && pathname === "/v1/payment_links") {
+      return Promise.resolve(new Response(null, { status: 504 }));
+    }
     const made = new Map([
       ["/v1/payment_links", { id: "plink_1", url: LISTED_URL }],
       ["/v1/prices", { id: "price_1" }],
@@ -1134,7 +1167,7 @@ type Keys = Partial<Record<"stripe" | "vercel" | "printful", boolean>>;
 const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[0] = {}) => {
   const secrets = new Map<string, string>();
   if (!missing.stripe) {
-    secrets.set("STRIPE_SECRET_KEY", "sk_live_founder");
+    secrets.set("STRIPE_SECRET_KEY", "sk_test_founder");
   }
   if (!missing.vercel) {
     secrets.set("VERCEL_TOKEN", TOKEN);
@@ -1161,8 +1194,11 @@ describe("sell_print", () => {
       `Held for the founder's sign-off on "${PRINT_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
-    expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");
+    expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
     expect(outward(sent)).toHaveLength(6);
+    expect(
+      sent.filter((s) => s.host === "api.stripe.com" && s.method === "GET").map((s) => s.path),
+    ).toEqual(["/v1/shipping_rates"]);
   });
 
   it("once signed off, lists it on a US-only link at Printful's shipping, tagged and saved", async () => {
@@ -1174,10 +1210,16 @@ describe("sell_print", () => {
     const answer = await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id });
 
     expect(answer).toBe(
-      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 for each one it prints and ships; every paid order goes to Printful automatically.`,
+      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 for each one it prints and ships. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
     );
     const tags = { bet: bet.id, listing: "launch-tee", product: "acme" };
-    expect(sent.filter((s) => s.host === "api.stripe.com")).toEqual([
+    const stripe = outward(sent).filter((s) => s.host === "api.stripe.com");
+    for (const { idempotencyKey } of stripe) {
+      expect(idempotencyKey).toMatch(/^idlebiz-[0-9a-f]{64}$/u);
+    }
+    expect(
+      stripe.map((s) => ({ form: s.form, host: s.host, method: s.method, path: s.path })),
+    ).toEqual([
       {
         form: { currency: "usd", "product_data[name]": "Launch tee", unit_amount: "2800" },
         host: "api.stripe.com",
@@ -1223,9 +1265,10 @@ describe("sell_print", () => {
       betId: bet.id,
       costCents: 1820,
       id: "launch-tee",
+      livemode: false,
       name: "Launch tee",
       paymentLink: { id: "plink_1", url: LISTED_URL },
-      placements: PRINT.placements,
+      placements: [{ ...PRINT.placements[0], sha256: DESIGN_SHA }],
       priceCents: 2800,
       productId: "acme",
       shippingCents: 799,
@@ -1256,15 +1299,92 @@ describe("sell_print", () => {
     expect(link?.form).not.toHaveProperty("metadata[bet]");
   });
 
-  it("refuses a price that loses money, naming the lowest that does not, and asks nobody", async () => {
-    const { ctx, asked, sent } = sellingRun();
+  it.each([11.35, 11.36])(
+    "refuses $%s, a price that loses money, naming the lowest that does not, and asks nobody",
+    async (priceUsd) => {
+      const { ctx, asked, sent } = sellingRun();
 
-    // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
-    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd: 11.35 })).toBe(
-      "$11.35 would lose money on every sale: Printful charges up to $18.20 to print one and ship it in the US, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is $11.37: price it above that, with the margin the bet needs.",
+      // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
+      expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd })).toBe(
+        `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one and ship it in the US, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is $11.37: price it above that, with the margin the bet needs.`,
+      );
+      expect(asked).toEqual([]);
+      expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");
+    },
+  );
+
+  it("takes a price exactly at the floor to the founder", async () => {
+    const { ctx, asked } = sellingRun();
+    await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd: 11.37 });
+    expect(asked).toEqual([
+      {
+        command: PRINT_ACTION.replace("$28.00", "$11.37"),
+        rule: "payments",
+        type: "approval",
+      },
+    ]);
+  });
+
+  it("lists nothing on a live key, since no paid order reaches Printful yet", async () => {
+    const { ctx, asked } = sellingRun();
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({
+        PRINTFUL_STORE: JSON.stringify({ id: 42, name: "Acme Prints" }),
+        PRINTFUL_TOKEN: "pf_founder_token",
+        STRIPE_SECRET_KEY: "rk_live_founder",
+        VERCEL_TOKEN: TOKEN,
+      }),
+    );
+    const sent = fakeSellers();
+    store.grantApproval(ctx.run.taskId, PRINT_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      "IdleBiz does not send paid orders to Printful yet",
     );
     expect(asked).toEqual([]);
-    expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");
+    expect(sent).toEqual([]);
+    expect(store.listListings()).toEqual([]);
+  });
+
+  it("asks the founder to fix a Stripe key that cannot make shipping rates before they sign", async () => {
+    const { ctx, asked, sent } = sellingRun({}, { shippingRates: 403 });
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      "Stripe won't let IdleBiz's key make shipping rates: the founder has a Stripe card waiting",
+    );
+    expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
+    expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
+  });
+
+  it("asks again once the design behind the signed URL has changed", async () => {
+    const { ctx, asked, sent } = sellingRun();
+    store.grantApproval(ctx.run.taskId, PRINT_ACTION.replace(DESIGN_SHA, "0".repeat(64)));
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      "Held for the founder's sign-off",
+    );
+    expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
+    expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
+  });
+
+  it("sends Stripe the same keys when a listing is tried again, so nothing is made twice", async () => {
+    const { ctx } = sellingRun();
+    const keysOf = async () => {
+      const sent = fakeSellers({ linkTimesOut: true });
+      store.grantApproval(ctx.run.taskId, PRINT_ACTION);
+      expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+        "Stripe made no payment link",
+      );
+      return outward(sent)
+        .filter((s) => s.host === "api.stripe.com")
+        .map((s) => s.idempotencyKey);
+    };
+
+    const first = await keysOf();
+    expect(first).toHaveLength(3);
+    expect(await keysOf()).toEqual(first);
+    expect(store.listListings()).toEqual([]);
   });
 
   it.each([
@@ -1344,7 +1464,7 @@ describe("sell_print", () => {
       ],
       [
         "acme-site.vercel.app",
-        () => new Response(null, { headers: { "content-type": "image/png" } }),
+        () => new Response(DESIGN, { headers: { "content-type": "image/png" } }),
       ],
     ]);
     vi.stubGlobal("fetch", (url: string) =>
@@ -1372,5 +1492,80 @@ describe("sell_print", () => {
       "Acme has no Vercel project yet: deploy it with the print file, which makes one, then list it.",
     );
     expect(sent).toEqual([]);
+  });
+});
+
+const CATALOG_TEE = {
+  brand: "Bella + Canvas",
+  id: 71,
+  is_discontinued: false,
+  model: "3001",
+  name: "Unisex Staple T-Shirt",
+  placements: [{ placement: "front", technique: "dtg" }],
+  techniques: [{ key: "dtg" }],
+  type: "T-SHIRT",
+};
+
+/** Priya's run with the founder's keys, reading a catalog that answers `read`. */
+const catalogRun = (read: CatalogRead, missing: Keys = {}) => {
+  const run = sellingRun(missing);
+  const queries: CatalogQuery[] = [];
+  const ctx: RunContext = {
+    ...run.ctx,
+    printListing: {
+      ...run.ctx.printListing,
+      catalog: (query) => {
+        queries.push(query);
+        return Promise.resolve(read);
+      },
+    },
+  };
+  return { ...run, ctx, queries };
+};
+
+describe("printful_catalog", () => {
+  it("lists a page of products, saying how to read the next", async () => {
+    const { ctx, queries } = catalogRun({
+      kind: "products",
+      offset: 0,
+      products: [CATALOG_TEE],
+      total: 120,
+    });
+    expect(await callTool(ctx, "POST /v1/printful-catalog", {})).toBe(
+      `Printful's catalog, from product 1 of 120 that ship to the US (id: name — techniques; discontinued ones left out). Pass "product":<id> for its placements and variants. Pass "offset":50 for the next page.\n71: Unisex Staple T-Shirt (Bella + Canvas 3001) — dtg`,
+    );
+    expect(queries).toEqual([{ offset: 0 }]);
+  });
+
+  it("gives a product's placements and variants as sell_print takes them", async () => {
+    const { ctx, queries } = catalogRun({
+      kind: "product",
+      product: CATALOG_TEE,
+      variants: [
+        { id: 4012, label: "Black / S" },
+        { id: 4013, label: "Black / M" },
+      ],
+    });
+    expect(await callTool(ctx, "POST /v1/printful-catalog", { product: 71 })).toBe(
+      "71: Unisex Staple T-Shirt\nPlacements, as sell_print's placement (technique): front (dtg)\nVariants, as sell_print's variantIds (id: colour / size):\n4012: Black / S\n4013: Black / M",
+    );
+    expect(queries).toEqual([{ product: 71 }]);
+  });
+
+  it("leaves the founder a Printful card with no token", async () => {
+    const { asked, ctx, queries } = catalogRun({ kind: "refused" }, { printful: true });
+    expect(await callTool(ctx, "POST /v1/printful-catalog", {})).toContain(
+      "IdleBiz has no Printful token",
+    );
+    expect(queries).toEqual([]);
+    expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
+  });
+
+  it("asks for a new token once Printful turns the saved one away", async () => {
+    const { asked, ctx } = catalogRun({ kind: "refused" });
+    expect(await callTool(ctx, "POST /v1/printful-catalog", {})).toContain(
+      "Printful turned IdleBiz's token away",
+    );
+    expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
   });
 });

@@ -17,7 +17,7 @@ import type { PaymentLinker } from "@/main/payment-links";
 import { priceFloorCents } from "@/main/print-listing";
 import type { PrintListing } from "@/main/print-listing";
 import { printfulCredential } from "@/main/printful";
-import type { PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
+import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
 import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
 import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
@@ -39,7 +39,8 @@ import { formatUsd, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
 import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
-import type { PrintPlacement } from "@/shared/listing";
+import { CATALOG_PAGE } from "@/shared/listing";
+import type { ListedPlacement, ListingVariant, PrintPlacement } from "@/shared/listing";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
 
@@ -245,14 +246,17 @@ const sellingKeys = (
   return { printful, stripe, vercel };
 };
 
-/** End the call unless every print file is an image the product serves on its production domains right now. */
-const requireServedFiles = async (
+/**
+ * Each placement with the digest of the image the product serves at its URL on its production
+ * domains right now; any other file ends the call.
+ */
+const servedFiles = async (
   ctx: RunContext,
   product: Product,
   binding: VercelBinding,
   token: string,
   placements: readonly PrintPlacement[],
-): Promise<void> => {
+): Promise<ListedPlacement[]> => {
   const read = await ctx.printListing.hosts(binding, token);
   if (read.kind === "refused") {
     return needIntegration(
@@ -268,21 +272,35 @@ const requireServedFiles = async (
       `Vercel could not say where ${product.name} is served (${read.reason}); try again.`,
     );
   }
-  for (const { fileUrl } of placements) {
+  const served: ListedPlacement[] = [];
+  for (const placement of placements) {
+    const { fileUrl } = placement;
     if (!read.hosts.includes(new URL(fileUrl).hostname)) {
       const domains = read.hosts.length === 0 ? "none yet" : read.hosts.join(", ");
       throw new RefusalError(
         `${fileUrl} is not on ${product.name}'s production domains (${domains}): Printful prints only a file the product itself serves, so deploy it there and name that URL.`,
       );
     }
-    const problem = await ctx.printListing.fileProblem(fileUrl);
-    if (problem !== null) {
+    const file = await ctx.printListing.readFile(fileUrl);
+    if (file.kind === "unfit") {
       throw new RefusalError(
-        `Printful could not fetch ${fileUrl}: ${problem}. Deploy the print file first, and check it loads as an image.`,
+        `Printful could not fetch ${fileUrl}: ${file.reason}. Deploy the print file first, and check it loads as an image.`,
       );
     }
+    served.push({ ...placement, sha256: file.sha256 });
   }
+  return served;
 };
+
+/** Ask the founder for a Printful token in place of one Printful turned away, which ends the call. */
+const printfulTurnedAway = (ctx: RunContext): never =>
+  needIntegration(
+    ctx,
+    "printful",
+    "Printful turned IdleBiz's token away (tokens expire): paste a new one",
+    "Printful turned IdleBiz's token away, which happens when it expires: the founder has a Printful card waiting to paste a new one. Continue with what you can — this task resumes automatically once it is saved.",
+    "Printful turned IdleBiz's token away.",
+  );
 
 /** Printful's price for a listing; a token it turns away is asked for anew, which ends the call. */
 const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuote> => {
@@ -292,19 +310,73 @@ const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuot
       return quoted.quote;
     }
     case "refused": {
-      return needIntegration(
-        ctx,
-        "printful",
-        "Printful turned IdleBiz's token away (tokens expire): paste a new one",
-        "Printful turned IdleBiz's token away, which happens when it expires: the founder has a Printful card waiting to paste a new one. Continue with what you can — this task resumes automatically once it is saved.",
-        "Printful turned IdleBiz's token away.",
-      );
+      return printfulTurnedAway(ctx);
     }
     case "failed": {
       throw new RefusalError(`Printful could not price it: ${quoted.reason}`);
     }
     // no default
   }
+};
+
+/** End the call unless the founder's Stripe key can make the listing's shipping rate. */
+const requireShippingAccess = async (ctx: RunContext, key: string): Promise<void> => {
+  const access = await ctx.printListing.shippingAccess(key);
+  switch (access.kind) {
+    case "granted": {
+      return;
+    }
+    case "refused": {
+      return needIntegration(
+        ctx,
+        "stripe",
+        `Stripe won't let IdleBiz's key make shipping rates, which listing a print needs (${access.said}): remove the key and paste one whose restricted permissions include Write on Shipping Rates, or your secret key`,
+        "Stripe won't let IdleBiz's key make shipping rates: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.",
+        "Stripe won't let IdleBiz's key make shipping rates.",
+      );
+    }
+    case "unreachable": {
+      throw new RefusalError(
+        `Stripe could not be asked about shipping rates (${access.reason}); try again.`,
+      );
+    }
+    // no default
+  }
+};
+
+const NO_FULFILMENT =
+  "IdleBiz does not send paid orders to Printful yet, so sell_print lists only on a test-mode Stripe key, and the founder's is live: a live link would take a buyer's money for an item nobody ships. Sell what create_payment_link can for now.";
+
+/** One page of Printful's catalog, a product a line, with how to read the next. */
+const catalogPage = ({
+  offset,
+  products,
+  total,
+}: {
+  offset: number;
+  products: readonly CatalogProduct[];
+  total: number;
+}): string => {
+  if (offset >= total) {
+    return `Printful's catalog lists ${total} products that ship to the US, so none from ${offset + 1}.`;
+  }
+  const next = offset + CATALOG_PAGE;
+  const more = next < total ? ` Pass "offset":${next} for the next page.` : "";
+  const lines = products.map((p) => {
+    const made = [p.brand, p.model].filter(Boolean).join(" ");
+    const how = p.techniques.map((t) => t.key).join(", ");
+    return `${p.id}: ${p.name}${made ? ` (${made})` : ""}${how ? ` — ${how}` : ""}`;
+  });
+  return `Printful's catalog, from product ${offset + 1} of ${total} that ship to the US (id: name — techniques; discontinued ones left out). Pass "product":<id> for its placements and variants.${more}\n${lines.join("\n")}`;
+};
+
+/** A catalog product as sell_print names it: its placements with their techniques, and its variants. */
+const catalogProduct = (product: CatalogProduct, variants: readonly ListingVariant[]): string => {
+  const placements = product.placements.map((p) => `${p.placement} (${p.technique})`);
+  return `${product.id}: ${product.name}${product.is_discontinued === true ? " — discontinued, so it cannot be ordered" : ""}
+Placements, as sell_print's placement (technique): ${placements.join(", ") || "none listed"}
+Variants, as sell_print's variantIds (id: colour / size):
+${variants.map((v) => `${v.id}: ${v.label}`).join("\n")}`;
 };
 
 /** Why a bet takes no more work, in the words the agent should act on. */
@@ -570,6 +642,36 @@ const TOOLS = {
       return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${testMode}`;
     },
   ),
+  printful_catalog: define(TOOL_SPECS.printful_catalog, async (ctx, { offset, product }) => {
+    const credential =
+      printfulCredential() ??
+      needIntegration(
+        ctx,
+        "printful",
+        "to read Printful's catalog for what to sell",
+        "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.",
+        "IdleBiz has no Printful token.",
+      );
+    const read = await ctx.printListing.catalog(
+      product === undefined ? { offset: offset ?? 0 } : { product },
+      credential,
+    );
+    switch (read.kind) {
+      case "products": {
+        return catalogPage(read);
+      }
+      case "product": {
+        return catalogProduct(read.product, read.variants);
+      }
+      case "refused": {
+        return printfulTurnedAway(ctx);
+      }
+      case "failed": {
+        return `Printful's catalog could not be read: ${read.reason}`;
+      }
+      // no default
+    }
+  }),
   sell_print: define(TOOL_SPECS.sell_print, async (ctx, body) => {
     const { bet, name, priceUsd, variantIds, product: named } = body;
     const productId = productFor(ctx, named);
@@ -584,22 +686,27 @@ const TOOLS = {
     if (notTheBet !== null) {
       return notTheBet;
     }
-    const placements = printFileUrls(body.placements);
+    const urls = printFileUrls(body.placements);
     if (product.vercel === null) {
       return `${product.name} has no Vercel project yet: deploy it with the print file, which makes one, then list it.`;
     }
     const priceCents = Math.round(priceUsd * 100);
     const price = formatUsd(priceCents / 100);
     const keys = sellingKeys(ctx, product, name, price);
-    await requireServedFiles(ctx, product, product.vercel, keys.vercel, placements);
+    if (!isTestKey(keys.stripe)) {
+      return NO_FULFILMENT;
+    }
+    const placements = await servedFiles(ctx, product, product.vercel, keys.vercel, urls);
     const quote = await quotePrint(ctx, { credential: keys.printful, placements, variantIds });
     const floor = priceFloorCents(quote);
     const shipping = formatUsd(quote.shippingCents / 100);
     if (priceCents < floor) {
       return `${price} would lose money on every sale: Printful charges up to ${formatUsd(quote.costCents / 100)} to print one and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is ${formatUsd(floor / 100)}: price it above that, with the margin the bet needs.`;
     }
+    await requireShippingAccess(ctx, keys.stripe);
+    // the digest pins the design the founder signs for: a later deploy can change what the URL serves
     const printed = placements
-      .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl}`)
+      .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl} sha256:${p.sha256}`)
       .join(", ");
     // quoted as JSON, so a name cannot pose as more of the action the founder signs
     const action = `sell ${JSON.stringify(name)} (variants ${variantIds.join(", ")}) printing ${printed} at ${price} via Printful on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
@@ -623,6 +730,7 @@ const TOOLS = {
       costCents: quote.costCents,
       createdAt: Date.now(),
       id: listingId,
+      livemode: !isTestKey(keys.stripe),
       name,
       paymentLink: { id: made.id, url: made.url },
       placements,
@@ -632,8 +740,7 @@ const TOOLS = {
       variants: quote.variants,
     });
     post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
-    const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
-    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatUsd(quote.costCents / 100)} for each one it prints and ships; every paid order goes to Printful automatically.${testMode}`;
+    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatUsd(quote.costCents / 100)} for each one it prints and ships.${TEST_MODE}`;
   }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);

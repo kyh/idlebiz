@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
-import { HttpError, postForm } from "@/main/lib/http";
+import { HttpError, getJson, postForm } from "@/main/lib/http";
 import { STRIPE_VERSION } from "@/main/metrics";
 import { errorMessage } from "@/shared/errors";
 import type { ListingVariant } from "@/shared/listing";
@@ -107,25 +108,73 @@ const variantChoice = (variants: readonly ListingVariant[]): Record<string, stri
         ),
       };
 
+/** Whether a key may make shipping rates, which a restricted key needs granted on its own. */
+export type StripeAccess =
+  | { kind: "granted" }
+  | { kind: "refused"; said: string }
+  | { kind: "unreachable"; reason: string };
+
+/**
+ * Ask Stripe whether `key` reaches shipping rates before the founder signs off on a listing,
+ * so a restricted key made before prints were sold is fixed first rather than failing after
+ * the sign-off, halfway through. Only a read can be asked without making one: write implies
+ * read, so this catches a key with no grant there, not one granted Read alone.
+ */
+export const stripeShippingAccess = async (key: string): Promise<StripeAccess> => {
+  try {
+    await getJson(`${API}/v1/shipping_rates?limit=1`, headersFor(key));
+    return { kind: "granted" };
+  } catch (error) {
+    if (error instanceof HttpError && error.refused) {
+      return { kind: "refused", said: stripeSays(error) };
+    }
+    return {
+      kind: "unreachable",
+      reason: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
+    };
+  }
+};
+
+/**
+ * Stripe replays the first answer to a key for 24 hours, so a listing tried again after a
+ * timeout gets back the price, rate and link Stripe already made, rather than a second live
+ * link tagged for it that no saved listing knows. The key covers every field sent, since Stripe
+ * refuses a key sent again with other fields.
+ */
+const idempotencyKey = (
+  listing: string,
+  product: string,
+  path: string,
+  form: Readonly<Record<string, string>>,
+): string =>
+  `idlebiz-${createHash("sha256")
+    .update(JSON.stringify([product, listing, path, form]))
+    .digest("hex")}`;
+
 /**
  * A print-on-demand item's payment link, tagged like any other so its money counts for the
  * product and the bet, and for the listing, so each paid order can be sent to Printful.
  */
 export const stripeShippedLink: ShippedLinker = async (req) => {
   const { bet, key, listing, name, priceCents, product, shippingCents, variants } = req;
-  const headers = headersFor(key);
   const tags: Record<string, string> =
     bet === null ? { listing, product } : { bet, listing, product };
+  const post = (path: string, form: Record<string, string>) =>
+    postForm(
+      `${API}${path}`,
+      { ...headersFor(key), "Idempotency-Key": idempotencyKey(listing, product, path, form) },
+      form,
+    );
   try {
     const price = Created.parse(
-      await postForm(`${API}/v1/prices`, headers, {
+      await post("/v1/prices", {
         currency: "usd",
         "product_data[name]": name,
         unit_amount: String(priceCents),
       }),
     );
     const rate = Created.parse(
-      await postForm(`${API}/v1/shipping_rates`, headers, {
+      await post("/v1/shipping_rates", {
         display_name: "Standard shipping",
         "fixed_amount[amount]": String(shippingCents),
         "fixed_amount[currency]": "usd",
@@ -133,7 +182,7 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
       }),
     );
     const link = LinkWithId.parse(
-      await postForm(`${API}/v1/payment_links`, headers, {
+      await post("/v1/payment_links", {
         "line_items[0][price]": price.id,
         "line_items[0][quantity]": "1",
         "shipping_address_collection[allowed_countries][0]": "US",

@@ -5,6 +5,9 @@ import { z } from "zod";
 // (`front`, `embroidery_chest_left`, `dtg`); holding them to that keeps what the founder signs
 // plain.
 
+/** How many products one page of Printful's catalog lists: enough to skim, few enough to read. */
+export const CATALOG_PAGE = 50;
+
 const PrintfulKeySchema = z
   .string()
   .regex(/^[a-z0-9_]{1,40}$/u, "Printful's own lowercase name, such as front or dtg");
@@ -16,6 +19,12 @@ export const PrintPlacementSchema = z.strictObject({
   technique: PrintfulKeySchema,
 });
 export type PrintPlacement = z.infer<typeof PrintPlacementSchema>;
+
+/** A placement as it was signed off: with the digest of the file its URL served then, which an order is checked against. */
+const ListedPlacementSchema = PrintPlacementSchema.extend({
+  sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+});
+export type ListedPlacement = z.infer<typeof ListedPlacementSchema>;
 
 /** A Printful catalog variant a buyer can pick, labelled as Printful names it (colour / size). */
 const ListingVariantSchema = z.object({
@@ -31,9 +40,11 @@ export const ListingSchema = z.object({
   costCents: z.number().int().nonnegative(),
   createdAt: z.number(),
   id: z.string().min(1),
+  /** False for a link made with a test-mode key, whose payments are money nobody paid. */
+  livemode: z.boolean(),
   name: z.string().min(1),
   paymentLink: z.object({ id: z.string().min(1), url: z.url() }),
-  placements: z.array(PrintPlacementSchema).min(1),
+  placements: z.array(ListedPlacementSchema).min(1),
   /** The retail price, which the packing slip shows the buyer instead of Printful's. */
   priceCents: z.number().int().positive(),
   productId: z.string().min(1),

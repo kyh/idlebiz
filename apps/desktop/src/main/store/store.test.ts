@@ -1174,10 +1174,16 @@ const listingOf = (productId: string, id: string) => ({
   costCents: 1820,
   createdAt: 1,
   id,
+  livemode: false,
   name: "Launch tee",
   paymentLink: { id: "plink_1", url: "https://buy.stripe.com/tee" },
   placements: [
-    { fileUrl: "https://acme.vercel.app/tee.png", placement: "front", technique: "dtg" },
+    {
+      fileUrl: "https://acme.vercel.app/tee.png",
+      placement: "front",
+      sha256: "a".repeat(64),
+      technique: "dtg",
+    },
   ],
   priceCents: 2800,
   productId,

@@ -1,10 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
-import { HttpError, fetchOk, getJson } from "@/main/lib/http";
+import { HttpError, fetchOk } from "@/main/lib/http";
+import { report } from "@/main/lib/report";
 import { PRINTFUL_STORE, PRINTFUL_TOKEN, getSecret } from "@/main/secrets";
 import { errorMessage } from "@/shared/errors";
 import { jsonValueSchema, parseJson } from "@/shared/json";
 import type { JsonValue } from "@/shared/json";
+import { CATALOG_PAGE } from "@/shared/listing";
 import type { ListingVariant, PrintPlacement } from "@/shared/listing";
 import { RefusalError } from "@/shared/refusal";
 
@@ -69,21 +71,90 @@ export const printfulSays = (error: HttpError): string => {
     : `Printful answered ${error.status}: ${words}`;
 };
 
-export const printfulGet = (path: string, token: string, storeId?: number): Promise<JsonValue> =>
-  getJson(`${PRINTFUL_API}${path}`, printfulHeaders(token, storeId), TIMEOUT_MS);
+/** How often estimates are polled, and how long a rate-limited call first waits before it is tried again. */
+export interface Pacing {
+  pollMs: number;
+  backoffMs: number;
+}
 
-const printfulPost = async (
+// Printful allows 120 calls a minute, refilled as a leaky bucket. A listing polls its three
+// sample addresses' estimates at once: every 3s that is 60 calls a minute, leaving room for the
+// rest. Its X-Ratelimit-Reset header comes with no documented unit, so a 429 is waited out by
+// doubling instead: the bucket refills two calls a second.
+const PACING: Pacing = { backoffMs: 2000, pollMs: 3000 };
+const RATE_LIMIT_RETRIES = 3;
+
+const printfulCall = async (path: string, init: RequestInit, backoffMs: number) => {
+  const call = async () => {
+    const res = await fetchOk(`${PRINTFUL_API}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return jsonValueSchema.parse(await res.json());
+  };
+  for (let attempt = 0; attempt < RATE_LIMIT_RETRIES; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.status !== 429) {
+        throw error;
+      }
+      await sleep(backoffMs * 2 ** attempt);
+    }
+  }
+  return await call();
+};
+
+export const printfulGet = (
+  path: string,
+  token: string,
+  storeId?: number,
+  backoffMs = PACING.backoffMs,
+): Promise<JsonValue> =>
+  printfulCall(path, { headers: printfulHeaders(token, storeId) }, backoffMs);
+
+const printfulPost = (
   path: string,
   { token, storeId }: PrintfulCredential,
   body: JsonValue,
-): Promise<JsonValue> => {
-  const res = await fetchOk(`${PRINTFUL_API}${path}`, {
-    body: JSON.stringify(body),
-    headers: { ...printfulHeaders(token, storeId), "Content-Type": "application/json" },
-    method: "POST",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  return jsonValueSchema.parse(await res.json());
+  backoffMs: number,
+): Promise<JsonValue> =>
+  printfulCall(
+    path,
+    {
+      body: JSON.stringify(body),
+      headers: { ...printfulHeaders(token, storeId), "Content-Type": "application/json" },
+      method: "POST",
+    },
+    backoffMs,
+  );
+
+/** What a failed Printful read leaves the caller: `refused` is the token turned away, which only a new one fixes; `failed` says why, to the agent. */
+type PrintfulFailure = { kind: "refused" } | { kind: "failed"; reason: string };
+
+const UNREADABLE_ANSWER =
+  "Printful answered in a shape IdleBiz does not read, which a change on Printful's side causes; try again later";
+
+/**
+ * Run a read of Printful's, answering its failure as what the caller acts on. An answer the
+ * schemas refuse is a fault as well as the agent's sentence: Printful's v2 is still in beta.
+ */
+const readingPrintful = async <T>(
+  what: string,
+  read: () => Promise<T>,
+): Promise<T | PrintfulFailure> => {
+  try {
+    return await read();
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return error.refused ? { kind: "refused" } : { kind: "failed", reason: printfulSays(error) };
+    }
+    if (error instanceof z.ZodError) {
+      report(`printful ${what}`, error);
+      return { kind: "failed", reason: UNREADABLE_ANSWER };
+    }
+    return { kind: "failed", reason: errorMessage(error) };
+  }
 };
 
 /** What a listing is priced from: the variants it offers and what goes where on them. */
@@ -103,11 +174,7 @@ export interface PrintQuote {
   shippingCents: number;
 }
 
-/** `refused` is the token turned away, which only a new one fixes; `failed` says why, to the agent. */
-export type QuoteResult =
-  | { kind: "quoted"; quote: PrintQuote }
-  | { kind: "refused" }
-  | { kind: "failed"; reason: string };
+export type QuoteResult = { kind: "quoted"; quote: PrintQuote } | PrintfulFailure;
 
 export type PrintQuoter = (req: QuoteRequest) => Promise<QuoteResult>;
 
@@ -121,15 +188,16 @@ const SAMPLE_ADDRESSES = [
   { country_code: "US", state_code: "HI", zip: "96813" },
 ] as const;
 
-const VariantSchema = z.object({
-  data: z.object({
-    catalog_product_id: z.number(),
-    color: z.string().nullish(),
-    id: z.number(),
-    name: z.string(),
-    size: z.string().nullish(),
-  }),
+const CatalogVariantSchema = z.object({
+  catalog_product_id: z.number(),
+  color: z.string().nullish(),
+  id: z.number(),
+  name: z.string(),
+  size: z.string().nullish(),
 });
+type CatalogVariant = z.infer<typeof CatalogVariantSchema>;
+
+const VariantSchema = z.object({ data: CatalogVariantSchema });
 
 const CostsSchema = z.object({
   currency: z.string().nullable(),
@@ -150,8 +218,6 @@ type EstimateTask = z.infer<typeof TaskSchema>["data"];
 /** How long one estimate may take to finish, polled every `pollMs`. */
 const ESTIMATE_DEADLINE_MS = 60_000;
 
-type CatalogVariant = z.infer<typeof VariantSchema>["data"];
-
 const labelOf = ({ color, name, size }: CatalogVariant): string =>
   ([color, size].filter(Boolean).join(" / ") || name).slice(0, 100);
 
@@ -166,10 +232,12 @@ const centsOf = (amount: string | null, what: string): number => {
 const variantOf = async (
   id: number,
   { token, storeId }: PrintfulCredential,
+  { backoffMs }: Pacing,
 ): Promise<CatalogVariant> => {
   try {
-    return VariantSchema.parse(await printfulGet(`/v2/catalog-variants/${id}`, token, storeId))
-      .data;
+    return VariantSchema.parse(
+      await printfulGet(`/v2/catalog-variants/${id}`, token, storeId, backoffMs),
+    ).data;
   } catch (error) {
     if (error instanceof HttpError && error.status === 404) {
       throw new RefusalError(`Printful's catalog has no variant ${id}.`);
@@ -181,7 +249,7 @@ const variantOf = async (
 const settled = async (
   task: EstimateTask,
   { token, storeId }: PrintfulCredential,
-  pollMs: number,
+  { backoffMs, pollMs }: Pacing,
 ): Promise<EstimateTask> => {
   const deadline = Date.now() + ESTIMATE_DEADLINE_MS;
   let current = task;
@@ -195,6 +263,7 @@ const settled = async (
         `/v2/order-estimation-tasks?id=${encodeURIComponent(current.id)}`,
         token,
         storeId,
+        backoffMs,
       ),
     ).data;
   }
@@ -207,26 +276,31 @@ const estimate = async (
   placements: readonly PrintPlacement[],
   recipient: (typeof SAMPLE_ADDRESSES)[number],
   credential: PrintfulCredential,
-  pollMs: number,
+  pacing: Pacing,
 ): Promise<{ total: number; shipping: number }> => {
   const posted = TaskSchema.parse(
-    await printfulPost("/v2/order-estimation-tasks", credential, {
-      order_items: [
-        {
-          catalog_variant_id: variantId,
-          placements: placements.map(({ fileUrl, placement, technique }) => ({
-            layers: [{ type: "file", url: fileUrl }],
-            placement,
-            technique,
-          })),
-          quantity: 1,
-          source: "catalog",
-        },
-      ],
-      recipient: { ...recipient },
-    }),
+    await printfulPost(
+      "/v2/order-estimation-tasks",
+      credential,
+      {
+        order_items: [
+          {
+            catalog_variant_id: variantId,
+            placements: placements.map(({ fileUrl, placement, technique }) => ({
+              layers: [{ type: "file", url: fileUrl }],
+              placement,
+              technique,
+            })),
+            quantity: 1,
+            source: "catalog",
+          },
+        ],
+        recipient: { ...recipient },
+      },
+      pacing.backoffMs,
+    ),
   ).data;
-  const done = await settled(posted, credential, pollMs);
+  const done = await settled(posted, credential, pacing);
   if (done.status === "failed" || done.costs === null) {
     const why = done.failure_reasons.join(" ") || "it gave no reason";
     throw new RefusalError(
@@ -246,17 +320,16 @@ const estimate = async (
 
 /**
  * Price a listing the way Printful will charge for it: an estimate for each variant with the
- * exact design, to each sample address, keeping the most any of them costs. The addresses run
- * together, the variants one after another, well inside Printful's 120 calls a minute.
+ * exact design, to each sample address, keeping the most any of them costs.
  */
-export const printfulQuote = async (
+export const printfulQuote = (
   { credential, placements, variantIds }: QuoteRequest,
-  { pollMs = 1000 }: { pollMs?: number } = {},
-): Promise<QuoteResult> => {
-  try {
+  pacing: Pacing = PACING,
+): Promise<QuoteResult> =>
+  readingPrintful("quote", async (): Promise<QuoteResult> => {
     const variants: CatalogVariant[] = [];
     for (const id of variantIds) {
-      variants.push(await variantOf(id, credential));
+      variants.push(await variantOf(id, credential, pacing));
     }
     const products = new Set(variants.map((v) => v.catalog_product_id));
     if (products.size > 1) {
@@ -270,7 +343,7 @@ export const printfulQuote = async (
     let shippingCents = 0;
     for (const { id } of variants) {
       const costs = await Promise.all(
-        SAMPLE_ADDRESSES.map((to) => estimate(id, placements, to, credential, pollMs)),
+        SAMPLE_ADDRESSES.map((to) => estimate(id, placements, to, credential, pacing)),
       );
       costCents = Math.max(costCents, ...costs.map((c) => c.total));
       shippingCents = Math.max(shippingCents, ...costs.map((c) => c.shipping));
@@ -283,10 +356,79 @@ export const printfulQuote = async (
         variants: variants.map((v) => ({ id: v.id, label: labelOf(v) })),
       },
     };
-  } catch (error) {
-    if (!(error instanceof HttpError)) {
-      return { kind: "failed", reason: errorMessage(error) };
+  });
+
+const CatalogProductSchema = z.object({
+  brand: z.string().nullish(),
+  id: z.number().int(),
+  is_discontinued: z.boolean().nullish(),
+  model: z.string().nullish(),
+  name: z.string(),
+  placements: z
+    .array(z.object({ placement: z.string(), technique: z.string() }))
+    .nullish()
+    .transform((placements) => placements ?? []),
+  techniques: z
+    .array(z.object({ key: z.string() }))
+    .nullish()
+    .transform((techniques) => techniques ?? []),
+  type: z.string().nullish(),
+});
+export type CatalogProduct = z.infer<typeof CatalogProductSchema>;
+
+const PagingSchema = z.object({ offset: z.number(), total: z.number() });
+
+const ProductsSchema = z.object({ data: z.array(CatalogProductSchema), paging: PagingSchema });
+const ProductSchema = z.object({ data: CatalogProductSchema });
+const VariantsSchema = z.object({ data: z.array(CatalogVariantSchema) });
+
+/** One page of the products Printful ships to the US, or one product with every variant a listing can offer. */
+export type CatalogRead =
+  | { kind: "products"; products: CatalogProduct[]; offset: number; total: number }
+  | { kind: "product"; product: CatalogProduct; variants: ListingVariant[] }
+  | PrintfulFailure;
+
+export type CatalogQuery = { product: number } | { offset: number };
+
+export type CatalogReader = (
+  query: CatalogQuery,
+  credential: PrintfulCredential,
+) => Promise<CatalogRead>;
+
+/** Printful's catalog, read with the founder's token: v2 serves it to a signed-in caller only. */
+export const printfulCatalog: CatalogReader = (query, { token, storeId }) =>
+  readingPrintful("catalog", async (): Promise<CatalogRead> => {
+    if ("offset" in query) {
+      const page = ProductsSchema.parse(
+        await printfulGet(
+          `/v2/catalog-products?destination_country=US&limit=${CATALOG_PAGE}&offset=${query.offset}`,
+          token,
+          storeId,
+        ),
+      );
+      return {
+        kind: "products",
+        offset: page.paging.offset,
+        products: page.data.filter((p) => p.is_discontinued !== true),
+        total: page.paging.total,
+      };
     }
-    return error.refused ? { kind: "refused" } : { kind: "failed", reason: printfulSays(error) };
-  }
-};
+    try {
+      const product = ProductSchema.parse(
+        await printfulGet(`/v2/catalog-products/${query.product}`, token, storeId),
+      ).data;
+      const variants = VariantsSchema.parse(
+        await printfulGet(`/v2/catalog-products/${query.product}/catalog-variants`, token, storeId),
+      ).data;
+      return {
+        kind: "product",
+        product,
+        variants: variants.map((v) => ({ id: v.id, label: labelOf(v) })),
+      };
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) {
+        return { kind: "failed", reason: `Printful's catalog has no product ${query.product}.` };
+      }
+      throw error;
+    }
+  });
