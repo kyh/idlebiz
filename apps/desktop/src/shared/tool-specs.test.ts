@@ -50,12 +50,21 @@ describe("tool specs", () => {
   it.each([
     [{ question: "Monthly or yearly?" }, true],
     [{ action: "Buy acme.dev", instructions: "Any registrar; send me the account email." }, true],
-    [{ action: "Buy acme.dev", draft: "", instructions: "..." }, false],
+    [{ action: "Buy acme.dev", draft: "", instructions: "..." }, true],
+    [{ action: "Buy acme.dev", draft: null, instructions: "..." }, true],
     [{ action: "Buy acme.dev" }, false],
     [{ action: "Buy acme.dev", instructions: "...", question: "Or not?" }, false],
   ])("takes %j as an ask: %s", (body, ok) => {
     expect(TOOL_SPECS.ask_boss.body.safeParse(body).success).toBe(ok);
   });
+
+  it.each([{}, { action: "Buy acme.dev" }, { action: "Buy", draft: 3, instructions: "..." }])(
+    "answers %j with the two shapes an ask takes",
+    (body) => {
+      const parsed = TOOL_SPECS.ask_boss.body.safeParse(body);
+      expect(parsed.error?.issues[0]?.message).toContain('{"action":"...","instructions":"..."}');
+    },
+  );
 
   it("tells the lead each metric's floor", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");

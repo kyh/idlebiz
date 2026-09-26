@@ -10,7 +10,7 @@ const Draft = ({ text }: { text: string }) => {
   const { submission, submit } = useSubmission(() => copyText(text));
   return (
     <div className="mt-2">
-      <pre className="px-inset px-code px-scroll max-h-40 overflow-y-auto p-2">{text}</pre>
+      <pre className="px-inset px-draft px-scroll max-h-40 overflow-y-auto p-2">{text}</pre>
       <div className="mt-1 flex justify-end">
         <button type="button" onClick={() => submit()} className="px-btn">
           {submission.kind === "sent" ? "Copied ✓" : "Copy draft"}
@@ -23,7 +23,8 @@ const Draft = ({ text }: { text: string }) => {
 
 /**
  * A step only the founder can take, as the teammate wrote it up. Done carries whatever they
- * type back to the run as written, a product's key included; Can't carries why.
+ * type back to the run as written, a product's key included, into the continuation's TASK.md,
+ * which every run can read; Can't carries why.
  */
 export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk }) => {
   const [text, setText] = useState("");
@@ -49,7 +50,10 @@ export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk
         disabled={decided}
       />
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-fg-dim">{by}&apos;s run gets what you type, as written.</span>
+        <span className="text-xs text-fg-dim">
+          {by}&apos;s run gets what you type, as written, and it stays in the task, where any
+          teammate can read it.
+        </span>
         <span className="flex gap-2">
           <button
             type="button"

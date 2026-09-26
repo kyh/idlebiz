@@ -190,7 +190,7 @@ const assignmentBrief = (
           `Hypothesis: ${bet.hypothesis}`,
           `It wins only if it brings in ${betGoal(bet)} (so far: ${betProgress(bet)}) — the app judges that from the live number, not from what anyone reports. ${betMark(bet)}`,
           `${betMoney(bet)} of its budget is spent; when the budget runs out the work stops. Once the lead calls the work live, the number gets ${bet.windowHours}h to answer.`,
-          `If the next step is waiting on the founder (a connection, an approval) and a teammate has already asked, do not ask again: do what can be done without it, or stop.`,
+          `If the next step is waiting on the founder (a connection, an approval, an action) and a teammate has already asked, do not ask again: do what can be done without it, or stop.`,
           `Do the one thing most likely to move that number. Shipping is not the goal; the number is.`,
           isLeader
             ? `When the work that could move it is out the door, call measure_bet so the spending stops and the clock starts. If the bet is plainly dead, kill_bet and say why.`
@@ -347,13 +347,31 @@ export const founderPing = (text: string): TaskBrief => ({
   title: `Founder: ${text.slice(0, 48)}`,
 });
 
+/** `text` in a code fence that no run of backticks inside it closes early. */
+const fenced = (text: string): string[] => {
+  const longest = Math.max(2, ...Array.from(text.matchAll(/`+/gu), ([run]) => run.length));
+  const fence = "`".repeat(longest + 1);
+  return [fence, text, fence];
+};
+
+/** Every line of `text` quoted, so a line break cannot end the quote early. */
+const quoted = (text: string): string =>
+  text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+
 const askInWords = (ask: BlockedAsk): string => {
   switch (ask.type) {
     case "question": {
       return ask.question;
     }
     case "action": {
-      return `a step only a human could take: ${ask.action}. ${ask.instructions}`;
+      return [
+        `a step only a human could take: ${ask.action}`,
+        ask.instructions,
+        ...(ask.draft === null ? [] : ["The draft they were handed:", ...fenced(ask.draft)]),
+      ].join("\n");
     }
     case "approval": {
       return `permission to run \`${ask.command}\``;
@@ -369,10 +387,10 @@ const askInWords = (ask: BlockedAsk): string => {
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
   description: [
     "This task was waiting on the founder for:",
-    `> ${askInWords(ask)}`,
+    quoted(askInWords(ask)),
     "",
     "The founder answered:",
-    `> ${answer}`,
+    quoted(answer),
     "",
     `Continue the work with that answer. Original task: ${task.title}`,
     ...(task.description === null ? [] : ["", task.description]),

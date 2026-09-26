@@ -313,7 +313,9 @@ describe("company tools", () => {
   it("keeps the first thing a run asks the founder", async () => {
     const { ctx, asked } = runAs("priya");
     await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
-    await callTool(ctx, "POST /v1/request-integration", { kind: "vercel", reason: "to deploy" });
+    expect(
+      await callTool(ctx, "POST /v1/request-integration", { kind: "vercel", reason: "to deploy" }),
+    ).toContain("The founder was not asked");
     expect(asked).toEqual([{ question: "Ship it?", type: "question" }]);
     expect(ctx.asks.current()).toEqual({ question: "Ship it?", type: "question" });
   });
@@ -326,7 +328,7 @@ describe("company tools", () => {
     });
     const second = await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
     expect(card).toContain("action card");
-    expect(second).toContain("Not sent");
+    expect(second).toContain("The founder was not asked");
     expect(asked).toEqual([
       {
         action: "Post the launch thread",
@@ -335,6 +337,16 @@ describe("company tools", () => {
         type: "action",
       },
     ]);
+  });
+
+  it.each([null, "", "  "])("takes a draft of %j as none", async (draft) => {
+    const { ctx, asked } = runAs("priya");
+    await callTool(ctx, "POST /v1/ask-boss", {
+      action: "Buy acme.dev",
+      draft,
+      instructions: "...",
+    });
+    expect(asked).toMatchObject([{ draft: null, type: "action" }]);
   });
 
   it("delegates to a teammate by role, against the run's bet", async () => {
@@ -684,6 +696,18 @@ describe("create_payment_link", () => {
       `Held for the founder's sign-off on "${action}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("says a sign-off was never asked for when the run already asked the founder something", async () => {
+    const { ctx, asked, stripe } = chargingRun();
+    await callTool(ctx, "POST /v1/ask-boss", { action: "Verify the email", instructions: "..." });
+
+    const held = await callTool(ctx, "POST /v1/payment-link", LINK);
+    expect(held).toContain(`Held for the founder's sign-off on "payment link`);
+    expect(held).toContain("The founder was not asked");
+    expect(held).not.toContain("the task resumes on their answer");
+    expect(asked).toMatchObject([{ type: "action" }]);
     expect(stripe).toEqual([]);
   });
 

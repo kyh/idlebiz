@@ -207,6 +207,19 @@ describe("the brief that carries the founder's answer", () => {
     expect(text).not.toContain("You previously asked");
   });
 
+  it("quotes every line of the ask and the answer", () => {
+    const ask: BlockedAsk = {
+      action: "Post the launch thread",
+      draft: "Run it:\n```\nnpx acme\n```",
+      instructions: "Post it.\nSend me its URL.",
+      type: "action",
+    };
+    const text = continuationBrief(task, ask, "Done.\nhttps://x.dev/1").description;
+    expect(text).toContain("> Post it.\n> Send me its URL.");
+    expect(text).toContain("> ````\n> Run it:\n> ```\n> npx acme\n> ```\n> ````");
+    expect(text).toContain("The founder answered:\n> Done.\n> https://x.dev/1");
+  });
+
   it("carries the original task's description, when it has one", () => {
     const ask: BlockedAsk = { question: "Monthly or yearly?", type: "question" };
     expect(briefOn(ask)).toContain(
@@ -238,7 +251,7 @@ describe("the brief that carries the founder's answer", () => {
         instructions: "Post it on r/SideProject.",
         type: "action",
       },
-      "> a step only a human could take: Post the launch thread. Post it on r/SideProject.",
+      "> a step only a human could take: Post the launch thread\n> Post it on r/SideProject.\n> The draft they were handed:\n> ```\n> We built a thing.\n> ```",
       "[action]",
     ],
   ])("reads a %j ask in words, not as TASK.md stores it", (ask, words, stored) => {

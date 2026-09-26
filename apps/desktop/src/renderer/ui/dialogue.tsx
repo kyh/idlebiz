@@ -7,6 +7,7 @@ import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
+import { ActionCard } from "@/renderer/ui/action-card";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { RichText } from "@/renderer/ui/linkify";
 import { useModal } from "@/renderer/ui/modal";
@@ -189,15 +190,16 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   );
   const { list: tasks, options } = fetched.kind === "ready" ? fetched.value : NOTHING_FETCHED;
 
-  // only free-text questions get the inline answer form; integration asks
-  // live in the inbox where the [Connect] button is. Shown only for a current
-  // list: the moment an answer lands, the status event makes this one stale,
-  // and a form for a question already answered would send twice.
+  // only questions and actions are answered here; integration asks live in the
+  // inbox where the [Connect] button is. Shown only for a current list: the
+  // moment an answer lands, the status event makes this one stale, and a form
+  // for an ask already answered would send twice.
   const asked =
     fetched.kind === "ready" && fetched.current
-      ? tasks.filter(taskIn("blocked")).find((t) => t.state.ask.type === "question")
+      ? tasks
+          .filter(taskIn("blocked"))
+          .find((t) => t.state.ask.type === "question" || t.state.ask.type === "action")
       : undefined;
-  const question = asked && asked.state.ask.type === "question" ? asked.state.ask.question : null;
   // the menu: main's options for this employee, then Talk… for free text. It
   // waits for the options so it opens on the first one, not on Talk.
   const rows: Row[] = [
@@ -307,15 +309,19 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
           </div>
           <div className="dlg-body">
             <EmployeeTag name={emp.name} title={jobTitle(emp)} status={emp.status} size="lg" />
-            {asked && question !== null ? (
+            {asked?.state.ask.type === "action" ? (
+              <ActionCard t={asked} by={emp.name} ask={asked.state.ask} />
+            ) : null}
+            {asked?.state.ask.type === "question" ? (
               <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
                 <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
                 <div className="mt-1 text-sm leading-snug text-fg">
-                  <RichText text={question} />
+                  <RichText text={asked.state.ask.question} />
                 </div>
                 <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
               </div>
-            ) : (
+            ) : null}
+            {asked ? null : (
               <div className="px-scroll flex min-h-[64px] flex-1 flex-col overflow-y-auto">
                 <Speech key={latest?.id ?? "flavor"} text={speech.slice(0, 280)} />
                 {trail.length > 0 ? (

@@ -91,6 +91,16 @@ const post = (ctx: RunContext, text: string, to: string | null = null): void => 
 const productFor = (ctx: RunContext, named: string | undefined): string | null =>
   named ?? ctx.run.productId ?? store.attentionProduct()?.id ?? null;
 
+const UNSENT =
+  "The founder was not asked: this run already asked them something, and only a run's first ask reaches them. Note it, and try again once they answer.";
+
+/**
+ * Leave the founder `ask` and answer `sent`; or, since only a run's first ask reaches them, say
+ * that this one did not, after `why` it was needed.
+ */
+const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why = ""): string =>
+  ctx.asks.raise(ask) ? sent : `${why} ${UNSENT}`.trim();
+
 /**
  * Spend the founder's sign-off on `action` in this task, or ask them for it and
  * end the call. The action is the approval's key, so it reads as what is signed.
@@ -99,9 +109,14 @@ const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId): void
   if (store.consumeApproval(ctx.run.taskId, action)) {
     return;
   }
-  ctx.asks.raise({ command: action, rule, type: "approval" });
+  const held = `Held for the founder's sign-off on "${action}".`;
   throw new RefusalError(
-    `Held for the founder's sign-off on "${action}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    askFounder(
+      ctx,
+      { command: action, rule, type: "approval" },
+      `${held} End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+      held,
+    ),
   );
 };
 
@@ -177,16 +192,17 @@ const TOOLS = {
         ? { question: body.question, type: "question" }
         : {
             action: body.action,
-            draft: body.draft ?? null,
+            draft: body.draft,
             instructions: body.instructions,
             type: "action",
           };
-    if (!ctx.asks.raise(ask)) {
-      return "Not sent: this run already asked the founder something, and only a run's first ask reaches them. Note this one and raise it once they answer.";
-    }
-    return ask.type === "question"
-      ? "Your question was sent to the founder. Note it and continue with anything you can still do."
-      : "The founder has your action card. Note it and continue with anything that does not wait on it.";
+    return askFounder(
+      ctx,
+      ask,
+      ask.type === "question"
+        ? "Your question was sent to the founder. Note it and continue with anything you can still do."
+        : "The founder has your action card. Note it and continue with anything that does not wait on it.",
+    );
   }),
   message_team: define(TOOL_SPECS.message_team, (ctx, { text }) => {
     // Free-form chat is capped here, not in the room: every teammate's brief reads it.
@@ -225,10 +241,13 @@ const TOOLS = {
     return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
   }),
   read_bets: define(TOOL_SPECS.read_bets, () => betLedger(store.listBets())),
-  request_integration: define(TOOL_SPECS.request_integration, (ctx, { kind, reason }) => {
-    ctx.asks.raise({ integration: kind, reason, type: "integration" });
-    return `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`;
-  }),
+  request_integration: define(TOOL_SPECS.request_integration, (ctx, { kind, reason }) =>
+    askFounder(
+      ctx,
+      { integration: kind, reason, type: "integration" },
+      `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
+    ),
+  ),
   deploy: define(TOOL_SPECS.deploy, async (ctx, { product: named }) => {
     const productId = productFor(ctx, named);
     if (productId === null) {
@@ -240,12 +259,12 @@ const TOOLS = {
     }
     const token = getSecret("VERCEL_TOKEN");
     if (!token) {
-      ctx.asks.raise({
-        integration: "vercel",
-        reason: `to deploy ${product.name}`,
-        type: "integration",
-      });
-      return "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
+      return askFounder(
+        ctx,
+        { integration: "vercel", reason: `to deploy ${product.name}`, type: "integration" },
+        "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.",
+        "Vercel is not connected.",
+      );
     }
     const target: DeployTarget =
       product.vercel === null
@@ -254,12 +273,17 @@ const TOOLS = {
     requireSignOff(ctx, deployAction(product.id, target), "deploy");
     const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token });
     if (deployed.kind === "name-taken") {
-      ctx.asks.raise({
-        integration: "vercel",
-        reason: `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
-        type: "integration",
-      });
-      return `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it. The founder has a Vercel card waiting to bind ${product.name} to its project; this task resumes once they do. Continue with what you can.`;
+      const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
+      return askFounder(
+        ctx,
+        {
+          integration: "vercel",
+          reason: `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
+          type: "integration",
+        },
+        `${refused} The founder has a Vercel card waiting to bind ${product.name} to its project; this task resumes once they do. Continue with what you can.`,
+        refused,
+      );
     }
     // a new project exists from its first deployment on, live or not
     const made = target.kind === "new" ? deployed.project : null;
@@ -305,12 +329,16 @@ const TOOLS = {
       const price = formatUsd(cents / 100);
       const key = getSecret(STRIPE_SECRET_KEY);
       if (!key) {
-        ctx.asks.raise({
-          integration: "stripe",
-          reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
-          type: "integration",
-        });
-        return "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
+        return askFounder(
+          ctx,
+          {
+            integration: "stripe",
+            reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
+            type: "integration",
+          },
+          "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.",
+          "IdleBiz has no Stripe key to charge with.",
+        );
       }
       // quoted as JSON, so a name cannot pose as more of the action the founder signs
       const action = `payment link ${JSON.stringify(name)} at ${price} on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;

@@ -375,6 +375,16 @@
   word-break: break-all;
 }
 
+/* Prose to paste, as written: wrapped between words, and a long URL wherever it must be. */
+.px-draft {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .px-link {
   font-family: inherit;
   font-size: 11px;

@@ -112,7 +112,10 @@ allocator and the replay.
   (`{action, instructions, draft?}`): a step no tool takes, such as posting from the founder's
   accounts, signing up, buying a domain or verifying an email. The founder answers Done, with
   an optional note that reaches the run as written (a product's own key included, by the
-  founder's choice), or Can't, with why (`resolveAction`). The task blocks like a question's,
+  founder's choice), or Can't, with why (`resolveAction`). That note lands in the
+  continuation's TASK.md, which every run can read, and the card says so: sealing it
+  elsewhere would narrow nothing while the runner's own transcript holds the prompt. Only a
+  run's first ask reaches the founder; every tool that asks says so when its ask was dropped. The task blocks like a question's,
   so its bet gets no hands meanwhile. The agents are told to propose actions rather than
   stall, and to keep questions rare. TASK.md keeps an action behind `[action] ` as JSON, and
   escapes any question starting with `[` behind `[ask] `, so no agent's text reads back as an

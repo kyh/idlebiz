@@ -973,7 +973,7 @@ describe("an action only the founder can take", () => {
 
     expect(continuation).toMatchObject({ assigneeId: "mae", betId: bet.id });
     expect(continuation.description).toContain(
-      "> a step only a human could take: Post the launch thread.",
+      "> a step only a human could take: Post the launch thread\n",
     );
     expect(continuation.description).toContain(
       "Done. They sent back: https://reddit.com/r/SideProject/1",
