@@ -228,11 +228,12 @@ rather than crashing boot.
   cache, `/private/tmp`, its runner's agent-browser namespace and node CLIs'
   `~/Library/Preferences/*-nodejs`, and nothing else in HOME or the save. Inside those it
   still cannot write what the founder's own CLI loads from the runner's home (`RUNNER_HOMES`),
-  claude's auto-memory of other folders, a PATH folder there, or, in its own folders, git's
-  config and hooks, `.claude/settings*.json`, `.mcp.json` and `.codex/`. Reads are open but
+  claude's auto-memory of other folders, a PATH folder there, or, in its own folders, anything
+  in `.git/` but what git writes as it works (objects, refs, logs, the index, merge and rebase
+  state), `.claude/settings*.json`, `.mcp.json` and `.codex/`. Reads are open but
   for the founder's logins (`LOGINS`), `secrets.json` and the other runner's home. No socket
-  of the founder's (ssh, gpg and 1Password agents, container engines, the founder's own
-  agent-browser daemons or the other runner's) and no loopback debug port (9222, 9229)
+  of the founder's (ssh, gpg and 1Password agents, container engines, claude's session sockets,
+  the codex app's, the founder's own agent-browser daemons or the other runner's) and no loopback debug port (9222, 9229)
   answers a run; LaunchServices opens nothing for it, and codex runs reach no Keychain. Main
   makes a product's workspace a repository before its run and sets the run's git identity by
   env; toolchain caches go to `cache/` by env (`TOOL_CACHE_ENV` in

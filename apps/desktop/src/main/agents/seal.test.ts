@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -179,7 +180,7 @@ describe("sealedCommand", () => {
     const save = lineOf("deny", "file-write*", "/Users/me/.idlebiz");
     const reopened = lineOf("allow", "file-write*", WORKSPACE);
     const config = lineOf("deny", "file-write*", "/Users/me/.claude/settings");
-    const opened = lines.findIndex((line) => line.includes('(require-any (regex #"/\\.git/'));
+    const opened = lines.findIndex((line) => line.includes('(require-not (regex #"/\\.git/'));
     const kept = lineOf("deny", "file-write-create file-write-unlink", WORKSPACE);
     expect([scratch, save, reopened, config, opened, kept].every((at) => at > -1)).toBe(true);
     expect(scratch).toBeLessThan(save);
@@ -569,6 +570,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".claude/local/claude",
               ".claude/shell-snapshots/snapshot-zsh-1.sh",
               ".claude/session-env/a/hook-0.sh",
+              ".claude/chrome/chrome-native-host",
+              ".claude/ide/41234.lock",
             ]
           : [
               ".codex/config.toml",
@@ -580,6 +583,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".codex/skills/a/SKILL.md",
               ".codex/plugins/a.json",
               ".codex/packages/standalone/bin/codex",
+              ".codex/.env",
+              ".codex/.env.local",
+              ".codex/shell_snapshots/a.sh",
+              ".codex/memories/memory_summary.md",
+              ".codex/computer-use/Codex Computer Use.app/Contents/MacOS/run",
+              ".codex/worktrees/a/app/package.json",
             ];
       const kept = config.map(plant);
       const state = (
@@ -669,15 +678,26 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         plant(".idlebiz/acme/workspace/.git/hooks/pre-commit.sample"),
         at(".idlebiz/acme/workspace/.git/hooks/pre-commit"),
         at(".idlebiz/acme/workspace/.git/config.lock"),
+        at(".idlebiz/acme/workspace/.git/commondir"),
+        plant(".idlebiz/acme/workspace/.git/info/attributes"),
         plant(".idlebiz/acme/workspace/.git/worktrees/w/config.worktree"),
+        at(".idlebiz/acme/workspace/.git/worktrees/w/commondir"),
+        plant(".idlebiz/acme/workspace/.git/modules/m/config"),
+        plant(".idlebiz/acme/workspace/.git/objects/info/alternates"),
         plant(".idlebiz/acme/workspace/web/.git/config"),
         at(".idlebiz/acme/workspace/.mcp.json"),
         plant(".idlebiz/acme/workspace/.claude/settings.json"),
         at(".idlebiz/acme/workspace/.claude/settings.local.json"),
         at(".idlebiz/acme/agents/ann/memory/.codex"),
       ];
+      mkdirSync(at(".idlebiz/acme/workspace/.git/objects/ab"), { recursive: true });
+      mkdirSync(at(".idlebiz/acme/workspace/.git/logs"), { recursive: true });
       const work = [
         plant(".idlebiz/acme/workspace/.git/index"),
+        at(".idlebiz/acme/workspace/.git/index.lock"),
+        at(".idlebiz/acme/workspace/.git/COMMIT_EDITMSG"),
+        at(".idlebiz/acme/workspace/.git/objects/ab/cdef"),
+        at(".idlebiz/acme/workspace/.git/logs/HEAD"),
         plant(".idlebiz/acme/workspace/.git/refs/heads/main"),
         plant(".idlebiz/acme/workspace/.claude/notes.md"),
         plant(".idlebiz/acme/workspace/src/config"),
@@ -686,6 +706,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       const workspace = at(".idlebiz/acme/workspace");
       expect(
         await tryAs(runner, {
+          dirs: [path.join(workspace, ".git/alt")],
           moves: [
             [path.join(workspace, ".git"), path.join(workspace, "git-old")],
             [path.join(workspace, ".claude"), path.join(workspace, "claude-old")],
@@ -697,9 +718,50 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         ...all(work, "written"),
         [path.join(workspace, ".claude")]: "EPERM",
         [path.join(workspace, ".git")]: "EPERM",
+        [path.join(workspace, ".git/alt")]: "EPERM",
       });
     },
   );
+
+  it("lets a run commit, branch, merge, rebase, stash and gc in the repository main made, never changing its config", () => {
+    const workspace = at(".idlebiz/acme/workspace");
+    const env = {
+      GIT_AUTHOR_EMAIL: "ann@idlebiz.local",
+      GIT_AUTHOR_NAME: "Ann",
+      GIT_COMMITTER_EMAIL: "ann@idlebiz.local",
+      GIT_COMMITTER_NAME: "Ann",
+      HOME: home,
+      PATH: "/usr/bin:/bin",
+    };
+    spawnSync("/usr/bin/git", ["init", "-q", "-b", "main"], { cwd: workspace, env });
+    const config = readFileSync(path.join(workspace, ".git/config"), "utf-8");
+    const work = [
+      "echo a > a && git add a && git commit -qm a",
+      "git checkout -qb feature && echo b > b && git add b && git commit -qm b",
+      "git checkout -q main && echo c > c && git add c && git commit -qm c",
+      "git merge -q --no-edit feature",
+      "git checkout -qb topic feature && echo d > d && git add d && git commit -qm d",
+      "git rebase -q main",
+      "echo e >> a && git stash -q && git stash pop -q",
+      "git diff --stat && git log --oneline",
+      "git gc -q",
+    ].join(" && ");
+    return seal().then((sealed) => {
+      const run = (script: string) => {
+        const [bin = "", ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
+        return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
+      };
+      const done = run(`set -e; ${work}`);
+      expect(done.stderr).toBe("");
+      expect(done.status).toBe(0);
+      expect(run("git config user.name Mallory").status).not.toBe(0);
+      expect(run("git worktree add -q ../w").status).not.toBe(0);
+      expect(readFileSync(path.join(workspace, ".git/config"), "utf-8")).toBe(config);
+      expect(run("git log --format=%an topic").stdout.trim().split("\n")).toEqual(
+        Array.from({ length: 5 }, () => "Ann"),
+      );
+    });
+  });
 
   it("keeps a run from reading a sibling of secrets.json, where the save is named and where it leads", async () => {
     link("linked-save", "elsewhere/idlebiz/");
@@ -935,6 +997,15 @@ for (const target of targets) {
       });
     });
 
+    it("is out of reach where the codex app listens in codex's home, though a codex run writes the rest of it", async () => {
+      const app = await listen(path.join(short, ".codex/ipc/ipc.sock"));
+      const other = await listen(path.join(short, ".codex/tmp/run.sock"));
+      expect(await connect("codex", [app, other])).toEqual({
+        [app]: "EPERM",
+        [other]: "reached",
+      });
+    });
+
     it("reaches only the agent-browser daemons its own runner's runs start", async () => {
       const namespaces = path.join(short, ".agent-browser/namespaces");
       const [claude, codex, founder] = await Promise.all([
@@ -1069,6 +1140,13 @@ describe.skipIf(!onMac)("sealRuns", () => {
       { match: "subpath", path: path.join(realpathSync(root), "acme/workspace") },
     ]);
     expect(seal.debugPorts).toEqual([9222, 9229]);
+    expect(seal.sockets).toEqual(
+      expect.arrayContaining(
+        ["/var/run/docker.sock", "/private/tmp/cc-socks", "/private/tmp/codex-browser-use"].map(
+          (at) => ({ match: "subpath", path: at }),
+        ),
+      ),
+    );
   });
 
   it("finds a runner's home where the founder moved it", async () => {

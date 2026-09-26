@@ -72,9 +72,10 @@ const LOGINS = [
 ];
 
 /**
- * Each runner's home: the state its runs write, and what in it its CLI loads and runs in the
- * founder's own sessions, which they do not. Each of `config` is a prefix, since a CLI writes a
- * file through a sibling it renames over it.
+ * Each runner's home: the state its runs write, what in it its CLI loads and runs in the
+ * founder's own sessions, which they do not write, and the sockets there of what acts as the
+ * founder. Each of `config` is a prefix, since a CLI writes a file through a sibling it renames
+ * over it; one ending in a slash is only that folder, where a sibling shares its name's start.
  */
 const RUNNER_HOMES = {
   claude: {
@@ -94,9 +95,14 @@ const RUNNER_HOMES = {
       // sourced before each command the founder's own sessions run
       "shell-snapshots",
       "session-env",
+      // the native host Chrome runs for claude's extension
+      "chrome",
+      // each names an IDE's MCP server, which the founder's sessions connect to
+      "ide",
     ],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
+    sockets: [],
   },
   codex: {
     config: [
@@ -108,22 +114,35 @@ const RUNNER_HOMES = {
       "skills",
       "plugins",
       "packages",
+      // loaded into the env of every command codex runs
+      ".env",
+      "shell_snapshots",
+      "memories/",
+      // the desktop app runs its computer-use app from here, and works in its worktrees
+      "computer-use",
+      "worktrees",
     ],
     dir: ".codex",
     override: "CODEX_HOME",
+    // the desktop app's, which starts threads for whoever asks
+    sockets: ["ipc"],
   },
 } as const satisfies Record<
   AgentRunner,
-  { config: readonly string[]; dir: string; override: string }
+  { config: readonly string[]; dir: string; override: string; sockets: readonly string[] }
 >;
 
 /**
  * What the founder's own tools run from a folder of the run's the moment they open it: git's
- * config and hooks (a shell prompt runs git status there), claude's project settings and MCP
- * servers, codex's project config. Matched at any depth, a nested repository's included.
+ * (a shell prompt runs git status there), claude's project settings and MCP servers, codex's
+ * project config. In a repository's folder a run writes only what git writes as it stages,
+ * commits, branches, stashes, merges and rebases: the rest is what git obeys, its config and
+ * hooks and every file that names another folder's (`commondir`, `worktrees/`, `modules/`,
+ * an alternate object store).
  */
 const OPENED_AS_FOUNDER = [
-  String.raw`(regex #"/\.git/((worktrees|modules)/.+/)?(config|config\.worktree|hooks)(\.lock)?(/|$)")`,
+  String.raw`(require-all (regex #"/\.git/") (require-not (regex #"/\.git/((objects|refs|logs|rebase-merge|rebase-apply|sequencer|rr-cache)(/|$)|(index|index\.stash\.[0-9]+|next-index-[0-9]+|HEAD|ORIG_HEAD|FETCH_HEAD|MERGE_HEAD|MERGE_MSG|MERGE_MODE|MERGE_RR|AUTO_MERGE|CHERRY_PICK_HEAD|REVERT_HEAD|REBASE_HEAD|BISECT_[A-Z_]+|COMMIT_EDITMSG|SQUASH_MSG|TAG_EDITMSG|packed-refs(\.new)?|info/refs(_[A-Za-z0-9]+)?|shallow|gc\.pid|gc\.log)(\.lock)?$)")))`,
+  String.raw`(regex #"/\.git/objects/info/(http-)?alternates")`,
   String.raw`(regex #"/\.claude/settings[^/]*$")`,
   String.raw`(regex #"/\.mcp\.json$")`,
   String.raw`(regex #"/\.codex(/|$)")`,
@@ -149,8 +168,17 @@ const FOUNDER_SOCKETS = [
   ".local/share/containers",
 ];
 
-/** Container engines outside HOME: Docker's socket and podman's machine sockets in TMPDIR. */
-const ENGINE_SOCKETS = ["/var/run/docker.sock", path.join(tmpdir(), "podman")];
+/**
+ * Sockets outside HOME of what acts as the founder: Docker's, podman's machine sockets in TMPDIR,
+ * claude's sessions, which take messages from each other, and the codex app's browser tool, which
+ * drives the founder's Chrome.
+ */
+const OUTSIDE_SOCKETS = [
+  "/var/run/docker.sock",
+  path.join(tmpdir(), "podman"),
+  "/private/tmp/cc-socks",
+  "/private/tmp/codex-browser-use",
+];
 
 // IdleBiz's own renderer in dev (`--remoteDebuggingPort 9222`) and node's inspector: either
 // answers anyone on loopback, and the renderer holds the founder's approve button.
@@ -574,7 +602,11 @@ const runnerHomeOf = async (
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
   const configs = await Promise.all(
-    config.map((name) => reachOf(path.join(folder, name), "prefix")),
+    config.map((name) =>
+      name.endsWith("/")
+        ? reachOf(path.join(folder, name.slice(0, -1)))
+        : reachOf(path.join(folder, name), "prefix"),
+    ),
   );
   const names = inHome ? await readdir(home).catch(() => []) : [];
   const linked = await Promise.all(
@@ -658,6 +690,7 @@ export const sealFor = async ({
     runnerHomeOf(realHome, "claude", env),
     runnerHomeOf(realHome, "codex", env),
   ]);
+  const homes = { claude, codex };
   const scratchReaches = await reachesOf([...new Set(scratch)]);
   const browserRoot = path.join(realHome, ".agent-browser");
   const namespaceOf = (runner: AgentRunner): Reach => ({
@@ -694,12 +727,17 @@ export const sealFor = async ({
     debugPorts,
     onPath: candidates.filter(inRoot),
     preferences: path.join(realHome, "Library", "Preferences"),
-    runners: { claude, codex },
+    runners: homes,
     save: await reachOf(save),
     scratch: scratchReaches,
     sockets: [
+      ...(await reachesOf(
+        RUNNER_IDS.flatMap((id) =>
+          RUNNER_HOMES[id].sockets.map((name) => path.join(homes[id].folder, name)),
+        ),
+      )),
       ...(await under(FOUNDER_SOCKETS)),
-      ...(await reachesOf(ENGINE_SOCKETS)),
+      ...(await reachesOf(OUTSIDE_SOCKETS)),
       ...(sshAgent === null ? [] : await reachOf(sshAgent)),
     ],
     unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly, "prefix"))],

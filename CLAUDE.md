@@ -130,10 +130,9 @@ allocator and the replay.
   with the founder's own key (`main/payment-links.ts`; a Connect grant is read-only),
   tagging each payment for its product and a named open revenue bet on it. Nothing pushes
   code: the founder pushes by hand, from a fresh clone (`git clone --no-local <workspace>`),
-  never with git inside the workspace. A run writes that repository's config and hooks
-  (`core.fsmonitor`, `core.hooksPath`, `core.sshCommand`, `credential.helper`…), and git obeys
-  them there, unsealed, as the founder — so does a git-aware shell prompt or editor opened on
-  the folder. A clone runs only upload-pack there, which runs nothing its config names since
+  never with git inside the workspace. The seal keeps a run from git's config and hooks there,
+  but git run in the folder still obeys what a run leaves in it (a rebase's todo list, a
+  `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there, which runs nothing its config names since
   git stopped lazy-fetching a partial clone's missing objects (2.45.1; 2.39.4 and the other
   backports). The prompts and the questions IdleBiz asks the founder say so.
   Each signed tool runs once the founder signs off on the action it names:
@@ -219,11 +218,14 @@ allocator and the replay.
   folders, then re-denies inside them: what the runner's CLI loads in the founder's own
   sessions (`RUNNER_HOMES`: claude's settings, instructions, rules, hooks, skills, agents,
   commands, plugins, shell snapshots…; codex's `config.toml`, hooks, `AGENTS*`, rules,
-  prompts, skills, plugins, packages; claude's auto-memory of every folder but the run's
-  own), a PATH folder that lies in a root (a shim folder in TMPDIR) with every folder above
+  prompts, skills, plugins, packages, `.env*`, shell snapshots, memories, the desktop app's
+  computer-use app and worktrees; claude's Chrome native host, IDE lock files and auto-memory
+  of every folder but the run's own), a PATH folder that lies in a root (a shim folder in TMPDIR) with every folder above
   it there, and in the run's own folders what the founder's tools run on opening one
-  (`.git/config` and `hooks/` at any depth, `.claude/settings*.json`, `.mcp.json`, `.codex/`,
-  and the `.git`/`.claude` folders themselves). Main makes a product's workspace a
+  (in `.git/` at any depth, everything but what git writes as it stages, commits, branches,
+  stashes, merges, rebases and gcs — so no config, hooks, `commondir`, `worktrees/`, `modules/`
+  or alternates; `.claude/settings*.json`, `.mcp.json`, `.codex/`; and the `.git`/`.claude`
+  folders themselves). Main makes a product's workspace a
   repository before its run (`ensureRepository`, macOS's git) and names the run's commits by
   `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, since no run writes git config. Seatbelt matches the path
   a symlink leads to, so each path is sealed where it is named and where it resolves as the
@@ -232,8 +234,10 @@ allocator and the replay.
   A run cannot remove, move or replace one of its own folders; main makes them first.
   Besides files: no socket of the founder's answers a run (an ssh or gpg agent under a
   sealed path, 1Password's, Secretive's, launchd's, main's `SSH_AUTH_SOCK`, an ssh-agent
-  started from a terminal, which cannot be renamed out from under its rule, and Docker's,
-  OrbStack's, Colima's, Lima's, Rancher's and podman's), nor another agent-browser daemon
+  started from a terminal, which cannot be renamed out from under its rule, Docker's,
+  OrbStack's, Colima's, Lima's, Rancher's and podman's, claude's sessions' `/tmp/cc-socks`,
+  which take messages from each other, and the codex app's `~/.codex/ipc` and
+  `/tmp/codex-browser-use`, which starts threads and drives the founder's Chrome), nor another agent-browser daemon
   than its runner's (`browserNamespace`, keyed by save and runner, under
   `AGENT_BROWSER_SOCKET_DIR`), nor loopback's 9222 and 9229 (the dev renderer's debug port
   holds the founder's approve button); LaunchServices opens nothing (only the CLI sign-in
@@ -254,8 +258,8 @@ allocator and the replay.
   the login stores (another project's `.env`, transcripts); the Keychain and
   `~/.claude.json` to claude runs, which share the founder's login (claude reads its login
   from the Keychain and rewrites `~/.claude.json`, whose `mcpServers` load in the founder's
-  sessions), and the rest of each runner's state (codex's memories, session logs, claude's
-  IDE lock files); a program a run builds can still send Apple Events (macOS asks the
+  sessions), and the rest of each runner's state (session logs, which codex's own memory
+  pass reads, what codex stages in `.tmp/`, claude's `daemon/` and `jobs/`); a program a run builds can still send Apple Events (macOS asks the
   founder first: refuse it); a socket or debugger listening under another name; the
   founder's git run inside a workspace laid out other than as `.git/` (push from a fresh
   clone); and anything the founder runs from TMPDIR or `/private/tmp` that no PATH entry
