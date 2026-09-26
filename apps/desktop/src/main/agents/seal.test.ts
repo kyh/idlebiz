@@ -46,7 +46,7 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
-  claudeMemory: { own: null, projects: "/Users/me/.claude/projects" },
+  claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
   debugPorts: [9222],
   namespaces: {
     claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
@@ -56,14 +56,13 @@ const SEAL: Seal = {
   preferences: "/Users/me/Library/Preferences",
   runners: {
     claude: {
+      account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       config: [{ match: "prefix", path: "/Users/me/.claude/settings" }],
       folder: "/Users/me/.claude",
-      state: [
-        { match: "subpath", path: "/Users/me/.claude" },
-        { match: "prefix", path: "/Users/me/.claude.json" },
-      ],
+      state: [{ match: "subpath", path: "/Users/me/.claude" }],
     },
     codex: {
+      account: [],
       config: [{ match: "prefix", path: "/Users/me/.codex/config.toml" }],
       folder: "/Users/me/.codex",
       state: [{ match: "subpath", path: "/Users/me/.codex" }],
@@ -169,8 +168,8 @@ describe("sealedCommand", () => {
   it("closes the save, reopens the run's own folders, then holds every later rule inside them", () => {
     const seal: Seal = {
       ...SEAL,
-      claudeMemory: {
-        own: "/Users/me/.claude/projects/-w/memory",
+      claudeProjects: {
+        own: "/Users/me/.claude/projects/-w",
         projects: "/Users/me/.claude/projects",
       },
       writable: [{ match: "subpath", path: WORKSPACE }],
@@ -189,18 +188,15 @@ describe("sealedCommand", () => {
     expect(reopened).toBeLessThan(opened);
     expect(reopened).toBeLessThan(kept);
     expect(denied("file-write-create file-write-unlink")).toContain(WORKSPACE);
-    const others = lines.findIndex((line) => line.includes("/memory(/|$)"));
+    const others = lineOf("deny", "file-write*", "/Users/me/.claude/projects");
     expect(others).toBeGreaterThan(-1);
-    const ownMemory = lineOf("allow", "file-write*", "/Users/me/.claude/projects/-w/memory");
-    expect(ownMemory).toBeGreaterThan(others);
-    // what the founder's tools run on opening a folder holds in the run's own memory too
-    expect(ownMemory).toBeLessThan(opened);
-    expect(
-      lineOf("allow", "file-write-create file-write-unlink", "/Users/me/.claude/projects/-w"),
-    ).toBeGreaterThan(
-      lineOf("deny", "file-write-create file-write-unlink", "/Users/me/.claude/projects"),
+    const ownProject = lineOf("allow", "file-write*", "/Users/me/.claude/projects/-w");
+    expect(ownProject).toBeGreaterThan(others);
+    // what the founder's tools run on opening a folder holds in the run's own project too
+    expect(ownProject).toBeLessThan(opened);
+    expect(readBack(sealedCommand(seal, "codex", [])).params).not.toContain(
+      "/Users/me/.claude/projects",
     );
-    expect(readBack(sealedCommand(seal, "codex", [])).profile).not.toContain("/memory(/|$)");
   });
 
   it("lets no run open anything through LaunchServices, and only a sign-in open the browser", () => {
@@ -243,8 +239,8 @@ describe("sealedCommand", () => {
       ...SEAL,
       debugPorts: [],
       runners: {
-        claude: { config: [], folder: "/Users/me/.claude", state: [] },
-        codex: { config: [], folder: "/Users/me/.codex", state: [] },
+        claude: { account: [], config: [], folder: "/Users/me/.claude", state: [] },
+        codex: { account: [], config: [], folder: "/Users/me/.codex", state: [] },
       },
       save: [],
       scratch: [],
@@ -422,8 +418,9 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     runner: "claude" | "codex",
     files: Attempts,
     sealed: Promise<Seal> = seal(),
+    command: typeof sealedCommand = sealedCommand,
   ) => {
-    const argv = sealedCommand(await sealed, runner, [
+    const argv = command(await sealed, runner, [
       process.execPath,
       "-e",
       TRY_FILES,
@@ -571,6 +568,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".claude/settings.json",
               ".claude/settings.local.json",
               ".claude/settings.json.tmp.1",
+              ".claude/.config.json",
+              ".claude/backups/.claude.json.backup.1",
+              ".claude.json",
+              ".claude.json.backup",
+              ".claude.json.tmp.1.2",
               ".claude/CLAUDE.md",
               ".claude/rules/a.md",
               ".claude/hooks/pre.sh",
@@ -622,7 +624,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       const kept = config.map(plant);
       const state = (
         runner === "claude"
-          ? [".claude/projects/a/session.jsonl", ".claude.json", ".claude.json.backup"]
+          ? [".claude/todos/a.json", ".claude/file-history/a/b", ".claude/history.jsonl"]
           : [".codex/sessions/a.jsonl", ".codex/history.jsonl", ".codex/memories_1.sqlite"]
       ).map(plant);
       // a name that only starts like the home's, such as the founder's worktrees of real repositories
@@ -639,6 +641,14 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     },
   );
 
+  it("lets only the sign-in write claude's account file, whose MCP servers start in the founder's sessions", async () => {
+    const account = [plant(".claude.json"), at(".claude.json.tmp.1.2")];
+    expect(await tryAs("claude", { writes: account })).toEqual(all(account, "EPERM"));
+    expect(await tryAs("claude", { writes: account }, seal(), signInCommand)).toEqual(
+      all(account, "written"),
+    );
+  });
+
   it("keeps a runner's instructions where a symlink leads, as a dotfile manager sets them up", async () => {
     const target = link(".claude/CLAUDE.md", "tmp/dots/CLAUDE.md");
     const scratch = plant("tmp/dots/notes.md");
@@ -648,21 +658,25 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
-  it("lets a claude run keep what it learns about its own folder, and no other's", async () => {
+  it("lets a claude run keep its own folder's transcripts and memory, and no other's", async () => {
     const workspace = realpathSync(at(".idlebiz/acme/workspace"));
-    const mine = at(
-      `.claude/projects/${workspace.replaceAll(/[^a-zA-Z0-9]/gu, "-")}/memory/MEMORY.md`,
-    );
-    mkdirSync(path.dirname(mine), { recursive: true });
+    const project = at(`.claude/projects/${workspace.replaceAll(/[^a-zA-Z0-9]/gu, "-")}`);
+    mkdirSync(at(".claude/projects"), { recursive: true });
+    const mine = path.join(project, "memory/MEMORY.md");
+    const session = path.join(project, "session.jsonl");
     const theirs = plant(".claude/projects/-Users-me-app/memory/MEMORY.md");
     const transcript = plant(".claude/projects/-Users-me-app/session.jsonl");
-    expect(await tryAs("claude", { writes: [mine, theirs, transcript] })).toEqual({
-      [mine]: "written",
-      [theirs]: "EPERM",
-      [transcript]: "written",
+    expect(
+      await tryAs("claude", {
+        dirs: [path.dirname(mine)],
+        writes: [mine, session, theirs, transcript],
+      }),
+    ).toEqual({
+      ...all([mine, session], "written"),
+      ...all([theirs, transcript], "EPERM"),
+      [path.dirname(mine)]: "made",
     });
-    // a folder is checked where it goes, never what it carries: none that holds a memory moves
-    const project = path.dirname(path.dirname(mine));
+    // a folder is checked where it goes, never what it carries: none moves in or out
     const other = at(".claude/projects/-Users-me-app");
     const planted = plant("tmp/planted/memory/MEMORY.md");
     expect(
@@ -1195,6 +1209,10 @@ describe.skipIf(!onMac)("sealRuns", () => {
     expect(seal.runners.claude.state).toEqual([
       { match: "subpath", path: path.join(home, ".claude") },
       { match: "subpath", path: path.join(box, "dotfiles/claude") },
+    ]);
+    expect(seal.runners.claude.account).toEqual([
+      { match: "prefix", path: path.join(home, ".claude/.claude.json") },
+      { match: "prefix", path: path.join(box, "dotfiles/claude/.claude.json") },
       { match: "prefix", path: path.join(home, ".claude.json") },
     ]);
     expect(seal.runners.claude.config).toContainEqual({

@@ -136,7 +136,7 @@ third boundary.
     logins), `secrets.json` with every name that starts with it, and the other runner's home.
   - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its
     workspace, the shared one, its memory, the save's `cache/`), its runner's home (`~/.claude`
-    and `~/.claude.json*`, or `~/.codex`), TMPDIR, macOS's per-user temp and cache folders,
+    or `~/.codex`), TMPDIR, macOS's per-user temp and cache folders,
     `/private/tmp`, its runner's agent-browser namespace, node CLIs'
     `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `TOOL_CACHE_ENV`
     (`agent-driver.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
@@ -144,13 +144,19 @@ third boundary.
   - Seatbelt obeys the last rule a path matches, so inside those folders the profile denies
     again what the founder's own tools load or run later: what the runner's CLI or desktop app
     loads from its home (`RUNNER_HOMES`: settings, instructions, rules, hooks, skills, plugins,
-    shell snapshots, daemons…), claude's memory of every folder but the run's own, a PATH folder
-    inside one of them with every folder above it there, and, anywhere, what the founder's
-    tools run on opening a folder: in `.git/` everything but what git writes as it stages,
+    shell snapshots, daemons…), claude's transcripts and memory of every folder but the run's
+    own (`projects/`, which the founder's sessions there resume and load), a PATH folder inside
+    one of them with every folder above it there, and, anywhere, what the founder's tools run
+    on opening a folder: in `.git/` everything but what git writes as it stages,
     commits, branches, stashes, merges, rebases and gcs (so no config, hooks, `commondir`,
     `worktrees/`, `modules/` or alternates), `.claude/settings*.json`, `.mcp.json`, `.codex/`,
     and the `.git`/`.claude` folders themselves. Seatbelt checks a moved folder where it lands,
     never what it carries, so these hold in TMPDIR and `cache/` too.
+  - Nor does a run write claude's account file (`account` in `RUNNER_HOMES`: `~/.claude.json`
+    with every name that starts with it, or the one in `CLAUDE_CONFIG_DIR`), its backups or the
+    legacy `.config.json` claude reads in its place: the MCP servers named there, user-wide or
+    per project, start in the founder's own sessions, unsealed. claude runs without writing it;
+    only the sign-in, which records the login there, does.
   - Seatbelt matches the path a symlink leads to, never the link, so each sealed path is named
     where it is and where it resolves. A run's own folders are allowed only where the save
     resolves: a run whose folder, or any folder between it and the save, is a symlink does not
@@ -175,7 +181,7 @@ third boundary.
     refusal is listed in Settings beside what boot skipped, and a CLI sign-in retry checks
     again. Main starts a runner's CLI itself only sealed as that runner: its version and login
     probes, `codex mcp list`, and the sign-in (`sealedSignIn`, the only one that may open the
-    browser). The installer runs in `/bin/bash -c`, never a login shell. The login-shell PATH
+    browser or write claude's account file). The installer runs in `/bin/bash -c`, never a login shell. The login-shell PATH
     probe (`adoptShellPath`) runs unsealed: no run writes the founder's shell startup files.
     `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands through a planted
     link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session
@@ -262,16 +268,14 @@ $<amount> on <product> for bet <slug>`. A sign-off belongs to the continuation t
 - **What stays open**, on purpose or for want of a rule:
   - the network: a run can send what it reads anywhere;
   - reads across HOME outside the login stores (another project's `.env`, transcripts);
-  - to claude runs, which share the founder's login, the Keychain (claude reads its login
+  - to claude runs, which share the founder's login, the Keychain: claude reads its login
     there, so a token the founder's `gh` or git keeps there is guarded only by the tripwire's
-    `read-credentials` and `git-push` holds) and `~/.claude.json` (claude rewrites it; its
-    `mcpServers` load in the founder's own sessions);
-  - the rest of each runner's state: session logs and transcripts (which codex's own memory
-    pass reads), claude's session registry, codex's thread and queue databases;
+    `read-credentials` and `git-push` holds;
+  - the rest of each runner's state: claude's prompt history and session registry, codex's
+    session logs (which its own memory pass reads), thread and queue databases;
   - the runners' shared ground: every run writes `cache/` and a product's workspace, so code a
     codex run leaves there (a package script, a `node_modules/.bin` shim) runs in the next
     claude run, with the Keychain and claude's login;
-  - a git dependency, which npm and pnpm clone into a `.git` no run may make, fails;
   - a program a run builds can still send Apple Events (macOS asks the founder first: refuse
     it), and a debugger listening on a port other than 9222 or 9229 takes its orders;
   - the founder's git run inside a workspace (push from a fresh clone), and anything the

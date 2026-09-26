@@ -1,6 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -19,7 +27,8 @@ import { parseJson } from "@/shared/json";
 // turn claude's own sandbox on, as a founder's may. It proves the session's flag-tier settings
 // keep that sandbox off, so a command runs inside the seal instead of failing to nest, and
 // still asks IdleBiz first, so holdFor still judges it; that no MCP server of the founder's starts;
-// and that a run cannot rewrite the settings the founder's own claude loads, and still runs.
+// and that a run cannot rewrite the settings or account file the founder's own claude loads,
+// and still runs and keeps its transcript.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -234,7 +243,8 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     home = path.join(base, "home");
     // where the founder's claude keeps its config, so the seal treats it as theirs
     configDir = path.join(home, ".claude");
-    mkdirSync(configDir, { recursive: true });
+    // main makes it before every claude run, which cannot
+    mkdirSync(path.join(configDir, "projects"), { recursive: true });
     writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(FOUNDER_SETTINGS));
     // a server of the founder's, which leaves a mark if a run starts it
     const founderServer = {
@@ -358,6 +368,22 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       expect(result.end).toEqual({ kind: "completed" });
       expect(outputs.join("\n")).toMatch(/operation not permitted/iu);
       expect(readFileSync(settings, "utf-8")).toBe(JSON.stringify(FOUNDER_SETTINGS));
+    },
+  );
+
+  it(
+    "keeps its transcript in its own folder's project, and names no MCP server in the founder's account file",
+    { timeout: 60_000 },
+    async () => {
+      const account = path.join(configDir, ".claude.json");
+      const before = readFileSync(account, "utf-8");
+      const { result } = await turn(`echo '{"mcpServers":{}}' > ${account}`, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(outputs.join("\n")).toMatch(/operation not permitted/iu);
+      expect(readFileSync(account, "utf-8")).toBe(before);
+      const cwd = await realPathOf(workspace);
+      const project = path.join(configDir, "projects", cwd.replaceAll(/[^a-zA-Z0-9]/gu, "-"));
+      expect(readdirSync(project).some((file) => file.endsWith(".jsonl"))).toBe(true);
     },
   );
 });

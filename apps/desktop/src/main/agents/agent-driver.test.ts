@@ -54,7 +54,7 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
-  claudeMemory: { own: null, projects: "/Users/me/.claude/projects" },
+  claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
   debugPorts: [9222],
   namespaces: {
     claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
@@ -64,14 +64,13 @@ const SEAL: Seal = {
   preferences: "/Users/me/Library/Preferences",
   runners: {
     claude: {
+      account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       config: [{ match: "prefix", path: "/Users/me/.claude/settings" }],
       folder: "/Users/me/.claude",
-      state: [
-        { match: "subpath", path: "/Users/me/.claude" },
-        { match: "prefix", path: "/Users/me/.claude.json" },
-      ],
+      state: [{ match: "subpath", path: "/Users/me/.claude" }],
     },
     codex: {
+      account: [],
       config: [{ match: "prefix", path: "/Users/me/.codex/config.toml" }],
       folder: "/Users/me/.codex",
       state: [{ match: "subpath", path: "/Users/me/.codex" }],

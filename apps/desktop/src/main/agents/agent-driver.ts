@@ -673,8 +673,8 @@ class AgentDriver {
     const seal = await this.seal(confinement.writable);
     makeBrowserNamespace(emp.runner);
     if (emp.runner === "claude") {
-      // where claude keeps every folder's transcripts and memory, which a run can only write in
-      mkdirSync(seal.claudeMemory.projects, { recursive: true });
+      // where claude keeps each folder's transcripts and memory, which a run cannot make
+      mkdirSync(seal.claudeProjects.projects, { recursive: true });
     }
     if (run.workspace !== company.workspaceDir) {
       await ensureRepository(run.workspace);

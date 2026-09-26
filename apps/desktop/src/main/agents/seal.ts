@@ -76,12 +76,18 @@ const LOGINS = [
  * founder's own sessions, which they do not write, and the sockets there of what acts as the
  * founder. Each of `config` is a prefix, since a CLI writes a file through a sibling it renames
  * over it; one ending in a slash is only that folder, where a sibling shares its name's start.
- * `siblings` sit beside the home in HOME, each with every name that starts with it.
+ * `account` is where the CLI records the founder's account, in the home and beside it in HOME,
+ * each with every name that starts with it: only the sign-in writes it.
  */
 const RUNNER_HOMES = {
   claude: {
+    // its MCP servers, user-wide and per project, start in the founder's own sessions, unsealed
+    account: [".claude.json"],
     config: [
       "settings",
+      // read in place of ~/.claude.json whenever it exists
+      ".config.json",
+      "backups",
       "CLAUDE.md",
       "rules",
       "hooks",
@@ -108,10 +114,10 @@ const RUNNER_HOMES = {
     ],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
-    siblings: [".claude.json"],
     sockets: [],
   },
   codex: {
+    account: [],
     config: [
       "config.toml",
       "hooks.json",
@@ -144,17 +150,16 @@ const RUNNER_HOMES = {
     ],
     dir: ".codex",
     override: "CODEX_HOME",
-    siblings: [],
     // the desktop app's, which starts threads for whoever asks
     sockets: ["ipc"],
   },
 } as const satisfies Record<
   AgentRunner,
   {
+    account: readonly string[];
     config: readonly string[];
     dir: string;
     override: string;
-    siblings: readonly string[];
     sockets: readonly string[];
   }
 >;
@@ -182,10 +187,6 @@ const PROJECT_CODEX = String.raw`(regex #"/\.codex(/|$)")`;
 const CODEX_IN_CODEX_HOME = String.raw`(regex #"/\.codex/(.+/)?\.codex(/|$)")`;
 
 const HOLDING_FOLDERS = String.raw`(regex #"/\.(git|claude)$")`;
-
-const CLAUDE_MEMORY = String.raw`(regex #"/projects/[^/]+/memory(/|$)")`;
-
-const CLAUDE_PROJECT = String.raw`(regex #"/projects/[^/]+$")`;
 
 // Where node CLIs keep their preferences (the `conf` package's folder on macOS), with no env to
 // move it: create-next-app saves its answers there, and its atomic write retries a refusal until
@@ -218,12 +219,13 @@ interface Reach {
   path: string;
 }
 
-/** A runner's home: what its runs write, and what in it they do not. */
+/** A runner's home: what its runs write, what in it they do not, and what only its sign-in writes. */
 interface RunnerHome {
   /** The home's folder, where it resolves. */
   folder: string;
   state: readonly Reach[];
   config: readonly Reach[];
+  account: readonly Reach[];
 }
 
 /**
@@ -256,10 +258,10 @@ export interface Seal {
   /** Per runner, the agent-browser namespace its runs start their daemons in. */
   namespaces: Record<AgentRunner, Reach>;
   /**
-   * Where claude keeps what it learns about each folder, which the founder's own sessions there
-   * load: a claude run writes only its working directory's, when it has one.
+   * Where claude keeps each folder's transcripts and memory, which the founder's own sessions
+   * there resume and load: a claude run writes only its working directory's, when it has one.
    */
-  claudeMemory: { projects: string; own: string | null };
+  claudeProjects: { projects: string; own: string | null };
 }
 
 // A sealed process cannot exec a setuid program, and /bin/ps is one: version managers (fnm) walk
@@ -290,10 +292,11 @@ const SCRIPTING_CLIS = String.raw`(deny process-exec (literal "/usr/bin/osascrip
 const KEYCHAIN = String.raw`(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd.xpc"))`;
 
 /**
- * What a sealed process may ask LaunchServices to open. An app LaunchServices starts runs outside
- * the seal as the founder, so a run opens nothing; only the founder's CLI sign-in opens the browser.
+ * Who is sealed: an employee run, or the founder's CLI sign-in. A run asks LaunchServices to open
+ * nothing, since an app it starts runs outside the seal as the founder, and writes no account
+ * file; the sign-in opens the browser it signs in through and records the login it makes.
  */
-type Opens = "nothing" | "the browser";
+type Sealed = "run" | "sign-in";
 
 // A rule with no filter reaches everything, so one with nothing to reach is left out.
 const rule =
@@ -329,7 +332,7 @@ const writeRootsOf = (seal: Seal, runner: AgentRunner): Reach[] => [
 const commandUnder = (
   seal: Seal,
   runner: AgentRunner,
-  opens: Opens,
+  sealed: Sealed,
   argv: readonly string[],
 ): string[] => {
   // Each path is a parameter, never quoted into the profile's source.
@@ -338,9 +341,15 @@ const commandUnder = (
   const reach = ({ match, path: at }: Reach): string => `(${match} ${param(at)})`;
   const literal = (at: string): string => `(literal ${param(at)})`;
   const other = RUNNER_IDS.filter((id) => id !== runner);
-  const unreadable = [...seal.unreadable, ...other.flatMap((id) => seal.runners[id].state)];
-  const roots = [...writeRootsOf(seal, runner), ...seal.writable];
-  const kept = [...seal.runners[runner].config, ...seal.onPath];
+  const unreadable = [
+    ...seal.unreadable,
+    ...other.flatMap((id) => [...seal.runners[id].state, ...seal.runners[id].account]),
+  ];
+  const { account, config } = seal.runners[runner];
+  const signs = sealed === "sign-in" ? account : [];
+  const written = [...writeRootsOf(seal, runner), ...signs];
+  const roots = [...written, ...seal.writable];
+  const kept = [...config, ...(sealed === "run" ? account : []), ...seal.onPath];
   // A folder above a kept path, moved, would carry it out from under its rule; made where there
   // is none yet, as a link or a folder moved in, it would put the run's own files under it.
   const above = [
@@ -355,31 +364,24 @@ const commandUnder = (
     path.basename(codexHome) === ".codex"
       ? `(require-all ${PROJECT_CODEX} (require-not (require-all ${reach({ match: "subpath", path: codexHome })} (require-not ${CODEX_IN_CODEX_HOME}))))`
       : PROJECT_CODEX;
-  const { own, projects } = seal.claudeMemory;
-  const inProjects = `(prefix ${param(`${projects}${path.sep}`)})`;
+  const { own, projects } = seal.claudeProjects;
   const profile = [
     BASE_PROFILE,
-    ...(opens === "nothing" ? ["(deny lsopen)", SCRIPTING_CLIS] : []),
+    ...(sealed === "run" ? ["(deny lsopen)", SCRIPTING_CLIS] : []),
     ...(runner === "codex" ? [KEYCHAIN] : []),
     "(deny file-write*)",
     DEV_NODES,
-    ...allow("file-write*", writeRootsOf(seal, runner).map(reach)),
+    ...allow("file-write*", written.map(reach)),
     `(allow file-write* (require-all (prefix ${param(`${seal.preferences}${path.sep}`)}) ${NODE_PREFERENCES}))`,
     // the save may sit in TMPDIR, as a test's does: a run writes only its own folders of it
     ...deny("file-write*", seal.save.map(reach)),
     ...allow("file-write*", seal.writable.map(reach)),
-    // What claude learns of every other folder, and each folder it keeps it in, which would carry
-    // it along when moved.
+    // Every other folder's transcripts and memory, which the founder's sessions there resume and
+    // load, unsealed.
     ...(runner === "claude"
       ? [
-          `(deny file-write* (require-all ${inProjects} ${CLAUDE_MEMORY}))`,
-          `(deny file-write-create file-write-unlink ${literal(projects)} (require-all ${inProjects} ${CLAUDE_PROJECT}))`,
-          ...(own === null
-            ? []
-            : [
-                `(allow file-write* ${reach({ match: "subpath", path: own })})`,
-                `(allow file-write-create file-write-unlink ${literal(path.dirname(own))})`,
-              ]),
+          `(deny file-write* ${literal(projects)} (prefix ${param(`${projects}${path.sep}`)}))`,
+          ...allow("file-write*", own === null ? [] : [reach({ match: "subpath", path: own })]),
         ]
       : []),
     // Seatbelt obeys the last rule a path matches: every rule from here on holds inside the
@@ -412,11 +414,11 @@ const commandUnder = (
 
 /** `argv` as a `runner` run starts it: under the profile, with this machine's paths. */
 export const sealedCommand = (seal: Seal, runner: AgentRunner, argv: readonly string[]): string[] =>
-  commandUnder(seal, runner, "nothing", argv);
+  commandUnder(seal, runner, "run", argv);
 
-/** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through. */
+/** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through and record the login. */
 export const signInCommand = (seal: Seal, runner: AgentRunner, argv: readonly string[]): string[] =>
-  commandUnder(seal, runner, "the browser", argv);
+  commandUnder(seal, runner, "sign-in", argv);
 
 /** How a program run under the profile ended: its exit code, or null when it never ran or was killed. */
 export type SealProbe = (
@@ -615,10 +617,9 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
 };
 
 /**
- * A runner's home and what in it runs as the founder. Under HOME, its state is the folder and
- * each sibling with every name that starts with it (claude writes `~/.claude.json` through
- * siblings of it), each where it is named and where it leads; moved by `override`, only that
- * folder. A dotfile manager may link anything in it in from elsewhere: each is kept where it
+ * A runner's home and what in it runs as the founder. Its state is the folder, where it is named
+ * and where it leads; moved by `override`, the account file sits only in it, else beside it in
+ * HOME too. A dotfile manager may link anything in it in from elsewhere: each is kept where it
  * leads too.
  */
 const runnerHomeOf = async (
@@ -626,7 +627,7 @@ const runnerHomeOf = async (
   runner: AgentRunner,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
-  const { config, dir, override, siblings } = RUNNER_HOMES[runner];
+  const { account, config, dir, override } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
@@ -637,22 +638,21 @@ const runnerHomeOf = async (
         : reachOf(path.join(folder, name), "prefix"),
     ),
   );
-  const beside = inHome
-    ? await reachesOf(
-        siblings.map((name) => path.join(home, name)),
-        "prefix",
-      )
-    : [];
+  const accounts = account.flatMap((name) => [
+    path.join(folder, name),
+    ...(inHome ? [path.join(home, name)] : []),
+  ]);
   return {
+    account: await reachesOf(accounts, "prefix"),
     config: configs.flat(),
     folder: await realPathOf(folder),
-    state: [...(await reachOf(folder)), ...beside],
+    state: await reachOf(folder),
   };
 };
 
-/** Where claude keeps what it learns about `cwd`, which the founder's own sessions there load. */
-const claudeMemoryOf = (claudeHome: string, cwd: string): string =>
-  path.join(claudeHome, "projects", cwd.replaceAll(/[^a-zA-Z0-9]/gu, "-"), "memory");
+/** Where claude keeps `cwd`'s transcripts and memory. */
+const claudeProjectOf = (claudeHome: string, cwd: string): string =>
+  path.join(claudeHome, "projects", cwd.replaceAll(/[^a-zA-Z0-9]/gu, "-"));
 
 /** macOS's per-user cache folder (DARWIN_USER_CACHE_DIR), where its own libraries write. */
 const darwinUserCacheDir = async (): Promise<string> => {
@@ -739,8 +739,8 @@ export const sealFor = async ({
       root.match === "prefix" ? at.startsWith(root.path) : inside(root.path, at),
     );
   return {
-    claudeMemory: {
-      own: cwd === undefined ? null : claudeMemoryOf(claude.folder, cwd.path),
+    claudeProjects: {
+      own: cwd === undefined ? null : claudeProjectOf(claude.folder, cwd.path),
       projects: path.join(claude.folder, "projects"),
     },
     debugPorts,

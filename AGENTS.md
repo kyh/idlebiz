@@ -211,10 +211,8 @@ rather than crashing boot.
   `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool pushes
   code: the founder pushes by hand from a fresh `git clone --no-local` of the workspace, never
   with git inside it, which obeys what the team left there, as the founder (CLAUDE.md). A run
-  cannot use their ssh keys or agents, git's Keychain helper cannot run and a codex run reaches
-  no Keychain, but a claude run shares the founder's login, which claude reads from the
-  Keychain, so a token the founder's `gh` keeps there is guarded only by the command policy's
-  `read-credentials` and `git-push` holds. No tool sets a project's env vars or domains, or
+  cannot use their ssh keys or agents; what it can still reach, the Keychain on a claude run
+  included, is CLAUDE.md's "What stays open". No tool sets a project's env vars or domains, or
   sells a subscription: those stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
@@ -227,16 +225,19 @@ rather than crashing boot.
   and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
   what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`
   and the other runner's home. Writes are denied but for the run's own folders (workspace,
-  shared, memory, the save's `cache/`), its runner's home less what that CLI loads
-  (`RUNNER_HOMES`), temp and per-user cache folders and its agent-browser namespace; nowhere
-  does a run write git's config or hooks, `.claude/settings*.json`, `.mcp.json` or `.codex/`.
+  shared, memory, the save's `cache/`), its runner's home, temp and per-user cache folders and
+  its agent-browser namespace. In the runner's home it writes nothing that CLI loads
+  (`RUNNER_HOMES`, claude's `~/.claude.json` included) and no other folder's claude
+  `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
+  `.mcp.json` or `.codex/`.
   It connects to no unix socket but its own folders' and its namespace's, to no loopback
   debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there
   is refused with a sentence the founder reads. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
   `TOOL_CACHE_ENV` in `main/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
   `cache/`, so a tool that writes elsewhere in HOME fails with `EPERM` until its cache is
-  moved there too. Boot checks
+  moved there too. A git dependency fails as well: npm and pnpm clone it into a `.git` no run
+  may make. Boot checks
   the seal without a model call (a read and a write canary per runner); until it holds, no run
   starts, and a refusal is listed in Settings. sandbox-exec cannot nest, so claude's own
   sandbox is forced off, runs start Chrome without its own (`AGENT_BROWSER_ARGS=--no-sandbox`),
