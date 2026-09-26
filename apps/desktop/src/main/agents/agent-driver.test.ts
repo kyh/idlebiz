@@ -54,27 +54,27 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
-  browser: {
-    namespaces: {
-      claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
-      codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },
-    },
-    root: { match: "subpath", path: "/Users/me/.agent-browser" },
-  },
   claudeMemory: { own: null, projects: "/Users/me/.claude/projects" },
   debugPorts: [9222],
+  namespaces: {
+    claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
+    codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },
+  },
   onPath: [],
   preferences: "/Users/me/Library/Preferences",
   runners: {
     claude: {
       config: [{ match: "prefix", path: "/Users/me/.claude/settings" }],
       folder: "/Users/me/.claude",
-      state: [{ match: "prefix", path: "/Users/me/.claude" }],
+      state: [
+        { match: "subpath", path: "/Users/me/.claude" },
+        { match: "prefix", path: "/Users/me/.claude.json" },
+      ],
     },
     codex: {
       config: [{ match: "prefix", path: "/Users/me/.codex/config.toml" }],
       folder: "/Users/me/.codex",
-      state: [{ match: "prefix", path: "/Users/me/.codex" }],
+      state: [{ match: "subpath", path: "/Users/me/.codex" }],
     },
   },
   save: [{ match: "subpath", path: "/Users/me/.idlebiz" }],

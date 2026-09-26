@@ -28,6 +28,7 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
+import { CODEX_IN_KEYCHAIN, codexLoginInKeychain } from "@/main/agents/codex-keychain";
 import { runEnv } from "@/main/agents/run-env";
 import {
   browserNamespace,
@@ -165,9 +166,20 @@ export const codexMcpOff = async (
   return { CODEX_CONFIG: JSON.stringify(config) };
 };
 
-/** `runner`'s session under `seal`, loading none of the founder's MCP servers. */
-const sessionAgent = async (runner: AgentRunner, seal: Seal): Promise<AcpAgent> =>
-  acpAgentFor(runner, seal, runner === "codex" ? await codexMcpOff(seal) : {});
+/**
+ * `runner`'s session under `seal`, loading none of the founder's MCP servers. A codex whose login
+ * is in the Keychain, which the seal closes to it, is refused before it spends an attempt failing
+ * to sign in.
+ */
+const sessionAgent = async (runner: AgentRunner, seal: Seal): Promise<AcpAgent> => {
+  if (runner === "claude") {
+    return acpAgentFor(runner, seal);
+  }
+  if (await codexLoginInKeychain()) {
+    throw new RefusalError(CODEX_IN_KEYCHAIN);
+  }
+  return acpAgentFor(runner, seal, await codexMcpOff(seal));
+};
 
 /**
  * The URL of the top page, then of every frame found under it; null where the
@@ -299,8 +311,11 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
 // One cache the runs share, outside their working trees and apart from the founder's: a package
 // a run installs never lands in a store the founder's own projects link from. A run writes only
 // its own folders, so every cache a toolchain would keep in HOME is moved here, and updaters that
-// would rewrite a CLI the founder runs are off.
+// would rewrite a CLI the founder runs are off. TMPDIR is moved too: a run connects only to
+// sockets in its own folders, and the founder's TMPDIR is full of theirs.
 const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
+
+const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
 
 const TOOL_CACHE_ENV = {
   BUN_INSTALL_CACHE_DIR: path.join(TOOL_CACHE_DIR, "bun"),
@@ -308,6 +323,7 @@ const TOOL_CACHE_ENV = {
   DISABLE_AUTOUPDATER: "1",
   NEXT_TELEMETRY_DISABLED: "1",
   PLAYWRIGHT_BROWSERS_PATH: path.join(TOOL_CACHE_DIR, "ms-playwright"),
+  TMPDIR: RUN_TMPDIR,
   XDG_CACHE_HOME: TOOL_CACHE_DIR,
   npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
   npm_config_devdir: path.join(TOOL_CACHE_DIR, "node-gyp"),
@@ -653,9 +669,13 @@ class AgentDriver {
     };
     // a run cannot make its own folders, only write in them
     mkdirSync(memory, { recursive: true });
-    mkdirSync(TOOL_CACHE_DIR, { recursive: true });
+    mkdirSync(RUN_TMPDIR, { recursive: true });
     const seal = await this.seal(confinement.writable);
     makeBrowserNamespace(emp.runner);
+    if (emp.runner === "claude") {
+      // where claude keeps every folder's transcripts and memory, which a run can only write in
+      mkdirSync(seal.claudeMemory.projects, { recursive: true });
+    }
     if (run.workspace !== company.workspaceDir) {
       await ensureRepository(run.workspace);
     }

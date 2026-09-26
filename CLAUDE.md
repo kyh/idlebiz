@@ -209,48 +209,56 @@ allocator and the replay.
   chat app profiles, agent-browser's saved logins), `secrets.json` with every name that
   starts with it, and the other runner's home. It writes nothing but its own folders
   (`Confinement.writable`: its workspace, the shared one, its memory, the tool cache), its
-  runner's home, TMPDIR and macOS's per-user temp and cache folders, `/private/tmp`, its
+  runner's home (`~/.claude` and `~/.claude.json*`, or `~/.codex`: no other name that starts
+  like them), TMPDIR and macOS's per-user temp and cache folders, `/private/tmp`, its
   runner's agent-browser namespace, node CLIs' `~/Library/Preferences/*-nodejs` and the
-  `/dev` nodes a toolchain writes. Every cache a toolchain would keep in HOME is moved into
-  the tool cache by env (`TOOL_CACHE_ENV` in `agent-driver.ts`), and CLI updaters are off.
-  Seatbelt obeys the last rule a path matches, so the profile denies every write, allows
-  those roots, closes the save again (a test's sits in TMPDIR), reopens the run's own
-  folders, then re-denies inside them: what the runner's CLI loads in the founder's own
-  sessions (`RUNNER_HOMES`: claude's settings, instructions, rules, hooks, skills, agents,
-  commands, plugins, shell snapshots…; codex's `config.toml`, hooks, `AGENTS*`, rules,
-  prompts, skills, plugins, packages, `.env*`, shell snapshots, memories, the desktop app's
-  computer-use app and worktrees; claude's Chrome native host, IDE lock files and auto-memory
-  of every folder but the run's own), a PATH folder that lies in a root (a shim folder in TMPDIR) with every folder above
-  it there, and in the run's own folders what the founder's tools run on opening one
-  (in `.git/` at any depth, everything but what git writes as it stages, commits, branches,
-  stashes, merges, rebases and gcs — so no config, hooks, `commondir`, `worktrees/`, `modules/`
-  or alternates; `.claude/settings*.json`, `.mcp.json`, `.codex/`; and the `.git`/`.claude`
-  folders themselves). Main makes a product's workspace a
-  repository before its run (`ensureRepository`, macOS's git) and names the run's commits by
-  `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, since no run writes git config. Seatbelt matches the path
-  a symlink leads to, so each path is sealed where it is named and where it resolves as the
-  run starts; a run's own folders are allowed only where the save resolves, and a run whose
-  folder, or any folder between it and the save, is a symlink does not start (`ownFolders`).
-  A run cannot remove, move or replace one of its own folders; main makes them first.
-  Besides files: no socket of the founder's answers a run (an ssh or gpg agent under a
-  sealed path, 1Password's, Secretive's, launchd's, main's `SSH_AUTH_SOCK`, an ssh-agent
-  started from a terminal, which cannot be renamed out from under its rule, Docker's,
-  OrbStack's, Colima's, Lima's, Rancher's and podman's, claude's sessions' `/tmp/cc-socks`,
-  which take messages from each other, and the codex app's `~/.codex/ipc` and
-  `/tmp/codex-browser-use`, which starts threads and drives the founder's Chrome), nor another agent-browser daemon
-  than its runner's (`browserNamespace`, keyed by save and runner, under
-  `AGENT_BROWSER_SOCKET_DIR`), nor loopback's 9222 and 9229 (the dev renderer's debug port
-  holds the founder's approve button); LaunchServices opens nothing (only the CLI sign-in
-  may open the browser); `osascript` and the other Apple Event CLIs and git's Keychain helper
-  do not run; a setuid program does not run but `/bin/ps`, which fnm needs; and a codex run
-  reaches no Keychain (`mach-lookup` of securityd, which holds against a copied binary too).
-  A codex whose login lives in the Keychain (`cli_auth_credentials_store`) cannot sign a run
-  in, and onboarding says so. Boot checks the seal for free (`checkSeal`: under each runner's
-  profile a canary must be unreadable, a file where no rule allows a write must not be made,
-  and the runtime must start); until it holds the scheduler starts nothing and autopilot
-  files nothing, and a refusal is listed in Settings beside what boot skipped. Main starts a
-  runner's CLI itself only under that runner's seal: its version and login probes and its
-  sign-in (`sealedSignIn`). The login-shell PATH probe runs unsealed: a run writes no file it
+  `/dev` nodes a toolchain writes. Every cache a toolchain would keep in HOME, and TMPDIR,
+  are moved into the tool cache by env (`TOOL_CACHE_ENV` in `agent-driver.ts`), and CLI
+  updaters are off. Seatbelt obeys the last rule a path matches, so the profile denies every
+  write, allows those roots, closes the save again (a test's sits in TMPDIR), reopens the
+  run's own folders, then re-denies: what the runner's CLI or desktop app loads or runs in
+  the founder's own sessions (`RUNNER_HOMES`: claude's settings, instructions, rules, hooks,
+  skills, agents, commands, plugins, shell snapshots, its daemon and jobs…; codex's
+  `config.toml`, hooks, `AGENTS*`, rules, prompts, skills, plugins, packages, `.env*`,
+  keybindings, shell snapshots, memories, the per-session helper links in `tmp/arg0`, and the
+  desktop app's computer-use app, worktrees, state, database, plugin staging and the registry
+  its Chrome native host starts programs from; claude's Chrome native host, IDE lock files and
+  auto-memory of every folder but the run's own, nor any folder that memory sits in), a PATH
+  folder that lies in a root (a shim folder in TMPDIR) with every folder above it there, and,
+  anywhere a run writes, what the founder's tools run on opening a folder: in `.git/`
+  everything but what git writes as it stages, commits, branches, stashes, merges, rebases and
+  gcs (so no config, hooks, `commondir`, `worktrees/`, `modules/` or alternates),
+  `.claude/settings*.json`, `.mcp.json`, `.codex/`, and the `.git`/`.claude` folders
+  themselves. Seatbelt checks a moved folder where it lands, never what it carries, so these
+  hold in TMPDIR and the tool cache too, or a tree built there could be moved into a
+  workspace whole. Main makes a product's workspace a repository before its run
+  (`ensureRepository`, macOS's git), makes claude's `projects/` folder, and names the run's
+  commits by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, since no run writes git config. Seatbelt
+  matches the path a symlink leads to, so each path is sealed where it is named and where it
+  resolves as the run starts; a run's own folders are allowed only where the save resolves,
+  and a run whose folder, or any folder between it and the save, is a symlink does not start
+  (`ownFolders`). A run cannot remove, move or replace one of its own folders; main makes
+  them first. A run connects to no unix socket but DNS's, syslog's, its own folders' and its
+  runner's agent-browser namespace (`browserNamespace`, keyed by save and runner, under
+  `AGENT_BROWSER_SOCKET_DIR`): no ssh, gpg or 1Password agent, container engine, Chromium or
+  Electron app's `SingletonSocket` (which hands the running app a URL), claude's or the codex
+  app's sockets, nor the founder's own agent-browser daemons or the other runner's. Those in
+  a folder it writes (launchd's, an ssh-agent's, main's `SSH_AUTH_SOCK`, claude's
+  `/tmp/cc-socks`, the codex app's `ipc` and `/tmp/codex-browser-use`, OpenAI's
+  `CUAService`) stay put. Nor does it reach loopback's 9222 and 9229 (the dev renderer's
+  debug port holds the founder's approve button); LaunchServices opens nothing (only the CLI
+  sign-in may open the browser); `osascript` and the other Apple Event CLIs and git's
+  Keychain helper do not run; a setuid program does not run but `/bin/ps`, which fnm needs;
+  and a codex run reaches no Keychain (`mach-lookup` of securityd, which holds against a
+  copied binary too). A codex whose login lives in the Keychain (`cli_auth_credentials_store`,
+  or the profile its config selects) is refused: onboarding says so, and every codex run is
+  refused with the same sentence before it starts (`main/agents/codex-keychain.ts`). Boot
+  checks the seal for free (`checkSeal`: under each runner's profile a canary must be
+  unreadable, a file where no rule allows a write must not be made, and the runtime must
+  start); until it holds the scheduler starts nothing and autopilot files nothing, and a
+  refusal is listed in Settings beside what boot skipped. Main starts a runner's CLI itself
+  only under that runner's seal: its version and login probes and its sign-in
+  (`sealedSignIn`). The login-shell PATH probe runs unsealed: a run writes no file it
   sources. Every place the founder enters a key runs in main, and `atomicWrite` makes each
   `.tmp` anew (`wx`), so a file main writes never lands through a planted link. Never set
   `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session but the first out.
@@ -258,12 +266,16 @@ allocator and the replay.
   the login stores (another project's `.env`, transcripts); the Keychain and
   `~/.claude.json` to claude runs, which share the founder's login (claude reads its login
   from the Keychain and rewrites `~/.claude.json`, whose `mcpServers` load in the founder's
-  sessions), and the rest of each runner's state (session logs, which codex's own memory
-  pass reads, what codex stages in `.tmp/`, claude's `daemon/` and `jobs/`); a program a run builds can still send Apple Events (macOS asks the
-  founder first: refuse it); a socket or debugger listening under another name; the
-  founder's git run inside a workspace laid out other than as `.git/` (push from a fresh
-  clone); and anything the founder runs from TMPDIR or `/private/tmp` that no PATH entry
-  names.
+  sessions), and the rest of each runner's state (session logs and transcripts, which codex's
+  own memory pass reads, claude's session registry, codex's thread and queue databases); the
+  runners' shared ground: every run writes the tool cache and a product's workspace, so code
+  a codex run leaves there (a package script, a `node_modules/.bin` shim) runs in the next
+  claude run, with the Keychain and claude's login, and codex runs are kept from those only
+  directly; a git dependency, which npm and pnpm clone into a `.git` no run may make; a
+  program a run builds can still send Apple Events (macOS asks the founder first: refuse
+  it); a debugger listening on another port; the founder's git run inside a workspace laid
+  out other than as `.git/` (push from a fresh clone); and anything the founder runs from
+  TMPDIR or `/private/tmp` that no PATH entry names.
 
 ## Two traps that fail silently
 

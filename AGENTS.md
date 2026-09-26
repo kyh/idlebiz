@@ -224,28 +224,33 @@ rather than crashing boot.
   in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
 - Every employee run starts sealed, inside the Seatbelt profile `main/agents/seal.ts` renders
   and hands `sandbox-exec -p`. Writes are denied by default: a run writes its own folders
-  (workspace, shared, memory, the save's `cache/`), its runner's home, TMPDIR, the per-user
-  cache, `/private/tmp`, its runner's agent-browser namespace and node CLIs'
-  `~/Library/Preferences/*-nodejs`, and nothing else in HOME or the save. Inside those it
-  still cannot write what the founder's own CLI loads from the runner's home (`RUNNER_HOMES`),
-  claude's auto-memory of other folders, a PATH folder there, or, in its own folders, anything
-  in `.git/` but what git writes as it works (objects, refs, logs, the index, merge and rebase
-  state), `.claude/settings*.json`, `.mcp.json` and `.codex/`. Reads are open but
-  for the founder's logins (`LOGINS`), `secrets.json` and the other runner's home. No socket
-  of the founder's (ssh, gpg and 1Password agents, container engines, claude's session sockets,
-  the codex app's, the founder's own agent-browser daemons or the other runner's) and no loopback debug port (9222, 9229)
-  answers a run; LaunchServices opens nothing for it, and codex runs reach no Keychain. Main
-  makes a product's workspace a repository before its run and sets the run's git identity by
-  env; toolchain caches go to `cache/` by env (`TOOL_CACHE_ENV` in
-  `main/agents/agent-driver.ts`). Boot checks the seal without a model call (a read canary
-  and a write canary per runner); until it holds, no run starts, and a refusal is listed in
-  Settings. sandbox-exec cannot nest, so claude's own sandbox is forced off and codex runs in
-  `external-sandbox`, a mode `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no
-  sandbox of codex's own, and it asks before every command and patch. A codex-acp upgrade
-  must carry that patch. Runs start Chrome for agent-browser without its own sandbox
+  (workspace, shared, memory, the save's `cache/`), its runner's home (`~/.claude` and
+  `~/.claude.json*`, or `~/.codex`), TMPDIR, the per-user cache, `/private/tmp`, its runner's
+  agent-browser namespace and node CLIs' `~/Library/Preferences/*-nodejs`, and nothing else
+  in HOME or the save. Inside those it still cannot write what the founder's own CLI or
+  desktop app loads from the runner's home (`RUNNER_HOMES`), claude's auto-memory of other
+  folders or the folders it sits in, a PATH folder there, or, anywhere, what the founder's
+  tools run on opening a folder: `.git/` but what git writes as it works (objects, refs, logs,
+  the index, merge and rebase state), `.claude/settings*.json`, `.mcp.json` and `.codex/`
+  (a moved folder is checked where it lands, not for what it carries, so none is built in
+  TMPDIR and moved in). Reads are open but for the founder's logins (`LOGINS`),
+  `secrets.json` and the other runner's home. A run connects to no unix socket but DNS's,
+  syslog's, its own folders' and its runner's agent-browser namespace, and to no loopback
+  debug port (9222, 9229); LaunchServices opens nothing for it, and codex runs reach no
+  Keychain: a codex whose login is there is refused with a sentence the founder reads. Main
+  makes a product's workspace a repository and claude's `projects/` before a run and sets
+  the run's git identity by env; toolchain caches and TMPDIR go to `cache/` by env
+  (`TOOL_CACHE_ENV` in `main/agents/agent-driver.ts`). Boot checks the seal without a model
+  call (a read canary and a write canary per runner); until it holds, no run starts, and a
+  refusal is listed in Settings. sandbox-exec cannot nest, so claude's own sandbox is forced
+  off and codex runs in `external-sandbox`, a mode
+  `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own,
+  and it asks before every command and patch. A codex-acp upgrade must carry that patch.
+  Runs start Chrome for agent-browser without its own sandbox
   (`AGENT_BROWSER_ARGS=--no-sandbox`). Open by design: the network, reads across HOME outside
   the login stores, and, through the shared login, the Keychain and `~/.claude.json` to
-  claude runs; CLAUDE.md lists every residual.
+  claude runs, which also run whatever a codex run leaves in the tool cache or a shared
+  workspace; CLAUDE.md lists every residual.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`main/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

@@ -76,6 +76,7 @@ const LOGINS = [
  * founder's own sessions, which they do not write, and the sockets there of what acts as the
  * founder. Each of `config` is a prefix, since a CLI writes a file through a sibling it renames
  * over it; one ending in a slash is only that folder, where a sibling shares its name's start.
+ * `siblings` sit beside the home in HOME, each with every name that starts with it.
  */
 const RUNNER_HOMES = {
   claude: {
@@ -99,9 +100,15 @@ const RUNNER_HOMES = {
       "chrome",
       // each names an IDE's MCP server, which the founder's sessions connect to
       "ide",
+      // the founder's background daemon and the jobs it dispatches and spawns
+      "daemon",
+      "jobs",
+      "bridge-spawn",
+      "seed-admin",
     ],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
+    siblings: [".claude.json"],
     sockets: [],
   },
   codex: {
@@ -114,6 +121,8 @@ const RUNNER_HOMES = {
       "skills",
       "plugins",
       "packages",
+      "vendor_imports",
+      "keybindings.json",
       // loaded into the env of every command codex runs
       ".env",
       "shell_snapshots",
@@ -121,63 +130,79 @@ const RUNNER_HOMES = {
       // the desktop app runs its computer-use app from here, and works in its worktrees
       "computer-use",
       "worktrees",
+      // what the desktop app loads, stages plugins in and starts: its state, its database, its
+      // processes, and the programs Chrome's native host for it runs, which its registry names
+      ".codex-global-state",
+      "sqlite/",
+      ".tmp/",
+      "process_manager",
+      "chrome-native-hosts",
+      "browser",
+      "node_repl",
+      // each session's links to codex's own helpers, which its commands run through PATH
+      "tmp/arg0/",
     ],
     dir: ".codex",
     override: "CODEX_HOME",
+    siblings: [],
     // the desktop app's, which starts threads for whoever asks
     sockets: ["ipc"],
   },
 } as const satisfies Record<
   AgentRunner,
-  { config: readonly string[]; dir: string; override: string; sockets: readonly string[] }
+  {
+    config: readonly string[];
+    dir: string;
+    override: string;
+    siblings: readonly string[];
+    sockets: readonly string[];
+  }
 >;
 
 /**
- * What the founder's own tools run from a folder of the run's the moment they open it: git's
- * (a shell prompt runs git status there), claude's project settings and MCP servers, codex's
- * project config. In a repository's folder a run writes only what git writes as it stages,
- * commits, branches, stashes, merges and rebases: the rest is what git obeys, its config and
- * hooks and every file that names another folder's (`commondir`, `worktrees/`, `modules/`,
- * an alternate object store).
+ * What the founder's own tools run from a folder the moment they open it: git's (a shell prompt
+ * runs git status there), claude's project settings and MCP servers, codex's project config.
+ * Held wherever a run writes, not only in its own folders: a folder is checked where it moves
+ * to, never what it carries, so one built in TMPDIR and moved into a workspace would bring them
+ * along. In a repository's folder a run writes only what git writes as it stages, commits,
+ * branches, stashes, merges and rebases: the rest is what git obeys, its config and hooks and
+ * every file that names another folder's (`commondir`, `worktrees/`, `modules/`, an alternate
+ * object store).
  */
 const OPENED_AS_FOUNDER = [
   String.raw`(require-all (regex #"/\.git/") (require-not (regex #"/\.git/((objects|refs|logs|rebase-merge|rebase-apply|sequencer|rr-cache)(/|$)|(index|index\.stash\.[0-9]+|next-index-[0-9]+|HEAD|ORIG_HEAD|FETCH_HEAD|MERGE_HEAD|MERGE_MSG|MERGE_MODE|MERGE_RR|AUTO_MERGE|CHERRY_PICK_HEAD|REVERT_HEAD|REBASE_HEAD|BISECT_[A-Z_]+|COMMIT_EDITMSG|SQUASH_MSG|TAG_EDITMSG|packed-refs(\.new)?|info/refs(_[A-Za-z0-9]+)?|shallow|gc\.pid|gc\.log)(\.lock)?$)")))`,
   String.raw`(regex #"/\.git/objects/info/(http-)?alternates")`,
   String.raw`(regex #"/\.claude/settings[^/]*$")`,
   String.raw`(regex #"/\.mcp\.json$")`,
-  String.raw`(regex #"/\.codex(/|$)")`,
 ];
+
+const PROJECT_CODEX = String.raw`(regex #"/\.codex(/|$)")`;
+
+// codex's own home is named so too: inside it, only a `.codex` below it is a project's.
+const CODEX_IN_CODEX_HOME = String.raw`(regex #"/\.codex/(.+/)?\.codex(/|$)")`;
 
 const HOLDING_FOLDERS = String.raw`(regex #"/\.(git|claude)$")`;
 
 const CLAUDE_MEMORY = String.raw`(regex #"/projects/[^/]+/memory(/|$)")`;
+
+const CLAUDE_PROJECT = String.raw`(regex #"/projects/[^/]+$")`;
 
 // Where node CLIs keep their preferences (the `conf` package's folder on macOS), with no env to
 // move it: create-next-app saves its answers there, and its atomic write retries a refusal until
 // the stack overflows. Data only; no CLI runs anything from it.
 const NODE_PREFERENCES = String.raw`(regex #"/Library/Preferences/[^/]+-nodejs(/|$)")`;
 
-/** Sockets under HOME of what acts as the founder: 1Password's and Secretive's agents, container engines. */
-const FOUNDER_SOCKETS = [
-  "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
-  "Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh",
-  ".orbstack/run",
-  ".colima",
-  ".lima",
-  ".rd",
-  ".local/share/containers",
-];
-
 /**
- * Sockets outside HOME of what acts as the founder: Docker's, podman's machine sockets in TMPDIR,
- * claude's sessions, which take messages from each other, and the codex app's browser tool, which
- * drives the founder's Chrome.
+ * Sockets in the scratch folders of what acts as the founder, which a run could otherwise remove
+ * and listen in place of: podman's machine sockets in TMPDIR, claude's sessions, which take
+ * messages from each other, the codex app's browser tool, which drives the founder's Chrome, and
+ * OpenAI's computer-use service.
  */
-const OUTSIDE_SOCKETS = [
-  "/var/run/docker.sock",
+const SCRATCH_SOCKETS = [
   path.join(tmpdir(), "podman"),
   "/private/tmp/cc-socks",
   "/private/tmp/codex-browser-use",
+  "/private/tmp/com.openai.sky.CUAService",
 ];
 
 // IdleBiz's own renderer in dev (`--remoteDebuggingPort 9222`) and node's inspector: either
@@ -220,7 +245,7 @@ export interface Seal {
   writable: readonly Reach[];
   /** Folders on main's PATH, and where their links lead, that fall inside a folder a run writes. */
   onPath: readonly Reach[];
-  /** Sockets of what acts as the founder, which no run reaches, moves or links. */
+  /** Sockets in a folder a run writes, of what acts as the founder: no run moves or replaces one. */
   sockets: readonly Reach[];
   /** The save, which a run writes only its own folders of, where it is named and where it resolves. */
   save: readonly Reach[];
@@ -228,8 +253,8 @@ export interface Seal {
   preferences: string;
   /** Loopback ports no run reaches: a debugger listening there takes orders from anyone. */
   debugPorts: readonly number[];
-  /** Where agent-browser's daemons listen, and per runner the namespace its runs start theirs in. */
-  browser: { root: Reach; namespaces: Record<AgentRunner, Reach> };
+  /** Per runner, the agent-browser namespace its runs start their daemons in. */
+  namespaces: Record<AgentRunner, Reach>;
   /**
    * Where claude keeps what it learns about each folder, which the founder's own sessions there
    * load: a claude run writes only its working directory's, when it has one.
@@ -240,16 +265,19 @@ export interface Seal {
 // A sealed process cannot exec a setuid program, and /bin/ps is one: version managers (fnm) walk
 // the process tree with it, and claude's shell snapshot runs them. It only reads.
 // git's Keychain helper signs as the founder with no file to seal.
-// launchd's ssh agent and one started from a terminal (`ssh-*/agent.<pid>`, wherever its TMPDIR
-// is) sign as the founder; each one's folder stays put, or its socket would leave the rule.
+// A run connects to no socket but its own (a later rule), DNS's and syslog's: the founder's
+// TMPDIR and /tmp are full of what answers as the founder, from each Chromium or Electron app's
+// SingletonSocket, which hands the running app a URL to open, to ssh and container agents.
 const BASE_PROFILE = String.raw`(version 1)
 (allow default)
 (allow process-exec (literal "/bin/ps") (with no-sandbox))
 (deny process-exec (regex #"/git-credential-osxkeychain$"))
-(deny network-outbound (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+/Listeners$"))
-(deny network-outbound (remote unix-socket (regex #"/ssh-[^/]+/agent\.[0-9]+$")))`;
+(deny network-outbound (remote unix-socket))
+(allow network-outbound (remote unix-socket (literal "/private/var/run/mDNSResponder")) (remote unix-socket (literal "/private/var/run/syslog")))`;
 
-// Last in their block, so they hold inside every folder a run writes.
+// launchd's ssh agent and one started from a terminal (`ssh-*/agent.<pid>`, wherever its TMPDIR
+// is) sign as the founder, in folders a run writes: neither is moved or replaced. Last in their
+// block, so they hold inside every folder a run writes.
 const AGENT_SOCKET_WRITES = String.raw`(deny file-write* (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+(/Listeners)?$"))
 (deny file-write-unlink (regex #"/ssh-[^/]+(/agent\.[0-9]+)?$"))`;
 
@@ -295,7 +323,7 @@ const foldersUpTo = (root: string, at: string): string[] => {
 const writeRootsOf = (seal: Seal, runner: AgentRunner): Reach[] => [
   ...seal.scratch,
   ...seal.runners[runner].state,
-  seal.browser.namespaces[runner],
+  seal.namespaces[runner],
 ];
 
 const commandUnder = (
@@ -322,7 +350,13 @@ const commandUnder = (
       ),
     ),
   ];
-  const ownFolder = `(require-any ${seal.writable.map(reach).join(" ")})`;
+  const codexHome = seal.runners.codex.folder;
+  const projectCodex =
+    path.basename(codexHome) === ".codex"
+      ? `(require-all ${PROJECT_CODEX} (require-not (require-all ${reach({ match: "subpath", path: codexHome })} (require-not ${CODEX_IN_CODEX_HOME}))))`
+      : PROJECT_CODEX;
+  const { own, projects } = seal.claudeMemory;
+  const inProjects = `(prefix ${param(`${projects}${path.sep}`)})`;
   const profile = [
     BASE_PROFILE,
     ...(opens === "nothing" ? ["(deny lsopen)", SCRIPTING_CLIS] : []),
@@ -334,28 +368,27 @@ const commandUnder = (
     // the save may sit in TMPDIR, as a test's does: a run writes only its own folders of it
     ...deny("file-write*", seal.save.map(reach)),
     ...allow("file-write*", seal.writable.map(reach)),
-    // Seatbelt obeys the last rule a path matches: every rule from here on holds inside the
-    // folders just allowed.
-    ...deny("file-write*", [...kept.map(reach), ...seal.sockets.map(reach)]),
-    ...(seal.writable.length === 0
-      ? []
-      : [
-          `(deny file-write* (require-all ${ownFolder} (require-any ${OPENED_AS_FOUNDER.join(" ")})))`,
-          // nor is either folder they sit in removed, moved or made, which would carry them out
-          // from under the rules above
-          `(deny file-write-create file-write-unlink (require-all ${ownFolder} ${HOLDING_FOLDERS}))`,
-        ]),
+    // What claude learns of every other folder, and each folder it keeps it in, which would carry
+    // it along when moved.
     ...(runner === "claude"
       ? [
-          `(deny file-write* (require-all (prefix ${param(`${seal.claudeMemory.projects}${path.sep}`)}) ${CLAUDE_MEMORY}))`,
-          ...allow(
-            "file-write*",
-            seal.claudeMemory.own === null
-              ? []
-              : [reach({ match: "subpath", path: seal.claudeMemory.own })],
-          ),
+          `(deny file-write* (require-all ${inProjects} ${CLAUDE_MEMORY}))`,
+          `(deny file-write-create file-write-unlink ${literal(projects)} (require-all ${inProjects} ${CLAUDE_PROJECT}))`,
+          ...(own === null
+            ? []
+            : [
+                `(allow file-write* ${reach({ match: "subpath", path: own })})`,
+                `(allow file-write-create file-write-unlink ${literal(path.dirname(own))})`,
+              ]),
         ]
       : []),
+    // Seatbelt obeys the last rule a path matches: every rule from here on holds inside the
+    // folders allowed above.
+    ...deny("file-write*", [...kept.map(reach), ...seal.sockets.map(reach)]),
+    `(deny file-write* (require-any ${[...OPENED_AS_FOUNDER, projectCodex].join(" ")}))`,
+    // nor is either folder they sit in removed, moved or made, which would carry them out from
+    // under the rules above
+    `(deny file-write-create file-write-unlink ${HOLDING_FOLDERS})`,
     // A subpath reaches the folder itself, which a run could otherwise remove and leave a link
     // in place of, for the next run to write through.
     ...deny("file-write-create file-write-unlink", [
@@ -364,15 +397,10 @@ const commandUnder = (
     ]),
     AGENT_SOCKET_WRITES,
     ...deny("file-read* file-write*", unreadable.map(reach)),
-    // A socket answers connect() whatever the file rules say, so one under a sealed path is
-    // sealed here too; a run reaches only its own runner's agent-browser daemons.
-    ...deny(
+    ...allow(
       "network-outbound",
-      [...unreadable, ...seal.sockets, seal.browser.root].map(
-        (at) => `(remote unix-socket ${reach(at)})`,
-      ),
+      [...seal.writable, seal.namespaces[runner]].map((at) => `(remote unix-socket ${reach(at)})`),
     ),
-    `(allow network-outbound (remote unix-socket ${reach(seal.browser.namespaces[runner])}))`,
     ...deny(
       "network-outbound",
       seal.debugPorts.map((port) => `(remote tcp "localhost:${port}")`),
@@ -587,17 +615,18 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
 };
 
 /**
- * A runner's home and what in it runs as the founder. Under HOME, its state is every name that
- * starts with the folder's (claude keeps `~/.claude.json` beside `~/.claude`, and writes it
- * through siblings of it), and wherever any of them leads; moved by `override`, only that folder.
- * A dotfile manager may link anything in it in from elsewhere: each is kept where it leads too.
+ * A runner's home and what in it runs as the founder. Under HOME, its state is the folder and
+ * each sibling with every name that starts with it (claude writes `~/.claude.json` through
+ * siblings of it), each where it is named and where it leads; moved by `override`, only that
+ * folder. A dotfile manager may link anything in it in from elsewhere: each is kept where it
+ * leads too.
  */
 const runnerHomeOf = async (
   home: string,
   runner: AgentRunner,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
-  const { config, dir, override } = RUNNER_HOMES[runner];
+  const { config, dir, override, siblings } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
@@ -608,24 +637,16 @@ const runnerHomeOf = async (
         : reachOf(path.join(folder, name), "prefix"),
     ),
   );
-  const names = inHome ? await readdir(home).catch(() => []) : [];
-  const linked = await Promise.all(
-    names
-      .filter((name) => name.startsWith(dir))
-      .map(async (name) => {
-        const resolved = await realPathOf(path.join(home, name));
-        return resolved.startsWith(folder) ? [] : [resolved];
-      }),
-  );
+  const beside = inHome
+    ? await reachesOf(
+        siblings.map((name) => path.join(home, name)),
+        "prefix",
+      )
+    : [];
   return {
     config: configs.flat(),
     folder: await realPathOf(folder),
-    state: inHome
-      ? [
-          { match: "prefix", path: folder },
-          ...linked.flat().map((at): Reach => ({ match: "prefix", path: at })),
-        ]
-      : await reachOf(folder),
+    state: [...(await reachOf(folder)), ...beside],
   };
 };
 
@@ -692,10 +713,9 @@ export const sealFor = async ({
   ]);
   const homes = { claude, codex };
   const scratchReaches = await reachesOf([...new Set(scratch)]);
-  const browserRoot = path.join(realHome, ".agent-browser");
   const namespaceOf = (runner: AgentRunner): Reach => ({
     match: "subpath",
-    path: path.join(browserRoot, "namespaces", browserNamespace(runner)),
+    path: path.join(realHome, ".agent-browser", "namespaces", browserNamespace(runner)),
   });
   const namespaces = { claude: namespaceOf("claude"), codex: namespaceOf("codex") };
   const own = await ownFolders(save, writable);
@@ -719,12 +739,12 @@ export const sealFor = async ({
       root.match === "prefix" ? at.startsWith(root.path) : inside(root.path, at),
     );
   return {
-    browser: { namespaces, root: { match: "subpath", path: browserRoot } },
     claudeMemory: {
       own: cwd === undefined ? null : claudeMemoryOf(claude.folder, cwd.path),
       projects: path.join(claude.folder, "projects"),
     },
     debugPorts,
+    namespaces,
     onPath: candidates.filter(inRoot),
     preferences: path.join(realHome, "Library", "Preferences"),
     runners: homes,
@@ -736,8 +756,7 @@ export const sealFor = async ({
           RUNNER_HOMES[id].sockets.map((name) => path.join(homes[id].folder, name)),
         ),
       )),
-      ...(await under(FOUNDER_SOCKETS)),
-      ...(await reachesOf(OUTSIDE_SOCKETS)),
+      ...(await reachesOf(SCRATCH_SOCKETS)),
       ...(sshAgent === null ? [] : await reachOf(sshAgent)),
     ],
     unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly, "prefix"))],

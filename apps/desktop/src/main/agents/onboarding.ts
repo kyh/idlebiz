@@ -1,13 +1,11 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
 import { createInterface } from "node:readline";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { agentDriver } from "@/main/agents/agent-driver";
+import { CODEX_IN_KEYCHAIN, codexLoginInKeychain } from "@/main/agents/codex-keychain";
 import { SANDBOX_EXEC } from "@/main/agents/seal";
 import { foundingTeamPrompt } from "@/main/prompts/onboarding";
 import { errorMessage } from "@/shared/errors";
@@ -59,17 +57,6 @@ const streamCommand = (
   });
 
 const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
-
-/** Whether the founder's codex keeps its login in the Keychain, which a codex run cannot reach. */
-const codexLoginInKeychain = async (): Promise<boolean> => {
-  const moved = process.env.CODEX_HOME;
-  const home = moved === undefined || moved === "" ? path.join(homedir(), ".codex") : moved;
-  const config = await readFile(path.join(home, "config.toml"), "utf-8").catch(() => "");
-  return /^\s*cli_auth_credentials_store\s*=\s*["'](?:keyring|auto)["']/mu.test(config);
-};
-
-const CODEX_IN_KEYCHAIN =
-  'Codex keeps its login in your Keychain, which IdleBiz\'s sandbox closes to codex runs. To use Codex, set cli_auth_credentials_store = "file" in ~/.codex/config.toml, run codex login in a terminal, then retry.';
 
 export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void> => {
   if (setupRunning) {
