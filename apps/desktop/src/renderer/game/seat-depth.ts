@@ -9,8 +9,8 @@ import { BUST } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
 import { characterDepth } from "@/shared/office-depth";
 import type { PixelPoint } from "@/shared/office-layout-schema";
-import { opaqueAt } from "@/shared/office-sight";
-import type { OpaqueMask } from "@/shared/office-sight";
+import { opaqueAt } from "@/renderer/game/opaque-mask";
+import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;

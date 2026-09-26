@@ -8,8 +8,6 @@
       "Bash(pnpm knip:*)",
       "Bash(pnpm dev:web:*)",
       "Bash(pnpm dev:kill:*)",
-      "Bash(pnpm --filter @repo/desktop check:office:*)",
-      "Bash(pnpm -F @repo/desktop check:office:*)",
       "Bash(agent-browser:*)"
     ]
   },

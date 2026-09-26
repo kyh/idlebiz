@@ -1,12 +1,10 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
-import { objectSpritePath } from "@/shared/office-object-sprite";
 import { objectDepth } from "@/shared/office-depth";
 import { walkGridOf } from "@/shared/office-grid";
 import type { WalkGrid } from "@/shared/office-grid";
 import { officeLayoutSchema } from "@/shared/office-layout-schema";
 import type {
-  OfficeDesign,
   OfficeLayoutData,
   OfficeObjectDef,
   OfficePoi,
@@ -14,19 +12,9 @@ import type {
   PixelPoint,
 } from "@/shared/office-layout-schema";
 
-export { comparePaintOrder } from "@/shared/office-depth";
-export {
-  type OfficeLayer,
-  type OfficeLayoutData,
-  type OfficePoi,
-  type OfficeSeat,
-  type PixelPoint,
-} from "@/shared/office-layout-schema";
+export { type PixelPoint } from "@/shared/office-layout-schema";
 
 interface OfficeObjectPlacement {
-  /** The object as authored: its band and floor line, for anything that judges draw order. */
-  readonly def: OfficeObjectDef;
-  readonly id: string;
   readonly key: string;
   readonly path: string;
   readonly x: number;
@@ -48,18 +36,6 @@ export interface Office {
   readonly placements: readonly OfficeObjectPlacement[];
 }
 
-// office-design.json is authored in the in-app office builder (#/ui): every
-// structure tile and furnishing is a placed object over an authored collision
-// grid with real walkable lanes. The schema (and what each field means) lives
-// in shared/office-layout-schema.ts, because main validates the same file
-// before it writes it. The bundled default is always the current version (the
-// migrating parser is for files from disk), so it parses strictly, at module load.
-export const BUNDLED_LAYOUT: OfficeLayoutData = officeLayoutSchema.parse(rawLayout);
-
-/** The office in force: the saved one, else the bundled one. */
-export const layoutOf = (design: OfficeDesign): OfficeLayoutData =>
-  design.kind === "saved" ? design.layout : BUNDLED_LAYOUT;
-
 /**
  * Spacing between two neighbours in a flat stack. Small enough that a band of
  * STACK_STEP⁻¹ objects (a million) still cannot reach the band above it, so no
@@ -71,7 +47,7 @@ const STACK_STEP = 1e-3;
  * Where a placed object draws, given its position in the paint-ordered array.
  *
  * The ground and overhead bands are flat stacks: they have no floor line, so they
- * paint in authored order and `index` alone separates them. Only the entity band
+ * paint in file order and `index` alone separates them. Only the entity band
  * y-sorts — furniture and actors share it, sorting on floor contact.
  */
 const depthFor = (obj: OfficeObjectDef, index: number): number => {
@@ -90,24 +66,18 @@ const depthFor = (obj: OfficeObjectDef, index: number): number => {
 };
 
 const placementsOf = (objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] =>
-  objects.map((obj, index) => {
-    const path = objectSpritePath(obj);
-    return {
-      def: obj,
-      depth: depthFor(obj, index),
-      flipX: obj.flipX ?? false,
-      flipY: obj.flipY ?? false,
-      id: obj.id,
-      // keyed by the file, not the id: one id can name two PNGs, and each must paint its own
-      key: `office-object-sprite-${path}`,
-      path,
-      x: obj.x,
-      y: obj.y,
-    };
-  });
+  objects.map((obj, index) => ({
+    depth: depthFor(obj, index),
+    flipX: obj.flipX ?? false,
+    flipY: obj.flipY ?? false,
+    key: `office-object-sprite-${obj.path}`,
+    path: obj.path,
+    x: obj.x,
+    y: obj.y,
+  }));
 
 /** The layout as the scene reads it: the walk grid and the paint-ordered placements. */
-export const officeOf = (layout: OfficeLayoutData): Office => ({
+const officeOf = (layout: OfficeLayoutData): Office => ({
   door: layout.door,
   grid: walkGridOf(layout),
   placements: placementsOf(layout.objects),
@@ -115,3 +85,6 @@ export const officeOf = (layout: OfficeLayoutData): Office => ({
   seats: layout.seats,
   spawn: layout.spawn,
 });
+
+/** The one office there is, frozen in office-design.json. */
+export const OFFICE: Office = officeOf(officeLayoutSchema.parse(rawLayout));

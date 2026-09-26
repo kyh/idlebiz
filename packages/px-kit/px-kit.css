@@ -165,10 +165,6 @@
     inset -2px -2px 0 0 var(--accent-hi);
 }
 
-.px-btn-danger {
-  color: var(--danger);
-}
-
 .px-opt {
   font-family: inherit;
   font-size: 14px;

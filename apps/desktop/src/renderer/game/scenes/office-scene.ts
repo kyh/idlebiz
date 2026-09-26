@@ -18,22 +18,18 @@ import { facingToward } from "@/renderer/game/movement";
 import type { Seat } from "@/renderer/game/npc";
 import type { Poi } from "@/renderer/game/npc-idle";
 import { NpcManager } from "@/renderer/game/npcs";
-import { BUNDLED_LAYOUT, officeOf } from "@/renderer/game/office-layout";
-import type { Office, OfficeLayoutData, PixelPoint } from "@/renderer/game/office-layout";
+import { OFFICE } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import { seatDepth } from "@/renderer/game/seat-depth";
 import { textureMasks } from "@/renderer/game/texture-masks";
-import type { OpaqueMask } from "@/renderer/game/texture-masks";
-import { WALK_STANDING_FRAME } from "@/shared/character-frame";
+import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 import { characterDepth } from "@/shared/office-depth";
-import { sightSealedGrid, standingSilhouette } from "@/shared/office-sight";
-import type { PaintedSprite } from "@/shared/office-sight";
 import type { ActivityEvent } from "@/shared/activity";
 import { hear, tell } from "@/renderer/game/office-port";
 import { DEFAULT_FOUNDER_SEED } from "@/shared/domain";
 import type { Employee } from "@/shared/domain";
 import { bodyBlockedAt, solidAt } from "@/shared/office-grid";
-import type { WalkGrid } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },
@@ -72,16 +68,18 @@ declare global {
   }
 }
 
+/** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
+const IDLE_POIS: readonly Poi[] = [
+  ...OFFICE.pois.map((p) => ({ face: p.face, x: p.x, y: p.y })),
+  ...OFFICE.seats.flatMap((seat): Poi[] =>
+    seat.role === "rest" ? [{ face: "down", sit: seat.sit, x: seat.x, y: seat.y }] : [],
+  ),
+];
+
 /** Tiled office assembled from Modern Office object sprites. */
 const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };
-
-/** What the scene is started with: the layout it builds the room from. */
-export interface OfficeSceneData {
-  layout: OfficeLayoutData;
-}
-export const officeSceneData = (layout: OfficeLayoutData): OfficeSceneData => ({ layout });
 
 export class OfficeScene extends Scene {
   private player?: Player;
@@ -97,14 +95,6 @@ export class OfficeScene extends Scene {
    */
   private readonly npcEvents = new BootGate<NpcManager>();
   private clickWalk?: ClickWalk;
-  /** The layout's grid with the spots nobody should stand in closed; set once the room is judged. */
-  /**
-   * The layout in force, from the scene data every start and restart carries.
-   * Phaser constructs the scene before any data exists, so the bundled office
-   * stands in until init() runs — which is before preload reads anything.
-   */
-  private office: Office = officeOf(BUNDLED_LAYOUT);
-  private grid: WalkGrid = this.office.grid;
   private modalOpen = false;
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;
@@ -114,14 +104,9 @@ export class OfficeScene extends Scene {
     super("office");
   }
 
-  init(data: OfficeSceneData) {
-    this.office = officeOf(data.layout);
-    this.grid = this.office.grid;
-  }
-
   preload() {
     const loaded = new Set<string>();
-    for (const placement of this.office.placements) {
+    for (const placement of OFFICE.placements) {
       if (loaded.has(placement.key)) {
         continue;
       }
@@ -269,7 +254,7 @@ export class OfficeScene extends Scene {
     cam.removeBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);
-    this.centerCameraOn(this.office.spawn);
+    this.centerCameraOn(OFFICE.spawn);
 
     const company = await bridge().getCompany();
     if (generation !== this.generation) {
@@ -288,11 +273,9 @@ export class OfficeScene extends Scene {
       return;
     }
     const player = this.placePlayer(playerKey);
-    const grid = this.sightSealed(masks, player);
-    this.grid = grid;
-    const npcs = new NpcManager(this, seats, grid, this.idlePois(), this.office.door);
+    const npcs = new NpcManager(this, seats, OFFICE.grid, IDLE_POIS, OFFICE.door);
     this.npcs = npcs;
-    this.clickWalk = new ClickWalk(this, grid, this.walkerOf(player), npcs, (id) =>
+    this.clickWalk = new ClickWalk(this, OFFICE.grid, this.walkerOf(player), npcs, (id) =>
       this.talkTo(id),
     );
 
@@ -320,56 +303,20 @@ export class OfficeScene extends Scene {
   }
 
   private buildRoom(masks: (key: string) => OpaqueMask | null): Seat[] {
-    const room = this.office.placements.map((placement) =>
+    const room = OFFICE.placements.map((placement) =>
       this.add
         .image(placement.x, placement.y, placement.key)
         .setOrigin(0, 0)
         .setDepth(placement.depth)
         .setFlip(placement.flipX, placement.flipY),
     );
-    return this.office.seats
+    return OFFICE.seats
       .filter((seat) => seat.role === "work")
       .map((seat) => ({
         depth: seatDepth(seat, room, (image) => masks(image.texture.key)),
         x: seat.x,
         y: seat.y,
       }));
-  }
-
-  /**
-   * The walk grid with every spot where the founder's face would be painted over
-   * closed. Judged from the textures the room is actually drawn with, so it holds
-   * for a saved office the bundled gate never saw.
-   */
-  private sightSealed(masks: (key: string) => OpaqueMask | null, player: Player): WalkGrid {
-    const sheet = masks(player.sprite.texture.key);
-    if (!sheet) {
-      return this.office.grid;
-    }
-    const silhouette = standingSilhouette(sheet, WALK_STANDING_FRAME);
-    // reading a texture is a canvas round trip: only what can draw above a character
-    const sprites: PaintedSprite[] = [];
-    for (const placement of this.office.placements) {
-      if (placement.def.layer === "floor") {
-        continue;
-      }
-      const mask = masks(placement.key);
-      if (mask) {
-        sprites.push({ mask, obj: placement.def });
-      }
-    }
-    return sightSealedGrid(this.office.grid, this.office.spawn, sprites, silhouette);
-  }
-
-  /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
-  private idlePois(): Poi[] {
-    const spots: Poi[] = this.office.pois.map((p) => ({ face: p.face, x: p.x, y: p.y }));
-    for (const seat of this.office.seats) {
-      if (seat.role === "rest") {
-        spots.push({ face: "down", sit: seat.sit, x: seat.x, y: seat.y });
-      }
-    }
-    return spots;
   }
 
   /** Toggle (G) a red overlay of the authored collision grid for debugging. */
@@ -379,7 +326,7 @@ export class OfficeScene extends Scene {
       this.debugGfx = undefined;
       return;
     }
-    const { grid } = this;
+    const { grid } = OFFICE;
     const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
     gfx.fillStyle(0xff_33_66, 0.35);
     for (let r = 0; r < grid.rows; r += 1) {
@@ -394,7 +341,7 @@ export class OfficeScene extends Scene {
 
   private debugApi(): OfficeDebugApi {
     return {
-      bodyBlockedAt: (x, y) => bodyBlockedAt(this.grid, x, y),
+      bodyBlockedAt: (x, y) => bodyBlockedAt(OFFICE.grid, x, y),
       probeMove: (start, delta) => this.probeMove(start, delta),
       snapshot: () => ({
         camera: {
@@ -402,19 +349,19 @@ export class OfficeScene extends Scene {
           y: this.cameras.main.scrollY,
           zoom: this.cameras.main.zoom,
         },
-        door: this.office.door,
-        objects: this.office.placements.length,
+        door: OFFICE.door,
+        objects: OFFICE.placements.length,
         player: {
           x: this.player?.sprite.x ?? null,
           y: this.player?.sprite.y ?? null,
         },
-        seats: this.office.seats.filter((seat) => seat.role === "work").length,
+        seats: OFFICE.seats.filter((seat) => seat.role === "work").length,
         world: {
-          h: this.office.grid.height,
-          w: this.office.grid.width,
+          h: OFFICE.grid.height,
+          w: OFFICE.grid.width,
         },
       }),
-      solidAtPx: (x, y) => solidAt(this.grid, x, y),
+      solidAtPx: (x, y) => solidAt(OFFICE.grid, x, y),
     };
   }
 
@@ -536,7 +483,7 @@ export class OfficeScene extends Scene {
 
   private placePlayer(key: string): Player {
     const sprite = this.add
-      .sprite(this.office.spawn.x, this.office.spawn.y, key, idleFrame("down"))
+      .sprite(OFFICE.spawn.x, OFFICE.spawn.y, key, idleFrame("down"))
       .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
     sprite.setDepth(characterDepth(sprite.y));
     const player = { anims: characterAnims(key), sprite };
@@ -615,7 +562,7 @@ export class OfficeScene extends Scene {
     if (!sprite) {
       return;
     }
-    const { grid } = this;
+    const { grid } = OFFICE;
     const nx = sprite.x + mx;
     if (!bodyBlockedAt(grid, nx, sprite.y)) {
       sprite.x = nx;

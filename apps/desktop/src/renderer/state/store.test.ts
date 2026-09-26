@@ -73,7 +73,6 @@ type Used =
   | "listBets"
   | "listProducts"
   | "listTasks"
-  | "loadOfficeDesign"
   | "loadReport"
   | "onActivity"
   | "onAuthEvent"
@@ -111,7 +110,6 @@ const fakeMain = (late: readonly Late[]) => {
     listEmployees: () => answerOf("listEmployees", main.employees),
     listProducts: () => Promise.resolve([]),
     listTasks: () => Promise.resolve([]),
-    loadOfficeDesign: () => Promise.resolve({ kind: "absent" }),
     loadReport: () => Promise.resolve({ companies: 1, skipped: [] }),
     onActivity: (listener) => {
       listeners.add(listener);

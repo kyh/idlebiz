@@ -17,7 +17,6 @@ import type {
 import type { Digest } from "@/shared/digest";
 import { errorMessage } from "@/shared/errors";
 import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@/shared/integrations";
-import type { OfficeDesign, OfficeLayoutData } from "@/shared/office-layout-schema";
 import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
 import type { Office } from "@/renderer/game/office-port";
@@ -32,12 +31,6 @@ interface State {
   booted: boolean;
   /** Why the last refresh before boot failed; null once one lands. */
   bootFailure: string | null;
-  /**
-   * The founder's saved office as main found it; null until that is known, and
-   * the scene mounts on nothing earlier. Settled before the bridge calls that
-   * can fail, so the room opens even when they do.
-   */
-  design: OfficeDesign | null;
   /** A coding CLI is signed in, by main's probe or a login since; null until the probe answers. */
   authed: boolean | null;
   stripeStatus: StripeStatus;
@@ -74,7 +67,6 @@ let state: State = {
   bootFailure: null,
   booted: false,
   company: null,
-  design: null,
   employees: [],
   feed: [],
   game: null,
@@ -154,31 +146,6 @@ export const setModalOpen = (open: boolean): void => {
   syncModal();
 };
 
-/**
- * Ask main for the player's saved office before the Phaser scene boots. Once:
- * the scene has built the room by the time anything refreshes again.
- */
-const settleDesign = async (): Promise<void> => {
-  if (state.design) {
-    return;
-  }
-  let design: OfficeDesign;
-  try {
-    design = await bridge().loadOfficeDesign();
-  } catch (error) {
-    design = { kind: "unreadable", reason: errorMessage(error) };
-  }
-  // The scene may mount now. Not `booted`: that also opens the HUD and the
-  // onboarding modal, and a founder shown onboarding because the bridge is down
-  // would create a second company on top of the one they have.
-  set({ design });
-};
-
-/** The builder saved an office: the scene rebuilds from it when it next mounts. */
-export const setLayout = (layout: OfficeLayoutData): void => {
-  set({ design: { kind: "saved", layout } });
-};
-
 /** Where each product really is: its entry and latest deploy (a lookup only for bound products). */
 const loadProductStatus = async (
   products: readonly Product[],
@@ -235,7 +202,6 @@ const splitTasks = (tasks: readonly Task[]): Pick<State, "pendingAsks" | "stuckT
 });
 
 const refreshOnce = async (): Promise<void> => {
-  await settleDesign();
   const ticket = order.ticket();
   const [company, resting, load] = await Promise.all([
     bridge().getCompany(),

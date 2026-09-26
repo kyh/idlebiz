@@ -1,7 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { layoutOf } from "@/renderer/game/office-layout";
+import { useEffect, useState } from "react";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useBoot, useStore } from "@/renderer/state/store";
+import { initStore, setGame, useBoot } from "@/renderer/state/store";
 import type { Boot } from "@/renderer/state/boot";
 import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
@@ -19,15 +18,6 @@ import { BudgetModal } from "@/renderer/ui/budget-modal";
 import { ConnectVercel } from "@/renderer/ui/connect-vercel";
 import { Settings } from "@/renderer/ui/settings";
 import { TeamChannel } from "@/renderer/ui/team-channel";
-import { OfficeObjectCatalog } from "@/renderer/ui/office-object-catalog";
-import { OfficeBuilder } from "@/renderer/ui/office-builder";
-
-const subscribeToHash = (onStoreChange: () => void): (() => void) => {
-  window.addEventListener("hashchange", onStoreChange);
-  return () => window.removeEventListener("hashchange", onStoreChange);
-};
-
-const getHash = (): string => window.location.hash;
 
 const OpenOverlay = ({
   overlay,
@@ -108,25 +98,15 @@ const Screen = ({
 
 export const App = () => {
   const boot = useBoot();
-  const design = useStore((s) => s.design);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
-  const route = useSyncExternalStore(subscribeToHash, getHash);
 
   useEffect(() => {
     initStore();
   }, []);
 
-  if (route === "#/office-assets") {
-    return <OfficeObjectCatalog />;
-  }
-
-  if (route === "#/ui") {
-    return design ? <OfficeBuilder design={design} /> : null;
-  }
-
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {design ? <PhaserGame key="office-game" layout={layoutOf(design)} onGame={setGame} /> : null}
+      <PhaserGame onGame={setGame} />
 
       <div className="pointer-events-none absolute inset-0">
         <CrashScreen>

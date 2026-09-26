@@ -1,20 +1,11 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 import { AUTO, Game, Scale } from "phaser";
 import type Phaser from "phaser";
-import type { OfficeLayoutData } from "@/renderer/game/office-layout";
-import { OfficeScene, officeSceneData } from "@/renderer/game/scenes/office-scene";
+import { OfficeScene } from "@/renderer/game/scenes/office-scene";
 
-export const PhaserGame = ({
-  layout,
-  onGame,
-}: {
-  layout: OfficeLayoutData;
-  onGame?: (game: Phaser.Game | null) => void;
-}) => {
+export const PhaserGame = ({ onGame }: { onGame?: (game: Phaser.Game | null) => void }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const gameRef = useRef<Phaser.Game | null>(null);
   const handOff = useEffectEvent((game: Phaser.Game | null) => onGame?.(game));
-  const firstLayout = useEffectEvent(() => layout);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -32,9 +23,7 @@ export const PhaserGame = ({
       scale: { height: "100%", mode: Scale.RESIZE, width: "100%" },
       type: AUTO,
     });
-    // the layout rides in as scene data, so the scene has it from init() on
-    game.scene.add("office", OfficeScene, true, officeSceneData(firstLayout()));
-    gameRef.current = game;
+    game.scene.add("office", OfficeScene, true);
     // The CDP handle, set here rather than waiting for the scene: under headless
     // automation the boot stalls before create() and the probe has to kick it.
     window.__game = game;
@@ -43,18 +32,9 @@ export const PhaserGame = ({
     return () => {
       handOff(null);
       game.destroy(true);
-      gameRef.current = null;
       window.__game = undefined;
     };
   }, []);
-
-  // a new layout while the office is up: the scene rebuilds from it
-  useEffect(() => {
-    const scene = gameRef.current?.scene.getScene("office");
-    if (scene?.scene.isActive()) {
-      scene.scene.restart(officeSceneData(layout));
-    }
-  }, [layout]);
 
   return (
     <div className="relative h-full w-full">
