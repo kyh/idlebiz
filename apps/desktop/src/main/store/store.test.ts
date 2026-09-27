@@ -34,6 +34,7 @@ const scheduler = createScheduler(agentDriver, asleep);
 const {
   alumniDir,
   betFile,
+  companyDir,
   companySharedDir,
   companyWorkspace,
   employeeAgentDir,
@@ -1192,40 +1193,37 @@ const listingOf = (productId: string, id: string) => ({
 });
 
 describe("listings", () => {
-  it("gives a namesake on the same product the next id, and loads each back", () => {
+  it("gives a namesake on any product the next id, and loads each back", () => {
     found();
     const first = firstProduct();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    const id = store.newListingId(first.id, "Launch tee");
+    const id = store.newListingId("Launch tee");
     store.recordListing(listingOf(first.id, id));
-    expect(store.newListingId(first.id, "Launch tee")).toBe(`${id}-2`);
-    expect(store.newListingId(side.id, "Launch tee")).toBe(id);
-    store.recordListing(listingOf(side.id, id));
+    expect(store.newListingId("Launch tee")).toBe(`${id}-2`);
+    store.recordListing(listingOf(side.id, `${id}-2`));
+    expect(() => store.recordListing(listingOf(side.id, id))).toThrow("already kept");
 
     store.initStore();
 
     expect(store.listListings().map((l) => [l.productId, l.id])).toEqual([
       [first.id, id],
-      [side.id, id],
+      [side.id, `${id}-2`],
     ]);
   });
 
-  it("skips a listing file it cannot read, and a retired product's go with it", () => {
+  it("skips a listing file it cannot read, and keeps a retired product's, whose link still sells", () => {
     const co = found();
-    const first = firstProduct();
+    firstProduct();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     store.recordListing(listingOf(side.id, "launch-tee"));
-    const broken = path.join(productsDir(co.id), first.id, "listings", "broken.json");
-    mkdirSync(path.dirname(broken), { recursive: true });
+    const broken = path.join(companyDir(co.id), "listings", "broken.json");
     writeFileSync(broken, "{");
 
     expect(store.initStore().skipped).toMatchObject([{ kind: "listing", path: broken }]);
     store.killProduct(side.id, "dud", null);
+    store.initStore();
 
-    expect(store.listListings()).toEqual([]);
-    expect(existsSync(path.join(retiredDir(co.id), side.id, "listings", "launch-tee.json"))).toBe(
-      true,
-    );
+    expect(store.listListings()).toMatchObject([{ id: "launch-tee", productId: side.id }]);
   });
 });
 
@@ -1259,15 +1257,18 @@ const saleOf = (productId: string, id: string) =>
   }) as const;
 
 describe("orders", () => {
-  it("keeps each order in its product's ledger across a restart, and a retired product's go with it", () => {
+  it("keeps each order of a kept listing across a restart and past its product's retirement", () => {
     const co = found();
     const first = firstProduct();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
+    expect(() => store.recordOrder(saleOf(first.id, "order-a"))).toThrow("no listing");
+    store.recordListing(listingOf(first.id, "launch-tee"));
+    store.recordListing(listingOf(side.id, "side-tee"));
     store.recordOrder(saleOf(first.id, "order-a"));
-    store.recordOrder(saleOf(side.id, "order-b"));
+    store.recordOrder({ ...saleOf(side.id, "order-b"), listingId: "side-tee" });
     store.updateSale("order-a", { stage: { checks: 0, kind: "pricing", printfulId: 9001 } });
     expect(() => store.recordOrder(saleOf(first.id, "order-a"))).toThrow("already kept");
-    const broken = path.join(productsDir(co.id), first.id, "orders", "broken.json");
+    const broken = path.join(companyDir(co.id), "orders", "broken.json");
     writeFileSync(broken, "{");
 
     expect(store.initStore().skipped).toMatchObject([{ kind: "order", path: broken }]);
@@ -1276,9 +1277,12 @@ describe("orders", () => {
       { id: "order-b" },
     ]);
     store.killProduct(side.id, "dud", null);
-    expect(store.listOrders().map((o) => o.id)).toEqual(["order-a"]);
-    expect(() => store.updateSale("order-b", { printfulStatus: "pending" })).toThrow("no sale");
-    expect(existsSync(path.join(retiredDir(co.id), side.id, "orders", "order-b.json"))).toBe(true);
+    store.updateSale("order-b", { printfulStatus: "pending" });
+    store.initStore();
+    expect(store.listOrders()).toMatchObject([
+      { id: "order-a" },
+      { id: "order-b", printfulStatus: "pending" },
+    ]);
   });
 
   it("raises one card per trouble, which no teammate can claim and only the founder settles", () => {

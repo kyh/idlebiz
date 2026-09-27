@@ -185,10 +185,10 @@ rather than crashing boot.
   (`main/printful.ts`, polled every 3s and backing off on a 429), refuses a price under the
   floor, and once signed off makes the shipped payment link (`stripeShippedLink` in
   `main/payment-links.ts`, each POST with an idempotency key) and saves the listing under
-  `products/<slug>/listings/`. Paid orders reach Printful through the order pump
+  `listings/`. Paid orders reach Printful through the order pump
   (`main/order-pump.ts`), which the metrics pulse runs: it reads Stripe's checkouts
-  (`main/stripe-checkouts.ts`) every 10 minutes, keeps each paid one under
-  `products/<slug>/orders/`, and drafts, prices and confirms it on Printful
+  (`main/stripe-checkouts.ts`) every 30 minutes, keeps each paid one under `orders/`
+  (a retired product's too, whose link still sells), and drafts, prices and confirms it on Printful
   (`main/printful-orders.ts`); anything it cannot settle is an order card in the Inbox, and
   `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
   at `fetch` (`main/order-pump.test.ts`). The Printful token is pasted in the Budget panel, kept only once Printful shows it can

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // A paid checkout on a listing's payment link, and what became of it at Printful. Main writes
-// one file per order under its product; runs may read them, so support can answer a buyer.
+// one file per order; runs may read them, so support can answer a buyer.
 
 /** Printful's `external_id`: at most 32 of [A-Za-z0-9_-], unique per store, which makes creating an order idempotent. */
 const OrderIdSchema = z.string().regex(/^[\w-]{1,32}$/u);
@@ -24,7 +24,7 @@ export type Recipient = z.infer<typeof RecipientSchema>;
  * asked anything, so a restart finds it and looks it up by its external id rather than make it
  * twice; `tries` counts failed sends. `pricing` is a draft whose costs are being worked out,
  * `checks` the reads so far. `held` waits on the founder, who has a card saying `why`.
- * `test` was paid in test mode: priced, then left a draft, since nobody paid for it.
+ * `test` was paid in test mode: priced, then its draft deleted, since nobody paid for it.
  */
 const OrderStageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("received"), tries: z.number().int().nonnegative() }),
@@ -54,7 +54,7 @@ const Paid = {
   sessionId: z.string().min(1),
 };
 
-/** products/<product>/orders/<id>.json. */
+/** orders/<id>.json, beside the products rather than in one: a retired product's orders still ship. */
 export const OrderSchema = z.discriminatedUnion("kind", [
   z.object({
     ...Paid,

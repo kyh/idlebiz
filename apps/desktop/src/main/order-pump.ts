@@ -8,7 +8,7 @@ import type { PrintfulCredential } from "@/main/printful";
 import { printfulOrders } from "@/main/printful-orders";
 import type { PrintfulOrder } from "@/main/printful-orders";
 import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
-import { readCheckouts } from "@/main/stripe-checkouts";
+import { CHECKOUT_READ_LIMIT, readCheckouts } from "@/main/stripe-checkouts";
 import type { CheckoutSession } from "@/main/stripe-checkouts";
 import { formatUsd } from "@/shared/format";
 import type { Listing } from "@/shared/listing";
@@ -21,10 +21,22 @@ import type { Order, Recipient, Sale } from "@/shared/order";
 // at no more than the buyer paid, so no restart confirms one twice or over that guard.
 // Whatever the pump cannot settle goes to the founder as a card: refunds are theirs.
 
-/** How often Stripe's checkouts are read, and sent orders' statuses with them: Printful takes days to ship. */
-export const ORDER_READ_MS = 10 * 60_000;
+// Stripe's reads are allotted by sales (on average 500 a transaction over 30 days, at least
+// 10k a month), and metrics already spends most of a quiet store's: checkouts are read on a
+// slower beat than Printful, which allows far more.
+/** How often Stripe's checkouts are read for new paid orders. */
+export const CHECKOUTS_READ_MS = 30 * 60_000;
+/** How often waiting orders are sent and sent ones' statuses read: Printful takes days to ship. */
+export const ORDER_TRACK_MS = 10 * 60_000;
 
-// failed sends before the founder is asked, a read apart each (an hour)
+/**
+ * What a pulse does for orders: `read` takes new paid checkouts from Stripe, then does what
+ * `track` does; `track` sends what waits and reads sent orders' statuses; every beat prices
+ * and confirms drafts.
+ */
+export type OrderBeat = "read" | "track" | "price";
+
+// failed sends before the founder is asked, a track apart each (an hour)
 const MAX_SEND_TRIES = 6;
 // reads of a draft's costs, a pulse apart, before the founder is asked
 const MAX_PRICING_CHECKS = 20;
@@ -101,15 +113,32 @@ const failedTry = (sale: Sale, tries: number, reason: string): void => {
   );
 };
 
+/**
+ * Keep what Printful says of a sale, and hand the founder a status that went wrong the first
+ * time it is read, whichever call read it: a confirmation Printful's billing refuses answers
+ * failed or onhold straight away.
+ */
+const noteStatus = (sale: Sale, printfulId: number, status: string, stage: Sale["stage"]): void => {
+  store.updateSale(sale.id, { printfulStatus: status, stage });
+  if (ALARMING.has(status) && status !== sale.printfulStatus) {
+    raiseOrderCard(cardTitle(sale, `Printful marked it ${status}`), {
+      action: `Check ${describe(sale)}`,
+      draft: null,
+      instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks (a failed charge is retried once billing works). ${REFUND}`,
+    });
+  }
+};
+
 /** Take on what Printful already has for a sale: a draft to price, or one already submitted. */
 const adopt = (sale: Sale, order: PrintfulOrder): void => {
-  store.updateSale(sale.id, {
-    printfulStatus: order.status,
-    stage:
-      order.status === "draft"
-        ? { checks: 0, kind: "pricing", printfulId: order.id }
-        : { kind: "confirmed", printfulId: order.id },
-  });
+  noteStatus(
+    sale,
+    order.id,
+    order.status,
+    order.status === "draft"
+      ? { checks: 0, kind: "pricing", printfulId: order.id }
+      : { kind: "confirmed", printfulId: order.id },
+  );
 };
 
 /**
@@ -229,6 +258,28 @@ const recheck = (sale: Sale, printfulId: number, checks: number, reason: string)
   );
 };
 
+/**
+ * A test-mode sale, which nobody paid: its priced draft is deleted, so the founder's Printful
+ * store holds no order nobody paid for, which confirming by hand would charge them for.
+ */
+const discard = async (
+  sale: Sale,
+  order: PrintfulOrder,
+  credential: PrintfulCredential,
+): Promise<void> => {
+  const { costs } = order;
+  const costCents = costs.kind === "done" && costs.currency === "USD" ? costs.totalCents : null;
+  const gone = await printfulOrders.discard(order.id, credential);
+  if (gone.kind !== "ok" && gone.kind !== "missing") {
+    report(`test order ${sale.id}`, new Error(`Printful kept test draft ${order.id}`));
+  }
+  store.updateSale(sale.id, {
+    costCents,
+    printfulStatus: gone.kind === "ok" || gone.kind === "missing" ? "deleted" : "draft",
+    stage: { kind: "test", printfulId: order.id },
+  });
+};
+
 /** Confirm a priced draft, on this read that shows it a draft, only when it costs no more than the buyer paid. */
 const confirm = async (
   sale: Sale,
@@ -239,6 +290,10 @@ const confirm = async (
   const { costs } = order;
   if (costs.kind === "calculating") {
     recheck(sale, order.id, checks, "Printful is still working out its cost");
+    return;
+  }
+  if (!sale.livemode) {
+    await discard(sale, order, credential);
     return;
   }
   if (costs.kind === "failed" || costs.currency !== "USD" || costs.totalCents === null) {
@@ -263,19 +318,12 @@ const confirm = async (
     );
     return;
   }
-  if (!sale.livemode) {
-    store.updateSale(sale.id, {
-      printfulStatus: "draft",
-      stage: { kind: "test", printfulId: order.id },
-    });
-    return;
-  }
   const confirmed = await printfulOrders.confirm(order.id, credential);
   switch (confirmed.kind) {
     case "ok": {
-      store.updateSale(sale.id, {
-        printfulStatus: confirmed.value.status,
-        stage: { kind: "confirmed", printfulId: order.id },
+      noteStatus(sale, order.id, confirmed.value.status, {
+        kind: "confirmed",
+        printfulId: order.id,
       });
       return;
     }
@@ -284,6 +332,12 @@ const confirm = async (
       return;
     }
     case "rejected": {
+      // the founder may have confirmed it by hand since it was read
+      const now = await printfulOrders.read(order.id, credential);
+      if (now.kind === "ok" && now.value.status !== "draft") {
+        adopt(sale, now.value);
+        return;
+      }
       hold(
         sale,
         order.id,
@@ -356,25 +410,22 @@ const track = async (
   if (status === sale.printfulStatus) {
     return;
   }
-  store.updateSale(sale.id, { printfulStatus: status });
   // a held draft the founder confirmed by hand is on its way like any other
-  if (sale.stage.kind === "held" && status !== "draft" && status !== "deleted") {
-    store.updateSale(sale.id, { stage: { kind: "confirmed", printfulId } });
-  }
-  if (ALARMING.has(status)) {
-    raiseOrderCard(cardTitle(sale, `Printful marked it ${status}`), {
-      action: `Check ${describe(sale)}`,
-      draft: null,
-      instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks (a failed charge is retried once billing works). ${REFUND}`,
-    });
-  }
+  const confirmedByHand = sale.stage.kind === "held" && status !== "draft" && status !== "deleted";
+  noteStatus(
+    sale,
+    printfulId,
+    status,
+    confirmedByHand ? { kind: "confirmed", printfulId } : sale.stage,
+  );
 };
 
-/** What a sale does next, if anything now: a draft is priced every pulse, the rest waits for a read. */
+/** What a sale does next, if anything now: a draft is priced every pulse, the rest waits for a track. */
 const stepOf = (
   sale: Sale,
-  readNow: boolean,
+  beat: OrderBeat,
 ): ((credential: PrintfulCredential) => Promise<void>) | null => {
+  const readNow = beat !== "price";
   const { stage } = sale;
   switch (stage.kind) {
     case "pricing": {
@@ -484,7 +535,9 @@ const take = (session: CheckoutSession, listing: Listing): void => {
     printfulStatus: null,
     stage: { kind: "received", tries: 0 },
   });
-  const test = session.livemode ? "" : " (test mode: Printful gets a draft, never confirmed)";
+  const test = session.livemode
+    ? ""
+    : " (test mode: Printful only prices a draft, then it is deleted)";
   postToRoom(
     { kind: "office" },
     `📦 Sold ${listing.name} (${read.variant.label}) for ${cents(paid.collectedCents)} on ${listing.productId}: it goes to Printful now${test}.`,
@@ -546,21 +599,25 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
   }
   if (read.whole) {
     store.setOrdersCursor(Math.max(cursor, waitFrom));
-  } else {
-    report("orders", new Error("more checkouts since the last read than one read takes"));
+    return;
   }
+  // Stripe lists newest first, so the older ones are out of reach of every read to come: the
+  // founder is told, and the cursor moves up to what was read, or no read would ever catch up.
+  const oldestRead = Math.min(...read.sessions.map((session) => session.created));
+  store.setOrdersCursor(Math.max(cursor, Math.min(waitFrom, oldestRead - 1)));
+  raiseOrderCard("Paid orders may have been missed", {
+    action: "Check Stripe for payments on IdleBiz's listings",
+    draft: null,
+    instructions: `More checkouts reached Stripe between two of IdleBiz's reads than one read takes (${CHECKOUT_READ_LIMIT}), which other business on the same account causes, so IdleBiz read only the newest and skipped any made before ${new Date(oldestRead * 1000).toISOString()}. In Stripe's dashboard, look for payments on IdleBiz's payment links before then that no order card or read_orders shows, and place those in Printful by hand. ${REFUND}`,
+  });
 };
 
-/**
- * Carry every order a step: on a read (`readNow`), take new paid checkouts from Stripe, send
- * what waits and read sent orders' statuses; on every pulse, price and confirm drafts. One
- * order's fault is its own.
- */
-export const pumpOrders = async (now: number, readNow: boolean): Promise<void> => {
+/** Carry every order the step its beat allows. One order's fault is its own. */
+export const pumpOrders = async (now: number, beat: OrderBeat): Promise<void> => {
   if (store.getCompany() === null) {
     return;
   }
-  if (readNow) {
+  if (beat === "read") {
     await takePaidCheckouts(now);
   }
   const credential = printfulCredential();
@@ -568,7 +625,7 @@ export const pumpOrders = async (now: number, readNow: boolean): Promise<void> =
     if (order.kind !== "sale") {
       continue;
     }
-    const step = stepOf(order, readNow);
+    const step = stepOf(order, beat);
     if (step === null) {
       continue;
     }

@@ -400,7 +400,7 @@ const orderStanding = (order: Order): string => {
       return `waiting on the founder: ${stage.why}`;
     }
     case "test": {
-      return `paid in test mode, so left a Printful draft (order ${stage.printfulId})`;
+      return `paid in test mode, so only priced as Printful draft ${stage.printfulId}, never sent`;
     }
     // no default
   }
@@ -763,7 +763,7 @@ const TOOLS = {
     // quoted as JSON, so a name cannot pose as more of the action the founder signs
     const action = `sell ${JSON.stringify(name)} (variants ${variantIds.join(", ")}) printing ${printed} at ${price} via Printful on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
     requireSignOff(ctx, action, "payments");
-    const listingId = store.newListingId(product.id, name);
+    const listingId = store.newListingId(name);
     const made = await ctx.printListing.publish({
       bet: bet ?? null,
       key: keys.stripe,
@@ -800,19 +800,20 @@ const TOOLS = {
     if (productId === null) {
       return "There is no product yet — create_product first.";
     }
-    const product = store.getProduct(productId);
-    if (!product) {
-      return store.noSuchProduct(productId);
-    }
     const orders = store
       .listOrders()
-      .filter((o) => o.productId === product.id)
+      .filter((o) => o.productId === productId)
       .toSorted((a, b) => b.createdAt - a.createdAt);
+    // a retired product's orders still ship, so its buyers still write in
+    const name = store.getProduct(productId)?.name ?? (orders.length > 0 ? productId : null);
+    if (name === null) {
+      return store.noSuchProduct(productId);
+    }
     if (orders.length === 0) {
-      return `${product.name} has no paid orders yet.`;
+      return `${name} has no paid orders yet.`;
     }
     const shown = orders.slice(0, RECENT_ORDERS);
-    return `${product.name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}`;
+    return `${name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}`;
   }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);
@@ -821,7 +822,7 @@ const TOOLS = {
   }),
   kill_product: define(TOOL_SPECS.kill_product, (ctx, { slug, reason }) => {
     const retired = retireProduct(slug, reason, ctx.employee.id);
-    return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.`;
+    return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down, and so is any payment link sell_print made for it: each paid order still ships.`;
   }),
   open_bet: define(TOOL_SPECS.open_bet, (ctx, { product, ...bet }) => {
     const productId = productFor(ctx, product);

@@ -33,7 +33,7 @@ const ListingVariantSchema = z.object({
 });
 export type ListingVariant = z.infer<typeof ListingVariantSchema>;
 
-/** products/<product>/listings/<id>.json; the product is the folder it sits in. */
+/** listings/<id>.json, beside the products rather than in one: a retired product's link still sells. */
 export const ListingSchema = z.object({
   betId: z.string().nullable(),
   /** What Printful charged, at most, to print and ship one to the sampled US addresses when it was listed. */

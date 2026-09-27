@@ -85,14 +85,13 @@ export interface Pacing {
 const PACING: Pacing = { backoffMs: 2000, pollMs: 3000 };
 const RATE_LIMIT_RETRIES = 3;
 
-const printfulCall = async (path: string, init: RequestInit, backoffMs: number) => {
-  const call = async () => {
-    const res = await fetchOk(`${PRINTFUL_API}${path}`, {
-      ...init,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    return jsonValueSchema.parse(await res.json());
-  };
+const printfulCall = async (
+  path: string,
+  init: RequestInit,
+  backoffMs: number,
+): Promise<Response> => {
+  const call = () =>
+    fetchOk(`${PRINTFUL_API}${path}`, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
   for (let attempt = 0; attempt < RATE_LIMIT_RETRIES; attempt += 1) {
     try {
       return await call();
@@ -106,13 +105,18 @@ const printfulCall = async (path: string, init: RequestInit, backoffMs: number) 
   return await call();
 };
 
+const jsonOf = async (call: Promise<Response>): Promise<JsonValue> => {
+  const res = await call;
+  return jsonValueSchema.parse(await res.json());
+};
+
 export const printfulGet = (
   path: string,
   token: string,
   storeId?: number,
   backoffMs = PACING.backoffMs,
 ): Promise<JsonValue> =>
-  printfulCall(path, { headers: printfulHeaders(token, storeId) }, backoffMs);
+  jsonOf(printfulCall(path, { headers: printfulHeaders(token, storeId) }, backoffMs));
 
 /** POST `body` as JSON, or nothing when it is null. */
 export const printfulPost = (
@@ -121,17 +125,33 @@ export const printfulPost = (
   body: JsonValue | null,
   backoffMs = PACING.backoffMs,
 ): Promise<JsonValue> =>
-  printfulCall(
+  jsonOf(
+    printfulCall(
+      path,
+      body === null
+        ? { headers: printfulHeaders(token, storeId), method: "POST" }
+        : {
+            body: JSON.stringify(body),
+            headers: { ...printfulHeaders(token, storeId), "Content-Type": "application/json" },
+            method: "POST",
+          },
+      backoffMs,
+    ),
+  );
+
+/** DELETE, whatever Printful answers with it: its reference names no body. */
+export const printfulDelete = async (
+  path: string,
+  { token, storeId }: PrintfulCredential,
+  backoffMs = PACING.backoffMs,
+): Promise<void> => {
+  const res = await printfulCall(
     path,
-    body === null
-      ? { headers: printfulHeaders(token, storeId), method: "POST" }
-      : {
-          body: JSON.stringify(body),
-          headers: { ...printfulHeaders(token, storeId), "Content-Type": "application/json" },
-          method: "POST",
-        },
+    { headers: printfulHeaders(token, storeId), method: "DELETE" },
     backoffMs,
   );
+  await res.text();
+};
 
 /** What a failed Printful read leaves the caller: `refused` is the token turned away, which only a new one fixes; `failed` says why, to the agent. */
 type PrintfulFailure = { kind: "refused" } | { kind: "failed"; reason: string };

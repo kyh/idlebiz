@@ -60,6 +60,9 @@ export type CheckoutsRead =
 
 // a thousand checkouts between two reads is far past what a print shop run from here sees
 const MAX_PAGES = 10;
+const PAGE_SIZE = 100;
+/** The most checkouts one read takes. */
+export const CHECKOUT_READ_LIMIT = MAX_PAGES * PAGE_SIZE;
 
 /** Sessions created after `createdAfter` (seconds), with their line items. */
 export const readCheckouts = async (key: string, createdAfter: number): Promise<CheckoutsRead> => {
@@ -70,7 +73,7 @@ export const readCheckouts = async (key: string, createdAfter: number): Promise<
       const from = after === null ? "" : `&starting_after=${after}`;
       const read = PageSchema.parse(
         await getJson(
-          `https://api.stripe.com/v1/checkout/sessions?limit=100&created[gt]=${createdAfter}&expand[]=data.line_items${from}`,
+          `https://api.stripe.com/v1/checkout/sessions?limit=${PAGE_SIZE}&created[gt]=${createdAfter}&expand[]=data.line_items${from}`,
           stripeHeaders(key),
         ),
       );

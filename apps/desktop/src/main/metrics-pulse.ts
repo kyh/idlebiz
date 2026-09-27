@@ -2,7 +2,8 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { guarded, report } from "@/main/lib/report";
 import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
-import { ORDER_READ_MS, pumpOrders } from "@/main/order-pump";
+import { CHECKOUTS_READ_MS, ORDER_TRACK_MS, pumpOrders } from "@/main/order-pump";
+import type { OrderBeat } from "@/main/order-pump";
 import { readMetricsConfig } from "@/main/store/metrics-config";
 import { noteStripeRead } from "@/main/stripe-connect";
 import { isClosed } from "@/shared/bets";
@@ -14,8 +15,25 @@ import { isClosed } from "@/shared/bets";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
-/** When Stripe's checkouts were last read for orders; null reads on the next pulse. */
-let ordersReadAt: number | null = null;
+/** When Stripe's checkouts were last read for orders, and when orders were last tracked; null does it on the next pulse. */
+let checkoutsReadAt: number | null = null;
+let ordersTrackedAt: number | null = null;
+
+const due = (last: number | null, at: number, every: number): boolean =>
+  last === null || at - last >= every;
+
+const orderBeat = (at: number): OrderBeat => {
+  if (due(checkoutsReadAt, at, CHECKOUTS_READ_MS)) {
+    checkoutsReadAt = at;
+    ordersTrackedAt = at;
+    return "read";
+  }
+  if (due(ordersTrackedAt, at, ORDER_TRACK_MS)) {
+    ordersTrackedAt = at;
+    return "track";
+  }
+  return "price";
+};
 
 // A beat later than this after the last one means the machine slept in
 // between, so nothing asked the sources: the streak starts again.
@@ -76,11 +94,7 @@ const now = async (): Promise<void> => {
   }
   try {
     const at = Date.now();
-    const readNow = ordersReadAt === null || at - ordersReadAt >= ORDER_READ_MS;
-    if (readNow) {
-      ordersReadAt = at;
-    }
-    await pumpOrders(at, readNow);
+    await pumpOrders(at, orderBeat(at));
   } catch (error) {
     report("orders", error);
   } finally {
@@ -114,6 +128,7 @@ export const metricsPulse = {
     }
     timer = null;
     streak = null;
-    ordersReadAt = null;
+    checkoutsReadAt = null;
+    ordersTrackedAt = null;
   },
 };

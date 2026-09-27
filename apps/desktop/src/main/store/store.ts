@@ -130,9 +130,9 @@ interface ActiveCompany {
   // Loaded only when the shipping log is opened.
   shipped: Task[] | null;
   products: Product[];
-  /** The print-on-demand items on sale, every live product's. */
+  /** Every print-on-demand item ever listed, a retired product's too: its payment link still takes money. */
   listings: Listing[];
-  /** Every live product's paid orders. */
+  /** Every paid order, a retired product's too, which still ships. */
   orders: Order[];
   /** Sign-offs the founder gave that no run has used yet. */
   grants: Grant[];
@@ -417,9 +417,8 @@ const loadPackages = <T extends { id: string }>(
   return rows;
 };
 
-/** Each `<id>.json` of a product's folder that `schema` reads; one naming another id or product is skipped. */
-const loadProductRecords = <T extends { id: string; productId: string }>(
-  product: Product,
+/** Each `<id>.json` of `dir` that `schema` reads; one naming another id is skipped. */
+const loadRecords = <T extends { createdAt: number; id: string }>(
   kind: LoadSkip["kind"],
   dir: string,
   schema: z.ZodType<T>,
@@ -430,21 +429,16 @@ const loadProductRecords = <T extends { id: string; productId: string }>(
       const file = path.join(dir, name);
       try {
         const record = schema.parse(parseJson(readFileSync(file, "utf-8")));
-        if (`${record.id}.json` !== name || record.productId !== product.id) {
-          throw new Error(`${kind} does not match its file's name or product`);
+        if (`${record.id}.json` !== name) {
+          throw new Error(`${kind} does not match its file's name`);
         }
         return [record];
       } catch (error) {
         skip(kind, file, error);
         return [];
       }
-    });
-
-const loadListings = (product: Product): Listing[] =>
-  loadProductRecords(product, "listing", listingsDir(product.companyId, product.id), ListingSchema);
-
-const loadOrders = (product: Product): Order[] =>
-  loadProductRecords(product, "order", ordersDir(product.companyId, product.id), OrderSchema);
+    })
+    .toSorted(byAge);
 
 const TEAM_CHAT_RING = 200;
 
@@ -943,15 +937,13 @@ export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot):
 // ---- listings ---------------------------------------------------------------
 export const listListings = (): Listing[] => [...current().listings];
 
-/** A new listing's id: its name's slug, free among the product's listings, skipped ones on disk too. */
-export const newListingId = (productId: string, name: string): string => {
-  const product = requireProduct(productId);
+/** A new listing's id: its name's slug, free among every product's listings, skipped ones on disk too. */
+export const newListingId = (name: string): string => {
+  const { company, listings } = current();
   return uniqueSlug(
     name,
-    current()
-      .listings.filter((l) => l.productId === product.id)
-      .map((l) => l.id),
-    (slug) => existsSync(listingFile(product.companyId, product.id, slug)),
+    listings.map((l) => l.id),
+    (slug) => existsSync(listingFile(company.id, slug)),
   );
 };
 
@@ -962,24 +954,18 @@ export const newListingId = (productId: string, name: string): string => {
 export const recordListing = (listing: Listing): void => {
   const product = requireProduct(listing.productId);
   const { listings } = current();
-  if (listings.some((l) => l.productId === product.id && l.id === listing.id)) {
-    throw new Error(`${product.id} already has a listing ${listing.id}`);
+  if (listings.some((l) => l.id === listing.id)) {
+    throw new Error(`a listing ${listing.id} is already kept`);
   }
   listings.push(listing);
-  atomicWrite(
-    listingFile(product.companyId, product.id, listing.id),
-    `${JSON.stringify(listing, null, 2)}\n`,
-  );
+  atomicWrite(listingFile(product.companyId, listing.id), `${JSON.stringify(listing, null, 2)}\n`);
 };
 
 // ---- orders -----------------------------------------------------------------
 export const listOrders = (): Order[] => [...current().orders];
 
 const saveOrder = (order: Order): void => {
-  atomicWrite(
-    orderFile(current().company.id, order.productId, order.id),
-    `${JSON.stringify(order, null, 2)}\n`,
-  );
+  atomicWrite(orderFile(current().company.id, order.id), `${JSON.stringify(order, null, 2)}\n`);
 };
 
 /**
@@ -987,8 +973,10 @@ const saveOrder = (order: Order): void => {
  * nothing is sent for it, so a restart always finds what it may already have sent.
  */
 export const recordOrder = (order: Order): void => {
-  requireProduct(order.productId);
-  const { orders } = current();
+  const { listings, orders } = current();
+  if (!listings.some((l) => l.productId === order.productId && l.id === order.listingId)) {
+    throw new Error(`no listing ${order.listingId} of ${order.productId} is kept`);
+  }
   if (orders.some((o) => o.id === order.id)) {
     throw new Error(`order ${order.id} is already kept`);
   }
@@ -998,7 +986,7 @@ export const recordOrder = (order: Order): void => {
 
 /**
  * What Printful did with a sale. It happened, so the cache keeps it even when the save throws,
- * and the next write carries it; a sale whose product was retired meanwhile is gone, and throws.
+ * and the next write carries it.
  */
 export const updateSale = (
   id: string,
@@ -1666,7 +1654,8 @@ export const productOfEmployee = (employeeId: string): Product | null => {
  * at the next boot. Nor can one a teammate's run is working in: the move would
  * pull the tree out from under it, and a retry would land as company-level
  * work. `by` is the employee retiring it, whose own run is exempt; null is the
- * founder. Returns the bets it took down.
+ * founder. Its listings and orders stay: their payment links still take money, and
+ * every paid order still ships. Returns the bets it took down.
  */
 export const killProduct = (productId: string, reason: string, by: string | null): Bet[] => {
   const product = requireProduct(productId);
@@ -1706,8 +1695,6 @@ export const killProduct = (productId: string, reason: string, by: string | null
   }
   dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
   active.products.splice(active.products.indexOf(product), 1);
-  active.listings = active.listings.filter((l) => l.productId !== productId);
-  active.orders = active.orders.filter((o) => o.productId !== productId);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
   }
@@ -1897,8 +1884,8 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (slug) => productFile(company.id, slug),
     (doc) => docToProduct(doc, company.id),
   ).toSorted(byAge);
-  active.listings = active.products.flatMap(loadListings).toSorted(byAge);
-  active.orders = active.products.flatMap(loadOrders).toSorted(byAge);
+  active.listings = loadRecords("listing", listingsDir(company.id), ListingSchema);
+  active.orders = loadRecords("order", ordersDir(company.id), OrderSchema);
   active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
   active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];
   active.routines = loadPackages(

@@ -12,7 +12,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-orders-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { orderIdOf, pumpOrders } = await import("./order-pump");
+const { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } = await import("./order-pump");
 const { settleOrderCard } = await import("./company-actions");
 
 const NOW = 1_800_000_000_000;
@@ -70,6 +70,8 @@ interface WorldSetup {
   pricingReads?: number;
   design?: Uint8Array;
   lostConfirmations?: number;
+  /** The status a confirmation leaves the order in. */
+  confirmedAs?: string;
 }
 
 const notFound = () => Response.json({ code: 404 }, { status: 404 });
@@ -85,13 +87,19 @@ const fakeWorld = ({
   pricingReads = 0,
   design = DESIGN,
   lostConfirmations = 0,
+  confirmedAs = "pending",
 }: WorldSetup = {}) => {
   const checkoutReads: number[] = [];
   const orders = new Map<number, PrintfulOrder>();
   const world = {
+    /** Called as a confirmation arrives, before Printful acts on it. */
+    beforeConfirm: (_order: PrintfulOrder): void => {},
     checkoutReads,
     confirmations: 0,
     creates: 0,
+    discards: 0,
+    /** Whether Stripe says every page has more after it. */
+    endless: false,
     lostConfirmations,
     orders,
     sessions,
@@ -126,11 +134,14 @@ const fakeWorld = ({
     return Response.json(orderJson(order));
   };
   const confirm = (order: PrintfulOrder | undefined) => {
+    if (order) {
+      world.beforeConfirm(order);
+    }
     if (order?.status !== "draft") {
       return Response.json({ code: 400 }, { status: 400 });
     }
     world.confirmations += 1;
-    order.status = "pending";
+    order.status = confirmedAs;
     if (world.lostConfirmations > 0) {
       world.lostConfirmations -= 1;
       return new Response(null, { status: 500 });
@@ -158,7 +169,12 @@ const fakeWorld = ({
     if (confirming !== undefined) {
       return confirm(orders.get(Number(confirming)));
     }
-    return read(orders.get(Number(/^\/v2\/orders\/(?<id>\d+)$/u.exec(pathname)?.groups?.id)));
+    const id = Number(/^\/v2\/orders\/(?<id>\d+)$/u.exec(pathname)?.groups?.id);
+    if (init?.method === "DELETE") {
+      world.discards += 1;
+      return orders.delete(id) ? new Response(null, { status: 204 }) : notFound();
+    }
+    return read(orders.get(id));
   };
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     const { host, pathname, searchParams } = new URL(url);
@@ -166,7 +182,7 @@ const fakeWorld = ({
       const after = Number(searchParams.get("created[gt]"));
       checkoutReads.push(after);
       const data = world.sessions.filter((session) => session.created > after);
-      return Promise.resolve(Response.json({ data, has_more: false }));
+      return Promise.resolve(Response.json({ data, has_more: world.endless }));
     }
     if (host === "acme-site.vercel.app") {
       return Promise.resolve(new Response(design, { headers: { "content-type": "image/png" } }));
@@ -244,9 +260,9 @@ const onlySale = () => {
 
 /** A read and then enough pulses to price and confirm what it sent. */
 const pumpUntilSettled = async (pulses = 3) => {
-  await pumpOrders(NOW, true);
+  await pumpOrders(NOW, "read");
   for (let i = 0; i < pulses; i += 1) {
-    await pumpOrders(NOW, false);
+    await pumpOrders(NOW, "price");
   }
 };
 
@@ -280,7 +296,7 @@ describe("the order pump", () => {
       ],
     });
 
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
 
     expect(store.listOrders().map((o) => o.sessionId)).toEqual(["cs_paid"]);
     expect(world.creates).toBe(1);
@@ -341,11 +357,11 @@ describe("the order pump", () => {
   it("never makes an order twice for a checkout read again, or one a restart finds already sent", async () => {
     openShop();
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
     // the next read overlaps the last, and a restart reads everything again
-    await pumpOrders(NOW + 600_000, true);
+    await pumpOrders(NOW + 600_000, "read");
     store.initStore();
-    await pumpOrders(NOW + 1_200_000, true);
+    await pumpOrders(NOW + 1_200_000, "read");
     expect(store.listOrders()).toHaveLength(1);
     expect(world.creates).toBe(1);
 
@@ -355,7 +371,7 @@ describe("the order pump", () => {
       throw new Error("no sale");
     }
     store.updateSale(kept.id, { stage: { kind: "received", tries: 0 } });
-    await pumpOrders(NOW + 1_800_000, true);
+    await pumpOrders(NOW + 1_800_000, "read");
     expect(world.creates).toBe(1);
     expect(world.confirmations).toBe(1);
     expect(onlySale().stage).toEqual({ kind: "confirmed", printfulId: 9001 });
@@ -415,7 +431,7 @@ describe("the order pump", () => {
     }
     sent.status = "failed";
 
-    await pumpOrders(NOW + 600_000, true);
+    await pumpOrders(NOW + 600_000, "read");
 
     expect(onlySale().printfulStatus).toBe("failed");
     expect(orderCards().map((t) => t.title)).toEqual([
@@ -424,6 +440,112 @@ describe("the order pump", () => {
     const [card] = orderCards();
     const ask = card?.state.kind === "blocked" ? card.state.ask : null;
     expect(ask?.type === "action" ? ask.instructions : "").toContain("refund the buyer in Stripe");
+  });
+
+  it("hands the founder an order Printful's confirmation answers onhold", async () => {
+    openShop();
+    fakeWorld({ confirmedAs: "onhold", sessions: [checkout("cs_paid")] });
+
+    await pumpUntilSettled();
+    await pumpOrders(NOW + 600_000, "track");
+    await pumpOrders(NOW + 1_200_000, "track");
+
+    expect(onlySale()).toMatchObject({
+      printfulStatus: "onhold",
+      stage: { kind: "confirmed", printfulId: 9001 },
+    });
+    expect(orderCards().map((t) => t.title)).toEqual([
+      `Order ${orderIdOf("cs_paid").slice(0, 8)}: Printful marked it onhold`,
+    ]);
+  });
+
+  it("hands the founder an order first read failed after its confirmation's answer was lost", async () => {
+    openShop();
+    const world = fakeWorld({
+      confirmedAs: "failed",
+      lostConfirmations: 1,
+      sessions: [checkout("cs_paid")],
+    });
+
+    await pumpUntilSettled(4);
+
+    expect(world.confirmations).toBe(1);
+    expect(onlySale().printfulStatus).toBe("failed");
+    expect(orderCards()).toHaveLength(1);
+  });
+
+  it("hands the founder a failed order a restart finds by its external id", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    await pumpUntilSettled();
+    const [sent] = world.orders.values();
+    if (!sent) {
+      throw new Error("nothing was sent");
+    }
+    sent.status = "failed";
+    // a crash before the save knew what Printful made
+    store.updateSale(onlySale().id, {
+      printfulStatus: null,
+      stage: { kind: "received", tries: 0 },
+    });
+
+    await pumpOrders(NOW + 600_000, "track");
+
+    expect(world.creates).toBe(1);
+    expect(onlySale()).toMatchObject({
+      printfulStatus: "failed",
+      stage: { kind: "confirmed", printfulId: 9001 },
+    });
+    expect(orderCards()).toHaveLength(1);
+  });
+
+  it("takes on a draft the founder confirmed by hand just before IdleBiz did, with no card", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    world.beforeConfirm = (order) => {
+      order.status = "pending";
+    };
+
+    await pumpUntilSettled();
+
+    expect(world.confirmations).toBe(0);
+    expect(onlySale()).toMatchObject({
+      printfulStatus: "pending",
+      stage: { kind: "confirmed", printfulId: 9001 },
+    });
+    expect(orderCards()).toEqual([]);
+  });
+
+  it("still ships and tracks a retired product's orders, and takes those its live link still sells", async () => {
+    const productId = openShop();
+    store.createProduct({ description: "the next idea", name: "Next" });
+    const world = fakeWorld({ pricingReads: 2, sessions: [checkout("cs_paid")] });
+    await pumpOrders(NOW, "read");
+    store.killProduct(productId, "dud", null);
+
+    await pumpUntilSettled(4);
+    world.sessions.push(checkout("cs_later", { created: NOW_S + 60 }));
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+    await pumpUntilSettled(4);
+
+    expect(world.confirmations).toBe(2);
+    expect(store.listOrders().map((o) => [o.sessionId, o.productId])).toEqual([
+      ["cs_paid", productId],
+      ["cs_later", productId],
+    ]);
+    expect(orderCards()).toEqual([]);
+  });
+
+  it("moves past checkouts one read cannot reach, and tells the founder", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    world.endless = true;
+
+    await pumpOrders(NOW, "read");
+
+    expect(store.ordersCursor()).toBe(NOW_S - 3601);
+    expect(orderCards().map((t) => t.title)).toEqual(["Paid orders may have been missed"]);
+    expect(store.listOrders()).toHaveLength(1);
   });
 
   it("keeps where the next read starts, holding it for a checkout that may still be paid", async () => {
@@ -435,7 +557,7 @@ describe("the order pump", () => {
       ],
     });
 
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
     expect(world.checkoutReads).toEqual([LISTED_AT / 1000 - 1]);
     expect(store.ordersCursor()).toBe(openedAt - 1);
 
@@ -444,29 +566,36 @@ describe("the order pump", () => {
       checkout("cs_open", { created: openedAt, payment_status: "unpaid", status: "expired" }),
     ];
     store.initStore();
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
     expect(world.checkoutReads.at(-1)).toBe(openedAt - 1);
     expect(store.ordersCursor()).toBe(NOW_S - 600);
   });
 
-  it("prices a test-mode checkout but never confirms it, since nobody paid", async () => {
+  it("prices a test-mode checkout, then deletes its draft, since nobody paid, even one dearer than the payment", async () => {
     openShop();
-    const world = fakeWorld({ sessions: [checkout("cs_test", { livemode: false })] });
+    const world = fakeWorld({
+      sessions: [checkout("cs_test", { livemode: false })],
+      totalUsd: "36.50",
+    });
 
     await pumpUntilSettled();
 
     expect(world.confirmations).toBe(0);
+    expect(world.discards).toBe(1);
+    expect(world.orders.size).toBe(0);
     expect(onlySale()).toMatchObject({
-      costCents: 2410,
+      costCents: 3650,
+      printfulStatus: "deleted",
       stage: { kind: "test", printfulId: 9001 },
     });
+    expect(orderCards()).toEqual([]);
   });
 
   it("sends nothing for a design that changed since the founder signed it", async () => {
     openShop();
     const world = fakeWorld({ design: new Uint8Array([1, 2, 3]), sessions: [checkout("cs_paid")] });
 
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
 
     expect(world.creates).toBe(0);
     expect(onlySale().stage).toMatchObject({ kind: "held", printfulId: null });
@@ -481,7 +610,7 @@ describe("the order pump", () => {
       sessions: [checkout("cs_nowhere", { collected_information: null })],
     });
 
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
 
     expect(world.creates).toBe(0);
     expect(store.listOrders()).toMatchObject([
@@ -503,7 +632,7 @@ describe("the order pump", () => {
     saveSecrets();
     const world = fakeWorld();
 
-    await pumpOrders(NOW, true);
+    await pumpOrders(NOW, "read");
 
     expect(world.checkoutReads).toEqual([]);
   });

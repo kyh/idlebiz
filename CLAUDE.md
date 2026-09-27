@@ -8,9 +8,10 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   packages (COMPANY.md, agents/<slug>/AGENTS.md â€” its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
-  get products/<slug>/workspace/), products/<slug>/listings/<id>.json for each print it
-  sells through Printful and products/<slug>/orders/<id>.json for each paid order of one (runs
-  read both, never write them), shared/ for what teammates share across products,
+  get products/<slug>/workspace/), listings/<id>.json for each print a product sells through
+  Printful and orders/<id>.json for each paid order of one (outside the product's package, so
+  both outlive its retirement: its link still sells, and each order still ships; runs read
+  both, never write them), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
   activity.jsonl).
 - COMPANY.md carries `format`. A save stamped higher than this build writes is refused
@@ -231,20 +232,23 @@ third boundary.
   founder's, pasted in the Budget panel (`main/printful-token.ts`), and a token Printful turns
   away asks for a new one, pasted over it there. Each paid order then goes to Printful unsigned,
   run by main on the metrics pulse (`main/order-pump.ts`), since the founder signed the listing
-  and its price floor: every 10 minutes one account-wide read of Stripe's checkout sessions
-  (`main/stripe-checkouts.ts`, line items expanded; a list per link would spend the reads Stripe
-  allows) from a `created[gt]` cursor in `state/orders-cursor.json`, held behind any checkout
-  that may still be paid and re-reading the last 10 minutes. A session on a listing's link with
+  and its price floor: every 30 minutes one account-wide read of Stripe's checkout sessions
+  (`main/stripe-checkouts.ts`, line items expanded; a list per link, or a faster beat, would
+  spend the reads Stripe allows, which metrics already mostly spends on a quiet store) from a
+  `created[gt]` cursor in `state/orders-cursor.json`, held behind any checkout that may still be
+  paid and re-reading the last 10 minutes. A read that cannot reach the cursor (Stripe lists
+  newest first) moves it up to what it read and cards the founder. A session on a listing's link with
   `payment_status` `paid` (complete alone is not paid) is kept as an order, on disk before
   Printful hears of it; its Printful `external_id` is the session id's hash, looked up
   (`/v2/orders/@<id>`) before a draft is made (`main/printful-orders.ts`), so a restart never
   makes one twice. The design is read again and must hash as signed. A draft charges nothing;
   it is polled every pulse until priced (a bounded number of reads) and confirmed only on a
   read that shows it still a draft costing no more than Stripe collected, so no restart
-  confirms twice or over that guard; test-mode checkouts are priced and left drafts. Sent
-  orders' Printful status is read with each Stripe read. What the pump cannot settle (a draft
-  dearer than the payment, a changed design, a refusal, a status of failed, canceled or onhold,
-  a refused key) is an order card: a blocked task of origin `order`, no assignee, no product,
+  confirms twice or over that guard; a test-mode checkout's draft is priced, then deleted,
+  never carded. Waiting orders are sent and sent ones' Printful status read every 10 minutes.
+  What the pump cannot settle (a draft dearer than the payment, a changed design, a refusal,
+  a status of failed, canceled or onhold the first time any call reads it, a refused key) is an
+  order card: a blocked task of origin `order`, no assignee, no product,
   so no bet stalls, no retirement drops it and no teammate can claim it. The founder's Done or
   Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes to the
   room, where support reads it. Refunds are the founder's. Agents read orders, buyers'

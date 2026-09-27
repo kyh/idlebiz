@@ -254,7 +254,7 @@ export const TOOL_SPECS = {
   }),
   kill_product: tool({
     body: SLUG_AND_REASON,
-    doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. The last product cannot be killed: start its successor first.",
+    doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. Its sell_print listings keep selling, and each paid order still ships: read_orders still reads them by its slug. The last product cannot be killed: start its successor first.",
     example: { reason: "...", slug: "product-slug" },
     leadOnly: "Only the team lead can retire a product — make the case in the team room.",
     method: "POST",

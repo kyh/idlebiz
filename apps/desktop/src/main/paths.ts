@@ -14,10 +14,10 @@ import { mkdirSync } from "node:fs";
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log), asks the founder answered, work the steering loop dropped
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
 //     products/<slug>/workspace/  its code (the first product's is workspace/)
-//     products/<slug>/listings/<id>.json  a print-on-demand item on sale: the Printful variants and design, its payment link
-//     products/<slug>/orders/<id>.json    a paid checkout on one of its listings, and what became of it at Printful
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
+//     listings/<id>.json    a print-on-demand item on sale for a product: the Printful variants and design, its payment link
+//     orders/<id>.json      a paid checkout on a listing, and what became of it at Printful
 //     workspace/            the first product's code
 //     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
@@ -98,16 +98,17 @@ export const productFile = (companySlug: string, productSlug: string): string =>
 /** A later product's own workspace, moved with its package when it retires. */
 export const productWorkspace = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "workspace");
-/** Outside the workspace, so a run can read its product's listings but never write one. */
-export const listingsDir = (companySlug: string, productSlug: string): string =>
-  path.join(productsDir(companySlug), productSlug, "listings");
-export const listingFile = (companySlug: string, productSlug: string, listingId: string): string =>
-  path.join(listingsDir(companySlug, productSlug), `${listingId}.json`);
-/** Beside the listings, so a run can read its product's orders, buyers' addresses included, but never write one. */
-export const ordersDir = (companySlug: string, productSlug: string): string =>
-  path.join(productsDir(companySlug), productSlug, "orders");
-export const orderFile = (companySlug: string, productSlug: string, orderId: string): string =>
-  path.join(ordersDir(companySlug, productSlug), `${orderId}.json`);
+// Listings and orders sit outside every product's package: a retired product's payment link
+// still takes money, and each order it takes must still ship and be tracked. Outside every
+// workspace too, so a run can read them, buyers' addresses included, but never write one.
+export const listingsDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "listings");
+export const listingFile = (companySlug: string, listingId: string): string =>
+  path.join(listingsDir(companySlug), `${listingId}.json`);
+export const ordersDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "orders");
+export const orderFile = (companySlug: string, orderId: string): string =>
+  path.join(ordersDir(companySlug), `${orderId}.json`);
 
 /** Killed products are archived here (package and workspace preserved, never deleted). */
 export const retiredDir = (companySlug: string): string =>
