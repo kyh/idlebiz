@@ -403,9 +403,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   founder's user, project and local settings (CLAUDE.md, skills, plugins, hooks), under the
   flag tier its session options set (`packages/agent-driver/src/registry.ts`), which outranks
   them: claude's own sandbox off, ask rules for shell and edits that beat any allow rule, no
-  bypass mode, and none of their MCP servers or claude.ai connectors (`strictMcpConfig`,
-  `disableClaudeAiConnectors`, a deny of `mcp__*`), which act signed in as the founder; the
-  company is reached with curl. A codex session loads the founder's codex config with every
+  bypass mode, no plan mode (its exit asks to approve a plan, which would block the task on a
+  founder card that changes nothing), and none of their MCP servers or claude.ai connectors
+  (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`), which act signed in as
+  the founder; the company is reached with curl. A codex session loads the founder's codex config with every
   MCP server turned off by the name `codex mcp list` gives it, apps and plugins whole
   (`codexMcpOff` in `main/agents/agent-driver.ts`); one it cannot list refuses the run with
   codex's reason. A runner is signed in only if its login probe, run sealed as its runs are,

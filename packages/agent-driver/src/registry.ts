@@ -74,7 +74,12 @@ const claudeSessionMeta = {
       allowDangerouslySkipPermissions: false,
       settings: {
         disableClaudeAiConnectors: true,
-        permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit"], deny: ["mcp__*"] },
+        // Plan mode's exit asks to approve a plan: IdleBiz would hold that for the founder to
+        // sign, blocking the task over a step that changes no boundary.
+        permissions: {
+          ask: ["Bash", "Edit", "Write", "NotebookEdit"],
+          deny: ["mcp__*", "EnterPlanMode", "ExitPlanMode"],
+        },
         // Off whatever the player's settings say: the run is already inside a Seatbelt profile,
         // and one cannot apply inside another. On, every command would fail, and a sandboxed
         // one would skip the Bash ask.

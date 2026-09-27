@@ -26,7 +26,8 @@ import { parseJson } from "@/shared/json";
 // model on loopback: nothing is billed, and claude's config dir is a scratch one whose settings
 // turn claude's own sandbox on, as a founder's may. It proves the session's flag-tier settings
 // keep that sandbox off, so a command runs inside the seal instead of failing to nest, and
-// still asks IdleBiz first, so holdFor still judges it; that no MCP server of the founder's starts;
+// still asks IdleBiz first, so holdFor still judges it; that it offers no plan mode, whose exit
+// would ask the founder to approve a plan; that no MCP server of the founder's starts;
 // and that a run cannot rewrite the settings or account file the founder's own claude loads,
 // and still runs and keeps its transcript.
 
@@ -156,9 +157,10 @@ const streamed = (move: Move): string =>
 
 /**
  * A Messages API that runs `command` through the Bash tool, then says "done"; a request of
- * claude's own that offers no Bash tool gets "done" too. Each command's output lands in `outputs`.
+ * claude's own that offers no Bash tool gets "done" too. Each command's output lands in `outputs`,
+ * and the tools each request offering Bash offers land in `offered`.
  */
-const standInModel = (command: () => string, outputs: string[]): Server =>
+const standInModel = (command: () => string, outputs: string[], offered: string[]): Server =>
   createServer((req, res) => {
     let body = "";
     req.on("data", (chunk: Buffer) => {
@@ -169,11 +171,15 @@ const standInModel = (command: () => string, outputs: string[]): Server =>
       const blocks = parsed.success ? parsed.data.messages.flatMap(({ content }) => content) : [];
       const results = blocks.filter(({ type }) => type === "tool_result");
       outputs.push(...results.map(({ content }) => content ?? ""));
-      const offersBash = parsed.success && parsed.data.tools?.some(({ name }) => name === "Bash");
+      const tools = parsed.success ? (parsed.data.tools ?? []).map(({ name }) => name) : [];
+      const offersBash = tools.includes("Bash");
+      if (offersBash) {
+        offered.push(...tools);
+      }
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.end(
         streamed(
-          offersBash === true && results.length === 0
+          offersBash && results.length === 0
             ? { command: command(), type: "tool_use" }
             : { text: "done", type: "text" },
         ),
@@ -213,6 +219,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let model: Server | null = null;
   let command = "true";
   const outputs: string[] = [];
+  const offered: string[] = [];
   let base = "";
   let home = "";
   let configDir = "";
@@ -220,7 +227,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let remote = "";
 
   beforeAll(async () => {
-    const listening = standInModel(() => command, outputs);
+    const listening = standInModel(() => command, outputs, offered);
     model = listening;
     listening.listen(0, "127.0.0.1");
     await once(listening, "listening");
@@ -238,6 +245,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
 
   beforeEach(() => {
     outputs.length = 0;
+    offered.length = 0;
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-run-"));
     home = path.join(base, "home");
     // where the founder's claude keeps its config, so the seal treats it as theirs
@@ -341,6 +349,18 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       const { pushed, result } = await turn("git push origin main", true);
       expect(result.end).toEqual({ kind: "completed" });
       expect(pushed).toContain("refs/heads/main");
+    },
+  );
+
+  it(
+    "offers no plan mode, whose exit would hold the turn for the founder to approve a plan",
+    { timeout: 60_000 },
+    async () => {
+      const { result } = await turn("true", true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(offered).toContain("Bash");
+      expect(offered).not.toContain("EnterPlanMode");
+      expect(offered).not.toContain("ExitPlanMode");
     },
   );
 

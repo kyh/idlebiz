@@ -426,7 +426,10 @@ describe("acpAgentFor", () => {
     expect(acpAgentFor("claude", SEAL).sessionMeta).toMatchObject({
       claudeCode: {
         options: {
-          settings: { disableClaudeAiConnectors: true, permissions: { deny: ["mcp__*"] } },
+          settings: {
+            disableClaudeAiConnectors: true,
+            permissions: { deny: ["mcp__*", "EnterPlanMode", "ExitPlanMode"] },
+          },
           strictMcpConfig: true,
         },
       },
