@@ -1000,11 +1000,16 @@ const TOOLS = {
     const price = formatCents(priceCents);
     const keys = sellingKeys(ctx, product, name, price);
     const placements = await servedFiles(ctx, product, product.vercel, keys.vercel, urls);
-    const quote = await quotePrint(ctx, { credential: keys.printful, placements, variantIds });
+    const quote = await quotePrint(ctx, {
+      credential: keys.printful,
+      placements,
+      retailCents: priceCents,
+      variantIds,
+    });
     const floor = priceFloorCents(quote);
     const shipping = formatCents(quote.shippingCents);
     if (priceCents < floor) {
-      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. The lowest price that loses nothing is ${formatCents(floor)}: price it above that, with the margin the bet needs.`;
+      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`;
     }
     await requireStripeAccess(ctx, ctx.printListing.stripeAccess(keys.stripe), PRINT_GRANT);
     // the digest pins the design the founder signs for: a later deploy can change what the URL serves

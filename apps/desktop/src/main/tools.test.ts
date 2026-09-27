@@ -1915,7 +1915,7 @@ describe("sell_print", () => {
 
       // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
       expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd })).toBe(
-        `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one and ship it in the US, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is $11.37: price it above that, with the margin the bet needs.`,
+        `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one sold at that price and ship it in the US, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. Every price under $11.37 loses money: price it above that, with the margin the bet needs.`,
       );
       expect(asked).toEqual([]);
       expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");

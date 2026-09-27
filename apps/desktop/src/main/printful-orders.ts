@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { answering, printfulDelete, printfulGet, printfulPost, usdCents } from "@/main/printful";
+import {
+  answering,
+  dollars,
+  printfulDelete,
+  printfulGet,
+  printfulPost,
+  usdCents,
+} from "@/main/printful";
 import type { PrintfulAnswer, PrintfulCredential } from "@/main/printful";
 import type { JsonValue } from "@/shared/json";
 import type { PrintPlacement } from "@/shared/listing";
@@ -32,8 +39,6 @@ export interface PrintfulOrder {
   status: string;
   costs: PrintfulCosts;
 }
-
-const dollars = (cents: number): string => (cents / 100).toFixed(2);
 
 const orderOf = (answer: JsonValue): PrintfulOrder => {
   const { costs, id, status } = OrderReadSchema.parse(answer).data;

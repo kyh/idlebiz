@@ -265,7 +265,8 @@ third boundary.
   `sell_print` lists a
   Printful print-on-demand item (`main/print-listing.ts`): its print files must be images the
   product's own verified production domains serve now, each read whole and hashed, Printful's
-  estimate prices each variant with them to California, Alaska and Hawaii, and a price below the
+  estimate prices each variant with them at the listing's price (California taxes that, not
+  Printful's own) to California, Alaska and Hawaii, and a price below the
   floor is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus
   Stripe's 4.4% + 30¢ at its dearest, less the shipping the buyer pays), as is a Stripe key that cannot read
   shipping rates or checkout sessions. Signed, it makes a Stripe price, a fixed shipping rate at

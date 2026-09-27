@@ -22,7 +22,10 @@ export const STRIPE_FEE_LABEL = `${(STRIPE_SHARE * 100).toFixed(1)}% + ${formatC
 export const netOfStripeCents = (collectedCents: number): number =>
   Math.floor(collectedCents * (1 - STRIPE_SHARE)) - STRIPE_FIXED_CENTS;
 
-/** The lowest price, in cents, at which a sale loses nothing. */
+/**
+ * The lowest price, in cents, at which a sale costing the quote loses nothing. Tax on the price
+ * itself only rises with it, so every price under this one loses money.
+ */
 export const priceFloorCents = ({ costCents, shippingCents }: PrintQuote): number =>
   Math.ceil((costCents + STRIPE_FIXED_CENTS) / (1 - STRIPE_SHARE)) - shippingCents;
 

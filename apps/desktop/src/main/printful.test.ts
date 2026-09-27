@@ -25,23 +25,33 @@ interface Asked {
 }
 
 const EstimateSchema = z.object({
-  order_items: z.tuple([z.object({ catalog_variant_id: z.number() })]),
+  order_items: z.tuple([
+    z.object({ catalog_variant_id: z.number(), retail_price: z.string().optional() }),
+  ]),
   recipient: z.object({ state_code: z.string() }),
 });
 
-/** The variant and state an estimate was asked for. */
+/** The variant, state and retail price an estimate was asked for. */
 const estimateOf = (body: JsonValue) => {
   const {
     order_items: [item],
     recipient,
   } = EstimateSchema.parse(body);
-  return { state: recipient.state_code, variant: item.catalog_variant_id };
+  return {
+    retail: item.retail_price ?? null,
+    state: recipient.state_code,
+    variant: item.catalog_variant_id,
+  };
 };
 
-/** What Printful charges one variant to one state, in dollars as its API writes them. */
-type Costs = (variant: number, state: string) => { total: string; shipping: string } | null;
+/** What Printful charges one variant to one state at a retail price, in dollars as its API writes them. */
+type Costs = (
+  variant: number,
+  state: string,
+  retail: string | null,
+) => { total: string; shipping: string } | null;
 
-const flatCosts: Costs = (_variant, state) =>
+const flatCosts = (_variant: number, state: string): ReturnType<Costs> =>
   state === "CA" ? { shipping: "4.75", total: "16.40" } : { shipping: "7.99", total: "18.20" };
 
 /**
@@ -58,7 +68,7 @@ const printful = ({
   currency?: string;
 } = {}) => {
   const asked: Asked[] = [];
-  const tasks = new Map<string, { variant: number; state: string }>();
+  const tasks = new Map<string, ReturnType<typeof estimateOf>>();
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     const { pathname, searchParams } = new URL(url);
     const body = init?.method === "POST" ? parseJson(z.string().parse(init.body)) : null;
@@ -95,7 +105,7 @@ const printful = ({
     }
     const id = searchParams.get("id") ?? "";
     const task = tasks.get(id);
-    const priced = task ? costs(task.variant, task.state) : null;
+    const priced = task ? costs(task.variant, task.state, task.retail) : null;
     return Promise.resolve(
       Response.json({
         data:
@@ -113,8 +123,11 @@ const printful = ({
   return asked;
 };
 
-const quote = (variantIds: number[], placements = [FRONT]) =>
-  printfulQuote({ credential: CREDENTIAL, placements, variantIds }, { backoffMs: 0, pollMs: 0 });
+const quote = (variantIds: number[], placements = [FRONT], retailCents = 2800) =>
+  printfulQuote(
+    { credential: CREDENTIAL, placements, retailCents, variantIds },
+    { backoffMs: 0, pollMs: 0 },
+  );
 
 describe("pricing a print with Printful", () => {
   it("estimates each variant with the design to every sampled US address, keeping the dearest", async () => {
@@ -153,10 +166,12 @@ describe("pricing a print with Printful", () => {
               },
             ],
             quantity: 1,
+            retail_price: "28.00",
             source: "catalog",
           },
         ],
         recipient: { country_code: "US", state_code: "CA", zip: "90012" },
+        retail_costs: { currency: "USD" },
       },
       method: "POST",
       path: "/v2/order-estimation-tasks",
@@ -171,6 +186,25 @@ describe("pricing a print with Printful", () => {
       "HI",
     ]);
     expect(asked.every((a) => a.store === "42")).toBe(true);
+  });
+
+  it("prices California's tax on the listing's own price, as Printful taxes its orders", async () => {
+    // Printful taxes a California order on its retail price, or on its own $20.00 plus 10%
+    // without one: 9.5% of $22.00 would quote $27.09, a floor of $23.66 that CA orders outcost
+    printful({
+      costs: (_variant, state, retail) => {
+        const tax = state === "CA" ? Math.round(Number(retail ?? "22.00") * 9.5) / 100 : 0;
+        return { shipping: "5.00", total: (25 + tax).toFixed(2) };
+      },
+    });
+
+    const quoted = await quote([4012], [FRONT], 2366);
+
+    expect(quoted).toMatchObject({
+      kind: "quoted",
+      quote: { costCents: 2725, shippingCents: 500 },
+    });
+    expect(quoted.kind === "quoted" ? priceFloorCents(quoted.quote) : null).toBe(2382);
   });
 
   it("says why Printful could not price it", async () => {

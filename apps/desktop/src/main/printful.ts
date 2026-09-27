@@ -221,11 +221,16 @@ export const usdCents = (usd: string | null | undefined): number | null => {
   return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
 };
 
-/** What a listing is priced from: the variants it offers and what goes where on them. */
+/** Cents as Printful writes an amount in dollars. */
+export const dollars = (cents: number): string => (cents / 100).toFixed(2);
+
+/** What a listing is priced from: the variants it offers, what goes where on them, and its price. */
 export interface QuoteRequest {
   credential: PrintfulCredential;
   variantIds: readonly number[];
   placements: readonly PrintPlacement[];
+  /** What the buyer pays for one before shipping, which Printful taxes some states on, as it will each order. */
+  retailCents: number;
 }
 
 /**
@@ -336,9 +341,8 @@ const settled = async (
 /** What one variant with the design costs, shipped to `recipient`, in cents. */
 const estimate = async (
   variantId: number,
-  placements: readonly PrintPlacement[],
+  { credential, placements, retailCents }: QuoteRequest,
   recipient: (typeof SAMPLE_ADDRESSES)[number],
-  credential: PrintfulCredential,
   pacing: Pacing,
 ): Promise<{ total: number; shipping: number }> => {
   const posted = TaskSchema.parse(
@@ -355,10 +359,14 @@ const estimate = async (
               technique,
             })),
             quantity: 1,
+            // without it Printful taxes a California order on its own price plus 10%, not on
+            // the listing's, which the order the pump places sends
+            retail_price: dollars(retailCents),
             source: "catalog",
           },
         ],
         recipient: { ...recipient },
+        retail_costs: { currency: "USD" },
       },
       pacing.backoffMs,
     ),
@@ -385,14 +393,11 @@ const estimate = async (
  * Price a listing the way Printful will charge for it: an estimate for each variant with the
  * exact design, to each sample address, keeping the most any of them costs.
  */
-export const printfulQuote = (
-  { credential, placements, variantIds }: QuoteRequest,
-  pacing: Pacing = PACING,
-): Promise<QuoteResult> =>
+export const printfulQuote = (req: QuoteRequest, pacing: Pacing = PACING): Promise<QuoteResult> =>
   readingPrintful("quote", async (): Promise<QuoteResult> => {
     const variants: CatalogVariant[] = [];
-    for (const id of variantIds) {
-      variants.push(await variantOf(id, credential, pacing));
+    for (const id of req.variantIds) {
+      variants.push(await variantOf(id, req.credential, pacing));
     }
     const products = new Set(variants.map((v) => v.catalog_product_id));
     if (products.size > 1) {
@@ -405,9 +410,7 @@ export const printfulQuote = (
     let costCents = 0;
     let shippingCents = 0;
     for (const { id } of variants) {
-      const costs = await Promise.all(
-        SAMPLE_ADDRESSES.map((to) => estimate(id, placements, to, credential, pacing)),
-      );
+      const costs = await Promise.all(SAMPLE_ADDRESSES.map((to) => estimate(id, req, to, pacing)));
       costCents = Math.max(costCents, ...costs.map((c) => c.total));
       shippingCents = Math.max(shippingCents, ...costs.map((c) => c.shipping));
     }
