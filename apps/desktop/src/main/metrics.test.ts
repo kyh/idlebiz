@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,8 +11,14 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-metrics-"));
 const secretsFile = path.join(root, "secrets.json");
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { countPages, fetchRealMetrics, stripeCredential, stripeInTestMode, sumCharges } =
-  await import("./metrics");
+const {
+  countPages,
+  fetchRealMetrics,
+  measureRefusal,
+  stripeCredential,
+  stripeInTestMode,
+  sumCharges,
+} = await import("./metrics");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -272,7 +278,11 @@ describe("stripeCredential", () => {
 
 describe("stripeInTestMode", () => {
   beforeEach(() => rmSync(secretsFile, { force: true }));
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(secretsFile, { force: true });
+    rmSync(path.join(root, "co"), { force: true, recursive: true });
+  });
 
   it("takes a test-mode key, secret or restricted, for one whose money counts for nothing", () => {
     expect(stripeInTestMode("co")).toBe(false);
@@ -282,6 +292,21 @@ describe("stripeInTestMode", () => {
     expect(stripeInTestMode("co")).toBe(true);
     writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"rk_test_1"}');
     expect(stripeInTestMode("co")).toBe(true);
+  });
+
+  it("takes a test-mode charging key for test mode while a live account is connected", () => {
+    mkdirSync(path.join(root, "co"), { recursive: true });
+    writeFileSync(
+      path.join(root, "co", "metrics.json"),
+      '{"stripeAccount":{"accountId":"acct_1","connectedAt":0,"livemode":true}}',
+    );
+    writeFileSync(
+      secretsFile,
+      '{"STRIPE_SECRET_KEY":"sk_test_1","STRIPE_CONNECT_TOKEN":"sk_live_granted"}',
+    );
+
+    expect(stripeInTestMode("co")).toBe(true);
+    expect(measureRefusal(revenueBet("pricing", 0), null)).toContain("test mode");
   });
 
   it("lets a test-mode key's money count under IDLEBIZ_COUNT_TEST_MONEY=1", () => {
@@ -320,6 +345,7 @@ describe("fetchRealMetrics", () => {
 
 describe("fetchRealMetrics reading Stripe", () => {
   afterEach(() => {
+    rmSync(secretsFile, { force: true });
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.useRealTimers();
@@ -393,6 +419,23 @@ describe("fetchRealMetrics reading Stripe", () => {
     expect(asked.slice(first)).toContain("/v1/charges?limit=100&created[gte]=0");
     expect(test.revenue).toBe(7);
     expect(test.betReadings.get("pricing")?.reading).toBe(7);
+  });
+
+  it("gives a bet no reading through a live Connect token while the charging key is in test mode", async () => {
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_links"}');
+    stripe((endpoint) =>
+      endpoint.startsWith("/v1/charges")
+        ? Response.json({ data: [] })
+        : Response.json({ total_count: 0 }),
+    );
+
+    const snap = await fetchRealMetrics(
+      { key: "sk_live_granted", via: "connect" },
+      [],
+      [revenueBet("pricing", 0)],
+    );
+
+    expect(snap.betReadings.get("pricing")?.reading).toBeNull();
   });
 
   it("keeps the money it read when the customer count fails", async () => {

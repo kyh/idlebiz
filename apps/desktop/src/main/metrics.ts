@@ -246,9 +246,18 @@ export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | 
 /** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
 const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
 
-/** A test-mode key sees only test-mode charges, so while those do not count, nothing it reads does. */
-const countsNoMoney = (credential: StripeCredential): boolean =>
-  isTestKey(credential.key) && !countsTestMoney();
+/**
+ * While test money does not count, none counts when either key is in test mode: the one that
+ * reads sees only test charges, and the founder's own key makes every link, so a live Connect
+ * token beside a test key reads a zero for money its links could only take in test mode.
+ */
+const countsNoMoney = (credential: StripeCredential): boolean => {
+  if (countsTestMoney()) {
+    return false;
+  }
+  const charging = getSecret(STRIPE_SECRET_KEY);
+  return isTestKey(credential.key) || (charging !== null && isTestKey(charging));
+};
 
 /** Whether the company reads Stripe with a key in test mode, whose charges count for nothing. */
 export const stripeInTestMode = (companyId: string): boolean => {
@@ -269,7 +278,7 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
       return 'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.';
     }
     return countsNoMoney(credential)
-      ? 'Stripe is in test mode — no charge counts. Ask the founder to connect a live Stripe account (request_integration "stripe"), then measure_bet again.'
+      ? 'Stripe is in test mode — no charge counts. Ask the founder to swap the Stripe key IdleBiz charges with for a live one in the Budget panel (request_integration "stripe"), then measure_bet again.'
       : null;
   }
   return product?.vercel && getSecret("VERCEL_TOKEN")
@@ -283,12 +292,13 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
 // was refused: a null only holds the last value, and re-asking would page a
 // capped account, or every charge a restricted key may read, through again
 // every pulse. A new key reads at once, since the key is part of what is kept,
-// and so does a change to whether test money counts; only a read Stripe never
+// and so does a change to whether any money counts; only a read Stripe never
 // answered is asked again.
 const STRIPE_TTL_MS = 10 * 60_000;
 let stripeRead: {
   countTest: boolean;
   key: string;
+  noMoney: boolean;
   since: number | null;
   snapshot: StripeSnapshot;
 } | null = null;
@@ -323,8 +333,12 @@ const stripeSnapshot = async (
   }
   const { key } = credential;
   const countTest = countsTestMoney();
+  const noMoney = countsNoMoney(credential);
   const kept =
-    stripeRead?.key === key && stripeRead.since === since && stripeRead.countTest === countTest
+    stripeRead?.key === key &&
+    stripeRead.since === since &&
+    stripeRead.countTest === countTest &&
+    stripeRead.noMoney === noMoney
       ? stripeRead.snapshot
       : null;
   if (
@@ -339,7 +353,7 @@ const stripeSnapshot = async (
   // close its window, or a kill, as a measured loss for dream to learn from.
   const reads = await Promise.allSettled([
     stripeCharges(key, null, countTest),
-    since === null || countsNoMoney(credential) ? null : stripeCharges(key, since, countTest),
+    since === null || noMoney ? null : stripeCharges(key, since, countTest),
     stripeCustomers(key),
   ]);
   const [charges, bets, customers] = reads;
@@ -352,7 +366,7 @@ const stripeSnapshot = async (
     customers: settled(customers),
   };
   if (reads.every((read) => read.status === "fulfilled" || refusedRead(read))) {
-    stripeRead = { countTest, key, since, snapshot };
+    stripeRead = { countTest, key, noMoney, since, snapshot };
   }
   return snapshot;
 };

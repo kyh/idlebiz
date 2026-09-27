@@ -274,7 +274,8 @@ rather than crashing boot.
 - `IDLEBIZ_COUNT_TEST_MONEY=1` counts test-mode Stripe charges toward revenue and bets, for
   an end-to-end run of a revenue bet on a test key. Without it only live-mode money counts:
   a test-mode key reads as "Stripe is in test mode — no charge counts" in the brief and
-  `measure_bet` refuses a revenue bet on it (`main/metrics.ts`).
+  `measure_bet` refuses a revenue bet on it (`main/metrics.ts`), even beside a live Connect
+  grant, since the key IdleBiz charges with makes every link.
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
