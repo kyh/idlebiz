@@ -1933,6 +1933,55 @@ describe("the save format", () => {
     expect(existsSync(path.join(root, ".push"))).toBe(false);
   });
 
+  it("rewords a format 6 routine still as seeded, and reads checkouts only from the adoption on", () => {
+    const co = store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "vc",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "sell deal memos",
+      name: "Acme",
+    });
+    const [seeded] = store.listRoutines();
+    const file = path.join(root, co.id, "routines", seeded?.id ?? "", "ROUTINE.md");
+    const seededText = seeded?.instruction ?? "";
+    const oldText =
+      "Review the pipeline docs in the workspace, source 3 new candidate companies, and write or refresh one investment memo.";
+    writeFileSync(file, readFileSync(file, "utf-8").replace(seededText, oldText));
+    restamp(co.id, 6);
+    const adoptedAt = Math.floor(Date.now() / 1000);
+
+    store.initStore();
+
+    expect(store.listRoutines().map((r) => r.instruction)).toEqual([seededText]);
+    expect(readFileSync(file, "utf-8")).toContain(seededText);
+    expect(store.ordersCursor()).toBeGreaterThanOrEqual(adoptedAt);
+  });
+
+  it("leaves a routine the founder reworded as it is", () => {
+    const co = store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "vc",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "sell deal memos",
+      name: "Acme",
+    });
+    const [seeded] = store.listRoutines();
+    const file = path.join(root, co.id, "routines", seeded?.id ?? "", "ROUTINE.md");
+    writeFileSync(
+      file,
+      readFileSync(file, "utf-8").replace(seeded?.instruction ?? "", "Read the week's filings."),
+    );
+    restamp(co.id, 6);
+
+    store.initStore();
+
+    expect(store.listRoutines().map((r) => r.instruction)).toEqual(["Read the week's filings."]);
+  });
+
   it("leaves alone a package written in a schema it does not read", () => {
     const co = found();
     const dir = path.join(root, co.id, "routines", "foreign");

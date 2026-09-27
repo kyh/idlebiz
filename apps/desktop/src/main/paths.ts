@@ -53,7 +53,7 @@ export const recentShipsFile = (companySlug: string): string =>
 /** The founder's digest-in-progress: what has happened since they last looked. */
 export const sinceLastLookFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "since-last-look.json");
-/** Where the next read of Stripe's checkouts starts; deleted, it reads again from the oldest listing and finds each order already kept. */
+/** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
 export const ordersCursorFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "orders-cursor.json");
 export const activityFile = (companySlug: string): string =>

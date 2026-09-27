@@ -37,9 +37,15 @@ const SessionSchema = z.object({
     .nullish(),
   id: z.string(),
   line_items: z
-    .object({ data: z.array(z.object({ quantity: z.number().int().nullish() })) })
+    .object({
+      data: z.array(
+        z.object({ description: z.string().nullish(), quantity: z.number().int().nullish() }),
+      ),
+    })
     .nullish(),
   livemode: z.boolean(),
+  // a payment link's metadata, which Stripe copies onto each of its sessions
+  metadata: z.record(z.string(), z.string()).nullish(),
   payment_intent: z.string().nullish(),
   payment_link: z.string().nullish(),
   payment_status: z.enum(["paid", "unpaid", "no_payment_required"]),

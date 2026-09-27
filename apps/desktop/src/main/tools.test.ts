@@ -909,7 +909,7 @@ describe("create_payment_link", () => {
     );
 
     expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
-      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL}`,
+      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt.`,
     );
     expect(stripe).toEqual([
       {
@@ -953,6 +953,25 @@ describe("create_payment_link", () => {
       { "metadata[product]": side.id, "payment_intent_data[metadata][product]": side.id },
     ]);
     expect(Object.keys(stripe[1]?.form ?? {})).not.toContain("metadata[bet]");
+  });
+
+  it("keeps a delivery on the link alone, where each checkout carries it to the founder's card", async () => {
+    const { ctx, stripe } = chargingRun();
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
+    const answer = await callTool(ctx, "POST /v1/payment-link", {
+      ...LINK,
+      delivery: " Email the licence key from keys.txt ",
+    });
+
+    expect(answer).toContain("The founder gets a card for each paid checkout");
+    expect(stripe[1]?.form).toMatchObject({
+      "metadata[delivery]": "Email the licence key from keys.txt",
+      "metadata[product]": "acme",
+    });
+    expect(Object.keys(stripe[1]?.form ?? {})).not.toContain(
+      "payment_intent_data[metadata][delivery]",
+    );
   });
 
   it("quotes the name in what the founder signs, so it cannot pose as the price", async () => {
@@ -1033,7 +1052,7 @@ describe("create_payment_link", () => {
     const { ctx } = chargingRun("sk_test_founder");
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
     expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toBe(
-      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
+      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
     );
   });
 
@@ -1584,7 +1603,6 @@ describe("read_orders", () => {
   const paid = {
     collectedCents: 3599,
     email: "ada@example.com",
-    listingId: "launch-tee",
     livemode: true,
     paymentIntent: "pi_1",
     productId: "acme",
@@ -1614,6 +1632,7 @@ describe("read_orders", () => {
       createdAt: Date.UTC(2026, 8, 20),
       id: "order-ada",
       kind: "sale",
+      listingId: "launch-tee",
       printfulStatus: "pending",
       quantity: 1,
       recipient: {
@@ -1636,15 +1655,29 @@ describe("read_orders", () => {
       email: "bo@example.com",
       id: "order-bo",
       kind: "unreadable",
+      listingId: "launch-tee",
       sessionId: "cs_bo",
       why: "Stripe's checkout carries no whole US shipping address",
+    });
+    store.recordOrder({
+      ...paid,
+      collectedCents: 900,
+      createdAt: Date.UTC(2026, 8, 22),
+      delivery: "Email the PDF at memos/acme.pdf",
+      email: "cy@example.com",
+      id: "order-cy",
+      kind: "link",
+      name: "Acme teardown",
+      sessionId: "cs_cy",
     });
 
     expect(
       await callTool({ ...ctx, run: { ...ctx.run, productId: "acme" } }, "POST /v1/orders", {}),
     ).toBe(
       [
-        "Acme's paid orders, newest first (2 of 2):",
+        "Acme's paid orders, newest first (3 of 3):",
+        "- 2026-09-22 · Acme teardown · paid $9.00 · the founder delivers it: Email the PDF at memos/acme.pdf",
+        "  cy@example.com",
         "- 2026-09-21 · Launch tee · paid $35.99 · not sent to Printful: Stripe's checkout carries no whole US shipping address; the founder handles it",
         "  bo@example.com",
         "- 2026-09-20 · Launch tee (Black / M) × 1 · paid $35.99 · at Printful (order 9001): pending",

@@ -385,6 +385,14 @@ const orderStanding = (order: Order): string => {
   if (order.kind === "unreadable") {
     return `not sent to Printful: ${order.why}; the founder handles it`;
   }
+  if (order.kind === "link") {
+    if (!order.livemode) {
+      return "paid in test mode, so nobody paid and nothing is owed";
+    }
+    return order.delivery === null
+      ? "paid through a payment link that names no delivery"
+      : `the founder delivers it: ${order.delivery}`;
+  }
   const { stage } = order;
   switch (stage.kind) {
     case "received": {
@@ -406,11 +414,15 @@ const orderStanding = (order: Order): string => {
   }
 };
 
-/** One order as read_orders lists it: when, what, for how much, where it stands, and who to ship it to. */
+/** One order as read_orders lists it: when, what, for how much, where it stands, and who it goes to. */
 const orderEntry = (order: Order): string => {
   const listing =
-    store.listListings().find((l) => l.productId === order.productId && l.id === order.listingId)
-      ?.name ?? order.listingId;
+    order.kind === "link"
+      ? order.name
+      : (store
+          .listListings()
+          .find((l) => l.productId === order.productId && l.id === order.listingId)?.name ??
+        order.listingId);
   const day = new Date(order.createdAt).toISOString().slice(0, 10);
   const lines = [`- ${day} · ${listing}`];
   if (order.kind === "sale") {
@@ -652,7 +664,7 @@ const TOOLS = {
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,
-    async (ctx, { amountUsd, bet, name, product: named }) => {
+    async (ctx, { amountUsd, bet, delivery, name, product: named }) => {
       const productId = productFor(ctx, named);
       if (productId === null) {
         return "There is no product to charge for — create_product first.";
@@ -686,6 +698,7 @@ const TOOLS = {
       const made = await ctx.createPaymentLink({
         bet: bet ?? null,
         cents,
+        delivery: delivery ?? null,
         key,
         name,
         product: product.id,
@@ -694,7 +707,11 @@ const TOOLS = {
         return `Stripe made no payment link: ${made.error}`;
       }
       const testMode = isTestKey(key) ? TEST_MODE : "";
-      return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${testMode}`;
+      const handover =
+        delivery === undefined
+          ? " Nothing names a delivery, so a buyer gets only Stripe's receipt."
+          : " The founder gets a card for each paid checkout, with the buyer's email and your delivery.";
+      return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${handover}${testMode}`;
     },
   ),
   printful_catalog: define(TOOL_SPECS.printful_catalog, async (ctx, { offset, product }) => {

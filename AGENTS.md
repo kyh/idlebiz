@@ -176,21 +176,23 @@ rather than crashing boot.
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
   waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
-  and Read on Charges and Customers for the revenue read below, and Write on Shipping Rates
-  and Read on Checkout Sessions to sell a print, which `sell_print` checks by reading both
-  (`stripeListingAccess`) before it asks for the sign-off. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
+  and Read on Charges and Customers for the revenue read below, Read on Checkout Sessions for
+  the order pump, and Write on Shipping Rates to sell a print, which `sell_print` checks with
+  a read of both (`stripeListingAccess`) before it asks for the sign-off. A link's optional
+  `delivery` (what the founder hands each buyer) rides on the link's metadata alone. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
   `main/printful.ts`) and list a print with `sell_print` (`main/print-listing.ts`): main checks
   the print files against the product's verified production domains (`productionHosts` in
   `main/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates
   (`main/printful.ts`, polled every 3s and backing off on a 429), refuses a price under the
   floor, and once signed off makes the shipped payment link (`stripeShippedLink` in
   `main/payment-links.ts`, each POST with an idempotency key) and saves the listing under
-  `listings/`. Paid orders reach Printful through the order pump
-  (`main/order-pump.ts`), which the metrics pulse runs: it reads Stripe's checkouts
-  (`main/stripe-checkouts.ts`) every 30 minutes, keeps each paid one under `orders/`
-  (a retired product's too, whose link still sells), and drafts, prices and confirms it on Printful
-  (`main/printful-orders.ts`); anything it cannot settle is an order card in the Inbox, and
-  `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
+  `listings/`. Paid orders reach Printful through the order pump (`main/order-pump.ts`),
+  which the metrics pulse runs: while a Stripe key is saved it reads Stripe's checkouts
+  (`main/stripe-checkouts.ts`) every 30 minutes, keeps each paid one on the company's links
+  under `orders/` (a retired product's too, whose link still sells), and drafts, prices and
+  confirms a print on Printful (`main/printful-orders.ts`); a `create_payment_link` sale is a
+  `link` order, carded to the founder when its link names a `delivery`. Anything it cannot
+  settle is an order card in the Inbox, and `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
   at `fetch` (`main/order-pump.test.ts`). The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
@@ -337,10 +339,13 @@ rather than crashing boot.
   scheduler gathers what it is grounded in; neither authors text. `instructions.ts` says how
   each business type earns (`BUSINESS_MODELS`; VC sells information, never investment) and
   teaches the tools as one flow: an `ask_boss` action card for any step only a human can take,
-  `set_env` for a key the founder hands back, `sell_print` and `read_orders` for prints. No
-  prompt tells a run to push: the founder pushes by hand.
-- **The budget is usage at API prices** (`usageLabel` in `shared/format.ts`) wherever the
-  founder sees it: what the runs would cost billed per token, not what their plan bills.
+  `set_env` for a key the founder hands back, `sell_print` and `read_orders` for prints, and a
+  link's `delivery` for what the founder sends each buyer, never an `ask_boss` card. No prompt
+  tells a run to push: the founder pushes by hand (`instructions.test.ts` checks both).
+- **The budget is usage at API prices**: what the runs would cost billed per token, not what
+  the founder's plan bills. The tray and HUD label it `usage` (`usageLabel` in
+  `shared/format.ts`); the Budget panel, the digest, onboarding and the HUD's tooltip say it
+  is at API prices.
 - **`apps/desktop` `dependencies` is exactly what the app ships.** electron-builder unpacks
   it into node_modules: the ACP adapters main spawns (they bring their own zod and ACP sdk)
   and sharp (native, kept out of the bundle in `electron.vite.config.ts`). Everything Vite
@@ -363,8 +368,8 @@ rather than crashing boot.
   `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make),
   `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
-  checkout sessions), `order-pump.ts` (each paid print order to Printful, and the founder's
-  order cards),
+  checkout sessions), `order-pump.ts` (each paid print order to Printful, each link sale's
+  delivery, and the founder's order cards),
   `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
   `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only

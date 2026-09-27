@@ -27,8 +27,9 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   `prevent-app-suspension`, never past a closed lid). Settings can open IdleBiz at login
   (`main/login-item.ts`): the macOS login item is its only record, only a packaged app
   registers one, and a launch at login starts in the menu bar. The budget is usage at API
-  prices (`usageLabel`), what the runs would cost billed per token, not what a subscription
-  bills, and every surface says so.
+  prices, what the runs would cost billed per token, not what a subscription bills: the tray
+  and HUD label it `usage` (`usageLabel`), never spend, and the Budget panel, the digest,
+  onboarding and the HUD's tooltip say it is at API prices.
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.
@@ -122,11 +123,13 @@ allocator and the replay.
   tells each run how its type makes money with the tools there are: software sells once
   through `create_payment_link`, a game studio a web game's paid unlock, ecommerce prints
   through `sell_print` to US buyers or sells digital goods through a link, custom whichever
-  fits, and VC sells
-  information only (deal memos, teardowns, a paid newsletter), never investment: taking money
-  as an investment or selling a security is regulated, and Stripe forbids it. A payment link
-  tells the product nothing about who paid (no tool makes a webhook), so the instructions say
-  a digital unlock takes the buyer's word or the founder delivers it by hand.
+  fits, and VC sells information only (deal memos, teardowns, a paid newsletter), never
+  investment: taking money as an investment or selling a security is regulated, and Stripe
+  forbids it. A payment link tells the product nothing about who paid (no tool makes a
+  webhook), so what a buyer is owed the founder sends: a link's `delivery` says what, and the
+  order pump cards the founder for each paid checkout on it. Anything else is an unlock that
+  takes the buyer's word, and the instructions never have an `ask_boss` card deliver, which
+  would block its bet.
 - **What only a human can do is an action card.** `ask_boss` takes a question or an action
   (`{action, instructions, draft?}`): a step no tool takes, such as posting from the founder's
   accounts, signing up, buying a domain or verifying an email. The founder answers Done, with
@@ -225,72 +228,78 @@ third boundary.
 - **Keys stay in main; what spends them runs there.** The keys IdleBiz holds live in
   `secrets.json`, which the seal keeps from every run, each value also sealed with the macOS
   Keychain (`safeStorage`), which a claude run can still reach; dev seals with the mock
-  keychain, and nothing on the real save, so it strands none. Main reads each where it uses
-  it. A run starts from the founder's env less every credential-shaped name and every URL with
-  a login in it, but its runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward
+  keychain, and nothing on the real save, so it strands none. Main reads each where it uses it.
+  A run starts from the founder's env less every credential-shaped name and every URL with a
+  login in it, but its runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward
   step that needs a key is a signed tool main runs: `deploy` uploads the product's folder
   through Vercel's API with the founder's token, and Vercel builds it on its own machines
   (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
   the founder's own key (`main/payment-links.ts`; a Connect grant is read-only), tagging each
-  payment for its product and a named open revenue bet on it; `sell_print` lists a Printful
-  print-on-demand item (`main/print-listing.ts`): its print files must be images the product's
-  own verified production domains serve now, each read whole and hashed, Printful's estimate
-  prices each variant with them to California, Alaska and Hawaii, and a price below the floor
-  is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus Stripe's
-  4.4% + 30¢, less the shipping the buyer pays), as is a Stripe key that cannot read shipping
-  rates or checkout sessions. Signed, it makes a Stripe price, a fixed shipping rate at Printful's dearest shipping and a
-  payment link collecting US addresses only, a dropdown for the variant when there are
-  several, tagged like `create_payment_link`'s and with `metadata[listing]`, each POST under an
-  idempotency key of its fields, so a retry after a timeout gets back what Stripe made; and
-  saves the listing with each file's sha256 and whether its link is live. Agents find variant
-  ids, placements and techniques with `printful_catalog`, which main reads with the token (v2
-  serves the catalog only to a signed-in caller). The Printful token and its one store are the
-  founder's, pasted in the Budget panel (`main/printful-token.ts`), and a token Printful turns
-  away asks for a new one, pasted over it there. Each paid order then goes to Printful unsigned,
-  run by main on the metrics pulse (`main/order-pump.ts`), since the founder signed the listing
-  and its price floor: every 30 minutes one account-wide read of Stripe's checkout sessions
+  payment for its product and a named open revenue bet on it, and the link alone with the
+  `delivery` its buyers are owed, which Stripe copies onto each checkout; `sell_print` lists a
+  Printful print-on-demand item (`main/print-listing.ts`): its print files must be images the
+  product's own verified production domains serve now, each read whole and hashed, Printful's
+  estimate prices each variant with them to California, Alaska and Hawaii, and a price below the
+  floor is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus
+  Stripe's 4.4% + 30¢, less the shipping the buyer pays), as is a Stripe key that cannot read
+  shipping rates or checkout sessions. Signed, it makes a Stripe price, a fixed shipping rate at
+  Printful's dearest shipping and a payment link collecting US addresses only, a dropdown for
+  the variant when there are several, tagged like `create_payment_link`'s and with
+  `metadata[listing]`, each POST under an idempotency key of its fields, so a retry after a
+  timeout gets back what Stripe made; and saves the listing with each file's sha256 and whether
+  its link is live. Agents find variant ids, placements and techniques with `printful_catalog`,
+  which main reads with the token (v2 serves the catalog only to a signed-in caller). The
+  Printful token and its one store are the founder's, pasted in the Budget panel
+  (`main/printful-token.ts`), and a token Printful turns away asks for a new one, pasted over it
+  there. Each paid order then goes to Printful unsigned, run by main on the metrics pulse
+  (`main/order-pump.ts`), since the founder signed the listing and its price floor: while a
+  Stripe key is saved, every 30 minutes one account-wide read of Stripe's checkout sessions
   (`main/stripe-checkouts.ts`, line items expanded; a list per link, or a faster beat, would
   spend the reads Stripe allows, which metrics already mostly spends on a quiet store) from a
-  `created[gt]` cursor in `state/orders-cursor.json`, held behind any checkout that may still be
-  paid and re-reading the last 10 minutes. A read that cannot reach the cursor (Stripe lists
-  newest first) moves it up to what it read and cards the founder. A session on a listing's link with
-  `payment_status` `paid` (complete alone is not paid) is kept as an order, on disk before
-  Printful hears of it; its Printful `external_id` is the session id's hash, looked up
-  (`/v2/orders/@<id>`) before a draft is made (`main/printful-orders.ts`), so a restart never
-  makes one twice. The design is read again and must hash as signed. A draft charges nothing;
-  it is polled every pulse until priced (a bounded number of reads) and confirmed only on a
-  read that shows it still a draft costing no more than Stripe collected, so no restart
-  confirms twice or over that guard; a test-mode checkout's draft is priced, then deleted,
-  never carded. Waiting orders are sent and sent ones' Printful status read every 10 minutes.
-  What the pump cannot settle (a draft dearer than the payment, a changed design, a refusal,
-  a status of failed, canceled or onhold the first time any call reads it, a refused key) is an
-  order card: a blocked task of origin `order`, no assignee, no product,
-  so no bet stalls, no retirement drops it and no teammate can claim it. The founder's Done or
-  Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes to the
-  room, where support reads it. Refunds are the founder's, in Stripe, and each card says so. Agents read orders, buyers'
-  addresses included, with the unsigned `read_orders`. Each tool above
-  runs once the founder signs off on the action it names, which is the approval's key (`requireSignOff` in
-  `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
-Vercel project named <product>` for a product bound to none), `payment link "<name>" at
-$<amount> on <product> for bet <slug>`, and `sell "<name>" (variants <ids>) printing
-<placement> (<technique>) <file URL> sha256:<digest> at $<price> via Printful on <product> for
-bet <slug>`, the file's whole digest, so a design deployed over the URL is signed for anew. A sign-off belongs to the continuation task, is spent
-  once and goes with the task. One such tool is unsigned: `set_env` sets a variable on the
-  product's bound project, sensitive, for production and preview (`main/vercel-env.ts`), since
-  a key the founder handed back for that product has reached runs anyway: their reply sits in
-  the task. It only creates a name set_env never set there, and replaces only one it did: the
-  founder may bind a live project whose variables are theirs, and a sensitive one cannot be
-  read back. Nothing is retried as a readable type. Main keeps each value Vercel took in
-  `secrets.json` (`ENV/<company>/<product>/<NAME>`, main's own copy never in the save, which
-  runs read), and a deploy refuses a folder any of whose uploaded files holds one, from any
-  product or company, naming the file and the variable, never the value: a key in source ships
-  publicly. The deploy tool reads the folder for that before it asks for the sign-off, and the
-  deploy again over what it uploads. Only values of 8 characters or more are scanned. It is a
-  tripwire, not a boundary: an encoded or split key passes, and nothing scans what the founder
-  pushes by hand. Vercel's
+  `created[gt]` cursor in `state/orders-cursor.json` (the founding at first; an older save
+  adopted reads from then), held behind any checkout that may still be paid and re-reading the
+  last 10 minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up
+  to what it read and cards the founder. A session on a listing's link with `payment_status`
+  `paid` (complete alone is not paid) is kept as an order, on disk before Printful hears of it;
+  its Printful `external_id` is the session id's hash, looked up (`/v2/orders/@<id>`) before a
+  draft is made (`main/printful-orders.ts`), so a restart never makes one twice. The design is
+  read again and must hash as signed. A draft charges nothing; it is polled every pulse until
+  priced (a bounded number of reads) and confirmed only on a read that shows it still a draft
+  costing no more than Stripe collected, so no restart confirms twice or over that guard; a
+  test-mode checkout's draft is priced, then deleted, never carded. A paid session on a
+  `create_payment_link` link (its `product` tag names a product of the company, live or retired,
+  and it has no `metadata[listing]`) is kept as a `link` order and posted to the room, and a
+  live one whose link names a `delivery` is carded to the founder with the buyer's email and
+  that text: nothing else reaches a buyer. Waiting orders are sent and sent ones' Printful
+  status read every 10 minutes. What the pump cannot settle (a draft dearer than the payment, a
+  changed design, a refusal, a status of failed, canceled or onhold the first time any call
+  reads it, a refused key) is an order card: a blocked task of origin `order`, no assignee, no
+  product, so no bet stalls, no retirement drops it and no teammate can claim it. The founder's
+  Done or Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes
+  to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
+  so. Agents read orders, buyers' emails and addresses included, with the unsigned
+  `read_orders`. Each tool above runs once the founder signs off on the action it names, which
+  is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
+on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
+  none), `payment link "<name>" at $<amount> on <product> for bet <slug>`, and `sell "<name>"
+(variants <ids>) printing <placement> (<technique>) <file URL> sha256:<digest> at $<price> via
+Printful on <product> for bet <slug>`, the file's whole digest, so a design deployed over the
+  URL is signed for anew. A sign-off belongs to the continuation task, is spent once and goes
+  with the task. One such tool is unsigned: `set_env` sets a variable on the product's bound
+  project, sensitive, for production and preview (`main/vercel-env.ts`), since a key the founder
+  handed back for that product has reached runs anyway: their reply sits in the task. It only
+  creates a name set_env never set there, and replaces only one it did: the founder may bind a
+  live project whose variables are theirs, and a sensitive one cannot be read back. Nothing is
+  retried as a readable type. Main keeps each value Vercel took in `secrets.json`
+  (`ENV/<company>/<product>/<NAME>`, main's own copy never in the save, which runs read), and a
+  deploy refuses a folder any of whose uploaded files holds one, from any product or company,
+  naming the file and the variable, never the value: a key in source ships publicly. The deploy
+  tool reads the folder for that before it asks for the sign-off, and the deploy again over what
+  it uploads. Only values of 8 characters or more are scanned. It is a tripwire, not a boundary:
+  an encoded or split key passes, and nothing scans what the founder pushes by hand. Vercel's
   own names and the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`…) are
-  refused as a name (`shared/env-name.ts`), and a set_env call's title, its curl line, is
-  logged as `set_env` alone.
+  refused as a name (`shared/env-name.ts`), and a set_env call's title, its curl line, is logged
+  as `set_env` alone.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits

@@ -38,3 +38,22 @@ export const defaultRoutines = (businessType: BusinessTypeId): readonly RoutineD
 
 /** Seeded slugs no company should run any more: the work belongs to bets, so boot removes them from a save. */
 export const RETIRED_ROUTINES: readonly string[] = ["business-review", "marketing-push"];
+
+/**
+ * Seeded instructions an older build wrote into each save, to the one its preset gives now:
+ * a routine is copied at founding, so boot rewords one still carrying the old default.
+ */
+export const REWORDED_ROUTINES: ReadonlyMap<string, string> = new Map([
+  [
+    "Walk the storefront as a customer: product pages, copy, pricing, checkout. Improve the weakest page and draft one promotion.",
+    BUSINESS_ROUTINES.ecommerce.instruction,
+  ],
+  [
+    "Play the current build end to end. Log what's broken or unfun, then fix the worst issue or delegate it to the right teammate.",
+    BUSINESS_ROUTINES["game-studio"].instruction,
+  ],
+  [
+    "Review the pipeline docs in the workspace, source 3 new candidate companies, and write or refresh one investment memo.",
+    BUSINESS_ROUTINES.vc.instruction,
+  ],
+]);

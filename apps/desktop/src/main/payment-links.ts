@@ -12,6 +12,8 @@ interface PaymentLinkRequest {
   cents: number;
   product: string;
   bet: string | null;
+  /** What the founder hands each buyer, which the order card for each paid checkout quotes. */
+  delivery: string | null;
 }
 
 /** `error` is why no link was made, in Stripe's words when it gave any. */
@@ -42,9 +44,18 @@ export const stripeSays = (error: HttpError): string => {
 };
 
 /** A payment link made on Stripe here in main, so an employee's process never holds the key. */
-export const stripePaymentLink: PaymentLinker = async ({ key, name, cents, product, bet }) => {
+export const stripePaymentLink: PaymentLinker = async ({
+  key,
+  name,
+  cents,
+  product,
+  bet,
+  delivery,
+}) => {
   const headers = stripeHeaders(key);
   const tags: Record<string, string> = bet === null ? { product } : { bet, product };
+  // the link's metadata alone reaches its checkout sessions, where the order pump reads it
+  const onSessions = delivery === null ? tags : { ...tags, delivery };
   try {
     const price = Created.parse(
       await postForm(`${API}/v1/prices`, headers, {
@@ -59,7 +70,7 @@ export const stripePaymentLink: PaymentLinker = async ({ key, name, cents, produ
         "line_items[0][quantity]": "1",
         // the charge the app counts copies its payment's metadata, never the link's;
         // the link's own tags are how the founder finds it in Stripe
-        ...underKey("metadata", tags),
+        ...underKey("metadata", onSessions),
         ...underKey("payment_intent_data[metadata]", tags),
       }),
     );

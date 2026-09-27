@@ -558,7 +558,8 @@ describe("the order pump", () => {
     });
 
     await pumpOrders(NOW, "read");
-    expect(world.checkoutReads).toEqual([LISTED_AT / 1000 - 1]);
+    const foundedAt = store.requireCompany().createdAt;
+    expect(world.checkoutReads).toEqual([Math.floor(foundedAt / 1000) - 1]);
     expect(store.ordersCursor()).toBe(openedAt - 1);
 
     // it expires unpaid: the cursor moves up to a little before the read
@@ -619,21 +620,79 @@ describe("the order pump", () => {
     expect(orderCards()).toHaveLength(1);
   });
 
-  it("asks Stripe nothing while no listing is on sale", async () => {
-    store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "software",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [],
-      mission: "ship",
-      name: "Acme",
-    });
-    saveSecrets();
-    const world = fakeWorld();
+  it("asks Stripe nothing without a key", async () => {
+    openShop();
+    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
 
     await pumpOrders(NOW, "read");
 
     expect(world.checkoutReads).toEqual([]);
+  });
+
+  it("keeps each paid checkout on a create_payment_link link, and cards the founder only for a live one with a delivery", async () => {
+    store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "vc",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "sell deal memos",
+      name: "Acme",
+    });
+    saveSecrets();
+    const productId = store.listProducts()[0]?.id ?? "";
+    const memo = (id: string, over: Partial<CheckoutSession> = {}) =>
+      checkout(id, {
+        amount_total: 900,
+        collected_information: null,
+        custom_fields: null,
+        line_items: { data: [{ description: "Acme teardown", quantity: 1 }] },
+        metadata: { delivery: "Email the PDF at memos/acme.pdf", product: productId },
+        payment_link: "plink_memo",
+        ...over,
+      });
+    const world = fakeWorld({
+      sessions: [
+        memo("cs_delivered"),
+        memo("cs_tip", { metadata: { product: productId } }),
+        memo("cs_test", { livemode: false }),
+        memo("cs_unpaid", { payment_status: "unpaid" }),
+        memo("cs_foreign", { metadata: { delivery: "x", product: "someone-elses" } }),
+        memo("cs_lost_listing", { metadata: { listing: "gone", product: productId } }),
+      ],
+    });
+
+    await pumpOrders(NOW, "read");
+
+    expect(world.creates).toBe(0);
+    expect(store.listOrders()).toMatchObject([
+      { delivery: "Email the PDF at memos/acme.pdf", kind: "link", name: "Acme teardown" },
+      { delivery: null, kind: "link", sessionId: "cs_tip" },
+      { kind: "link", livemode: false, sessionId: "cs_test" },
+    ]);
+    const cards = orderCards();
+    expect(cards.map((t) => t.title)).toEqual([
+      `Order ${orderIdOf("cs_delivered").slice(0, 8)}: deliver it`,
+    ]);
+    expect(cards[0]?.state).toMatchObject({
+      ask: {
+        action: 'Send ada@example.com what "Acme teardown" promised',
+        instructions: `"Acme teardown", ada@example.com: paid $9.00 on ${productId}, Stripe payment pi_cs_delivered. The team says to send: Email the PDF at memos/acme.pdf Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
+      },
+    });
+    expect(store.recentTeamMessages().map((m) => m.text)).toEqual([
+      `💵 Sold "Acme teardown" for $9.00 on ${productId}: the founder delivers it.`,
+      `💵 Sold "Acme teardown" for $9.00 on ${productId}.`,
+      `💵 Sold "Acme teardown" for $9.00 on ${productId} (test mode: nobody paid).`,
+    ]);
+
+    // a retired product's link still takes money, and its buyer is still owed
+    store.createProduct({ description: "the next idea", name: "Next" });
+    store.killProduct(productId, "dud", null);
+    world.sessions.push(memo("cs_after", { created: NOW_S + 60 }));
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+    expect(store.listOrders().at(-1)).toMatchObject({ productId, sessionId: "cs_after" });
+    expect(orderCards()).toHaveLength(2);
   });
 });

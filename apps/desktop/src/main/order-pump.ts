@@ -12,14 +12,16 @@ import { CHECKOUT_READ_LIMIT, readCheckouts } from "@/main/stripe-checkouts";
 import type { CheckoutSession } from "@/main/stripe-checkouts";
 import { formatUsd } from "@/shared/format";
 import type { Listing } from "@/shared/listing";
-import type { Order, Recipient, Sale } from "@/shared/order";
+import type { ListingOrder, Order, Recipient, Sale } from "@/shared/order";
 
 // Each paid checkout on a listing's payment link becomes one Printful order, placed with the
 // founder's token here in main. The order is on disk before Printful hears of it, and its
 // external id is the checkout's hash, so a restart looks it up rather than make it twice. A
 // draft charges nothing; it is confirmed only on a read that shows it still a draft, priced
 // at no more than the buyer paid, so no restart confirms one twice or over that guard.
-// Whatever the pump cannot settle goes to the founder as a card: refunds are theirs.
+// Whatever the pump cannot settle goes to the founder as a card: refunds are theirs. A paid
+// checkout on a create_payment_link link ships nothing, so it is kept too, and one whose link
+// names a delivery is carded to the founder, who alone can reach the buyer.
 
 // Stripe's reads are allotted by sales (on average 500 a transaction over 30 days, at least
 // 10k a month), and metrics already spends most of a quiet store's: checkouts are read on a
@@ -58,17 +60,18 @@ export const orderIdOf = (sessionId: string): string =>
 
 const cents = (amount: number): string => formatUsd(amount / 100);
 
-const listingOf = (order: Order): Listing | null =>
+const listingOf = (order: ListingOrder): Listing | null =>
   store.listListings().find((l) => l.productId === order.productId && l.id === order.listingId) ??
   null;
 
 /** How a card names an order: the buyer, what they bought, and where to find it in Stripe. */
 const describe = (order: Order): string => {
-  const listing = listingOf(order)?.name ?? order.listingId;
+  const what =
+    order.kind === "link"
+      ? JSON.stringify(order.name)
+      : (listingOf(order)?.name ?? order.listingId);
   const who =
-    order.kind === "sale"
-      ? `${order.recipient.name}'s ${listing} (${order.variant.label})`
-      : listing;
+    order.kind === "sale" ? `${order.recipient.name}'s ${what} (${order.variant.label})` : what;
   const email = order.email === null ? "" : `, ${order.email}`;
   const payment = order.paymentIntent ?? order.sessionId;
   return `${who}${email}: paid ${cents(order.collectedCents)} on ${order.productId}, Stripe payment ${payment}`;
@@ -502,19 +505,21 @@ const saleOf = (
   };
 };
 
-/** Keep a paid checkout as an order, and tell the room: the first sale is the game's milestone. */
+/** What every kept checkout records: who paid how much, and where to find it in Stripe. */
+const paidOn = (session: CheckoutSession, productId: string) => ({
+  collectedCents: session.amount_total ?? 0,
+  createdAt: session.created * 1000,
+  email: session.customer_details?.email ?? null,
+  id: orderIdOf(session.id),
+  livemode: session.livemode,
+  paymentIntent: session.payment_intent ?? null,
+  productId,
+  sessionId: session.id,
+});
+
+/** Keep a paid checkout on a listing's link as an order, and tell the room: the first sale is the game's milestone. */
 const take = (session: CheckoutSession, listing: Listing): void => {
-  const paid = {
-    collectedCents: session.amount_total ?? 0,
-    createdAt: session.created * 1000,
-    email: session.customer_details?.email ?? null,
-    id: orderIdOf(session.id),
-    listingId: listing.id,
-    livemode: session.livemode,
-    paymentIntent: session.payment_intent ?? null,
-    productId: listing.productId,
-    sessionId: session.id,
-  };
+  const paid = { ...paidOn(session, listing.productId), listingId: listing.id };
   const read = saleOf(session, listing);
   if (read.kind === "unreadable") {
     const order: Order = { ...paid, kind: "unreadable", why: read.why };
@@ -545,24 +550,73 @@ const take = (session: CheckoutSession, listing: Listing): void => {
 };
 
 /**
- * Keep every paid checkout on a listing's link since the cursor, and move the cursor up to the
+ * Keep a paid checkout on a create_payment_link link, tell the room, and card the founder with
+ * what the link says to deliver: nothing reaches a buyer from the team.
+ */
+const takeLinkSale = (session: CheckoutSession, productId: string): void => {
+  const order: Order = {
+    ...paidOn(session, productId),
+    delivery: session.metadata?.delivery ?? null,
+    kind: "link",
+    name: session.line_items?.data[0]?.description ?? "a payment link's item",
+  };
+  store.recordOrder(order);
+  const sold = `💵 Sold ${JSON.stringify(order.name)} for ${cents(order.collectedCents)} on ${productId}`;
+  if (!order.livemode) {
+    postToRoom({ kind: "office" }, `${sold} (test mode: nobody paid).`);
+    return;
+  }
+  if (order.delivery === null) {
+    postToRoom({ kind: "office" }, `${sold}.`);
+    return;
+  }
+  postToRoom({ kind: "office" }, `${sold}: the founder delivers it.`);
+  raiseOrderCard(cardTitle(order, "deliver it"), {
+    action: `Send ${order.email ?? "the buyer"} what ${JSON.stringify(order.name)} promised`,
+    draft: null,
+    instructions: `${describe(order)}. The team says to send: ${order.delivery} Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
+  });
+};
+
+/**
+ * Which of the company's links a checkout was made on: a listing's, or a create_payment_link
+ * link, known by the product its tags name. Null for any other checkout on the account.
+ */
+const soldOn = (
+  session: CheckoutSession,
+  onLink: ReadonlyMap<string, Listing>,
+): { kind: "listing"; listing: Listing } | { kind: "link"; productId: string } | null => {
+  const listing = onLink.get(session.payment_link ?? "");
+  if (listing !== undefined) {
+    return { kind: "listing", listing };
+  }
+  const tags = session.metadata;
+  const productId = tags?.product;
+  return session.payment_link &&
+    productId &&
+    tags.listing === undefined &&
+    store.madeProduct(productId)
+    ? { kind: "link", productId }
+    : null;
+};
+
+/**
+ * Keep every paid checkout on the company's links since the cursor, and move the cursor up to the
  * oldest that may still be paid: an open one (Stripe expires those within a day), or one whose
  * payment is still on its way.
  */
 const takePaidCheckouts = async (now: number): Promise<void> => {
-  const listings = store.listListings();
   const key = getSecret(STRIPE_SECRET_KEY);
-  if (listings.length === 0 || key === null) {
+  if (key === null) {
     return;
   }
-  const oldest = Math.min(...listings.map((l) => l.createdAt));
-  const cursor = store.ordersCursor() ?? Math.floor(oldest / 1000) - 1;
+  const cursor = store.ordersCursor() ?? Math.floor(store.requireCompany().createdAt / 1000) - 1;
   const read = await readCheckouts(key, cursor);
   if (read.kind === "refused") {
     raiseOrderCard("Paid orders can't be read from Stripe", {
       action: "Let IdleBiz's Stripe key read checkouts",
       draft: null,
-      instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful. In the Budget panel, remove the key and paste one whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
+      instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, remove the key and paste one whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
     });
     return;
   }
@@ -570,12 +624,12 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
     report("orders", new Error(`Stripe's checkouts could not be read: ${read.reason}`));
     return;
   }
-  const onLink = new Map(listings.map((l) => [l.paymentLink.id, l]));
+  const onLink = new Map(store.listListings().map((l) => [l.paymentLink.id, l]));
   const kept = new Set(store.listOrders().map((o) => o.sessionId));
   let waitFrom = Math.floor(now / 1000) - OVERLAP_S;
   for (const session of read.sessions) {
-    const listing = onLink.get(session.payment_link ?? "");
-    if (listing === undefined || kept.has(session.id)) {
+    const sold = soldOn(session, onLink);
+    if (sold === null || kept.has(session.id)) {
       continue;
     }
     const mayPay =
@@ -586,7 +640,11 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
     let unkept = false;
     if (session.payment_status === "paid") {
       try {
-        take(session, listing);
+        if (sold.kind === "listing") {
+          take(session, sold.listing);
+        } else {
+          takeLinkSale(session, sold.productId);
+        }
       } catch (error) {
         report(`order ${session.id}`, error);
         unkept = true;
@@ -606,9 +664,9 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
   const oldestRead = Math.min(...read.sessions.map((session) => session.created));
   store.setOrdersCursor(Math.max(cursor, Math.min(waitFrom, oldestRead - 1)));
   raiseOrderCard("Paid orders may have been missed", {
-    action: "Check Stripe for payments on IdleBiz's listings",
+    action: "Check Stripe for payments on IdleBiz's payment links",
     draft: null,
-    instructions: `More checkouts reached Stripe between two of IdleBiz's reads than one read takes (${CHECKOUT_READ_LIMIT}), which other business on the same account causes, so IdleBiz read only the newest and skipped any made before ${new Date(oldestRead * 1000).toISOString()}. In Stripe's dashboard, look for payments on IdleBiz's payment links before then that no order card or read_orders shows, and place those in Printful by hand. ${REFUND}`,
+    instructions: `More checkouts reached Stripe between two of IdleBiz's reads than one read takes (${CHECKOUT_READ_LIMIT}), which other business on the same account causes, so IdleBiz read only the newest and skipped any made before ${new Date(oldestRead * 1000).toISOString()}. In Stripe's dashboard, look for payments on IdleBiz's payment links before then that no order card or read_orders shows: place a print in Printful by hand, and deliver anything else. ${REFUND}`,
   });
 };
 

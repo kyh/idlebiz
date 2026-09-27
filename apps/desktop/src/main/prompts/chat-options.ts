@@ -41,7 +41,7 @@ const roleOption = (emp: Employee): ChatOption => {
   if (/(?:write|edit|research|content|doc)/u.test(r)) {
     return {
       instruction:
-        "Write the next most valuable piece of content for the business, ready to publish.",
+        "Write the next most valuable piece of content for the business: put it on the product's own site, or hand it to the founder as an ask_boss action saying where it goes.",
       label: "Write next piece",
     };
   }

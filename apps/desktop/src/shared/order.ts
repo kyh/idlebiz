@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// A paid checkout on a listing's payment link, and what became of it at Printful. Main writes
-// one file per order; runs may read them, so support can answer a buyer.
+// A paid checkout on one of the company's payment links, and, for a listing's, what became of it
+// at Printful. Main writes one file per order; runs may read them, so support can answer a buyer.
 
 /** Printful's `external_id`: at most 32 of [A-Za-z0-9_-], unique per store, which makes creating an order idempotent. */
 const OrderIdSchema = z.string().regex(/^[\w-]{1,32}$/u);
@@ -45,7 +45,6 @@ const Paid = {
   createdAt: z.number(),
   email: z.string().nullable(),
   id: OrderIdSchema,
-  listingId: z.string().min(1),
   /** False for a checkout in test mode, which nobody paid. */
   livemode: z.boolean(),
   /** What a refund in Stripe is made against. */
@@ -61,6 +60,7 @@ export const OrderSchema = z.discriminatedUnion("kind", [
     /** What Printful charges for it, in cents, once it has priced the draft. */
     costCents: z.number().int().nonnegative().nullable(),
     kind: z.literal("sale"),
+    listingId: z.string().min(1),
     /** Printful's own status (draft, pending, fulfilled, failed…) as last read; `deleted` once Printful no longer has it. */
     printfulStatus: z.string().nullable(),
     quantity: z.number().int().positive(),
@@ -69,7 +69,23 @@ export const OrderSchema = z.discriminatedUnion("kind", [
     variant: z.object({ id: z.number().int().positive(), label: z.string() }),
   }),
   /** Paid, but not an order IdleBiz can send, such as one with no shipping address: the founder's, by hand. */
-  z.object({ ...Paid, kind: z.literal("unreadable"), why: z.string() }),
+  z.object({
+    ...Paid,
+    kind: z.literal("unreadable"),
+    listingId: z.string().min(1),
+    why: z.string(),
+  }),
+  /**
+   * Paid on a create_payment_link link, where nothing ships on its own: `name` is what it sold,
+   * `delivery` what the team said the founder hands each buyer, null when it said nothing.
+   */
+  z.object({
+    ...Paid,
+    delivery: z.string().nullable(),
+    kind: z.literal("link"),
+    name: z.string(),
+  }),
 ]);
 export type Order = z.infer<typeof OrderSchema>;
 export type Sale = Extract<Order, { kind: "sale" }>;
+export type ListingOrder = Extract<Order, { kind: "sale" | "unreadable" }>;

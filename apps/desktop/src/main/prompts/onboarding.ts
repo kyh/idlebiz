@@ -4,7 +4,7 @@ import type { BusinessTypeId } from "@/shared/domain";
 const HIRE_HINTS = {
   custom: "",
   ecommerce:
-    "A print-on-demand shop needs product/merchandising, print design, storefront engineering, and marketing; Printful prints and ships, so no warehouse or fulfilment role.",
+    "A shop, printed on demand through Printful or selling digital goods, needs product/merchandising, design, storefront engineering, and marketing; nobody holds stock, so no warehouse or fulfilment role.",
   "game-studio":
     "A browser game with a paid unlock needs gameplay engineering, pixel art, sound, and game design.",
   software: "Lean product team: engineers, a designer, and someone on growth/marketing.",

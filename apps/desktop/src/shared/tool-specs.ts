@@ -178,11 +178,18 @@ export const TOOL_SPECS = {
     body: z.strictObject({
       amountUsd: z.number().min(0.5).max(10_000),
       bet: z.string().min(1).optional(),
+      // Stripe keeps a metadata value of at most 500 characters
+      delivery: z.string().trim().min(1).max(500).optional(),
       name: SALE_NAME,
       product: z.string().min(1).optional(),
     }),
-    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds a Stripe key. The founder signs off on each link: the first call is held, and calling again once they answer creates it.',
-    example: { amountUsd: 9, bet: "bet-slug", name: "..." },
+    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds a Stripe key. The buyer ends on Stripe\'s receipt page, and nothing reaches them from the team: when they are owed something (a file, a key, each issue of a newsletter), `delivery` says what the founder sends each one and where it is (a file in the workspace, a URL). Every paid checkout on the link then reaches the founder as a card with the buyer\'s email and that text, and read_orders lists it. The founder signs off on each link: the first call is held, and calling again once they answer creates it.',
+    example: {
+      amountUsd: 9,
+      bet: "bet-slug",
+      delivery: "Email the buyer the PDF at memos/acme-teardown.pdf in the workspace",
+      name: "...",
+    },
     leadOnly: null,
     method: "POST",
     path: "/v1/payment-link",
@@ -238,7 +245,7 @@ export const TOOL_SPECS = {
   }),
   read_orders: tool({
     body: z.strictObject({ product: z.string().min(1).optional() }),
-    doc: 'the latest paid orders of what sell_print listed on your run\'s product (name another with `"product":"<slug>"`): each buyer\'s name, email and shipping address, what they bought and paid, and where it stands at Printful, so you can answer a buyer. IdleBiz sends each order to Printful itself; refunds, and anything Printful needs a person for, are the founder\'s, who has a card for each order that needs them.',
+    doc: "the latest paid orders on your run's product (name another with `\"product\":\"<slug>\"`), through sell_print's listings and create_payment_link's links: each buyer's email, and for a print their name and shipping address, what they bought and paid, and where it stands, so you can answer a buyer. IdleBiz sends each print to Printful itself, and hands the founder a card for each paid link that names a delivery; refunds, and anything Printful needs a person for, are the founder's, who has a card for each order that needs them.",
     example: {},
     leadOnly: null,
     method: "POST",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { standingInstructions } from "./instructions";
+import { BUSINESS_TYPE_IDS } from "@/shared/domain";
 import type { BusinessTypeId, Company, Employee } from "@/shared/domain";
 
 const company = (businessType: BusinessTypeId): Company => ({
@@ -37,11 +38,11 @@ const employee: Employee = {
   status: "idle",
   title: "Analyst",
 };
-const instructionsFor = (businessType: BusinessTypeId): string =>
+const instructionsFor = (businessType: BusinessTypeId, lead = false): string =>
   standingInstructions({
     company: company(businessType),
     employee,
-    lead: false,
+    lead,
     memoryDir: "/tmp/memory",
     products: [],
   });
@@ -57,5 +58,34 @@ describe("standingInstructions", () => {
     const text = instructionsFor("ecommerce");
     expect(text).toMatch(/printful_catalog[\s\S]*sell_print[\s\S]*US addresses only/u);
     expect(text).toContain("read_orders");
+  });
+
+  it("tells every kind of business how it earns", () => {
+    const sections = BUSINESS_TYPE_IDS.map(
+      (type) => /## How Acme makes money\n(?<how>.+)\n/u.exec(instructionsFor(type))?.groups?.how,
+    );
+    for (const how of sections) {
+      expect(how).toMatch(/create_payment_link/u);
+    }
+    expect(new Set(sections).size).toBe(BUSINESS_TYPE_IDS.length);
+  });
+
+  it("never tells a run to push, only that the founder does", () => {
+    for (const type of BUSINESS_TYPE_IDS) {
+      for (const lead of [false, true]) {
+        const pushing = instructionsFor(type, lead)
+          .split("\n")
+          .filter((line) => /\bpush/iu.test(line));
+        expect(pushing).toEqual([
+          expect.stringMatching(/^- Pushing code: nobody on the team pushes\./u),
+        ]);
+      }
+    }
+  });
+
+  it("has the founder deliver what a link sold through its cards, never through ask_boss", () => {
+    const text = instructionsFor("software");
+    expect(text).toContain("create_payment_link's `delivery`");
+    expect(text).toContain("Never ask_boss the founder to deliver");
   });
 });

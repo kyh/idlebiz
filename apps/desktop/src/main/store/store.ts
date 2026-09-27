@@ -44,7 +44,7 @@ import { parseDoc, serializeDoc, slugify, optStr } from "@/main/store/frontmatte
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
 import { continuationBrief } from "@/main/prompts/briefs";
-import { RETIRED_ROUTINES, defaultRoutines } from "@/main/prompts/routines";
+import { RETIRED_ROUTINES, REWORDED_ROUTINES, defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
 import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
@@ -883,6 +883,10 @@ export const requireProduct = (id: string): Product => {
 
 export const listProducts = (): Product[] => [...(current().products ?? [])];
 
+/** Whether `id` is a product of this company, live or retired: a retired product's payment links still take money. */
+export const madeProduct = (id: string): boolean =>
+  getProduct(id) !== null || safeReaddir(retiredDir(current().company.id)).includes(id);
+
 const patchProduct = (id: string, patch: Partial<Product>): Product =>
   patchIn(current().products, id, patch, saveProduct);
 
@@ -974,7 +978,10 @@ const saveOrder = (order: Order): void => {
  */
 export const recordOrder = (order: Order): void => {
   const { listings, orders } = current();
-  if (!listings.some((l) => l.productId === order.productId && l.id === order.listingId)) {
+  if (
+    order.kind !== "link" &&
+    !listings.some((l) => l.productId === order.productId && l.id === order.listingId)
+  ) {
     throw new Error(`no listing ${order.listingId} of ${order.productId} is kept`);
   }
   if (orders.some((o) => o.id === order.id)) {
@@ -2073,6 +2080,28 @@ const adoptRetiredPush = (active: ActiveCompany): void => {
   rmSync(path.join(ROOT_DIR, ".push"), { force: true, recursive: true });
 };
 
+/**
+ * Format 6 and older seeded routines whose words sent a store audit to draft a promotion, a
+ * bet's job, and a VC to write investment memos, which it never sells. One the founder left as
+ * seeded takes its preset's words now.
+ */
+const adoptRewordedRoutines = (active: ActiveCompany): void => {
+  for (const r of active.routines) {
+    const instruction = REWORDED_ROUTINES.get(r.instruction);
+    if (instruction !== undefined) {
+      recordIn(active.routines, r.id, { instruction }, saveRoutine);
+    }
+  }
+};
+
+/**
+ * Format 6 and older read no checkouts, and a first read starts at founding: it would take every
+ * sale an older company ever made on a link as new, each posted to the room. Its reads start now.
+ */
+const adoptOrdersCursor = (): void => {
+  setOrdersCursor(Math.floor(Date.now() / 1000));
+};
+
 /** An older save's lead proposal, by its fixed title behind any "Continue: " an answer added. */
 const PROPOSAL_TITLE = /^(?:Continue: )*Open the next bet for /u;
 
@@ -2175,6 +2204,8 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 7) {
     adoptRetiredPush(active);
+    adoptRewordedRoutines(active);
+    adoptOrdersCursor();
   }
   saveCompany(active.company);
 };
