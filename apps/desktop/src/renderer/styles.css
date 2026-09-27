@@ -635,13 +635,19 @@ button:disabled {
 }
 
 /* ---- talking to an employee: their bust beside the text, the choices above it ---- */
+/* The choices sit in flow above the box, so a long ask shrinks the box and scrolls
+   inside it instead of pushing the choices off the top of the window. */
 .dlg {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   width: 100%;
   max-width: 48rem;
+  max-height: calc(100dvh - 48px);
 }
 .dlg-box {
   display: flex;
+  flex: 0 1 auto;
   align-items: stretch;
   gap: 20px;
   min-height: 252px;
@@ -660,8 +666,6 @@ button:disabled {
   gap: 10px;
 }
 .dlg-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 10px);
-  z-index: 1;
+  flex: none;
+  align-self: flex-end;
 }

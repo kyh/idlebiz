@@ -127,19 +127,21 @@ export const TeamChannel = () => {
   // keyed on the newest event, not the count — the feed is capped, so the
   // length stops changing once it fills and auto-scroll would die there.
   const newest = feed.at(-1)?.createdAt ?? null;
+  // hide while a dialogue/modal is up — a half-covered window reads as broken
+  const shown = company !== null && !modalOpen;
 
+  // and on every showing too: the feed comes back as a new box, scrolled to its top
   useEffect(() => {
-    if (newest === null) {
+    if (newest === null || !shown) {
       return;
     }
     const el = scrollRef.current;
     if (el) {
       el.scrollTo({ top: el.scrollHeight });
     }
-  }, [newest]);
+  }, [newest, shown]);
 
-  // hide while a dialogue/modal is up — a half-covered window reads as broken
-  if (!company || modalOpen) {
+  if (!company || !shown) {
     return null;
   }
 

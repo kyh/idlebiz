@@ -75,7 +75,8 @@ the last build. It covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
 shown as set and, for Stripe, removable; a key refused is never saved), Printful token entry
 (a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into
-secrets.json being sealed, and a held command denied from #team. It is local only, not part
+secrets.json being sealed, a held command denied from #team, keys held into a window
+let go of when it closes, #team kept on its newest line, and a long ask kept on screen. It is local only, not part
 of `pnpm verify` or CI:
 
 - It needs a macOS desktop session: each launch shows the window and takes focus.

@@ -233,6 +233,9 @@ export class OfficeScene extends Scene {
       kb.enableGlobalCapture();
     } else {
       kb.disableGlobalCapture();
+      // a disabled plugin drops the key-up of whatever is held, which would stay down
+      // once the keys come back: walking on its own, or eating the next press
+      kb.resetKeys();
     }
   }
 

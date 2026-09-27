@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bridgeOf, closeFully, expect, foundCompany, test } from "./harness";
+import type { Page } from "@playwright/test";
+import { z } from "zod";
 import type { Founded } from "./harness";
 
 // `npcs` is private to the scene and the manager; the string reaches them at runtime.
@@ -109,4 +111,132 @@ test("an action card hands the founder its draft and carries their answer back",
   const bridge = await bridgeOf(page);
   const open = await bridge.evaluate((b) => b.listTasks({}));
   expect(open.map((t) => t.description ?? "").join("\n")).toContain(`Done. They sent back: ${url}`);
+});
+
+// `npcs`, `player` and `facing` are private to the scene; the string reaches them at runtime.
+const SCENE = `window.__game.scene.getScene("office")`;
+const NPC_PLACED = (employeeId: string): string =>
+  `window.__game?.scene.getScene("office")?.npcs?.positionOf(${JSON.stringify(employeeId)}) != null`;
+
+const pointSchema = z.object({ x: z.number(), y: z.number() });
+type Point = z.infer<typeof pointSchema>;
+
+const playerAt = async (page: Page): Promise<Point> =>
+  pointSchema.parse(await page.evaluate(`(({ x, y }) => ({ x, y }))(${SCENE}.player.sprite)`));
+
+const placePlayer = async (page: Page, { x, y }: Point): Promise<void> => {
+  await page.evaluate(`void ${SCENE}.player.sprite.setPosition(${x}, ${y})`);
+};
+
+/** Stand the founder just left of `employeeId`, facing them, close enough to talk. */
+const standBeside = async (page: Page, employeeId: string): Promise<void> => {
+  await page.evaluate(`(() => {
+    const scene = ${SCENE};
+    const at = scene.npcs.positionOf(${JSON.stringify(employeeId)});
+    scene.player.sprite.setPosition(at.x - 26, at.y);
+    scene.facing = "right";
+  })()`);
+};
+
+// a human beat between keys: sent within one frame, a key let go reaches the office after it has the keyboard back
+const HOLD_MS = 150;
+
+test("a key held while a window opens is let go of when it closes", async ({ launch }) => {
+  const founding = await launch();
+  const { employees } = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  const bo = employees.find((e) => e.name === "Bo Chen");
+  if (!bo) {
+    throw new Error("the founded team has no Bo");
+  }
+
+  const { page } = await launch();
+  await expect.poll(() => page.evaluate(NPC_PLACED(bo.id))).toBe(true);
+  const spawn = await playerAt(page);
+  const dialogue = page.locator(".dlg");
+  for (const attempt of [1, 2]) {
+    await standBeside(page, bo.id);
+    await page.keyboard.down("e");
+    await expect(dialogue, `talk #${attempt}`).toBeVisible();
+    await page.waitForTimeout(HOLD_MS);
+    await page.keyboard.up("e");
+    await page.waitForTimeout(HOLD_MS);
+    await page.keyboard.press("Escape");
+    await expect(dialogue).toBeHidden();
+  }
+
+  await placePlayer(page, spawn);
+  await page.keyboard.down("ArrowRight");
+  await page.getByTitle("Settings").click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toBeVisible();
+  await page.waitForTimeout(HOLD_MS);
+  await page.keyboard.up("ArrowRight");
+  await page.waitForTimeout(HOLD_MS);
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  const stoppedAt = await playerAt(page);
+  await page.waitForTimeout(400);
+  expect(await playerAt(page)).toEqual(stoppedAt);
+});
+
+test("#team stays on its newest line after a window closes over it", async ({ launch }) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { page } = await launch();
+  const bridge = await bridgeOf(page);
+  await bridge.evaluate(async (b) => {
+    for (let i = 1; i <= 30; i += 1) {
+      await b.postTeamChat({ text: `line ${i}` });
+    }
+  });
+  const feed = page
+    .locator(".px-window")
+    .filter({ hasText: "# team" })
+    .locator(".px-scroll")
+    .first();
+  await expect(feed.getByText("line 30")).toBeInViewport();
+
+  await page.getByTitle("Settings").click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toBeVisible();
+  await settings.getByRole("button", { exact: true, name: "Done" }).click();
+  await expect(settings).toBeHidden();
+  await expect(feed.getByText("line 30")).toBeInViewport();
+});
+
+const LONG_QUESTION = Array.from(
+  { length: 20 },
+  (_, i) => `Point ${i + 1}: which way should the tip jar go before I continue?`,
+).join("\n");
+
+test("a long question keeps its lines and the dialogue stays on screen", async ({
+  launch,
+  root,
+}) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  await blockLead(root, founded, "e2e-long-ask", LONG_QUESTION);
+  const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+  if (!lead) {
+    throw new Error("the founded company has no lead");
+  }
+
+  const { page } = await launch();
+  await page.getByTitle(INBOX_BUTTON).click();
+  const inbox = page.getByRole("dialog", { name: "Inbox" });
+  await expect(inbox.getByText(/Point 1:/u)).toBeVisible();
+  await expect(inbox.getByText(/Point 1:/u)).toHaveCSS("white-space", "pre-wrap");
+  await inbox.getByRole("button", { exact: true, name: "Done" }).click();
+
+  await page.getByRole("button", { name: /team/iu }).click();
+  await page.getByTitle(`Talk to ${lead.name}`).click();
+  const dialogue = page.locator(".dlg");
+  await expect(dialogue.getByText(/Point 1:/u)).toBeVisible();
+  await expect(dialogue.getByText(/Point 1:/u)).toHaveCSS("white-space", "pre-wrap");
+  await expect(dialogue.locator(".dlg-menu")).toBeInViewport({ ratio: 1 });
+  await expect(page.getByTitle("Leave (esc)")).toBeInViewport({ ratio: 1 });
 });

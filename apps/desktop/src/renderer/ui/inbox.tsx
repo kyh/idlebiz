@@ -115,7 +115,7 @@ const AskRow = ({ t, by, question }: { t: Task; by: string; question: string }) 
       <div className="text-xs text-danger">
         ❗ {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-fg">
+      <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg">
         <RichText text={question} />
       </div>
       <AnswerForm task={t} onSent={() => setSent(true)} />

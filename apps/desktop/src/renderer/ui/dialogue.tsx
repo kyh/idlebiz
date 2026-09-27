@@ -8,6 +8,8 @@ import type { Submission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { ActionCard } from "@/renderer/ui/action-card";
+import { trailOf } from "@/renderer/ui/activity-trail";
+import type { Said } from "@/renderer/ui/activity-trail";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { RichText } from "@/renderer/ui/linkify";
 import { useModal } from "@/renderer/ui/modal";
@@ -151,13 +153,12 @@ const LINE_STYLES = new Map<ActivityKind, LineStyle>([
 ]);
 const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
 
-const FeedLine = ({ e }: { e: ActivityEvent }) => {
+const FeedLine = ({ e }: { e: Said }) => {
   const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
-  const text = "message" in e ? e.message : e.kind;
   return (
     <div className="break-words" style={{ color }}>
       {prefix}
-      <RichText text={text.slice(0, 300)} />
+      <RichText text={e.message.slice(0, 300)} />
     </div>
   );
 };
@@ -292,7 +293,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const spoken = mine.filter(isSpoken).filter((a) => a.message);
   const latest = spoken.at(-1);
   // what they're DOING: everything else stays a compact activity trail
-  const trail: ActivityEvent[] = mine.filter((a) => a !== latest).slice(-3);
+  const trail = trailOf(mine, latest);
   const working = emp.status === "working";
   const running = tasks.find((t) => t.state.kind === "running" || t.state.kind === "queued");
   const speech = speechFor(latest, working, running);
@@ -309,19 +310,22 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
           </div>
           <div className="dlg-body">
             <EmployeeTag name={emp.name} title={jobTitle(emp)} status={emp.status} size="lg" />
-            {asked?.state.ask.type === "action" ? (
-              <ActionCard t={asked} by={emp.name} ask={asked.state.ask} />
-            ) : null}
-            {asked?.state.ask.type === "question" ? (
-              <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
-                <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
-                <div className="mt-1 text-sm leading-snug text-fg">
-                  <RichText text={asked.state.ask.question} />
-                </div>
-                <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
+            {asked ? (
+              <div className="px-scroll min-h-0 overflow-y-auto">
+                {asked.state.ask.type === "action" ? (
+                  <ActionCard t={asked} by={emp.name} ask={asked.state.ask} />
+                ) : null}
+                {asked.state.ask.type === "question" ? (
+                  <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
+                    <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
+                    <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg">
+                      <RichText text={asked.state.ask.question} />
+                    </div>
+                    <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-            {asked ? null : (
+            ) : (
               <div className="px-scroll flex min-h-[64px] flex-1 flex-col overflow-y-auto">
                 <Speech key={latest?.id ?? "flavor"} text={speech.slice(0, 280)} />
                 {trail.length > 0 ? (
