@@ -692,7 +692,7 @@ export const sealFor = async ({
   sshAgent: string | null;
   /** The save, where a run writes only its own folders. */
   save: string;
-  /** Main's PATH, the login shell's folders on it whether they exist yet or not. */
+  /** Main's PATH, the login shell's folders and the installer's on it whether they exist yet or not. */
   pathDirs: readonly string[];
   /** The runner CLIs as main names them, a command on PATH or a path, which the founder runs unsealed. */
   clis: readonly string[];

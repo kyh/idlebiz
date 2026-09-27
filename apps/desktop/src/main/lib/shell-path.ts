@@ -10,10 +10,13 @@ import { promisify } from "node:util";
 const SHELL_TIMEOUT_MS = 5000;
 const MARK = "__IDLEBIZ_PATH__";
 
+// Kept whether it exists yet or not: onboarding's Claude Code installer makes it, and the CLI
+// it installs must be found without a restart.
+const installerBinDir = (): string => path.join(homedir(), ".local", "bin");
+
 const knownBinDirs = (): string[] => {
   const home = homedir();
   return [
-    path.join(home, ".local", "bin"),
     path.join(home, ".claude", "local"),
     path.join(home, ".npm-global", "bin"),
     path.join(home, ".volta", "bin"),
@@ -57,5 +60,5 @@ export const adoptShellPath = async (): Promise<void> => {
   const current = (process.env.PATH ?? "").split(path.delimiter);
   const shell = ((await loginShellPath()) ?? "").split(path.delimiter);
   const fallback = [...knownBinDirs(), ...current].filter((dir) => existsSync(dir));
-  process.env.PATH = dedupe([...shell, ...fallback]).join(path.delimiter);
+  process.env.PATH = dedupe([...shell, installerBinDir(), ...fallback]).join(path.delimiter);
 };

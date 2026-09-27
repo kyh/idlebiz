@@ -45,4 +45,12 @@ describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
     expect(adopted).toContain(path.join(home, ".local/bin"));
     expect(adopted).not.toContain(path.join(home, ".cargo/bin"));
   });
+
+  it("keeps the folder onboarding installs Claude Code into before it exists", async () => {
+    rmSync(path.join(home, ".local"), { force: true, recursive: true });
+
+    await adoptShellPath();
+
+    expect(process.env.PATH?.split(path.delimiter)).toContain(path.join(home, ".local/bin"));
+  });
 });
