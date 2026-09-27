@@ -21,7 +21,7 @@ const roleOption = (emp: Employee): ChatOption => {
   if (/(?:market|growth|community|social|brand)/u.test(r)) {
     return {
       instruction:
-        "Draft a launch/update post for the product as it exists today. Punchy, honest, ready to publish.",
+        "Draft a launch/update post for the product as it exists today. Punchy, honest, and handed to the founder to post as an ask_boss action.",
       label: "Draft launch post",
     };
   }

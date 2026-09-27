@@ -172,18 +172,17 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   {
     id: "game-studio",
     label: "Game studio",
-    pitchPlaceholder: "A cozy pixel-art farming roguelike playable in the browser.",
+    pitchPlaceholder: "A cozy pixel-art farming roguelike in the browser, with a paid full unlock.",
   },
   {
     id: "vc",
     label: "Venture capital firm",
-    pitchPlaceholder:
-      "A micro-VC that sources and writes investment memos on early-stage AI startups.",
+    pitchPlaceholder: "A paid deal-flow newsletter with memos on early-stage AI startups.",
   },
   {
     id: "ecommerce",
     label: "E-commerce business",
-    pitchPlaceholder: "An online store selling artist-designed enamel pins.",
+    pitchPlaceholder: "An online shop of artist-designed posters and tees, printed on demand.",
   },
   {
     id: "custom",

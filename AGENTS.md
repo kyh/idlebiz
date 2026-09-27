@@ -334,7 +334,13 @@ rather than crashing boot.
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
   so there is nothing to keep in sync.
 - **Prose an employee reads lives in `main/prompts/`.** The store persists it and the
-  scheduler gathers what it is grounded in; neither authors text.
+  scheduler gathers what it is grounded in; neither authors text. `instructions.ts` says how
+  each business type earns (`BUSINESS_MODELS`; VC sells information, never investment) and
+  teaches the tools as one flow: an `ask_boss` action card for any step only a human can take,
+  `set_env` for a key the founder hands back, `sell_print` and `read_orders` for prints. No
+  prompt tells a run to push: the founder pushes by hand.
+- **The budget is usage at API prices** (`usageLabel` in `shared/format.ts`) wherever the
+  founder sees it: what the runs would cost billed per token, not what their plan bills.
 - **`apps/desktop` `dependencies` is exactly what the app ships.** electron-builder unpacks
   it into node_modules: the ACP adapters main spawns (they bring their own zod and ACP sdk)
   and sharp (native, kept out of the bundle in `electron.vite.config.ts`). Everything Vite

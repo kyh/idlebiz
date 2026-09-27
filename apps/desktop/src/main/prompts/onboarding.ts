@@ -3,10 +3,12 @@ import type { BusinessTypeId } from "@/shared/domain";
 
 const HIRE_HINTS = {
   custom: "",
-  ecommerce: "A shop needs product/merchandising, storefront engineering, ops, and marketing.",
-  "game-studio": "A game needs gameplay engineering, pixel art, sound, and game design.",
+  ecommerce:
+    "A print-on-demand shop needs product/merchandising, print design, storefront engineering, and marketing; Printful prints and ships, so no warehouse or fulfilment role.",
+  "game-studio":
+    "A browser game with a paid unlock needs gameplay engineering, pixel art, sound, and game design.",
   software: "Lean product team: engineers, a designer, and someone on growth/marketing.",
-  vc: "An investment firm needs sourcing, analysis/research, and investor-facing writing.",
+  vc: "A firm selling deal memos, startup teardowns and a paid newsletter needs sourcing, analysis, writing, and distribution; it never raises or invests money, so no fundraising or investor-relations role.",
 } satisfies Record<BusinessTypeId, string>;
 
 export const foundingTeamPrompt = (
@@ -23,7 +25,7 @@ export const foundingTeamPrompt = (
 Company: ${companyName}
 Pitch: ${mission}${typeHint}
 
-Invent 5 distinct hires tailored to THIS pitch — whatever business it is. List first the one who runs the company day to day: they decide what the team bets its time and money on, hire and let go, and hand out the work, so give them a title that says so (General Manager, Head of Product, Studio Director…) and a persona that decides rather than builds. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; an investment firm needs sourcing + analysis + IR; a shop needs product + ops + marketing). Each person gets:
+Invent 5 distinct hires tailored to THIS pitch — whatever business it is. List first the one who runs the company day to day: they decide what the team bets its time and money on, hire and let go, and hand out the work, so give them a title that says so (General Manager, Head of Product, Studio Director…) and a persona that decides rather than builds. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; a deal-flow newsletter needs sourcing + analysis + writing; a print shop needs product + design + marketing). Each person gets:
 - name: a memorable first name (diverse, varied)
 - role: a short lowercase role key like "engineer", "pixel-artist", "writer"
 - title: their job title

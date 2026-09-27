@@ -22,6 +22,13 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   write of that file.
 - One active company per launch: newest `createdAt`, alphabetical slug on ties.
   Only that company's entities load or migrate; older saves remain untouched.
+- A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone
+  keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`,
+  `prevent-app-suspension`, never past a closed lid). Settings can open IdleBiz at login
+  (`main/login-item.ts`): the macOS login item is its only record, only a packaged app
+  registers one, and a launch at login starts in the menu bar. The budget is usage at API
+  prices (`usageLabel`), what the runs would cost billed per token, not what a subscription
+  bills, and every surface says so.
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.
@@ -111,6 +118,15 @@ allocator and the replay.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
   or employee), so the room agents read and the #team feed hold the same lines and no
   office news reads as the founder's word.
+- **Five businesses, one way to earn.** `BUSINESS_MODELS` in `main/prompts/instructions.ts`
+  tells each run how its type makes money with the tools there are: software sells once
+  through `create_payment_link`, a game studio a web game's paid unlock, ecommerce prints
+  through `sell_print` to US buyers or sells digital goods through a link, custom whichever
+  fits, and VC sells
+  information only (deal memos, teardowns, a paid newsletter), never investment: taking money
+  as an investment or selling a security is regulated, and Stripe forbids it. A payment link
+  tells the product nothing about who paid (no tool makes a webhook), so the instructions say
+  a digital unlock takes the buyer's word or the founder delivers it by hand.
 - **What only a human can do is an action card.** `ask_boss` takes a question or an action
   (`{action, instructions, draft?}`): a step no tool takes, such as posting from the founder's
   accounts, signing up, buying a domain or verifying an email. The founder answers Done, with
@@ -251,7 +267,7 @@ third boundary.
   order card: a blocked task of origin `order`, no assignee, no product,
   so no bet stalls, no retirement drops it and no teammate can claim it. The founder's Done or
   Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes to the
-  room, where support reads it. Refunds are the founder's. Agents read orders, buyers'
+  room, where support reads it. Refunds are the founder's, in Stripe, and each card says so. Agents read orders, buyers'
   addresses included, with the unsigned `read_orders`. Each tool above
   runs once the founder signs off on the action it names, which is the approval's key (`requireSignOff` in
   `main/tools.ts`): `deploy <product> to production on Vercel project <name>` (or `on a new
@@ -270,7 +286,8 @@ bet <slug>`, the file's whole digest, so a design deployed over the URL is signe
   product or company, naming the file and the variable, never the value: a key in source ships
   publicly. The deploy tool reads the folder for that before it asks for the sign-off, and the
   deploy again over what it uploads. Only values of 8 characters or more are scanned. It is a
-  tripwire, not a boundary: an encoded or split key passes, and `push` does not scan. Vercel's
+  tripwire, not a boundary: an encoded or split key passes, and nothing scans what the founder
+  pushes by hand. Vercel's
   own names and the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`â€¦) are
   refused as a name (`shared/env-name.ts`), and a set_env call's title, its curl line, is
   logged as `set_env` alone.
