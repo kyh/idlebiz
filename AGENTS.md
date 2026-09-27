@@ -206,7 +206,8 @@ rather than crashing boot.
   `links/`; retiring a product switches off its links, a listing's too, with the key
   (`switchOffRetiredLinks` in `main/company-actions.ts`, run by the retirement and every pulse;
   `main/retired-links.test.ts`), asking again each pulse while Stripe does not answer, and a
-  link Stripe refuses or never answers for is a card naming it. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  live link Stripe refuses or never answers for, or one with no key saved, is a card naming it
+  (a test-mode one, a line in the room). The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key
@@ -356,7 +357,8 @@ rather than crashing boot.
   each business type earns (`BUSINESS_MODELS`; VC sells information, never investment) and
   teaches the tools as one flow: an `ask_boss` action card for any step only a human can take,
   `set_env` for a key the founder hands back, `sell_print` and `read_orders` for prints, and a
-  link's `delivery` for what the founder sends each buyer, never an `ask_boss` card. No prompt
+  link's `delivery` for what the founder sends each buyer, never an `ask_boss` card, and
+  "Checking who paid" for an unlock the product's server checks with Stripe. No prompt
   tells a run to push: the founder pushes by hand (`instructions.test.ts` checks both).
 - **The budget is usage at API prices**: what the runs would cost billed per token, not what
   the founder's plan bills. The tray and HUD label it `usage` (`usageLabel` in
