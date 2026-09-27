@@ -19,6 +19,7 @@ import type {
   Speaker,
   Task,
 } from "@/shared/domain";
+import { orderCardTitle } from "@/shared/order";
 import type { CompanyLink } from "@/shared/payment-link";
 import { RefusalError } from "@/shared/refusal";
 
@@ -382,8 +383,8 @@ const switchedOffForReset = async (
  * Before a reset deletes the save, switch off with the founder's key every live payment link the
  * company still sells through, one at a time as the sweep does: once the save is gone nothing
  * records a link, ships its prints or hands its buyers what they paid for. Answers what the
- * founder must still do by hand (links left on, paid prints Printful never confirmed, links
- * older builds never recorded), or null when nothing is left.
+ * founder must still do by hand (links left on, paid prints Printful never confirmed, paid
+ * orders whose card is still open, links older builds never recorded), or null when nothing is left.
  */
 export const switchOffBeforeReset = async (): Promise<string | null> => {
   if (store.getCompany() === null) {
@@ -400,15 +401,28 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
       leftOn.push(`${JSON.stringify(link.name)} ${link.url} (${link.id}): ${why}`);
     }
   }
-  const unsent = store
-    .listOrders()
-    .flatMap((o) =>
-      o.kind === "sale" && o.livemode && o.stage.kind !== "confirmed"
-        ? [
-            `${o.recipient.name} (${o.email ?? "no email"}), checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}`,
-          ]
-        : [],
-    );
+  const paid = store.listOrders().filter((o) => o.livemode);
+  const unsent = paid.flatMap((o) =>
+    o.kind === "sale" && o.stage.kind !== "confirmed"
+      ? [
+          `${o.recipient.name} (${o.email ?? "no email"}), checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}`,
+        ]
+      : [],
+  );
+  const openCards = store
+    .listOpenTasks()
+    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t.title] : []));
+  const waiting = paid.flatMap((o) => {
+    const card = openCards.find((title) => title.startsWith(orderCardTitle(o, "")));
+    if (card === undefined || (o.kind === "sale" && o.stage.kind !== "confirmed")) {
+      return [];
+    }
+    const what = o.kind === "link" ? `${JSON.stringify(o.name)}, ` : "";
+    const owed = o.kind === "link" && o.delivery !== null ? `, owed: ${o.delivery}` : "";
+    return [
+      `${card}: ${what}${o.email ?? "no email"}, checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}${owed}`,
+    ];
+  });
   const unrecorded = store.unrecordedLinkProducts();
   const left = [
     ...(leftOn.length === 0
@@ -420,6 +434,11 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
       ? []
       : [
           `These paid prints were never confirmed at Printful: confirm each one's draft in Printful's dashboard where it has one, place it there by hand where it has none, or refund it in Stripe. ${unsent.join("; ")}.`,
+        ]),
+    ...(waiting.length === 0
+      ? []
+      : [
+          `These paid orders still wait on you, as their cards said: deliver or settle each one, or refund it in Stripe. ${waiting.join("; ")}.`,
         ]),
     ...(unrecorded.length === 0
       ? []

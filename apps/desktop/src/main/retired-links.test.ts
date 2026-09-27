@@ -526,6 +526,69 @@ describe("resetting the company", () => {
     expect(left).not.toContain("order-sent");
   });
 
+  it("names each paid order whose card still waits on the founder, and none they settled", async () => {
+    const { side } = openShop();
+    const paid = {
+      collectedCents: 900,
+      createdAt: 3,
+      livemode: true,
+      paymentIntent: null,
+      productId: side.id,
+    };
+    const owed = (id: string, trouble: string) => {
+      store.raiseOrderCard(`Order ${id.slice(0, 8)}: ${trouble}`, {
+        action: "Settle it",
+        draft: null,
+        instructions: "",
+        type: "action",
+      });
+      return `cs_${id}`;
+    };
+    const delivery = "Email the buyer the PDF";
+    store.recordOrder({
+      ...paid,
+      delivery,
+      email: "reader@example.com",
+      id: "guide-owed",
+      kind: "link",
+      name: "Guide",
+      sessionId: owed("guide-owed", "deliver it"),
+    });
+    store.recordOrder({
+      ...paid,
+      email: null,
+      id: "tee-noaddress",
+      kind: "unreadable",
+      listingId: "launch-tee",
+      sessionId: owed("tee-noaddress", "IdleBiz cannot send it"),
+      why: "it has no shipping address",
+    });
+    const settled = owed("guide-sent", "deliver it");
+    store.recordOrder({
+      ...paid,
+      delivery,
+      email: "done@example.com",
+      id: "guide-sent",
+      kind: "link",
+      name: "Guide",
+      sessionId: settled,
+    });
+    const card = cards().find((t) => t.title.startsWith("Order guide-se"));
+    if (!card) {
+      throw new Error("the settled order must have had a card");
+    }
+    settleOrderCard(card.id, { kind: "done", note: "" });
+    fakeStripe();
+
+    const left = await switchOffBeforeReset();
+
+    expect(left).toContain("cs_guide-owed");
+    expect(left).toContain("reader@example.com");
+    expect(left).toContain(delivery);
+    expect(left).toContain("cs_tee-noaddress");
+    expect(left).not.toContain(settled);
+  });
+
   it("names every live link for the founder to switch off when IdleBiz holds no key", async () => {
     openShop();
     saveKey(null);

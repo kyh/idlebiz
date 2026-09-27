@@ -15,6 +15,7 @@ import type { CheckoutSession, PaymentStanding } from "@/main/stripe-checkouts";
 import type { OrdersCursor } from "@/main/store/store";
 import { formatCents } from "@/shared/format";
 import type { Listing } from "@/shared/listing";
+import { orderCardTitle } from "@/shared/order";
 import type { Order, Recipient, Sale } from "@/shared/order";
 import type { LinkState } from "@/shared/payment-link";
 
@@ -76,9 +77,6 @@ const describe = (order: Order): string => {
   return `${who}${email}: paid ${formatCents(order.collectedCents)} on ${order.productId}, Stripe payment ${payment}`;
 };
 
-const cardTitle = (order: Order, trouble: string): string =>
-  `Order ${order.id.slice(0, 8)}: ${trouble}`;
-
 const REFUND = "If it can't ship, refund the buyer in Stripe.";
 
 /**
@@ -92,7 +90,7 @@ const hold = (sale: Sale, printfulId: number | null, trouble: string, why: strin
     postToRoom({ kind: "office" }, `🧪 Test order ${sale.id.slice(0, 8)} stopped: ${why}${where}`);
     return;
   }
-  raiseOrderCard(cardTitle(sale, trouble), {
+  raiseOrderCard(orderCardTitle(sale, trouble), {
     action: `Settle ${describe(sale)}`,
     draft: null,
     instructions: `${why}${where} ${REFUND}`,
@@ -116,7 +114,7 @@ const printfulTokenCard = (): void => {
 const noteStatus = (sale: Sale, printfulId: number, status: string, stage: Sale["stage"]): void => {
   store.updateSale(sale.id, { printfulStatus: status, stage });
   if (sale.livemode && ALARMING.has(status) && status !== sale.printfulStatus) {
-    raiseOrderCard(cardTitle(sale, `Printful marked it ${status}`), {
+    raiseOrderCard(orderCardTitle(sale, `Printful marked it ${status}`), {
       action: `Check ${describe(sale)}`,
       draft: null,
       instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks: after a failed charge, fix your billing, then confirm the order again in Printful's dashboard. ${REFUND}`,
@@ -645,7 +643,7 @@ const keepUnreadable = (
 ): void => {
   const order: Order = { ...paidOn(session, productId), kind: "unreadable", listingId, why };
   if (order.livemode) {
-    raiseOrderCard(cardTitle(order, "IdleBiz cannot send it"), {
+    raiseOrderCard(orderCardTitle(order, "IdleBiz cannot send it"), {
       action: `Settle ${describe(order)}`,
       draft: null,
       instructions: `A buyer paid, but ${why}, so IdleBiz sent nothing to Printful. Place it by hand in Printful's dashboard if you can. ${REFUND}`,
@@ -703,7 +701,7 @@ const takeLinkSale = (session: CheckoutSession, productId: string): void => {
     name: session.line_items?.data[0]?.description ?? "a payment link's item",
   };
   if (order.livemode && order.delivery !== null) {
-    raiseOrderCard(cardTitle(order, "deliver it"), {
+    raiseOrderCard(orderCardTitle(order, "deliver it"), {
       action: `Send ${order.email ?? "the buyer"} what ${JSON.stringify(order.name)} promised`,
       draft: null,
       instructions: `${describe(order)}. The team says to send: ${order.delivery} Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,

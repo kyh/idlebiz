@@ -89,3 +89,7 @@ export const OrderSchema = z.discriminatedUnion("kind", [
 ]);
 export type Order = z.infer<typeof OrderSchema>;
 export type Sale = Extract<Order, { kind: "sale" }>;
+
+/** The title of the founder's card about an order: its id, which names it in every card, and what went wrong. */
+export const orderCardTitle = (order: Order, trouble: string): string =>
+  `Order ${order.id.slice(0, 8)}: ${trouble}`;
