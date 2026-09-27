@@ -69,3 +69,32 @@ test("a file boot skipped is named in full, so the founder can find it", async (
   await expect(skipped).toBeVisible();
   expect(await skipped.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
+
+test("a Stripe sign-in left in the browser can be started over from the Budget panel", async ({
+  launch,
+}) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { app, page } = await launch();
+  const opened = await app.evaluateHandle(({ shell }) => {
+    const urls: string[] = [];
+    Object.defineProperty(shell, "openExternal", {
+      configurable: true,
+      value: (url: string) => {
+        urls.push(url);
+        return Promise.resolve();
+      },
+    });
+    return urls;
+  });
+  await page.getByRole("button", { name: /revenue/iu }).click();
+  const budget = page.getByRole("dialog", { name: "Budget" });
+  await budget.getByRole("button", { name: "Connect Stripe" }).click();
+  await expect(budget.getByText("Waiting for Stripe in your browser…")).toBeVisible();
+
+  await budget.getByRole("button", { name: "Start over" }).click();
+  await expect.poll(() => opened.evaluate((urls) => urls.length)).toBe(2);
+  await expect(budget.getByText("Waiting for Stripe in your browser…")).toBeVisible();
+});

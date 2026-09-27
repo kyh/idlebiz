@@ -55,9 +55,25 @@ const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
       </div>
     );
   }
+  // main holds a flow the founder left in the browser for minutes; a new one replaces it
   if (stripeStatus.state === "connecting") {
     return (
-      <div className="px-live-dot text-sm text-fg-dim">Waiting for Stripe in your browser…</div>
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="px-live-dot text-sm text-fg-dim">
+            Waiting for Stripe in your browser…
+          </span>
+          <button
+            type="button"
+            onClick={() => connecting.submit()}
+            disabled={connecting.submission.kind === "sending"}
+            className="px-btn"
+          >
+            Start over
+          </button>
+        </div>
+        <Failure submission={connecting.submission} doing="connect Stripe" />
+      </div>
     );
   }
   return (
