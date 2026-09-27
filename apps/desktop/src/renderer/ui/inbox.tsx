@@ -8,7 +8,7 @@ import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { approvalScope, describeRule } from "@/shared/hold-rules";
+import { approvalScope, describeRule, shownKey } from "@/shared/hold-rules";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationAsk, IntegrationNeed, Task, TaskIn } from "@/shared/domain";
@@ -74,7 +74,7 @@ const ApprovalRow = ({
         🔐 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
       <div className="mt-1 text-sm leading-snug text-fg">{describeRule(rule)}</div>
-      <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{command}</pre>
+      <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{shownKey(command)}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-fg-dim">{approvalScope(rule)}</span>
         <ApprovalButtons decided={decided} decide={decide} />

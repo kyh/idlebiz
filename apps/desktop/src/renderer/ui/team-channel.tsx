@@ -9,7 +9,7 @@ import type { FeedLine } from "@/renderer/state/activity-reducer";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import { formatTime } from "@/shared/format";
-import { describeRule } from "@/shared/hold-rules";
+import { describeRule, shownKey } from "@/shared/hold-rules";
 import { cn } from "cn";
 
 // The teammate says in the room that a command waits on the founder, so the answer sits beside it.
@@ -30,7 +30,7 @@ const HeldCommand = ({
       <div className="text-warn">
         🔐 {by} · <span className="text-fg-dim">{describeRule(rule)}</span>
       </div>
-      <code className="px-code mt-1 block">{command}</code>
+      <code className="px-code mt-1 block">{shownKey(command)}</code>
       <div className="mt-1.5 flex justify-end">
         <ApprovalButtons decided={decided} decide={decide} />
       </div>

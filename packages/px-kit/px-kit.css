@@ -373,6 +373,9 @@
   color: var(--fg);
   white-space: pre-wrap;
   word-break: break-all;
+  /* a held command reads in the order it runs: right-to-left letters never reorder it */
+  unicode-bidi: bidi-override;
+  direction: ltr;
 }
 
 /* Prose to paste, as written: wrapped between words, and a long URL wherever it must be. */

@@ -45,3 +45,14 @@ const TEXT = new Map<string, string>(Object.entries(HOLD_RULES));
 /** A saved ask names its rule as text, and may name one this version no longer has. */
 export const describeRule = (id: string): string =>
   TEXT.get(id) ?? `Saved rule "${id}" is unavailable in this version.`;
+
+// A direction override or a zero-width character in the key would let the card show one
+// command while the founder signs another, so each is shown by its code point.
+const HIDDEN = /[\p{Cc}\p{Cf}]/gu;
+
+/** A held ask's key as its card shows it: every control or format character named, none obeyed. */
+export const shownKey = (key: string): string =>
+  key.replaceAll(
+    HIDDEN,
+    (char) => `⟨U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}⟩`,
+  );
