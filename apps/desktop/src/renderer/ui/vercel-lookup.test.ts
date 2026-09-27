@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { BlockedAsk } from "@/shared/domain";
 import type { VercelListing, VercelProject } from "@/shared/integrations";
-import { lookupFor, problemOf } from "./vercel-lookup";
+import { awaitsVercelToken, lookupFor, problemOf } from "./vercel-lookup";
 
 const project: VercelProject = { id: "prj_1", name: "acme" };
 const listed: VercelListing = { account: "kai", kind: "loaded", projects: [project] };
@@ -39,5 +40,34 @@ describe("the Vercel picker's lookup", () => {
       state: "loaded",
       token: "vercel_x",
     });
+  });
+});
+
+const waiting = (productId: string | null, ask: BlockedAsk) => ({
+  productId,
+  state: { ask },
+});
+
+describe("a product bound to Vercel", () => {
+  const VERCEL: BlockedAsk = {
+    integration: "vercel",
+    reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
+    type: "integration",
+  };
+
+  it("takes a new token while the team waits on Vercel for it, or for no product named", () => {
+    expect(awaitsVercelToken("acme", [waiting("acme", VERCEL)])).toBe(true);
+    expect(awaitsVercelToken("acme", [waiting(null, VERCEL)])).toBe(true);
+  });
+
+  it("only shows its binding while nobody waits on Vercel for it", () => {
+    expect(awaitsVercelToken("acme", [])).toBe(false);
+    expect(awaitsVercelToken("acme", [waiting("side", VERCEL)])).toBe(false);
+    expect(
+      awaitsVercelToken("acme", [
+        waiting("acme", { integration: "stripe", reason: "to count revenue", type: "integration" }),
+        waiting("acme", { question: "Ship it?", type: "question" }),
+      ]),
+    ).toBe(false);
   });
 });

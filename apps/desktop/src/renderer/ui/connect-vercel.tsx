@@ -6,7 +6,7 @@ import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/stor
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
-import { lookupFor, problemOf } from "@/renderer/ui/vercel-lookup";
+import { awaitsVercelToken, lookupFor, problemOf } from "@/renderer/ui/vercel-lookup";
 import type { Product } from "@/shared/domain";
 import type { VercelProject } from "@/shared/integrations";
 
@@ -149,8 +149,10 @@ export const ConnectVercel = ({
 }) => {
   const products = useStore((s) => s.products);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [replacing, setReplacing] = useState(false);
   const disconnecting = useSubmission(disconnectVercel);
   const target = productId ?? chosen;
+  const waited = useStore((s) => target !== null && awaitsVercelToken(target, s.pendingAsks));
 
   if (target === null) {
     return (
@@ -169,22 +171,39 @@ export const ConnectVercel = ({
         {product.vercel ? (
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm text-fg">
-              ✓ <b>{product.name}</b> deploys to <b>{product.vercel.projectName}</b> — its users
-              come from that project&apos;s Web Analytics, and your team deploys to it for real.
+              {waited ? (
+                <>
+                  The team is waiting on Vercel here: pick <b>{product.vercel.projectName}</b>{" "}
+                  again, with a new token if Vercel turned the saved one away.
+                </>
+              ) : (
+                <>
+                  ✓ <b>{product.name}</b> deploys to <b>{product.vercel.projectName}</b> — its users
+                  come from that project&apos;s Web Analytics, and your team deploys to it for real.
+                </>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => disconnecting.submit(product.id)}
-              disabled={disconnecting.submission.kind === "sending"}
-              className="px-btn"
-            >
-              Disconnect
-            </button>
+            <div className="flex gap-2">
+              {waited || replacing ? null : (
+                <button type="button" onClick={() => setReplacing(true)} className="px-btn">
+                  Replace token
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => disconnecting.submit(product.id)}
+                disabled={disconnecting.submission.kind === "sending"}
+                className="px-btn"
+              >
+                Disconnect
+              </button>
+            </div>
             <Failure submission={disconnecting.submission} doing="disconnect" />
           </div>
-        ) : (
+        ) : null}
+        {!product.vercel || waited || replacing ? (
           <PickProject productId={product.id} onClose={onClose} />
-        )}
+        ) : null}
       </div>
     </Modal>
   );

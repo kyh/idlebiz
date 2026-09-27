@@ -1,4 +1,5 @@
 import type { Loaded } from "@/renderer/hooks/use-async";
+import type { BlockedAsk } from "@/shared/domain";
 import type { VercelListing, VercelProject } from "@/shared/integrations";
 
 type Lookup =
@@ -65,3 +66,18 @@ export const problemOf = (lookup: Lookup): string | null => {
   }
   return null;
 };
+
+/**
+ * Whether the team waits on Vercel for this product, or for one it never named. A bound product
+ * then gets the picker back: Vercel may have turned the saved token away.
+ */
+export const awaitsVercelToken = (
+  productId: string,
+  asks: readonly { productId: string | null; state: { ask: BlockedAsk } }[],
+): boolean =>
+  asks.some(
+    (t) =>
+      (t.productId === productId || t.productId === null) &&
+      t.state.ask.type === "integration" &&
+      t.state.ask.integration === "vercel",
+  );
