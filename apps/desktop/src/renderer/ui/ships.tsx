@@ -228,8 +228,7 @@ export const Ships = ({
   const productStatus = useStore((s) => s.productStatus);
   const bets = useStore((s) => s.bets);
   const [note, showNote] = useTransientNote(2500);
-  // null: the whole company's log
-  const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const log = useAsync(
     async () => (company ? await bridge().shippingLog() : []),
     [company?.id, company?.ships],
@@ -238,10 +237,10 @@ export const Ships = ({
   if (!company) {
     return null;
   }
-  const selectedName =
-    selected === null ? "" : ` · ${products.find((p) => p.id === selected)?.name ?? ""}`;
-
-  const selectedProduct = products.find((p) => p.id === selected);
+  // a pick retired since reads as none: the whole company
+  const selectedProduct = products.find((p) => p.id === picked);
+  const selected = selectedProduct?.id ?? null;
+  const selectedName = selectedProduct ? ` · ${selectedProduct.name}` : "";
   const openWorkspace = async () => {
     try {
       await bridge().openCompanyPath({ rel: selectedProduct?.workspaceDir ?? "" });
@@ -283,7 +282,7 @@ export const Ships = ({
               status={productStatus.get(p.id)}
               selected={selected === p.id}
               retirable={products.length > 1}
-              onSelect={() => setSelected(selected === p.id ? null : p.id)}
+              onSelect={() => setPicked(selected === p.id ? null : p.id)}
               onOpen={onOpen}
               onNote={showNote}
             />

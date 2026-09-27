@@ -77,6 +77,7 @@ type Used =
   | "onActivity"
   | "onAuthEvent"
   | "onStripeStatus"
+  | "setMaxAgents"
   | "stripeKeyStatus"
   | "stripeStatus";
 
@@ -121,6 +122,7 @@ const fakeMain = (late: readonly Late[]) => {
     },
     onStripeStatus: () => () => {},
     restingRunners: () => answerOf("restingRunners", main.resting),
+    setMaxAgents: ({ maxAgents }) => Promise.resolve({ ...company, maxAgents }),
     stripeKeyStatus: () => Promise.resolve({ state: "unset" }),
     stripeStatus: () => Promise.resolve({ state: "disconnected" }),
   };
@@ -239,6 +241,20 @@ describe("store", () => {
     expect(read(store, roster)).toBe("lead:working");
     await answer("listEmployees");
     expect(read(store, roster)).toBe("lead:working");
+  });
+
+  it("keeps a cap the founder saved while a refresh that read the company earlier is in flight", async () => {
+    const { answer, bridge } = fakeMain(["listEmployees"]);
+    const store = await freshStore(bridge);
+    await answer("listEmployees");
+
+    const refreshed = store.refresh();
+    await settle();
+    await store.setMaxAgents(6);
+    expect(read(store, (s) => String(s.company?.maxAgents))).toBe("6");
+    await answer("listEmployees");
+    await refreshed;
+    expect(read(store, (s) => String(s.company?.maxAgents))).toBe("6");
   });
 
   it("walks a hire in when a run's patch refused the refresh that found them", async () => {

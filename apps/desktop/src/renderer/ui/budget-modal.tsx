@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { bridge } from "@/renderer/bridge";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
+import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { Failure } from "@/renderer/ui/failure";
 import {
   useStore,
@@ -229,6 +230,8 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const liveMetrics = company !== null && company.revenueUsd !== null;
   const saving = useSubmission(setBudget);
   const resetting = useSubmission(resetSpend);
+  const capField = useRef<HTMLInputElement>(null);
+  const [capNote, showCapNote] = useTransientNote(2500);
 
   if (!company) {
     return null;
@@ -255,8 +258,8 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
             className="px-inset p-3 text-sm"
             style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
           >
-            ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite) to get the team
-            working again.
+            ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite), then press ▶
+            Start to get the team working again.
           </div>
         ) : null}
 
@@ -268,8 +271,11 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
             onChange={(mode) => {
               if (mode === "infinite") {
                 saving.submit({ mode });
-              } else {
+              } else if (capValid) {
                 setCap();
+              } else {
+                capField.current?.focus();
+                showCapNote("Type a cap, then Set cap.");
               }
             }}
             label="Usage cap"
@@ -279,6 +285,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
           <div className="mt-2 flex items-center gap-2">
             <span className="text-sm text-fg">$</span>
             <input
+              ref={capField}
               value={capInput}
               onChange={(e) => setCapInput(e.target.value)}
               placeholder="25"
@@ -294,6 +301,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
               Set cap
             </button>
           </div>
+          {capNote ? <div className="mt-1 text-xs text-fg-dim">{capNote}</div> : null}
           <Failure submission={saving.submission} doing="save the budget" />
         </div>
 

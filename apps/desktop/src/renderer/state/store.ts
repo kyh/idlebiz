@@ -319,8 +319,15 @@ const withCompany = async (act: () => Promise<void>): Promise<void> => {
     await act();
   }
 };
+// main answers a change with the company after it, newer than any read asked for before it
 const updateCompany = (call: () => Promise<Company>): Promise<void> =>
-  withCompany(async () => set({ company: await call() }));
+  withCompany(async () => {
+    const ticket = order.ticket();
+    const company = await call();
+    if (order.accepts("company", ticket)) {
+      set({ company });
+    }
+  });
 
 // main answers both with `bet.changed` / `product.killed`, and those events reload what moved
 export const killBet = async (betId: string, reason: string): Promise<void> => {
