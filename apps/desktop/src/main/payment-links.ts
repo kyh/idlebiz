@@ -248,6 +248,9 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
       await post("/v1/payment_links", {
         "line_items[0][price]": price.id,
         "line_items[0][quantity]": "1",
+        // the price floor counts on a card's fee; Klarna's or Affirm's is dearer, and Stripe
+        // offers any method the account has on unless the link names its own
+        "payment_method_types[0]": "card",
         "shipping_address_collection[allowed_countries][0]": "US",
         "shipping_options[0][shipping_rate]": rate.id,
         ...variantChoice(variants),

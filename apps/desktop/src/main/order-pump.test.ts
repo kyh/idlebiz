@@ -108,6 +108,8 @@ const fakeWorld = ({
     lostConfirmations,
     lostCreates,
     orders,
+    /** How each payment was made, by its intent, where it was not by card. */
+    paidWith: new Map<string, string>(),
     /** Payments the founder refunded in Stripe. */
     refunded: new Set<string>(),
     sessions,
@@ -205,8 +207,18 @@ const fakeWorld = ({
     if (host === "api.stripe.com" && pathname === "/v1/charges") {
       const intent = searchParams.get("payment_intent") ?? "";
       const refunded = world.refunded.has(intent) ? 3599 : 0;
+      const type = world.paidWith.get(intent) ?? "card";
       return Promise.resolve(
-        Response.json({ data: [{ amount_refunded: refunded, disputed: false, paid: true }] }),
+        Response.json({
+          data: [
+            {
+              amount_refunded: refunded,
+              disputed: false,
+              paid: true,
+              payment_method_details: { type },
+            },
+          ],
+        }),
       );
     }
     const link = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
@@ -452,6 +464,25 @@ describe("the order pump", () => {
     expect(orderCards()).toEqual([]);
     expect(store.listOpenTasks()).toEqual([]);
     expect(store.recentTeamMessages().at(-1)?.text).toContain("done — refunded");
+  });
+
+  it("leaves a draft paid other than by card, whose Stripe fee can pass a card's", async () => {
+    openShop();
+    // a card's dearest fee leaves $34.10 of $35.99, Klarna's 5.99% + 30¢ only $33.53
+    const world = fakeWorld({ sessions: [checkout("cs_paid")], totalUsd: "34.00" });
+    world.paidWith.set("pi_cs_paid", "klarna");
+
+    await pumpUntilSettled();
+
+    expect(world.confirmations).toBe(0);
+    expect(onlySale()).toMatchObject({
+      costCents: 3400,
+      stage: { kind: "held", printfulId: 9001 },
+    });
+    const [card] = orderCards();
+    expect(card?.title).toBe(
+      `Order ${orderIdOf("cs_paid").slice(0, 8)}: its buyer paid with klarna, not a card`,
+    );
   });
 
   it("hands the founder an order Printful marks failed", async () => {

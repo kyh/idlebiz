@@ -269,7 +269,7 @@ third boundary.
   floor is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus
   Stripe's 4.4% + 30¢ at its dearest, less the shipping the buyer pays), as is a Stripe key that cannot read
   shipping rates or checkout sessions. Signed, it makes a Stripe price, a fixed shipping rate at
-  Printful's dearest shipping and a payment link collecting US addresses only, a dropdown for
+  Printful's dearest shipping and a card-only payment link collecting US addresses only, a dropdown for
   the variant when there are several, tagged like `create_payment_link`'s and with
   `metadata[listing]`, each POST under an idempotency key of its fields, so a retry after a
   timeout gets back what Stripe made; and saves the listing with each file's sha256 and whether
@@ -294,9 +294,10 @@ third boundary.
   draft is made (`main/printful-orders.ts`), so a restart never makes one twice. The design is
   read again and must hash as signed. A draft charges nothing; it is polled every pulse until
   priced (a bounded number of reads) and confirmed only on a read that shows it still a draft
-  costing no more than Stripe collected less its dearest fee (`netOfStripeCents`), with the
-  payment's charges read just before and neither refunded nor disputed
-  (`readPaymentStanding`, Read on Charges), so no restart confirms twice or past that guard. A
+  costing no more than Stripe collected less its dearest fee on a card (`netOfStripeCents`), with
+  the payment's charges read just before, neither refunded nor disputed and paid by card
+  (`readPaymentStanding`, Read on Charges; a listing's link takes only cards, but one made before
+  it did may have taken Klarna or Affirm, whose fee is dearer), so no restart confirms twice or past that guard. A
   send whose last try failed asks Printful once more for a draft it may have made before the
   founder is told to place it by hand. A test-mode sale is priced, then its draft deleted (one
   Printful never prices is deleted too), and anything that stops it goes to the room, never a

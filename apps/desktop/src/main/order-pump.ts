@@ -3,7 +3,7 @@ import * as store from "@/main/store/store";
 import { postToRoom, raiseOrderCard } from "@/main/company-actions";
 import { report } from "@/main/lib/report";
 import { VARIANT_FIELD } from "@/main/payment-links";
-import { netOfStripeCents, readPrintFile } from "@/main/print-listing";
+import { STRIPE_FEE_LABEL, netOfStripeCents, readPrintFile } from "@/main/print-listing";
 import { printfulCredential } from "@/main/printful";
 import type { PrintfulCredential } from "@/main/printful";
 import { printfulOrders } from "@/main/printful-orders";
@@ -22,8 +22,8 @@ import type { LinkState } from "@/shared/payment-link";
 // founder's token here in main. The order is on disk before Printful hears of it, and its
 // external id is the checkout's hash, so a restart looks it up rather than make it twice. A
 // draft charges nothing; it is confirmed only on a read that shows it still a draft, priced at
-// no more than the buyer paid less Stripe's fee, with the payment neither refunded nor disputed,
-// so no restart confirms one twice or past that guard.
+// no more than the buyer paid less Stripe's fee on a card, with the payment made by card and
+// neither refunded nor disputed, so no restart confirms one twice or past that guard.
 // Whatever the pump cannot settle goes to the founder as a card: refunds are theirs. A paid
 // checkout on a create_payment_link link ships nothing, so it is kept too, and one whose link
 // names a delivery is carded to the founder, who alone can reach the buyer.
@@ -349,9 +349,32 @@ const paymentOf = (sale: Sale): Promise<PaymentStanding> => {
   return readPaymentStanding(key, sale.paymentIntent);
 };
 
+/** Why a payment Stripe could read stops Printful's draft of `costCents` being confirmed, or null when nothing does. */
+const paymentRefusal = (
+  payment: Exclude<PaymentStanding, { kind: "unread" }>,
+  costCents: number,
+): { trouble: string; why: string } | null => {
+  if (payment.kind === "taken") {
+    return {
+      trouble: "its payment was refunded or disputed",
+      why: "Stripe shows the buyer's payment refunded or disputed, so IdleBiz left Printful's draft unconfirmed. Delete the draft in Printful's dashboard, or confirm it there if the buyer is still owed it.",
+    };
+  }
+  // a listing's link takes only cards, but one made before it did can take a method with a dearer fee
+  if (payment.method !== "card") {
+    const method = payment.method ?? "a method Stripe did not name";
+    return {
+      trouble: `its buyer paid with ${method}, not a card`,
+      why: `The buyer paid with ${method}, whose Stripe fee can be more than the ${STRIPE_FEE_LABEL} of a card that IdleBiz counts on, so IdleBiz left Printful's ${formatCents(costCents)} draft unconfirmed. Check in Stripe's dashboard what the payment netted, then confirm the draft in Printful's dashboard if that covers it, or delete it.`,
+    };
+  }
+  return null;
+};
+
 /**
  * Confirm a priced draft, on this read that shows it a draft, only when it costs no more than the
- * buyer paid less Stripe's fee, and the payment is neither refunded nor disputed.
+ * buyer paid less Stripe's fee on a card, and the payment was made by card and is neither
+ * refunded nor disputed.
  */
 const confirm = async (
   sale: Sale,
@@ -402,13 +425,9 @@ const confirm = async (
     );
     return;
   }
-  if (payment.kind === "taken") {
-    hold(
-      sale,
-      order.id,
-      "its payment was refunded or disputed",
-      `Stripe shows the buyer's payment refunded or disputed, so IdleBiz left Printful's draft unconfirmed. Delete the draft in Printful's dashboard, or confirm it there if the buyer is still owed it.`,
-    );
+  const refused = paymentRefusal(payment, costCents);
+  if (refused !== null) {
+    hold(sale, order.id, refused.trouble, refused.why);
     return;
   }
   const confirmed = await printfulOrders.confirm(order.id, credential);

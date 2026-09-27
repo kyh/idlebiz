@@ -105,17 +105,23 @@ export const readCheckouts = async (key: string, createdAfter: number): Promise<
 
 const ChargesSchema = z.object({
   data: z.array(
-    z.object({ amount_refunded: z.number().int(), disputed: z.boolean(), paid: z.boolean() }),
+    z.object({
+      amount_refunded: z.number().int(),
+      disputed: z.boolean(),
+      paid: z.boolean(),
+      payment_method_details: z.object({ type: z.string() }).nullish(),
+    }),
   ),
 });
 
 /**
  * Whether the buyer's money is still there: `kept` when a paid charge of the payment has
- * nothing refunded and no dispute, `taken` when some was refunded or disputed, and `unread`
- * when Stripe could not say, which the caller treats as not yet known.
+ * nothing refunded and no dispute, with how it was paid (`card`, `klarna`…; null when Stripe
+ * did not say), `taken` when some was refunded or disputed, and `unread` when Stripe could not
+ * say, which the caller treats as not yet known.
  */
 export type PaymentStanding =
-  | { kind: "kept" }
+  | { kind: "kept"; method: string | null }
   | { kind: "taken" }
   | { kind: "unread"; reason: string };
 
@@ -134,9 +140,10 @@ export const readPaymentStanding = async (
     if (data.some((charge) => charge.amount_refunded > 0 || charge.disputed)) {
       return { kind: "taken" };
     }
-    return data.some((charge) => charge.paid)
-      ? { kind: "kept" }
-      : { kind: "unread", reason: "Stripe lists no paid charge for it" };
+    const paid = data.find((charge) => charge.paid);
+    return paid === undefined
+      ? { kind: "unread", reason: "Stripe lists no paid charge for it" }
+      : { kind: "kept", method: paid.payment_method_details?.type ?? null };
   } catch (error) {
     if (error instanceof z.ZodError) {
       report("stripe charges", error);

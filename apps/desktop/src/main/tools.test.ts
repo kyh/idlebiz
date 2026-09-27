@@ -1809,7 +1809,7 @@ describe("sell_print", () => {
     ).toEqual(["/v1/shipping_rates", "/v1/checkout/sessions"]);
   });
 
-  it("once signed off, lists it on a US-only link at Printful's shipping, tagged and saved", async () => {
+  it("once signed off, lists it on a US-only card-only link at Printful's shipping, tagged and saved", async () => {
     const { ctx, sent } = sellingRun();
     const bet = revenueBet();
     const action = `${PRINT_ACTION} for bet ${bet.id}`;
@@ -1861,6 +1861,7 @@ describe("sell_print", () => {
           ...Object.fromEntries(
             Object.entries(tags).map(([k, v]) => [`payment_intent_data[metadata][${k}]`, v]),
           ),
+          "payment_method_types[0]": "card",
           "shipping_address_collection[allowed_countries][0]": "US",
           "shipping_options[0][shipping_rate]": "shr_1",
         },

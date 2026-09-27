@@ -199,7 +199,7 @@ rather than crashing boot.
   (`main/stripe-checkouts.ts`) every 30 minutes, keeps each paid one on the company's links
   under `orders/` (a retired product's too) from a cursor kept per key,
   and drafts, prices and confirms a print on Printful (`main/printful-orders.ts`) once its cost
-  fits in what Stripe's fee leaves and its payment is neither refunded nor disputed; a `create_payment_link` sale is a
+  fits in what Stripe's fee on a card leaves and its payment is by card, neither refunded nor disputed; a `create_payment_link` sale is a
   `link` order, carded to the founder when its link names a `delivery`. Anything it cannot
   settle is an order card in the Inbox, and `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
   at `fetch` (`main/order-pump.test.ts`). `create_payment_link` keeps each link it makes under
