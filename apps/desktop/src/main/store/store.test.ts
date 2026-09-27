@@ -1923,9 +1923,17 @@ const shelveAnswer = (companyId: string, format: number) => {
   return { bet, next };
 };
 
+/** What an integration ask waits on, or null for a task waiting on none. */
+const integrationOf = (id: string) => {
+  const state = stateOf(id);
+  return state?.kind === "blocked" && state.ask.type === "integration"
+    ? state.ask.integration
+    : null;
+};
+
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(10);
+    expect(stampOf(found().id)).toBe(11);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1950,7 +1958,7 @@ describe("the save format", () => {
     store.initStore();
 
     expect(store.getCompany()).toMatchObject({ revenueUsd: 12, users: null });
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
   });
 
   it("drops the dead letters a format 9 save kept on stopped work, and keeps those it can retry", () => {
@@ -1983,7 +1991,36 @@ describe("the save format", () => {
       { kind: "dropped", reason: "bet is measuring" },
       { kind: "dropped", reason: "product retired" },
     ]);
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
+  });
+
+  it("reads the Stripe key asks a format 10 save filed as Stripe Connect asks as key asks, and leaves a Connect ask be", () => {
+    const co = foundTeam();
+    const askFor = (reason: string) => {
+      const t = store.createTask({ assigneeId: "priya", origin: "work", title: reason });
+      store.claimTask(t.id, "priya");
+      store.lockTaskForRun(t.id, "run-1");
+      store.settleTask(t.id, "run-1", {
+        ask: { integration: "stripe", productId: null, reason, type: "integration" },
+        kind: "blocked",
+        summary: null,
+      });
+      return t.id;
+    };
+    const sell = askFor('to sell "Tee" at $20.00 through a payment link');
+    const refused = askFor(
+      "Stripe won't let IdleBiz's key make payment links, it lacks a permission (denied): remove the key and paste one whose restricted permissions include Payment Links: Write, or your secret key",
+    );
+    const connect = askFor("to count the revenue the launch brings in");
+    restamp(co.id, 10);
+
+    store.initStore();
+
+    expect([sell, refused, connect].map(integrationOf)).toEqual([
+      "stripe-key",
+      "stripe-key",
+      "stripe",
+    ]);
   });
 
   it("adopts an unstamped save once, and only once", () => {
@@ -1993,7 +2030,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -2011,7 +2048,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -2120,7 +2157,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -2139,7 +2176,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
@@ -2166,7 +2203,7 @@ describe("the save format", () => {
     ];
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
     expect(room()).toEqual(adopted);
 
     store.initStore();
@@ -2190,7 +2227,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     store.initStore();
     expect(store.listOpenTasks()).toMatchObject([
@@ -2218,7 +2255,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     store.initStore();
     const archived = path.join(retiredDir(co.id), first.id, "workspace", "index.html");
@@ -2242,7 +2279,7 @@ describe("the save format", () => {
     restamp(co.id, 3);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     store.initStore();
     expect(proposals.map((id) => store.getTask(id)?.origin)).toEqual(["propose", "propose"]);
@@ -2263,7 +2300,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     store.initStore();
     expect(measuredWork()).toEqual(["dropped", "dropped", "dropped", "blocked"]);
@@ -2313,7 +2350,7 @@ describe("the save format", () => {
     restamp(co.id, 6);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(10);
+    expect(stampOf(co.id)).toBe(11);
 
     const pushedByHand = {
       ask: {

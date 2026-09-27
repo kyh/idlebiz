@@ -2563,6 +2563,28 @@ const adoptOrphanedTasks = (active: ActiveCompany): void => {
   }
 };
 
+/** The reasons create_payment_link, sell_print and the checkout grant check gave a Stripe key ask. */
+const KEY_ASK_REASON = /^(?:to sell .+ through a payment link$|Stripe won't let IdleBiz's key )/u;
+
+/**
+ * Format 10 and older filed an ask for a Stripe key to charge with as one for Stripe Connect,
+ * which only reads revenue: completing Connect resumed it into a run that found no key.
+ */
+const adoptStripeKeyAsks = (active: ActiveCompany): void => {
+  for (const t of active.tasks) {
+    const { state } = t;
+    if (
+      state.kind === "blocked" &&
+      state.ask.type === "integration" &&
+      state.ask.integration === "stripe" &&
+      KEY_ASK_REASON.test(state.ask.reason)
+    ) {
+      const keyAsk: TaskState = { ...state, ask: { ...state.ask, integration: "stripe-key" } };
+      recordIn(active.tasks, t.id, { state: keyAsk }, saveTask);
+    }
+  }
+};
+
 /**
  * Format 4 and older wrote each room line's speaker as an employee id or null:
  * rewrite the whole room in the shape that tells founder, office and employee
@@ -2643,6 +2665,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 10) {
     adoptStrandedDeadLetters(active);
+  }
+  if (from < 11) {
+    adoptStripeKeyAsks(active);
   }
   saveCompany(active.company);
 };
