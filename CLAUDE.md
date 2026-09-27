@@ -95,8 +95,8 @@ allocator and the replay.
   A bet that leaves open (measured, killed, judged) drops its waiting
   work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again, as is one that asks the founder once the bet has closed;
-  measuring keeps what waits on the founder and the continuation carrying their answer, since
-  that step may be what moves the number. Retiring a product drops its waiting work and switches
+  measuring keeps what waits on the founder and the continuation carrying their answer, whose
+  run is dropped only when it fails, since that step may be what moves the number. Retiring a product drops its waiting work and switches
   off its payment links, and the retiring run's own task, on no bet, is dropped the same way when
   it fails, parks, asks or is cut off, since a retry would run in the company's folder. A release drops
   the leaver's unstarted work and any ask no bet funds; a funded ask, and the continuation

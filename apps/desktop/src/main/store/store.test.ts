@@ -1256,6 +1256,39 @@ describe("bets", () => {
     expect(store.claimTask(next.id, priya.id)).toBeNull();
   });
 
+  it("re-queues the founder's answered step on a measuring bet when its run parks or is cut off by a restart", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const answered = (): string => {
+      const ask = running(bet.id, priya.id);
+      store.settleTask(ask, "run-1", {
+        ask: { question: "Ship it?", type: "question" },
+        kind: "blocked",
+        summary: null,
+      });
+      const next = store.resolveBlockedWithAnswer(ask, "yes");
+      if (!next) {
+        throw new Error("the answer went nowhere");
+      }
+      store.claimTask(next.id, priya.id);
+      store.lockTaskForRun(next.id, "run-2");
+      return next.id;
+    };
+    const parking = answered();
+    const cutOff = answered();
+    store.measureBet(bet.id, 0);
+
+    expect(store.parkTask(parking, "run-2", 0, "usage limit")).toEqual({ kind: "parked" });
+    store.initStore();
+
+    expect(store.getTask(parking)?.state).toMatchObject({ kind: "queued", nextAttemptAt: 0 });
+    expect(store.getTask(cutOff)?.state).toMatchObject({
+      kind: "queued",
+      lastError: "Interrupted by app restart",
+    });
+  });
+
   it("retires a product with its bets and open work, but never the last one", () => {
     const co = found();
     const first = firstProduct();

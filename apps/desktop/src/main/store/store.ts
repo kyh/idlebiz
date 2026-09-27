@@ -811,9 +811,8 @@ export const noteRunEnd = (
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
-/** Everything shelved as history, newest first. Read from disk the first time it is asked for. */
-export const listShippedTasks = (): Task[] => {
-  const active = current();
+/** Everything the company shelved as history. Read from disk the first time it is asked for. */
+const shippedOf = (active: ActiveCompany): Task[] => {
   const companyId = active.company.id;
   active.shipped ??= loadPackages(
     "task",
@@ -821,16 +820,22 @@ export const listShippedTasks = (): Task[] => {
     (slug) => shippedTaskFile(companyId, slug),
     (doc) => docToTask(doc, companyId),
   );
-  return active.shipped.toSorted(newestFirst);
+  return active.shipped;
 };
 
-/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
-const answeredOn = (betId: string): ReadonlySet<string> =>
+/** Everything shelved as history, newest first. */
+export const listShippedTasks = (): Task[] => shippedOf(current()).toSorted(newestFirst);
+
+/** The continuations carrying the founder's answers to the bet's asks, among `history`. */
+const answeredIn = (history: readonly Task[], betId: string): ReadonlySet<string> =>
   new Set(
-    listShippedTasks().flatMap((t) =>
+    history.flatMap((t) =>
       t.betId === betId && t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
     ),
   );
+
+/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
+const answeredOn = (betId: string): ReadonlySet<string> => answeredIn(shippedOf(current()), betId);
 
 const RELEASED = " was released";
 
@@ -1376,7 +1381,8 @@ const dropTask = (taskId: string, reason: string, now: number): void => {
  * no more work. A running task finishes its run, and is dropped if that run
  * fails, parks (`failTask`, `parkTask`), asks the founder once its bet has
  * closed (`settleTask`) or never settles before the app restarts
- * (`recoverInterrupted`). A dead letter goes too: `claimTask` would refuse every retry of it.
+ * (`recoverInterrupted`); on a measuring bet, the founder's answered step is
+ * dropped only when its run fails. A dead letter goes too: `claimTask` would refuse every retry of it.
  */
 const dropWork = (match: (t: Task) => boolean, reason: string, now: number): void => {
   for (const t of current().tasks.filter(match)) {
@@ -1822,7 +1828,8 @@ export const failTask = (
 /**
  * A run parked through no fault of the task — a usage limit, the app quitting: back on
  * the queue from `until`, no attempt burned. Only the owning run may; null when it no
- * longer holds the lock.
+ * longer holds the lock. One carrying the founder's answer on a measuring bet stays too,
+ * since that step may be what moves the number.
  */
 export const parkTask = (
   taskId: string,
@@ -1834,7 +1841,9 @@ export const parkTask = (
   if (!t) {
     return null;
   }
-  const dropped = droppedWhenStopped(t, t.attempts);
+  const carriesAnswer =
+    t.betId !== null && stoppedWorkReason(t) === BET_MEASURING && answeredOn(t.betId).has(t.id);
+  const dropped = carriesAnswer ? null : droppedWhenStopped(t, t.attempts);
   if (dropped) {
     return dropped;
   }
@@ -2084,15 +2093,23 @@ const readCompanies = (): FoundSave[] => {
   return companies;
 };
 
-/** A run the last launch never saw settle: dropped with a bet or product that stopped taking work, else counted as failed. */
+/**
+ * A run the last launch never saw settle: dropped with a bet or product that stopped taking
+ * work, but for one carrying the founder's answer on a measuring bet, else counted as failed.
+ */
 const recoverInterrupted = (
   task: Task,
-  bets: readonly Bet[],
-  retired: (productId: string) => boolean,
+  active: ActiveCompany,
+  unshelved: readonly Task[],
   now: number,
 ): Task => {
-  const stopped = stoppedReason(task, bets.find((bet) => bet.id === task.betId) ?? null, retired);
-  if (stopped !== null) {
+  const bet = active.bets.find((b) => b.id === task.betId) ?? null;
+  const stopped = stoppedReason(task, bet, retiredIn(active.company.id));
+  const carriesAnswer =
+    bet !== null &&
+    stopped === BET_MEASURING &&
+    answeredIn([...shippedOf(active), ...unshelved], bet.id).has(task.id);
+  if (stopped !== null && !carriesAnswer) {
     return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
   }
   return task.assigneeId
@@ -2101,19 +2118,21 @@ const recoverInterrupted = (
 };
 
 /** Recover the active company's interrupted runs and shelve its unshelved work. */
-const settleLoadedTasks = (company: Company, tasks: Task[], bets: readonly Bet[]): Task[] => {
+const settleLoadedTasks = (active: ActiveCompany, tasks: Task[]): Task[] => {
+  const { company } = active;
   const now = Date.now();
   for (const [i, task] of tasks.entries()) {
     if (task.state.kind !== "running") {
       continue;
     }
-    const recovered = recoverInterrupted(task, bets, retiredIn(company.id), now);
+    const recovered = recoverInterrupted(task, active, tasks, now);
     tasks[i] = recovered;
     saveTask(recovered);
   }
   for (const task of tasks.filter(isHistory)) {
     try {
       shelve(task);
+      active.shipped?.push(task);
     } catch (error) {
       skip("task", taskFile(company.id, task.id), error);
     }
@@ -2143,7 +2162,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (slug) => taskFile(company.id, slug),
     (doc) => docToTask(doc, company.id),
   ).toSorted(byAge);
-  active.tasks = settleLoadedTasks(company, tasks, active.bets);
+  active.tasks = settleLoadedTasks(active, tasks);
   active.products = loadPackages(
     "product",
     productsDir(company.id),
