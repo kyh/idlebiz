@@ -17,6 +17,16 @@ describe("a file path in agent text", () => {
     expect(relsIn(text)).toEqual([rel]);
   });
 
+  it.each([
+    ["Deployed to https://acme.vercel.app, go look", "https://acme.vercel.app"],
+    ["Pay here: https://buy.stripe.com/abc123.", "https://buy.stripe.com/abc123"],
+    ["**https://acme.vercel.app**", "https://acme.vercel.app"],
+    ["is it live (https://acme.vercel.app/pricing?)", "https://acme.vercel.app/pricing"],
+    ["see /Users/x/.idlebiz/acme/workspace/docs/spec.md.", "docs/spec.md"],
+  ])("leaves the sentence's punctuation off the link in %j", (text, rel) => {
+    expect(relsIn(text)).toEqual([rel]);
+  });
+
   it("leaves prose that only looks like a file as text", () => {
     expect(relsIn("built on Node.js")).toEqual([]);
   });
