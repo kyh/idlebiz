@@ -53,7 +53,13 @@ import type { RoutineDefinition } from "@/main/prompts/routines";
 import { betToDoc, docToBet } from "@/main/store/bet-codec";
 import { docToProduct, productToDoc } from "@/main/store/product-codec";
 import { docToTask, taskToDoc } from "@/main/store/task-codec";
-import { SAVE_FORMAT, companyToDoc, docToCompany, formatOf } from "@/main/store/company-codec";
+import {
+  NewerSaveError,
+  SAVE_FORMAT,
+  companyToDoc,
+  docToCompany,
+  formatOf,
+} from "@/main/store/company-codec";
 import { docToEmployee, employeeBody, employeeToDoc } from "@/main/store/employee-codec";
 import { docToRoutine, routineToDoc } from "@/main/store/routine-codec";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
@@ -400,7 +406,12 @@ let lastLoad: LoadReport = { companies: 0, skipped: [] };
 export const loadReport = (): LoadReport => lastLoad;
 
 const skip = (kind: LoadSkip["kind"], file: string, cause: unknown): void => {
-  lastLoad.skipped.push({ error: errorMessage(cause), kind, path: file });
+  lastLoad.skipped.push({
+    error: errorMessage(cause),
+    kind,
+    newerBuild: cause instanceof NewerSaveError,
+    path: file,
+  });
 };
 
 /** Report a file boot needed but could not read, alongside the packages the store skipped. */

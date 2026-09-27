@@ -267,7 +267,9 @@ describe("sealedCommand", () => {
 describe("notingSeal", () => {
   const report: LoadReport = {
     companies: 1,
-    skipped: [{ error: "bad yaml", kind: "task", path: "/save/tasks/x/TASK.md" }],
+    skipped: [
+      { error: "bad yaml", kind: "task", newerBuild: false, path: "/save/tasks/x/TASK.md" },
+    ],
   };
 
   it("tells the founder beside the save's notes why no run starts", () => {
@@ -278,6 +280,7 @@ describe("notingSeal", () => {
         {
           error: "sandbox-exec timed out, so none will start.",
           kind: "seal",
+          newerBuild: false,
           path: "/usr/bin/sandbox-exec",
         },
       ],

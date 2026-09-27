@@ -78,13 +78,14 @@ shown as set and, for Stripe, replaceable and removable; a key refused is never 
 secrets.json being sealed, a held command denied from #team, an action card answered, keys
 held into a window let go of when it closes, #team kept on its newest line, a long ask kept on
 screen, a typed answer kept while the dialogue's menu is hovered, Start refused while out of
-budget, retiring the selected product, and a file boot skipped named in full. It is local only, not part
+budget, retiring the selected product, a file boot skipped named in full, and a save a newer
+build wrote asking for an update. It is local only, not part
 of `pnpm verify` or CI:
 
 - It needs a macOS desktop session: each launch shows the window and takes focus.
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
   Stripe and Printful key entry, sealing) needs a signed-in `claude` or `codex` CLI and skips without one;
-  only the title screen runs without it. The refusal tests send made-up
+  only the title screen and the newer save run without it. The refusal tests send made-up
   keys to the real Vercel and Stripe APIs, so they need the network; where a key is taken,
   main's `fetch` answers those APIs and Printful's from canned JSON (`stubServices`), so no
   real account or key is needed.

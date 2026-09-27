@@ -565,7 +565,9 @@ describe("active company ownership", () => {
       const report = store.initStore();
 
       expect(report.companies).toBe(0);
-      expect(report.skipped).toEqual([expect.objectContaining({ kind: "company", path: file })]);
+      expect(report.skipped).toEqual([
+        expect.objectContaining({ kind: "company", newerBuild: false, path: file }),
+      ]);
       expect(store.getCompany()).toBeNull();
       expect(store.listQueuedTasks()).toEqual([]);
       scheduler.tick();
@@ -1874,7 +1876,7 @@ describe("the save format", () => {
     const report = store.initStore();
 
     expect(report.companies).toBe(0);
-    expect(report.skipped[0]).toMatchObject({ kind: "company" });
+    expect(report.skipped[0]).toMatchObject({ kind: "company", newerBuild: true });
     expect(report.skipped[0]?.error).toContain("newer IdleBiz");
     expect(store.getCompany()).toBeNull();
     expect(saveSnapshot(co.id)).toEqual(before);

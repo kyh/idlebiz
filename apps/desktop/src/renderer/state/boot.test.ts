@@ -4,7 +4,12 @@ import { bootOf } from "./boot";
 
 const known = { authed: true, bootFailure: null, booted: true, hasCompany: true, saveIssues: [] };
 
-const skip = (kind: LoadSkip["kind"]): LoadSkip => ({ error: "bad yaml", kind, path: `/${kind}` });
+const skip = (kind: LoadSkip["kind"]): LoadSkip => ({
+  error: "bad yaml",
+  kind,
+  newerBuild: false,
+  path: `/${kind}`,
+});
 
 describe("bootOf", () => {
   it("stops at an unreadable company before anything else", () => {

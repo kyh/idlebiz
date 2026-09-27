@@ -506,6 +506,8 @@ export interface LoadSkip {
     | "seal";
   path: string;
   error: string;
+  /** Written by a newer IdleBiz: updating the app opens it, and editing or moving it would lose what that build added. */
+  newerBuild: boolean;
 }
 
 /** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */

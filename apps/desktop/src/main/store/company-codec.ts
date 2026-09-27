@@ -22,6 +22,16 @@ export const SAVE_FORMAT = 10;
 
 export const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
+/** A save stamped higher than SAVE_FORMAT: updating the app opens it, and nothing here should touch it. */
+export class NewerSaveError extends Error {
+  constructor(format: number) {
+    super(
+      `this save was written by a newer IdleBiz (format ${format}, this build reads ${SAVE_FORMAT}) — update the app to open it`,
+    );
+    this.name = "NewerSaveError";
+  }
+}
+
 export const companyToDoc = (co: Company): FrontmatterDoc => {
   const metadata: FrontmatterDoc["metadata"] = {
     autopilot: co.autopilot,
@@ -75,9 +85,7 @@ const parseBudget = (m: FrontmatterDoc["metadata"]): Budget => {
 
 export const docToCompany = (doc: FrontmatterDoc): Company => {
   if (formatOf(doc) > SAVE_FORMAT) {
-    throw new Error(
-      `this save was written by a newer IdleBiz (format ${formatOf(doc)}, this build reads ${SAVE_FORMAT}) — update the app to open it`,
-    );
+    throw new NewerSaveError(formatOf(doc));
   }
   const f = doc.fields;
   const m = doc.metadata;

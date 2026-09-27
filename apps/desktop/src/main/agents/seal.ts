@@ -802,5 +802,8 @@ export const notingSeal = (report: LoadReport, refusal: string | null): LoadRepo
     ? report
     : {
         ...report,
-        skipped: [...report.skipped, { error: refusal, kind: "seal", path: SANDBOX_EXEC }],
+        skipped: [
+          ...report.skipped,
+          { error: refusal, kind: "seal", newerBuild: false, path: SANDBOX_EXEC },
+        ],
       };
