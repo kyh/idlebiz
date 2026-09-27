@@ -45,6 +45,16 @@ export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void
   onConnected(productId);
 };
 
+/** Save a token with no project picked: the product's first deploy makes one named after it and binds it. */
+export const saveVercelToken = ({
+  productId,
+  token,
+}: Contract["vercelSaveToken"]["payload"]): void => {
+  store.requireProduct(productId);
+  setSecret(VERCEL_TOKEN_KEY, token);
+  onConnected(productId);
+};
+
 export const disconnectVercel = (productId: string): void => {
   // Older saves may still use the founder's shared token.
   store.setProductVercel(productId, null);

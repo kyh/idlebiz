@@ -43,6 +43,7 @@ import {
   disconnectVercel,
   initVercelConnect,
   listVercelProjects,
+  saveVercelToken,
 } from "@/main/vercel-connect";
 import { adoptShellPath } from "@/main/lib/shell-path";
 import { bootFailed, initLog } from "@/main/lib/log";
@@ -226,6 +227,7 @@ const ipcHandlers = {
   vercelConnect: connectVercel,
   vercelDisconnect: ({ productId }) => disconnectVercel(productId),
   vercelListProjects: ({ token }) => listVercelProjects(token),
+  vercelSaveToken: saveVercelToken,
 } satisfies IpcHandlers;
 
 const appUrl = (): string => {

@@ -40,6 +40,32 @@ test("a Vercel token Vercel takes binds the product's project and is kept sealed
   expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
 });
 
+test("a Vercel token is kept with no project picked, for the first deploy to make one", async ({
+  launch,
+  root,
+}) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { app, page } = await launch();
+  await stubServices(app);
+  await page.getByRole("button", { name: /users/iu }).click();
+  await page.getByRole("button", { name: "▲ Vercel" }).click();
+  const connect = page.getByRole("dialog", { name: "Connect Vercel" });
+  await connect.getByPlaceholder("vercel_…").fill("vercel_e2e_fresh_token");
+  await connect.getByRole("button", { name: "Continue" }).click();
+  await expect(connect.getByText("Signed in as e2e")).toBeVisible();
+  await connect.getByRole("button", { name: "Save token only" }).click();
+  await expect(connect).toBeHidden();
+
+  const secrets = await readSecrets(root);
+  expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
+  const bridge = await bridgeOf(page);
+  const [product] = await bridge.evaluate((b) => b.listProducts());
+  expect(product?.vercel).toBeNull();
+});
+
 test("a Vercel token Vercel refuses is shown as refused and never saved", async ({
   launch,
   root,

@@ -55,6 +55,7 @@ export const CHANNELS = {
   vercelConnect: { channel: "vercel:connect", kind: "invoke" },
   vercelDisconnect: { channel: "vercel:disconnect", kind: "invoke" },
   vercelListProjects: { channel: "vercel:projects", kind: "invoke" },
+  vercelSaveToken: { channel: "vercel:save-token", kind: "invoke" },
 } as const;
 
 type Channels = typeof CHANNELS;

@@ -119,6 +119,7 @@ export const SCHEMAS = {
   }),
   vercelDisconnect: z.object({ productId: z.string() }),
   vercelListProjects: z.object({ token: VercelTokenSchema.optional() }),
+  vercelSaveToken: z.object({ productId: z.string(), token: VercelTokenSchema }),
 } satisfies {
   [M in InvokeMethod]: IpcKind<M> extends "invoke-void" ? z.ZodType<void> : z.ZodType;
 };
@@ -163,6 +164,7 @@ interface Results {
   vercelListProjects: VercelListing;
   vercelConnect: Done;
   vercelDisconnect: Done;
+  vercelSaveToken: Done;
   listProducts: Product[];
   createProduct: Product;
   productStatus: ProductStatus;

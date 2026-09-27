@@ -9,7 +9,8 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 
 const store = await import("@/main/store/store");
 const { getSecret, setSecret } = await import("@/main/secrets");
-const { connectVercel, disconnectVercel, listVercelProjects } = await import("./vercel-connect");
+const { connectVercel, disconnectVercel, initVercelConnect, listVercelProjects, saveVercelToken } =
+  await import("./vercel-connect");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -106,6 +107,18 @@ it("binds a product with the saved token when none is given, leaving it as it wa
 
   expect(store.requireProduct(product.id).vercel?.projectId).toBe("prj_acme");
   expect(getSecret("VERCEL_TOKEN")).toBe("saved-token");
+});
+
+it("saves a token with no project picked, leaving the product for its first deploy to bind", () => {
+  const product = foundProduct();
+  const resumed: string[] = [];
+  initVercelConnect({ onConnected: (productId) => resumed.push(productId) });
+
+  saveVercelToken({ productId: product.id, token: "fresh-token" });
+
+  expect(getSecret("VERCEL_TOKEN")).toBe("fresh-token");
+  expect(store.requireProduct(product.id).vercel).toBeNull();
+  expect(resumed).toEqual([product.id]);
 });
 
 it("lists the saved token's projects when none is given", async () => {

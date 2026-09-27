@@ -12,7 +12,8 @@ import type { VercelProject } from "@/shared/integrations";
 
 // One token serves every product, so a product is bound with the saved one
 // unless the founder pastes another.
-const PickProject = ({ productId, onClose }: { productId: string; onClose: () => void }) => {
+const PickProject = ({ product, onClose }: { product: Product; onClose: () => void }) => {
+  const productId = product.id;
   const [token, setToken] = useState("");
   const [cursor, setCursor] = useState(0);
   // a fresh object per Continue, so asking again with the same token reads again
@@ -31,7 +32,15 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
       onClose();
     },
   );
-  const busy = lookup.state === "loading" || connecting.submission.kind === "sending";
+  const saving = useSubmission(async (given: string) => {
+    await bridge().vercelSaveToken({ productId, token: given });
+    onClose();
+  });
+  const busy =
+    lookup.state === "loading" ||
+    connecting.submission.kind === "sending" ||
+    saving.submission.kind === "sending";
+  const pasted = lookup.state === "loaded" ? lookup.token : undefined;
 
   const saved = lookup.state === "loaded" && lookup.token === undefined;
   const problem = problemOf(lookup);
@@ -89,7 +98,28 @@ const PickProject = ({ productId, onClose }: { productId: string; onClose: () =>
           />
         </div>
       ) : null}
+      {lookup.state === "loaded" && lookup.projects.length === 0 ? (
+        <div className="text-xs text-fg-dim">No projects on this account yet.</div>
+      ) : null}
+      {pasted === undefined ? null : (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => saving.submit(pasted)}
+            disabled={busy}
+            className="px-btn"
+          >
+            Save token only
+          </button>
+          <div className="text-xs text-fg-dim">
+            {product.vercel
+              ? `${product.name} keeps deploying to ${product.vercel.projectName}.`
+              : `The first deploy makes a project named ${product.id} and binds ${product.name} to it.`}
+          </div>
+        </div>
+      )}
       <Failure submission={connecting.submission} doing="connect" />
+      <Failure submission={saving.submission} doing="save the token" />
       {problem ? <div className="text-xs text-danger">{problem}</div> : null}
     </>
   );
@@ -202,7 +232,7 @@ export const ConnectVercel = ({
           </div>
         ) : null}
         {!product.vercel || waited || replacing ? (
-          <PickProject productId={product.id} onClose={onClose} />
+          <PickProject product={product} onClose={onClose} />
         ) : null}
       </div>
     </Modal>

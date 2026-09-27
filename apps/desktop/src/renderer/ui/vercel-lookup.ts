@@ -57,15 +57,8 @@ export const lookupFor = (listing: Loaded<VercelListing>, token?: string): Looku
   }
 };
 
-export const problemOf = (lookup: Lookup): string | null => {
-  if (lookup.state === "error") {
-    return lookup.message;
-  }
-  if (lookup.state === "loaded" && lookup.projects.length === 0) {
-    return "No projects on this account yet.";
-  }
-  return null;
-};
+export const problemOf = (lookup: Lookup): string | null =>
+  lookup.state === "error" ? lookup.message : null;
 
 /**
  * Whether the team waits on Vercel for this product, or for one it never named. A bound product
