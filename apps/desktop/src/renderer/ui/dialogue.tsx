@@ -196,15 +196,13 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const { list: tasks, options } = fetched.kind === "ready" ? fetched.value : NOTHING_FETCHED;
 
   // only questions and actions are answered here; integration asks live in the
-  // inbox where the [Connect] button is. Shown only for a current list: the
-  // moment an answer lands, the status event makes this one stale, and a form
-  // for an ask already answered would send twice.
-  const asked =
-    fetched.kind === "ready" && fetched.current
-      ? tasks
-          .filter(taskIn("blocked"))
-          .find((t) => t.state.ask.type === "question" || t.state.ask.type === "action")
-      : undefined;
+  // inbox where the [Connect] button is. A stale list still shows its ask: any
+  // status event of theirs makes it stale, and dropping the form until the
+  // refetch lands would wipe what the founder is typing. An answered form stays
+  // sent, and main refuses an ask answered elsewhere.
+  const asked = tasks
+    .filter(taskIn("blocked"))
+    .find((t) => t.state.ask.type === "question" || t.state.ask.type === "action");
   // the menu: main's options for this employee, then Talk… for free text. It
   // waits for the options so it opens on the first one, not on Talk.
   const rows: Row[] = [
@@ -323,7 +321,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
             {asked ? (
               <div className="px-scroll min-h-0 overflow-y-auto">
                 {asked.state.ask.type === "action" ? (
-                  <ActionCard t={asked} by={emp.name} ask={asked.state.ask} />
+                  <ActionCard key={asked.id} t={asked} by={emp.name} ask={asked.state.ask} />
                 ) : null}
                 {asked.state.ask.type === "question" ? (
                   <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
@@ -331,7 +329,12 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
                     <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg">
                       <RichText text={asked.state.ask.question} />
                     </div>
-                    <AnswerForm task={asked} autoFocus onSent={() => showNote("Answer sent ✓")} />
+                    <AnswerForm
+                      key={asked.id}
+                      task={asked}
+                      autoFocus={mode === "menu"}
+                      onSent={() => showNote("Answer sent ✓")}
+                    />
                   </div>
                 ) : null}
               </div>

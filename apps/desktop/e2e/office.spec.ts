@@ -295,6 +295,74 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
   await expect(answer).toHaveValue("Blue");
 });
 
+test("an answer being typed survives a status event of the asker's", async ({ launch, root }) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  await blockLead(root, founded, "e2e-color", "Which color?");
+  const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+  if (!lead) {
+    throw new Error("the founded company has no lead");
+  }
+
+  const { page } = await launch();
+  await page.getByRole("button", { name: /team/iu }).click();
+  await page.getByTitle(`Talk to ${lead.name}`).click();
+  const dialogue = page.locator(".dlg");
+  const answer = dialogue.getByPlaceholder("Your answer…");
+  await expect(answer).toBeFocused();
+  await page.keyboard.type("Blu");
+
+  const bridge = await bridgeOf(page);
+  await bridge.evaluate(
+    (b, employeeId) => b.directEmployee({ employeeId, instruction: "Tidy the README." }),
+    lead.id,
+  );
+  await expect(
+    dialogue.locator(".dlg-menu").getByRole("button", { name: /Check in:/u }),
+  ).toBeVisible();
+  await page.keyboard.type("e");
+  await expect(answer).toBeFocused();
+  await expect(answer).toHaveValue("Blue");
+});
+
+test("Talk… keeps the keys while an ask waits and a status event of the asker's lands", async ({
+  launch,
+  root,
+}) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  await blockLead(root, founded, "e2e-color", "Which color?");
+  const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+  if (!lead) {
+    throw new Error("the founded company has no lead");
+  }
+
+  const { page } = await launch();
+  await page.getByRole("button", { name: /team/iu }).click();
+  await page.getByTitle(`Talk to ${lead.name}`).click();
+  const dialogue = page.locator(".dlg");
+  await dialogue
+    .locator(".dlg-menu")
+    .getByRole("button", { name: /Talk…/u })
+    .click();
+  const talk = dialogue.getByPlaceholder(`Tell ${lead.name} what to do…`);
+  await expect(talk).toBeFocused();
+  await page.keyboard.type("Ship the ");
+
+  const bridge = await bridgeOf(page);
+  await bridge.evaluate(
+    (b, employeeId) => b.directEmployee({ employeeId, instruction: "Tidy the README." }),
+    lead.id,
+  );
+  await page.waitForTimeout(500);
+  await page.keyboard.type("pricing page");
+  await expect(talk).toBeFocused();
+  await expect(talk).toHaveValue("Ship the pricing page");
+  await expect(dialogue.getByPlaceholder("Your answer…")).toHaveValue("");
+});
+
 test("the dialogue's cursor stays on Talk… when a row is added ahead of it meanwhile", async ({
   launch,
 }) => {
