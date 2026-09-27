@@ -4,7 +4,7 @@ export const siteConfig = {
   author: { name: "Kaiyu Hsu", url: "https://kyh.io" },
   description:
     "An idle game business simulator where your employees are real AI agents. They write real code, ship real products, and burn real money.",
-  email: "im.kaiyu@gmail.com",
+  email: "kai@kyh.io",
   githubRepo,
   name: "IdleBiz",
   repository: `https://github.com/${githubRepo}`,

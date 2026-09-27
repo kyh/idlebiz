@@ -10,7 +10,7 @@ describe("homeGraph", () => {
   });
 
   it("gives the organization a contact point and no invented address", () => {
-    expect(organization.contactPoint[0]?.email).toBe("im.kaiyu@gmail.com");
+    expect(organization.contactPoint[0]?.email).toBe("kai@kyh.io");
     expect(organization).not.toHaveProperty("address");
     expect(organization).not.toHaveProperty("telephone");
   });
