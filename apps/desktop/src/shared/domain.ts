@@ -21,7 +21,6 @@ export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
 export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
-export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /**
  * What an integration ask waits on: a kind an agent may request, or a Stripe key to charge
