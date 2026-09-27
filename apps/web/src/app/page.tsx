@@ -2,9 +2,16 @@ import { cacheLife, cacheTag } from "next/cache";
 import { z } from "zod";
 
 import { siteConfig } from "@/lib/site-config";
+import { homeIntro, whenToUse } from "@/lib/agent/site-content";
+import { homeGraph } from "@/lib/agent/structured-data";
+import { pageMetadata } from "@/lib/page-metadata";
 import { OfficeLife } from "@/app/office-life";
 import { WindowCard } from "@/app/window-card";
 import { Cta } from "@/app/cta";
+import { JsonLd } from "@/app/json-ld";
+import { SiteFooter } from "@/app/site-footer";
+
+export const metadata = pageMetadata("/", null);
 
 const GITHUB_REPO = siteConfig.githubRepo;
 
@@ -64,6 +71,7 @@ const Page = async () => {
 
   return (
     <main className="px-floor flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+      <JsonLd node={homeGraph} />
       <WindowCard
         titlebar={
           <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-[12px] uppercase tracking-wider">
@@ -108,15 +116,22 @@ const Page = async () => {
         </div>
       </WindowCard>
 
-      <footer className="mt-8 flex items-center gap-4 text-[11px] text-chrome-hi">
-        <a href={`https://github.com/${GITHUB_REPO}`} className="no-underline hover:text-light">
-          GitHub
-        </a>
-        <span aria-hidden>·</span>
-        <span>© 2026 kyh</span>
-        <span aria-hidden>·</span>
-        <span>{siteConfig.name} is in early development</span>
-      </footer>
+      <section className="sr-only">
+        <h2>What {siteConfig.name} is</h2>
+        {homeIntro.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+        <h2>When to use {siteConfig.name}</h2>
+        <ul>
+          {whenToUse.map((item) => (
+            <li key={item.label}>
+              {item.label}: {item.text}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <SiteFooter />
     </main>
   );
 };
