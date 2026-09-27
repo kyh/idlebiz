@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { bridgeOf, closeFully, expect, foundCompany, test } from "./harness";
 
 test("an out-of-budget company tells the founder to press Start once the cap is raised", async ({
@@ -47,4 +49,23 @@ test("Start while out of budget says why and leaves the office paused", async ({
     "Out of budget — raise the cap in Budget first.",
   );
   await expect(page.getByRole("button", { name: /Start/u })).toBeVisible();
+});
+
+test("a file boot skipped is named in full, so the founder can find it", async ({
+  launch,
+  root,
+}) => {
+  const founding = await launch();
+  const { company } = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  const taskDir = path.join(root, company.id, "tasks", "a-fairly-long-task-slug-the-lead-wrote");
+  await mkdir(taskDir, { recursive: true });
+  await writeFile(path.join(taskDir, "TASK.md"), "---\nbroken: [\n---\n");
+
+  const { page } = await launch();
+  await page.getByTitle("Settings").click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const skipped = settings.getByText(path.join(taskDir, "TASK.md"), { exact: true });
+  await expect(skipped).toBeVisible();
+  expect(await skipped.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
