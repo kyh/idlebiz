@@ -1543,9 +1543,12 @@ export const holdFor = async (
   confinement: Confinement,
 ): Promise<Hold | null> => {
   if (tool.kind === "mcp") {
-    // a server nothing can name is signed for call by call: a lease on "unknown" would cover every such server
-    const key = `mcp: use ${tool.server ?? "a tool nothing could name"}`;
-    return leases.has(key) ? null : { key, leasable: tool.server !== null, rule: "external-tool" };
+    if (tool.server === null) {
+      // signed for call by call: a lease on "unknown" would cover every such server
+      return { key: "mcp: use a tool nothing could name", leasable: false, rule: "unknown-ask" };
+    }
+    const key = `mcp: use ${tool.server}`;
+    return leases.has(key) ? null : { key, leasable: true, rule: "external-tool" };
   }
   if (tool.kind === "edit") {
     // the seal refuses a write outside the run's own folders, whichever tool makes it

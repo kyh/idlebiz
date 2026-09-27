@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyCommand, holdFor, normalizeCommand } from "./command-policy";
 import type { Confinement, LivePage, RuleId } from "./command-policy";
+import { isLeased } from "./hold-rules";
 import { toolDocs } from "./tool-specs";
 
 const MUST_ASK = {
@@ -961,7 +962,27 @@ describe("holdFor", () => {
 
   it("never leases a server nothing could name", async () => {
     const hold = await holdFor({ kind: "mcp", server: null }, NONE, at({}), ROOM);
-    expect(hold?.leasable).toBe(false);
+    expect(hold).toEqual({
+      key: "mcp: use a tool nothing could name",
+      leasable: false,
+      rule: "unknown-ask",
+    });
+  });
+
+  it("leases a hold exactly when its rule tells the founder it covers the rest of the run", async () => {
+    const remote = at({ "": "https://shop.example" });
+    const holds = await Promise.all([
+      holdFor(shell("agent-browser click @e5"), NONE, remote, ROOM),
+      holdFor(shell("agent-browser batch 'click @e5'"), NONE, remote, ROOM),
+      holdFor({ kind: "mcp", server: "gmail" }, NONE, remote, ROOM),
+      holdFor({ kind: "mcp", server: null }, NONE, remote, ROOM),
+      holdFor({ host: "x.com", kind: "network" }, NONE, remote, ROOM),
+      holdFor(shell("git push origin main"), NONE, remote, ROOM),
+    ]);
+    expect(holds).not.toContain(null);
+    expect(holds.map((hold) => [hold?.rule, hold?.leasable])).toEqual(
+      holds.map((hold) => [hold?.rule, hold !== null && isLeased(hold.rule)]),
+    );
   });
 
   it("lets an edit through: the seal, not the policy, judges where a run writes", async () => {

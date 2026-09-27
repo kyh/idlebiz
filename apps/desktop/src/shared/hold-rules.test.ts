@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeRule } from "./hold-rules";
+import { approvalScope, describeRule } from "./hold-rules";
 
 describe("describeRule", () => {
   it("describes current rules and identifies unavailable saved rules", () => {
@@ -12,5 +12,13 @@ describe("describeRule", () => {
     expect(describeRule("retired-rule")).toBe(
       'Saved rule "retired-rule" is unavailable in this version.',
     );
+  });
+
+  it("says a leased approval covers the rest of the run, and any other one run", () => {
+    expect(approvalScope("browser-act")).toContain("rest of this run");
+    expect(approvalScope("external-tool")).toContain("rest of this run");
+    expect(approvalScope("git-push")).toContain("once");
+    expect(approvalScope("unknown-ask")).toContain("once");
+    expect(approvalScope("retired-rule")).toContain("once");
   });
 });

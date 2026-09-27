@@ -29,6 +29,17 @@ const HOLD_RULES = {
 
 export type HoldRuleId = keyof typeof HOLD_RULES;
 
+const LEASED: ReadonlySet<string> = new Set<HoldRuleId>(["browser-act", "external-tool"]);
+
+/** Whether signing an ask under this rule covers the rest of the run rather than one run of it. */
+export const isLeased = (rule: string): boolean => LEASED.has(rule);
+
+/** What the founder signs for by approving an ask under this rule. */
+export const approvalScope = (rule: string): string =>
+  isLeased(rule)
+    ? "Approving covers this for the rest of this run."
+    : "Approving covers exactly this, once.";
+
 const TEXT = new Map<string, string>(Object.entries(HOLD_RULES));
 
 /** A saved ask names its rule as text, and may name one this version no longer has. */
