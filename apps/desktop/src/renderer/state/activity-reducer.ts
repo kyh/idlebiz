@@ -61,6 +61,10 @@ export const newestOf = (feed: readonly FeedLine[]): number | null => {
   return last ? whenOf(last) : null;
 };
 
+/** The id of the room's newest line in the feed, or null while it holds none. */
+export const newestRoomLine = (feed: readonly FeedLine[]): number | null =>
+  feed.findLast((line) => line.kind === "room")?.id ?? null;
+
 /** The room as main keeps it, as feed lines, each cut as its event is. */
 export const roomLines = (messages: readonly TeamMessage[]): FeedLine[] =>
   messages.map(({ createdAt, from, id, text }) => ({

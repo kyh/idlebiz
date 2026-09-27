@@ -1,4 +1,6 @@
+import { useEffect, useRef } from "react";
 import { useAsync } from "@/renderer/hooks/use-async";
+import { newestRoomLine } from "@/renderer/state/activity-reducer";
 import { useStore, setTalkingTo, teamMessages } from "@/renderer/state/store";
 import { Bust } from "@/renderer/ui/bust";
 import { employeeName, jobTitle } from "@/renderer/ui/employee-name";
@@ -50,13 +52,24 @@ const RoomLine = ({
 export const Teams = ({ onClose }: { onClose: () => void }) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
-  const room = useAsync(() => teamMessages(30), []);
+  // the feed hears each line as it is said; the room is read again for it in full
+  const said = useStore((s) => newestRoomLine(s.feed));
+  const room = useAsync(() => teamMessages(30), [said]);
+  const messages = room.kind === "ready" ? room.value : [];
+  const newest = messages.at(-1)?.id;
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && newest !== undefined) {
+      el.scrollTo({ top: el.scrollHeight });
+    }
+  }, [newest]);
 
   if (!company) {
     return null;
   }
   const headcount = `${employees.length} ${employees.length === 1 ? "person" : "people"}`;
-  const messages = room.kind === "ready" ? room.value : [];
   const quiet = room.kind === "failed" ? room.message : "Quiet so far.";
 
   return (
@@ -76,7 +89,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
       </div>
       <div className="px-inset mt-3 p-3">
         <div className="text-xs uppercase tracking-wide text-fg-dim">Team room</div>
-        <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+        <div ref={scrollRef} className="mt-1 max-h-40 space-y-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="text-xs text-fg-dim">{quiet}</div>
           ) : (

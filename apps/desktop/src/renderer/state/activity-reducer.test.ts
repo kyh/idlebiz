@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
 import type { Employee, RunOutcome, TeamMessage } from "@/shared/domain";
-import { feedKey, joinFeed, reduceActivity, roomLines } from "./activity-reducer";
+import { feedKey, joinFeed, newestRoomLine, reduceActivity, roomLines } from "./activity-reducer";
 
 const stamp = { createdAt: 0, id: 1 };
 const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
@@ -250,6 +250,15 @@ describe("reduceActivity", () => {
     };
     const feed = reduceActivity({ ...held, feed: opened }, echoed).patch.feed ?? [];
     expect(feed.map(feedKey)).toEqual(["room 3", "news 1", "room 4"]);
+  });
+
+  it("names the room's newest line, past the news heard after it", () => {
+    const heard = joinFeed(
+      [{ event: { ...shipped(1), createdAt: 40 }, kind: "news" }],
+      roomLines([roomLine(3, 10, "before"), roomLine(4, 30, "after")]),
+    );
+    expect(newestRoomLine(heard)).toBe(4);
+    expect(newestRoomLine([{ event: shipped(1), kind: "news" }])).toBeNull();
   });
 
   it("keeps the feed to its last thirty lines", () => {
