@@ -50,7 +50,7 @@ export const whenToUse: LinkItem[] = [
   },
   {
     label: "Not a fit",
-    text: "Windows or Linux users, anyone without a signed-in claude or codex CLI, or anyone looking for a hosted API — IdleBiz is a local macOS app with no public API",
+    text: "Intel Macs, Windows or Linux users, anyone without a signed-in claude or codex CLI, or anyone looking for a hosted API — IdleBiz is a local macOS app with no public API",
   },
 ];
 
@@ -58,11 +58,11 @@ export const gettingStarted: LinkItem[] = [
   {
     href: `${siteConfig.repository}/releases/latest`,
     label: "Download for Mac",
-    text: "the latest signed .dmg from GitHub releases",
+    text: "the latest signed Apple silicon .dmg from GitHub releases",
   },
   {
     label: "Requirements",
-    text: "macOS and a signed-in `claude` (Claude Code) or `codex` CLI on your PATH",
+    text: "an Apple silicon Mac and a signed-in `claude` (Claude Code) or `codex` CLI on your PATH",
   },
   {
     href: siteConfig.repository,
@@ -153,7 +153,7 @@ export const privacyPage: ProsePage = {
   blocks: [
     {
       kind: "paragraph",
-      text: `${siteConfig.name} collects as little as it can. This website has no accounts, no analytics, no advertising and no cookies, and the desktop app sends nothing about you or your company back to us.`,
+      text: `${siteConfig.name} collects as little as it can. This website has no accounts, no analytics, no advertising and no cookies, and the desktop app sends nothing about you or your company back to us beyond the Stripe Connect exchange below.`,
     },
     { kind: "heading", text: "This website" },
     {
@@ -170,7 +170,7 @@ export const privacyPage: ProsePage = {
         {
           href: "https://stripe.com/privacy",
           label: "Stripe Connect",
-          text: "if you connect Stripe from the app, this site exchanges Stripe's one-time code for a read-only token, encrypts it to a key only your running app holds, and hands it back to the app. The token is never stored on our side",
+          text: "if you connect Stripe from the app, this site exchanges Stripe's one-time code for a read-only token, encrypts it to a key only your running app holds, and hands it back to the app. When you disconnect, the app sends that token and your Stripe account id back here once, to confirm the token is yours and revoke the grant. The token is never stored on our side",
         },
       ],
       kind: "list",

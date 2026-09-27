@@ -110,7 +110,8 @@ const Page = async () => {
               Download for Mac
             </Cta>
             <span className="text-[11px] text-fg-dim">
-              {version ? `${version} · ` : ""}macOS · runs on your own Claude Code or Codex
+              {version ? `${version} · ` : ""}Apple silicon Mac · runs on your own Claude Code or
+              Codex
             </span>
           </div>
         </div>

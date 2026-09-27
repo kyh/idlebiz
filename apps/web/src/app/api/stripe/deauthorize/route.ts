@@ -1,5 +1,5 @@
 import { DeauthorizeBodySchema } from "@repo/stripe-connect-protocol/protocol";
-import { deauthorize, tokenAccountId } from "@/lib/stripe-oauth";
+import { deauthorize, tokenOwner } from "@/lib/stripe-oauth";
 
 export const POST = async (req: Request): Promise<Response> => {
   let raw: unknown;
@@ -16,8 +16,11 @@ export const POST = async (req: Request): Promise<Response> => {
 
   // ownership check: only the holder of a valid token for this account may
   // disconnect it — keeps this endpoint from deauthorizing arbitrary accounts
-  const owner = await tokenAccountId(accessToken);
-  if (owner === null || owner !== stripeUserId) {
+  const owner = await tokenOwner(accessToken);
+  if (owner.kind === "unreadable") {
+    return Response.json({ error: owner.reason }, { status: 502 });
+  }
+  if (owner.kind === "dead" || owner.id !== stripeUserId) {
     return Response.json({ error: "not authorized for this account" }, { status: 403 });
   }
 

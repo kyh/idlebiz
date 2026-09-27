@@ -9,6 +9,13 @@ describe("homeGraph", () => {
     expect(types).toEqual(["Organization", "WebSite", "SoftwareApplication"]);
   });
 
+  it("requires Apple silicon, since every released .dmg is arm64", () => {
+    expect(homeGraph["@graph"][2]).toHaveProperty(
+      "softwareRequirements",
+      expect.stringMatching(/^An Apple silicon Mac/u),
+    );
+  });
+
   it("gives the organization a contact point and no invented address", () => {
     expect(organization.contactPoint[0]?.email).toBe("kai@kyh.io");
     expect(organization).not.toHaveProperty("address");

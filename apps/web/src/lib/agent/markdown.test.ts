@@ -6,7 +6,7 @@ import {
   renderNotFoundMarkdown,
   renderProsePageMarkdown,
 } from "./markdown";
-import { prosePages } from "./site-content";
+import { privacyPage, prosePages } from "./site-content";
 
 const h2Sections = (markdown: string): string[] =>
   markdown.split("\n").filter((line) => line.startsWith("## "));
@@ -33,6 +33,11 @@ describe("renderLlmsTxt", () => {
     }
     expect(llms).not.toMatch(/\]\(\//u);
   });
+
+  it("says the release runs only on Apple silicon, since every .dmg is arm64", () => {
+    expect(llms).toMatch(/\*\*Requirements\*\*: an Apple silicon Mac/u);
+    expect(llms).toMatch(/\*\*Not a fit\*\*: Intel Macs/u);
+  });
 });
 
 describe("renderHomeMarkdown", () => {
@@ -51,6 +56,11 @@ describe("renderProsePageMarkdown", () => {
       expect(markdown.startsWith(`# ${page.heading}\n`)).toBe(true);
       expect(markdown.length).toBeGreaterThan(500);
     }
+  });
+
+  it("tells the founder what Disconnect sends to this site", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toMatch(/\[Stripe Connect\]\([^)]*\): .*when you disconnect/iu);
   });
 });
 

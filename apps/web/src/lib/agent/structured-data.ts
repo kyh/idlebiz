@@ -80,7 +80,8 @@ const application = {
   operatingSystem: "macOS",
   publisher: { "@id": ORGANIZATION_ID },
   sameAs,
-  softwareRequirements: "A signed-in Claude Code (claude) or Codex (codex) CLI",
+  softwareRequirements:
+    "An Apple silicon Mac and a signed-in Claude Code (claude) or Codex (codex) CLI",
   url: siteConfig.url,
 } satisfies JsonLdNode;
 

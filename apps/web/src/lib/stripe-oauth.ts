@@ -46,16 +46,30 @@ export const exchangeCode = async (code: string): Promise<ConnectedAccount> => {
 
 const accountResponseSchema = z.object({ id: z.string() });
 
-/** The account id the token actually belongs to (ownership check for deauthorize). */
-export const tokenAccountId = async (accessToken: string): Promise<string | null> => {
+export type TokenOwner =
+  | { kind: "account"; id: string }
+  | { kind: "dead" }
+  | { kind: "unreadable"; reason: string };
+
+/**
+ * The account the token actually belongs to (ownership check for deauthorize).
+ * Only a 401 means the token is dead: a rate limit or outage says nothing about
+ * the grant, and the desktop reads "dead" as nothing left to revoke.
+ */
+export const tokenOwner = async (accessToken: string): Promise<TokenOwner> => {
   const res = await fetch("https://api.stripe.com/v1/account", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (res.status === 401) {
+    return { kind: "dead" };
+  }
   if (!res.ok) {
-    return null;
+    return { kind: "unreadable", reason: `account lookup failed (${res.status})` };
   }
   const account = accountResponseSchema.safeParse(await res.json());
-  return account.success ? account.data.id : null;
+  return account.success
+    ? { id: account.data.id, kind: "account" }
+    : { kind: "unreadable", reason: "account lookup returned an unexpected shape" };
 };
 
 export const deauthorize = async (stripeUserId: string): Promise<void> => {
