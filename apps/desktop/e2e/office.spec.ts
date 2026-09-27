@@ -265,3 +265,37 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
   await expect(answer).toBeFocused();
   await expect(answer).toHaveValue("Blue");
 });
+
+test("the dialogue's cursor stays on Talk… when a row is added ahead of it meanwhile", async ({
+  launch,
+}) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  const engineer = founded.employees.find((e) => e.id !== founded.company.leaderId);
+  if (!engineer) {
+    throw new Error("the founded company has only its lead");
+  }
+
+  const { page } = await launch();
+  await page.getByRole("button", { name: /team/iu }).click();
+  await page.getByTitle(`Talk to ${engineer.name}`).click();
+  const dialogue = page.locator(".dlg");
+  const menu = dialogue.locator(".dlg-menu");
+  await menu.getByRole("button", { name: /Talk…/u }).click();
+  await expect(dialogue.getByPlaceholder(`Tell ${engineer.name} what to do…`)).toBeFocused();
+
+  // queued work puts a Check in row ahead of Talk… while the menu is away
+  const bridge = await bridgeOf(page);
+  await bridge.evaluate(
+    (b, employeeId) => b.directEmployee({ employeeId, instruction: "Tidy the README." }),
+    engineer.id,
+  );
+  await expect(dialogue.getByText(/queued/u)).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.keyboard.press("Escape");
+
+  await expect(menu.getByRole("button", { name: /Check in:/u })).toBeVisible();
+  await expect(menu.locator('.px-menu-item[data-cur="true"]')).toHaveText(/Talk…/u);
+  await expect(menu.getByRole("button", { name: /Talk…/u })).toBeFocused();
+});

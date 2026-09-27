@@ -67,6 +67,8 @@ const labelOf = (row: Row): string => {
     // no default
   }
 };
+/** Main's option labels are distinct, so a label names its row wherever the list moves it. */
+const keyOf = (row: Row): string => (row.kind === "ask" ? `ask:${row.option.label}` : row.kind);
 
 const SPEECH_CLASS = "text-sm leading-relaxed break-words text-fg";
 const Speech = ({ text }: { text: string }) => {
@@ -170,7 +172,9 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const company = useStore((s) => s.company);
   const activity = useStore((s) => s.activity);
   const [mode, setMode] = useState<"menu" | "talk">("menu");
-  const [sel, setSel] = useState(0);
+  // The cursor names a row, not a place: rows come and go around it, and a menu
+  // remounted after Talk… would otherwise land on whatever now sits at the old index.
+  const [chosen, setChosen] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [note, showNote] = useTransientNote(NOTE_MS);
 
@@ -260,11 +264,17 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   };
 
   const sending = submission.kind === "sending";
+  const at = rows.findIndex((row) => keyOf(row) === chosen);
   const menu: Menu = {
-    cursor: sel,
+    cursor: Math.max(0, at),
     items: rows.map((row) => ({ disabled: sending, label: labelOf(row) })),
     pick: choose,
-    setCursor: setSel,
+    setCursor: (i) => {
+      const row = rows[i];
+      if (row) {
+        setChosen(keyOf(row));
+      }
+    },
   };
 
   // the choice window walks and picks itself; Escape backs out of Talk, then leaves
