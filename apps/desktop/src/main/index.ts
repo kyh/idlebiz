@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
   powerSaveBlocker,
   safeStorage,
   session,
@@ -51,6 +52,7 @@ import {
   beginConnect,
   disconnectStripe,
   getStripeStatus,
+  revokeBeforeReset,
 } from "@/main/stripe-connect";
 import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "@/main/stripe-key";
 import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "@/main/printful-token";
@@ -78,8 +80,15 @@ const resetGame = async (): Promise<void> => {
   metricsPulse.stop();
   suspendWrites();
   try {
-    await stopAgents();
+    const [, stripeLeft] = await Promise.all([stopAgents(), revokeBeforeReset()]);
     await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
+    if (stripeLeft) {
+      await dialog.showMessageBox({
+        detail: stripeLeft,
+        message: "Stripe did not confirm it revoked IdleBiz's access",
+        type: "warning",
+      });
+    }
   } finally {
     setImmediate(() => {
       app.relaunch();

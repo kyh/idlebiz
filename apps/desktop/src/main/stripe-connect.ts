@@ -15,7 +15,7 @@ import { listenLoopback } from "@/main/lib/http";
 import type { RealSnapshot, StripeCredential } from "@/main/metrics";
 import { STRIPE_CONNECT_TOKEN, getSecret, setSecret, deleteSecret } from "@/main/secrets";
 import { readMetricsConfig, writeMetricsConfig } from "@/main/store/metrics-config";
-import { requireCompany } from "@/main/store/store";
+import { getCompany, requireCompany } from "@/main/store/store";
 import { errorMessage } from "@/shared/errors";
 import type { StripeStatus } from "@/shared/integrations";
 
@@ -273,6 +273,9 @@ const revoke = async (body: DeauthorizeBody): Promise<Revocation> => {
   }
 };
 
+const stillListed = (reason: string): string =>
+  `Stripe may still list IdleBiz (${reason}) — remove it under Installed apps in your Stripe Dashboard.`;
+
 /** Clean up local state, then deauthorize on Stripe's side; the founder hears when Stripe did not confirm. */
 export const disconnectStripe = async (companyId: string): Promise<void> => {
   requireCompany();
@@ -293,9 +296,22 @@ export const disconnectStripe = async (companyId: string): Promise<void> => {
       revoking = null;
     }
     if (outcome.kind === "unconfirmed" && current === generation) {
-      fail(
-        `Disconnected here, but Stripe may still list IdleBiz (${outcome.reason}) — remove it under Installed apps in your Stripe Dashboard.`,
-      );
+      fail(`Disconnected here, but ${stillListed(outcome.reason)}`);
     }
   }
+};
+
+/**
+ * A reset deletes the only token that can revoke the grant, so it revokes first. What the
+ * founder must still remove by hand when Stripe did not confirm; null when nothing is left.
+ */
+export const revokeBeforeReset = async (): Promise<string | null> => {
+  const company = getCompany();
+  const token = getSecret(STRIPE_CONNECT_TOKEN);
+  const account = company && readMetricsConfig(company.id)?.stripeAccount;
+  if (!token || !account) {
+    return null;
+  }
+  const outcome = await revoke({ accessToken: token, stripeUserId: account.accountId });
+  return outcome.kind === "unconfirmed" ? stillListed(outcome.reason) : null;
 };

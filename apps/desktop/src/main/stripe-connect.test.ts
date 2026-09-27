@@ -4,6 +4,7 @@ import { createServer, IncomingMessage } from "node:http";
 import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { text } from "node:stream/consumers";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { loopbackUrl, parseState } from "@repo/stripe-connect-protocol/protocol";
@@ -19,13 +20,16 @@ const previous = {
 };
 process.env.IDLEBIZ_ROOT_DIR = root;
 let holdRevocation: ((res: ServerResponse) => void) | null = null;
+const revocations: string[] = [];
 const web = createServer((req, res) => {
-  req.resume();
-  if (holdRevocation) {
-    holdRevocation(res);
-  } else {
-    res.writeHead(200).end();
-  }
+  void text(req).then((body) => {
+    revocations.push(body);
+    if (holdRevocation) {
+      holdRevocation(res);
+    } else {
+      res.writeHead(200).end();
+    }
+  });
 });
 const port = await listenLoopback(web);
 process.env.IDLEBIZ_WEB_URL = `http://127.0.0.1:${port}`;
@@ -54,6 +58,7 @@ stripe.initStripeConnect({
   },
 });
 beforeEach(() => {
+  revocations.length = 0;
   urls.length = 0;
   connected.length = 0;
   notified.length = 0;
@@ -284,5 +289,30 @@ describe("Stripe read health", () => {
       message: "Stripe connection cancelled.",
       state: "error",
     });
+  });
+});
+
+describe("a reset", () => {
+  it("revokes the grant with the token it is about to delete", async () => {
+    await stripe.beginConnect(company.id);
+    const response = await fetch(await callbackUrl(latestState(), "token-reset"));
+    await response.text();
+    expect(await stripe.revokeBeforeReset()).toBeNull();
+    expect(revocations).toEqual([
+      JSON.stringify({ accessToken: "token-reset", stripeUserId: "acct_fixture" }),
+    ]);
+  });
+
+  it("tells the founder to remove IdleBiz by hand when Stripe does not confirm", async () => {
+    await stripe.beginConnect(company.id);
+    const response = await fetch(await callbackUrl(latestState(), "token-reset"));
+    await response.text();
+    holdRevocation = (res) => res.writeHead(502).end();
+    expect(await stripe.revokeBeforeReset()).toMatch(/HTTP 502.*Installed apps/u);
+  });
+
+  it("sends nothing when Stripe is not connected", async () => {
+    expect(await stripe.revokeBeforeReset()).toBeNull();
+    expect(revocations).toEqual([]);
   });
 });
