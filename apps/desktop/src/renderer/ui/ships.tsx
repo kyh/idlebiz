@@ -150,7 +150,7 @@ const ProductCard = ({
           <ConfirmLink
             label="retire"
             confirmLabel="retire it"
-            title="Archive it under retired/ and free its budget"
+            title="Archive it under retired/, switch off its payment links and free its budget"
             className="ml-auto"
             onConfirm={() => killProduct(product.id, "the founder retired it")}
           />

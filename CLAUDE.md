@@ -9,10 +9,11 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
   get products/<slug>/workspace/), listings/<id>.json for each print a product sells through
-  Printful and orders/<id>.json for each paid checkout on one of the company's links, a
-  listing's or `create_payment_link`'s (outside the product's package, so both outlive its
-  retirement: its link still sells, and each order still ships or is still owed; runs read
-  both, never write them), shared/ for what teammates share across products,
+  Printful, links/<id>.json for each `create_payment_link` link (by Stripe's id), and
+  orders/<id>.json for each paid checkout on one of the company's links, a listing's or
+  `create_payment_link`'s (outside the product's package, so all outlive its retirement: its
+  links are switched off from them, and each order still ships or is still owed; runs read
+  them, never write them), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
   activity.jsonl).
 - COMPANY.md carries `format`. A save stamped higher than this build writes is refused
@@ -92,7 +93,7 @@ allocator and the replay.
   A bet that leaves open (measured, killed, judged) drops its waiting
   work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again, as is one that asks the founder once the bet has closed;
-  measuring keeps what waits on the founder, since that step may be what moves the number. Retiring a product drops its waiting work, and a release drops
+  measuring keeps what waits on the founder, since that step may be what moves the number. Retiring a product drops its waiting work and switches off its payment links, and a release drops
   the leaver's unstarted work and any ask no bet funds. `dropped` is history, not a failure:
   the Inbox never offers it back and the lead's brief never lists it, since reviving it would
   only bill what takes no more work; the lead delegates the idea again under a live bet.
@@ -291,7 +292,22 @@ third boundary.
   Done or Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes
   to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
   so. A menu-bar-only launch counts what waits on the founder in the tray and notifies each new
-  order card. Agents read orders, buyers' emails and addresses included, with the unsigned
+  order card. Retiring a product switches off, in main with the founder's key, every payment
+  link it sells through, a listing's and each `create_payment_link` link, whose record main
+  keeps under `links/` (`switchOffRetiredLinks` in `main/company-actions.ts`, which sends
+  `POST /v1/payment_links/<id>` with `active=false`), so it takes no new money; checkouts
+  already paid still count and still ship, and one opened before the switch and paid after is
+  kept like any other. The retirement is on disk before Stripe is asked and never depends on
+  its answer; each link then records `switched-off`, or `left-on` with why, raised first as one
+  card per link naming it to switch off by hand in Stripe's dashboard (no key, a refusal, the
+  network; a test-mode link tells the room instead). Every pulse sweeps again, one sweep at a
+  time, so a quit before Stripe answered is finished at the next launch; switching off a link
+  already off answers the same. Format 6 and older kept no record of `create_payment_link`
+  links, and Stripe's links carry no date, so an older save adopted lists its products in
+  `state/unrecorded-links.json`; once one retires and a live key is saved, one read of the
+  account's active links cards the founder with those tagged for it (none switched off by
+  IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
+  say which links no longer sell. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to

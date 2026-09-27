@@ -17,6 +17,7 @@ import { KILL_GRACE_MS, windowEnd } from "@/shared/bets";
 import type { BetState } from "@/shared/bets";
 import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
+import type { Listing } from "@/shared/listing";
 import { approvalAnswer, runPreamble } from "@/main/prompts/briefs";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 import { betToDoc } from "./bet-codec";
@@ -1170,14 +1171,14 @@ describe("bets", () => {
   });
 });
 
-const listingOf = (productId: string, id: string) => ({
+const listingOf = (productId: string, id: string): Listing => ({
   betId: null,
   costCents: 1820,
   createdAt: 1,
   id,
   livemode: false,
   name: "Launch tee",
-  paymentLink: { id: "plink_1", url: "https://buy.stripe.com/tee" },
+  paymentLink: { id: "plink_1", state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
   placements: [
     {
       fileUrl: "https://acme.vercel.app/tee.png",
@@ -1211,7 +1212,7 @@ describe("listings", () => {
     ]);
   });
 
-  it("skips a listing file it cannot read, and keeps a retired product's, whose link still sells", () => {
+  it("skips a listing file it cannot read, and keeps a retired product's, whose orders still ship", () => {
     const co = found();
     firstProduct();
     const side = store.createProduct({ description: "a side bet", name: "Side" });

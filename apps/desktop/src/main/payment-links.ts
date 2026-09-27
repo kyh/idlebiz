@@ -4,6 +4,7 @@ import { HttpError, getJson, postForm } from "@/main/lib/http";
 import { STRIPE_API, stripeHeaders, stripeSays } from "@/main/stripe-api";
 import { errorMessage } from "@/shared/errors";
 import type { ListingVariant } from "@/shared/listing";
+import { StripeLinkIdSchema } from "@/shared/payment-link";
 
 /** One price in USD, sold once through a link whose every payment carries the product's tag and, when named, the bet's. */
 interface PaymentLinkRequest {
@@ -17,13 +18,12 @@ interface PaymentLinkRequest {
 }
 
 /** `error` is why no link was made, in Stripe's words when it gave any. */
-type PaymentLinkResult = { ok: true; url: string } | { ok: false; error: string };
+type PaymentLinkResult = { ok: true; id: string; url: string } | { ok: false; error: string };
 
 export type PaymentLinker = (req: PaymentLinkRequest) => Promise<PaymentLinkResult>;
 
 const Created = z.object({ id: z.string() });
-const Link = z.object({ url: z.url() });
-const LinkWithId = z.object({ id: z.string(), url: z.url() });
+const LinkWithId = z.object({ id: StripeLinkIdSchema, url: z.url() });
 
 /** Each tag as a form field under `prefix`, the way Stripe reads a map. */
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
@@ -50,7 +50,7 @@ export const stripePaymentLink: PaymentLinker = async ({
         unit_amount: String(cents),
       }),
     );
-    const link = Link.parse(
+    const link = LinkWithId.parse(
       await postForm(`${STRIPE_API}/v1/payment_links`, headers, {
         "line_items[0][price]": price.id,
         "line_items[0][quantity]": "1",
@@ -60,7 +60,7 @@ export const stripePaymentLink: PaymentLinker = async ({
         ...underKey("payment_intent_data[metadata]", tags),
       }),
     );
-    return { ok: true, url: link.url };
+    return { id: link.id, ok: true, url: link.url };
   } catch (error) {
     return {
       error: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
@@ -208,5 +208,91 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
       error: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
       ok: false,
     };
+  }
+};
+
+/** `error` is why Stripe did not switch the link off, in its words when it gave any. */
+export type SwitchOffResult = { ok: true } | { ok: false; error: string };
+
+const Switched = z.object({ active: z.boolean() });
+
+/**
+ * Switch a payment link off with the founder's key, here in main: its URL then shows the buyer
+ * that it is deactivated. Asking again of a link already off answers the same.
+ */
+export const switchOffPaymentLink = async (key: string, id: string): Promise<SwitchOffResult> => {
+  try {
+    const link = Switched.parse(
+      await postForm(
+        `${STRIPE_API}/v1/payment_links/${encodeURIComponent(id)}`,
+        stripeHeaders(key),
+        {
+          active: "false",
+        },
+      ),
+    );
+    return link.active ? { error: "Stripe still lists it as active", ok: false } : { ok: true };
+  } catch (error) {
+    return {
+      error: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
+      ok: false,
+    };
+  }
+};
+
+const ActiveLinksSchema = z.object({
+  data: z.array(
+    z.object({
+      id: z.string(),
+      metadata: z.record(z.string(), z.string()).nullish(),
+      url: z.url(),
+    }),
+  ),
+  has_more: z.boolean(),
+});
+
+/** An active payment link on the account, with the tags it was made with. */
+interface ActiveLink {
+  id: string;
+  url: string;
+  tags: Readonly<Record<string, string>>;
+}
+
+/** Every active link; `whole` is false when there were more than one read takes. */
+export type ActiveLinksRead =
+  | { kind: "read"; links: ActiveLink[]; whole: boolean }
+  | { kind: "refused"; said: string }
+  | { kind: "failed"; reason: string };
+
+// a thousand live payment links is far past what a company run from here makes
+const MAX_LINK_PAGES = 10;
+
+/** The account's active payment links, read with the grant creating them already takes (Write implies Read). */
+export const readActiveLinks = async (key: string): Promise<ActiveLinksRead> => {
+  const links: ActiveLink[] = [];
+  let after: string | null = null;
+  try {
+    for (let page = 0; page < MAX_LINK_PAGES; page += 1) {
+      const from = after === null ? "" : `&starting_after=${after}`;
+      const read = ActiveLinksSchema.parse(
+        await getJson(
+          `${STRIPE_API}/v1/payment_links?active=true&limit=100${from}`,
+          stripeHeaders(key),
+        ),
+      );
+      links.push(...read.data.map(({ id, metadata, url }) => ({ id, tags: metadata ?? {}, url })));
+      after = read.has_more ? (read.data.at(-1)?.id ?? null) : null;
+      if (after === null) {
+        return { kind: "read", links, whole: true };
+      }
+    }
+    return { kind: "read", links, whole: false };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return error.refused
+        ? { kind: "refused", said: stripeSays(error) }
+        : { kind: "failed", reason: stripeSays(error) };
+    }
+    return { kind: "failed", reason: errorMessage(error) };
   }
 };

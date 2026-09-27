@@ -14,7 +14,7 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { ordersDir } = await import("./paths");
 const { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } = await import("./order-pump");
-const { settleOrderCard } = await import("./company-actions");
+const { retireProduct, settleOrderCard } = await import("./company-actions");
 
 const NOW = 1_800_000_000_000;
 const NOW_S = NOW / 1000;
@@ -94,6 +94,7 @@ const fakeWorld = ({
   lostCreates = 0,
 }: WorldSetup = {}) => {
   const checkoutReads: number[] = [];
+  const switchedOff: string[] = [];
   const orders = new Map<number, PrintfulOrder>();
   const world = {
     /** Called as a confirmation arrives, before Printful acts on it. */
@@ -110,6 +111,8 @@ const fakeWorld = ({
     /** Payments the founder refunded in Stripe. */
     refunded: new Set<string>(),
     sessions,
+    /** Payment links switched off, by id. */
+    switchedOff,
   };
   const orderJson = (order: PrintfulOrder) => ({
     data: {
@@ -206,6 +209,11 @@ const fakeWorld = ({
         Response.json({ data: [{ amount_refunded: refunded, disputed: false, paid: true }] }),
       );
     }
+    const link = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
+    if (host === "api.stripe.com" && link !== undefined && init?.method === "POST") {
+      switchedOff.push(link);
+      return Promise.resolve(Response.json({ active: false, id: link }));
+    }
     if (host === "acme-site.vercel.app") {
       return Promise.resolve(new Response(design, { headers: { "content-type": "image/png" } }));
     }
@@ -255,7 +263,7 @@ const openShop = () => {
     id: "launch-tee",
     livemode: true,
     name: "Launch tee",
-    paymentLink: { id: LINK, url: "https://buy.stripe.com/tee" },
+    paymentLink: { id: LINK, state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
     placements: [{ fileUrl: FILE_URL, placement: "front", sha256: DESIGN_SHA, technique: "dtg" }],
     priceCents: 2800,
     productId,
@@ -561,6 +569,30 @@ describe("the order pump", () => {
     expect(orderCards()).toEqual([]);
   });
 
+  it("still ships what a retired product's switched-off link was paid, even a checkout opened before and paid after", async () => {
+    const productId = openShop();
+    store.createProduct({ description: "the next idea", name: "Next" });
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    await pumpOrders(NOW, "read");
+
+    await retireProduct(productId, "dud", null);
+    world.sessions.push(checkout("cs_late", { created: NOW_S - 60 }));
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+    await pumpUntilSettled(4);
+
+    expect(world.switchedOff).toEqual([LINK]);
+    expect(store.getListing("launch-tee")?.paymentLink.state.kind).toBe("switched-off");
+    expect(world.confirmations).toBe(2);
+    expect(store.listOrders().map((o) => [o.sessionId, o.productId])).toEqual([
+      ["cs_paid", productId],
+      ["cs_late", productId],
+    ]);
+    expect(orderCards()).toEqual([]);
+    expect(store.recentTeamMessages(50).map((m) => m.text)).toContain(
+      `📦 Sold Launch tee (Black / M) for $35.99 on ${productId}, paid on a link since switched off: it goes to Printful now.`,
+    );
+  });
+
   it("moves past checkouts one read cannot reach, and tells the founder", async () => {
     openShop();
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
@@ -712,7 +744,7 @@ describe("the order pump", () => {
       `💵 Sold "Acme teardown" for $9.00 on ${productId}.`,
     ]);
 
-    // a retired product's link still takes money, and its buyer is still owed
+    // a retired product's link nobody switched off still takes money, and its buyer is still owed
     store.createProduct({ description: "the next idea", name: "Next" });
     store.killProduct(productId, "dud", null);
     world.sessions.push(memo("cs_after", { created: NOW_S + 60 }));

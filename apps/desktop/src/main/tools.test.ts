@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { z } from "zod";
 import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
+import type { ChargeLink } from "@/shared/payment-link";
 import { BadRequestError } from "@/shared/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
 import type { CatalogQuery, CatalogRead } from "./printful";
@@ -878,6 +879,20 @@ describe("set_env", () => {
 const LINK = { amountUsd: 9, name: "Pro plan" };
 const PAID_URL = "https://buy.stripe.com/pro";
 
+/** The link create_payment_link keeps for "Pro plan" at $9 on Acme. */
+const PRO_LINK: ChargeLink = {
+  betId: null,
+  cents: 900,
+  createdAt: 1,
+  delivery: null,
+  id: "plink_pro",
+  livemode: true,
+  name: "Pro plan",
+  productId: "acme",
+  state: { kind: "selling" },
+  url: PAID_URL,
+};
+
 /** Stripe, as far as a payment link goes: every form it was sent, by endpoint. */
 const fakeStripe = () => {
   const sent: { endpoint: string; auth: string | null; form: Record<string, string> }[] = [];
@@ -889,7 +904,9 @@ const fakeStripe = () => {
       form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
     });
     return Promise.resolve(
-      Response.json(endpoint === "/v1/prices" ? { id: "price_1" } : { url: PAID_URL }),
+      Response.json(
+        endpoint === "/v1/prices" ? { id: "price_1" } : { id: "plink_pro", url: PAID_URL },
+      ),
     );
   });
   return sent;
@@ -969,6 +986,10 @@ describe("create_payment_link", () => {
         },
       },
     ]);
+    expect({ ...store.getChargeLink("plink_pro"), createdAt: 1 }).toEqual({
+      ...PRO_LINK,
+      betId: bet.id,
+    });
     expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toContain(
       "Held for the founder's sign-off",
     );
@@ -1375,7 +1396,7 @@ describe("sell_print", () => {
       id: "launch-tee",
       livemode: false,
       name: "Launch tee",
-      paymentLink: { id: "plink_1", url: LISTED_URL },
+      paymentLink: { id: "plink_1", state: { kind: "selling" }, url: LISTED_URL },
       placements: [{ ...PRINT.placements[0], sha256: DESIGN_SHA }],
       priceCents: 2800,
       productId: "acme",
@@ -1701,7 +1722,7 @@ describe("read_orders", () => {
       id: "launch-tee",
       livemode: true,
       name: "Launch tee",
-      paymentLink: { id: "plink_1", url: LISTED_URL },
+      paymentLink: { id: "plink_1", state: { kind: "selling" }, url: LISTED_URL },
       placements: [
         { fileUrl: LISTED_URL, placement: "front", sha256: DESIGN_SHA, technique: "dtg" },
       ],
@@ -1775,6 +1796,71 @@ describe("read_orders", () => {
     const { ctx } = runAs("priya");
     expect(await callTool(ctx, "POST /v1/orders", { product: "acme" })).toBe(
       "Acme has no paid orders yet.",
+    );
+  });
+
+  it("says which of a retired product's links no longer sell", async () => {
+    const { ctx } = runAs("priya");
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    store.recordOrder({
+      ...paid,
+      collectedCents: 900,
+      createdAt: Date.UTC(2026, 8, 22),
+      delivery: null,
+      id: "order-cy",
+      kind: "link",
+      name: "Pro plan",
+      productId: side.id,
+      sessionId: "cs_cy",
+    });
+    store.killProduct(side.id, "dud", null);
+    store.setLinkState(PRO_LINK.id, { at: Date.UTC(2026, 8, 23), kind: "switched-off" });
+
+    expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
+      [
+        `${side.id}'s paid orders, newest first (1 of 1):`,
+        "- 2026-09-22 · Pro plan · paid $9.00 · paid through a payment link that names no delivery",
+        "  ada@example.com",
+        "Its payment links:",
+        `- "Pro plan" ${PAID_URL} is switched off at Stripe 2026-09-23, when its product retired, so it takes no new money`,
+      ].join("\n"),
+    );
+  });
+});
+
+describe("kill_product", () => {
+  it("retires the product and says which of its payment links Stripe switched off", async () => {
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder" }),
+    );
+    const { ctx } = runAs("mae");
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    store.recordChargeLink({
+      ...PRO_LINK,
+      id: "plink_gone",
+      name: "Old plan",
+      productId: side.id,
+      url: "https://buy.stripe.com/gone",
+    });
+    vi.stubGlobal("fetch", (url: string) =>
+      Promise.resolve(
+        url.endsWith("/plink_gone")
+          ? Response.json({ error: { message: "No such payment_link" } }, { status: 404 })
+          : Response.json({ active: false, id: PRO_LINK.id }),
+      ),
+    );
+
+    const answer = await callTool(ctx, "POST /v1/kill-product", { reason: "dud", slug: side.id });
+
+    expect(store.getProduct(side.id)).toBeNull();
+    expect(answer).toContain(
+      `Its payment links: "Pro plan" ${PAID_URL} is switched off at Stripe `,
+    );
+    expect(answer).toContain(
+      '"Old plan" https://buy.stripe.com/gone is still on at Stripe, which would not switch it off (No such payment_link): the founder switches it off by hand. Each order already paid still ships, and still counts.',
     );
   });
 });

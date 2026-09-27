@@ -43,6 +43,7 @@ import type { JsonValue } from "@/shared/json";
 import { CATALOG_PAGE } from "@/shared/listing";
 import type { ListedPlacement, ListingVariant, PrintPlacement } from "@/shared/listing";
 import type { Order } from "@/shared/order";
+import type { CompanyLink, LinkState } from "@/shared/payment-link";
 import { TOOL_NAMES, TOOL_SPECS } from "@/shared/tool-specs";
 import type { ToolName, ToolSpec } from "@/shared/tool-specs";
 
@@ -443,6 +444,25 @@ const orderStanding = (order: Order): string => {
   }
 };
 
+/** Whether a payment link still takes money, as a teammate should read it. */
+const linkStanding = (state: LinkState): string => {
+  switch (state.kind) {
+    case "selling": {
+      return "selling";
+    }
+    case "switched-off": {
+      return `switched off at Stripe ${new Date(state.at).toISOString().slice(0, 10)}, when its product retired, so it takes no new money`;
+    }
+    case "left-on": {
+      return `still on at Stripe, which would not switch it off (${state.why}): the founder switches it off by hand`;
+    }
+    // no default
+  }
+};
+
+const linkEntry = (link: CompanyLink): string =>
+  `${JSON.stringify(link.name)} ${link.url} is ${linkStanding(link.state)}`;
+
 /** One order as read_orders lists it: when, what, for how much, where it stands, and who it goes to. */
 const orderEntry = (order: Order): string => {
   const listing =
@@ -740,6 +760,18 @@ const TOOLS = {
       if (!made.ok) {
         return `Stripe made no payment link: ${made.error}`;
       }
+      store.recordChargeLink({
+        betId: bet ?? null,
+        cents,
+        createdAt: Date.now(),
+        delivery: delivery ?? null,
+        id: made.id,
+        livemode: !isTestKey(key),
+        name,
+        productId: product.id,
+        state: { kind: "selling" },
+        url: made.url,
+      });
       const testMode = isTestKey(key) ? TEST_MODE : "";
       const handover =
         delivery === undefined
@@ -835,7 +867,7 @@ const TOOLS = {
       id: listingId,
       livemode: !isTestKey(keys.stripe),
       name,
-      paymentLink: { id: made.id, url: made.url },
+      paymentLink: { id: made.id, state: { kind: "selling" }, url: made.url },
       placements,
       priceCents,
       productId: product.id,
@@ -864,16 +896,28 @@ const TOOLS = {
       return `${name} has no paid orders yet.`;
     }
     const shown = orders.slice(0, RECENT_ORDERS);
-    return `${name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}`;
+    const stopped = store
+      .paymentLinks()
+      .filter((l) => l.productId === productId && l.state.kind !== "selling");
+    const links =
+      stopped.length === 0
+        ? ""
+        : `\nIts payment links:\n${stopped.map((l) => `- ${linkEntry(l)}`).join("\n")}`;
+    return `${name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}${links}`;
   }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);
     post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
     return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Fund work on it with open_bet and "product":"${product.id}", then delegate against that bet.`;
   }),
-  kill_product: define(TOOL_SPECS.kill_product, (ctx, { slug, reason }) => {
-    const retired = retireProduct(slug, reason, ctx.employee.id);
-    return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down, and so is any payment link sell_print made for it: each paid order still ships.`;
+  kill_product: define(TOOL_SPECS.kill_product, async (ctx, { slug, reason }) => {
+    const retired = await retireProduct(slug, reason, ctx.employee.id);
+    const links = store.paymentLinks().filter((l) => l.productId === slug);
+    const told =
+      links.length === 0
+        ? ""
+        : ` Its payment links: ${links.map(linkEntry).join("; ")}. Each order already paid still ships, and still counts.`;
+    return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.${told}`;
   }),
   open_bet: define(TOOL_SPECS.open_bet, (ctx, { product, ...bet }) => {
     const productId = productFor(ctx, product);

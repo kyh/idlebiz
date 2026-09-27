@@ -1,5 +1,6 @@
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
+import { switchOffRetiredLinks } from "@/main/company-actions";
 import { guarded, report } from "@/main/lib/report";
 import { PULSE_MS, fetchRealMetrics, stripeCredential } from "@/main/metrics";
 import { CHECKOUTS_READ_MS, ORDER_TRACK_MS, pumpOrders } from "@/main/order-pump";
@@ -11,7 +12,8 @@ import { isClosed } from "@/shared/bets";
 // The real numbers, read on a beat and written where they belong: the company,
 // each product, and each live bet's reading — which, with how long the pulse
 // has been asking, is all the evaluator ever judges a bet by. Paid print orders
-// ride the same beat to Printful.
+// ride the same beat to Printful, and a retired product's links left selling by a
+// quit are switched off on it.
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
@@ -92,6 +94,7 @@ const now = async (): Promise<void> => {
   } catch (error) {
     report("pulse", error);
   }
+  await switchOffRetiredLinks();
   try {
     const at = Date.now();
     await pumpOrders(at, orderBeat(at));

@@ -16,6 +16,7 @@ import type { OrdersCursor } from "@/main/store/store";
 import { formatCents } from "@/shared/format";
 import type { Listing } from "@/shared/listing";
 import type { Order, Recipient, Sale } from "@/shared/order";
+import type { LinkState } from "@/shared/payment-link";
 
 // Each paid checkout on a listing's payment link becomes one Printful order, placed with the
 // founder's token here in main. The order is on disk before Printful hears of it, and its
@@ -616,6 +617,10 @@ const keepUnreadable = (
   }
 };
 
+/** A checkout opened before its link was switched off still pays, so the room hears that one is on its way. */
+const sinceOff = (state: LinkState): string =>
+  state.kind === "switched-off" ? ", paid on a link since switched off" : "";
+
 /** Keep a paid checkout on a listing's link as an order, and tell the room: the first sale is the game's milestone. */
 const take = (session: CheckoutSession, listing: Listing): void => {
   const read = saleOf(session, listing);
@@ -638,7 +643,7 @@ const take = (session: CheckoutSession, listing: Listing): void => {
     : " (test mode: Printful only prices a draft, then it is deleted)";
   postToRoom(
     { kind: "office" },
-    `📦 Sold ${listing.name} (${read.variant.label}) for ${formatCents(paid.collectedCents)} on ${listing.productId}: it goes to Printful now${test}.`,
+    `📦 Sold ${listing.name} (${read.variant.label}) for ${formatCents(paid.collectedCents)} on ${listing.productId}${sinceOff(listing.paymentLink.state)}: it goes to Printful now${test}.`,
   );
 };
 
@@ -662,7 +667,8 @@ const takeLinkSale = (session: CheckoutSession, productId: string): void => {
     });
   }
   store.recordOrder(order);
-  const sold = `💵 Sold ${JSON.stringify(order.name)} for ${formatCents(order.collectedCents)} on ${productId}`;
+  const link = store.getChargeLink(session.payment_link ?? "");
+  const sold = `💵 Sold ${JSON.stringify(order.name)} for ${formatCents(order.collectedCents)} on ${productId}${link === null ? "" : sinceOff(link.state)}`;
   if (!order.livemode) {
     postToRoom({ kind: "office" }, `${sold} (test mode: nobody paid).`);
     return;

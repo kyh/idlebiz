@@ -1,7 +1,11 @@
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
+import { report } from "@/main/lib/report";
+import { readActiveLinks, switchOffPaymentLink } from "@/main/payment-links";
+import type { ActiveLinksRead, SwitchOffResult } from "@/main/payment-links";
 import { betNews } from "@/main/prompts/briefs";
-import { heldKeyIn } from "@/main/secrets";
+import { STRIPE_SECRET_KEY, getSecret, heldKeyIn } from "@/main/secrets";
+import { isTestKey } from "@/main/stripe-api";
 import type { Bet } from "@/shared/bets";
 import type {
   ActionAsk,
@@ -12,6 +16,7 @@ import type {
   Speaker,
   Task,
 } from "@/shared/domain";
+import type { CompanyLink } from "@/shared/payment-link";
 import { RefusalError } from "@/shared/refusal";
 
 // A change to the company that everyone should hear about: the store mutation,
@@ -49,25 +54,6 @@ export const killBet = (betId: string, reason: string): Bet => {
   const killed = store.killBet(betId, reason, Date.now());
   announceBet(killed);
   return killed;
-};
-
-/** Retire a product and everything riding on it. `by` is the lead who called it; null is the founder. */
-export const retireProduct = (productId: string, reason: string, by: string | null): Product => {
-  const product = store.requireProduct(productId);
-  for (const bet of store.killProduct(productId, reason, by)) {
-    announceBet(bet);
-  }
-  postToRoom(
-    by === null ? { kind: "founder" } : { id: by, kind: "employee" },
-    `🪦 Retired ${product.name} — ${reason}`,
-  );
-  publishActivity({
-    employeeId: by,
-    kind: "product.killed",
-    message: product.name,
-    payload: { productId, reason },
-  });
-  return product;
 };
 
 /** Start a product, from the lead's tool or the founder's panel. */
@@ -175,4 +161,175 @@ export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
     payload: { open: false, taskId: card.id },
   });
   return card;
+};
+
+const office: Speaker = { kind: "office" };
+
+/**
+ * Hand the founder a link Stripe would not switch off, to switch off by hand; a test-mode link
+ * takes no real money, so the room hears instead. The card is raised before the link is marked,
+ * since cards dedupe by title and the mark is what stops the next sweep asking Stripe again.
+ */
+const leaveOn = (link: CompanyLink, why: string): void => {
+  const named = `${JSON.stringify(link.name)} (${link.url})`;
+  if (link.livemode) {
+    const sells = link.print
+      ? "it takes money, and each order paid through it still goes to Printful"
+      : "it takes money";
+    raiseOrderCard(`Switch off payment link ${link.id}`, {
+      action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
+      draft: null,
+      instructions: `${link.productId} is retired, but Stripe would not switch off its payment link ${link.id} for IdleBiz: ${why}. Until it is off, ${sells}. In Stripe's dashboard, open Payment links, find ${link.id} and deactivate it. Press Done once it is off.`,
+    });
+  } else {
+    postToRoom(
+      office,
+      `🧪 Test payment link ${named} of retired ${link.productId} stays on: ${why}.`,
+    );
+  }
+  store.setLinkState(link.id, { kind: "left-on", why });
+};
+
+const switchOff = async (link: CompanyLink, key: string | null): Promise<void> => {
+  try {
+    const done: SwitchOffResult =
+      key === null
+        ? { error: "IdleBiz has no Stripe key", ok: false }
+        : await switchOffPaymentLink(key, link.id);
+    if (!done.ok) {
+      leaveOn(link, done.error);
+      return;
+    }
+    store.setLinkState(link.id, { at: Date.now(), kind: "switched-off" });
+    postToRoom(
+      office,
+      `🔌 Switched off ${JSON.stringify(link.name)}, a payment link of retired ${link.productId}: it takes no new money.`,
+    );
+  } catch (error) {
+    report(`payment link ${link.id}`, error);
+  }
+};
+
+/** Stripe's active links, read only with a live key: a test-mode key lists none of the live ones. */
+const activeLinks = (key: string | null): Promise<ActiveLinksRead> | null =>
+  key === null || isTestKey(key) ? null : readActiveLinks(key);
+
+/** What Stripe showed of a retired product's unrecorded links, as its card says it; null when it has none. */
+const unrecordedSeen = (
+  read: Exclude<ActiveLinksRead, { kind: "failed" }>,
+  productId: string,
+  known: ReadonlySet<string>,
+): string | null => {
+  if (read.kind === "refused") {
+    return `Stripe turned IdleBiz's key away when it looked for them (${read.said}).`;
+  }
+  const found = read.links.filter((l) => l.tags.product === productId && !known.has(l.id));
+  if (read.whole && found.length === 0) {
+    return null;
+  }
+  const listed =
+    found.length === 0
+      ? []
+      : [
+          `Stripe lists these active ones tagged for it: ${found.map((l) => `${l.url} (${l.id})`).join(", ")}.`,
+        ];
+  const partial = read.whole
+    ? []
+    : ["IdleBiz read only part of the account's links, so there may be more."];
+  return [...listed, ...partial].join(" ");
+};
+
+/**
+ * Hand the founder the links older builds made for a retired product and never recorded. Stripe's
+ * links carry no date and older builds tagged them by product alone, so another company's tagged
+ * the same would read as this one's: the founder switches them off, never IdleBiz. Each product is
+ * looked for once, on a live key; a read that failed is tried again on the next sweep.
+ */
+const handOverUnrecordedLinks = async (key: string | null): Promise<void> => {
+  const pending = store.unrecordedLinkProducts();
+  const retired = pending.filter((id) => store.getProduct(id) === null);
+  const reading = retired.length === 0 ? null : activeLinks(key);
+  if (reading === null) {
+    return;
+  }
+  const read = await reading;
+  if (read.kind === "failed") {
+    report("retired links", new Error(`Stripe's payment links could not be read: ${read.reason}`));
+    return;
+  }
+  const known = new Set(store.paymentLinks().map((l) => l.id));
+  for (const productId of retired) {
+    const seen = unrecordedSeen(read, productId, known);
+    if (seen === null) {
+      continue;
+    }
+    raiseOrderCard(`Switch off ${productId}'s older payment links`, {
+      action: `Switch off the payment links older IdleBiz made for retired ${productId}, in Stripe's dashboard`,
+      draft: null,
+      instructions: `${productId} is retired. Older versions of IdleBiz kept no record of the payment links they made, and Stripe's links carry no date, so IdleBiz cannot tell its own from another company's with the same tag, and left them on. ${seen} In Stripe's dashboard, open Payment links and deactivate each whose metadata names product ${productId} and is this company's. Press Done once they are off.`,
+    });
+  }
+  store.setUnrecordedLinkProducts(pending.filter((id) => !retired.includes(id)));
+};
+
+const sweepRetiredLinks = async (): Promise<void> => {
+  if (store.getCompany() === null) {
+    return;
+  }
+  const key = getSecret(STRIPE_SECRET_KEY);
+  const due = store
+    .paymentLinks()
+    .filter((l) => l.state.kind === "selling" && store.getProduct(l.productId) === null);
+  await Promise.all(due.map((link) => switchOff(link, key)));
+  await handOverUnrecordedLinks(key);
+};
+
+const sweepReported = async (after: Promise<void>): Promise<void> => {
+  await after;
+  try {
+    await sweepRetiredLinks();
+  } catch (error) {
+    report("retired links", error);
+  }
+};
+
+let lastSweep: Promise<void> = Promise.resolve();
+
+/**
+ * Switch off, with the founder's key here in main, every payment link a retired product still
+ * sells through, so it takes no new money; what it already took still counts and still ships.
+ * Retirement asks, and so does every pulse, which finishes what a quit cut short. Each sweep
+ * waits for the last, so two never ask Stripe about one link at once. Never rejects.
+ */
+export const switchOffRetiredLinks = (): Promise<void> => {
+  lastSweep = sweepReported(lastSweep);
+  return lastSweep;
+};
+
+/**
+ * Retire a product and everything riding on it, then switch off its payment links. The
+ * retirement never waits on Stripe, only the answer does. `by` is the lead who called it; null
+ * is the founder.
+ */
+export const retireProduct = async (
+  productId: string,
+  reason: string,
+  by: string | null,
+): Promise<Product> => {
+  const product = store.requireProduct(productId);
+  for (const bet of store.killProduct(productId, reason, by)) {
+    announceBet(bet);
+  }
+  postToRoom(
+    by === null ? { kind: "founder" } : { id: by, kind: "employee" },
+    `🪦 Retired ${product.name} — ${reason}`,
+  );
+  publishActivity({
+    employeeId: by,
+    kind: "product.killed",
+    message: product.name,
+    payload: { productId, reason },
+  });
+  await switchOffRetiredLinks();
+  return product;
 };

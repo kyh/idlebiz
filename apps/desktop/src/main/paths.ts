@@ -16,7 +16,8 @@ import { mkdirSync } from "node:fs";
 //     products/<slug>/workspace/  its code (the first product's is workspace/)
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
-//     listings/<id>.json    a print-on-demand item on sale for a product: the Printful variants and design, its payment link
+//     listings/<id>.json    a print-on-demand item on sale for a product: the Printful variants and design, its payment link and whether it still sells
+//     links/<id>.json       a create_payment_link link, by Stripe's id: what it sells for which product, and whether it still sells
 //     orders/<id>.json      a paid checkout on one of the company's payment links (a listing's or create_payment_link's), and what became of it
 //     workspace/            the first product's code
 //     shared/               what teammates share across products; the cwd of work no product owns
@@ -27,6 +28,7 @@ import { mkdirSync } from "node:fs";
 //       recent-ships.json     the latest ship summaries, for the next brief
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
 //       orders-cursor.json    where each Stripe key's next read of checkouts starts
+//       unrecorded-links.json products an older save made that may have create_payment_link links no links/ file holds
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -56,6 +58,9 @@ export const sinceLastLookFile = (companySlug: string): string =>
 /** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
 export const ordersCursorFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "orders-cursor.json");
+/** Products an older save made, whose create_payment_link links IdleBiz never recorded: each is looked for at Stripe once it retires. */
+export const unrecordedLinksFile = (companySlug: string): string =>
+  path.join(stateDir(companySlug), "unrecorded-links.json");
 export const activityFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "activity.jsonl");
 
@@ -98,13 +103,18 @@ export const productFile = (companySlug: string, productSlug: string): string =>
 /** A later product's own workspace, moved with its package when it retires. */
 export const productWorkspace = (companySlug: string, productSlug: string): string =>
   path.join(productsDir(companySlug), productSlug, "workspace");
-// Listings and orders sit outside every product's package: a retired product's payment link
-// still takes money, and each order it takes must still ship and be tracked. Outside every
-// workspace too, so a run can read them, buyers' addresses included, but never write one.
+// Listings, links and orders sit outside every product's package: a retired product's payment
+// links are switched off from them, and each order they took must still ship and be tracked.
+// Outside every workspace too, so a run can read them, buyers' addresses included, but never
+// write one.
 export const listingsDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "listings");
 export const listingFile = (companySlug: string, listingId: string): string =>
   path.join(listingsDir(companySlug), `${listingId}.json`);
+export const linksDir = (companySlug: string): string =>
+  path.join(companyDir(companySlug), "links");
+export const linkFile = (companySlug: string, linkId: string): string =>
+  path.join(linksDir(companySlug), `${linkId}.json`);
 export const ordersDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "orders");
 export const orderFile = (companySlug: string, orderId: string): string =>

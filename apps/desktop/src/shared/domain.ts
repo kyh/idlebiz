@@ -473,6 +473,7 @@ export interface LoadSkip {
     | "routine"
     | "product"
     | "listing"
+    | "link"
     | "order"
     | "bet"
     | "team"

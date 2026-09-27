@@ -26,11 +26,14 @@ import {
   productsDir,
   productFile,
   productWorkspace,
+  linkFile,
+  linksDir,
   listingsDir,
   listingFile,
   ordersDir,
   orderFile,
   ordersCursorFile,
+  unrecordedLinksFile,
   retiredDir,
   betsDir,
   betFile,
@@ -75,6 +78,8 @@ import { parseJson } from "@/shared/json";
 import { ListingSchema } from "@/shared/listing";
 import type { Listing } from "@/shared/listing";
 import { OrderSchema } from "@/shared/order";
+import { ChargeLinkSchema } from "@/shared/payment-link";
+import type { ChargeLink, CompanyLink, LinkState } from "@/shared/payment-link";
 import type { Order, Sale } from "@/shared/order";
 import { RefusalError } from "@/shared/refusal";
 import { emptyDigest, foldDigest } from "@/main/store/digest";
@@ -130,8 +135,10 @@ interface ActiveCompany {
   // Loaded only when the shipping log is opened.
   shipped: Task[] | null;
   products: Product[];
-  /** Every print-on-demand item ever listed, a retired product's too: its payment link still takes money. */
+  /** Every print-on-demand item ever listed, a retired product's too: its orders still ship. */
   listings: Listing[];
+  /** Every create_payment_link link, a retired product's too: its buyers may still be owed a delivery. */
+  links: ChargeLink[];
   /** Every paid checkout on the company's links, a retired product's too: a print still ships, a delivery is still owed. */
   orders: Order[];
   /** Sign-offs the founder gave that no run has used yet. */
@@ -186,6 +193,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   company,
   employees: [],
   grants: [],
+  links: [],
   listings: [],
   orders: [],
   policy: DEFAULT_POLICY,
@@ -883,7 +891,7 @@ export const requireProduct = (id: string): Product => {
 
 export const listProducts = (): Product[] => [...(current().products ?? [])];
 
-/** Whether `id` is a product of this company, live or retired: a retired product's payment links still take money. */
+/** Whether `id` is a product of this company, live or retired: a retired product's paid orders still ship. */
 export const madeProduct = (id: string): boolean =>
   getProduct(id) !== null || safeReaddir(retiredDir(current().company.id)).includes(id);
 
@@ -955,18 +963,103 @@ export const newListingId = (name: string): string => {
   );
 };
 
+const saveListing = (listing: Listing): void => {
+  atomicWrite(
+    listingFile(current().company.id, listing.id),
+    `${JSON.stringify(listing, null, 2)}\n`,
+  );
+};
+
 /**
  * A listing Stripe already sells through its link, so the cache keeps it even when the save
  * throws: money may come through that link either way.
  */
 export const recordListing = (listing: Listing): void => {
-  const product = requireProduct(listing.productId);
+  requireProduct(listing.productId);
   const { listings } = current();
   if (listings.some((l) => l.id === listing.id)) {
     throw new Error(`a listing ${listing.id} is already kept`);
   }
   listings.push(listing);
-  atomicWrite(listingFile(product.companyId, listing.id), `${JSON.stringify(listing, null, 2)}\n`);
+  saveListing(listing);
+};
+
+// ---- payment links ----------------------------------------------------------
+export const getChargeLink = (id: string): ChargeLink | null =>
+  current().links.find((l) => l.id === id) ?? null;
+
+const saveChargeLink = (link: ChargeLink): void => {
+  atomicWrite(linkFile(current().company.id, link.id), `${JSON.stringify(link, null, 2)}\n`);
+};
+
+/**
+ * A create_payment_link link Stripe already sells through, so the cache keeps it even when the
+ * save throws: retiring its product must still find it to switch it off.
+ */
+export const recordChargeLink = (link: ChargeLink): void => {
+  requireProduct(link.productId);
+  const { links } = current();
+  if (links.some((l) => l.id === link.id)) {
+    throw new Error(`a payment link ${link.id} is already kept`);
+  }
+  links.push(link);
+  saveChargeLink(link);
+};
+
+/** Every payment link the company made, a listing's and create_payment_link's alike. */
+export const paymentLinks = (): CompanyLink[] => {
+  const { links, listings } = current();
+  return [
+    ...listings.map(({ livemode, name, paymentLink, productId }) => ({
+      id: paymentLink.id,
+      livemode,
+      name,
+      print: true,
+      productId,
+      state: paymentLink.state,
+      url: paymentLink.url,
+    })),
+    ...links.map(({ id, livemode, name, productId, state, url }) => ({
+      id,
+      livemode,
+      name,
+      print: false,
+      productId,
+      state,
+      url,
+    })),
+  ];
+};
+
+/** What retiring a link's product did to it at Stripe. It happened, so the cache keeps it even when the save throws. */
+export const setLinkState = (id: string, state: LinkState): void => {
+  const { links, listings } = current();
+  const listed = listings.findIndex((l) => l.paymentLink.id === id);
+  const listing = listings[listed];
+  if (listing !== undefined) {
+    const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
+    listings[listed] = next;
+    saveListing(next);
+    return;
+  }
+  const at = links.findIndex((l) => l.id === id);
+  const link = links[at];
+  if (link === undefined) {
+    throw new Error(`no payment link ${id} is kept`);
+  }
+  const next = { ...link, state };
+  links[at] = next;
+  saveChargeLink(next);
+};
+
+const UnrecordedLinksSchema = z.array(z.string());
+
+/** Products an older save made whose create_payment_link links IdleBiz never recorded, and has not looked for since. */
+export const unrecordedLinkProducts = (): string[] =>
+  readJsonFile(unrecordedLinksFile(current().company.id), UnrecordedLinksSchema) ?? [];
+
+export const setUnrecordedLinkProducts = (productIds: readonly string[]): void => {
+  atomicWrite(unrecordedLinksFile(current().company.id), JSON.stringify(productIds));
 };
 
 // ---- orders -----------------------------------------------------------------
@@ -1672,8 +1765,8 @@ export const productOfEmployee = (employeeId: string): Product | null => {
  * at the next boot. Nor can one a teammate's run is working in: the move would
  * pull the tree out from under it, and a retry would land as company-level
  * work. `by` is the employee retiring it, whose own run is exempt; null is the
- * founder. Its listings and orders stay: their payment links still take money, and
- * every paid order still ships. Returns the bets it took down.
+ * founder. Its listings, links and orders stay: main switches its links off at Stripe
+ * (`switchOffRetiredLinks`), and every paid order still ships. Returns the bets it took down.
  */
 export const killProduct = (productId: string, reason: string, by: string | null): Bet[] => {
   const product = requireProduct(productId);
@@ -1903,6 +1996,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (doc) => docToProduct(doc, company.id),
   ).toSorted(byAge);
   active.listings = loadRecords("listing", listingsDir(company.id), ListingSchema);
+  active.links = loadRecords("link", linksDir(company.id), ChargeLinkSchema);
   active.orders = loadRecords("order", ordersDir(company.id), OrderSchema);
   active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
   active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];
@@ -2113,6 +2207,18 @@ const adoptOrdersCursor = (): void => {
   setOrdersCursor({ byKey: {}, floor: Math.floor(Date.now() / 1000) });
 };
 
+/**
+ * Format 6 and older kept no record of the links create_payment_link made, so retiring a product
+ * could not switch them off: each product it made is looked for at Stripe once it retires, those
+ * it already retired on the first pulse.
+ */
+const adoptUnrecordedLinks = (active: ActiveCompany): void => {
+  const made = [...active.products.map((p) => p.id), ...safeReaddir(retiredDir(active.company.id))];
+  if (made.length > 0) {
+    setUnrecordedLinkProducts(made);
+  }
+};
+
 /** An older save's lead proposal, by its fixed title behind any "Continue: " an answer added. */
 const PROPOSAL_TITLE = /^(?:Continue: )*Open the next bet for /u;
 
@@ -2217,6 +2323,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     adoptRetiredPush(active);
     adoptRewordedRoutines(active);
     adoptOrdersCursor();
+    adoptUnrecordedLinks(active);
   }
   saveCompany(active.company);
 };

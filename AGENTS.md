@@ -192,12 +192,15 @@ rather than crashing boot.
   `listings/`. Paid orders reach Printful through the order pump (`main/order-pump.ts`),
   which the metrics pulse runs: while a Stripe key is saved it reads Stripe's checkouts
   (`main/stripe-checkouts.ts`) every 30 minutes, keeps each paid one on the company's links
-  under `orders/` (a retired product's too, whose link still sells) from a cursor kept per key,
+  under `orders/` (a retired product's too) from a cursor kept per key,
   and drafts, prices and confirms a print on Printful (`main/printful-orders.ts`) once its cost
   fits in what Stripe's fee leaves and its payment is neither refunded nor disputed; a `create_payment_link` sale is a
   `link` order, carded to the founder when its link names a `delivery`. Anything it cannot
   settle is an order card in the Inbox, and `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
-  at `fetch` (`main/order-pump.test.ts`). The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  at `fetch` (`main/order-pump.test.ts`). `create_payment_link` keeps each link it makes under
+  `links/`; retiring a product switches off its links, a listing's too, with the key
+  (`switchOffRetiredLinks` in `main/company-actions.ts`, run by the retirement and every pulse;
+  `main/retired-links.test.ts`), and a link Stripe would not switch off is a card naming it. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key
@@ -370,7 +373,8 @@ rather than crashing boot.
   `stripe-key.ts` (the charging key the founder enters),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
-  `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make),
+  `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
+  switch-off of a retired product's links),
   `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
   checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful, each link sale's
