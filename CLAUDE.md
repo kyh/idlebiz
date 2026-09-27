@@ -127,11 +127,15 @@ allocator and the replay.
   through `sell_print` to US buyers or sells digital goods through a link, custom whichever
   fits, and VC sells information only (deal memos, teardowns, a paid newsletter), never
   investment: taking money as an investment or selling a security is regulated, and Stripe
-  forbids it. A payment link tells the product nothing about who paid (no tool makes a
-  webhook), so what a buyer is owed the founder sends: a link's `delivery` says what, and the
-  order pump cards the founder for each paid checkout on it. Anything else is an unlock that
-  takes the buyer's word, and the instructions never have an `ask_boss` card deliver, which
-  would block its bet.
+  forbids it. A product tells who paid on its own server (no tool makes a webhook): a link's
+  `afterPaymentUrl` sends each buyer back to a route of the product's with `session_id`, and
+  the route reads that checkout session with a restricted key of the product's own (Checkout
+  Sessions: Read, which the founder makes on an `ask_boss` action and the team keeps with
+  `set_env`; IdleBiz's own key is refused there), unlocking only a session `paid` on its link.
+  The instructions teach it under "Checking who paid", with a Next.js route. What only the
+  founder can hand over, a link's `delivery` says, and the order pump cards the founder for
+  each paid checkout on it; the instructions never have an `ask_boss` card deliver, which would
+  block its bet.
 - **What only a human can do is an action card.** `ask_boss` takes a question or an action
   (`{action, instructions, draft?}`): a step no tool takes, such as posting from the founder's
   accounts, signing up, buying a domain or verifying an email. The founder answers Done, with
@@ -240,7 +244,11 @@ third boundary.
   payment for its product and a named open revenue bet on it, and the link alone with the
   `delivery` its buyers are owed, which Stripe copies onto each checkout (a link with one is
   refused before the sign-off while the key cannot read checkout sessions, since that read is
-  how each buyer reaches the founder); `sell_print` lists a
+  how each buyer reaches the founder). Its `afterPaymentUrl`, where each buyer lands once they
+  have paid, must be https with no login on one of the product's verified production domains
+  (`productionHosts`, as `sell_print`'s files), and main adds
+  `session_id={CHECKOUT_SESSION_ID}`, which Stripe fills (`after_completion[type]=redirect`);
+  `sell_print` lists a
   Printful print-on-demand item (`main/print-listing.ts`): its print files must be images the
   product's own verified production domains serve now, each read whole and hashed, Printful's
   estimate prices each variant with them to California, Alaska and Hawaii, and a price below the
@@ -316,8 +324,9 @@ third boundary.
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
-  none), `payment link "<name>" at $<amount> on <product> for bet <slug> delivering "<delivery>"`
-  (the delivery is what the founder owes each buyer, so a changed one is signed anew), and `sell "<name>"
+  none), `payment link "<name>" at $<amount> on <product> for bet <slug> delivering "<delivery>"
+then send buyers to <url>` (the delivery is what the founder owes each buyer and the URL is
+  where paying buyers land, so a changed one is signed anew), and `sell "<name>"
 (variants <ids>) printing <placement> (<technique>) <file URL> sha256:<digest> at $<price> via
 Printful on <product> for bet <slug>`, the file's whole digest, so a design deployed over the
   URL is signed for anew. A sign-off belongs to the continuation task, is spent once and goes

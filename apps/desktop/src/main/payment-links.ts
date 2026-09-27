@@ -15,6 +15,8 @@ interface PaymentLinkRequest {
   bet: string | null;
   /** What the founder hands each buyer, which the order card for each paid checkout quotes. */
   delivery: string | null;
+  /** The product's own page a buyer lands on once they have paid, in place of Stripe's receipt. */
+  afterPayment: string | null;
 }
 
 /** `error` is why no link was made, in Stripe's words when it gave any. */
@@ -25,12 +27,36 @@ export type PaymentLinker = (req: PaymentLinkRequest) => Promise<PaymentLinkResu
 const Created = z.object({ id: z.string() });
 const LinkWithId = z.object({ id: StripeLinkIdSchema, url: z.url() });
 
+/** The query parameter a buyer lands back on the product with, naming their checkout session. */
+export const CHECKOUT_SESSION_PARAM = "session_id";
+
+/**
+ * `page` with the parameter Stripe fills with the paid checkout session's id, which the product's
+ * server reads the session by. The placeholder has to reach Stripe as written, so it is added to
+ * the text rather than through `searchParams`, which would escape its braces.
+ */
+const withCheckoutSession = (page: string): string => {
+  const url = new URL(page);
+  const query = url.search === "" ? "?" : `${url.search}&`;
+  return `${url.origin}${url.pathname}${query}${CHECKOUT_SESSION_PARAM}={CHECKOUT_SESSION_ID}${url.hash}`;
+};
+
+/** Where Stripe sends a buyer once they have paid: the product's page, or its own receipt. */
+const afterCompletion = (page: string | null): Record<string, string> =>
+  page === null
+    ? {}
+    : {
+        "after_completion[redirect][url]": withCheckoutSession(page),
+        "after_completion[type]": "redirect",
+      };
+
 /** Each tag as a form field under `prefix`, the way Stripe reads a map. */
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [`${prefix}[${key}]`, value]));
 
 /** A payment link made on Stripe here in main, so an employee's process never holds the key. */
 export const stripePaymentLink: PaymentLinker = async ({
+  afterPayment,
   key,
   name,
   cents,
@@ -54,6 +80,7 @@ export const stripePaymentLink: PaymentLinker = async ({
       await postForm(`${STRIPE_API}/v1/payment_links`, headers, {
         "line_items[0][price]": price.id,
         "line_items[0][quantity]": "1",
+        ...afterCompletion(afterPayment),
         // the charge the app counts copies its payment's metadata, never the link's;
         // the link's own tags are how the founder finds it in Stripe
         ...underKey("metadata", onSessions),

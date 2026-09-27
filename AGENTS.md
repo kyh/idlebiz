@@ -182,7 +182,12 @@ rather than crashing boot.
   a read of both (`stripeListingAccess`) before it asks for the sign-off. A link's optional
   `delivery` (what the founder hands each buyer) rides on the link's metadata alone, is part of
   the action the founder signs, and needs Read on Checkout Sessions, which
-  `create_payment_link` checks first (`stripeCheckoutAccess`). Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
+  `create_payment_link` checks first (`stripeCheckoutAccess`). Its optional `afterPaymentUrl`
+  sends each buyer back to the product, on one of its verified production domains
+  (`productionHosts`), with `session_id={CHECKOUT_SESSION_ID}` added
+  (`after_completion[type]=redirect`), and is signed too (`then send buyers to <url>`): the
+  product's own server reads that session with a Checkout Sessions: Read key the founder makes
+  for it, which is how a paid unlock checks who paid. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
   `main/printful.ts`) and list a print with `sell_print` (`main/print-listing.ts`): main checks
   the print files against the product's verified production domains (`productionHosts` in
   `main/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates

@@ -179,6 +179,8 @@ export const TOOL_SPECS = {
   }),
   create_payment_link: tool({
     body: z.strictObject({
+      // the founder reads it whole in what they sign
+      afterPaymentUrl: z.url().max(500).optional(),
       amountUsd: z.number().min(0.5).max(10_000),
       bet: z.string().min(1).optional(),
       // Stripe keeps a metadata value of at most 500 characters
@@ -186,7 +188,7 @@ export const TOOL_SPECS = {
       name: SALE_NAME,
       product: z.string().min(1).optional(),
     }),
-    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds a Stripe key. The buyer ends on Stripe\'s receipt page, and nothing reaches them from the team: when they are owed something (a file, a key, each issue of a newsletter), `delivery` says what the founder sends each one and where it is (a file in the workspace, a URL). Every paid checkout on the link then reaches the founder as a card with the buyer\'s email and that text, and read_orders lists it. The founder signs off on each link, its delivery included: the first call is held, and calling again once they answer creates it.',
+    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds IdleBiz\'s Stripe key. The buyer ends on Stripe\'s receipt page, unless `afterPaymentUrl` names a page of the product\'s own to send them to: https, on its production domain, deployed first. IdleBiz adds `session_id` to it, filled with the buyer\'s checkout session, and the answer names the link\'s id: the product\'s server reads that session with a key of the product\'s own and unlocks only what it reads as paid on this link (see "Checking who paid"). When a buyer is owed something only the founder can hand over (a file, a key, each issue of a newsletter), `delivery` says what the founder sends each one and where it is (a file in the workspace, a URL). Every paid checkout on the link then reaches the founder as a card with the buyer\'s email and that text, and read_orders lists it. The founder signs off on each link, its delivery and landing page included: the first call is held, and calling again once they answer creates it.',
     example: {
       amountUsd: 9,
       bet: "bet-slug",

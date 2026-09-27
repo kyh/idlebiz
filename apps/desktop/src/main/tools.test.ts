@@ -21,6 +21,7 @@ const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
 const { stripePaymentLink } = await import("./payment-links");
 const { printListing } = await import("./print-listing");
+const { productionHosts } = await import("./vercel");
 const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
 
@@ -87,8 +88,6 @@ const runAs = (employeeId: string) => {
     printListing: {
       catalog: () =>
         Promise.reject(new Error("read Printful's catalog without a test asking for it")),
-      hosts: () =>
-        Promise.reject(new Error("asked Vercel for domains without a test asking for it")),
       publish: () => Promise.reject(new Error("listed a print without a test asking for it")),
       quote: () =>
         Promise.reject(new Error("asked Printful for a price without a test asking for it")),
@@ -97,6 +96,8 @@ const runAs = (employeeId: string) => {
       stripeAccess: () =>
         Promise.reject(new Error("asked Stripe about its grants without a test asking for it")),
     },
+    productionHosts: () =>
+      Promise.reject(new Error("asked Vercel for domains without a test asking for it")),
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
     setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
   };
@@ -931,6 +932,28 @@ const chargingRun = (key: string | null = "sk_live_founder") => {
   return { ...run, ctx, stripe };
 };
 
+const UNLOCK = "https://play.acme.dev/unlock";
+const UNLOCK_ACTION = `payment link "Pro plan" at $9.00 on acme then send buyers to ${UNLOCK}`;
+
+/** A charging run whose Acme serves production on acme-site.vercel.app and play.acme.dev, with the founder's Vercel token saved too. */
+const landingRun = () => {
+  const run = chargingRun(null);
+  writeFileSync(
+    path.join(root, "secrets.json"),
+    JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder", VERCEL_TOKEN: TOKEN }),
+  );
+  store.setProductVercel("acme", VERCEL);
+  const hostsAsked: string[] = [];
+  const ctx: RunContext = {
+    ...run.ctx,
+    productionHosts: (_binding, token) => {
+      hostsAsked.push(token);
+      return Promise.resolve({ hosts: ["acme-site.vercel.app", "play.acme.dev"], kind: "listed" });
+    },
+  };
+  return { ...run, ctx, hostsAsked };
+};
+
 const revenueBet = (productId = "acme") =>
   store.openBet({ ...BET, metric: "revenue", productId, target: 20, title: "Paid tier" });
 
@@ -1196,6 +1219,128 @@ describe("create_payment_link", () => {
     );
   });
 
+  it("has the founder sign the page paying buyers land on, and asks Stripe nothing yet", async () => {
+    const { ctx, asked, hostsAsked, stripe } = landingRun();
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
+      `Held for the founder's sign-off on "${UNLOCK_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    );
+    expect(asked).toEqual([{ command: UNLOCK_ACTION, rule: "payments", type: "approval" }]);
+    expect(hostsAsked).toEqual([TOKEN]);
+    expect(stripe).toEqual([]);
+  });
+
+  it.each([
+    {
+      page: UNLOCK,
+      sent: "https://play.acme.dev/unlock?session_id={CHECKOUT_SESSION_ID}",
+    },
+    {
+      page: "https://PLAY.acme.dev/unlock?level=2#top",
+      sent: "https://play.acme.dev/unlock?level=2&session_id={CHECKOUT_SESSION_ID}#top",
+    },
+  ])(
+    "once signed off, has Stripe send each buyer to $page with their checkout session",
+    async ({ page, sent }) => {
+      const { ctx, stripe } = landingRun();
+      const signed = new URL(page).href;
+      store.grantApproval(
+        ctx.run.taskId,
+        `payment link "Pro plan" at $9.00 on acme then send buyers to ${signed}`,
+      );
+
+      const answer = await callTool(ctx, "POST /v1/payment-link", {
+        ...LINK,
+        afterPaymentUrl: page,
+      });
+
+      expect(answer).toBe(
+        `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Each buyer who pays lands on ${signed} with a session_id naming their checkout session: unlock only what the product's server reads there as paid on this link, plink_pro.`,
+      );
+      expect(stripe[1]).toEqual({
+        auth: "Bearer sk_live_founder",
+        endpoint: "/v1/payment_links",
+        form: {
+          "after_completion[redirect][url]": sent,
+          "after_completion[type]": "redirect",
+          "line_items[0][price]": "price_1",
+          "line_items[0][quantity]": "1",
+          "metadata[product]": "acme",
+          "payment_intent_data[metadata][product]": "acme",
+        },
+      });
+    },
+  );
+
+  it.each([
+    {
+      page: "http://play.acme.dev/unlock",
+      said: "http://play.acme.dev/unlock is not https: buyers who paid are sent only to an https page on the product's own domain.",
+    },
+    {
+      page: "data:text/html,paid",
+      said: "data:text/html,paid is not https",
+    },
+    {
+      page: "https://me:pw@play.acme.dev/unlock",
+      said: "carries a login: the page buyers land on has to be public",
+    },
+    {
+      page: "https://play.acme.dev/unlock?session_id=cs_live_paid",
+      said: "already has a session_id: IdleBiz adds it",
+    },
+    {
+      page: "https://acme.example.com/unlock",
+      said: "https://acme.example.com/unlock is not on Acme's production domains (acme-site.vercel.app, play.acme.dev): buyers who paid are sent only to a page the product itself serves, where its server checks their checkout.",
+    },
+  ])("refuses a landing page the product does not serve: $page", async ({ page, said }) => {
+    const { ctx, asked, stripe } = landingRun();
+    expect(
+      await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: page }),
+    ).toContain(said);
+    expect(asked).toEqual([]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("refuses a landing page that is no URL as the caller's error", async () => {
+    const { ctx, stripe } = landingRun();
+    await expect(
+      callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: "/unlock" }),
+    ).rejects.toThrow(BadRequestError);
+    expect(stripe).toEqual([]);
+  });
+
+  it("tells a product with no Vercel project to deploy its landing page first", async () => {
+    const { ctx, hostsAsked, stripe } = landingRun();
+    store.setProductVercel("acme", null);
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
+      "Acme has no Vercel project yet: deploy the page buyers land on, which makes one, then make the link.",
+    );
+    expect(hostsAsked).toEqual([]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("leaves a Vercel card while it cannot check where the product is served", async () => {
+    const { ctx, asked, hostsAsked, stripe } = landingRun();
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder" }),
+    );
+    expect(
+      await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK }),
+    ).toContain("Vercel is not connected");
+    expect(asked).toEqual([
+      {
+        integration: "vercel",
+        reason: "to check where Acme sends buyers who paid",
+        type: "integration",
+      },
+    ]);
+    expect(hostsAsked).toEqual([]);
+    expect(stripe).toEqual([]);
+  });
+
   it("answers with Stripe's own reason when it makes no link", async () => {
     const { ctx } = chargingRun();
     vi.stubGlobal("fetch", () =>
@@ -1344,7 +1489,12 @@ const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[
   const run = runAs("priya");
   store.setProductVercel("acme", VERCEL);
   const sent = fakeSellers(sellers);
-  const ctx: RunContext = { ...run.ctx, printListing, run: { ...run.ctx.run, productId: "acme" } };
+  const ctx: RunContext = {
+    ...run.ctx,
+    printListing,
+    productionHosts,
+    run: { ...run.ctx.run, productId: "acme" },
+  };
   return { ...run, ctx, sent };
 };
 

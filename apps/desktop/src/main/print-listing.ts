@@ -3,7 +3,6 @@ import { printfulCatalog, printfulQuote } from "@/main/printful";
 import type { CatalogReader, PrintQuote, PrintQuoter } from "@/main/printful";
 import { stripeShippedLink, stripeListingAccess } from "@/main/payment-links";
 import type { ShippedLinker, StripeAccess } from "@/main/payment-links";
-import { productionHosts } from "@/main/vercel";
 import { errorMessage } from "@/shared/errors";
 import { formatCents } from "@/shared/format";
 
@@ -72,9 +71,8 @@ export const readPrintFile = async (url: string): Promise<PrintFileRead> => {
   }
 };
 
-/** What listing a print-on-demand item takes from outside: Vercel's domains, the file, Printful's catalog and price, Stripe's grant and link. */
+/** What listing a print-on-demand item takes from outside: the file, Printful's catalog and price, Stripe's grant and link. */
 export interface PrintListing {
-  hosts: typeof productionHosts;
   readFile: (url: string) => Promise<PrintFileRead>;
   catalog: CatalogReader;
   quote: PrintQuoter;
@@ -84,7 +82,6 @@ export interface PrintListing {
 
 export const printListing: PrintListing = {
   catalog: printfulCatalog,
-  hosts: productionHosts,
   publish: stripeShippedLink,
   quote: printfulQuote,
   readFile: readPrintFile,

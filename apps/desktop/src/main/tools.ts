@@ -14,6 +14,7 @@ import {
   switchOffRetiredLinks,
 } from "@/main/company-actions";
 import { measureRefusal } from "@/main/metrics";
+import { CHECKOUT_SESSION_PARAM } from "@/main/payment-links";
 import type { PaymentLinker, StripeAccess } from "@/main/payment-links";
 import { STRIPE_FEE_LABEL, priceFloorCents } from "@/main/print-listing";
 import type { PrintListing } from "@/main/print-listing";
@@ -21,6 +22,7 @@ import { printfulCredential } from "@/main/printful";
 import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
 import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "@/main/secrets";
 import { isTestKey } from "@/main/stripe-api";
+import type { productionHosts } from "@/main/vercel";
 import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
@@ -71,8 +73,10 @@ export interface RunContext {
   checkoutAccess: (key: string) => Promise<StripeAccess>;
   /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
   setEnv: EnvSetter;
-  /** List a print-on-demand item with the founder's Vercel, Printful and Stripe keys, which the run itself never holds. */
+  /** List a print-on-demand item with the founder's Printful and Stripe keys, which the run itself never holds. */
   printListing: PrintListing;
+  /** Read where a product's production deploys are served with the founder's Vercel key, which the run itself never holds. */
+  productionHosts: typeof productionHosts;
 }
 
 /** A tool ready to be called with whatever the agent sent. */
@@ -255,18 +259,14 @@ const sellingKeys = (
   return { printful, stripe, vercel };
 };
 
-/**
- * Each placement with the digest of the image the product serves at its URL on its production
- * domains right now; any other file ends the call.
- */
-const servedFiles = async (
+/** The hosts `product` serves its production deploys on; a token Vercel turns away is asked for anew, which ends the call. */
+const productHosts = async (
   ctx: RunContext,
   product: Product,
   binding: VercelBinding,
   token: string,
-  placements: readonly PrintPlacement[],
-): Promise<ListedPlacement[]> => {
-  const read = await ctx.printListing.hosts(binding, token);
+): Promise<string[]> => {
+  const read = await ctx.productionHosts(binding, token);
   if (read.kind === "refused") {
     return needIntegration(
       ctx,
@@ -281,13 +281,30 @@ const servedFiles = async (
       `Vercel could not say where ${product.name} is served (${read.reason}); try again.`,
     );
   }
+  return read.hosts;
+};
+
+const domainsLabel = (hosts: readonly string[]): string =>
+  hosts.length === 0 ? "none yet" : hosts.join(", ");
+
+/**
+ * Each placement with the digest of the image the product serves at its URL on its production
+ * domains right now; any other file ends the call.
+ */
+const servedFiles = async (
+  ctx: RunContext,
+  product: Product,
+  binding: VercelBinding,
+  token: string,
+  placements: readonly PrintPlacement[],
+): Promise<ListedPlacement[]> => {
+  const hosts = await productHosts(ctx, product, binding, token);
   const served: ListedPlacement[] = [];
   for (const placement of placements) {
     const { fileUrl } = placement;
-    if (!read.hosts.includes(new URL(fileUrl).hostname)) {
-      const domains = read.hosts.length === 0 ? "none yet" : read.hosts.join(", ");
+    if (!hosts.includes(new URL(fileUrl).hostname)) {
       throw new RefusalError(
-        `${fileUrl} is not on ${product.name}'s production domains (${domains}): Printful prints only a file the product itself serves, so deploy it there and name that URL.`,
+        `${fileUrl} is not on ${product.name}'s production domains (${domainsLabel(hosts)}): Printful prints only a file the product itself serves, so deploy it there and name that URL.`,
       );
     }
     const file = await ctx.printListing.readFile(fileUrl);
@@ -299,6 +316,95 @@ const servedFiles = async (
     served.push({ ...placement, sha256: file.sha256 });
   }
   return served;
+};
+
+/** Why buyers cannot be sent to `url` once they have paid, or null when they can. */
+const afterPaymentRefusal = (url: URL): string | null => {
+  if (url.protocol !== "https:") {
+    return `${url.href} is not https: buyers who paid are sent only to an https page on the product's own domain.`;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return `${url.href} carries a login: the page buyers land on has to be public, since they arrive with none.`;
+  }
+  if (url.searchParams.has(CHECKOUT_SESSION_PARAM)) {
+    return `${url.href} already has a ${CHECKOUT_SESSION_PARAM}: IdleBiz adds it, filled with each buyer's checkout session, so name the page without it.`;
+  }
+  return null;
+};
+
+/**
+ * The page of `product`'s own that buyers land on once they have paid, as the founder signs it;
+ * one the product does not serve over https on its production domains ends the call, since that
+ * page is where the product checks who paid.
+ */
+const afterPaymentPage = async (
+  ctx: RunContext,
+  product: Product,
+  page: string,
+): Promise<string> => {
+  const url = new URL(page);
+  const refusal = afterPaymentRefusal(url);
+  if (refusal !== null) {
+    throw new RefusalError(refusal);
+  }
+  if (product.vercel === null) {
+    throw new RefusalError(
+      `${product.name} has no Vercel project yet: deploy the page buyers land on, which makes one, then make the link.`,
+    );
+  }
+  const token =
+    getSecret("VERCEL_TOKEN") ??
+    needIntegration(
+      ctx,
+      "vercel",
+      `to check where ${product.name} sends buyers who paid`,
+      VERCEL_WAITING,
+      "Vercel is not connected.",
+    );
+  const hosts = await productHosts(ctx, product, product.vercel, token);
+  if (!hosts.includes(url.hostname)) {
+    throw new RefusalError(
+      `${url.href} is not on ${product.name}'s production domains (${domainsLabel(hosts)}): buyers who paid are sent only to a page the product itself serves, where its server checks their checkout.`,
+    );
+  }
+  return url.href;
+};
+
+/**
+ * What the founder signs for a payment link. The name and delivery are quoted as JSON, so
+ * neither can pose as more of the action; the delivery is signed since it is what the founder
+ * owes each buyer, and so is the page paying buyers land on, whose href holds no space or quote
+ * to pose with.
+ */
+const chargeAction = (link: {
+  name: string;
+  price: string;
+  product: string;
+  bet: string | undefined;
+  delivery: string | undefined;
+  afterPayment: string | null;
+}): string =>
+  [
+    `payment link ${JSON.stringify(link.name)} at ${link.price} on ${link.product}`,
+    link.bet === undefined ? "" : ` for bet ${link.bet}`,
+    link.delivery === undefined ? "" : ` delivering ${JSON.stringify(link.delivery)}`,
+    link.afterPayment === null ? "" : ` then send buyers to ${link.afterPayment}`,
+  ].join("");
+
+/** What a buyer gets once they pay on link `id`, as the agent is told. */
+const afterSale = (
+  id: string,
+  delivery: string | undefined,
+  afterPayment: string | null,
+): string => {
+  const card =
+    delivery === undefined
+      ? ""
+      : " The founder gets a card for each paid checkout, with the buyer's email and your delivery.";
+  if (afterPayment === null) {
+    return card || " Nothing names a delivery, so a buyer gets only Stripe's receipt.";
+  }
+  return ` Each buyer who pays lands on ${afterPayment} with a ${CHECKOUT_SESSION_PARAM} naming their checkout session: unlock only what the product's server reads there as paid on this link, ${id}.${card}`;
 };
 
 /** Ask the founder for a Printful token in place of one Printful turned away, which ends the call. */
@@ -738,7 +844,7 @@ const TOOLS = {
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,
-    async (ctx, { amountUsd, bet, delivery, name, product: named }) => {
+    async (ctx, { afterPaymentUrl, amountUsd, bet, delivery, name, product: named }) => {
       const productId = productFor(ctx, named);
       if (productId === null) {
         return "There is no product to charge for — create_product first.";
@@ -751,6 +857,10 @@ const TOOLS = {
       if (notTheBet !== null) {
         return notTheBet;
       }
+      const afterPayment =
+        afterPaymentUrl === undefined
+          ? null
+          : await afterPaymentPage(ctx, product, afterPaymentUrl);
       const cents = Math.round(amountUsd * 100);
       const price = formatCents(cents);
       const key = getSecret(STRIPE_SECRET_KEY);
@@ -769,11 +879,13 @@ const TOOLS = {
       if (delivery !== undefined) {
         await requireStripeAccess(ctx, ctx.checkoutAccess(key), DELIVERY_GRANT);
       }
-      // quoted as JSON, so neither can pose as more of the action the founder signs; the delivery
-      // is signed too, since it is what the founder owes each buyer
-      const action = `payment link ${JSON.stringify(name)} at ${price} on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}${delivery === undefined ? "" : ` delivering ${JSON.stringify(delivery)}`}`;
-      requireSignOff(ctx, action, "payments");
+      requireSignOff(
+        ctx,
+        chargeAction({ afterPayment, bet, delivery, name, price, product: product.id }),
+        "payments",
+      );
       const made = await ctx.createPaymentLink({
+        afterPayment,
         bet: bet ?? null,
         cents,
         delivery: delivery ?? null,
@@ -801,11 +913,7 @@ const TOOLS = {
         return retired;
       }
       const testMode = isTestKey(key) ? TEST_MODE : "";
-      const handover =
-        delivery === undefined
-          ? " Nothing names a delivery, so a buyer gets only Stripe's receipt."
-          : " The founder gets a card for each paid checkout, with the buyer's email and your delivery.";
-      return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${handover}${testMode}`;
+      return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${afterSale(made.id, delivery, afterPayment)}${testMode}`;
     },
   ),
   printful_catalog: define(TOOL_SPECS.printful_catalog, async (ctx, { offset, product }) => {

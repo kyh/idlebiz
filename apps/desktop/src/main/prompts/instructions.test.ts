@@ -83,6 +83,15 @@ describe("standingInstructions", () => {
     }
   });
 
+  it("has a game's paid unlock checked on its server, with a key of the product's own the founder makes", () => {
+    const text = instructionsFor("game-studio");
+    expect(text).toMatch(/paid unlock[^\n]*afterPaymentUrl[^\n]*Checking who paid/u);
+    expect(text).toContain('its `payment_status` is `"paid"` and its `payment_link` is the id');
+    expect(text).toContain("Create restricted key");
+    expect(text).toContain("granting only Checkout Sessions: Read");
+    expect(text).toContain("set_env as `STRIPE_CHECKOUT_READ_KEY`");
+  });
+
   it("has the founder deliver what a link sold through its cards, never through ask_boss", () => {
     const text = instructionsFor("software");
     expect(text).toContain("create_payment_link's `delivery`");
