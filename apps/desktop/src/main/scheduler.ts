@@ -543,7 +543,13 @@ class Scheduler {
 
   /** Resume every ask waiting on one of `needs`, which the founder has just connected. */
   resumeIntegrationAsks(...needs: IntegrationNeed[]): void {
-    this.resumeAsks((ask) => needs.includes(ask.integration));
+    const company = store.getCompany();
+    // A test-mode key counts no money whatever else is connected: a run resumed on it for
+    // revenue finds the same test mode and asks again.
+    const countsNoMoney = company !== null && stripeInTestMode(company.id);
+    this.resumeAsks(
+      (ask) => needs.includes(ask.integration) && !(ask.integration === "stripe" && countsNoMoney),
+    );
   }
 
   /**
