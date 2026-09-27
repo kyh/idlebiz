@@ -211,10 +211,20 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
   }
 };
 
-/** `error` is why Stripe did not switch the link off, in its words when it gave any. */
-export type SwitchOffResult = { ok: true } | { ok: false; error: string };
+/**
+ * `refused` when Stripe answered no, which asking again would answer the same; `unanswered` when
+ * it was busy (429), failing (5xx) or out of reach, which the next ask may get past. `error` is
+ * why, in Stripe's words when it gave any.
+ */
+export type SwitchOffResult =
+  | { kind: "off" }
+  | { kind: "refused"; error: string }
+  | { kind: "unanswered"; error: string };
 
 const Switched = z.object({ active: z.boolean() });
+
+/** Stripe asks for a 429 (a rate limit, a lock timeout) to be retried, and a 5xx is its own fault. */
+const passing = (error: HttpError): boolean => error.status === 429 || error.status >= 500;
 
 /**
  * Switch a payment link off with the founder's key, here in main: its URL then shows the buyer
@@ -231,12 +241,14 @@ export const switchOffPaymentLink = async (key: string, id: string): Promise<Swi
         },
       ),
     );
-    return link.active ? { error: "Stripe still lists it as active", ok: false } : { ok: true };
+    return link.active
+      ? { error: "Stripe still lists it as active", kind: "refused" }
+      : { kind: "off" };
   } catch (error) {
-    return {
-      error: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
-      ok: false,
-    };
+    if (error instanceof HttpError) {
+      return { error: stripeSays(error), kind: passing(error) ? "unanswered" : "refused" };
+    }
+    return { error: errorMessage(error), kind: "unanswered" };
   }
 };
 

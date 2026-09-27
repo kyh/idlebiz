@@ -297,17 +297,22 @@ third boundary.
   keeps under `links/` (`switchOffRetiredLinks` in `main/company-actions.ts`, which sends
   `POST /v1/payment_links/<id>` with `active=false`), so it takes no new money; checkouts
   already paid still count and still ship, and one opened before the switch and paid after is
-  kept like any other. The retirement is on disk before Stripe is asked and never depends on
-  its answer; each link then records `switched-off`, or `left-on` with why, raised first as one
-  card per link naming it to switch off by hand in Stripe's dashboard (no key, a refusal, the
-  network; a test-mode link tells the room instead). Every pulse sweeps again, one sweep at a
-  time, so a quit before Stripe answered is finished at the next launch; switching off a link
-  already off answers the same. Format 6 and older kept no record of `create_payment_link`
+  kept like any other. Only a product whose package is under `retired/` and not `products/`
+  counts as retired (`isRetiredProduct`), so one boot could not read keeps its links. The
+  retirement is on disk before Stripe is asked and never depends on its answer; each link then
+  records `switched-off`, `retrying` while Stripe is busy (429), failing (5xx) or out of reach,
+  or `left-on` with why, raised first as one card per link naming it to switch off by hand in
+  Stripe's dashboard (no key, a refusal, ten sweeps unanswered; a test-mode link tells the room
+  instead), whose Done records it switched off by the founder. A key saved but not openable this
+  launch leaves the links waiting for it. Every pulse sweeps again, one sweep at a time and one
+  link at a time, so a quit before Stripe answered is finished at the next launch; switching off
+  a link already off answers the same. A link Stripe makes while its product retires is still
+  kept, and switched off at once. Format 6 and older kept no record of `create_payment_link`
   links, and Stripe's links carry no date, so an older save adopted lists its products in
   `state/unrecorded-links.json`; once one retires and a live key is saved, one read of the
   account's active links cards the founder with those tagged for it (none switched off by
   IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
-  say which links no longer sell. Agents read orders, buyers' emails and addresses included, with the unsigned
+  say where each of a retired product's links stands. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to

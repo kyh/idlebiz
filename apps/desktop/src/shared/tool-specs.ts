@@ -248,7 +248,7 @@ export const TOOL_SPECS = {
   }),
   read_orders: tool({
     body: z.strictObject({ product: z.string().min(1).optional() }),
-    doc: "the latest paid orders on your run's product (name another with `\"product\":\"<slug>\"`), through sell_print's listings and create_payment_link's links: each buyer's email, and for a print their name and shipping address, what they bought and paid, and where it stands, so you can answer a buyer. IdleBiz sends each print to Printful itself, and hands the founder a card for each paid link that names a delivery; refunds, and anything Printful needs a person for, are the founder's, who has a card for each order that needs them.",
+    doc: "the latest paid orders on your run's product (name another with `\"product\":\"<slug>\"`), through sell_print's listings and create_payment_link's links: each buyer's email, and for a print their name and shipping address, what they bought and paid, and where it stands, so you can answer a buyer; for a retired product, where each of its payment links stands. IdleBiz sends each print to Printful itself, and hands the founder a card for each paid link that names a delivery; refunds, and anything Printful needs a person for, are the founder's, who has a card for each order that needs them.",
     example: {},
     leadOnly: null,
     method: "POST",
@@ -264,7 +264,7 @@ export const TOOL_SPECS = {
   }),
   kill_product: tool({
     body: SLUG_AND_REASON,
-    doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. Its payment links, sell_print's and create_payment_link's, are switched off, so it takes no new money; each order already paid still ships and still counts, and read_orders still reads them by its slug. The last product cannot be killed: start its successor first.",
+    doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. IdleBiz switches off its payment links at Stripe, sell_print's and create_payment_link's, so it takes no new money, and hands the founder any Stripe would not switch off, and any an older IdleBiz made without keeping a record, to switch off by hand; each order already paid still ships and still counts, and read_orders still reads its orders and says where each link stands, by its slug. The last product cannot be killed: start its successor first.",
     example: { reason: "...", slug: "product-slug" },
     leadOnly: "Only the team lead can retire a product — make the case in the team room.",
     method: "POST",

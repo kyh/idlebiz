@@ -8,13 +8,24 @@ import { z } from "zod";
 export const StripeLinkIdSchema = z.string().regex(/^plink_\w+$/u);
 
 /**
- * `selling` until its product retires. Then main switches it off at Stripe, or, when Stripe
- * would not, leaves it `left-on`, `why` in the founder's card (or, for a test-mode link that
- * takes no real money, the room's line) naming it to switch off by hand.
+ * `selling` until its product retires. Then main switches it off at Stripe; while Stripe does not
+ * answer (busy, failing, out of reach) it is `retrying`, `tries` sweeps so far. When Stripe
+ * refuses, or never answers, it is `left-on`, `why` in the founder's card (or, for a test-mode
+ * link that takes no real money, the room's line) naming it to switch off by hand, and the
+ * founder's Done on that card records it `switched-off` by them.
  */
 export const LinkStateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("selling") }),
-  z.object({ at: z.number(), kind: z.literal("switched-off") }),
+  z.object({
+    kind: z.literal("retrying"),
+    tries: z.number().int().positive(),
+    why: z.string(),
+  }),
+  z.object({
+    at: z.number(),
+    by: z.enum(["idlebiz", "founder"]),
+    kind: z.literal("switched-off"),
+  }),
   z.object({ kind: z.literal("left-on"), why: z.string() }),
 ]);
 export type LinkState = z.infer<typeof LinkStateSchema>;

@@ -200,7 +200,8 @@ rather than crashing boot.
   at `fetch` (`main/order-pump.test.ts`). `create_payment_link` keeps each link it makes under
   `links/`; retiring a product switches off its links, a listing's too, with the key
   (`switchOffRetiredLinks` in `main/company-actions.ts`, run by the retirement and every pulse;
-  `main/retired-links.test.ts`), and a link Stripe would not switch off is a card naming it. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  `main/retired-links.test.ts`), asking again each pulse while Stripe does not answer, and a
+  link Stripe refuses or never answers for is a card naming it. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key

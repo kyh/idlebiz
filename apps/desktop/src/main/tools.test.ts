@@ -903,6 +903,9 @@ const fakeStripe = () => {
       endpoint,
       form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
     });
+    if (endpoint.startsWith("/v1/payment_links/")) {
+      return Promise.resolve(Response.json({ active: false, id: "plink_pro" }));
+    }
     return Promise.resolve(
       Response.json(
         endpoint === "/v1/prices" ? { id: "price_1" } : { id: "plink_pro", url: PAID_URL },
@@ -994,6 +997,38 @@ describe("create_payment_link", () => {
       "Held for the founder's sign-off",
     );
     expect(stripe).toHaveLength(2);
+  });
+
+  it("keeps and switches off a link Stripe made while its product retired", async () => {
+    const { ctx, stripe } = chargingRun();
+    const side = store.createProduct({ description: "a side project", name: "Side" });
+    store.grantApproval(ctx.run.taskId, `payment link "Pro plan" at $9.00 on ${side.id}`);
+    const retiring: RunContext = {
+      ...ctx,
+      createPaymentLink: async (req) => {
+        const made = await stripePaymentLink(req);
+        store.killProduct(side.id, "dud", null);
+        return made;
+      },
+    };
+
+    const answer = await callTool(retiring, "POST /v1/payment-link", {
+      ...LINK,
+      product: side.id,
+    });
+
+    expect(stripe.map((s) => s.endpoint)).toEqual([
+      "/v1/prices",
+      "/v1/payment_links",
+      "/v1/payment_links/plink_pro",
+    ]);
+    expect(store.getChargeLink("plink_pro")).toMatchObject({
+      productId: side.id,
+      state: { by: "idlebiz", kind: "switched-off" },
+    });
+    expect(answer).toContain(
+      `Side was retired while Stripe made its payment link. Its link "Pro plan" ${PAID_URL} is switched off at Stripe `,
+    );
   });
 
   it("tags the product alone when no bet is named, charging whole cents", async () => {
@@ -1815,7 +1850,11 @@ describe("read_orders", () => {
       sessionId: "cs_cy",
     });
     store.killProduct(side.id, "dud", null);
-    store.setLinkState(PRO_LINK.id, { at: Date.UTC(2026, 8, 23), kind: "switched-off" });
+    store.setLinkState(PRO_LINK.id, {
+      at: Date.UTC(2026, 8, 23),
+      by: "idlebiz",
+      kind: "switched-off",
+    });
 
     expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
       [
@@ -1824,6 +1863,34 @@ describe("read_orders", () => {
         "  ada@example.com",
         "Its payment links:",
         `- "Pro plan" ${PAID_URL} is switched off at Stripe 2026-09-23, when its product retired, so it takes no new money`,
+      ].join("\n"),
+    );
+  });
+
+  it("says where a retired product's links stand though it sold nothing, the founder's own switch-off too", async () => {
+    const { ctx } = runAs("priya");
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    store.recordChargeLink({
+      ...PRO_LINK,
+      id: "plink_next",
+      name: "Next plan",
+      productId: side.id,
+      url: "https://buy.stripe.com/next",
+    });
+    store.killProduct(side.id, "dud", null);
+    store.setLinkState(PRO_LINK.id, {
+      at: Date.UTC(2026, 8, 23),
+      by: "founder",
+      kind: "switched-off",
+    });
+
+    expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
+      [
+        `${side.id} has no paid orders yet.`,
+        "Its payment links:",
+        `- "Pro plan" ${PAID_URL} is switched off by hand in Stripe's dashboard 2026-09-23, the founder says, so it takes no new money`,
+        '- "Next plan" https://buy.stripe.com/next is not switched off yet: IdleBiz switches it off at Stripe as soon as it can',
       ].join("\n"),
     );
   });

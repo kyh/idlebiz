@@ -2,9 +2,9 @@ import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { report } from "@/main/lib/report";
 import { readActiveLinks, switchOffPaymentLink } from "@/main/payment-links";
-import type { ActiveLinksRead, SwitchOffResult } from "@/main/payment-links";
+import type { ActiveLinksRead } from "@/main/payment-links";
 import { betNews } from "@/main/prompts/briefs";
-import { STRIPE_SECRET_KEY, getSecret, heldKeyIn } from "@/main/secrets";
+import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "@/main/secrets";
 import { isTestKey } from "@/main/stripe-api";
 import type { Bet } from "@/shared/bets";
 import type {
@@ -136,6 +136,19 @@ const STRIPE_KEY_IN_TEXT = /\b[rs]k_(?:live|test)_[0-9A-Za-z]{8,}/u;
 const replyText = (reply: ActionReply): string =>
   reply.kind === "cant" ? reply.reason : reply.note;
 
+const SWITCH_OFF_CARD = "Switch off payment link ";
+
+const switchOffCard = (linkId: string): string => `${SWITCH_OFF_CARD}${linkId}`;
+
+/** The founder's Done on a link's switch-off card says they switched it off in Stripe's dashboard. */
+const switchedOffByHand = (title: string): void => {
+  const linkId = title.startsWith(SWITCH_OFF_CARD) ? title.slice(SWITCH_OFF_CARD.length) : null;
+  const link = store.paymentLinks().find((l) => l.id === linkId);
+  if (link?.state.kind === "left-on") {
+    store.setLinkState(link.id, { at: Date.now(), by: "founder", kind: "switched-off" });
+  }
+};
+
 /**
  * The founder settled an order card. No run carries it on, so what they said goes to the room,
  * where whoever answers the buyer reads it.
@@ -151,6 +164,9 @@ export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
   const card = store.closeOrderCard(taskId);
   if (!card) {
     throw new RefusalError("that order card is already settled");
+  }
+  if (reply.kind === "done") {
+    switchedOffByHand(card.title);
   }
   const told =
     reply.kind === "cant" ? `couldn't — ${said}` : `done${said === "" ? "" : ` — ${said}`}`;
@@ -176,7 +192,7 @@ const leaveOn = (link: CompanyLink, why: string): void => {
     const sells = link.print
       ? "it takes money, and each order paid through it still goes to Printful"
       : "it takes money";
-    raiseOrderCard(`Switch off payment link ${link.id}`, {
+    raiseOrderCard(switchOffCard(link.id), {
       action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
       draft: null,
       instructions: `${link.productId} is retired, but Stripe would not switch off its payment link ${link.id} for IdleBiz: ${why}. Until it is off, ${sells}. In Stripe's dashboard, open Payment links, find ${link.id} and deactivate it. Press Done once it is off.`,
@@ -190,21 +206,41 @@ const leaveOn = (link: CompanyLink, why: string): void => {
   store.setLinkState(link.id, { kind: "left-on", why });
 };
 
+// ten sweeps is about five minutes of pulses: long enough to ride out a burst of 429s or a blip,
+// short enough that the founder hears of a link still taking money while it matters
+const MAX_SWITCH_OFF_TRIES = 10;
+
 const switchOff = async (link: CompanyLink, key: string | null): Promise<void> => {
   try {
-    const done: SwitchOffResult =
-      key === null
-        ? { error: "IdleBiz has no Stripe key", ok: false }
-        : await switchOffPaymentLink(key, link.id);
-    if (!done.ok) {
-      leaveOn(link, done.error);
+    if (key === null) {
+      leaveOn(link, "IdleBiz has no Stripe key");
       return;
     }
-    store.setLinkState(link.id, { at: Date.now(), kind: "switched-off" });
-    postToRoom(
-      office,
-      `🔌 Switched off ${JSON.stringify(link.name)}, a payment link of retired ${link.productId}: it takes no new money.`,
-    );
+    const done = await switchOffPaymentLink(key, link.id);
+    switch (done.kind) {
+      case "off": {
+        store.setLinkState(link.id, { at: Date.now(), by: "idlebiz", kind: "switched-off" });
+        postToRoom(
+          office,
+          `🔌 Switched off ${JSON.stringify(link.name)}, a payment link of retired ${link.productId}: it takes no new money.`,
+        );
+        break;
+      }
+      case "refused": {
+        leaveOn(link, done.error);
+        break;
+      }
+      case "unanswered": {
+        const tries = (link.state.kind === "retrying" ? link.state.tries : 0) + 1;
+        if (tries >= MAX_SWITCH_OFF_TRIES) {
+          leaveOn(link, `Stripe did not answer ${tries} times (${done.error})`);
+        } else {
+          store.setLinkState(link.id, { kind: "retrying", tries, why: done.error });
+        }
+        break;
+      }
+      // no default
+    }
   } catch (error) {
     report(`payment link ${link.id}`, error);
   }
@@ -247,7 +283,7 @@ const unrecordedSeen = (
  */
 const handOverUnrecordedLinks = async (key: string | null): Promise<void> => {
   const pending = store.unrecordedLinkProducts();
-  const retired = pending.filter((id) => store.getProduct(id) === null);
+  const retired = pending.filter((id) => store.isRetiredProduct(id));
   const reading = retired.length === 0 ? null : activeLinks(key);
   if (reading === null) {
     return;
@@ -277,10 +313,22 @@ const sweepRetiredLinks = async (): Promise<void> => {
     return;
   }
   const key = getSecret(STRIPE_SECRET_KEY);
+  if (key === null && hasSecret(STRIPE_SECRET_KEY)) {
+    // a key this launch cannot open (no Keychain, or it refused) is still the founder's: its
+    // links wait for it rather than be handed over as keyless, and boot's report says why
+    return;
+  }
   const due = store
     .paymentLinks()
-    .filter((l) => l.state.kind === "selling" && store.getProduct(l.productId) === null);
-  await Promise.all(due.map((link) => switchOff(link, key)));
+    .filter(
+      (l) =>
+        (l.state.kind === "selling" || l.state.kind === "retrying") &&
+        store.isRetiredProduct(l.productId),
+    );
+  // one at a time: a burst of switch-offs is what Stripe's rate limit turns away
+  for (const link of due) {
+    await switchOff(link, key);
+  }
   await handOverUnrecordedLinks(key);
 };
 

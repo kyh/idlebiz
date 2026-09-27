@@ -9,13 +9,13 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-retired-links-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { retireProduct, switchOffRetiredLinks } = await import("./company-actions");
+const { retireProduct, settleOrderCard, switchOffRetiredLinks } = await import("./company-actions");
 
 const TEE = "plink_tee";
 const PRO = "plink_pro";
 const SANDBOX = "plink_sandbox";
 
-type Answer = "off" | "refused" | "down";
+type Answer = "off" | "refused" | "busy" | "down";
 
 interface StripeSetup {
   /** How Stripe answers a switch-off of each link; one not named is switched off. */
@@ -52,6 +52,11 @@ const fakeStripe = ({ answers = {}, active = [] }: StripeSetup = {}) => {
     const answer = answers[id] ?? "off";
     if (answer === "down") {
       return Promise.reject(new TypeError("fetch failed"));
+    }
+    if (answer === "busy") {
+      return Promise.resolve(
+        Response.json({ error: { message: "Too many requests" } }, { status: 429 }),
+      );
     }
     return Promise.resolve(
       answer === "refused"
@@ -190,25 +195,17 @@ describe("retiring a product", () => {
     expect(statesOf()).toMatchObject({ plink_next: "selling" });
   });
 
-  it("hands the founder one card for each link Stripe would not switch off, and switches off the rest", async () => {
+  it("hands the founder one card for each link Stripe refused to switch off, and switches off the rest", async () => {
     const { side } = openShop();
-    store.recordChargeLink(chargeLinkOn(side.id, "plink_lost"));
-    const stripe = fakeStripe({ answers: { [PRO]: "refused", plink_lost: "down" } });
+    const stripe = fakeStripe({ answers: { [PRO]: "refused" } });
 
     const retired = await retireProduct(side.id, "dud", null);
 
     expect(retired.id).toBe(side.id);
     expect(store.getProduct(side.id)).toBeNull();
-    expect(statesOf()).toEqual({
-      [PRO]: "left-on",
-      [TEE]: "switched-off",
-      plink_lost: "left-on",
-    });
-    expect(cards().map((c) => c.title)).toEqual([
-      "Switch off payment link plink_lost",
-      `Switch off payment link ${PRO}`,
-    ]);
-    const refused = cards().find((c) => c.title.endsWith(PRO));
+    expect(statesOf()).toEqual({ [PRO]: "left-on", [TEE]: "switched-off" });
+    expect(cards().map((c) => c.title)).toEqual([`Switch off payment link ${PRO}`]);
+    const [refused] = cards();
     expect(refused?.state).toMatchObject({
       ask: {
         action: `Switch off "Pro plan" (https://buy.stripe.com/${PRO}), a payment link of retired ${side.id}, in Stripe's dashboard`,
@@ -219,8 +216,94 @@ describe("retiring a product", () => {
 
     await switchOffRetiredLinks();
 
-    expect(stripe.switchOffs).toHaveLength(3);
-    expect(cards()).toHaveLength(2);
+    expect(stripe.switchOffs).toHaveLength(2);
+    expect(cards()).toHaveLength(1);
+  });
+
+  it("asks again each sweep while Stripe is busy or out of reach, and cards the founder only once it keeps not answering", async () => {
+    const { side } = openShop();
+    const stripe = fakeStripe({ answers: { [PRO]: "down", [TEE]: "busy" } });
+
+    await retireProduct(side.id, "dud", null);
+
+    expect(statesOf()).toEqual({ [PRO]: "retrying", [TEE]: "retrying" });
+    expect(cards()).toEqual([]);
+
+    const later = fakeStripe({ answers: { [PRO]: "down" } });
+    await switchOffRetiredLinks();
+
+    expect(statesOf()).toEqual({ [PRO]: "retrying", [TEE]: "switched-off" });
+    expect(store.paymentLinks().find((l) => l.id === PRO)?.state).toEqual({
+      kind: "retrying",
+      tries: 2,
+      why: "fetch failed",
+    });
+
+    for (let sweep = 3; sweep <= 10; sweep += 1) {
+      await switchOffRetiredLinks();
+    }
+
+    expect(stripe.switchOffs).toHaveLength(2);
+    expect(later.switchOffs.map((s) => s.id)).toEqual([
+      TEE,
+      ...Array.from({ length: 9 }, () => PRO),
+    ]);
+    expect(statesOf()).toEqual({ [PRO]: "left-on", [TEE]: "switched-off" });
+    expect(cards().map((c) => c.title)).toEqual([`Switch off payment link ${PRO}`]);
+    expect(JSON.stringify(cards()[0]?.state)).toContain(
+      "Stripe did not answer 10 times (fetch failed)",
+    );
+  });
+
+  it("records a link the founder switched off by hand once they press Done on its card", async () => {
+    const { side } = openShop();
+    fakeStripe({ answers: { [PRO]: "refused", [TEE]: "refused" } });
+    await retireProduct(side.id, "dud", null);
+    const [pro, tee] = cards();
+
+    settleOrderCard(pro?.id ?? "", { kind: "done", note: "" });
+    settleOrderCard(tee?.id ?? "", { kind: "cant", reason: "no dashboard access" });
+
+    expect(store.paymentLinks().find((l) => l.id === PRO)?.state).toMatchObject({
+      by: "founder",
+      kind: "switched-off",
+    });
+    expect(statesOf()).toMatchObject({ [TEE]: "left-on" });
+  });
+
+  it("switches off nothing for a live product whose PRODUCT.md boot could not read", async () => {
+    const { company, side } = openShop();
+    writeFileSync(path.join(root, company.id, "products", side.id, "PRODUCT.md"), "not a product");
+    store.initStore();
+    const stripe = fakeStripe();
+
+    await switchOffRetiredLinks();
+
+    expect(store.loadReport().skipped).toMatchObject([{ kind: "product" }]);
+    expect(store.getProduct(side.id)).toBeNull();
+    expect(stripe.switchOffs).toEqual([]);
+    expect(statesOf()).toEqual({ [PRO]: "selling", [TEE]: "selling" });
+    expect(cards()).toEqual([]);
+  });
+
+  it("waits for a saved key this launch cannot open, rather than hand its links over as keyless", async () => {
+    const { side } = openShop();
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sealed:v1:c2VhbGVk" }),
+    );
+    const stripe = fakeStripe();
+
+    await retireProduct(side.id, "dud", null);
+
+    expect(stripe.switchOffs).toEqual([]);
+    expect(statesOf()).toEqual({ [PRO]: "selling", [TEE]: "selling" });
+    expect(cards()).toEqual([]);
+
+    saveKey("rk_live_founder");
+    await switchOffRetiredLinks();
+
+    expect(statesOf()).toEqual({ [PRO]: "switched-off", [TEE]: "switched-off" });
   });
 
   it("retires without a Stripe key, carding each live link and telling the room of a test one", async () => {
@@ -324,6 +407,29 @@ describe("an older save's links", () => {
     expect(stripe.lists).toBe(2);
     expect(cards().map((c) => c.title)).toContain(`Switch off ${side.id}'s older payment links`);
     expect(store.unrecordedLinkProducts()).not.toContain(side.id);
+  });
+
+  it("looks for no live product's older links when its PRODUCT.md could not be read", async () => {
+    const { side } = olderShop();
+    const company = store.getCompany();
+    writeFileSync(
+      path.join(root, company?.id ?? "", "products", side.id, "PRODUCT.md"),
+      "not a product",
+    );
+    store.initStore();
+    saveKey("rk_live_founder");
+    fakeStripe({
+      active: [
+        { id: "plink_side", metadata: { product: side.id }, url: "https://buy.stripe.com/side" },
+      ],
+    });
+
+    await switchOffRetiredLinks();
+
+    expect(cards().map((c) => c.title)).not.toContain(
+      `Switch off ${side.id}'s older payment links`,
+    );
+    expect(store.unrecordedLinkProducts()).toContain(side.id);
   });
 
   it("raises nothing for a retired product Stripe lists no link for", async () => {

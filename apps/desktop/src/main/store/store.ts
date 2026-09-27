@@ -895,6 +895,23 @@ export const listProducts = (): Product[] => [...(current().products ?? [])];
 export const madeProduct = (id: string): boolean =>
   getProduct(id) !== null || safeReaddir(retiredDir(current().company.id)).includes(id);
 
+/**
+ * Whether `id` was retired: its package sits under retired/ and none under products/. A product
+ * boot could not read is missing from the loaded ones but still in products/, so it never reads
+ * as retired, and its payment links are never switched off for it.
+ */
+export const isRetiredProduct = (id: string): boolean => {
+  const { company } = current();
+  return heldIn(retiredDir(company.id))(id) && !heldIn(productsDir(company.id))(id);
+};
+
+/** A product's payment links outlive it: Stripe may make one while its product retires. */
+const requireMadeProduct = (id: string): void => {
+  if (!madeProduct(id)) {
+    throw new RefusalError(`no product ${id}`);
+  }
+};
+
 const patchProduct = (id: string, patch: Partial<Product>): Product =>
   patchIn(current().products, id, patch, saveProduct);
 
@@ -972,10 +989,11 @@ const saveListing = (listing: Listing): void => {
 
 /**
  * A listing Stripe already sells through its link, so the cache keeps it even when the save
- * throws: money may come through that link either way.
+ * throws, and even when its product retired while Stripe made it: money may come through that
+ * link either way, until the sweep switches it off.
  */
 export const recordListing = (listing: Listing): void => {
-  requireProduct(listing.productId);
+  requireMadeProduct(listing.productId);
   const { listings } = current();
   if (listings.some((l) => l.id === listing.id)) {
     throw new Error(`a listing ${listing.id} is already kept`);
@@ -994,10 +1012,11 @@ const saveChargeLink = (link: ChargeLink): void => {
 
 /**
  * A create_payment_link link Stripe already sells through, so the cache keeps it even when the
- * save throws: retiring its product must still find it to switch it off.
+ * save throws, and even when its product retired while Stripe made it: the sweep must still find
+ * it to switch it off.
  */
 export const recordChargeLink = (link: ChargeLink): void => {
-  requireProduct(link.productId);
+  requireMadeProduct(link.productId);
   const { links } = current();
   if (links.some((l) => l.id === link.id)) {
     throw new Error(`a payment link ${link.id} is already kept`);

@@ -11,6 +11,7 @@ import {
   postToRoom,
   retireProduct,
   startProduct,
+  switchOffRetiredLinks,
 } from "@/main/company-actions";
 import { measureRefusal } from "@/main/metrics";
 import type { PaymentLinker, StripeAccess } from "@/main/payment-links";
@@ -444,14 +445,23 @@ const orderStanding = (order: Order): string => {
   }
 };
 
-/** Whether a payment link still takes money, as a teammate should read it. */
-const linkStanding = (state: LinkState): string => {
+const dayOf = (at: number): string => new Date(at).toISOString().slice(0, 10);
+
+/** Whether a payment link still takes money, as a teammate should read it; `retired` is its product's standing. */
+const linkStanding = (state: LinkState, retired: boolean): string => {
   switch (state.kind) {
     case "selling": {
-      return "selling";
+      return retired
+        ? "not switched off yet: IdleBiz switches it off at Stripe as soon as it can"
+        : "selling";
+    }
+    case "retrying": {
+      return `not switched off yet: Stripe did not answer (${state.why}), so IdleBiz asks again each pulse and hands it to the founder if Stripe keeps not answering`;
     }
     case "switched-off": {
-      return `switched off at Stripe ${new Date(state.at).toISOString().slice(0, 10)}, when its product retired, so it takes no new money`;
+      return state.by === "founder"
+        ? `switched off by hand in Stripe's dashboard ${dayOf(state.at)}, the founder says, so it takes no new money`
+        : `switched off at Stripe ${dayOf(state.at)}, when its product retired, so it takes no new money`;
     }
     case "left-on": {
       return `still on at Stripe, which would not switch it off (${state.why}): the founder switches it off by hand`;
@@ -461,7 +471,21 @@ const linkStanding = (state: LinkState): string => {
 };
 
 const linkEntry = (link: CompanyLink): string =>
-  `${JSON.stringify(link.name)} ${link.url} is ${linkStanding(link.state)}`;
+  `${JSON.stringify(link.name)} ${link.url} is ${linkStanding(link.state, store.isRetiredProduct(link.productId))}`;
+
+/**
+ * What became of a link Stripe made while its product retired: switched off at once, as the
+ * retirement's own were. Null while the product is live.
+ */
+const madeWhileRetiring = async (product: Product, linkId: string): Promise<string | null> => {
+  if (!store.isRetiredProduct(product.id)) {
+    return null;
+  }
+  await switchOffRetiredLinks();
+  const link = store.paymentLinks().find((l) => l.id === linkId);
+  const standing = link === undefined ? "" : ` Its link ${linkEntry(link)}.`;
+  return `${product.name} was retired while Stripe made its payment link.${standing} Each order already paid through it still ships.`;
+};
 
 /** One order as read_orders lists it: when, what, for how much, where it stands, and who it goes to. */
 const orderEntry = (order: Order): string => {
@@ -469,7 +493,7 @@ const orderEntry = (order: Order): string => {
     order.kind === "link"
       ? order.name
       : (store.getListing(order.listingId)?.name ?? order.listingId);
-  const day = new Date(order.createdAt).toISOString().slice(0, 10);
+  const day = dayOf(order.createdAt);
   const lines = [`- ${day} · ${listing}`];
   if (order.kind === "sale") {
     const { recipient: to } = order;
@@ -772,6 +796,10 @@ const TOOLS = {
         state: { kind: "selling" },
         url: made.url,
       });
+      const retired = await madeWhileRetiring(product, made.id);
+      if (retired !== null) {
+        return retired;
+      }
       const testMode = isTestKey(key) ? TEST_MODE : "";
       const handover =
         delivery === undefined
@@ -874,6 +902,10 @@ const TOOLS = {
       shippingCents: quote.shippingCents,
       variants: quote.variants,
     });
+    const retired = await madeWhileRetiring(product, made.id);
+    if (retired !== null) {
+      return retired;
+    }
     post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
     const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
     return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
@@ -888,21 +920,23 @@ const TOOLS = {
       .filter((o) => o.productId === productId)
       .toSorted((a, b) => b.createdAt - a.createdAt);
     // a retired product's orders still ship, so its buyers still write in
-    const name = store.getProduct(productId)?.name ?? (orders.length > 0 ? productId : null);
+    const made = orders.length > 0 || store.madeProduct(productId);
+    const name = store.getProduct(productId)?.name ?? (made ? productId : null);
     if (name === null) {
       return store.noSuchProduct(productId);
     }
+    const retired = store.isRetiredProduct(productId);
+    const told = store
+      .paymentLinks()
+      .filter((l) => l.productId === productId && (retired || l.state.kind !== "selling"));
+    const links =
+      told.length === 0
+        ? ""
+        : `\nIts payment links:\n${told.map((l) => `- ${linkEntry(l)}`).join("\n")}`;
     if (orders.length === 0) {
-      return `${name} has no paid orders yet.`;
+      return `${name} has no paid orders yet.${links}`;
     }
     const shown = orders.slice(0, RECENT_ORDERS);
-    const stopped = store
-      .paymentLinks()
-      .filter((l) => l.productId === productId && l.state.kind !== "selling");
-    const links =
-      stopped.length === 0
-        ? ""
-        : `\nIts payment links:\n${stopped.map((l) => `- ${linkEntry(l)}`).join("\n")}`;
     return `${name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}${links}`;
   }),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
