@@ -79,9 +79,13 @@ export const ActionReplySchema = z.discriminatedUnion("kind", [
 ]);
 export type ActionReply = z.infer<typeof ActionReplySchema>;
 
+/** A name as a mention matches it: case and accents aside, so `@zoe` and `@Zoë` both find Zoë. */
+const foldName = (name: string): string =>
+  name.normalize("NFKD").replaceAll(/\p{M}/gu, "").toLowerCase();
+
 /**
  * Resolve `@token` mentions against the roster: employee slug match first,
- * then exact first-name token (case-insensitive). Whole-token matching only —
+ * then exact first-name token (case- and accent-insensitive). Whole-token matching only —
  * `@sam` never wakes Samantha. Returns matched employee ids, deduped.
  */
 export const resolveMentions = (
@@ -89,13 +93,13 @@ export const resolveMentions = (
   roster: readonly { id: string; name: string }[],
 ): string[] => {
   const ids = new Set<string>();
-  for (const m of text.matchAll(/@(?<token>[\w-]+)/gu)) {
-    const token = (m.groups?.token ?? "").toLowerCase();
+  for (const m of text.matchAll(/@(?<token>[\p{L}\p{M}\p{N}_-]+)/gu)) {
+    const token = foldName(m.groups?.token ?? "");
     if (!token) {
       continue;
     }
     const bySlug = roster.find((e) => e.id.toLowerCase() === token);
-    const byFirst = roster.filter((e) => e.name.split(/\s+/u)[0]?.toLowerCase() === token);
+    const byFirst = roster.filter((e) => foldName(e.name.split(/\s+/u)[0] ?? "") === token);
     if (bySlug) {
       ids.add(bySlug.id);
     } else {
