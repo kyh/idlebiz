@@ -46,7 +46,7 @@ import {
 import { parseDoc, serializeDoc, slugify, optStr } from "@/main/store/frontmatter";
 import type { FrontmatterDoc } from "@/main/store/frontmatter";
 import { z } from "zod";
-import { continuationBrief } from "@/main/prompts/briefs";
+import { continuationBrief, continuationTitle, isRoutineBrief } from "@/main/prompts/briefs";
 import { RETIRED_ROUTINES, REWORDED_ROUTINES, defaultRoutines } from "@/main/prompts/routines";
 import type { RoutineDefinition } from "@/main/prompts/routines";
 import { betToDoc, docToBet } from "@/main/store/bet-codec";
@@ -137,6 +137,8 @@ interface ActiveCompany {
   products: Product[];
   /** Every print-on-demand item ever listed, a retired product's too: its orders still ship. */
   listings: Listing[];
+  /** Listing ids handed out whose listing Stripe is still making: no namesake listed meanwhile may take one. */
+  pendingListings: Set<string>;
   /** Every create_payment_link link, a retired product's too: its buyers may still be owed a delivery. */
   links: ChargeLink[];
   /** Every paid checkout on the company's links, a retired product's too: a print still ships, a delivery is still owed. */
@@ -196,6 +198,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   links: [],
   listings: [],
   orders: [],
+  pendingListings: new Set(),
   policy: DEFAULT_POLICY,
   products: [],
   recentShips: [],
@@ -690,16 +693,6 @@ const seedDefaultRoutines = (companyId: string, businessType: BusinessTypeId): v
   }
 };
 
-const dropRetiredRoutines = (active: ActiveCompany): void => {
-  for (const routine of active.routines.filter((r) => RETIRED_ROUTINES.includes(r.id))) {
-    active.routines.splice(active.routines.indexOf(routine), 1);
-    rmSync(path.dirname(routineFile(routine.companyId, routine.id)), {
-      force: true,
-      recursive: true,
-    });
-  }
-};
-
 export const listRoutines = (): Routine[] => [...current().routines];
 
 export const markRoutineRun = (routineId: string): void => {
@@ -989,14 +982,21 @@ export const listListings = (): Listing[] => [...current().listings];
 export const getListing = (id: string): Listing | null =>
   current().listings.find((l) => l.id === id) ?? null;
 
-/** A new listing's id: its name's slug, free among every product's listings, skipped ones on disk too. */
+/**
+ * A new listing's id: its name's slug, free among every product's listings, skipped ones on disk
+ * and those still being made. Held until `releaseListingId`, once the listing is kept or never made.
+ */
 export const newListingId = (name: string): string => {
-  const { company, listings } = current();
-  return uniqueSlug(
-    name,
-    listings.map((l) => l.id),
-    (slug) => existsSync(listingFile(company.id, slug)),
+  const { company, listings, pendingListings } = current();
+  const id = uniqueSlug(name, [...listings.map((l) => l.id), ...pendingListings], (slug) =>
+    existsSync(listingFile(company.id, slug)),
   );
+  pendingListings.add(id);
+  return id;
+};
+
+export const releaseListingId = (id: string): void => {
+  maybeCurrent()?.pendingListings.delete(id);
 };
 
 const saveListing = (listing: Listing): void => {
@@ -1337,6 +1337,7 @@ const BET_MEASURING = "bet is measuring";
 const BET_CLOSED = "bet closed";
 const BET_KILLED = "bet killed";
 const PRODUCT_RETIRED = "product retired";
+const ROUTINE_RETIRED = "routine retired";
 
 /** Why the bet takes no more runs, as the work it drops says; null while it is open, or for work on none. */
 const stoppedBetReason = (bet: Bet | null): string | null => {
@@ -2156,6 +2157,56 @@ const adoptUnmarkedRevenueBets = (active: ActiveCompany): void => {
   }
 };
 
+/**
+ * The continuation an older build made for an answered ask without naming it: the first made once
+ * the ask closed (those builds closed it first) on its bet and product under its title, that no
+ * other answer names.
+ */
+const continuationOf = (
+  ask: Task,
+  work: readonly Task[],
+  named: ReadonlySet<string>,
+): Task | null =>
+  work
+    .filter(
+      (t) =>
+        t.betId === ask.betId &&
+        t.productId === ask.productId &&
+        t.title === continuationTitle(ask.title) &&
+        t.createdAt >= (ask.completedAt ?? ask.createdAt) &&
+        !named.has(t.id),
+    )
+    .toSorted(byAge)[0] ?? null;
+
+/**
+ * Format 7 and older shelved an answer adopted from format 1 naming no continuation, so measuring
+ * its bet dropped the one carrying the founder's answer: name it, where it is still found.
+ */
+const adoptAnswerLinks = (active: ActiveCompany): void => {
+  const companyId = active.company.id;
+  const shipped = listShippedTasks();
+  const work = [...active.tasks, ...shipped];
+  const named = new Set(
+    shipped.flatMap((t) =>
+      t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
+    ),
+  );
+  const linked = new Map<string, Task>();
+  for (const ask of shipped.toSorted(byAge)) {
+    const next =
+      ask.state.kind === "superseded" && ask.state.by === null
+        ? continuationOf(ask, work, named)
+        : null;
+    if (next !== null) {
+      named.add(next.id);
+      const answered: Task = { ...ask, state: { by: next.id, kind: "superseded" } };
+      atomicWrite(shippedTaskFile(companyId, ask.id), serializeDoc(taskToDoc(answered)));
+      linked.set(ask.id, answered);
+    }
+  }
+  active.shipped = shipped.map((t) => linked.get(t.id) ?? t);
+};
+
 /** Format 1 shelved an answered ask as done, its summary the answer: relabel it as the history it is. */
 const adoptAnsweredAsks = (active: ActiveCompany): void => {
   const companyId = active.company.id;
@@ -2167,6 +2218,8 @@ const adoptAnsweredAsks = (active: ActiveCompany): void => {
     atomicWrite(shippedTaskFile(companyId, t.id), serializeDoc(taskToDoc(answered)));
     return answered;
   });
+  // before adoptStoppedBetWork, which keeps a measuring bet's answers only once they are named
+  adoptAnswerLinks(active);
 };
 
 /**
@@ -2238,15 +2291,19 @@ const adoptDroppedWork = (active: ActiveCompany): void => {
 
 /**
  * Format 5 and older could leave a measured or closed bet's waiting work queued, to run and
- * bill it: drop it as the bet's change does. A measuring bet keeps what waits on the founder.
+ * bill it: drop it as the bet's change does. A measuring bet keeps what waits on the founder,
+ * or carries their answer.
  */
 const adoptStoppedBetWork = (active: ActiveCompany): void => {
   const now = Date.now();
   for (const bet of active.bets) {
     const reason = stoppedBetReason(bet);
     if (reason !== null) {
+      const answered = answeredOn(bet.id);
       dropWork(
-        (t) => t.betId === bet.id && (reason === BET_CLOSED || t.state.kind !== "blocked"),
+        (t) =>
+          t.betId === bet.id &&
+          (reason === BET_CLOSED || (t.state.kind !== "blocked" && !answered.has(t.id))),
         reason,
         now,
       );
@@ -2304,6 +2361,28 @@ const adoptRetiredPush = (active: ActiveCompany): void => {
     writeGrants(kept);
   }
   rmSync(path.join(ROOT_DIR, ".push"), { force: true, recursive: true });
+};
+
+/**
+ * Format 0 seeded routines whose work belongs to bets now. Their waiting runs go too, a run the
+ * quit cut off included, which boot has queued again by now: each would bill the company outside
+ * every bet, as the founder's work, since the save kept no origin.
+ */
+const dropRetiredRoutines = (active: ActiveCompany): void => {
+  const retired = active.routines.filter((r) => RETIRED_ROUTINES.includes(r.id));
+  for (const routine of retired) {
+    active.routines.splice(active.routines.indexOf(routine), 1);
+    rmSync(path.dirname(routineFile(routine.companyId, routine.id)), {
+      force: true,
+      recursive: true,
+    });
+  }
+  const names = new Set(retired.map((r) => r.name));
+  dropWork(
+    (t) => t.betId === null && names.has(t.title) && isRoutineBrief(t.description),
+    ROUTINE_RETIRED,
+    Date.now(),
+  );
 };
 
 /**
@@ -2448,6 +2527,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     adoptRewordedRoutines(active);
     adoptOrdersCursor();
     adoptUnrecordedLinks(active);
+  }
+  if (from < 8) {
+    adoptAnswerLinks(active);
   }
   saveCompany(active.company);
 };

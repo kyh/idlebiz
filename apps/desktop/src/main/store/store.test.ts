@@ -1322,6 +1322,18 @@ describe("listings", () => {
     ]);
   });
 
+  it("holds an id it handed out until the listing is kept or let go, so two listings never share one", () => {
+    found();
+    const first = firstProduct();
+    const id = store.newListingId("Launch tee");
+    expect(store.newListingId("Launch tee")).toBe(`${id}-2`);
+    store.releaseListingId(`${id}-2`);
+    store.recordListing(listingOf(first.id, id));
+    store.releaseListingId(id);
+
+    expect(store.newListingId("Launch tee")).toBe(`${id}-2`);
+  });
+
   it("skips a listing file it cannot read, and keeps a retired product's, whose orders still ship", () => {
     const co = found();
     firstProduct();
@@ -1787,7 +1799,7 @@ const writeBetState = (companyId: string, betId: string, state: BetState): void 
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(7);
+    expect(stampOf(found().id)).toBe(8);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1811,7 +1823,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1829,7 +1841,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -1837,6 +1849,95 @@ describe("the save format", () => {
     expect(store.listShippedTasks().filter(taskIn("superseded"))).toMatchObject([
       { id: answered.id, state: { by: null, kind: "superseded" } },
     ]);
+  });
+
+  it.each([
+    { format: 1, shelvedAs: { kind: "done", summary: "Founder answered: blue" } as const },
+    { format: 7, shelvedAs: { by: null, kind: "superseded" } as const },
+  ])(
+    "links an answer a format $format save shelved to the continuation carrying it, so measuring keeps it",
+    ({ format, shelvedAs }) => {
+      const co = foundTeam();
+      const bet = launch(firstProduct().id);
+      const ask = store.createTask({
+        assigneeId: "priya",
+        betId: bet.id,
+        origin: "work",
+        title: "Ask the founder",
+      });
+      block(ask.id, "priya");
+      const next = store.resolveBlockedWithAnswer(ask.id, "blue");
+      const shelved = store.listShippedTasks().find((t) => t.id === ask.id);
+      if (!next || !shelved) {
+        throw new Error("the ask was not answered");
+      }
+      // an older build closed the ask before it made the continuation
+      writeFileSync(
+        path.join(shippedDir(co.id), ask.id, "TASK.md"),
+        serializeDoc(taskToDoc({ ...shelved, completedAt: next.createdAt, state: shelvedAs })),
+      );
+      restamp(co.id, format);
+
+      store.initStore();
+      store.measureBet(bet.id, 0);
+
+      expect(stateOf(ask.id)).toEqual({ by: next.id, kind: "superseded" });
+      expect(stateOf(next.id)?.kind).toBe("todo");
+    },
+  );
+
+  it("keeps the continuation of an answer a format 1 save shelved on a bet it left measuring", () => {
+    const co = foundTeam();
+    const bet = launch(firstProduct().id);
+    const ask = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Ask the founder",
+    });
+    block(ask.id, "priya");
+    const next = store.resolveBlockedWithAnswer(ask.id, "blue");
+    const shelved = store.listShippedTasks().find((t) => t.id === ask.id);
+    if (!next || !shelved) {
+      throw new Error("the ask was not answered");
+    }
+    writeFileSync(
+      path.join(shippedDir(co.id), ask.id, "TASK.md"),
+      serializeDoc(
+        taskToDoc({
+          ...shelved,
+          completedAt: next.createdAt,
+          state: { kind: "done", summary: "Founder answered: blue" },
+        }),
+      ),
+    );
+    writeBetState(co.id, bet.id, { kind: "measuring", until: windowEnd(bet, 0) });
+    restamp(co.id, 1);
+
+    store.initStore();
+
+    expect(stateOf(next.id)?.kind).toBe("todo");
+  });
+
+  it("drops the work a format 0 save left on a routine it retires, a run cut off by the quit too", () => {
+    const co = foundTeam();
+    seedRetiredRoutine(co.id);
+    const review = store.createTask({
+      assigneeId: "priya",
+      description: "Review the business.\n\n(Recurring company routine — runs every 24h.)",
+      origin: "routine",
+      title: "Business review",
+    });
+    store.claimTask(review.id, "priya");
+    store.lockTaskForRun(review.id, "run-1");
+    forgetOrigin(co.id, review.id);
+    const asked = store.createTask({ origin: "founder", title: "Business review" });
+    unstamp(co.id);
+
+    store.initStore();
+
+    expect(stateOf(review.id)).toEqual({ kind: "dropped", reason: "routine retired" });
+    expect(stateOf(asked.id)).toEqual({ kind: "todo" });
   });
 
   it("finds a format 2 product's workspace under this root, whatever path it kept", () => {
@@ -1857,7 +1958,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -1876,7 +1977,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
@@ -1903,7 +2004,7 @@ describe("the save format", () => {
     ];
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
     expect(room()).toEqual(adopted);
 
     store.initStore();
@@ -1927,7 +2028,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     store.initStore();
     expect(store.listOpenTasks()).toMatchObject([
@@ -1955,7 +2056,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     store.initStore();
     const archived = path.join(retiredDir(co.id), first.id, "workspace", "index.html");
@@ -1979,7 +2080,7 @@ describe("the save format", () => {
     restamp(co.id, 3);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     store.initStore();
     expect(proposals.map((id) => store.getTask(id)?.origin)).toEqual(["propose", "propose"]);
@@ -2000,7 +2101,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     store.initStore();
     expect(measuredWork()).toEqual(["dropped", "dropped", "dropped", "blocked"]);
@@ -2050,7 +2151,7 @@ describe("the save format", () => {
     restamp(co.id, 6);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(7);
+    expect(stampOf(co.id)).toBe(8);
 
     const pushedByHand = {
       ask: {

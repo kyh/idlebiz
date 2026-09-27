@@ -1921,6 +1921,23 @@ describe("sell_print", () => {
     expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
   });
 
+  it("keeps both of two namesakes listed at once, each under an id of its own", async () => {
+    const { ctx } = sellingRun();
+    const other = { ...ctx, run: { ...ctx.run, taskId: `${ctx.run.taskId}-other` } };
+    for (const { run } of [ctx, other]) {
+      store.grantApproval(run.taskId, PRINT_ACTION);
+    }
+
+    const answers = await Promise.all(
+      [ctx, other].map((run) => callTool(run, "POST /v1/sell-print", PRINT)),
+    );
+
+    for (const answer of answers) {
+      expect(answer).toContain('Listed "Launch tee" on Acme');
+    }
+    expect(store.listListings().map((l) => l.id)).toEqual(["launch-tee", "launch-tee-2"]);
+  });
+
   it("sends Stripe the same keys when a listing is tried again, so nothing is made twice", async () => {
     const { ctx } = sellingRun();
     const keysOf = async () => {

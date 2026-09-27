@@ -332,10 +332,16 @@ export const runPreamble = (product: Product | null, company: Company): string =
   return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}\nThe company workspace, shared across products, is at ${company.workspaceDir}.`;
 };
 
+const ROUTINE_NOTE = "\n\n(Recurring company routine — runs every ";
+
 export const routineBrief = (r: Routine): TaskBrief => ({
-  description: `${r.instruction}\n\n(Recurring company routine — runs every ${r.intervalHours}h.)`,
+  description: `${r.instruction}${ROUTINE_NOTE}${r.intervalHours}h.)`,
   title: r.name,
 });
+
+/** Whether a brief is a routine's run, as every build has worded it. */
+export const isRoutineBrief = (description: string | null): boolean =>
+  description?.includes(ROUTINE_NOTE) ?? false;
 
 export const founderPing = (text: string): TaskBrief => ({
   description: [
@@ -383,6 +389,8 @@ const askInWords = (ask: BlockedAsk): string => {
   }
 };
 
+export const continuationTitle = (askTitle: string): string => `Continue: ${askTitle.slice(0, 60)}`;
+
 /** Whoever runs it may not be who asked: a leaver's open asks pass to the lead. */
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
   description: [
@@ -395,7 +403,7 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
     `Continue the work with that answer. Original task: ${task.title}`,
     ...(task.description === null ? [] : ["", task.description]),
   ].join("\n"),
-  title: `Continue: ${task.title.slice(0, 60)}`,
+  title: continuationTitle(task.title),
 });
 
 export const integrationConnectedAnswer = (kind: IntegrationKind): string =>

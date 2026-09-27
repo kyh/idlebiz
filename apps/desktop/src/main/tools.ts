@@ -1015,40 +1015,44 @@ const TOOLS = {
     const action = `sell ${JSON.stringify(name)} (variants ${variantIds.join(", ")}) printing ${printed} at ${price} via Printful on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
     requireSignOff(ctx, action, "payments");
     const listingId = store.newListingId(name);
-    const made = await ctx.printListing.publish({
-      bet: bet ?? null,
-      key: keys.stripe,
-      listing: listingId,
-      name,
-      priceCents,
-      product: product.id,
-      shippingCents: quote.shippingCents,
-      variants: quote.variants,
-    });
-    if (!made.ok) {
-      return `Stripe made no payment link: ${made.error}`;
+    try {
+      const made = await ctx.printListing.publish({
+        bet: bet ?? null,
+        key: keys.stripe,
+        listing: listingId,
+        name,
+        priceCents,
+        product: product.id,
+        shippingCents: quote.shippingCents,
+        variants: quote.variants,
+      });
+      if (!made.ok) {
+        return `Stripe made no payment link: ${made.error}`;
+      }
+      store.recordListing({
+        betId: bet ?? null,
+        costCents: quote.costCents,
+        createdAt: Date.now(),
+        id: listingId,
+        livemode: !isTestKey(keys.stripe),
+        name,
+        paymentLink: { id: made.id, state: { kind: "selling" }, url: made.url },
+        placements,
+        priceCents,
+        productId: product.id,
+        shippingCents: quote.shippingCents,
+        variants: quote.variants,
+      });
+      const retired = await madeWhileRetiring(product, made.id);
+      if (retired !== null) {
+        return retired;
+      }
+      post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
+      const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
+      return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
+    } finally {
+      store.releaseListingId(listingId);
     }
-    store.recordListing({
-      betId: bet ?? null,
-      costCents: quote.costCents,
-      createdAt: Date.now(),
-      id: listingId,
-      livemode: !isTestKey(keys.stripe),
-      name,
-      paymentLink: { id: made.id, state: { kind: "selling" }, url: made.url },
-      placements,
-      priceCents,
-      productId: product.id,
-      shippingCents: quote.shippingCents,
-      variants: quote.variants,
-    });
-    const retired = await madeWhileRetiring(product, made.id);
-    if (retired !== null) {
-      return retired;
-    }
-    post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
-    const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
-    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
   }),
   read_orders: define(TOOL_SPECS.read_orders, (ctx, { product: named }) => {
     const productId = productFor(ctx, named);
