@@ -1897,6 +1897,32 @@ const writeBetState = (companyId: string, betId: string, state: BetState): void 
   writeFileSync(betFile(companyId, betId), serializeDoc(betToDoc({ ...bet, state })));
 };
 
+/** An ask on a bet, answered, and shelved as a format `format` build left it: closed before its continuation, naming none. */
+const shelveAnswer = (companyId: string, format: number) => {
+  const bet = launch(firstProduct().id);
+  const ask = store.createTask({
+    assigneeId: "priya",
+    betId: bet.id,
+    origin: "work",
+    title: "Ask the founder",
+  });
+  block(ask.id, "priya");
+  const next = store.resolveBlockedWithAnswer(ask.id, "blue");
+  const shelved = store.listShippedTasks().find((t) => t.id === ask.id);
+  if (!next || !shelved) {
+    throw new Error("the ask was not answered");
+  }
+  const state =
+    format < 2
+      ? ({ kind: "done", summary: "Founder answered: blue" } as const)
+      : ({ by: null, kind: "superseded" } as const);
+  writeFileSync(
+    path.join(shippedDir(companyId), ask.id, "TASK.md"),
+    serializeDoc(taskToDoc({ ...shelved, completedAt: next.createdAt, state })),
+  );
+  return { bet, next };
+};
+
 describe("the save format", () => {
   it("stamps what it writes", () => {
     expect(stampOf(found().id)).toBe(10);
@@ -2030,37 +2056,29 @@ describe("the save format", () => {
     },
   );
 
-  it("keeps the continuation of an answer a format 1 save shelved on a bet it left measuring", () => {
+  it.each([1, 2, 3, 4, 5, 6, 7])(
+    "keeps the continuation of an answer a format %i save shelved on a bet it left measuring",
+    (format) => {
+      const co = foundTeam();
+      const { bet, next } = shelveAnswer(co.id, format);
+      writeBetState(co.id, bet.id, { kind: "measuring", until: windowEnd(bet, 0) });
+      restamp(co.id, format);
+
+      store.initStore();
+
+      expect(stateOf(next.id)?.kind).toBe("todo");
+    },
+  );
+
+  it("hands the continuation of an answer a format 2 save shelved on a leaver to the lead", () => {
     const co = foundTeam();
-    const bet = launch(firstProduct().id);
-    const ask = store.createTask({
-      assigneeId: "priya",
-      betId: bet.id,
-      origin: "work",
-      title: "Ask the founder",
-    });
-    block(ask.id, "priya");
-    const next = store.resolveBlockedWithAnswer(ask.id, "blue");
-    const shelved = store.listShippedTasks().find((t) => t.id === ask.id);
-    if (!next || !shelved) {
-      throw new Error("the ask was not answered");
-    }
-    writeFileSync(
-      path.join(shippedDir(co.id), ask.id, "TASK.md"),
-      serializeDoc(
-        taskToDoc({
-          ...shelved,
-          completedAt: next.createdAt,
-          state: { kind: "done", summary: "Founder answered: blue" },
-        }),
-      ),
-    );
-    writeBetState(co.id, bet.id, { kind: "measuring", until: windowEnd(bet, 0) });
-    restamp(co.id, 1);
+    const { next } = shelveAnswer(co.id, 2);
+    rmSync(employeeAgentDir(co.id, "priya"), { recursive: true });
+    restamp(co.id, 2);
 
     store.initStore();
 
-    expect(stateOf(next.id)?.kind).toBe("todo");
+    expect(store.getTask(next.id)).toMatchObject({ assigneeId: "mae", state: { kind: "todo" } });
   });
 
   it("drops the work a format 0 save left on a routine it retires, a run cut off by the quit too", () => {

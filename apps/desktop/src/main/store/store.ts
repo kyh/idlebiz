@@ -2315,8 +2315,6 @@ const adoptAnsweredAsks = (active: ActiveCompany): void => {
     atomicWrite(shippedTaskFile(companyId, t.id), serializeDoc(taskToDoc(answered)));
     return answered;
   });
-  // before adoptStoppedBetWork, which keeps a measuring bet's answers only once they are named
-  adoptAnswerLinks(active);
 };
 
 /**
@@ -2612,6 +2610,10 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   if (from < 2) {
     adoptAnsweredAsks(active);
   }
+  // before any step that reads answeredOn: a release or a measuring bet keeps an answer only once it is named
+  if (from < 8) {
+    adoptAnswerLinks(active);
+  }
   if (from < 3) {
     adoptProductWorkspaces(active);
     adoptRetiredFirstWorkspace(active);
@@ -2633,9 +2635,6 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     adoptRewordedRoutines(active);
     adoptOrdersCursor();
     adoptUnrecordedLinks(active);
-  }
-  if (from < 8) {
-    adoptAnswerLinks(active);
   }
   if (from < 9) {
     // Format 8 and older took Stripe's customer count for users while no Vercel read answered;
