@@ -8,8 +8,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { execFile } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { runInNewContext } from "node:vm";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
@@ -22,6 +24,7 @@ import { RefusalError } from "@/shared/refusal";
 import type { BrowserCli } from "./agent-driver";
 import type { Seal, SealState } from "./seal";
 
+const execFileAsync = promisify(execFile);
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
@@ -35,6 +38,7 @@ const {
   createAgentDriver,
   decidePermission,
   ensureRepository,
+  gitIdentity,
   livePageOf,
   mcpOffConfig,
   memoryAfter,
@@ -475,6 +479,39 @@ describe("livePageOf", () => {
 
   it("shows no page when agent-browser cannot answer", async () => {
     expect(await livePageOf(() => Promise.reject(new Error("ENOENT")), "idlebiz-x")("")).toBeNull();
+  });
+});
+
+describe("gitIdentity", () => {
+  it("commits as the employee even where the founder signs every commit and tag with keys the seal hides", async () => {
+    const company = found();
+    const mae = store.listEmployees().find((emp) => emp.name === "Mae");
+    if (mae === undefined) {
+      throw new Error("no hire founded");
+    }
+    const workspace = mkdtempSync(path.join(tmpdir(), "idlebiz-sign-"));
+    const config = path.join(workspace, "founder.gitconfig");
+    writeFileSync(
+      config,
+      "[commit]\n\tgpgsign = true\n[tag]\n\tgpgsign = true\n\tforceSignAnnotated = true\n[gpg]\n\tprogram = /usr/bin/false\n",
+    );
+    const env = {
+      GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_NOSYSTEM: "1",
+      HOME: workspace,
+      PATH: "/usr/bin:/bin",
+      ...gitIdentity(mae, company),
+    };
+    const git = (...args: string[]) => execFileAsync("/usr/bin/git", args, { cwd: workspace, env });
+    try {
+      await git("init", "--quiet");
+      await git("commit", "--allow-empty", "--quiet", "-m", "ship");
+      await git("tag", "-a", "v1", "-m", "v1");
+      const { stdout } = await git("log", "-1", "--format=%an <%ae>");
+      expect(stdout.trim()).toBe(`Mae <${mae.id}@${company.id}.idlebiz.invalid>`);
+    } finally {
+      rmSync(workspace, { force: true, recursive: true });
+    }
   });
 });
 

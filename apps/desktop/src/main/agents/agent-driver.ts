@@ -368,14 +368,25 @@ export const ensureRepository = async (workspace: string): Promise<void> => {
   }
 };
 
-/** Who a run's commits name, since it cannot write git's config to say so. */
-const gitIdentity = (emp: Employee, company: Company) => {
+/**
+ * Who a run's commits name, since it cannot write git's config to say so. Nor do they sign:
+ * the founder's global config may sign every commit and tag with keys the seal hides, which
+ * would fail each one.
+ */
+export const gitIdentity = (emp: Employee, company: Company) => {
   const email = `${emp.id}@${company.id}.idlebiz.invalid`;
   return {
     GIT_AUTHOR_EMAIL: email,
     GIT_AUTHOR_NAME: emp.name,
     GIT_COMMITTER_EMAIL: email,
     GIT_COMMITTER_NAME: emp.name,
+    GIT_CONFIG_COUNT: "3",
+    GIT_CONFIG_KEY_0: "commit.gpgSign",
+    GIT_CONFIG_KEY_1: "tag.gpgSign",
+    GIT_CONFIG_KEY_2: "tag.forceSignAnnotated",
+    GIT_CONFIG_VALUE_0: "false",
+    GIT_CONFIG_VALUE_1: "false",
+    GIT_CONFIG_VALUE_2: "false",
   };
 };
 
