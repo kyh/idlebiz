@@ -1013,6 +1013,37 @@ describe("a release", () => {
     expect(continuation.assigneeId).toBe("priya");
     expect(kindOf(continuation)).toBe("running");
   });
+
+  it("carries a sign-off the founder gave the leaver, not yet run, to the lead", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, resting, running } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const task = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    drain.assign(task.id, "mae");
+    running.get("mae")?.({
+      ...done(),
+      outcome: {
+        ask: { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+        kind: "blocked",
+      },
+    });
+    await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+    resting.add("claude");
+    const continuation = drain.resolveApproval(task.id, true);
+
+    expect(store.archiveEmployee("mae")).toMatchObject({ dropped: 0, rehomed: 1 });
+    expect(store.getTask(continuation.id)).toMatchObject({
+      assigneeId: "priya",
+      state: { kind: "queued" },
+    });
+    expect(store.holdsApproval(continuation.id)).toBe(true);
+  });
 });
 
 const POST: BlockedAsk = {

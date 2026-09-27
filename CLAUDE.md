@@ -99,7 +99,8 @@ allocator and the replay.
   that step may be what moves the number. Retiring a product drops its waiting work and switches
   off its payment links, and the retiring run's own task, on no bet, is dropped the same way when
   it fails, parks, asks or is cut off, since a retry would run in the company's folder. A release drops
-  the leaver's unstarted work and any ask no bet funds. `dropped` is history, not a failure:
+  the leaver's unstarted work and any ask no bet funds; a funded ask, and the continuation
+  carrying the founder's answer to one, go to the lead. `dropped` is history, not a failure:
   the Inbox never offers it back and the lead's brief never lists it, since reviving it would
   only bill what takes no more work; the lead delegates the idea again under a live bet.
   `dead` is only work whose runs failed on their own, and stays revivable while its bet is open

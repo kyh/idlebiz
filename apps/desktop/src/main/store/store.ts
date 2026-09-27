@@ -798,15 +798,45 @@ export const noteRunEnd = (
   recordIn(active.employees, id, { ...session, lastRunMetrics }, saveRunState);
 };
 
+const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
+
+/** Everything shelved as history, newest first. Read from disk the first time it is asked for. */
+export const listShippedTasks = (): Task[] => {
+  const active = current();
+  const companyId = active.company.id;
+  active.shipped ??= loadPackages(
+    "task",
+    shippedDir(companyId),
+    (slug) => shippedTaskFile(companyId, slug),
+    (doc) => docToTask(doc, companyId),
+  );
+  return active.shipped.toSorted(newestFirst);
+};
+
+/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
+const answeredOn = (betId: string): ReadonlySet<string> =>
+  new Set(
+    listShippedTasks().flatMap((t) =>
+      t.betId === betId && t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
+    ),
+  );
+
 const RELEASED = " was released";
 
 /**
- * Where a released employee's open task goes. An ask a bet funds, or a dead letter, goes to
- * the lead, so an answer or a retry still reaches someone. Unstarted work is dropped, so it
- * holds no bet's slot and never runs on the lead unasked. A run in flight settles on its
- * own; null leaves it be.
+ * Where a released employee's open task goes. An ask a bet funds, the founder's answer to
+ * one (`answered`, with any sign-off it holds), or a dead letter, goes to the lead, so an
+ * answer or a retry still reaches someone. Other unstarted work is dropped, so it holds no
+ * bet's slot and never runs on the lead unasked. A run in flight settles on its own; null
+ * leaves it be.
  */
-const rehomed = (t: Task, leaverName: string, lead: string | null, now: number): Task | null => {
+const rehomed = (
+  t: Task,
+  leaverName: string,
+  lead: string | null,
+  answered: boolean,
+  now: number,
+): Task | null => {
   const dropped = (): Task => ({
     ...t,
     ...entering({ kind: "dropped", reason: `${leaverName}${RELEASED}` }, now),
@@ -814,7 +844,7 @@ const rehomed = (t: Task, leaverName: string, lead: string | null, now: number):
   switch (t.state.kind) {
     case "todo":
     case "queued": {
-      return dropped();
+      return answered ? { ...t, assigneeId: lead } : dropped();
     }
     case "blocked": {
       // a departing lead's blocked proposal would read as the next lead's, and hold every new bet
@@ -845,7 +875,8 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
   const now = Date.now();
   const moved: HandedOver = { dropped: 0, rehomed: 0 };
   for (const t of active.tasks.filter((task) => task.assigneeId === leaverId)) {
-    const next = rehomed(t, leaverName, lead, now);
+    const answered = t.betId !== null && answeredOn(t.betId).has(t.id);
+    const next = rehomed(t, leaverName, lead, answered, now);
     if (!next) {
       continue;
     }
@@ -1322,21 +1353,6 @@ export const runsInFlight = (): ReadonlyMap<string, number> => {
   return counts;
 };
 
-const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
-
-/** Everything shelved as history, newest first. Read from disk the first time it is asked for. */
-export const listShippedTasks = (): Task[] => {
-  const active = current();
-  const companyId = active.company.id;
-  active.shipped ??= loadPackages(
-    "task",
-    shippedDir(companyId),
-    (slug) => shippedTaskFile(companyId, slug),
-    (doc) => docToTask(doc, companyId),
-  );
-  return active.shipped.toSorted(newestFirst);
-};
-
 const dropTask = (taskId: string, reason: string, now: number): void => {
   shelveClosed(
     patchIn(current().tasks, taskId, entering({ kind: "dropped", reason }, now), saveTask),
@@ -1392,14 +1408,6 @@ const stoppedReason = (
 
 const stoppedWorkReason = (t: Task): string | null =>
   stoppedReason(t, t.betId === null ? null : getBet(t.betId), isRetiredProduct);
-
-/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
-const answeredOn = (betId: string): ReadonlySet<string> =>
-  new Set(
-    listShippedTasks().flatMap((t) =>
-      t.betId === betId && t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
-    ),
-  );
 
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
