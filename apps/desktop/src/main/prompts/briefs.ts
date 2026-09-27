@@ -223,7 +223,7 @@ const assignmentBrief = (
       return {
         focus: product,
         lines: [
-          `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet has budget left. Opening the next one is your job this run.`,
+          `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet can take another run: each is spent out, waiting on the founder, or has what is left covered by runs already going. Opening the next one is your job this run.`,
           widen ? newGround : `${where}.`,
           `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,

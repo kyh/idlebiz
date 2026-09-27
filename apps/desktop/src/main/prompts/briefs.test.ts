@@ -177,6 +177,14 @@ describe("the brief that asks for the next bet", () => {
     expect(full).toContain("a channel it has never tried — App (app) has room for one.");
     expect(full).toContain("already runs 5 products, all it can: a new one needs kill_product");
   });
+
+  it("says why no open bet takes a run, rather than that none has budget left", () => {
+    const text = proposal(false, true);
+    expect(text).not.toContain("no open bet has budget left");
+    expect(text).toContain(
+      "no open bet can take another run: each is spent out, waiting on the founder, or has what is left covered by runs already going.",
+    );
+  });
 });
 
 describe("the brief that carries the founder's answer", () => {

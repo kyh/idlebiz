@@ -917,10 +917,12 @@ export const madeProduct = (id: string): boolean =>
  * boot could not read is missing from the loaded ones but still in products/, so it never reads
  * as retired, and its payment links are never switched off for it.
  */
-export const isRetiredProduct = (id: string): boolean => {
-  const { company } = current();
-  return heldIn(retiredDir(company.id))(id) && !heldIn(productsDir(company.id))(id);
-};
+const retiredIn =
+  (companyId: string) =>
+  (id: string): boolean =>
+    heldIn(retiredDir(companyId))(id) && !heldIn(productsDir(companyId))(id);
+
+export const isRetiredProduct = (id: string): boolean => retiredIn(current().company.id)(id);
 
 /** A product's payment links outlive it: Stripe may make one while its product retires. */
 const requireMadeProduct = (id: string): void => {
@@ -1296,6 +1298,21 @@ export const runsInFlight = (): ReadonlyMap<string, number> => {
   return counts;
 };
 
+const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
+
+/** Everything shelved as history, newest first. Read from disk the first time it is asked for. */
+export const listShippedTasks = (): Task[] => {
+  const active = current();
+  const companyId = active.company.id;
+  active.shipped ??= loadPackages(
+    "task",
+    shippedDir(companyId),
+    (slug) => shippedTaskFile(companyId, slug),
+    (doc) => docToTask(doc, companyId),
+  );
+  return active.shipped.toSorted(newestFirst);
+};
+
 /**
  * Drop the matching work that is waiting into history: no failure, and nothing
  * the founder can revive, since it would only bill a bet or product that takes
@@ -1327,6 +1344,28 @@ const stoppedBetReason = (bet: Bet | null): string | null => {
   return bet.state.kind === "measuring" ? BET_MEASURING : BET_CLOSED;
 };
 
+/**
+ * Why the task takes no more runs: its bet stopped taking work, or its product retired, and a
+ * run would land in the company's folder, billing what takes no more work. Null while it runs on.
+ */
+const stoppedReason = (
+  t: Task,
+  bet: Bet | null,
+  retired: (productId: string) => boolean,
+): string | null =>
+  stoppedBetReason(bet) ?? (t.productId !== null && retired(t.productId) ? PRODUCT_RETIRED : null);
+
+const stoppedWorkReason = (t: Task): string | null =>
+  stoppedReason(t, t.betId === null ? null : getBet(t.betId), isRetiredProduct);
+
+/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
+const answeredOn = (betId: string): ReadonlySet<string> =>
+  new Set(
+    listShippedTasks().flatMap((t) =>
+      t.betId === betId && t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
+    ),
+  );
+
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
@@ -1342,8 +1381,13 @@ export const measureBet = (betId: string, now: number): Bet => {
     throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
-  // work waiting on the founder stays: that step may be the one that moves the number
-  dropWork((t) => t.betId === betId && t.state.kind !== "blocked", BET_MEASURING, now);
+  // work waiting on the founder, or carrying their answer, stays: that step may be the one that moves the number
+  const answered = answeredOn(betId);
+  dropWork(
+    (t) => t.betId === betId && t.state.kind !== "blocked" && !answered.has(t.id),
+    BET_MEASURING,
+    now,
+  );
   return measuring;
 };
 
@@ -1489,8 +1533,6 @@ export const createTask = (brief: NewTask): Task => addTask(brief, { kind: "todo
 export const getTask = (id: string): Task | null =>
   maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
 
-const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
-
 /** The company's open queue: everything not yet history, newest first. */
 export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
 
@@ -1503,19 +1545,6 @@ export const queryTasks = (query: {
   return listOpenTasks()
     .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
     .filter((t) => status === undefined || status.some((s) => s === t.state.kind));
-};
-
-/** Everything shelved as history, newest first. Read from disk the first time it is asked for. */
-export const listShippedTasks = (): Task[] => {
-  const active = current();
-  const companyId = active.company.id;
-  active.shipped ??= loadPackages(
-    "task",
-    shippedDir(companyId),
-    (slug) => shippedTaskFile(companyId, slug),
-    (doc) => docToTask(doc, companyId),
-  );
-  return active.shipped.toSorted(newestFirst);
 };
 
 /** A shipping log line's summary; the brief a task ran on stays on disk. */
@@ -1601,7 +1630,11 @@ const close = (
 const heldBy = (t: Task | null, runId: string): Task | null =>
   t && t.state.kind === "running" && t.state.runId === runId ? t : null;
 
-/** Null on a claim conflict or for anyone off the roster; reviving a dead task resets its retry count. */
+/**
+ * Null on a claim conflict or for anyone off the roster; reviving a dead task resets its retry
+ * count. Refused for work whose bet or product stopped taking it, but for the founder's step on
+ * a measuring bet: a dead letter there is no such step.
+ */
 export const claimTask = (taskId: string, employeeId: string): Task | null => {
   const t = getTask(taskId);
   if (!t || !getEmployee(employeeId)) {
@@ -1612,6 +1645,12 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
     t.origin !== "order" && (kind === "todo" || kind === "blocked" || kind === "dead");
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) {
     return null;
+  }
+  const stopped = stoppedWorkReason(t);
+  if (stopped !== null && (stopped !== BET_MEASURING || kind === "dead")) {
+    throw new RefusalError(
+      `"${t.title}" won't run again: its ${stopped}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
+    );
   }
   const patch: Partial<Task> = {
     assigneeId: employeeId,
@@ -1639,9 +1678,9 @@ interface Dropped {
   kind: "dropped";
 }
 
-/** A run whose bet stopped taking work while it ran drops its task rather than leave it waiting; null while the bet is open. */
-const droppedWithBet = (t: Task, attempts: number): Dropped | null => {
-  const reason = stoppedBetReason(t.betId === null ? null : getBet(t.betId));
+/** A run whose bet or product stopped taking work while it ran drops its task rather than leave it waiting; null while both take it. */
+const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
+  const reason = stoppedWorkReason(t);
   if (reason === null) {
     return null;
   }
@@ -1653,9 +1692,9 @@ const droppedWithBet = (t: Task, attempts: number): Dropped | null => {
 
 /**
  * The run settled: the task is done, or waits on the founder. Only the owning run may; null
- * when it no longer holds the lock. An ask on a closed bet is dropped: an answer would only
- * bill a bet that takes no more work. One on a measuring bet stays, since that step may be
- * what moves the number.
+ * when it no longer holds the lock. An ask on a closed bet or a retired product is dropped: an
+ * answer would only bill what takes no more work. One on a measuring bet stays, since that step
+ * may be what moves the number.
  */
 export const settleTask = (
   taskId: string,
@@ -1666,10 +1705,9 @@ export const settleTask = (
   if (!t) {
     return null;
   }
-  const closedBet =
-    state.kind === "blocked" &&
-    stoppedBetReason(t.betId === null ? null : getBet(t.betId)) === BET_CLOSED;
-  const dropped = closedBet ? droppedWithBet(t, t.attempts) : null;
+  const stopped = state.kind === "blocked" ? stoppedWorkReason(t) : null;
+  const dropped =
+    stopped !== null && stopped !== BET_MEASURING ? droppedWhenStopped(t, t.attempts) : null;
   if (dropped) {
     return dropped;
   }
@@ -1702,7 +1740,7 @@ export const failTask = (
     return null;
   }
   const next = failed(t, error);
-  const dropped = droppedWithBet(t, next.verdict.attempts);
+  const dropped = droppedWhenStopped(t, next.verdict.attempts);
   if (dropped) {
     return dropped;
   }
@@ -1725,7 +1763,7 @@ export const parkTask = (
   if (!t) {
     return null;
   }
-  const dropped = droppedWithBet(t, t.attempts);
+  const dropped = droppedWhenStopped(t, t.attempts);
   if (dropped) {
     return dropped;
   }
@@ -1970,9 +2008,14 @@ const readCompanies = (): FoundSave[] => {
   return companies;
 };
 
-/** A run the last launch never saw settle: dropped with a bet that stopped taking work, else counted as failed. */
-const recoverInterrupted = (task: Task, bets: readonly Bet[], now: number): Task => {
-  const stopped = stoppedBetReason(bets.find((bet) => bet.id === task.betId) ?? null);
+/** A run the last launch never saw settle: dropped with a bet or product that stopped taking work, else counted as failed. */
+const recoverInterrupted = (
+  task: Task,
+  bets: readonly Bet[],
+  retired: (productId: string) => boolean,
+  now: number,
+): Task => {
+  const stopped = stoppedReason(task, bets.find((bet) => bet.id === task.betId) ?? null, retired);
   if (stopped !== null) {
     return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
   }
@@ -1988,7 +2031,7 @@ const settleLoadedTasks = (company: Company, tasks: Task[], bets: readonly Bet[]
     if (task.state.kind !== "running") {
       continue;
     }
-    const recovered = recoverInterrupted(task, bets, now);
+    const recovered = recoverInterrupted(task, bets, retiredIn(company.id), now);
     tasks[i] = recovered;
     saveTask(recovered);
   }

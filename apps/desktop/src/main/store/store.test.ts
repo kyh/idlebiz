@@ -931,7 +931,7 @@ describe("bets", () => {
     expect(store.shippingLog()).toEqual([]);
   });
 
-  it("keeps a dead letter revivable when its bet stops: its run failed on its own", () => {
+  it("keeps a dead letter a failure when its bet stops, and never runs it again on that bet", () => {
     const co = found();
     const bet = launch(firstProduct().id);
     const priya = store.createEmployee({ ...hire("Priya") });
@@ -947,6 +947,78 @@ describe("bets", () => {
     store.measureBet(bet.id, 0);
 
     expect(store.getTask(task.id)?.state).toEqual({ kind: "dead", lastError: "boom" });
+    expect(() => store.claimTask(task.id, priya.id)).toThrow(
+      '"Post" won\'t run again: its bet is measuring',
+    );
+    expect(store.getTask(task.id)?.state.kind).toBe("dead");
+  });
+
+  it("never runs a dead letter again once its product retired, on a bet or on none", () => {
+    const co = foundTeam();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const bet = launch(side.id);
+    const onBet = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      productId: side.id,
+      title: "Post",
+    });
+    const onNone = store.createTask({
+      assigneeId: "mae",
+      betId: null,
+      origin: "founder",
+      productId: side.id,
+      title: "Ping",
+    });
+    writeDead(co.id, onBet.id, "boom");
+    writeDead(co.id, onNone.id, "boom");
+    store.initStore();
+    store.killProduct(side.id, "dud", null);
+
+    expect(() => store.claimTask(onBet.id, "mae")).toThrow(
+      '"Post" won\'t run again: its bet closed',
+    );
+    expect(() => store.claimTask(onNone.id, "mae")).toThrow(
+      '"Ping" won\'t run again: its product retired',
+    );
+    expect(store.getTask(onNone.id)?.state.kind).toBe("dead");
+  });
+
+  it("drops the retiring run's own work when it fails, parks, asks or is cut off, never queueing it without its product", () => {
+    foundTeam();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const run = (title: string): string => {
+      const t = store.createTask({
+        assigneeId: "mae",
+        betId: null,
+        origin: "propose",
+        productId: side.id,
+        title,
+      });
+      store.claimTask(t.id, "mae");
+      store.lockTaskForRun(t.id, `run-${title}`);
+      return t.id;
+    };
+    const failing = run("fail");
+    const parking = run("park");
+    const asking = run("ask");
+    const cut = run("cut");
+    store.killProduct(side.id, "dud", "mae");
+
+    expect(store.failTask(failing, "run-fail", "boom")).toEqual({ kind: "dropped" });
+    expect(store.parkTask(parking, "run-park", 0, "usage limit")).toEqual({ kind: "dropped" });
+    expect(
+      store.settleTask(asking, "run-ask", {
+        ask: { question: "Ship it?", type: "question" },
+        kind: "blocked",
+        summary: null,
+      }),
+    ).toEqual({ kind: "dropped" });
+    store.initStore();
+    for (const id of [failing, parking, asking, cut]) {
+      expect(stateOf(id)).toEqual({ kind: "dropped", reason: "product retired" });
+    }
   });
 
   it("drops the waiting work of a bet the evaluator closes, and only that bet's", () => {
@@ -1039,6 +1111,27 @@ describe("bets", () => {
       attempts: 1,
       state: { kind: "queued", lastError: "Interrupted by app restart" },
     });
+  });
+
+  it("keeps the founder's answered step queued when its bet starts measuring, as it keeps an unanswered ask", () => {
+    found();
+    const bet = launch(firstProduct().id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const ask = running(bet.id, priya.id);
+    store.settleTask(ask, "run-1", {
+      ask: { question: "Ship it?", type: "question" },
+      kind: "blocked",
+      summary: null,
+    });
+    const next = store.resolveBlockedWithAnswer(ask, "yes");
+    if (!next) {
+      throw new Error("the answer went nowhere");
+    }
+    store.claimTask(next.id, priya.id);
+
+    store.measureBet(bet.id, 0);
+
+    expect(store.getTask(next.id)?.state.kind).toBe("queued");
   });
 
   it("drops the founder's answered step on a measuring bet when it fails, beyond the Inbox's reach", () => {
