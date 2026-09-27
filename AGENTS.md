@@ -177,7 +177,7 @@ rather than crashing boot.
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
   waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
-  and Read on Charges and Customers for the revenue read below, Read on Checkout Sessions for
+  and Read on Charges for the revenue read below, Read on Checkout Sessions for
   the order pump, and Write on Shipping Rates to sell a print, which `sell_print` checks with
   a read of both (`stripeListingAccess`) before it asks for the sign-off. A link's optional
   `delivery` (what the founder hands each buyer) rides on the link's metadata alone, is part of

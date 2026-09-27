@@ -148,34 +148,6 @@ export const sumCharges = async (
   return null;
 };
 
-const StripeListSchema = z.object({
-  data: z.array(z.object({ id: z.string().optional() })).default([]),
-  has_more: z.boolean().default(false),
-});
-const StripeCountSchema = z.object({ total_count: z.number() });
-
-const MAX_CUSTOMER_PAGES = 50;
-
-/** Rows across a list, or null when the read is incomplete, by the same rule as `sumCharges`. */
-export const countPages = async (
-  fetchPage: (after: string | null) => Promise<JsonValue>,
-): Promise<number | null> => {
-  let count = 0;
-  let after: string | null = null;
-  for (let i = 0; i < MAX_CUSTOMER_PAGES; i += 1) {
-    const page = StripeListSchema.safeParse(await fetchPage(after));
-    if (!page.success) {
-      return null;
-    }
-    count += page.data.data.length;
-    after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
-    if (after === null) {
-      return count;
-    }
-  }
-  return null;
-};
-
 /** Every charge on the account, or only those created since `since` (ms). */
 const stripeCharges = (
   key: string,
@@ -190,26 +162,6 @@ const stripeCharges = (
   );
 };
 
-/** Exact customer count via the search API; paginate fallback if search is unavailable. */
-const stripeCustomers = async (key: string): Promise<number | null> => {
-  try {
-    const counted = StripeCountSchema.safeParse(
-      await stripeGet("/v1/customers/search?query=created%3E0&limit=1&expand[]=total_count", key),
-    );
-    if (counted.success) {
-      return counted.data.total_count;
-    }
-  } catch (error) {
-    if (error instanceof HttpError && error.refused) {
-      throw error;
-    }
-    /* search unsupported on this account — paginate below */
-  }
-  return await countPages((after) =>
-    stripeGet(`/v1/customers?limit=100${after ? `&starting_after=${after}` : ""}`, key),
-  );
-};
-
 interface StripeSnapshot {
   /** When it was read: a kept read is as old as the pulse that took it. */
   at: number;
@@ -217,7 +169,6 @@ interface StripeSnapshot {
   charges: Revenue | null;
   /** Charges since the oldest live revenue bet opened: all a bet can claim, whatever the account's size. Null on a key that counts no money. */
   bets: Revenue | null;
-  customers: number | null;
   answer: StripeAnswer;
 }
 
@@ -286,8 +237,7 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
     : `No source reads users of ${product?.name ?? bet.productId} yet — ask the founder to bind Vercel to it (request_integration "vercel"), then measure_bet again.`;
 };
 
-// Every charge is re-read, since a refund can land on any old one, and
-// customers are paged when search is unavailable. The numbers move in hours, so
+// Every charge is re-read, since a refund can land on any old one. The numbers move in hours, so
 // one read of the account is kept this long, even one that came back short or
 // was refused: a null only holds the last value, and re-asking would page a
 // capped account, or every charge a restricted key may read, through again
@@ -329,7 +279,7 @@ const stripeSnapshot = async (
 ): Promise<StripeSnapshot> => {
   const now = Date.now();
   if (credential === null) {
-    return { answer: "unanswered", at: now, bets: null, charges: null, customers: null };
+    return { answer: "unanswered", at: now, bets: null, charges: null };
   }
   const { key } = credential;
   const countTest = countsTestMoney();
@@ -354,16 +304,14 @@ const stripeSnapshot = async (
   const reads = await Promise.allSettled([
     stripeCharges(key, null, countTest),
     since === null || noMoney ? null : stripeCharges(key, since, countTest),
-    stripeCustomers(key),
   ]);
-  const [charges, bets, customers] = reads;
+  const [charges, bets] = reads;
   const snapshot: StripeSnapshot = {
     // the bets read is a stand-in when no revenue bet is live, so it cannot say Stripe answered
-    answer: answerOf([charges, customers]),
+    answer: answerOf([charges]),
     at: now,
     bets: settled(bets),
     charges: settled(charges),
-    customers: settled(customers),
   };
   if (reads.every((read) => read.status === "fulfilled" || refusedRead(read))) {
     stripeRead = { countTest, key, noMoney, since, snapshot };
@@ -371,7 +319,10 @@ const stripeSnapshot = async (
   return snapshot;
 };
 
-/** Visitors of every product's deploy, and their sum when any product reports. */
+/**
+ * Visitors of every product's deploy, and their sum only once every one reported: a sum
+ * missing a product that failed this beat would read as visitors lost, then won back.
+ */
 const productVisitors = async (
   products: readonly Product[],
 ): Promise<{ each: Map<string, number | null>; total: number | null }> => {
@@ -379,7 +330,11 @@ const productVisitors = async (
   const counts = await Promise.all(bound.map(({ vercel }) => webAnalyticsVisitors(vercel)));
   const each = new Map(bound.map(({ id }, i) => [id, counts[i] ?? null]));
   const known = counts.filter((n): n is number => n !== null);
-  return { each, total: known.length > 0 ? known.reduce((a, b) => a + b, 0) : null };
+  return {
+    each,
+    total:
+      known.length > 0 && known.length === counts.length ? known.reduce((a, b) => a + b, 0) : null,
+  };
 };
 
 /**
@@ -449,7 +404,6 @@ export const fetchRealMetrics = async (
     productUsers: vercel.each,
     revenue: charges?.total ?? null,
     stripe: credential ? { answer: stripe.answer, via: credential.via } : null,
-    // real traffic first; paying customers as the fallback "users" signal
-    users: vercel.total ?? stripe.customers,
+    users: vercel.total,
   };
 };

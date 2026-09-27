@@ -147,7 +147,7 @@ describe("a charging key that can't read", () => {
     expect(read.stripe).toEqual({ answer: "refused", via: "own" });
     expect(getStripeStatus("fixture")).toEqual({
       message:
-        "Stripe won't let your charging key read charges and customers — grant it Read on both, replace it, or connect Stripe.",
+        "Stripe won't let your charging key read charges — grant it Read on Charges, replace it, or connect Stripe.",
       state: "error",
     });
     expect(stripeKeyStatus()).toEqual({ last4: "1234", livemode: true, state: "set" });

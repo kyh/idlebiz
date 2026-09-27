@@ -252,7 +252,7 @@ describe("Stripe disconnect", () => {
 
 describe("Stripe read health", () => {
   const ownKeyRefused =
-    "Stripe won't let your charging key read charges and customers — grant it Read on both, replace it, or connect Stripe.";
+    "Stripe won't let your charging key read charges — grant it Read on Charges, replace it, or connect Stripe.";
 
   it("names a refused own key until Stripe takes one again", () => {
     stripe.noteStripeRead(company.id, { answer: "refused", via: "own" });

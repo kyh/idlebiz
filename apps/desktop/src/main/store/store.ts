@@ -2583,6 +2583,11 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   if (from < 8) {
     adoptAnswerLinks(active);
   }
+  if (from < 9) {
+    // Format 8 and older took Stripe's customer count for users while no Vercel read answered;
+    // the next pulse reads visitors again wherever a product is bound.
+    active.company = { ...active.company, users: null };
+  }
   saveCompany(active.company);
 };
 

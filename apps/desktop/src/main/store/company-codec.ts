@@ -18,7 +18,7 @@ import type { FrontmatterDoc } from "@/main/store/frontmatter";
  * quietly drop whatever the newer build added. It is refused instead. A save
  * stamped lower is adopted once at boot, then carries this stamp.
  */
-export const SAVE_FORMAT = 8;
+export const SAVE_FORMAT = 9;
 
 export const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 

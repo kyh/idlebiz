@@ -252,8 +252,6 @@ const NOTHING = { data: [], has_more: false, object: "list" };
  */
 const CANNED_APIS: Canned[] = [
   canned(STRIPE, "/v1/charges", NOTHING),
-  canned(STRIPE, "/v1/customers", NOTHING),
-  canned(STRIPE, "/v1/customers/search", { ...NOTHING, object: "search_result", total_count: 0 }),
   canned(STRIPE, "/v1/payment_links", NOTHING),
   canned(PRINTFUL, "/v2/oauth-scopes", {
     data: [{ name: "View and manage orders", value: "orders" }],

@@ -1860,7 +1860,7 @@ const writeBetState = (companyId: string, betId: string, state: BetState): void 
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(8);
+    expect(stampOf(found().id)).toBe(9);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1877,6 +1877,17 @@ describe("the save format", () => {
     expect(saveSnapshot(co.id)).toEqual(before);
   });
 
+  it("forgets the users a format 8 save kept, which may be Stripe's customer count", () => {
+    const co = found();
+    store.setRealMetrics({ revenue: 12, users: 3 });
+    restamp(co.id, 8);
+
+    store.initStore();
+
+    expect(store.getCompany()).toMatchObject({ revenueUsd: 12, users: null });
+    expect(stampOf(co.id)).toBe(9);
+  });
+
   it("adopts an unstamped save once, and only once", () => {
     const co = found();
     unstamp(co.id);
@@ -1884,7 +1895,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1902,7 +1913,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -2019,7 +2030,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -2038,7 +2049,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
@@ -2065,7 +2076,7 @@ describe("the save format", () => {
     ];
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
     expect(room()).toEqual(adopted);
 
     store.initStore();
@@ -2089,7 +2100,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     store.initStore();
     expect(store.listOpenTasks()).toMatchObject([
@@ -2117,7 +2128,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     store.initStore();
     const archived = path.join(retiredDir(co.id), first.id, "workspace", "index.html");
@@ -2141,7 +2152,7 @@ describe("the save format", () => {
     restamp(co.id, 3);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     store.initStore();
     expect(proposals.map((id) => store.getTask(id)?.origin)).toEqual(["propose", "propose"]);
@@ -2162,7 +2173,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     store.initStore();
     expect(measuredWork()).toEqual(["dropped", "dropped", "dropped", "blocked"]);
@@ -2212,7 +2223,7 @@ describe("the save format", () => {
     restamp(co.id, 6);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(8);
+    expect(stampOf(co.id)).toBe(9);
 
     const pushedByHand = {
       ask: {

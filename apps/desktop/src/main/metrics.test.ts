@@ -11,14 +11,8 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-metrics-"));
 const secretsFile = path.join(root, "secrets.json");
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const {
-  countPages,
-  fetchRealMetrics,
-  measureRefusal,
-  stripeCredential,
-  stripeInTestMode,
-  sumCharges,
-} = await import("./metrics");
+const { fetchRealMetrics, measureRefusal, stripeCredential, stripeInTestMode, sumCharges } =
+  await import("./metrics");
 
 afterAll(() => {
   rmSync(root, { force: true, recursive: true });
@@ -40,11 +34,6 @@ const charge = (id: string, amount: number, metadata: Record<string, string> = {
   livemode: true,
   metadata,
   paid: true,
-});
-
-const rows = (ids: string[], hasMore: boolean) => ({
-  data: ids.map((id) => ({ id })),
-  has_more: hasMore,
 });
 
 const revenueBet = (id: string, createdAt: number): Bet => ({
@@ -227,27 +216,6 @@ describe("sumCharges", () => {
   });
 });
 
-describe("countPages", () => {
-  it("counts every row across the list", async () => {
-    const count = await countPages((after) =>
-      Promise.resolve(after === null ? rows(["cus_1", "cus_2"], true) : rows(["cus_3"], false)),
-    );
-    expect(count).toBe(3);
-  });
-
-  it("reports nothing rather than a partial count", async () => {
-    const count = await countPages((after) =>
-      Promise.resolve(after === null ? rows(["cus_1"], true) : "rate limited"),
-    );
-    expect(count).toBeNull();
-  });
-
-  it("reports nothing when the list outruns the page cap", async () => {
-    const count = await countPages(() => Promise.resolve(rows(["cus_1"], true)));
-    expect(count).toBeNull();
-  });
-});
-
 describe("stripeCredential", () => {
   const stripeAccount = { accountId: "acct_1", connectedAt: 0, livemode: false };
 
@@ -360,19 +328,22 @@ describe("fetchRealMetrics reading Stripe", () => {
 
     await fetchRealMetrics({ key: "pinned", via: "own" }, [], [revenueBet("pricing", 0)]);
 
-    expect(versions).toHaveLength(3);
+    expect(versions).toHaveLength(2);
     expect(new Set(versions)).toEqual(new Set(["2025-03-31.basil"]));
   });
 
-  it("asks customer search to expand its total", async () => {
+  it("reads no users from Stripe, whose customers are not visitors", async () => {
     const asked = stripe((endpoint) =>
-      endpoint.startsWith("/v1/customers/search") ? Response.json({ total_count: 42 }) : down(),
+      endpoint.startsWith("/v1/charges")
+        ? Response.json({ data: [charge("ch_1", 900)] })
+        : Response.json({ data: [], total_count: 3 }),
     );
 
-    const snap = await fetchRealMetrics({ key: "search", via: "own" }, [], []);
+    const snap = await fetchRealMetrics({ key: "customers", via: "own" }, [], []);
 
-    expect(asked).toContain("/v1/customers/search?query=created%3E0&limit=1&expand[]=total_count");
-    expect(snap.users).toBe(42);
+    expect(snap.revenue).toBe(9);
+    expect(snap.users).toBeNull();
+    expect(asked.filter((endpoint) => endpoint.startsWith("/v1/customers"))).toEqual([]);
   });
 
   it("reads a bet's money from the charges since the oldest live revenue bet opened", async () => {
@@ -438,34 +409,31 @@ describe("fetchRealMetrics reading Stripe", () => {
     expect(snap.betReadings.get("pricing")?.reading).toBeNull();
   });
 
-  it("keeps the money it read when the customer count fails", async () => {
+  it("keeps the money it read when the bets' read fails, and asks again", async () => {
     const asked = stripe((endpoint) =>
-      endpoint.startsWith("/v1/charges") ? Response.json({ data: [charge("ch_1", 900)] }) : down(),
+      endpoint.includes("created[gte]") ? down() : Response.json({ data: [charge("ch_1", 900)] }),
     );
+    const bets = [revenueBet("pricing", 0)];
 
-    const snap = await fetchRealMetrics({ key: "flaky", via: "own" }, [], []);
+    const snap = await fetchRealMetrics({ key: "flaky", via: "own" }, [], bets);
     const first = asked.length;
-    await fetchRealMetrics({ key: "flaky", via: "own" }, [], []);
+    await fetchRealMetrics({ key: "flaky", via: "own" }, [], bets);
 
     expect(snap.revenue).toBe(9);
-    expect(snap.users).toBeNull();
+    expect(snap.betReadings.get("pricing")?.reading).toBeNull();
     expect(snap.stripe).toEqual({ answer: "accepted", via: "own" });
     expect(asked.length).toBe(first * 2);
   });
 
-  it("keeps a read a restricted key was refused part of", async () => {
-    const asked = stripe((endpoint) =>
-      endpoint.startsWith("/v1/charges")
-        ? Response.json({ data: [charge("ch_1", 900)] })
-        : new Response("{}", { status: 403 }),
-    );
+  it("keeps a read the key was refused", async () => {
+    const asked = stripe(() => new Response("{}", { status: 403 }));
     const credential: StripeCredential = { key: "restricted", via: "own" };
 
     const snap = await fetchRealMetrics(credential, [], []);
     const first = asked.length;
     const again = await fetchRealMetrics(credential, [], []);
 
-    expect(snap.revenue).toBe(9);
+    expect(snap.revenue).toBeNull();
     expect(again.stripe).toEqual({ answer: "refused", via: "own" });
     expect(asked.length).toBe(first);
   });
@@ -493,7 +461,6 @@ describe("fetchRealMetrics reading Stripe", () => {
     await fetchRealMetrics(credential, [], [revenueBet("pricing", 0)]);
 
     expect(snap.revenue).toBeNull();
-    expect(snap.users).toBe(3);
     expect(again).toBe(first);
     expect(asked.length).toBeGreaterThan(again);
   });
@@ -615,6 +582,43 @@ describe("fetchRealMetrics reading Vercel", () => {
     rmSync(secretsFile, { force: true });
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it("adds up the company's visitors only once every bound product answered", async () => {
+    const shop: Product = {
+      ...app,
+      id: "shop",
+      vercel: { projectId: "prj_shop", projectName: "shop", teamId: null },
+    };
+    vi.stubGlobal("fetch", (url: string) => {
+      const project = new URL(url).searchParams.get("projectId");
+      return Promise.resolve(
+        project === "prj_shop" ? down() : Response.json({ data: { visitors: 400 } }),
+      );
+    });
+
+    const snap = await fetchRealMetrics(null, [app, shop], []);
+
+    expect(snap.productUsers.get("app")).toBe(400);
+    expect(snap.productUsers.get("shop")).toBeNull();
+    expect(snap.users).toBeNull();
+  });
+
+  it("adds up the visitors of every bound product", async () => {
+    const shop: Product = {
+      ...app,
+      id: "shop",
+      vercel: { projectId: "prj_shop", projectName: "shop", teamId: null },
+    };
+    visits([1, 2]);
+
+    const snap = await fetchRealMetrics(
+      null,
+      [app, shop, { ...app, id: "draft", vercel: null }],
+      [],
+    );
+
+    expect(snap.users).toBe(4);
   });
 
   it("asks for a measuring bet's visitors only up to its window's close", async () => {

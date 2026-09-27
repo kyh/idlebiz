@@ -81,7 +81,7 @@ const fail = (message: string): void => {
 
 const REFUSED: Record<StripeCredential["via"], string> = {
   connect: "Stripe access was revoked — reconnect in the HUD.",
-  own: "Stripe won't let your charging key read charges and customers — grant it Read on both, replace it, or connect Stripe.",
+  own: "Stripe won't let your charging key read charges — grant it Read on Charges, replace it, or connect Stripe.",
 };
 
 /** What the metrics pulse's read says of the company's Stripe key; a refusal shows without deleting the key. */
