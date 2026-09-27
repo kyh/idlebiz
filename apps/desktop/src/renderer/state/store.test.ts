@@ -3,9 +3,16 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
-import type { AuthFlowEvent, Company, Employee, RestingRunners } from "@/shared/domain";
+import type {
+  AuthFlowEvent,
+  Company,
+  Employee,
+  RestingRunners,
+  TeamMessage,
+} from "@/shared/domain";
 import type { AppBridge } from "@/shared/ipc-registry";
 import type { Office } from "@/renderer/game/office-port";
+import { feedKey } from "@/renderer/state/activity-reducer";
 
 const company: Company = {
   autopilot: true,
@@ -64,6 +71,16 @@ const hired = (employeeId: string): ActivityEvent => ({
   payload: { by: "lead", name: employeeId, title: "Engineer" },
 });
 
+/** The chat event of room line `id`, said at `id`. */
+const said = (id: number, text: string): ActivityEvent => ({
+  createdAt: id,
+  employeeId: null,
+  id: 100 + id,
+  kind: "chat",
+  message: text,
+  payload: { from: { kind: "founder" }, line: id, to: null },
+});
+
 /** What these tests let main answer late. */
 type Late = "listEmployees" | "restingRunners";
 type Used =
@@ -79,12 +96,14 @@ type Used =
   | "onStripeStatus"
   | "setMaxAgents"
   | "stripeKeyStatus"
-  | "stripeStatus";
+  | "stripeStatus"
+  | "teamMessages";
 
 interface MainHolds {
   authed: boolean;
   employees: Employee[];
   resting: RestingRunners;
+  room: TeamMessage[];
 }
 
 /**
@@ -92,7 +111,7 @@ interface MainHolds {
  * test says, with what main held when it was asked; the rest answer at once.
  */
 const fakeMain = (late: readonly Late[]) => {
-  const main: MainHolds = { authed: true, employees: [employee("lead")], resting: {} };
+  const main: MainHolds = { authed: true, employees: [employee("lead")], resting: {}, room: [] };
   const waiting: { method: Late; release: () => void }[] = [];
   const listeners = new Set<(e: ActivityEvent) => void>();
   const loginListeners = new Set<(e: AuthFlowEvent) => void>();
@@ -125,6 +144,7 @@ const fakeMain = (late: readonly Late[]) => {
     setMaxAgents: ({ maxAgents }) => Promise.resolve({ ...company, maxAgents }),
     stripeKeyStatus: () => Promise.resolve({ state: "unset" }),
     stripeStatus: () => Promise.resolve({ state: "disconnected" }),
+    teamMessages: ({ limit = 30 }) => Promise.resolve(main.room.slice(-limit)),
   };
   return {
     /** Answer the oldest request for `method` still waiting. */
@@ -192,6 +212,7 @@ const screen = (store: Store): string => renderToStaticMarkup(createElement(Scre
 const read = (store: Store, select: (s: Seen) => string): string =>
   renderToStaticMarkup(createElement(Probe, { select, store }));
 
+const feed = (s: Seen): string => s.feed.map(feedKey).join(" ");
 const roster = (s: Seen): string => s.employees.map((e) => `${e.id}:${e.status}`).join(" ");
 const boot = (s: Seen): string => `${s.booted} ${s.bootFailure ?? "-"}`;
 const resting = (s: Seen): string =>
@@ -202,6 +223,18 @@ const resting = (s: Seen): string =>
 
 describe("store", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("opens #team on the room main kept, and shows each line it then hears once", async () => {
+    const { bridge, emit, main } = fakeMain([]);
+    main.room = [
+      { companyId: "co", createdAt: 1, from: { kind: "founder" }, id: 1, text: "early" },
+    ];
+    const store = await freshStore(bridge);
+    expect(read(store, feed)).toBe("room 1");
+    await emit(said(1, "early"));
+    await emit(said(2, "later"));
+    expect(read(store, feed)).toBe("room 1 room 2");
+  });
 
   it("keeps a run that starts during the first refresh, and the roster that refresh went for", async () => {
     const { answer, bridge, emit, main } = fakeMain(["listEmployees"]);

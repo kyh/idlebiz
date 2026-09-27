@@ -207,6 +207,35 @@ test("#team stays on its newest line after a window closes over it", async ({ la
   await expect(feed.getByText("line 30")).toBeInViewport();
 });
 
+test("#team shows the room again once its window reopens from the dock", async ({ launch }) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { app, page } = await launch();
+  await expect(page.getByText("# team")).toBeVisible();
+  const bridge = await bridgeOf(page);
+  await bridge.evaluate((b) => b.postTeamChat({ text: "said before the window closed" }));
+  await app.evaluate(({ BrowserWindow }) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.close();
+    }
+  });
+  await expect
+    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
+    .toBe(0);
+  await app.evaluate(({ app: electronApp }) => electronApp.emit("activate"));
+
+  const appPages = (): Page[] =>
+    app.windows().filter((p) => !p.isClosed() && /^(?:file|https?):/u.test(p.url()));
+  await expect.poll(() => appPages().length).toBe(1);
+  const [window] = appPages();
+  if (!window) {
+    throw new Error("no window reopened");
+  }
+  await expect(window.getByText("said before the window closed")).toBeVisible();
+});
+
 const LONG_QUESTION = Array.from(
   { length: 20 },
   (_, i) => `Point ${i + 1}: which way should the tip jar go before I continue?`,

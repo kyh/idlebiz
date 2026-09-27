@@ -11,6 +11,9 @@ import {
 
 // main/activity.ts publishes this union and persists it as activity.jsonl rows.
 
+/** How much of a room line its chat event carries; the room keeps it whole, since agents act on it. */
+export const CHAT_EVENT_TEXT = 400;
+
 /** A step in one employee's run on one task. */
 const inRun = { employeeId: z.string(), runId: z.string(), taskId: z.string() };
 /** A task moving for its assignee; one just queued has no run yet. */
@@ -44,10 +47,13 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   }),
   /** One assistant message, flushed at a tool call or the end of the turn. */
   event("message", inRun, { message: z.string() }),
-  /** A line in the team room. `to` names the teammate it was handed to, if any. */
+  /**
+   * A line in the team room, its text cut to CHAT_EVENT_TEXT. `line` is the room line's id,
+   * so a window that read the room already knows it. `to` names the teammate it was handed to, if any.
+   */
   event("chat", byWhom, {
     message: z.string(),
-    payload: z.object({ from: SpeakerSchema, to: z.string().nullable() }),
+    payload: z.object({ from: SpeakerSchema, line: z.number(), to: z.string().nullable() }),
   }),
   /** A completed task's summary — the real counter behind the product version. */
   event("ship", inRun, { message: z.string() }),

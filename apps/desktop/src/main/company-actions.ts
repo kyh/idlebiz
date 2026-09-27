@@ -6,6 +6,7 @@ import type { ActiveLinksRead } from "@/main/payment-links";
 import { betNews } from "@/main/prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "@/main/secrets";
 import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
+import { CHAT_EVENT_TEXT } from "@/shared/activity";
 import type { Bet } from "@/shared/bets";
 import { isOutOfBudget } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
@@ -33,12 +34,12 @@ import { RefusalError } from "@/shared/refusal";
  * handed to, if any.
  */
 export const postToRoom = (from: Speaker, text: string, to: string | null = null): void => {
-  store.postTeamMessage(from, text);
+  const { id } = store.postTeamMessage(from, text);
   publishActivity({
     employeeId: from.kind === "employee" ? from.id : null,
     kind: "chat",
-    message: text.slice(0, 400),
-    payload: { from, to },
+    message: text.slice(0, CHAT_EVENT_TEXT),
+    payload: { from, line: id, to },
   });
 };
 

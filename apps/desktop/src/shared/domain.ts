@@ -365,7 +365,8 @@ export const SpeakerSchema = z.discriminatedUnion("kind", [
 export type Speaker = z.infer<typeof SpeakerSchema>;
 
 export interface TeamMessage {
-  id?: number;
+  /** Stands for this launch only: main numbers the room anew each time it loads it. */
+  id: number;
   companyId: string;
   from: Speaker;
   text: string;

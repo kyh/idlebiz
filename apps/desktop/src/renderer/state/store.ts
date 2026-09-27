@@ -21,8 +21,8 @@ import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@/shared/inte
 import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
 import type { Office } from "@/renderer/game/office-port";
-import { reduceActivity } from "@/renderer/state/activity-reducer";
-import type { Slice } from "@/renderer/state/activity-reducer";
+import { FEED_LINES, joinFeed, reduceActivity, roomLines } from "@/renderer/state/activity-reducer";
+import type { FeedLine, Slice } from "@/renderer/state/activity-reducer";
 import { bootOf } from "@/renderer/state/boot";
 import type { Boot } from "@/renderer/state/boot";
 import { Coalesced, latestWins } from "@/renderer/state/ordering";
@@ -48,8 +48,8 @@ interface State {
   company: Company | null;
   employees: Employee[];
   activity: ActivityEvent[];
-  /** What the #team channel shows, newest last. */
-  feed: ActivityEvent[];
+  /** What the #team channel shows, newest last: the room as each refresh reads it, and the news heard since the window opened. */
+  feed: FeedLine[];
   /** Awaiting the founder's answer. */
   pendingAsks: TaskIn<"blocked">[];
   /** Dead-lettered, needing a retry. */
@@ -209,16 +209,23 @@ const refreshOnce = async (): Promise<void> => {
     bridge().restingRunners(),
     bridge().loadReport(),
   ]);
-  const [employees, tasks, products, bets] = company
+  const [employees, tasks, products, bets, room] = company
     ? await Promise.all([
         bridge().listEmployees(),
         bridge().listTasks({ status: ["blocked", "dead"] }),
         bridge().listProducts(),
         bridge().listBets(),
+        bridge().teamMessages({ limit: FEED_LINES }),
       ])
-    : [[], [], [], []];
-  // a slice a newer request or event already answered keeps the newer answer
-  const patch: Partial<State> = { bootFailure: null, booted: true, saveIssues: load.skipped };
+    : [[], [], [], [], []];
+  // a slice a newer request or event already answered keeps the newer answer; the feed
+  // keeps every line either way, so the room read back only adds what the window missed
+  const patch: Partial<State> = {
+    bootFailure: null,
+    booted: true,
+    feed: joinFeed(state.feed, roomLines(room)),
+    saveIssues: load.skipped,
+  };
   if (order.accepts("company", ticket)) {
     patch.company = company;
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
-import type { Employee, RunOutcome } from "@/shared/domain";
-import { reduceActivity } from "./activity-reducer";
+import type { Employee, RunOutcome, TeamMessage } from "@/shared/domain";
+import { feedKey, joinFeed, reduceActivity, roomLines } from "./activity-reducer";
 
 const stamp = { createdAt: 0, id: 1 };
 const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
@@ -24,12 +24,20 @@ const employee = (id: string): Employee => ({
   title: "Engineer",
 });
 
-const shipped = (id: number): ActivityEvent => ({
+const shipped = (id: number): Extract<ActivityEvent, { kind: "ship" }> => ({
   ...inRun,
   createdAt: 0,
   id,
   kind: "ship",
   message: `ship ${id}`,
+});
+
+const roomLine = (id: number, createdAt: number, text: string): TeamMessage => ({
+  companyId: "co",
+  createdAt,
+  from: { kind: "founder" },
+  id,
+  text,
 });
 
 const held = {
@@ -73,7 +81,7 @@ describe("reduceActivity", () => {
         },
       },
     };
-    expect(reduceActivity(held, ask).patch.feed).toEqual([ask]);
+    expect(reduceActivity(held, ask).patch.feed).toEqual([{ event: ask, kind: "news" }]);
   });
 
   it("clears a resolved ask from the inbox the moment it resumes", () => {
@@ -201,7 +209,7 @@ describe("reduceActivity", () => {
       employeeId: null,
       kind: "chat",
       message: "ship it",
-      payload: { from: { kind: "founder" }, to: null },
+      payload: { from: { kind: "founder" }, line: 7, to: null },
     };
     const posted = reduceActivity(held, line).patch;
     let { activity } = posted;
@@ -220,13 +228,39 @@ describe("reduceActivity", () => {
       ({ activity } = patch);
     }
     expect(activity.map((e) => e.id)).not.toContain(line.id);
-    expect(feed).toEqual([line]);
+    expect(feed).toEqual([
+      { createdAt: 0, from: { kind: "founder" }, id: 7, kind: "room", text: "ship it" },
+    ]);
+  });
+
+  it("shows the room a window opened on, beside the news it hears live, each line once", () => {
+    const news = { ...shipped(1), createdAt: 20 };
+    const heard = reduceActivity(held, news).patch.feed ?? [];
+    const opened = joinFeed(
+      heard,
+      roomLines([roomLine(3, 10, "before"), roomLine(4, 30, "after")]),
+    );
+    const echoed: ActivityEvent = {
+      createdAt: 31,
+      employeeId: null,
+      id: 2,
+      kind: "chat",
+      message: "after",
+      payload: { from: { kind: "founder" }, line: 4, to: null },
+    };
+    const feed = reduceActivity({ ...held, feed: opened }, echoed).patch.feed ?? [];
+    expect(feed.map(feedKey)).toEqual(["room 3", "news 1", "room 4"]);
   });
 
   it("keeps the feed to its last thirty lines", () => {
-    const full = { ...held, feed: Array.from({ length: 30 }, (_, id) => shipped(id)) };
+    const full = {
+      ...held,
+      feed: Array.from({ length: 30 }, (_, id) => ({ event: shipped(id), kind: "news" as const })),
+    };
     const feed = reduceActivity(full, shipped(30)).patch.feed ?? [];
     expect(feed).toHaveLength(30);
-    expect([feed[0]?.id, feed.at(-1)?.id]).toEqual([1, 30]);
+    expect(feed.map((line) => (line.kind === "news" ? line.event.id : null))).toEqual(
+      Array.from({ length: 30 }, (_, i) => i + 1),
+    );
   });
 });

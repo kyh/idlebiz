@@ -76,11 +76,11 @@ office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken 
 shown as set and, for Stripe, replaceable and removable; a key refused is never saved), Printful token entry
 (a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into
 secrets.json being sealed, a held command denied from #team, an action card answered, keys
-held into a window let go of when it closes, #team kept on its newest line, a long ask kept on
-screen, a typed answer kept while the dialogue's menu is hovered, the dialogue's cursor kept on Talk…
-as rows come ahead of it, Start refused while out of
-budget, a Stripe sign-in left in the browser started over, retiring the selected product, a file boot skipped named in full, and a save a newer
-build wrote asking for an update. It is local only, not part
+held into a window let go of when it closes, #team kept on its newest line and shown again when
+its window reopens, a long ask kept on screen, a typed answer kept while the dialogue's menu is
+hovered, the dialogue's cursor kept on Talk… as rows come ahead of it, Start refused while out of
+budget, a Stripe sign-in left in the browser started over, retiring the selected product, a file
+boot skipped named in full, and a save a newer build wrote asking for an update. It is local only, not part
 of `pnpm verify` or CI:
 
 - It needs a macOS desktop session: each launch shows the window and takes focus.
@@ -367,7 +367,8 @@ rather than crashing boot.
   when that digest no longer matches.
   The brief's "recently shipped" lines come from `state/recent-ships.json`, written with the
   ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
-  the renderer, whose feed starts empty every launch. Company-level running state goes in
+  the renderer, whose activity ring starts empty every launch; #team reads the room back from
+  main's copy of `chat.jsonl` instead. Company-level running state goes in
   `<company>/state/` (path helpers in `main/paths.ts`); what the founder configured
   (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,

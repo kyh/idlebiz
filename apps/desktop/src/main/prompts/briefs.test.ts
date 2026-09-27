@@ -85,6 +85,7 @@ const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
   companyId: "acme",
   createdAt: 0,
   from,
+  id: 0,
   text,
 });
 

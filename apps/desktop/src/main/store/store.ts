@@ -1521,7 +1521,7 @@ export const recordShip = (productId: string | null, summary: string): void => {
 // ---- the company room ------------------------------------------------------
 export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   const active = current();
-  const msg: TeamMessage = {
+  const msg: Omit<TeamMessage, "id"> = {
     companyId: active.company.id,
     createdAt: Date.now(),
     from,

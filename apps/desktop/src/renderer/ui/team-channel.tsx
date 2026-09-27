@@ -4,7 +4,8 @@ import { useStore, sendFounderChat } from "@/renderer/state/store";
 import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
-import type { ActivityEvent } from "@/shared/activity";
+import { feedKey, newestOf } from "@/renderer/state/activity-reducer";
+import type { FeedLine } from "@/renderer/state/activity-reducer";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { BlockedAsk } from "@/shared/domain";
 import { formatTime } from "@/shared/format";
@@ -59,7 +60,35 @@ const askLine = (ask: BlockedAsk): string => {
   }
 };
 
-const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => string }) => {
+const RoomRow = ({
+  line: { from, text },
+  nameOf,
+}: {
+  line: Extract<FeedLine, { kind: "room" }>;
+  nameOf: (id: string) => string;
+}) => {
+  if (from.kind === "office") {
+    return <div className="text-fg-dim">{text}</div>;
+  }
+  return (
+    <div>
+      {from.kind === "founder" ? (
+        <span style={{ color: "var(--warn)" }}>you</span>
+      ) : (
+        <span style={{ color: "var(--accent-lo)" }}>{nameOf(from.id)}</span>
+      )}{" "}
+      <span className="text-[#4c5064]">{text}</span>
+    </div>
+  );
+};
+
+const NewsRow = ({
+  e,
+  nameOf,
+}: {
+  e: Extract<FeedLine, { kind: "news" }>["event"];
+  nameOf: (id: string) => string;
+}) => {
   switch (e.kind) {
     case "ship": {
       return (
@@ -88,25 +117,7 @@ const FeedRow = ({ e, nameOf }: { e: ActivityEvent; nameOf: (id: string) => stri
         </div>
       );
     }
-    case "chat": {
-      const { from } = e.payload;
-      if (from.kind === "office") {
-        return <div className="text-fg-dim">{e.message}</div>;
-      }
-      return (
-        <div>
-          {from.kind === "founder" ? (
-            <span style={{ color: "var(--warn)" }}>you</span>
-          ) : (
-            <span style={{ color: "var(--accent-lo)" }}>{nameOf(from.id)}</span>
-          )}{" "}
-          <span className="text-[#4c5064]">{e.message}</span>
-        </div>
-      );
-    }
-    default: {
-      return null;
-    }
+    // no default
   }
 };
 
@@ -124,9 +135,9 @@ export const TeamChannel = () => {
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // keyed on the newest event, not the count — the feed is capped, so the
+  // keyed on the newest line, not the count — the feed is capped, so the
   // length stops changing once it fills and auto-scroll would die there.
-  const newest = feed.at(-1)?.createdAt ?? null;
+  const newest = newestOf(feed);
   // hide while a dialogue/modal is up — a half-covered window reads as broken
   const shown = company !== null && !modalOpen;
 
@@ -174,7 +185,13 @@ export const TeamChannel = () => {
             {company.autopilot ? "The team is getting to work…" : "Autopilot paused."}
           </div>
         ) : (
-          feed.map((e) => <FeedRow key={e.id} e={e} nameOf={nameOf} />)
+          feed.map((line) =>
+            line.kind === "room" ? (
+              <RoomRow key={feedKey(line)} line={line} nameOf={nameOf} />
+            ) : (
+              <NewsRow key={feedKey(line)} e={line.event} nameOf={nameOf} />
+            ),
+          )
         )}
       </div>
       {held.length > 0 ? (
