@@ -1349,12 +1349,12 @@ const dropTask = (taskId: string, reason: string, now: number): void => {
  * no more work. A running task finishes its run, and is dropped if that run
  * fails, parks (`failTask`, `parkTask`), asks the founder once its bet has
  * closed (`settleTask`) or never settles before the app restarts
- * (`recoverInterrupted`). A dead letter stays one: its run failed on its own.
+ * (`recoverInterrupted`). A dead letter goes too: `claimTask` would refuse every retry of it.
  */
 const dropWork = (match: (t: Task) => boolean, reason: string, now: number): void => {
   for (const t of current().tasks.filter(match)) {
     const { kind } = t.state;
-    if (kind === "todo" || kind === "queued" || kind === "blocked") {
+    if (kind === "todo" || kind === "queued" || kind === "blocked" || kind === "dead") {
       // one refused save must not keep the rest from dropping; `lockTaskForRun` drops it before it runs
       try {
         dropTask(t.id, reason, now);
@@ -2369,6 +2369,20 @@ const adoptStoppedBetWork = (active: ActiveCompany): void => {
   }
 };
 
+/**
+ * Format 9 and older kept a dead letter when its bet stopped or its product retired, and the
+ * Inbox offered it back for good, though `claimTask` refuses every retry of it.
+ */
+const adoptStrandedDeadLetters = (active: ActiveCompany): void => {
+  const now = Date.now();
+  for (const t of active.tasks.filter(taskIn("dead"))) {
+    const stopped = stoppedWorkReason(t);
+    if (stopped !== null) {
+      dropTask(t.id, stopped, now);
+    }
+  }
+};
+
 /** What the retired push tool asked the founder to sign: `push <branch> (<sha>) of <product> to <url>`. */
 const PUSH_SIGN_OFF = /^push \S+ \(/u;
 
@@ -2587,6 +2601,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     // Format 8 and older took Stripe's customer count for users while no Vercel read answered;
     // the next pulse reads visitors again wherever a product is bound.
     active.company = { ...active.company, users: null };
+  }
+  if (from < 10) {
+    adoptStrandedDeadLetters(active);
   }
   saveCompany(active.company);
 };

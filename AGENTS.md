@@ -308,7 +308,8 @@ rather than crashing boot.
   so does an ask the founder answered, `superseded` by its continuation, and work the
   steering loop `dropped` (its bet stopped taking work, its product was retired, its
   assignee released), neither ever a ship. `dead` tasks — runs that failed on their own —
-  stay in the active queue because the Inbox can retry them (while their bet is open and their product live) and employees use them to
+  stay in the active queue until their bet stops or their product retires, because the Inbox
+  can retry them and employees use them to
   identify unresolved problems. `listTasks` answers open work only; the one
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **The office is frozen data.** `renderer/game/office-design.json` is the one office:

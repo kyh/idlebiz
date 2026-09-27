@@ -103,7 +103,8 @@ allocator and the replay.
   the Inbox never offers it back and the lead's brief never lists it, since reviving it would
   only bill what takes no more work; the lead delegates the idea again under a live bet.
   `dead` is only work whose runs failed on their own, and stays revivable while its bet is open
-  and its product live: `claimTask` refuses anything else a run would bill. "Waiting on the
+  and its product live: a bet that leaves open or a product that retires drops its dead work
+  too, since `claimTask` refuses anything else a run would bill. "Waiting on the
   founder" is modelled in `allocate` once: a bet with a blocked task gets no hands — settle
   runs carry their bet, so that covers them — and a lead whose last proposal is blocked is
   not asked again.

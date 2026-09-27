@@ -958,29 +958,36 @@ describe("bets", () => {
     expect(store.shippingLog()).toEqual([]);
   });
 
-  it("keeps a dead letter a failure when its bet stops, and never runs it again on that bet", () => {
-    const co = found();
-    const bet = launch(firstProduct().id);
-    const priya = store.createEmployee({ ...hire("Priya") });
-    const task = store.createTask({
-      assigneeId: priya.id,
-      betId: bet.id,
-      origin: "work",
-      title: "Post",
-    });
-    writeDead(co.id, task.id, "boom");
-    store.initStore();
+  it.each([
+    {
+      event: "measured",
+      reason: "bet is measuring",
+      stop: (id: string) => store.measureBet(id, 0),
+    },
+    { event: "killed", reason: "bet killed", stop: (id: string) => store.killBet(id, "dud", 0) },
+  ])(
+    "drops a dead letter into history once its bet is $event, since no retry could run it",
+    ({ stop, reason }) => {
+      const co = found();
+      const bet = launch(firstProduct().id);
+      const priya = store.createEmployee({ ...hire("Priya") });
+      const task = store.createTask({
+        assigneeId: priya.id,
+        betId: bet.id,
+        origin: "work",
+        title: "Post",
+      });
+      writeDead(co.id, task.id, "boom");
+      store.initStore();
 
-    store.measureBet(bet.id, 0);
+      stop(bet.id);
 
-    expect(store.getTask(task.id)?.state).toEqual({ kind: "dead", lastError: "boom" });
-    expect(() => store.claimTask(task.id, priya.id)).toThrow(
-      '"Post" won\'t run again: its bet is measuring',
-    );
-    expect(store.getTask(task.id)?.state.kind).toBe("dead");
-  });
+      expect(store.queryTasks({ status: ["dead"] })).toEqual([]);
+      expect(stateOf(task.id)).toMatchObject({ kind: "dropped", reason });
+    },
+  );
 
-  it("never runs a dead letter again once its product retired, on a bet or on none", () => {
+  it("drops a dead letter into history once its product retired, on a bet or on none", () => {
     const co = foundTeam();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
@@ -1003,13 +1010,9 @@ describe("bets", () => {
     store.initStore();
     store.killProduct(side.id, "dud", null);
 
-    expect(() => store.claimTask(onBet.id, "mae")).toThrow(
-      '"Post" won\'t run again: its bet closed',
-    );
-    expect(() => store.claimTask(onNone.id, "mae")).toThrow(
-      '"Ping" won\'t run again: its product retired',
-    );
-    expect(store.getTask(onNone.id)?.state.kind).toBe("dead");
+    expect(store.queryTasks({ status: ["dead"] })).toEqual([]);
+    expect(stateOf(onBet.id)).toMatchObject({ kind: "dropped", reason: "product retired" });
+    expect(stateOf(onNone.id)).toMatchObject({ kind: "dropped", reason: "product retired" });
   });
 
   it("drops the retiring run's own work when it fails, parks, asks or is cut off, never queueing it without its product", () => {
@@ -1860,7 +1863,7 @@ const writeBetState = (companyId: string, betId: string, state: BetState): void 
 
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(9);
+    expect(stampOf(found().id)).toBe(10);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {
@@ -1885,7 +1888,40 @@ describe("the save format", () => {
     store.initStore();
 
     expect(store.getCompany()).toMatchObject({ revenueUsd: 12, users: null });
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
+  });
+
+  it("drops the dead letters a format 9 save kept on stopped work, and keeps those it can retry", () => {
+    const co = foundTeam();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const killed = launch(firstProduct().id);
+    const measuring = launch(firstProduct().id);
+    const open = launch(firstProduct().id);
+    store.killBet(killed.id, "dud", 0);
+    store.measureBet(measuring.id, 0);
+    store.killProduct(side.id, "dud", null);
+    const deadOn = (title: string, betId: string | null, productId: string | null) => {
+      const t = store.createTask({ assigneeId: "mae", betId, origin: "work", productId, title });
+      writeDead(co.id, t.id, "boom");
+      return t.id;
+    };
+    const stranded = [
+      deadOn("on a killed bet", killed.id, null),
+      deadOn("on a measuring bet", measuring.id, null),
+      deadOn("on a retired product", null, side.id),
+    ];
+    const retriable = deadOn("on an open bet", open.id, null);
+    restamp(co.id, 9);
+
+    store.initStore();
+
+    expect(store.queryTasks({ status: ["dead"] }).map((t) => t.id)).toEqual([retriable]);
+    expect(stranded.map((id) => stateOf(id))).toMatchObject([
+      { kind: "dropped", reason: "bet closed" },
+      { kind: "dropped", reason: "bet is measuring" },
+      { kind: "dropped", reason: "product retired" },
+    ]);
+    expect(stampOf(co.id)).toBe(10);
   });
 
   it("adopts an unstamped save once, and only once", () => {
@@ -1895,7 +1931,7 @@ describe("the save format", () => {
 
     store.initStore();
     expect(existsSync(retiredRoutine(co.id))).toBe(false);
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     seedRetiredRoutine(co.id);
     store.initStore();
@@ -1913,7 +1949,7 @@ describe("the save format", () => {
     seedRetiredRoutine(co.id);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
     expect(existsSync(retiredRoutine(co.id))).toBe(true);
 
     store.initStore();
@@ -2030,7 +2066,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
     expect(readFileSync(gadgetFile, "utf-8")).not.toContain(elsewhere);
 
     store.initStore();
@@ -2049,7 +2085,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     store.initStore();
     expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
@@ -2076,7 +2112,7 @@ describe("the save format", () => {
     ];
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
     expect(room()).toEqual(adopted);
 
     store.initStore();
@@ -2100,7 +2136,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     store.initStore();
     expect(store.listOpenTasks()).toMatchObject([
@@ -2128,7 +2164,7 @@ describe("the save format", () => {
     restamp(co.id, 2);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     store.initStore();
     const archived = path.join(retiredDir(co.id), first.id, "workspace", "index.html");
@@ -2152,7 +2188,7 @@ describe("the save format", () => {
     restamp(co.id, 3);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     store.initStore();
     expect(proposals.map((id) => store.getTask(id)?.origin)).toEqual(["propose", "propose"]);
@@ -2173,7 +2209,7 @@ describe("the save format", () => {
     restamp(co.id, 5);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     store.initStore();
     expect(measuredWork()).toEqual(["dropped", "dropped", "dropped", "blocked"]);
@@ -2223,7 +2259,7 @@ describe("the save format", () => {
     restamp(co.id, 6);
 
     store.initStore();
-    expect(stampOf(co.id)).toBe(9);
+    expect(stampOf(co.id)).toBe(10);
 
     const pushedByHand = {
       ask: {
