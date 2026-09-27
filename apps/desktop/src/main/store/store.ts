@@ -974,8 +974,18 @@ export const createProduct = (named: ProductDraft): Product => {
   return product;
 };
 
-export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product =>
-  patchProduct(productId, { vercel });
+/** One project per product: two on one would each count its visitors, and each deploy replace the other's site. */
+export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product => {
+  const holder =
+    vercel &&
+    current().products.find((p) => p.id !== productId && p.vercel?.projectId === vercel.projectId);
+  if (vercel && holder) {
+    throw new RefusalError(
+      `${holder.name} is already bound to the Vercel project ${vercel.projectName}; pick another project, or disconnect ${holder.name} from it first.`,
+    );
+  }
+  return patchProduct(productId, { vercel });
+};
 
 /** Real numbers per product, from the pulse. */
 export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot): void => {

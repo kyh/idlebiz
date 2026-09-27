@@ -18,6 +18,7 @@ import type { BetState } from "@/shared/bets";
 import type { Budget } from "@/shared/domain";
 import { taskIn } from "@/shared/domain";
 import type { Listing } from "@/shared/listing";
+import { RefusalError } from "@/shared/refusal";
 import { approvalAnswer, runPreamble } from "@/main/prompts/briefs";
 import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
 import { betToDoc } from "./bet-codec";
@@ -239,6 +240,17 @@ describe("products", () => {
     expect(store.getCompany()?.ships).toBe(1);
     expect(store.attentionProduct()?.id).toBe(first?.id);
     expect(store.listShippedTasks()[0]?.productId).toBe(gadget.id);
+  });
+
+  it("refuses to bind a product to a Vercel project another product holds", () => {
+    found();
+    const [first] = store.listProducts();
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    const binding = { projectId: "prj_1", projectName: "site", teamId: null };
+    store.setProductVercel(first?.id ?? "", binding);
+    expect(() => store.setProductVercel(gadget.id, binding)).toThrow(RefusalError);
+    expect(store.getProduct(gadget.id)?.vercel).toBeNull();
+    expect(store.setProductVercel(first?.id ?? "", binding).vercel).toEqual(binding);
   });
 
   it("gives a company from before products its one product, with the binding metrics.json held", () => {

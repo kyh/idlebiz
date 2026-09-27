@@ -8,11 +8,11 @@ import type { Contract } from "@/shared/ipc-registry";
 
 const VERCEL_TOKEN_KEY = "VERCEL_TOKEN";
 
-let onConnected: () => void = () => {
+let onConnected: (productId: string) => void = () => {
   /* empty */
 };
 
-export const initVercelConnect = (hooks: { onConnected: () => void }): void => {
+export const initVercelConnect = (hooks: { onConnected: (productId: string) => void }): void => {
   ({ onConnected } = hooks);
 };
 
@@ -42,7 +42,7 @@ export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void
     setSecret(VERCEL_TOKEN_KEY, token);
   }
   store.setProductVercel(productId, { projectId, projectName, teamId: teamId ?? null });
-  onConnected();
+  onConnected(productId);
 };
 
 export const disconnectVercel = (productId: string): void => {

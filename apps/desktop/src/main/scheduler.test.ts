@@ -1001,7 +1001,7 @@ const POST: BlockedAsk = {
 };
 
 /** Mae's run on a funded bet hands the founder `ask`, and the office goes on ticking. */
-const blockedOn = async (ask: BlockedAsk) => {
+const blockedOn = async (ask: BlockedAsk, productId?: string | null) => {
   found();
   const bet = openBet(5);
   const { driver, running } = scripted();
@@ -1010,6 +1010,7 @@ const blockedOn = async (ask: BlockedAsk) => {
     assigneeId: "mae",
     betId: bet.id,
     origin: "work",
+    productId: productId === undefined ? bet.productId : productId,
     title: "Launch",
   });
   drain.assign(task.id, "mae");
@@ -1041,6 +1042,29 @@ describe("an integration the founder connects", () => {
   it.each([KEY, READ])("resumes %j once a Stripe key is saved", async (ask) => {
     const { drain, task } = await blockedOn(ask);
     drain.resumeIntegrationAsks("stripe", "stripe-key");
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  const BIND: BlockedAsk = {
+    integration: "vercel",
+    reason: "to bind the product so its users bet can be measured",
+    type: "integration",
+  };
+
+  it("resumes a product's Vercel ask only once that product is bound", async () => {
+    const { drain, task } = await blockedOn(BIND);
+    const home = task.productId ?? "";
+    const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+    drain.resumeVercelAsks(side);
+    expect(kindOf(task)).toBe("blocked");
+    drain.resumeVercelAsks(home);
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  it("resumes a Vercel ask that named no product on any binding", async () => {
+    const { drain, task } = await blockedOn(BIND, null);
+    const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+    drain.resumeVercelAsks(side);
     expect(kindOf(task)).not.toBe("blocked");
   });
 });
