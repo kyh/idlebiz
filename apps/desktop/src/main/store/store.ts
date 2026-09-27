@@ -1952,6 +1952,12 @@ export const killProduct = (productId: string, reason: string, by: string | null
 
 // ---- founding and boot -------------------------------------------------------
 /** Publish a complete company with one directory rename; boot ignores staging directories. */
+/** The root's entries a company may be in: dot folders are main's own, and the tool cache is every run's to write. */
+const saveEntries = (): string[] =>
+  safeReaddir(ROOT_DIR).filter(
+    (entry) => !entry.startsWith(".") && companyDir(entry) !== TOOL_CACHE_DIR,
+  );
+
 export const foundCompany = (input: {
   name: string;
   mission: string;
@@ -1964,9 +1970,7 @@ export const foundCompany = (input: {
   if (c().active) {
     throw new RefusalError("a company is already active");
   }
-  if (
-    safeReaddir(ROOT_DIR).some((entry) => !entry.startsWith(".") && existsSync(companyFile(entry)))
-  ) {
+  if (saveEntries().some((entry) => existsSync(companyFile(entry)))) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
   const id = uniqueSlug(
@@ -2054,10 +2058,7 @@ interface FoundSave {
 
 const readCompanies = (): FoundSave[] => {
   const companies: FoundSave[] = [];
-  for (const entry of safeReaddir(ROOT_DIR)) {
-    if (entry.startsWith(".")) {
-      continue;
-    }
+  for (const entry of saveEntries()) {
     const file = companyFile(entry);
     if (!existsSync(file)) {
       continue;

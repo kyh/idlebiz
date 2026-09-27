@@ -393,6 +393,26 @@ describe("founding publication", () => {
     expect(companyDir(company.id)).not.toBe(path.join(root, "cache"));
   });
 
+  it.each(["a forged company", "a garbage file"])(
+    "never reads %s a run planted in the tool cache",
+    (planted) => {
+      const company = found();
+      if (planted === "a forged company") {
+        copyCompany(company.id, "cache", company.createdAt + 1000);
+      } else {
+        mkdirSync(path.join(root, "cache"), { recursive: true });
+        writeFileSync(path.join(root, "cache", "COMPANY.md"), "garbage");
+      }
+
+      expect(store.initStore()).toEqual({ companies: 1, skipped: [] });
+      expect(store.getCompany()?.id).toBe(company.id);
+
+      rmSync(path.join(root, company.id), { force: true, recursive: true });
+      store.initStore();
+      expect(found().id).toBe(company.id);
+    },
+  );
+
   it.each([false, true])(
     "ignores an interrupted stage with COMPANY.md present: %s",
     (hasCompanyFile) => {
