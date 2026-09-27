@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { isReply } from "@/shared/ipc-channels";
 import { RefusalError } from "@/shared/refusal";
-import { settle } from "./ipc-reply";
+import { refusePayload, settle } from "./ipc-reply";
 
 const seatCap = "the office is at its 12-seat cap";
 
@@ -59,5 +60,31 @@ describe("IPC reply", () => {
     expect(isReply(await settle(() => {}, undefined))).toBe(true);
     const strays = [undefined, null, "ok", { value: 1 }, { ok: "yes" }, { ok: false }];
     expect(strays.filter(isReply)).toEqual([]);
+  });
+});
+
+describe("a payload its schema refuses", () => {
+  const post = z.object({ text: z.string().min(1).max(2000) });
+  const refusalOf = (text: string | number) => {
+    const parsed = post.safeParse({ text });
+    if (parsed.success) {
+      throw new Error("the schema took it");
+    }
+    return refusePayload("postTeamChat", parsed.error);
+  };
+
+  it("tells the founder the limit text went over, and reports nothing", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(refusalOf("x".repeat(2100))).toEqual({
+      message: "Keep it to 2000 characters or fewer.",
+      ok: false,
+    });
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it("answers any other misfit as a fault, and reports it", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(refusalOf(7)).toMatchObject({ ok: false });
+    expect(log).toHaveBeenCalledOnce();
   });
 });

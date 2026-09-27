@@ -74,7 +74,7 @@ export type WireValue =
   | WireValue[]
   | { [key: string]: WireValue };
 
-interface IpcFailure {
+export interface IpcFailure {
   ok: false;
   message: string;
 }

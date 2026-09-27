@@ -1,7 +1,7 @@
 import { ipcMain } from "electron";
 import type { WebFrameMain } from "electron";
 import type { z } from "zod";
-import { settle } from "@/main/lib/ipc-reply";
+import { refusePayload, settle } from "@/main/lib/ipc-reply";
 import { CHANNELS } from "@/shared/ipc-channels";
 import type { InvokeMethod, WireValue } from "@/shared/ipc-channels";
 import { SCHEMAS } from "@/shared/ipc-registry";
@@ -26,10 +26,7 @@ const handle = <M extends InvokeMethod>(handlers: Pick<IpcHandlers, M>, method: 
       throw new Error(`[ipc:${method}] refused: not the app's own window`);
     }
     const result = SCHEMA_MAP[method].safeParse(raw);
-    if (!result.success) {
-      throw new Error(`[ipc:${method}] payload validation failed — ${result.error.message}`);
-    }
-    return settle(fn, result.data);
+    return result.success ? settle(fn, result.data) : refusePayload(method, result.error);
   });
 };
 
