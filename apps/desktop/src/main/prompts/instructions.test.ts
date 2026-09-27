@@ -70,6 +70,11 @@ describe("standingInstructions", () => {
     expect(new Set(sections).size).toBe(BUSINESS_TYPE_IDS.length);
   });
 
+  it("says a run can make no git repository, and how to fetch a repository's code instead", () => {
+    const text = instructionsFor("software");
+    expect(text).toMatch(/cannot make a git repository[^\n]*`git clone`[^\n]*`git init`[^\n]*tar/u);
+  });
+
   it("never tells a run to push, only that the founder does", () => {
     for (const type of BUSINESS_TYPE_IDS) {
       for (const lead of [false, true]) {

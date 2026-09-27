@@ -264,7 +264,8 @@ rather than crashing boot.
   `TOOL_CACHE_ENV` in `main/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
   `cache/`, so a tool that writes elsewhere in HOME fails with `EPERM` until its cache is
   moved there too. A git dependency fails as well: npm and pnpm clone it into a `.git` no run
-  may make. Boot checks
+  may make, and so do `git clone` and `git init`; the standing instructions say so and point
+  runs at a repository's tarball instead. Boot checks
   the seal without a model call (a read and a write canary per runner); until it holds, no run
   starts, and a refusal is listed in Settings. sandbox-exec cannot nest, so claude's own
   sandbox is forced off, runs start Chrome without its own (`AGENT_BROWSER_ARGS=--no-sandbox`),
