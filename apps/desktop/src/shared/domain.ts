@@ -251,6 +251,12 @@ export const LastShipSchema = z.object({
 });
 type LastShip = z.infer<typeof LastShipSchema>;
 
+/** A runner session, and the folder it began in: claude records a turn only under the folder it runs in. */
+export interface RunSession {
+  id: string;
+  workspace: string;
+}
+
 export interface Employee {
   id: string;
   companyId: string;
@@ -260,7 +266,7 @@ export interface Employee {
   /** system-prompt flavor for the agent */
   persona: string;
   runner: AgentRunner;
-  sessionId: string | null;
+  session: RunSession | null;
   /** Digest of the instructions that session was last given; a run whose instructions differ sends them again. */
   instructionsDigest: string | null;
   /** deterministic sprite + portrait */

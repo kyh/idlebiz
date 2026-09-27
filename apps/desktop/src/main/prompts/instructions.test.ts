@@ -33,7 +33,7 @@ const employee: Employee = {
   persona: "",
   role: "analyst",
   runner: "claude",
-  sessionId: null,
+  session: null,
   spriteSeed: "s",
   status: "idle",
   title: "Analyst",

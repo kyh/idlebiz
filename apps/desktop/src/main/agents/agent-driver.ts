@@ -49,6 +49,7 @@ import type {
   Employee,
   RestingRunners,
   RunOutcome,
+  RunSession,
 } from "@/shared/domain";
 import * as store from "@/main/store/store";
 import { ROOT_DIR, employeeMemoryDir } from "@/main/paths";
@@ -446,7 +447,7 @@ export interface RunResult {
   outcome: RunOutcome;
   summary: string;
   /** The session to remember for this employee after the run; null forgets it. */
-  session: string | null;
+  session: RunSession | null;
   /** Digest of the instructions that session now holds. */
   instructionsDigest: string | null;
   usage: AgentUsage;
@@ -462,14 +463,23 @@ export const memoryAfter = (
   turn: Pick<AcpTurnResult, "end" | "sessionId">,
   stored: Memory,
   digest: string,
+  workspace: string,
 ): Memory => {
   if (turn.end.kind === "failed" && turn.end.sessionSpent) {
     return { instructionsDigest: null, session: null };
   }
   return turn.sessionId === undefined
     ? stored
-    : { instructionsDigest: digest, session: turn.sessionId };
+    : { instructionsDigest: digest, session: { id: turn.sessionId, workspace } };
 };
+
+/**
+ * The session a run in `workspace` resumes. Only one begun there: claude resumes a session from
+ * any folder but the seal lets a run write only its own folder's transcripts, so a turn resumed
+ * elsewhere is never recorded and the next resume has forgotten it.
+ */
+export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
+  session?.workspace === workspace ? session.id : undefined;
 
 class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
@@ -656,7 +666,7 @@ class AgentDriver {
     signal: AbortSignal,
   ): Promise<RunResult> {
     const prompt = `${task.title}\n\n${task.description}`.trim();
-    const resumeId = emp.sessionId ?? undefined;
+    const resumeId = resumeIn(emp.session, task.workspace);
     // read at the start, so a change made while the run works reaches the next one
     const instructions = store.employeeInstructions(emp.id);
     const digest = createHash("sha256").update(instructions).digest("hex");
@@ -673,14 +683,19 @@ class AgentDriver {
     const retryFresh =
       first.result.outcome.kind === "failed" && first.turn.resumed && !first.sawOutput;
     if (!retryFresh) {
-      const stored = { instructionsDigest: emp.instructionsDigest, session: emp.sessionId };
-      return { ...first.result, ...memoryAfter(first.turn, stored, digest) };
+      const stored = { instructionsDigest: emp.instructionsDigest, session: emp.session };
+      return { ...first.result, ...memoryAfter(first.turn, stored, digest, task.workspace) };
     }
     const retry = await this.invoke(emp, company, run, onEvent, tools, undefined, signal);
     // the stale attempt was still billed; each attempt is already priced, so add, don't re-price
     return {
       ...retry.result,
-      ...memoryAfter(retry.turn, { instructionsDigest: digest, session: null }, digest),
+      ...memoryAfter(
+        retry.turn,
+        { instructionsDigest: digest, session: null },
+        digest,
+        task.workspace,
+      ),
       usage: addUsage(first.result.usage, retry.result.usage),
     };
   }

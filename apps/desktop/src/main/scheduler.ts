@@ -243,7 +243,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
   if (status !== "queued") {
     store.revokeApprovals(task.id);
   }
-  store.noteRunEnd(emp.id, { instructionsDigest: r.instructionsDigest, sessionId: r.session });
+  store.noteRunEnd(emp.id, { instructionsDigest: r.instructionsDigest, session: r.session });
 
   publishActivity({ ...at, kind: "status", message: status });
   return status;
@@ -718,7 +718,7 @@ class Scheduler {
       result = {
         instructionsDigest: employee.instructionsDigest,
         outcome: { error: errorMessage(error), kind: "failed" },
-        session: employee.sessionId,
+        session: employee.session,
         summary: "",
         usage: zeroUsage(),
       };

@@ -58,8 +58,7 @@ export const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee 
     persona: optStr(m, "persona") ?? "",
     role: optStr(m, "role") ?? "general",
     runner: parseRunner(optStr(m, "runner")),
-    // saves from before run-state.json kept the session here; adoptOlderSave moves it into run-state.json
-    sessionId: optStr(m, "sessionId"),
+    session: null,
     spriteSeed: optStr(m, "spriteSeed") ?? `emp-${reqStr(f, "slug")}`,
     status: "idle",
     title: optStr(m, "title") ?? optStr(f, "description") ?? "",

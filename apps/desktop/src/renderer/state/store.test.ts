@@ -38,7 +38,7 @@ const employee = (id: string, status: Employee["status"] = "idle"): Employee => 
   persona: "",
   role: "engineer",
   runner: "claude",
-  sessionId: null,
+  session: null,
   spriteSeed: id,
   status,
   title: "Engineer",

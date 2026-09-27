@@ -265,6 +265,8 @@ const RunStateSchema = z.object({
   // defaulted: a file without it must still parse, or its session would be dropped with it
   lastShip: LastShipSchema.nullable().default(null),
   sessionId: z.string().nullable(),
+  // a file without it names no folder its session began in, so that session is never resumed
+  sessionWorkspace: z.string().nullable().default(null),
 });
 
 const saveRunState = (e: Employee): void => {
@@ -272,15 +274,24 @@ const saveRunState = (e: Employee): void => {
     instructionsDigest: e.instructionsDigest,
     lastRunMetrics: e.lastRunMetrics,
     lastShip: e.lastShip,
-    sessionId: e.sessionId,
+    sessionId: e.session?.id ?? null,
+    sessionWorkspace: e.session?.workspace ?? null,
   };
   atomicWrite(employeeRunStateFile(e.companyId, e.id), JSON.stringify(state, null, 2));
 };
 
-const withRunState = (e: Employee): Employee => ({
-  ...e,
-  ...readJsonFile(employeeRunStateFile(e.companyId, e.id), RunStateSchema),
-});
+const withRunState = (e: Employee): Employee => {
+  const state = readJsonFile(employeeRunStateFile(e.companyId, e.id), RunStateSchema);
+  if (state === null) {
+    return e;
+  }
+  const { instructionsDigest, lastRunMetrics, lastShip, sessionId, sessionWorkspace } = state;
+  const session =
+    sessionId === null || sessionWorkspace === null
+      ? null
+      : { id: sessionId, workspace: sessionWorkspace };
+  return { ...e, instructionsDigest, lastRunMetrics, lastShip, session };
+};
 
 // ---- persistence ------------------------------------------------------------
 const readTextIfPresent = (file: string): string | null => {
@@ -723,7 +734,7 @@ const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
   persona: input.persona,
   role: input.role,
   runner: input.runner,
-  sessionId: null,
+  session: null,
   spriteSeed: input.spriteSeed,
   status: "idle",
   title: input.title,
@@ -775,7 +786,7 @@ export const setEmployeeStatus = (id: string, status: Employee["status"]): void 
  */
 export const noteRunEnd = (
   id: string,
-  session: Pick<Employee, "sessionId" | "instructionsDigest">,
+  session: Pick<Employee, "session" | "instructionsDigest">,
 ): void => {
   const { active } = c();
   if (!active) {
@@ -2507,12 +2518,6 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   const { id } = active.company;
   if (from < 1) {
     adoptLegacyTeam(active.company);
-    for (const e of active.employees) {
-      if (e.sessionId !== null) {
-        // AGENTS.md is rewritten without it at the end of this boot
-        saveRunState(e);
-      }
-    }
     if (lacksProduct(active)) {
       const vercel = legacyVercel(id);
       ensureFirstProduct(active, vercel);

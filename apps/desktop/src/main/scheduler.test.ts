@@ -84,6 +84,8 @@ const done = (costUsd = 0): RunResult => ({
   usage: { ...zeroUsage(), costUsd },
 });
 
+const SESSION = { id: "session-1", workspace: "/save/workspace" };
+
 const interrupted: RunResult = { ...done(), outcome: { kind: "interrupted" } };
 
 /** A runner whose runs end when the test says so, or as interrupted the moment they are aborted. */
@@ -601,16 +603,16 @@ describe("settling a run", () => {
   });
 
   it("remembers the session and the instructions it now holds", async () => {
-    await runOne({ ...done(), instructionsDigest: "told", session: "session-1" });
+    await runOne({ ...done(), instructionsDigest: "told", session: SESSION });
     expect(store.getEmployee("priya")).toMatchObject({
       instructionsDigest: "told",
-      sessionId: "session-1",
+      session: SESSION,
     });
   });
 
   it("keeps the session and what it was told when the runner throws", async () => {
     found();
-    store.noteRunEnd("priya", { instructionsDigest: "told", sessionId: "session-1" });
+    store.noteRunEnd("priya", { instructionsDigest: "told", session: SESSION });
     const broken: EmployeeRunner = {
       ...scripted().driver,
       runTask: () => Promise.reject(new Error("no CLI")),
@@ -620,7 +622,7 @@ describe("settling a run", () => {
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.getEmployee("priya")).toMatchObject({
       instructionsDigest: "told",
-      sessionId: "session-1",
+      session: SESSION,
     });
   });
 

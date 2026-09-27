@@ -14,7 +14,7 @@ const employee: Employee = {
   persona: "",
   role: "engineer",
   runner: "claude",
-  sessionId: null,
+  session: null,
   spriteSeed: "s",
   status: "idle",
   title: "Founding Engineer",

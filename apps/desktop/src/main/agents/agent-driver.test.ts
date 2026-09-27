@@ -43,6 +43,7 @@ const {
   mcpOffConfig,
   memoryAfter,
   outcomeOf,
+  resumeIn,
 } = await import("./agent-driver");
 const { browserNamespace, realPathOf, sealedCommand, signInCommand } = await import("./seal");
 
@@ -242,29 +243,43 @@ describe("rest", () => {
 });
 
 describe("memoryAfter", () => {
-  const stored = { instructionsDigest: "old", session: "kept" };
+  const kept = { id: "kept", workspace: "/save/workspace" };
+  const stored = { instructionsDigest: "old", session: kept };
+  const ran = { id: "ran", workspace: "/save/products/b/workspace" };
 
-  it("remembers the session the turn ran, holding the instructions it was given", () => {
-    expect(memoryAfter({ end: { kind: "completed" }, sessionId: "ran" }, stored, "new")).toEqual({
+  it("remembers the session the turn ran, where it ran, holding the instructions it was given", () => {
+    expect(
+      memoryAfter({ end: { kind: "completed" }, sessionId: "ran" }, stored, "new", ran.workspace),
+    ).toEqual({ instructionsDigest: "new", session: ran });
+    expect(memoryAfter({ end: failed, sessionId: "ran" }, stored, "new", ran.workspace)).toEqual({
       instructionsDigest: "new",
-      session: "ran",
-    });
-    expect(memoryAfter({ end: failed, sessionId: "ran" }, stored, "new")).toEqual({
-      instructionsDigest: "new",
-      session: "ran",
+      session: ran,
     });
   });
 
   it("leaves what was stored when the turn opened no session", () => {
-    expect(memoryAfter({ end: failed }, stored, "new")).toEqual(stored);
+    expect(memoryAfter({ end: failed }, stored, "new", ran.workspace)).toEqual(stored);
   });
 
   it("forgets a session only a new one can follow", () => {
     const spent = { error: "context window exceeded", kind: "failed", sessionSpent: true } as const;
-    expect(memoryAfter({ end: spent, sessionId: "kept" }, stored, "new")).toEqual({
+    expect(memoryAfter({ end: spent, sessionId: "kept" }, stored, "new", kept.workspace)).toEqual({
       instructionsDigest: null,
       session: null,
     });
+  });
+});
+
+describe("resumeIn", () => {
+  const session = { id: "s1", workspace: "/save/products/a/workspace" };
+
+  it("resumes a session in the folder it began in", () => {
+    expect(resumeIn(session, "/save/products/a/workspace")).toBe("s1");
+  });
+
+  it("starts fresh in any other folder, where claude could not record the turn", () => {
+    expect(resumeIn(session, "/save/products/b/workspace")).toBeUndefined();
+    expect(resumeIn(null, "/save/products/a/workspace")).toBeUndefined();
   });
 });
 

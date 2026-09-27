@@ -433,7 +433,8 @@ describe("active company ownership", () => {
     expect(store.listQueuedTasks().map((task) => task.companyId)).toEqual(["newer"]);
     expect(store.getTask(running.id)?.state.kind).toBe("queued");
 
-    store.noteRunEnd(employee.id, { instructionsDigest: null, sessionId: "new-session" });
+    const session = { id: "new-session", workspace: product.workspaceDir };
+    store.noteRunEnd(employee.id, { instructionsDigest: null, session });
     store.setProductVercel(product.id, {
       projectId: "new-project",
       projectName: "New",
@@ -444,7 +445,7 @@ describe("active company ownership", () => {
     store.recordShip(product.id, "new company shipped");
     scheduler.tick();
 
-    expect(store.getEmployee(employee.id)?.sessionId).toBe("new-session");
+    expect(store.getEmployee(employee.id)?.session).toEqual(session);
     expect(store.getProduct(product.id)?.ships).toBe(1);
     expect(store.listShippedTasks().map((task) => task.id)).toEqual([queued.id]);
     expect(saveSnapshot(older.id)).toEqual(before);
@@ -614,18 +615,19 @@ describe("what a run leaves behind", () => {
     const before = readFileSync(instructions, "utf-8");
     store.setRealMetrics({ revenue: 12.5, users: null });
 
-    store.noteRunEnd(emp.id, { instructionsDigest: "told-1", sessionId: "session-1" });
+    const session = { id: "session-1", workspace: company.workspaceDir };
+    store.noteRunEnd(emp.id, { instructionsDigest: "told-1", session });
 
     expect(readFileSync(instructions, "utf-8")).toBe(before);
     store.initStore();
     expect(store.getEmployee(emp.id)).toMatchObject({
       instructionsDigest: "told-1",
       lastRunMetrics: { revenueUsd: 12.5, users: null },
-      sessionId: "session-1",
+      session,
     });
   });
 
-  it("still resumes a session a save from before run-state.json kept in AGENTS.md", () => {
+  it("drops a session a save from before run-state.json kept in AGENTS.md, which names no folder it began in", () => {
     const company = found();
     const emp = store.createEmployee(hire("Priya"));
     const instructions = path.join(root, company.id, "agents", emp.id, "AGENTS.md");
@@ -638,7 +640,7 @@ describe("what a run leaves behind", () => {
     store.initStore();
     store.initStore();
     expect(readFileSync(instructions, "utf-8")).not.toContain("legacy-session");
-    expect(store.getEmployee(emp.id)?.sessionId).toBe("legacy-session");
+    expect(store.getEmployee(emp.id)?.session).toBeNull();
   });
 
   it("keeps their last ship, for a dialogue to build on without reading the log", () => {
@@ -659,7 +661,7 @@ describe("what a run leaves behind", () => {
     });
   });
 
-  it("still resumes the session of an older run-state, owing it its instructions once", () => {
+  it("keeps an older run-state but not its session, which names no folder it began in", () => {
     const company = found();
     const emp = store.createEmployee(hire("Priya"));
     writeFileSync(
@@ -670,7 +672,7 @@ describe("what a run leaves behind", () => {
     expect(store.getEmployee(emp.id)).toMatchObject({
       instructionsDigest: null,
       lastShip: null,
-      sessionId: "session-1",
+      session: null,
     });
   });
 
