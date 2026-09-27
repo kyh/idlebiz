@@ -39,6 +39,8 @@ export interface Npc {
   activity: Activity;
   /** They asked the founder something this run — "!" until the run settles. */
   asking: boolean;
+  /** An ask of theirs still waits on the founder, whatever they do meanwhile. */
+  waiting: boolean;
   plan: WalkPlan | null;
   nextWanderAt: number;
   pendingTimer?: Phaser.Time.TimerEvent;
@@ -75,6 +77,7 @@ export const applyLook = (npc: Npc): void => {
     asking: npc.asking,
     atDesk: atSeat(npc),
     phase: npc.phase,
+    waiting: npc.waiting,
     walking: npc.plan !== null,
   });
   npc.attachments.showEmote(emote);

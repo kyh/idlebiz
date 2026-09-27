@@ -41,14 +41,16 @@ export interface Situation {
   readonly activity: Activity;
   /** They asked the founder something this run. */
   readonly asking: boolean;
+  /** An ask of theirs from any run still waits on the founder. */
+  readonly waiting: boolean;
   /** On their way somewhere. */
   readonly walking: boolean;
   /** On their seat, as opposed to away from it or deskless. */
   readonly atDesk: boolean;
 }
 
-const emoteOf = ({ activity, asking }: Situation): Emote | null => {
-  if (activity.kind === "blocked" || asking) {
+const emoteOf = ({ activity, asking, waiting }: Situation): Emote | null => {
+  if (activity.kind === "blocked" || asking || waiting) {
     return "alert";
   }
   return activity.kind === "working" && activity.pose === "thinking" ? "think" : null;

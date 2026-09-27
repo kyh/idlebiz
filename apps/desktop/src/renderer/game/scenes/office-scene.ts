@@ -27,8 +27,9 @@ import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 import { characterDepth } from "@/shared/office-depth";
 import type { ActivityEvent } from "@/shared/activity";
 import { hear, tell } from "@/renderer/game/office-port";
+import { Coalesced } from "@/renderer/state/ordering";
 import { DEFAULT_FOUNDER_SEED } from "@/shared/domain";
-import type { Employee } from "@/shared/domain";
+import type { Employee, Task } from "@/shared/domain";
 import { bodyBlockedAt, solidAt } from "@/shared/office-grid";
 
 const FACING_OFFSET = {
@@ -81,6 +82,9 @@ const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };
 
+const assigneesOf = (tasks: readonly Task[]): Set<string> =>
+  new Set(tasks.flatMap((t) => (t.assigneeId ? [t.assigneeId] : [])));
+
 export class OfficeScene extends Scene {
   private player?: Player;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -94,6 +98,8 @@ export class OfficeScene extends Scene {
    * there is a no-op, so replaying what the snapshot already saw is harmless.
    */
   private readonly npcEvents = new BootGate<NpcManager>();
+  // one at a time, so an answer read before the founder's reply never lands after the one read since
+  private readonly asks = new Coalesced(() => this.recheckAsks());
   private clickWalk?: ClickWalk;
   private modalOpen = false;
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
@@ -299,6 +305,7 @@ export class OfficeScene extends Scene {
         npcs.setState(task.assigneeId, "blocked");
       }
     }
+    npcs.setWaiting(assigneesOf(blocked));
     this.npcEvents.open(npcs);
   }
 
@@ -411,12 +418,15 @@ export class OfficeScene extends Scene {
           const asks = settled === null ? outcome.kind === "blocked" : settled === "blocked";
           const state = asks ? "blocked" : "idle";
           this.npcEvents.run((npcs) => npcs.setState(e.employeeId, state));
+          void this.asks.call();
           return;
         }
-        // an answer requeues the task, but its run may not start at once: drop the "!" now
+        // an answer requeues the task, but its run may not start at once: drop the "!" now,
+        // unless other work of theirs was queued while an ask of theirs still waits
         case "status": {
           if (e.message === "queued") {
             this.npcEvents.run((npcs) => npcs.unblock(e.employeeId));
+            void this.asks.call();
           }
           break;
         }
@@ -424,7 +434,7 @@ export class OfficeScene extends Scene {
         // with no event per task
         case "bet.changed":
         case "product.killed": {
-          void this.recheckAsks();
+          void this.asks.call();
           break;
         }
         default: {
@@ -434,10 +444,7 @@ export class OfficeScene extends Scene {
     });
   }
 
-  /**
-   * Asks main who still waits on the founder and lowers every other "!". Never
-   * raises one: that is run.end's, and a late answer would revive an ask since answered.
-   */
+  /** Asks main who still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
   private async recheckAsks(): Promise<void> {
     const { generation } = this;
     try {
@@ -445,8 +452,7 @@ export class OfficeScene extends Scene {
       if (generation !== this.generation) {
         return;
       }
-      const asking = new Set(blocked.flatMap((t) => (t.assigneeId ? [t.assigneeId] : [])));
-      this.npcEvents.run((npcs) => npcs.unblockAllBut(asking));
+      this.npcEvents.run((npcs) => npcs.setWaiting(assigneesOf(blocked)));
     } catch (error) {
       console.error("Could not recheck the office's asks", error);
     }

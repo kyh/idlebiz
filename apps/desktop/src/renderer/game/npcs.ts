@@ -146,6 +146,7 @@ export class NpcManager {
       plan: null,
       seat,
       sprite,
+      waiting: false,
     };
     this.npcs.set(emp.id, npc);
     if (passage === "door") {
@@ -293,11 +294,14 @@ export class NpcManager {
     }
   }
 
-  /** Asks the steering loop dropped: only those still asking keep the "!". */
-  unblockAllBut(asking: ReadonlySet<string>): void {
-    for (const id of this.npcs.keys()) {
-      if (!asking.has(id)) {
-        this.unblock(id);
+  /** Who main says still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
+  setWaiting(waiting: ReadonlySet<string>): void {
+    for (const [id, npc] of this.npcs) {
+      npc.waiting = waiting.has(id);
+      if (!npc.waiting && npc.activity.kind === "blocked") {
+        this.setState(id, "idle");
+      } else {
+        applyLook(npc);
       }
     }
   }

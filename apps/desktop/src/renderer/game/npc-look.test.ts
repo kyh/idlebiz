@@ -16,6 +16,7 @@ const settled = (activity: Activity, asking: boolean, atDesk: boolean): Situatio
   asking,
   atDesk,
   phase: "settled",
+  waiting: false,
   walking: false,
 });
 
@@ -46,6 +47,13 @@ describe("lookOf, settled and standing still", () => {
     ["blocked", true, false, "alert", still("down")],
   ])("%s, asking %s, at desk %s", (activity, asking, atDesk, emote, stance) => {
     expect(lookOf(settled(ACTIVITIES[activity], asking, atDesk))).toEqual({ emote, stance });
+  });
+});
+
+describe("lookOf, while an ask of theirs waits on the founder", () => {
+  it.each(Object.entries(ACTIVITIES))('keeps the "!" over them %s', (_name, activity) => {
+    const look = lookOf({ ...settled(activity, false, true), waiting: true });
+    expect(look.emote).toBe("alert");
   });
 });
 
