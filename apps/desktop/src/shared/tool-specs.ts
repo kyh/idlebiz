@@ -146,7 +146,7 @@ export const TOOL_SPECS = {
   }),
   request_integration: tool({
     body: z.strictObject({ kind: z.enum(INTEGRATION_KINDS), reason: z.string().trim().min(1) }),
-    doc: 'the business needs a real-world connection: `"vercel"` (hosting, deploys, traffic analytics), `"stripe"` (counting revenue; read-only, cannot create payments) or `"printful"` (printing and shipping what sell_print lists). The founder gets a card with a Connect button; this task resumes automatically once they connect.',
+    doc: 'the business needs a real-world connection: `"vercel"` (hosting, deploys, traffic analytics), `"stripe"` (counting revenue; read-only, cannot create payments) or `"printful"` (printing and shipping what sell_print lists). The founder gets a card with a Connect button; this task resumes automatically once they connect, and for `"stripe"` only once Stripe is live: while either Stripe key is in test mode it keeps waiting.',
     example: { kind: "vercel", reason: "..." },
     leadOnly: null,
     method: "POST",

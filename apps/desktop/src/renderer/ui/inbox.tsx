@@ -3,6 +3,7 @@ import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, retryTask } from "@/renderer/state/store";
 import { ActionCard } from "@/renderer/ui/action-card";
 import { AnswerForm } from "@/renderer/ui/answer-form";
+import { connectAskCopy } from "@/renderer/ui/connect-ask";
 import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
@@ -28,27 +29,25 @@ const ConnectRow = ({
   reason: string;
   onConnect: (need: IntegrationNeed) => void;
 }) => {
-  const label = INTEGRATION_LABELS[integration];
-  // only a saved key charges: a Stripe connection reads revenue, so the card says to add one
-  const isKey = integration === "stripe-key";
+  const stripeKey = useStore((s) => s.stripeKey);
+  const stripeStatus = useStore((s) => s.stripeStatus);
+  const copy = connectAskCopy(integration, stripeKey, stripeStatus);
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">
         🔌 {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
       <div className="mt-1 text-sm leading-snug text-fg">
-        {reason || `The team needs ${label} connected to keep going.`}
+        {reason || `The team needs ${INTEGRATION_LABELS[integration]} connected to keep going.`}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-fg-dim">
-          Their task resumes automatically once {isKey ? "the key is saved" : "connected"}.
-        </span>
+        <span className="text-xs text-fg-dim">{copy.resumes}</span>
         <button
           type="button"
           onClick={() => onConnect(integration)}
           className="px-btn-accent px-btn"
         >
-          {isKey ? "Add" : "Connect"} {label}
+          {copy.button}
         </button>
       </div>
     </div>
