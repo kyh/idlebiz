@@ -701,18 +701,34 @@ describe("deploy", () => {
     expect(store.getProduct("acme")?.vercel).toBeNull();
   });
 
-  it("asks to bind the product it named, not the run's own, when that name is taken", async () => {
+  it("deploys only its run's own product, the folder a signed run has to itself", async () => {
     connectVercel();
-    const { ctx, asked } = deployingRun({ kind: "name-taken", name: "side" });
+    const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     const side = store.createProduct({ description: "a side project", name: "Side" });
     store.grantApproval(
       ctx.run.taskId,
       `deploy ${side.id} to production on a new Vercel project named ${side.id}`,
     );
 
-    await callTool(ctx, "POST /v1/deploy", { product: side.id });
+    await expect(callTool(ctx, "POST /v1/deploy", { product: side.id })).rejects.toThrow(
+      'Unrecognized key: "product"',
+    );
+    expect(asked).toEqual([]);
+    expect(deploys).toEqual([]);
+  });
 
-    expect(asked).toMatchObject([{ integration: "vercel", productId: side.id }]);
+  it("deploys nothing from a run on no product", async () => {
+    connectVercel();
+    const { ctx, asked, deploys } = deployingRun(DEPLOYED);
+    const companyRun: RunContext = { ...ctx, run: { ...ctx.run, productId: null } };
+    store.grantApproval(ctx.run.taskId, BOUND_ACTION);
+    store.setProductVercel("acme", VERCEL);
+
+    expect(await callTool(companyRun, "POST /v1/deploy", {})).toBe(
+      "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.",
+    );
+    expect(asked).toEqual([]);
+    expect(deploys).toEqual([]);
   });
 
   it("refuses a folder holding a key set_env set before the founder is asked to sign off", async () => {

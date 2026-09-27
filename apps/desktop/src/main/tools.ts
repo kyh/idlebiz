@@ -792,10 +792,11 @@ const TOOLS = {
       `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
     ),
   ),
-  deploy: define(TOOL_SPECS.deploy, async (ctx, { product: named }) => {
-    const productId = productFor(ctx, named);
+  // A signed run has only its own product's folder to itself, so no other is shipped from it.
+  deploy: define(TOOL_SPECS.deploy, async (ctx) => {
+    const { productId } = ctx.run;
     if (productId === null) {
-      return "There is no product to deploy — create_product first.";
+      return "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.";
     }
     const product = store.getProduct(productId);
     if (!product) {
