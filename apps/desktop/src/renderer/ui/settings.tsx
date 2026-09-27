@@ -163,7 +163,9 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           </div>
           <div className="mt-1 text-sm leading-snug text-fg">
             Reset demolishes the office: every employee, task, and workspace file your team created,
-            plus stored secrets and connections. The game restarts from scratch. There is no undo.
+            plus stored secrets and connections. Its live payment links are switched off at Stripe
+            first; any Stripe would not switch off, and paid prints not yet at Printful, are listed
+            for you to handle by hand. The game restarts from scratch. There is no undo.
           </div>
           {demolishing ? (
             <div className="px-live-dot mt-3 text-sm" style={{ color: "var(--danger)" }}>

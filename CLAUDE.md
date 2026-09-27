@@ -340,7 +340,10 @@ third boundary.
   writes it again, so deleted, those links are never looked for. Once one retires and a live
   key is saved, one read of the account's active links cards the founder with those tagged for it (none switched off by
   IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
-  say where each of a retired product's links stands. Agents read orders, buyers' emails and addresses included, with the unsigned
+  say where each of a retired product's links stands. A reset switches off every live link not
+  yet off before it deletes the save (`switchOffBeforeReset`), since nothing is left after to
+  ship its prints or record a buyer, and its warning names each link Stripe left on, each paid
+  print Printful never confirmed and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to

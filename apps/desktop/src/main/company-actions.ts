@@ -8,6 +8,7 @@ import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "@/main/secre
 import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
 import type { Bet } from "@/shared/bets";
 import { isOutOfBudget } from "@/shared/domain";
+import { formatUsd } from "@/shared/format";
 import type {
   ActionAsk,
   ActionReply,
@@ -362,6 +363,70 @@ let lastSweep: Promise<void> = Promise.resolve();
 export const switchOffRetiredLinks = (): Promise<void> => {
   lastSweep = sweepReported(lastSweep);
   return lastSweep;
+};
+
+/** Why a live link still takes money once the save is gone, or null once Stripe switched it off. */
+const switchedOffForReset = async (
+  link: CompanyLink,
+  key: string | null,
+): Promise<string | null> => {
+  if (key === null) {
+    return "IdleBiz has no Stripe key it can use";
+  }
+  const done = await switchOffPaymentLink(key, link.id);
+  return done.kind === "off" ? null : done.error;
+};
+
+/**
+ * Before a reset deletes the save, switch off with the founder's key every live payment link the
+ * company still sells through, one at a time as the sweep does: once the save is gone nothing
+ * records a link, ships its prints or hands its buyers what they paid for. Answers what the
+ * founder must still do by hand (links left on, paid prints Printful never confirmed, links
+ * older builds never recorded), or null when nothing is left.
+ */
+export const switchOffBeforeReset = async (): Promise<string | null> => {
+  if (store.getCompany() === null) {
+    return null;
+  }
+  const key = getSecret(STRIPE_SECRET_KEY);
+  const leftOn: string[] = [];
+  for (const link of store.paymentLinks()) {
+    if (!link.livemode || link.state.kind === "switched-off") {
+      continue;
+    }
+    const why = await switchedOffForReset(link, key);
+    if (why !== null) {
+      leftOn.push(`${JSON.stringify(link.name)} ${link.url} (${link.id}): ${why}`);
+    }
+  }
+  const unsent = store
+    .listOrders()
+    .flatMap((o) =>
+      o.kind === "sale" && o.livemode && o.stage.kind !== "confirmed"
+        ? [
+            `${o.recipient.name} (${o.email ?? "no email"}), checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}`,
+          ]
+        : [],
+    );
+  const unrecorded = store.unrecordedLinkProducts();
+  const left = [
+    ...(leftOn.length === 0
+      ? []
+      : [
+          `These payment links still take money: in Stripe's dashboard, open Payment links and deactivate each. ${leftOn.join("; ")}.`,
+        ]),
+    ...(unsent.length === 0
+      ? []
+      : [
+          `These paid prints were never confirmed at Printful: confirm each one's draft in Printful's dashboard where it has one, place it there by hand where it has none, or refund it in Stripe. ${unsent.join("; ")}.`,
+        ]),
+    ...(unrecorded.length === 0
+      ? []
+      : [
+          `Older versions of IdleBiz kept no record of the payment links they made for ${unrecorded.join(", ")}: deactivate those whose metadata names them.`,
+        ]),
+  ];
+  return left.length === 0 ? null : left.join("\n\n");
 };
 
 /**

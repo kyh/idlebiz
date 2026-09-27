@@ -4,12 +4,14 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChargeLink } from "@/shared/payment-link";
 import type { Listing } from "@/shared/listing";
+import type { Sale } from "@/shared/order";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-retired-links-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { retireProduct, settleOrderCard, switchOffRetiredLinks } = await import("./company-actions");
+const { retireProduct, settleOrderCard, switchOffBeforeReset, switchOffRetiredLinks } =
+  await import("./company-actions");
 
 const TEE = "plink_tee";
 const PRO = "plink_pro";
@@ -465,5 +467,74 @@ describe("an older save's links", () => {
 
     expect(again.lists).toBe(1);
     expect(store.unrecordedLinkProducts()).not.toContain(gone.id);
+  });
+});
+
+/** A paid print order of `productId`'s tee, at `stage`. */
+const teeOrder = (productId: string, id: string, stage: Sale["stage"]): Sale => ({
+  collectedCents: 3599,
+  costCents: null,
+  createdAt: 3,
+  email: "buyer@example.com",
+  id,
+  kind: "sale",
+  listingId: "launch-tee",
+  livemode: true,
+  paymentIntent: null,
+  printfulStatus: null,
+  productId,
+  quantity: 1,
+  recipient: {
+    address1: "1 Main St",
+    address2: null,
+    city: "Springfield",
+    countryCode: "US",
+    name: "Pat Buyer",
+    phone: null,
+    stateCode: "IL",
+    zip: "62701",
+  },
+  sessionId: `cs_${id}`,
+  stage,
+  variant: { id: 4012, label: "Black / S" },
+});
+
+describe("resetting the company", () => {
+  it("switches off every live link still taking money, so nothing charges once the save is gone", async () => {
+    const { side } = openShop();
+    store.recordChargeLink(chargeLinkOn(side.id, SANDBOX, false));
+    const stripe = fakeStripe();
+
+    expect(await switchOffBeforeReset()).toBeNull();
+
+    expect(stripe.switchOffs.map((s) => s.id)).toEqual([TEE, PRO]);
+    expect(stripe.switchOffs.every((s) => s.auth === "Bearer rk_live_founder")).toBe(true);
+  });
+
+  it("names each link it could not switch off and each paid print not yet at Printful", async () => {
+    const { side } = openShop();
+    store.recordOrder(teeOrder(side.id, "order-received", { kind: "received", tries: 0 }));
+    store.recordOrder(teeOrder(side.id, "order-sent", { kind: "confirmed", printfulId: 7 }));
+    const stripe = fakeStripe({ answers: { [PRO]: "refused" } });
+
+    const left = await switchOffBeforeReset();
+
+    expect(stripe.switchOffs.map((s) => s.id)).toEqual([TEE, PRO]);
+    expect(left).toContain(`https://buy.stripe.com/${PRO}`);
+    expect(left).not.toContain("https://buy.stripe.com/tee");
+    expect(left).toContain("Pat Buyer");
+    expect(left).not.toContain("order-sent");
+  });
+
+  it("names every live link for the founder to switch off when IdleBiz holds no key", async () => {
+    openShop();
+    saveKey(null);
+    const stripe = fakeStripe();
+
+    const left = await switchOffBeforeReset();
+
+    expect(stripe.switchOffs).toEqual([]);
+    expect(left).toContain("https://buy.stripe.com/tee");
+    expect(left).toContain(`https://buy.stripe.com/${PRO}`);
   });
 });

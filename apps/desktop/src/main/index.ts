@@ -30,6 +30,7 @@ import {
   retireProduct,
   setAutopilot,
   startProduct,
+  switchOffBeforeReset,
 } from "@/main/company-actions";
 import { keepAwake } from "@/main/keep-awake";
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin } from "@/main/login-item";
@@ -80,12 +81,23 @@ const resetGame = async (): Promise<void> => {
   metricsPulse.stop();
   suspendWrites();
   try {
-    const [, stripeLeft] = await Promise.all([stopAgents(), revokeBeforeReset()]);
+    const [, stripeLeft, linksLeft] = await Promise.all([
+      stopAgents(),
+      revokeBeforeReset(),
+      switchOffBeforeReset(),
+    ]);
     await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
     if (stripeLeft) {
       await dialog.showMessageBox({
         detail: stripeLeft,
         message: "Stripe did not confirm it revoked IdleBiz's access",
+        type: "warning",
+      });
+    }
+    if (linksLeft) {
+      await dialog.showMessageBox({
+        detail: linksLeft,
+        message: "Some of the company's sales need you in Stripe or Printful",
         type: "warning",
       });
     }

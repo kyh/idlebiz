@@ -212,7 +212,9 @@ rather than crashing boot.
   (`switchOffRetiredLinks` in `main/company-actions.ts`, run by the retirement and every pulse;
   `main/retired-links.test.ts`), asking again each pulse while Stripe does not answer, and a
   live link Stripe refuses or never answers for, or one with no key saved, is a card naming it
-  (a test-mode one, a line in the room). The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  (a test-mode one, a line in the room). A reset switches off every live link first
+  (`switchOffBeforeReset`) and warns of what it could not, with each paid print Printful never
+  confirmed. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key
