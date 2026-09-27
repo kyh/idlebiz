@@ -23,11 +23,19 @@ export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
 export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
+/**
+ * What an integration ask waits on: a kind an agent may request, or a Stripe key to charge
+ * with, which only a saved key gives — a Stripe connection only reads revenue.
+ */
+export const INTEGRATION_NEEDS = [...INTEGRATION_KINDS, "stripe-key"] as const;
+export type IntegrationNeed = (typeof INTEGRATION_NEEDS)[number];
+
 export const INTEGRATION_LABELS = {
   printful: "Printful",
   stripe: "Stripe",
+  "stripe-key": "Stripe key",
   vercel: "Vercel",
-} satisfies Record<IntegrationKind, string>;
+} satisfies Record<IntegrationNeed, string>;
 
 /** A step only a human can take: `action` names it, `draft` is text to paste, if any. */
 export const ActionAskSchema = z.object({
@@ -43,7 +51,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   z.object({ question: z.string(), type: z.literal("question") }),
   ActionAskSchema,
   z.object({
-    integration: z.enum(INTEGRATION_KINDS),
+    integration: z.enum(INTEGRATION_NEEDS),
     reason: z.string(),
     type: z.literal("integration"),
   }),

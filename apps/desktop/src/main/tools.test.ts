@@ -1365,7 +1365,7 @@ describe("create_payment_link", () => {
     });
 
     expect(answer).toContain("Stripe won't let IdleBiz's key read checkouts");
-    expect(run.asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
+    expect(run.asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
     expect(run.stripe).toEqual([]);
   });
 
@@ -1405,7 +1405,7 @@ describe("create_payment_link", () => {
     expect(answer).toContain("this task resumes automatically once the key is saved");
     expect(asked).toEqual([
       {
-        integration: "stripe",
+        integration: "stripe-key",
         reason: 'to sell "Pro plan" at $9.00 through a payment link',
         type: "integration",
       },
@@ -1966,7 +1966,7 @@ describe("sell_print", () => {
       expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
         "Stripe won't let IdleBiz's key make shipping rates or read checkouts: the founder has a Stripe card waiting",
       );
-      expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
+      expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
       expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
     },
   );
@@ -2087,7 +2087,7 @@ describe("sell_print", () => {
     },
     {
       ask: {
-        integration: "stripe",
+        integration: "stripe-key",
         reason: 'to sell "Launch tee" at $28.00 through a payment link',
         type: "integration",
       },
@@ -2104,7 +2104,7 @@ describe("sell_print", () => {
       said: "Vercel is not connected",
     },
   ])(
-    "leaves the founder a card for a missing $ask.integration key",
+    "leaves the founder a $ask.integration card for a missing key",
     async ({ ask, missing, said }) => {
       const { ctx, asked, sent } = sellingRun(missing);
       expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(said);

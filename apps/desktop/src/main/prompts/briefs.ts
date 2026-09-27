@@ -13,7 +13,7 @@ import type {
   BlockedAsk,
   Company,
   Employee,
-  IntegrationKind,
+  IntegrationNeed,
   Product,
   Routine,
   RunMetrics,
@@ -406,8 +406,10 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
   title: continuationTitle(task.title),
 });
 
-export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
-  `${INTEGRATION_LABELS[kind]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
+export const integrationConnectedAnswer = (need: IntegrationNeed): string =>
+  need === "stripe-key"
+    ? "The founder saved a Stripe key — IdleBiz holds it and charges with it for you. Continue where you left off."
+    : `${INTEGRATION_LABELS[need]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
 
 export const actionAnswer = (reply: ActionReply): string => {
   if (reply.kind === "cant") {

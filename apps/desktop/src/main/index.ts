@@ -56,6 +56,7 @@ import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "@/main/stripe-k
 import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "@/main/printful-token";
 import { ON_REAL_SAVE, ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
+import type { IntegrationNeed } from "@/shared/domain";
 
 const moduleDir = import.meta.dirname;
 const isDev = !app.isPackaged;
@@ -87,10 +88,10 @@ const resetGame = async (): Promise<void> => {
   }
 };
 
-/** Stripe takes a key now: read it at once, and resume the work that waited on it. */
-const stripeReady = (): void => {
+/** Stripe reads revenue now: read it at once, and resume the work that waited on it. */
+const stripeReady = (...needs: IntegrationNeed[]): void => {
   metricsPulse.now();
-  scheduler.resumeIntegrationAsks("stripe");
+  scheduler.resumeIntegrationAsks(...needs);
 };
 
 const ipcHandlers = {
@@ -189,7 +190,7 @@ const ipcHandlers = {
   },
   stripeKeySave: async ({ key }) => {
     await saveStripeKey(key);
-    stripeReady();
+    stripeReady("stripe", "stripe-key");
   },
   stripeKeyStatus,
   stripeStatus: () => {
@@ -362,7 +363,8 @@ const boot = async (): Promise<void> => {
 
   initStripeConnect({
     notify: (status) => broadcast("onStripeStatus", status),
-    onConnected: stripeReady,
+    // a Stripe connection only reads revenue: work waiting on a key to charge with waits on
+    onConnected: () => stripeReady("stripe"),
     openExternal: (url) => shell.openExternal(url),
   });
   initVercelConnect({

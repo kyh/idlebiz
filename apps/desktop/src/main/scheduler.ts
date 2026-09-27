@@ -51,7 +51,7 @@ import type {
   ActionReply,
   Company,
   Employee,
-  IntegrationKind,
+  IntegrationNeed,
   Task,
   TaskStatus,
 } from "@/shared/domain";
@@ -528,7 +528,8 @@ class Scheduler {
     return this.assign(continuation.id, continuation.assigneeId);
   }
 
-  resumeIntegrationAsks(kind: IntegrationKind): void {
+  /** Resume every ask waiting on one of `needs`, which the founder has just connected. */
+  resumeIntegrationAsks(...needs: IntegrationNeed[]): void {
     const company = store.getCompany();
     if (!company) {
       return;
@@ -538,12 +539,12 @@ class Scheduler {
       if (st.kind !== "blocked" || st.ask.type !== "integration") {
         continue;
       }
-      if (st.ask.integration !== kind) {
+      if (!needs.includes(st.ask.integration)) {
         continue;
       }
       const continuation = store.resolveBlockedWithAnswer(
         task.id,
-        integrationConnectedAnswer(kind),
+        integrationConnectedAnswer(st.ask.integration),
       );
       if (continuation?.assigneeId) {
         this.queue(continuation.id, continuation.assigneeId);

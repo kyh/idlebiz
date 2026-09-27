@@ -11,7 +11,7 @@ import { Modal } from "@/renderer/ui/modal";
 import { approvalScope, describeRule } from "@/shared/hold-rules";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { IntegrationKind, Task, TaskIn } from "@/shared/domain";
+import type { IntegrationNeed, Task, TaskIn } from "@/shared/domain";
 import { cn } from "cn";
 
 // Connecting resumes integration asks automatically; no text answer is needed.
@@ -24,11 +24,13 @@ const ConnectRow = ({
 }: {
   t: Task;
   by: string;
-  integration: IntegrationKind;
+  integration: IntegrationNeed;
   reason: string;
-  onConnect: (kind: IntegrationKind) => void;
+  onConnect: (need: IntegrationNeed) => void;
 }) => {
   const label = INTEGRATION_LABELS[integration];
+  // only a saved key charges: a Stripe connection reads revenue, so the card says to add one
+  const isKey = integration === "stripe-key";
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">
@@ -39,14 +41,14 @@ const ConnectRow = ({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-fg-dim">
-          Their task resumes automatically once connected.
+          Their task resumes automatically once {isKey ? "the key is saved" : "connected"}.
         </span>
         <button
           type="button"
           onClick={() => onConnect(integration)}
           className="px-btn-accent px-btn"
         >
-          Connect {label}
+          {isKey ? "Add" : "Connect"} {label}
         </button>
       </div>
     </div>
@@ -139,8 +141,8 @@ export const Inbox = ({
   }
   const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
   // Stripe and Printful are the company's; Vercel binds the product the ask came from, or asks which
-  const connect = (kind: IntegrationKind, t: Task): void => {
-    onOpen(kind === "vercel" ? { kind: "vercel", productId: t.productId } : { kind: "budget" });
+  const connect = (need: IntegrationNeed, t: Task): void => {
+    onOpen(need === "vercel" ? { kind: "vercel", productId: t.productId } : { kind: "budget" });
   };
 
   const askRow = (t: TaskIn<"blocked">) => {
@@ -154,7 +156,7 @@ export const Inbox = ({
             by={nameOf(t.assigneeId)}
             integration={ask.integration}
             reason={ask.reason}
-            onConnect={(kind) => connect(kind, t)}
+            onConnect={(need) => connect(need, t)}
           />
         );
       }

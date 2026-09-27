@@ -48,7 +48,9 @@ const askLine = (ask: BlockedAsk): string => {
       return `needs you to: ${ask.action}`;
     }
     case "integration": {
-      return `needs ${INTEGRATION_LABELS[ask.integration]} connected`;
+      return ask.integration === "stripe-key"
+        ? "needs a Stripe key"
+        : `needs ${INTEGRATION_LABELS[ask.integration]} connected`;
     }
     case "approval": {
       return `needs your sign-off: ${describeRule(ask.rule)}`;

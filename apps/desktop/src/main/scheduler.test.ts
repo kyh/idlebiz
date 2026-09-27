@@ -1020,6 +1020,31 @@ const blockedOn = async (ask: BlockedAsk) => {
   return { bet, drain, task };
 };
 
+describe("an integration the founder connects", () => {
+  const KEY: BlockedAsk = {
+    integration: "stripe-key",
+    reason: "to sell a plan through a payment link",
+    type: "integration",
+  };
+  const READ: BlockedAsk = {
+    integration: "stripe",
+    reason: "to count revenue",
+    type: "integration",
+  };
+
+  it("resumes no ask for a Stripe key on a read-only Stripe connection", async () => {
+    const { drain, task } = await blockedOn(KEY);
+    drain.resumeIntegrationAsks("stripe");
+    expect(kindOf(task)).toBe("blocked");
+  });
+
+  it.each([KEY, READ])("resumes %j once a Stripe key is saved", async (ask) => {
+    const { drain, task } = await blockedOn(ask);
+    drain.resumeIntegrationAsks("stripe", "stripe-key");
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+});
+
 const workOn = (betId: string): Task[] =>
   store.listOpenTasks().filter((t) => t.betId === betId && t.state.kind !== "blocked");
 
