@@ -249,7 +249,7 @@ const saveSecrets = (stripeKey = "rk_live_founder") => {
 };
 
 /** Acme, selling a tee in black S and M at $28 plus $7.99 shipping through `LINK`. */
-const openShop = () => {
+const openShop = (livemode = true) => {
   store.foundCompany({
     budget: { mode: "infinite" },
     businessType: "ecommerce",
@@ -274,7 +274,7 @@ const openShop = () => {
     costCents: 1820,
     createdAt: LISTED_AT,
     id: "launch-tee",
-    livemode: true,
+    livemode,
     name: "Launch tee",
     paymentLink: { id: LINK, state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
     placements: [{ fileUrl: FILE_URL, placement: "front", sha256: DESIGN_SHA, technique: "dtg" }],
@@ -662,7 +662,7 @@ describe("the order pump", () => {
   });
 
   it("prices a test-mode checkout, then deletes its draft, since nobody paid, even one dearer than the payment", async () => {
-    openShop();
+    openShop(false);
     saveSecrets("rk_test_founder");
     const world = fakeWorld({
       sessions: [checkout("cs_test", { livemode: false })],
@@ -718,6 +718,37 @@ describe("the order pump", () => {
     await pumpOrders(NOW, "read");
 
     expect(world.checkoutReads).toEqual([]);
+  });
+
+  it("cards the founder when no live key reads a live link that still takes money", async () => {
+    openShop();
+    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
+    fakeWorld({ sessions: [checkout("cs_paid")] });
+
+    await pumpOrders(NOW, "read");
+    expect(orderCards().map((t) => t.title)).toEqual(["Paid orders wait for a live Stripe key"]);
+
+    const [card] = orderCards();
+    settleOrderCard(card?.id ?? "", { kind: "done", note: "" });
+    saveSecrets("rk_test_founder");
+    const world = fakeWorld({
+      sessions: [checkout("cs_paid"), checkout("cs_test", { livemode: false })],
+    });
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+    expect(orderCards().map((t) => t.title)).toEqual(["Paid orders wait for a live Stripe key"]);
+    expect(store.listOrders().map((o) => o.sessionId)).toEqual(["cs_test"]);
+    expect(world.checkoutReads).toHaveLength(1);
+  });
+
+  it("raises no key card once every live link that could owe a buyer is switched off", async () => {
+    openShop();
+    store.setLinkState(LINK, { at: NOW, by: "idlebiz", kind: "switched-off" });
+    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
+    fakeWorld();
+
+    await pumpOrders(NOW, "read");
+
+    expect(orderCards()).toEqual([]);
   });
 
   it("keeps each paid checkout on a create_payment_link link, and cards the founder only for a live one with a delivery", async () => {
@@ -901,7 +932,7 @@ describe("the order pump", () => {
   });
 
   it("tells the room, not the founder, of a test-mode checkout it cannot send", async () => {
-    openShop();
+    openShop(false);
     saveSecrets("rk_test_founder");
     fakeWorld({
       sessions: [checkout("cs_test", { collected_information: null, livemode: false })],
@@ -967,7 +998,7 @@ describe("the order pump", () => {
   });
 
   it("deletes a test-mode draft Printful never finishes pricing, rather than leave it to be confirmed by hand", async () => {
-    openShop();
+    openShop(false);
     saveSecrets("rk_test_founder");
     const world = fakeWorld({
       pricingReads: 1000,

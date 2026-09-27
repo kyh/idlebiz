@@ -789,6 +789,32 @@ const startOf = (cursor: OrdersCursor, reader: string): number => {
   return sameMode.length > 0 ? Math.min(...sameMode) : cursor.floor;
 };
 
+const stillSelling = (state: LinkState): boolean => state.kind !== "switched-off";
+
+/**
+ * The founder's card while no live key reads what a live link still sells: a print, or a
+ * delivery. Removing the key or saving a test one switches off no link.
+ */
+const cardUnlessLive = (key: string | null): void => {
+  if (key !== null && !isTestKey(key)) {
+    return;
+  }
+  const owed =
+    store.listListings().some((l) => l.livemode && stillSelling(l.paymentLink.state)) ||
+    store
+      .listChargeLinks()
+      .some((link) => link.livemode && link.delivery !== null && stillSelling(link.state));
+  if (!owed) {
+    return;
+  }
+  const why = key === null ? "no Stripe key is saved" : "the saved Stripe key is a test key";
+  raiseOrderCard("Paid orders wait for a live Stripe key", {
+    action: "Save a live Stripe key in the Budget panel",
+    draft: null,
+    instructions: `IdleBiz reads paid orders with the Stripe key in the Budget panel, and ${why}, while the company's live payment links still take real money. Nobody's paid print reaches Printful and no card tells you what a buyer is owed until a live key whose restricted permissions include Read on Checkout Sessions, or your secret key, is saved. Press Done once it is saved: the orders paid meanwhile are read then.`,
+  });
+};
+
 /**
  * Keep every paid checkout on the company's links since the key's cursor, and move it up to the
  * oldest that may still be paid: an open one (Stripe expires those within a day), or one whose
@@ -796,6 +822,7 @@ const startOf = (cursor: OrdersCursor, reader: string): number => {
  */
 const takePaidCheckouts = async (now: number): Promise<void> => {
   const key = getSecret(STRIPE_SECRET_KEY);
+  cardUnlessLive(key);
   if (key === null) {
     return;
   }
