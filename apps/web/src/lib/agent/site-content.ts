@@ -178,7 +178,7 @@ export const privacyPage: ProsePage = {
     { kind: "heading", text: "The desktop app" },
     {
       kind: "paragraph",
-      text: "Your company — employees, tasks, memory, workspace files and the activity log — lives on your Mac under ~/.idlebiz. Stripe, Vercel and Printful keys you enter are encrypted with the macOS Keychain and never handed to your employees. There is no telemetry and no crash reporting to us; logs stay in ~/Library/Logs/IdleBiz.",
+      text: "Your company — employees, tasks, memory, workspace files and the activity log — lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter are encrypted with the macOS Keychain and never handed to your employees. There is no telemetry and no crash reporting to us; logs stay in ~/Library/Logs/IdleBiz.",
     },
     {
       kind: "paragraph",
@@ -187,7 +187,7 @@ export const privacyPage: ProsePage = {
     { kind: "heading", text: "Your choices" },
     {
       kind: "paragraph",
-      text: `Delete ~/.idlebiz to remove every company and key. Disconnect Stripe from the app's Budget panel, or from your Stripe dashboard. Questions or requests: ${siteConfig.email}.`,
+      text: `Delete ~/.idlebiz to remove every company and key, and the runs' transcripts under ~/.claude/projects and ~/.codex/sessions to remove what the CLIs kept of them. Disconnect Stripe from the app's Budget panel, or from your Stripe dashboard. Questions or requests: ${siteConfig.email}.`,
     },
   ],
   description: `What ${siteConfig.name} and this website collect, and where your data lives.`,

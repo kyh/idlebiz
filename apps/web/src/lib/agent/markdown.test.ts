@@ -86,6 +86,15 @@ describe("what the site claims the app does", () => {
     expect(markdown).toMatch(/Printful[^.]*(?:name|address)/iu);
     expect(markdown).toMatch(/Stripe, Vercel and Printful keys/u);
   });
+
+  it("names where the CLIs keep each run's transcript, since deleting ~/.idlebiz leaves them", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    const cut = markdown.indexOf("## Your choices");
+    for (const at of ["~/.claude/projects", "~/.codex/sessions"]) {
+      expect(markdown.slice(0, cut)).toContain(at);
+      expect(markdown.slice(cut)).toContain(at);
+    }
+  });
 });
 
 describe("renderNotFoundMarkdown", () => {
