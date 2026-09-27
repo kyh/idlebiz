@@ -367,7 +367,8 @@ rather than crashing boot.
 - **The budget is usage at API prices**: what the runs would cost billed per token, not what
   the founder's plan bills. The tray and HUD label it `usage` (`usageLabel` in
   `shared/format.ts`); the Budget panel, the digest, onboarding and the HUD's tooltip say it
-  is at API prices.
+  is at API prices. A turn cut off before its agent answers (the watchdog, Stop, a quit, a
+  crash) still bills what its usage updates reported, as uncached input (`runAcpTurn`).
 - **`apps/desktop` `dependencies` is exactly what the app ships.** electron-builder unpacks
   it into node_modules: the ACP adapters main spawns (they bring their own zod and ACP sdk)
   and sharp (native, kept out of the bundle in `electron.vite.config.ts`). Everything Vite

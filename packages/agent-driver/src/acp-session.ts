@@ -295,7 +295,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     let lastMessage = "";
     let pending = "";
     let total = zeroUsage();
-    let requestTokens = 0;
+    // a resume may replay what the session spent before, so only the prompt's updates count
+    let prompted = false;
+    // per request, their sum; for any other agent `used` is its context size, so the largest
+    let reportedTokens = 0;
     let lastRequestTokens: number | undefined;
 
     // ACP has no message-end marker. Flush prose before a tool call or at turn end.
@@ -474,10 +477,17 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
           return;
         }
-        // codex re-sends a request's count unchanged; a repeat is not another request
-        if (update.sessionUpdate === "usage_update" && update.used !== lastRequestTokens) {
-          requestTokens += update.used;
-          lastRequestTokens = update.used;
+        if (update.sessionUpdate === "usage_update" && prompted) {
+          if (!opts.agent.usagePerRequest) {
+            reportedTokens = Math.max(reportedTokens, update.used);
+          } else if (update.used !== lastRequestTokens) {
+            // codex re-sends a request's count unchanged; a repeat is not another request
+            reportedTokens += update.used;
+            lastRequestTokens = update.used;
+          }
+          // Until the agent's answer accounts for the turn, a turn cut off before it still bills
+          // what was reported: as uncached input, since an update carries no split.
+          total = { ...total, inputTokens: reportedTokens };
         }
         const cost = RunCost.safeParse(update);
         if (cost.success && cost.data.cost.amount > total.costUsd) {
@@ -539,9 +549,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           sessionId,
         });
 
-        // a resume may replay what the session spent before
-        requestTokens = 0;
-        lastRequestTokens = undefined;
+        prompted = true;
         const res = await agent.request("session/prompt", {
           prompt: [{ text: turnText(opts, resumed), type: "text" }],
           sessionId,
@@ -553,7 +561,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           // request's split. For any other agent `used` is its context size, not a request.
           const scale =
             opts.agent.usagePerRequest && u.totalTokens > 0
-              ? Math.max(1, requestTokens / u.totalTokens)
+              ? Math.max(1, reportedTokens / u.totalTokens)
               : 1;
           const scaled = (tokens: number): number => Math.round(tokens * scale);
           total = {

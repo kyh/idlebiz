@@ -75,6 +75,54 @@ describe("a turn's token usage", () => {
   });
 });
 
+/** An agent that reports three requests' usage, then works on until the watchdog cuts the turn off. */
+const cutOffAgent = `
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method, params } = JSON.parse(line);
+  if (method === "initialize") send({ id, result: { agentCapabilities: {}, protocolVersion: 1 } });
+  if (method === "session/new") send({ id, result: { sessionId: "s" } });
+  if (method === "session/set_mode") send({ id, result: {} });
+  if (method === "session/prompt") {
+    for (const used of [100000, 200000, 300000]) {
+      send({ method: "session/update", params: { sessionId: params.sessionId, update: { sessionUpdate: "usage_update", size: 400000, used } } });
+    }
+  }
+});
+`;
+
+const cutOff = (usagePerRequest?: true) =>
+  runAcpTurn({
+    agent: {
+      command: [process.execPath, "-e", cutOffAgent],
+      env: {},
+      sessionModeId: "default",
+      usagePerRequest,
+    },
+    cwd,
+    idleTimeoutMs: 0,
+    maxSessionMs: 500,
+    onEvent: () => {},
+    prompt: "work",
+    systemPrompt: "",
+    teardownGraceMs: 100,
+  });
+
+describe("a turn cut off before the agent answered", () => {
+  it("bills every request the agent reported", async () => {
+    const { end, usage } = await cutOff(true);
+    expect(end.kind).toBe("failed");
+    expect(usage).toEqual({ cachedTokens: 0, costUsd: 0, inputTokens: 600_000, outputTokens: 0 });
+    expect(priceUsage(RUNNERS.codex.fallbackRates, usage)).toBeGreaterThan(0);
+  });
+
+  it("bills at least the largest context the agent reported when its updates are not per request", async () => {
+    const { end, usage } = await cutOff();
+    expect(end.kind).toBe("failed");
+    expect(usage).toEqual({ cachedTokens: 0, costUsd: 0, inputTokens: 300_000, outputTokens: 0 });
+  });
+});
+
 describe("priceUsage", () => {
   it("prices tokens per million at the runner's rates", () => {
     const usage = {
