@@ -2586,6 +2586,30 @@ const adoptStripeKeyAsks = (active: ActiveCompany): void => {
 };
 
 /**
+ * Format 10 and older let two products bind one Vercel project: each counted the other's visitors
+ * as its users, and each deploy replaced the other's site. The oldest keeps it. Only the founder
+ * can give the others a project of their own, so the room says which lost theirs; it is read
+ * afresh once the office opens, so the line needs no event.
+ */
+const adoptSharedVercelProjects = (active: ActiveCompany): void => {
+  const holders = new Map<string, Product>();
+  for (const p of active.products.toSorted(
+    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  )) {
+    const holder = p.vercel && holders.get(p.vercel.projectId);
+    if (p.vercel && holder) {
+      recordIn(active.products, p.id, { users: null, vercel: null }, saveProduct);
+      postTeamMessage(
+        { kind: "office" },
+        `${p.name} was bound to the Vercel project ${p.vercel.projectName}, which ${holder.name} holds too, so each counted the other's visitors and each deploy replaced the other's site. ${p.name} is unbound now: bind it to a project of its own with its ▲ Vercel button in Products, or its next deploy asks you to sign for a new project named after it.`,
+      );
+    } else if (p.vercel) {
+      holders.set(p.vercel.projectId, p);
+    }
+  }
+};
+
+/**
  * Format 4 and older wrote each room line's speaker as an employee id or null:
  * rewrite the whole room in the shape that tells founder, office and employee
  * apart. A line neither shape reads was already skipped by every reader.
@@ -2668,6 +2692,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   }
   if (from < 11) {
     adoptStripeKeyAsks(active);
+    adoptSharedVercelProjects(active);
   }
   saveCompany(active.company);
 };

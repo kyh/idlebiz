@@ -2023,6 +2023,40 @@ describe("the save format", () => {
     ]);
   });
 
+  it("keeps a Vercel project a format 10 save bound to two products on the older one, and tells the room", () => {
+    const co = found();
+    const first = firstProduct();
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    const other = store.createProduct({ description: "y", name: "Other" });
+    const site = { projectId: "prj_1", projectName: "site", teamId: null };
+    const own = { projectId: "prj_2", projectName: "own", teamId: null };
+    store.setProductVercel(first.id, site);
+    store.setProductVercel(other.id, own);
+    const gadgetFile = path.join(productsDir(co.id), gadget.id, "PRODUCT.md");
+    const doc = parseDoc(readFileSync(gadgetFile, "utf-8"));
+    writeFileSync(
+      gadgetFile,
+      serializeDoc({
+        ...doc,
+        metadata: { ...doc.metadata, vercelProjectId: "prj_1", vercelProjectName: "site" },
+      }),
+    );
+    restamp(co.id, 10);
+
+    store.initStore();
+
+    expect([first, gadget, other].map((p) => store.getProduct(p.id)?.vercel)).toEqual([
+      site,
+      null,
+      own,
+    ]);
+    expect(store.recentTeamMessages().map((m) => m.text)).toEqual([
+      expect.stringContaining("Gadget was bound to the Vercel project site, which Acme holds"),
+    ]);
+    store.initStore();
+    expect(store.getProduct(gadget.id)?.vercel).toBeNull();
+  });
+
   it("adopts an unstamped save once, and only once", () => {
     const co = found();
     unstamp(co.id);
