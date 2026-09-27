@@ -217,7 +217,7 @@ rather than crashing boot.
   live link Stripe refuses or never answers for, or one with no key saved, is a card naming it
   (a test-mode one, a line in the room). A reset switches off every live link first
   (`switchOffBeforeReset`) and warns of what it could not, with each paid print Printful never
-  confirmed and each paid order whose card still waits on the founder. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
+  confirmed (but a held one whose card the founder settled) and each paid order whose card still waits on the founder. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key

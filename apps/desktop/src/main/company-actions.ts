@@ -20,6 +20,7 @@ import type {
   Task,
 } from "@/shared/domain";
 import { orderCardTitle } from "@/shared/order";
+import type { Order } from "@/shared/order";
 import type { CompanyLink } from "@/shared/payment-link";
 import { RefusalError } from "@/shared/refusal";
 
@@ -383,8 +384,8 @@ const switchedOffForReset = async (
  * Before a reset deletes the save, switch off with the founder's key every live payment link the
  * company still sells through, one at a time as the sweep does: once the save is gone nothing
  * records a link, ships its prints or hands its buyers what they paid for. Answers what the
- * founder must still do by hand (links left on, paid prints Printful never confirmed, paid
- * orders whose card is still open, links older builds never recorded), or null when nothing is left.
+ * founder must still do by hand (links left on, paid prints Printful never confirmed and the
+ * founder has not settled, paid orders whose card is still open, links older builds never recorded), or null when nothing is left.
  */
 export const switchOffBeforeReset = async (): Promise<string | null> => {
   if (store.getCompany() === null) {
@@ -402,18 +403,23 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
     }
   }
   const paid = store.listOrders().filter((o) => o.livemode);
+  const openCards = store
+    .listOpenTasks()
+    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t.title] : []));
+  const cardOf = (o: Order): string | undefined =>
+    openCards.find((title) => title.startsWith(orderCardTitle(o, "")));
+  // A held sale whose card the founder settled is theirs already: they refunded or placed it.
   const unsent = paid.flatMap((o) =>
-    o.kind === "sale" && o.stage.kind !== "confirmed"
+    o.kind === "sale" &&
+    o.stage.kind !== "confirmed" &&
+    (o.stage.kind !== "held" || cardOf(o) !== undefined)
       ? [
           `${o.recipient.name} (${o.email ?? "no email"}), checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}`,
         ]
       : [],
   );
-  const openCards = store
-    .listOpenTasks()
-    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t.title] : []));
   const waiting = paid.flatMap((o) => {
-    const card = openCards.find((title) => title.startsWith(orderCardTitle(o, "")));
+    const card = cardOf(o);
     if (card === undefined || (o.kind === "sale" && o.stage.kind !== "confirmed")) {
       return [];
     }

@@ -589,6 +589,34 @@ describe("resetting the company", () => {
     expect(left).not.toContain(settled);
   });
 
+  it("names a held print only while its card still waits, never one the founder settled", async () => {
+    const { side } = openShop();
+    const hold = (id: string) => {
+      store.recordOrder(
+        teeOrder(side.id, id, { kind: "held", printfulId: 7, why: "Printful wants more" }),
+      );
+      store.raiseOrderCard(`Order ${id.slice(0, 8)}: Printful wants more than the buyer paid`, {
+        action: "Settle it",
+        draft: null,
+        instructions: "",
+        type: "action",
+      });
+    };
+    hold("held-open");
+    hold("heldover");
+    const card = cards().find((t) => t.title.startsWith("Order heldover"));
+    if (!card) {
+      throw new Error("the settled sale must have had a card");
+    }
+    settleOrderCard(card.id, { kind: "done", note: "refunded" });
+    fakeStripe();
+
+    const left = await switchOffBeforeReset();
+
+    expect(left).toContain("checkout cs_held-open");
+    expect(left).not.toContain("cs_heldover");
+  });
+
   it("names every live link for the founder to switch off when IdleBiz holds no key", async () => {
     openShop();
     saveKey(null);

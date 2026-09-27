@@ -345,7 +345,7 @@ third boundary.
   say where each of a retired product's links stands. A reset switches off every live link not
   yet off before it deletes the save (`switchOffBeforeReset`), since nothing is left after to
   ship its prints or record a buyer, and its warning names each link Stripe left on, each paid
-  print Printful never confirmed, each paid order whose card still waits on the founder (a
+  print Printful never confirmed (but a held one whose card the founder settled), each paid order whose card still waits on the founder (a
   delivery, one IdleBiz cannot send) and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
