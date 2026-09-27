@@ -359,8 +359,12 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   builds into the page (`NEXT_PUBLIC_`, `VITE_`…) is set, so a publishable key (`pk_`) stays out
   of the source, but never over a value shaped like a secret (`publicValueRefusal`: Stripe's
   `sk_`/`rk_`/`whsec_`, a private key block, GitHub, OpenAI, Anthropic, AWS, Resend and Slack
-  keys), and the deploy guard skips its value (`unshippableEnvValues`), which the build ships
-  anyway. A set_env call's title, its curl line, is logged as `set_env` alone.
+  keys), nor over one set_env keeps under a server-only name, or one holding or held in it
+  (`serverOnlyValueIn`): the build inlines a public value where the file scan never looks. The
+  deploy guard skips a public name's value (`unshippableEnvValues`), which the build ships
+  anyway; that trusts the name, not the framework, so a prefix the product's framework does not
+  read (`VITE_` in a Next.js app) leaves a value server-only and unguarded. A set_env call's
+  title, its curl line, is logged as `set_env` alone.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits

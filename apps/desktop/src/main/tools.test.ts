@@ -795,7 +795,7 @@ describe("set_env", () => {
         value: publishable,
       }),
     ).toBe(
-      "Set NEXT_PUBLIC_STRIPE_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy, whose build puts it in the page for every visitor to read.",
+      "Set NEXT_PUBLIC_STRIPE_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy, built into the page for every visitor to read only by a framework that reads the NEXT_PUBLIC_ prefix: Next.js as process.env.NEXT_PUBLIC_…, Vite as import.meta.env.VITE_…, SvelteKit and Astro a PUBLIC_ name. Under any other framework it stays server-only, read as process.env.NEXT_PUBLIC_STRIPE_KEY, and no deploy refuses a file that holds it.",
     );
     expect(sets.map(({ name }) => name)).toEqual(["NEXT_PUBLIC_STRIPE_KEY"]);
 
@@ -830,6 +830,39 @@ describe("set_env", () => {
     expect(sets).toEqual([]);
     expect(store.recentTeamMessages()).toEqual([]);
   });
+
+  it("answers a Stripe secret key under a public name as the secret key it is", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    expect(
+      await callTool(ctx, "POST /v1/set-env", {
+        name: "NEXT_PUBLIC_STRIPE_KEY",
+        value: "sk_live_foundersUnrestricted1",
+      }),
+    ).toContain("that value is a Stripe secret key (sk_)");
+    expect(sets).toEqual([]);
+  });
+
+  it.each(["opaqueServerOnly1234", "Bearer opaqueServerOnly1234", "ServerOnly1234"])(
+    "refuses a public name over a value kept under a server-only one: %s",
+    async (value) => {
+      connectVercel();
+      const { ctx, sets } = settingRun();
+      store.setProductVercel("acme", VERCEL);
+      await callTool(ctx, "POST /v1/set-env", { name: "DB_KEY", value: "opaqueServerOnly1234" });
+
+      const answer = await callTool(ctx, "POST /v1/set-env", { name: "NEXT_PUBLIC_DB_KEY", value });
+
+      expect(answer).toBe(
+        "NEXT_PUBLIC_DB_KEY was not set: that value is the one set_env keeps as DB_KEY on acme, server-only, and a NEXT_PUBLIC_ name would build it into the page, where every visitor reads it. Server code reads it as process.env.DB_KEY; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).",
+      );
+      expect(answer).not.toContain(value);
+      expect(sets.map(({ name }) => name)).toEqual(["DB_KEY"]);
+      expect(store.recentTeamMessages().map(({ text }) => text)).toEqual(["🔑 set DB_KEY on Acme"]);
+    },
+  );
 
   it("sets the variable on the run's product's project with the founder's token, unsigned, and says when it takes effect", async () => {
     connectVercel();

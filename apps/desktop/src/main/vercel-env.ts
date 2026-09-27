@@ -51,7 +51,8 @@ export const keepEnvValue = (product: ProductRef, name: string, value: string): 
  * Every value set_env set under a server-only name, in any company (secrets.json is every
  * company's, and never the save, which runs read): one product's key ships as publicly from
  * another's folder. A value under a public name is built into the page anyway, so a file
- * holding it ships nothing new.
+ * holding it ships nothing new. That trusts the name, not the framework: a prefix the product's
+ * framework does not read (`VITE_` in a Next.js app) leaves its value server-only and unguarded.
  */
 export const unshippableEnvValues = (): KeptEnvValue[] =>
   [...secretsUnder(ENV_PREFIX)].flatMap(([key, value]) => {
@@ -64,6 +65,21 @@ export const unshippableEnvValues = (): KeptEnvValue[] =>
       ? []
       : [{ company, kind: "env", name, product, value }];
   });
+
+// a flag or a port turns up in any value, and no key is this short
+const MIN_KEPT_LENGTH = 8;
+
+/**
+ * The server-only variable whose value a public one would build into the page: one that holds
+ * `value` or is held in it. The deploy guard reads only the folder, never what a build inlines,
+ * so this is all that stands between a kept key and every visitor.
+ */
+export const serverOnlyValueIn = (value: string): KeptEnvValue | null =>
+  unshippableEnvValues().find(
+    (kept) =>
+      (kept.value.length >= MIN_KEPT_LENGTH && value.includes(kept.value)) ||
+      (value.length >= MIN_KEPT_LENGTH && kept.value.includes(value)),
+  ) ?? null;
 
 const ENV_TIMEOUT_MS = 10_000;
 

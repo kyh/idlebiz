@@ -38,7 +38,8 @@ const PUBLIC_PREFIXES = [
   "GATSBY_",
 ];
 
-const publicPrefixOf = (name: string): string | undefined =>
+/** The prefix a framework builds into the page that `name` starts with. */
+export const publicPrefixOf = (name: string): string | undefined =>
   PUBLIC_PREFIXES.find((prefix) => name.startsWith(prefix));
 
 /** Whether a framework builds `name`'s value into the page, so shipping it is the point. */

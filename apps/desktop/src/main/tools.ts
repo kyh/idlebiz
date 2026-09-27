@@ -23,7 +23,12 @@ import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } fro
 import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "@/main/secrets";
 import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
 import type { productionHosts } from "@/main/vercel";
-import { keepEnvValue, teamSetEnv, unshippableEnvValues } from "@/main/vercel-env";
+import {
+  keepEnvValue,
+  serverOnlyValueIn,
+  teamSetEnv,
+  unshippableEnvValues,
+} from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
@@ -38,7 +43,7 @@ import type {
   TaskOrigin,
   VercelBinding,
 } from "@/shared/domain";
-import { isPublicEnvName, publicValueRefusal } from "@/shared/env-name";
+import { publicPrefixOf, publicValueRefusal } from "@/shared/env-name";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { formatCents, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
@@ -844,6 +849,11 @@ const TOOLS = {
     if (exposed !== null) {
       return exposed;
     }
+    const prefix = publicPrefixOf(name);
+    const kept = prefix === undefined ? null : serverOnlyValueIn(value);
+    if (kept !== null) {
+      return `${name} was not set: that value is the one set_env keeps as ${kept.name} on ${kept.product}, server-only, and a ${prefix} name would build it into the page, where every visitor reads it. Server code reads it as process.env.${kept.name}; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).`;
+    }
     const replaces = teamSetEnv(product, name);
     const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
     if (!set.ok) {
@@ -855,9 +865,9 @@ const TOOLS = {
     keepEnvValue(product, name, value);
     post(ctx, `🔑 set ${name} on ${product.name}`);
     const where = `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview.`;
-    return isPublicEnvName(name)
-      ? `${where} It takes effect on the next deploy, whose build puts it in the page for every visitor to read.`
-      : `${where} It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`;
+    return prefix === undefined
+      ? `${where} It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`
+      : `${where} It takes effect on the next deploy, built into the page for every visitor to read only by a framework that reads the ${prefix} prefix: Next.js as process.env.NEXT_PUBLIC_…, Vite as import.meta.env.VITE_…, SvelteKit and Astro a PUBLIC_ name. Under any other framework it stays server-only, read as process.env.${name}, and no deploy refuses a file that holds it.`;
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,

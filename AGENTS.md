@@ -231,8 +231,9 @@ rather than crashing boot.
   save, which runs read) so `deploy` refuses a folder whose files hold any of them, before the
   sign-off is asked, naming the file and the variable, never the value. A public name
   (`NEXT_PUBLIC_`, `VITE_`…, `shared/env-name.ts`) is the exception: its value is built into the
-  page, so a deploy ships it, and set_env refuses one shaped like a secret under it. No tool sets a
-  project's domains or sells a subscription: those stay the founder's.
+  page, so a deploy ships it, and set_env refuses one shaped like a secret, or one it keeps under
+  a server-only name, under it. No tool sets a project's domains or sells a subscription: those
+  stay the founder's.
 - A run's env is the founder's (main's) less every credential-shaped name — `TOKEN`,
   `SECRET`, `PASSWORD`, `KEY`, `APIKEY`, `PAT`, `DSN`, `WEBHOOK`, `CREDENTIALS`, `AUTH` as
   whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a
