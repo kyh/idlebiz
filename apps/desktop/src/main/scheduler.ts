@@ -17,9 +17,9 @@ import {
 import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { deployToVercel } from "@/main/deploy";
-import { stripeCheckoutAccess, stripePaymentLink } from "@/main/payment-links";
+import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "@/main/payment-links";
 import { printListing } from "@/main/print-listing";
-import { productionHosts } from "@/main/vercel";
+import { productionHosts, validateToken } from "@/main/vercel";
 import { setVercelEnv } from "@/main/vercel-env";
 import type { VercelConnection } from "@/main/vercel-connect";
 import type { KeepAwake } from "@/main/keep-awake";
@@ -466,12 +466,14 @@ class Scheduler {
       assign: (taskId, employeeId) => {
         this.queue(taskId, employeeId);
       },
+      checkVercelToken: validateToken,
       checkoutAccess: stripeCheckoutAccess,
       company,
       createPaymentLink: stripePaymentLink,
       deploy: deployToVercel,
       driver: this.driver,
       employee,
+      linkAccess: stripeLinkAccess,
       printListing,
       productionHosts,
       run,

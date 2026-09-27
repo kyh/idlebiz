@@ -23,7 +23,7 @@ import { printfulCredential } from "@/main/printful";
 import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
 import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "@/main/secrets";
 import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
-import type { productionHosts } from "@/main/vercel";
+import type { productionHosts, validateToken } from "@/main/vercel";
 import {
   keepEnvValue,
   serverOnlyValueIn,
@@ -76,10 +76,14 @@ export interface RunContext {
   deploy: Deployer;
   /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
   createPaymentLink: PaymentLinker;
+  /** Ask Stripe whether the founder's key still reaches payment links, before a sign-off is spent on one. */
+  linkAccess: (key: string) => Promise<StripeAccess>;
   /** Ask Stripe whether the founder's key reads checkouts, as a link owed a delivery needs. */
   checkoutAccess: (key: string) => Promise<StripeAccess>;
   /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
   setEnv: EnvSetter;
+  /** Ask Vercel whether it still takes the founder's token, before a sign-off is spent on a deploy. */
+  checkVercelToken: typeof validateToken;
   /** List a print-on-demand item with the founder's Printful and Stripe keys, which the run itself never holds. */
   printListing: PrintListing;
   /** Read where a product's production deploys are served with the founder's Vercel key, which the run itself never holds. */
@@ -284,6 +288,43 @@ const sellingKeys = (
   return { printful, stripe, vercel };
 };
 
+/** Ask the founder for a Vercel token in place of one Vercel turned away `doing` something for `product`, which ends the call. */
+const vercelTurnedAway = (ctx: RunContext, product: Product, doing: string): never =>
+  needVercel(
+    ctx,
+    product.id,
+    `Vercel turned IdleBiz's token away ${doing}`,
+    "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting to connect it again. Continue with what you can — this task resumes automatically once connected.",
+    "Vercel turned IdleBiz's token away.",
+  );
+
+/** Vercel's word on `token`; one it cannot give ends the call. */
+const vercelTakes = async (
+  ctx: RunContext,
+  token: string,
+): ReturnType<RunContext["checkVercelToken"]> => {
+  try {
+    return await ctx.checkVercelToken(token);
+  } catch (error) {
+    throw new RefusalError(
+      `Vercel could not be asked whether IdleBiz's token still works (${errorMessage(error)}); try again.`,
+    );
+  }
+};
+
+/** End the call unless Vercel still takes `token`; one it turns away (expired, revoked) is asked for anew. */
+const requireLiveVercelToken = async (
+  ctx: RunContext,
+  product: Product,
+  token: string,
+  doing: string,
+): Promise<void> => {
+  const check = await vercelTakes(ctx, token);
+  if (check.kind === "rejected") {
+    vercelTurnedAway(ctx, product, doing);
+  }
+};
+
 /** The hosts `product` serves its production deploys on; a token Vercel turns away is asked for anew, which ends the call. */
 const productHosts = async (
   ctx: RunContext,
@@ -293,13 +334,7 @@ const productHosts = async (
 ): Promise<string[]> => {
   const read = await ctx.productionHosts(binding, token);
   if (read.kind === "refused") {
-    return needVercel(
-      ctx,
-      product.id,
-      `Vercel turned IdleBiz's token away while checking ${product.name}'s domains`,
-      "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting to connect it again. Continue with what you can — this task resumes automatically once connected.",
-      "Vercel turned IdleBiz's token away.",
-    );
+    return vercelTurnedAway(ctx, product, `while checking ${product.name}'s domains`);
   }
   if (read.kind === "unreachable") {
     throw new RefusalError(
@@ -475,11 +510,33 @@ const PRINT_GRANT: StripeGrant = {
   why: "which selling a print needs",
 };
 
+const LINK_GRANT: StripeGrant = {
+  can: "make payment links",
+  permissions: "Write on Payment Links, Prices and Products",
+  why: "which charging through one needs",
+};
+
+const LISTING_GRANT: StripeGrant = {
+  can: "make payment links or shipping rates",
+  permissions: "Write on Payment Links, Prices, Products and Shipping Rates",
+  why: "which selling a print needs",
+};
+
 const DELIVERY_GRANT: StripeGrant = {
   can: "read checkouts",
   permissions: "Read on Checkout Sessions",
   why: "which is how each buyer owed a delivery reaches the founder",
 };
+
+/** Ask the founder for a Stripe key with `grant` in place of one Stripe turned away, saying `said`, which ends the call. */
+const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, said: string): never =>
+  needIntegration(
+    ctx,
+    "stripe-key",
+    `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
+    `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
+    `Stripe won't let IdleBiz's key ${grant.can}.`,
+  );
 
 /** End the call unless Stripe says the founder's key has `grant`. */
 const requireStripeAccess = async (
@@ -493,13 +550,7 @@ const requireStripeAccess = async (
       return;
     }
     case "refused": {
-      return needIntegration(
-        ctx,
-        "stripe-key",
-        `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${access.said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
-        `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
-        `Stripe won't let IdleBiz's key ${grant.can}.`,
-      );
+      return stripeTurnedAway(ctx, grant, access.said);
     }
     case "unreachable": {
       throw new RefusalError(
@@ -826,6 +877,7 @@ const TOOLS = {
     if (leak !== null) {
       return leak;
     }
+    await requireLiveVercelToken(ctx, product, token, `while deploying ${product.name}`);
     requireSignOff(ctx, deployAction(product.id, target), "deploy");
     const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token, unshippable });
     if (deployed.kind === "name-taken") {
@@ -903,6 +955,7 @@ const TOOLS = {
     if (kept !== null) {
       return `${name} was not set: that value is the one set_env keeps as ${kept.name} on ${kept.product}, server-only, and a ${prefix} name would build it into the page, where every visitor reads it. Server code reads it as process.env.${kept.name}; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).`;
     }
+    await requireLiveVercelToken(ctx, product, token, `while setting ${name} on ${product.name}`);
     const replaces = teamSetEnv(product, product.vercel.projectId, name);
     const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
     if (!set.ok) {
@@ -953,6 +1006,7 @@ const TOOLS = {
           "IdleBiz has no Stripe key to charge with.",
         );
       }
+      await requireStripeAccess(ctx, ctx.linkAccess(key), LINK_GRANT);
       if (delivery !== undefined) {
         await requireStripeAccess(ctx, ctx.checkoutAccess(key), DELIVERY_GRANT);
       }
@@ -972,7 +1026,10 @@ const TOOLS = {
           name,
           product: product.id,
         });
-        if (!made.ok) {
+        if (made.kind === "refused") {
+          return stripeTurnedAway(ctx, LINK_GRANT, made.said);
+        }
+        if (made.kind === "failed") {
           return `Stripe made no payment link: ${made.error}`;
         }
         if (store.getChargeLink(made.id) !== null) {
@@ -1062,7 +1119,7 @@ const TOOLS = {
     const floor = priceFloorCents(quote);
     const shipping = formatCents(quote.shippingCents);
     if (priceCents < floor) {
-      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`;
+      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`;
     }
     await requireStripeAccess(ctx, ctx.printListing.stripeAccess(keys.stripe), PRINT_GRANT);
     // the digest pins the design the founder signs for: a later deploy can change what the URL serves
@@ -1085,7 +1142,10 @@ const TOOLS = {
         shippingCents: quote.shippingCents,
         variants: quote.variants,
       });
-      if (!made.ok) {
+      if (made.kind === "refused") {
+        return stripeTurnedAway(ctx, LISTING_GRANT, made.said);
+      }
+      if (made.kind === "failed") {
         return `Stripe made no payment link: ${made.error}`;
       }
       store.recordListing({
@@ -1108,7 +1168,7 @@ const TOOLS = {
       }
       post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
       const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
-      return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
+      return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
     } finally {
       kept();
       store.releaseListingId(listingId);

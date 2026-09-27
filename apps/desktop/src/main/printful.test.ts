@@ -152,7 +152,7 @@ describe("pricing a print with Printful", () => {
       },
     });
     const posted = asked.filter((a) => a.method === "POST");
-    expect(posted).toHaveLength(6);
+    expect(posted).toHaveLength(10);
     expect(posted[0]).toEqual({
       body: {
         order_items: [
@@ -179,9 +179,13 @@ describe("pricing a print with Printful", () => {
     });
     expect(posted.map((p) => estimateOf(p.body).state)).toEqual([
       "CA",
+      "WA",
+      "CO",
       "AK",
       "HI",
       "CA",
+      "WA",
+      "CO",
       "AK",
       "HI",
     ]);
@@ -205,6 +209,24 @@ describe("pricing a print with Printful", () => {
       quote: { costCents: 2725, shippingCents: 500 },
     });
     expect(quoted.kind === "quoted" ? priceFloorCents(quoted.quote) : null).toBe(2382);
+  });
+
+  it("prices Seattle's tax and Colorado's delivery fee, which outcost California's tax", async () => {
+    // $25.00 shipped, plus each place's tax on the $28.00 listing and Colorado's 29¢ fee
+    const rates = new Map([
+      ["CA", 9.75],
+      ["WA", 10.35],
+      ["CO", 8.81],
+    ]);
+    printful({
+      costs: (_variant, state) => {
+        const tax = Math.round(28 * (rates.get(state) ?? 0));
+        const fee = state === "CO" ? 29 : 0;
+        return { shipping: "5.00", total: ((2500 + tax + fee) / 100).toFixed(2) };
+      },
+    });
+
+    expect(await quote([4012])).toMatchObject({ kind: "quoted", quote: { costCents: 2790 } });
   });
 
   it("says why Printful could not price it", async () => {
@@ -281,7 +303,7 @@ describe("Printful's rate limit", () => {
     });
 
     expect(await quote([4012])).toMatchObject({ kind: "quoted", quote: { costCents: 1820 } });
-    expect(asked.filter((a) => a.method === "POST")).toHaveLength(3);
+    expect(asked.filter((a) => a.method === "POST")).toHaveLength(5);
   });
 
   it("ends the call once it outlasts every retry", async () => {

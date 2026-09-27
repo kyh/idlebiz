@@ -190,7 +190,10 @@ rather than crashing boot.
   sign-off. A link's optional
   `delivery` (what the founder hands each buyer) rides on the link's metadata alone, is part of
   the action the founder signs, and needs Read on Checkout Sessions, which
-  `create_payment_link` checks first (`stripeCheckoutAccess`). Its optional `afterPaymentUrl`
+  `create_payment_link` checks first (`stripeCheckoutAccess`). Every `create_payment_link` also
+  asks Stripe whether the key still reads payment links (`stripeLinkAccess`) before the sign-off,
+  so a key rolled, revoked or expired since it was saved leaves a Stripe card instead; one Stripe
+  turns away while making the link or a listing's (401/403) leaves the same card. Its optional `afterPaymentUrl`
   sends each buyer back to the product, on one of its verified production domains
   (`productionHosts`), with `session_id={CHECKOUT_SESSION_ID}` added
   (`after_completion[type]=redirect`), and is signed too (`then send buyers to <url>`): the
@@ -237,7 +240,10 @@ rather than crashing boot.
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
-  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. No tool pushes
+  `VERCEL_TOKEN` in main (`main/deploy.ts`) once the founder signs off. Before the sign-off is
+  asked, and before `set_env` sets anything, Vercel is asked whether it still takes the token
+  (`validateToken`): one it turns away (expired, revoked) leaves the founder a Vercel card rather
+  than spend the sign-off on a deploy that would fail. No tool pushes
   code: the founder pushes by hand from a fresh `git clone --no-local` of the workspace, never
   with git inside it, which obeys what the team left there, as the founder (CLAUDE.md). A run
   cannot use their ssh keys or agents; what it can still reach, the Keychain on a claude run

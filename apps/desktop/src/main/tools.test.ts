@@ -20,7 +20,7 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
-const { stripePaymentLink } = await import("./payment-links");
+const { stripeLinkAccess, stripePaymentLink } = await import("./payment-links");
 const { printListing } = await import("./print-listing");
 const { productionHosts } = await import("./vercel");
 const { fetchRealMetrics } = await import("./metrics");
@@ -79,6 +79,8 @@ const runAs = (employeeId: string, more: readonly ReturnType<typeof hire>[] = []
       assigned.push(taskId);
       store.claimTask(taskId, assigneeId);
     },
+    checkVercelToken: () =>
+      Promise.reject(new Error("asked Vercel about its token without a test asking for it")),
     checkoutAccess: () =>
       Promise.reject(new Error("asked Stripe about checkouts without a test asking for it")),
     company,
@@ -86,6 +88,8 @@ const runAs = (employeeId: string, more: readonly ReturnType<typeof hire>[] = []
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
     driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     employee,
+    linkAccess: () =>
+      Promise.reject(new Error("asked Stripe about payment links without a test asking for it")),
     printListing: {
       catalog: () =>
         Promise.reject(new Error("read Printful's catalog without a test asking for it")),
@@ -582,6 +586,7 @@ const deployingRun = (result: DeployResult) => {
   const deploys: DeployRequest[] = [];
   const ctx: RunContext = {
     ...run.ctx,
+    checkVercelToken: () => Promise.resolve({ account: "kai", kind: "valid" }),
     deploy: (req) => {
       deploys.push(req);
       return Promise.resolve(result);
@@ -777,6 +782,56 @@ describe("deploy", () => {
     ]);
     expect(deploys).toEqual([]);
   });
+  it("asks for Vercel anew, and spends no sign-off, while Vercel turns the saved token away", async () => {
+    connectVercel();
+    const run = deployingRun(DEPLOYED);
+    store.setProductVercel("acme", VERCEL);
+    store.grantApproval(run.ctx.run.taskId, BOUND_ACTION);
+    const checked: string[] = [];
+    const ctx: RunContext = {
+      ...run.ctx,
+      checkVercelToken: (token) => {
+        checked.push(token);
+        return Promise.resolve({ kind: "rejected" });
+      },
+    };
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain(
+      "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting",
+    );
+    expect(checked).toEqual([TOKEN]);
+    expect(run.asked).toEqual([
+      {
+        integration: "vercel",
+        productId: "acme",
+        reason: "Vercel turned IdleBiz's token away while deploying Acme",
+        type: "integration",
+      },
+    ]);
+    expect(run.deploys).toEqual([]);
+    expect(await callTool(run.ctx, "POST /v1/deploy", {})).toBe(
+      "Deployed Acme to production: https://acme-1.vercel.app",
+    );
+  });
+
+  it("spends no sign-off while Vercel cannot be asked about the token", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    connectVercel();
+    const run = deployingRun(DEPLOYED);
+    store.setProductVercel("acme", VERCEL);
+    store.grantApproval(run.ctx.run.taskId, BOUND_ACTION);
+    const ctx: RunContext = {
+      ...run.ctx,
+      checkVercelToken: () => Promise.reject(new TypeError("fetch failed")),
+    };
+
+    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+      "Vercel could not be asked whether IdleBiz's token still works (fetch failed); try again.",
+    );
+    expect(run.asked).toEqual([]);
+    expect(logged).not.toHaveBeenCalled();
+    expect(await callTool(run.ctx, "POST /v1/deploy", {})).toContain("Deployed Acme");
+  });
 });
 
 const OPENAI = { name: "OPENAI_API_KEY", value: "sk-proj-acme-runtime" };
@@ -789,6 +844,7 @@ const settingRun = (result: EnvResult = SET) => {
   const sets: EnvRequest[] = [];
   const ctx: RunContext = {
     ...run.ctx,
+    checkVercelToken: () => Promise.resolve({ account: "kai", kind: "valid" }),
     run: { ...run.ctx.run, productId: "acme" },
     setEnv: (req) => {
       sets.push(req);
@@ -1064,6 +1120,29 @@ describe("set_env", () => {
     expect(sets).toEqual([]);
   });
 
+  it("asks for Vercel anew while Vercel turns the saved token away", async () => {
+    connectVercel();
+    const run = settingRun();
+    store.setProductVercel("acme", VERCEL);
+    const ctx: RunContext = {
+      ...run.ctx,
+      checkVercelToken: () => Promise.resolve({ kind: "rejected" }),
+    };
+
+    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toContain(
+      "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting",
+    );
+    expect(run.asked).toEqual([
+      {
+        integration: "vercel",
+        productId: "acme",
+        reason: "Vercel turned IdleBiz's token away while setting OPENAI_API_KEY on Acme",
+        type: "integration",
+      },
+    ]);
+    expect(run.sets).toEqual([]);
+  });
+
   it("refuses a name Vercel keeps as the caller's error", async () => {
     connectVercel();
     const { ctx, sets } = settingRun();
@@ -1128,6 +1207,7 @@ const chargingRun = (key: string | null = "sk_live_founder") => {
     ...run.ctx,
     checkoutAccess: () => Promise.resolve({ kind: "granted" }),
     createPaymentLink: stripePaymentLink,
+    linkAccess: () => Promise.resolve({ kind: "granted" }),
     run: { ...run.ctx.run, productId: "acme" },
   };
   return { ...run, ctx, stripe };
@@ -1355,6 +1435,51 @@ describe("create_payment_link", () => {
     expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_pro"]);
   });
 
+  it("makes a new link rather than record one Stripe replays that is switched off since", async () => {
+    const replays = new Map<string, JsonValue>();
+    const active = new Map<string, boolean>();
+    const stripe = (url: string, init: RequestInit = {}) => {
+      const { pathname } = new URL(url);
+      const id = pathname.split("/").at(-1) ?? "";
+      if (init.method !== "POST") {
+        return Promise.resolve(Response.json({ active: active.get(id), id }));
+      }
+      const key = new Headers(init.headers).get("Idempotency-Key") ?? "";
+      const replay = replays.get(key);
+      if (replay !== undefined) {
+        return Promise.resolve(
+          Response.json(replay, { headers: { "Idempotent-Replayed": "true" } }),
+        );
+      }
+      const n = active.size + 1;
+      const made: JsonValue =
+        pathname === "/v1/prices"
+          ? { id: `price_${n}` }
+          : { active: true, id: `plink_${n}`, url: `https://buy.stripe.com/${n}` };
+      if (pathname === "/v1/payment_links") {
+        active.set(`plink_${n}`, true);
+      }
+      replays.set(key, made);
+      return Promise.resolve(Response.json(made));
+    };
+    const make = () => {
+      const { ctx } = chargingRun();
+      vi.stubGlobal("fetch", stripe);
+      store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+      return callTool(ctx, "POST /v1/payment-link", LINK);
+    };
+    expect(await make()).toContain("https://buy.stripe.com/1");
+    // the founder resets, which switches the link off, and founds Acme again
+    active.set("plink_1", false);
+    rmSync(root, { force: true, recursive: true });
+    store.initStore();
+
+    expect(await make()).toContain(
+      'Created a payment link for "Pro plan" at $9.00 on Acme: https://buy.stripe.com/2',
+    );
+    expect(store.paymentLinks().map((l) => [l.id, l.state.kind])).toEqual([["plink_2", "selling"]]);
+  });
+
   it("tags the product alone when no bet is named, charging whole cents", async () => {
     const { ctx, stripe } = chargingRun();
     const side = store.createProduct({ description: "a side project", name: "Side" });
@@ -1436,6 +1561,60 @@ describe("create_payment_link", () => {
     expect(answer).toContain("Stripe won't let IdleBiz's key read checkouts");
     expect(run.asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
     expect(run.stripe).toEqual([]);
+  });
+
+  it("leaves a Stripe card, and spends no sign-off, while Stripe turns the saved key away", async () => {
+    const run = chargingRun("rk_live_rolledkey123");
+    const action = 'payment link "Pro plan" at $9.00 on acme';
+    store.grantApproval(run.ctx.run.taskId, action);
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(new URL(url).pathname);
+      return Promise.resolve(
+        Response.json(
+          { error: { message: "Expired API Key provided: rk_live_*****y123" } },
+          { status: 401 },
+        ),
+      );
+    });
+    const ctx: RunContext = { ...run.ctx, linkAccess: stripeLinkAccess };
+
+    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
+      "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
+    );
+    expect(asked).toEqual(["/v1/payment_links"]);
+    expect(run.asked).toEqual([
+      {
+        integration: "stripe-key",
+        productId: null,
+        reason:
+          "Stripe won't let IdleBiz's key make payment links, which charging through one needs (Expired API Key provided: rk_live_*****y123): in the Budget panel, paste over it a key whose restricted permissions include Write on Payment Links, Prices and Products, or your secret key",
+        type: "integration",
+      },
+    ]);
+    expect(store.consumeApproval(ctx.run.taskId, action)).toBe(true);
+  });
+
+  it("leaves a Stripe card when Stripe turns the key away from making the link after all", async () => {
+    const { ctx, asked } = chargingRun();
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        Response.json(
+          { error: { message: "The provided key does not have the required permissions" } },
+          { status: 403 },
+        ),
+      ),
+    );
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
+    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
+      "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
+    );
+    expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+    expect(JSON.stringify(asked)).toContain(
+      "(The provided key does not have the required permissions)",
+    );
+    expect(store.paymentLinks()).toEqual([]);
   });
 
   it("quotes the name in what the founder signs, so it cannot pose as the price", async () => {
@@ -1899,7 +2078,7 @@ describe("sell_print", () => {
     );
     expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
     expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
-    expect(outward(sent)).toHaveLength(6);
+    expect(outward(sent)).toHaveLength(10);
     expect(
       sent.filter((s) => s.host === "api.stripe.com" && s.method === "GET").map((s) => s.path),
     ).toEqual(["/v1/shipping_rates", "/v1/checkout/sessions", "/v1/charges"]);
@@ -1914,7 +2093,7 @@ describe("sell_print", () => {
     const answer = await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id });
 
     expect(answer).toBe(
-      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
+      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
     );
     const tags = { bet: bet.id, listing: "launch-tee", product: "acme" };
     const stripe = outward(sent).filter((s) => s.host === "api.stripe.com");
@@ -2011,7 +2190,7 @@ describe("sell_print", () => {
 
       // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
       expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd })).toBe(
-        `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one sold at that price and ship it in the US, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. Every price under $11.37 loses money: price it above that, with the margin the bet needs.`,
+        `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. Every price under $11.37 loses money: price it above that, with the margin the bet needs.`,
       );
       expect(asked).toEqual([]);
       expect(sent.map((s) => s.host)).not.toContain("api.stripe.com");

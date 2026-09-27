@@ -70,6 +70,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
     const ctx: RunContext = {
       asks: askBox((ask) => asked.push(ask)),
       assign: (taskId) => asked.push(taskId),
+      checkVercelToken: unasked("checked the Vercel token"),
       checkoutAccess: unasked("read checkouts"),
       company,
       createPaymentLink: () => {
@@ -79,6 +80,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
       deploy: unasked("deployed"),
       driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
       employee,
+      linkAccess: () => Promise.resolve({ kind: "granted" }),
       printListing: {
         catalog: unasked("read the catalog"),
         publish: unasked("listed a print"),
@@ -96,7 +98,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
     const making = callTool(ctx, "POST /v1/payment-link", link);
     await vi.waitFor(() => expect(links).toBe(1));
     const reset = switchOffBeforeReset();
-    stripe.resolve({ id: "plink_late", ok: true, url: "https://buy.stripe.com/late" });
+    stripe.resolve({ id: "plink_late", kind: "made", url: "https://buy.stripe.com/late" });
     await making;
 
     expect(await reset).toBeNull();

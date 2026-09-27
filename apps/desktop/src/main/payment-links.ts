@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { HttpError, getJson, postForm } from "@/main/lib/http";
+import { HttpError, getJson, postForm, postFormAnswer } from "@/main/lib/http";
 import { STRIPE_API, stripeHeaders, stripeSays } from "@/main/stripe-api";
 import { errorMessage } from "@/shared/errors";
 import type { JsonValue } from "@/shared/json";
@@ -20,10 +20,22 @@ interface PaymentLinkRequest {
   afterPayment: string | null;
 }
 
-/** `error` is why no link was made, in Stripe's words when it gave any. */
-type PaymentLinkResult = { ok: true; id: string; url: string } | { ok: false; error: string };
+/**
+ * The link Stripe made, or why none was: `refused` is the key turned away (401/403), which only
+ * another key gets past; `failed` is anything else. Either reason is in Stripe's words when it
+ * gave any.
+ */
+export type LinkResult =
+  | { kind: "made"; id: string; url: string }
+  | { kind: "refused"; said: string }
+  | { kind: "failed"; error: string };
 
-export type PaymentLinker = (req: PaymentLinkRequest) => Promise<PaymentLinkResult>;
+export type PaymentLinker = (req: PaymentLinkRequest) => Promise<LinkResult>;
+
+const turnedDown = (error: HttpError): LinkResult =>
+  error.refused
+    ? { kind: "refused", said: stripeSays(error) }
+    : { error: stripeSays(error), kind: "failed" };
 
 const Created = z.object({ id: z.string() });
 const LinkWithId = z.object({ id: StripeLinkIdSchema, url: z.url() });
@@ -55,8 +67,26 @@ const afterCompletion = (page: string | null): Record<string, string> =>
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [`${prefix}[${key}]`, value]));
 
-// each failure passed over took a sign-off of its own; this only stops a replay loop Stripe never sends
-const MAX_REPLAYED_FAILURES = 20;
+// each key passed over took a sign-off of its own; this only stops a replay loop Stripe never sends
+const MAX_KEYS_PASSED = 20;
+
+const replayedIn = (headers: Headers): boolean => headers.get("Idempotent-Replayed") === "true";
+
+const Switched = z.object({ active: z.boolean() });
+
+/**
+ * Whether the link a replayed create answers with is switched off by now: Stripe replays the
+ * link as it was made, and a reset, a retirement or the founder may have switched it off since.
+ */
+const switchedOffSince =
+  (key: string) =>
+  async (replayed: JsonValue): Promise<boolean> => {
+    const { id } = Created.parse(replayed);
+    const link = Switched.parse(
+      await getJson(`${STRIPE_API}/v1/payment_links/${encodeURIComponent(id)}`, stripeHeaders(key)),
+    );
+    return !link.active;
+  };
 
 /**
  * Stripe replays the first answer to a key for 24 hours, so a link tried again after a timeout
@@ -66,20 +96,26 @@ const MAX_REPLAYED_FAILURES = 20;
  * the product, and the listing for a print.
  *
  * Stripe replays a failure too, a 500 included, so a key it answered with one would fail every
- * sign-off for a day. A replayed failure moves on to the next key in the sequence; a key whose
- * request got no answer is never passed, so a retry after a timeout still finds what Stripe made.
+ * sign-off for a day, and so does a replayed answer `dead` finds no longer any use, such as a
+ * link switched off since. Either moves on to the next key in the sequence; a key whose request
+ * got no answer is never passed, so a retry after a timeout still finds what Stripe made.
  * Stripe calls a 500's outcome indeterminate, so passing one can leave a second link, which a
  * founder signing again for the same link accepts over a day with none.
  */
 const idempotentPost =
   (key: string, owner: readonly string[]) =>
-  (path: string, form: Readonly<Record<string, string>>): Promise<JsonValue> => {
+  (
+    path: string,
+    form: Readonly<Record<string, string>>,
+    dead: (replayed: JsonValue) => Promise<boolean> = () => Promise.resolve(false),
+  ): Promise<JsonValue> => {
     const digest = createHash("sha256")
       .update(JSON.stringify([...owner, path, form]))
       .digest("hex");
     const send = async (attempt: number): Promise<JsonValue> => {
+      const more = attempt + 1 < MAX_KEYS_PASSED;
       try {
-        return await postForm(
+        const { body, headers } = await postFormAnswer(
           `${STRIPE_API}${path}`,
           {
             ...stripeHeaders(key),
@@ -87,16 +123,15 @@ const idempotentPost =
           },
           form,
         );
-      } catch (error) {
-        if (
-          error instanceof HttpError &&
-          error.headers.get("Idempotent-Replayed") === "true" &&
-          attempt + 1 < MAX_REPLAYED_FAILURES
-        ) {
-          return await send(attempt + 1);
+        if (!(more && replayedIn(headers) && (await dead(body)))) {
+          return body;
         }
-        throw error;
+      } catch (error) {
+        if (!(more && error instanceof HttpError && replayedIn(error.headers))) {
+          throw error;
+        }
       }
+      return await send(attempt + 1);
     };
     return send(0);
   };
@@ -124,22 +159,25 @@ export const stripePaymentLink: PaymentLinker = async ({
       }),
     );
     const link = LinkWithId.parse(
-      await post("/v1/payment_links", {
-        "line_items[0][price]": price.id,
-        "line_items[0][quantity]": "1",
-        ...afterCompletion(afterPayment),
-        // the charge the app counts copies its payment's metadata, never the link's;
-        // the link's own tags are how the founder finds it in Stripe
-        ...underKey("metadata", onSessions),
-        ...underKey("payment_intent_data[metadata]", tags),
-      }),
+      await post(
+        "/v1/payment_links",
+        {
+          "line_items[0][price]": price.id,
+          "line_items[0][quantity]": "1",
+          ...afterCompletion(afterPayment),
+          // the charge the app counts copies its payment's metadata, never the link's;
+          // the link's own tags are how the founder finds it in Stripe
+          ...underKey("metadata", onSessions),
+          ...underKey("payment_intent_data[metadata]", tags),
+        },
+        switchedOffSince(key),
+      ),
     );
-    return { id: link.id, ok: true, url: link.url };
+    return { id: link.id, kind: "made", url: link.url };
   } catch (error) {
-    return {
-      error: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
-      ok: false,
-    };
+    return error instanceof HttpError
+      ? turnedDown(error)
+      : { error: errorMessage(error), kind: "failed" };
   }
 };
 
@@ -156,9 +194,7 @@ interface ShippedLinkRequest {
   listing: string;
 }
 
-type ShippedLinkResult = { ok: true; id: string; url: string } | { ok: false; error: string };
-
-export type ShippedLinker = (req: ShippedLinkRequest) => Promise<ShippedLinkResult>;
+export type ShippedLinker = (req: ShippedLinkRequest) => Promise<LinkResult>;
 
 /** The custom field a buyer picks the variant in; fulfilment reads the choice back by it. */
 export const VARIANT_FIELD = "variant";
@@ -216,6 +252,14 @@ const CHECKOUTS = "/v1/checkout/sessions?limit=1";
 export const stripeListingAccess = (key: string): Promise<StripeAccess> =>
   accessTo(key, ["/v1/shipping_rates?limit=1", CHECKOUTS, "/v1/charges?limit=1"]);
 
+/**
+ * Whether `key` reaches payment links, asked before the founder signs off on one, so a key rolled,
+ * revoked or expired since it was saved is replaced first rather than spend the sign-off. Write
+ * implies read, so this is the read every key that can make a link has.
+ */
+export const stripeLinkAccess = (key: string): Promise<StripeAccess> =>
+  accessTo(key, ["/v1/payment_links?limit=1"]);
+
 /** Whether `key` reads checkout sessions, which is how each buyer a link owes a delivery is found. */
 export const stripeCheckoutAccess = (key: string): Promise<StripeAccess> =>
   accessTo(key, [CHECKOUTS]);
@@ -246,25 +290,28 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
       }),
     );
     const link = LinkWithId.parse(
-      await post("/v1/payment_links", {
-        "line_items[0][price]": price.id,
-        "line_items[0][quantity]": "1",
-        // the price floor counts on a card's fee; Klarna's or Affirm's is dearer, and Stripe
-        // offers any method the account has on unless the link names its own
-        "payment_method_types[0]": "card",
-        "shipping_address_collection[allowed_countries][0]": "US",
-        "shipping_options[0][shipping_rate]": rate.id,
-        ...variantChoice(variants),
-        ...underKey("metadata", tags),
-        ...underKey("payment_intent_data[metadata]", tags),
-      }),
+      await post(
+        "/v1/payment_links",
+        {
+          "line_items[0][price]": price.id,
+          "line_items[0][quantity]": "1",
+          // the price floor counts on a card's fee; Klarna's or Affirm's is dearer, and Stripe
+          // offers any method the account has on unless the link names its own
+          "payment_method_types[0]": "card",
+          "shipping_address_collection[allowed_countries][0]": "US",
+          "shipping_options[0][shipping_rate]": rate.id,
+          ...variantChoice(variants),
+          ...underKey("metadata", tags),
+          ...underKey("payment_intent_data[metadata]", tags),
+        },
+        switchedOffSince(key),
+      ),
     );
-    return { id: link.id, ok: true, url: link.url };
+    return { id: link.id, kind: "made", url: link.url };
   } catch (error) {
-    return {
-      error: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
-      ok: false,
-    };
+    return error instanceof HttpError
+      ? turnedDown(error)
+      : { error: errorMessage(error), kind: "failed" };
   }
 };
 
@@ -277,8 +324,6 @@ export type SwitchOffResult =
   | { kind: "off" }
   | { kind: "refused"; error: string }
   | { kind: "unanswered"; error: string };
-
-const Switched = z.object({ active: z.boolean() });
 
 /** Stripe asks for a 429 (a rate limit, a lock timeout) to be retried, and a 5xx is its own fault. */
 const passing = (error: HttpError): boolean => error.status === 429 || error.status >= 500;

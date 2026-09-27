@@ -234,8 +234,9 @@ export interface QuoteRequest {
 }
 
 /**
- * The most Printful charges to print one and ship it anywhere in the US, tax included, and the
- * part of it that is shipping, both in cents; with each variant labelled as Printful names it.
+ * The most Printful charges to print one and ship it to any sampled US address, tax and fees
+ * included, and the part of it that is shipping, both in cents; with each variant labelled as
+ * Printful names it.
  */
 export interface PrintQuote {
   variants: ListingVariant[];
@@ -248,11 +249,15 @@ export type QuoteResult = { kind: "quoted"; quote: PrintQuote } | PrintfulFailur
 export type PrintQuoter = (req: QuoteRequest) => Promise<QuoteResult>;
 
 /**
- * Where a buyer on a US-only payment link can be: the contiguous states (California, whose sales
- * tax is among the highest), and the two that cost the most to reach.
+ * Where a buyer on a US-only payment link can be: big cities whose sales tax is among the highest
+ * (Los Angeles, Seattle), Denver, where Colorado adds a retail delivery fee, and the two states that
+ * cost the most to reach. A town whose tax is higher still costs more than any of them, which the
+ * order pump holds for the founder rather than pay Printful more than the buyer paid.
  */
 const SAMPLE_ADDRESSES = [
   { country_code: "US", state_code: "CA", zip: "90012" },
+  { country_code: "US", state_code: "WA", zip: "98101" },
+  { country_code: "US", state_code: "CO", zip: "80202" },
   { country_code: "US", state_code: "AK", zip: "99501" },
   { country_code: "US", state_code: "HI", zip: "96813" },
 ] as const;

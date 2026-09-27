@@ -261,7 +261,11 @@ third boundary.
   how each buyer reaches the founder), each POST under an idempotency key of its fields, like
   `sell_print`'s, so a retry after a timeout gets back the link Stripe made rather than a second
   one nothing saved knows; Stripe replays a failure (a 500 too) for a day, so a key it answered
-  with one moves on to the next (`idempotentPost`). Its `afterPaymentUrl`, where each buyer lands once they
+  with one moves on to the next (`idempotentPost`), as does a replayed link Stripe now lists as
+  switched off (a reset, a retirement or the founder switched it off since). A key Stripe turns
+  away is a Stripe card, asked before the sign-off (`stripeLinkAccess`), and a Vercel token
+  Vercel turns away is a Vercel card, asked before a deploy's sign-off and before `set_env`
+  (`validateToken`), so neither spends a sign-off on a call that would fail. Its `afterPaymentUrl`, where each buyer lands once they
   have paid, must be https with no login or port on one of the product's verified production domains
   (`productionHosts`, as `sell_print`'s files), and main adds
   `session_id={CHECKOUT_SESSION_ID}`, which Stripe fills (`after_completion[type]=redirect`);
@@ -269,7 +273,8 @@ third boundary.
   Printful print-on-demand item (`main/print-listing.ts`): its print files must be images the
   product's own verified production domains serve now, each read whole and hashed, Printful's
   estimate prices each variant with them at the listing's price (California taxes that, not
-  Printful's own) to California, Alaska and Hawaii, and a price below the
+  Printful's own) to Los Angeles, Seattle, Denver (Colorado adds a retail delivery fee), Alaska
+  and Hawaii, and a price below the
   floor is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus
   Stripe's 4.4% + 30¢ at its dearest, less the shipping the buyer pays), as is a Stripe key that cannot read
   shipping rates, checkout sessions or charges. Signed, it makes a Stripe price, a fixed shipping rate at

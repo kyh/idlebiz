@@ -51,6 +51,22 @@ export const getJson = async (
   return jsonValueSchema.parse(await res.json());
 };
 
+/** POST a form to a JSON endpoint with a hard timeout, answering with the headers too; throws HttpError on any non-2xx status. */
+export const postFormAnswer = async (
+  url: string,
+  headers: Record<string, string>,
+  form: Readonly<Record<string, string>>,
+  timeoutMs = 8000,
+): Promise<{ body: JsonValue; headers: Headers }> => {
+  const res = await fetchOk(url, {
+    body: new URLSearchParams(form),
+    headers,
+    method: "POST",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return { body: jsonValueSchema.parse(await res.json()), headers: res.headers };
+};
+
 /** POST a form to a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */
 export const postForm = async (
   url: string,
@@ -58,13 +74,8 @@ export const postForm = async (
   form: Readonly<Record<string, string>>,
   timeoutMs = 8000,
 ): Promise<JsonValue> => {
-  const res = await fetchOk(url, {
-    body: new URLSearchParams(form),
-    headers,
-    method: "POST",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  return jsonValueSchema.parse(await res.json());
+  const { body } = await postFormAnswer(url, headers, form, timeoutMs);
+  return body;
 };
 
 /** Bind a server to an ephemeral loopback port and return the port. */
