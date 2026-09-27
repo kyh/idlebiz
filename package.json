@@ -23,8 +23,8 @@
     "knip": "^6.37.0",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
-    "oxlint-tsgolint": "^7.0.2002",
-    "turbo": "^2.11.2",
+    "oxlint-tsgolint": "^7.0.2003",
+    "turbo": "^2.11.4",
     "typescript": "catalog:",
     "ultracite": "^7.12.0"
   },
