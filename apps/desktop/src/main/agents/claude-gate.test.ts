@@ -21,6 +21,7 @@ import { z } from "zod";
 import { holdFor } from "@/shared/command-policy";
 import type { Hold } from "@/shared/command-policy";
 import { parseJson } from "@/shared/json";
+import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 
 // The real claude, driven through the app's claude-agent-acp inside the seal, by a stand-in
 // model on loopback: nothing is billed, and claude's config dir is a scratch one whose settings
@@ -363,6 +364,11 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       expect(offered).not.toContain("ExitPlanMode");
     },
   );
+
+  it("gives its shell commands time to wait out a deploy", { timeout: 60_000 }, async () => {
+    await turn("echo timeout=$BASH_DEFAULT_TIMEOUT_MS", true);
+    expect(outputs.join("\n")).toContain(`timeout=${DEPLOY_TIMEOUT_MS + 60_000}`);
+  });
 
   it("starts none of the founder's MCP servers", { timeout: 60_000 }, async () => {
     const { mcpStarted, result } = await turn("true", true);

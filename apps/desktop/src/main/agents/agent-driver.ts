@@ -56,6 +56,7 @@ import { ROOT_DIR, employeeMemoryDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
 import type { Confinement, LivePage } from "@/shared/command-policy";
 import { RefusalError } from "@/shared/refusal";
+import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
@@ -110,6 +111,11 @@ export const acpAgentFor = (
   };
   if (adapter.binEnvVar) {
     env[adapter.binEnvVar] = runnerBin(runner);
+  }
+  if (runner === "claude") {
+    // claude kills a shell command after 2 minutes by default: a deploy's curl would die before
+    // Vercel answers, with the founder's sign-off already spent on it
+    env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
   }
   return {
     command: sealedCommand(seal, runner, [

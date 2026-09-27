@@ -21,6 +21,7 @@ import type { LivePage } from "@/shared/command-policy";
 import type { BlockedAsk } from "@/shared/domain";
 import { parseJson } from "@/shared/json";
 import { RefusalError } from "@/shared/refusal";
+import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 import type { BrowserCli } from "./agent-driver";
 import type { Seal, SealState } from "./seal";
 
@@ -455,6 +456,11 @@ describe("acpAgentFor", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("lets a claude shell command run as long as a deploy may take to answer", () => {
+    const { BASH_DEFAULT_TIMEOUT_MS: timeout } = acpAgentFor("claude", SEAL).env;
+    expect(Number(timeout)).toBeGreaterThan(DEPLOY_TIMEOUT_MS);
   });
 
   it("keeps claude's own sandbox off, whatever the founder's settings say", () => {
