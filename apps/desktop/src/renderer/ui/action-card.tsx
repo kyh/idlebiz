@@ -25,7 +25,7 @@ const Draft = ({ text }: { text: string }) => {
  * A step only the founder can take, as the teammate wrote it up. Done carries whatever they
  * type back to the run as written, a product's key included, into the continuation's TASK.md,
  * which every run can read; Can't carries why. An order card is main's: no run carries it on,
- * so what they type goes to the team room.
+ * so what they type goes to the team room. Main refuses a reply holding a key IdleBiz holds.
  */
 export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk }) => {
   const [text, setText] = useState("");
@@ -45,7 +45,11 @@ export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="What to send back (a URL, a value), or why you can't"
+        placeholder={
+          t.origin === "order"
+            ? "A note for the team, or why you can't (never a key)"
+            : "What to send back (a URL, a value), or why you can't"
+        }
         aria-label="Reply"
         className="px-field mt-2 w-full min-w-0"
         disabled={decided}
@@ -54,7 +58,7 @@ export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk
         <span className="text-xs text-fg-dim">
           {t.origin === "order"
             ? "What you type goes to the team room, where whoever answers the buyer reads it."
-            : `${by}'s run gets what you type, as written, and it stays in the task, where any teammate can read it.`}
+            : `${by}'s run gets what you type, as written, and it stays in the task, where any teammate can read it. IdleBiz's own Stripe, Printful and Vercel keys are refused: it uses them itself.`}
         </span>
         <span className="flex gap-2">
           <button

@@ -73,7 +73,8 @@ End-to-end suite — `pnpm e2e` builds the desktop app, then drives the build wi
 Playwright's Electron support (`apps/desktop/e2e/`); `pnpm -F @repo/desktop e2e` reruns it on
 the last build. It covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
-shown as set and, for Stripe, removable; a key refused is never saved), a key pasted into
+shown as set and, for Stripe, removable; a key refused is never saved), Printful token entry
+(a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into
 secrets.json being sealed, and a held command denied from #team. It is local only, not part
 of `pnpm verify` or CI:
 
@@ -179,7 +180,9 @@ rather than crashing boot.
   and Read on Charges and Customers for the revenue read below, Read on Checkout Sessions for
   the order pump, and Write on Shipping Rates to sell a print, which `sell_print` checks with
   a read of both (`stripeListingAccess`) before it asks for the sign-off. A link's optional
-  `delivery` (what the founder hands each buyer) rides on the link's metadata alone. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
+  `delivery` (what the founder hands each buyer) rides on the link's metadata alone, is part of
+  the action the founder signs, and needs Read on Checkout Sessions, which
+  `create_payment_link` checks first (`stripeCheckoutAccess`). Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
   `main/printful.ts`) and list a print with `sell_print` (`main/print-listing.ts`): main checks
   the print files against the product's verified production domains (`productionHosts` in
   `main/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates
@@ -189,8 +192,9 @@ rather than crashing boot.
   `listings/`. Paid orders reach Printful through the order pump (`main/order-pump.ts`),
   which the metrics pulse runs: while a Stripe key is saved it reads Stripe's checkouts
   (`main/stripe-checkouts.ts`) every 30 minutes, keeps each paid one on the company's links
-  under `orders/` (a retired product's too, whose link still sells), and drafts, prices and
-  confirms a print on Printful (`main/printful-orders.ts`); a `create_payment_link` sale is a
+  under `orders/` (a retired product's too, whose link still sells) from a cursor kept per key,
+  and drafts, prices and confirms a print on Printful (`main/printful-orders.ts`) once its cost
+  fits in what Stripe's fee leaves and its payment is neither refunded nor disputed; a `create_payment_link` sale is a
   `link` order, carded to the founder when its link names a `delivery`. Anything it cannot
   settle is an order card in the Inbox, and `read_orders` lists orders for support. Its tests fake Stripe, the product's site and Printful
   at `fetch` (`main/order-pump.test.ts`). The Printful token is pasted in the Budget panel, kept only once Printful shows it can
@@ -362,13 +366,14 @@ rather than crashing boot.
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
-  (the two integrations, same shape), `stripe-key.ts` (the charging key the founder enters),
+  (the two OAuth connections, same shape), `stripe-api.ts` (what every Stripe call shares),
+  `stripe-key.ts` (the charging key the founder enters),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make),
   `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
-  checkout sessions), `order-pump.ts` (each paid print order to Printful, each link sale's
+  checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful, each link sale's
   delivery, and the founder's order cards),
   `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
   `sell_print` checks before it lists), `secrets.ts`,

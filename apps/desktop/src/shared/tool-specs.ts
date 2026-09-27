@@ -36,17 +36,20 @@ const WAGER = {
  */
 export const DEPLOY_TIMEOUT_MS = 5 * 60_000;
 
-// JSON quoting leaves format characters raw: a direction override would let a name visually
-// rewrite the price the founder signs
-const SALE_NAME = z
-  .string()
-  .trim()
-  .min(1)
-  .max(80)
-  .regex(
-    /^[^\p{Cc}\p{Cf}]+$/u,
-    "name must be plain text: no control, zero-width or direction-changing characters",
-  );
+// JSON quoting leaves format characters raw: a direction override would let a name or a
+// delivery visually rewrite the price the founder signs
+const signedText = (field: string, max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(
+      /^[^\p{Cc}\p{Cf}]+$/u,
+      `${field} must be plain text on one line: no control, zero-width or direction-changing characters`,
+    );
+
+const SALE_NAME = signedText("name", 80);
 
 /** Printful prices each variant to three addresses, and allows 120 calls a minute. */
 const MAX_PRINT_VARIANTS = 6;
@@ -93,7 +96,7 @@ export const TOOL_SPECS = {
             : undefined,
       },
     ),
-    doc: 'hand the founder something only they can do, in one of two kinds. An **action** is a step only a human can take: post this draft somewhere, sign up for a service, buy a domain, verify an email. `action` names it in a line, `instructions` say exactly where to go, what to do and what to send back, and `draft` is the text to paste, if there is one. Actions are how the team gets anything done that needs a human: when the next step is one, propose it rather than stall. The founder answers Done, with whatever you asked them to send back (a URL, a value, a key this product needs), or Can\'t, with why. A **question**, `{"question":"..."}`, is for a decision only the founder can make: use it sparingly and prefer making reasonable choices yourself. Either way the answer arrives in a later run, so continue with whatever you can still do. Only a run\'s first ask reaches the founder.',
+    doc: "hand the founder something only they can do, in one of two kinds. An **action** is a step only a human can take: post this draft somewhere, sign up for a service, buy a domain, verify an email. `action` names it in a line, `instructions` say exactly where to go, what to do and what to send back, and `draft` is the text to paste, if there is one. Actions are how the team gets anything done that needs a human: when the next step is one, propose it rather than stall. The founder answers Done, with whatever you asked them to send back (a URL, a value, a key of this product's own, never IdleBiz's Stripe, Vercel or Printful key, which the tools already use and IdleBiz refuses to pass on), or Can't, with why. A **question**, `{\"question\":\"...\"}`, is for a decision only the founder can make: use it sparingly and prefer making reasonable choices yourself. Either way the answer arrives in a later run, so continue with whatever you can still do. Only a run's first ask reaches the founder.",
     example: {
       action: "Post the launch thread on r/SideProject",
       draft: "...",
@@ -179,11 +182,11 @@ export const TOOL_SPECS = {
       amountUsd: z.number().min(0.5).max(10_000),
       bet: z.string().min(1).optional(),
       // Stripe keeps a metadata value of at most 500 characters
-      delivery: z.string().trim().min(1).max(500).optional(),
+      delivery: signedText("delivery", 500).optional(),
       name: SALE_NAME,
       product: z.string().min(1).optional(),
     }),
-    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds a Stripe key. The buyer ends on Stripe\'s receipt page, and nothing reaches them from the team: when they are owed something (a file, a key, each issue of a newsletter), `delivery` says what the founder sends each one and where it is (a file in the workspace, a URL). Every paid checkout on the link then reaches the founder as a card with the buyer\'s email and that text, and read_orders lists it. The founder signs off on each link: the first call is held, and calling again once they answer creates it.',
+    doc: 'the only way to charge: creates a Stripe payment link that charges `amountUsd` once, in USD, for what `name` says, and answers with its URL. Every payment through it is tagged for your run\'s product (name another with `"product":"<slug>"`) and, with `"bet":"<slug>"`, for that open revenue bet on the product, so the app counts it for both. It sells one thing once at a fixed price: no tool makes a subscription, a checkout session or a webhook, and nobody on the team holds a Stripe key. The buyer ends on Stripe\'s receipt page, and nothing reaches them from the team: when they are owed something (a file, a key, each issue of a newsletter), `delivery` says what the founder sends each one and where it is (a file in the workspace, a URL). Every paid checkout on the link then reaches the founder as a card with the buyer\'s email and that text, and read_orders lists it. The founder signs off on each link, its delivery included: the first call is held, and calling again once they answer creates it.',
     example: {
       amountUsd: 9,
       bet: "bet-slug",

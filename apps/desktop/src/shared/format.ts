@@ -19,6 +19,9 @@ export const formatCompact = (n: number): string => compactFmt.format(n);
 /** "$12.34" — money the founder is spending, always to the cent. */
 export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
 
+/** "$12.34" from 1234: Stripe and Printful count money in cents. */
+export const formatCents = (cents: number): string => formatUsd(cents / 100);
+
 export const napLabel = (until: number): string => `☕ resting til ${formatTime(until)}`;
 
 /** When the office wakes: the earliest of the runners' usage-limit resets still ahead. */

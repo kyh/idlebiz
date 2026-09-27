@@ -45,8 +45,8 @@ export const savePrintfulToken = async (token: string): Promise<void> => {
   let scopes: z.infer<typeof ScopesSchema>;
   let stores: z.infer<typeof StoresSchema>;
   try {
-    scopes = ScopesSchema.parse(await printfulGet("/v2/oauth-scopes", token));
-    stores = StoresSchema.parse(await printfulGet("/v2/stores", token));
+    scopes = ScopesSchema.parse(await printfulGet("/v2/oauth-scopes", { token }));
+    stores = StoresSchema.parse(await printfulGet("/v2/stores", { token }));
   } catch (error) {
     throw new RefusalError(
       error instanceof HttpError

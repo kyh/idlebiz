@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { HttpError, getJson } from "@/main/lib/http";
 import { report } from "@/main/lib/report";
-import { stripeHeaders, stripeSays } from "@/main/payment-links";
+import { STRIPE_API, stripeHeaders, stripeSays } from "@/main/stripe-api";
 import { errorMessage } from "@/shared/errors";
 
 // Stripe's checkout sessions, read account-wide in one list with their line items: a list per
@@ -79,7 +79,7 @@ export const readCheckouts = async (key: string, createdAfter: number): Promise<
       const from = after === null ? "" : `&starting_after=${after}`;
       const read = PageSchema.parse(
         await getJson(
-          `https://api.stripe.com/v1/checkout/sessions?limit=${PAGE_SIZE}&created[gt]=${createdAfter}&expand[]=data.line_items${from}`,
+          `${STRIPE_API}/v1/checkout/sessions?limit=${PAGE_SIZE}&created[gt]=${createdAfter}&expand[]=data.line_items${from}`,
           stripeHeaders(key),
         ),
       );
@@ -100,5 +100,50 @@ export const readCheckouts = async (key: string, createdAfter: number): Promise<
       report("stripe checkouts", error);
     }
     return { kind: "failed", reason: errorMessage(error) };
+  }
+};
+
+const ChargesSchema = z.object({
+  data: z.array(
+    z.object({ amount_refunded: z.number().int(), disputed: z.boolean(), paid: z.boolean() }),
+  ),
+});
+
+/**
+ * Whether the buyer's money is still there: `kept` when a paid charge of the payment has
+ * nothing refunded and no dispute, `taken` when some was refunded or disputed, and `unread`
+ * when Stripe could not say, which the caller treats as not yet known.
+ */
+export type PaymentStanding =
+  | { kind: "kept" }
+  | { kind: "taken" }
+  | { kind: "unread"; reason: string };
+
+/** Read the charges of `paymentIntent`, with the Read on Charges grant metrics already needs. */
+export const readPaymentStanding = async (
+  key: string,
+  paymentIntent: string,
+): Promise<PaymentStanding> => {
+  try {
+    const { data } = ChargesSchema.parse(
+      await getJson(
+        `${STRIPE_API}/v1/charges?payment_intent=${encodeURIComponent(paymentIntent)}&limit=10`,
+        stripeHeaders(key),
+      ),
+    );
+    if (data.some((charge) => charge.amount_refunded > 0 || charge.disputed)) {
+      return { kind: "taken" };
+    }
+    return data.some((charge) => charge.paid)
+      ? { kind: "kept" }
+      : { kind: "unread", reason: "Stripe lists no paid charge for it" };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      report("stripe charges", error);
+    }
+    return {
+      kind: "unread",
+      reason: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
+    };
   }
 };

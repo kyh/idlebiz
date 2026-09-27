@@ -24,6 +24,8 @@ const trayIcon = (): Electron.NativeImage => {
 interface OfficeStatus {
   company: ReturnType<typeof store.getCompany>;
   working: number;
+  /** Asks and order cards only the founder can settle. */
+  waiting: number;
   napUntil: number | undefined;
   active: boolean;
 }
@@ -31,31 +33,44 @@ interface OfficeStatus {
 const officeStatus = (): OfficeStatus => {
   const company = store.getCompany();
   const working = company ? store.listEmployees().filter((e) => e.status === "working").length : 0;
+  const waiting = company
+    ? store.listOpenTasks().filter((t) => t.state.kind === "blocked").length
+    : 0;
   return {
     active: working > 0 || company?.autopilot === true,
     company,
     napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
+    waiting,
     working,
   };
 };
 
-const statusLine = (s: OfficeStatus): string => {
-  if (!s.company) {
-    return "No company yet";
-  }
-  const usage = usageLabel(s.company.spentUsd);
+const officeLine = (s: OfficeStatus, company: NonNullable<OfficeStatus["company"]>): string => {
+  const usage = usageLabel(company.spentUsd);
   if (s.working > 0) {
     return `${s.working} working · ${usage}`;
   }
   if (s.napUntil !== undefined) {
     return napLabel(s.napUntil);
   }
-  return `${s.company.autopilot ? "idle" : "paused"} · ${usage}`;
+  return `${company.autopilot ? "idle" : "paused"} · ${usage}`;
 };
 
+const statusLine = (s: OfficeStatus): string => {
+  if (!s.company) {
+    return "No company yet";
+  }
+  const line = officeLine(s, s.company);
+  return s.waiting > 0 ? `✋ ${s.waiting} waiting on you · ${line}` : line;
+};
+
+// what waits on the founder leads: a menu-bar-only launch shows nothing else of it
 const badge = (s: OfficeStatus, windowless: boolean): string => {
   if (!windowless) {
     return "";
+  }
+  if (s.waiting > 0) {
+    return ` ✋ ${s.waiting}`;
   }
   if (s.working > 0) {
     return ` ● ${s.working}`;
@@ -89,7 +104,12 @@ class AppTray {
     // status decays on its own (resting countdowns, run ends while closed)
     setInterval(() => this.rebuild(), 60_000).unref?.();
     // and reacts to the office: debounce the activity stream into rebuilds
-    activityEvents.on("activity", () => this.scheduleRebuild());
+    activityEvents.on("activity", (event) => {
+      this.scheduleRebuild();
+      if (event.kind === "order.card" && event.payload.open) {
+        this.announceCard(event.message);
+      }
+    });
   }
 
   /** Notify once when the office continues working after its last window closes. */
@@ -107,6 +127,18 @@ class AppTray {
       }).show();
     }
     this.rebuild();
+  }
+
+  /** An order card waits on the founder, who may have no window open to see it. */
+  private announceCard(title: string): void {
+    if (!this.windowless || !Notification.isSupported()) {
+      return;
+    }
+    new Notification({
+      body: `${title} — open IdleBiz to settle it.`,
+      silent: true,
+      title: "An order card is waiting",
+    }).show();
   }
 
   /** Opened at login, into the menu bar: the founder asked for that, so nothing announces it. */

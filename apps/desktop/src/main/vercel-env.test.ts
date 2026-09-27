@@ -175,8 +175,14 @@ describe("the values a deploy may not ship", () => {
     keepEnvValue({ companyId: "next-co", id: "acme" }, "RESEND_API_KEY", "re_next_key");
 
     expect(keptEnvValues()).toEqual([
-      { company: "co", name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
-      { company: "next-co", name: "RESEND_API_KEY", product: "acme", value: "re_next_key" },
+      { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
+      {
+        company: "next-co",
+        kind: "env",
+        name: "RESEND_API_KEY",
+        product: "acme",
+        value: "re_next_key",
+      },
     ]);
   });
 

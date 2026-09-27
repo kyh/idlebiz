@@ -110,10 +110,10 @@ const jsonOf = async (call: Promise<Response>): Promise<JsonValue> => {
   return jsonValueSchema.parse(await res.json());
 };
 
+/** GET with the founder's credential, or with a bare token before its store is known. */
 export const printfulGet = (
   path: string,
-  token: string,
-  storeId?: number,
+  { token, storeId }: { token: string; storeId?: number },
   backoffMs = PACING.backoffMs,
 ): Promise<JsonValue> =>
   jsonOf(printfulCall(path, { headers: printfulHeaders(token, storeId) }, backoffMs));
@@ -153,32 +153,72 @@ export const printfulDelete = async (
   await res.text();
 };
 
+/**
+ * How a Printful call failed: `refused` is the token turned away, which only a new one fixes;
+ * `missing` a 404; `rejected` a refusal that asking again cannot change, such as an address it
+ * cannot ship to; `down` no answer to act on, so the call is tried again later.
+ */
+type PrintfulFault =
+  | { kind: "refused" }
+  | { kind: "missing"; reason: string }
+  | { kind: "rejected"; reason: string }
+  | { kind: "down"; reason: string };
+
+const UNREADABLE_ANSWER =
+  "Printful answered in a shape IdleBiz does not read, which a change on Printful's side causes; try again later";
+
+/** How Printful answered a call: what it sent, or how the call failed. */
+export type PrintfulAnswer<T> = { kind: "ok"; value: T } | PrintfulFault;
+
+/**
+ * Run a call of Printful's, answering its failure as what the caller acts on. An answer the
+ * schemas refuse is a fault as well as the caller's reason: Printful's v2 is still in beta.
+ */
+export const answering = async <T>(
+  what: string,
+  call: () => Promise<T>,
+): Promise<PrintfulAnswer<T>> => {
+  try {
+    return { kind: "ok", value: await call() };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      if (error.refused) {
+        return { kind: "refused" };
+      }
+      if (error.status === 404) {
+        return { kind: "missing", reason: printfulSays(error) };
+      }
+      // a 429 still there after the call's own retries is Printful being busy, not a refusal
+      const permanent = error.status >= 400 && error.status < 500 && error.status !== 429;
+      return { kind: permanent ? "rejected" : "down", reason: printfulSays(error) };
+    }
+    if (error instanceof z.ZodError) {
+      report(`printful ${what}`, error);
+      return { kind: "down", reason: UNREADABLE_ANSWER };
+    }
+    return { kind: "down", reason: errorMessage(error) };
+  }
+};
+
 /** What a failed Printful read leaves the caller: `refused` is the token turned away, which only a new one fixes; `failed` says why, to the agent. */
 type PrintfulFailure = { kind: "refused" } | { kind: "failed"; reason: string };
 
-export const UNREADABLE_ANSWER =
-  "Printful answered in a shape IdleBiz does not read, which a change on Printful's side causes; try again later";
-
-/**
- * Run a read of Printful's, answering its failure as what the caller acts on. An answer the
- * schemas refuse is a fault as well as the agent's sentence: Printful's v2 is still in beta.
- */
+/** Run a read of Printful's, as the agent's tools answer it: any failure but a refused token is its reason. */
 const readingPrintful = async <T>(
   what: string,
   read: () => Promise<T>,
 ): Promise<T | PrintfulFailure> => {
-  try {
-    return await read();
-  } catch (error) {
-    if (error instanceof HttpError) {
-      return error.refused ? { kind: "refused" } : { kind: "failed", reason: printfulSays(error) };
-    }
-    if (error instanceof z.ZodError) {
-      report(`printful ${what}`, error);
-      return { kind: "failed", reason: UNREADABLE_ANSWER };
-    }
-    return { kind: "failed", reason: errorMessage(error) };
+  const answer = await answering(what, read);
+  if (answer.kind === "ok") {
+    return answer.value;
   }
+  return answer.kind === "refused" ? answer : { kind: "failed", reason: answer.reason };
+};
+
+/** Printful's dollar string in whole cents, or null when it is none. */
+export const usdCents = (usd: string | null | undefined): number | null => {
+  const amount = usd === null || usd === undefined ? Number.NaN : Number(usd);
+  return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
 };
 
 /** What a listing is priced from: the variants it offers and what goes where on them. */
@@ -246,21 +286,21 @@ const labelOf = ({ color, name, size }: CatalogVariant): string =>
   ([color, size].filter(Boolean).join(" / ") || name).slice(0, 100);
 
 const centsOf = (amount: string | null, what: string): number => {
-  const usd = amount === null ? Number.NaN : Number(amount);
-  if (!Number.isFinite(usd) || usd < 0) {
+  const cents = usdCents(amount);
+  if (cents === null) {
     throw new RefusalError(`Printful's estimate gave no ${what}.`);
   }
-  return Math.round(usd * 100);
+  return cents;
 };
 
 const variantOf = async (
   id: number,
-  { token, storeId }: PrintfulCredential,
+  credential: PrintfulCredential,
   { backoffMs }: Pacing,
 ): Promise<CatalogVariant> => {
   try {
     return VariantSchema.parse(
-      await printfulGet(`/v2/catalog-variants/${id}`, token, storeId, backoffMs),
+      await printfulGet(`/v2/catalog-variants/${id}`, credential, backoffMs),
     ).data;
   } catch (error) {
     if (error instanceof HttpError && error.status === 404) {
@@ -272,7 +312,7 @@ const variantOf = async (
 
 const settled = async (
   task: EstimateTask,
-  { token, storeId }: PrintfulCredential,
+  credential: PrintfulCredential,
   { backoffMs, pollMs }: Pacing,
 ): Promise<EstimateTask> => {
   const deadline = Date.now() + ESTIMATE_DEADLINE_MS;
@@ -285,8 +325,7 @@ const settled = async (
     current = TaskSchema.parse(
       await printfulGet(
         `/v2/order-estimation-tasks?id=${encodeURIComponent(current.id)}`,
-        token,
-        storeId,
+        credential,
         backoffMs,
       ),
     ).data;
@@ -420,14 +459,13 @@ export type CatalogReader = (
 ) => Promise<CatalogRead>;
 
 /** Printful's catalog, read with the founder's token: v2 serves it to a signed-in caller only. */
-export const printfulCatalog: CatalogReader = (query, { token, storeId }) =>
+export const printfulCatalog: CatalogReader = (query, credential) =>
   readingPrintful("catalog", async (): Promise<CatalogRead> => {
     if ("offset" in query) {
       const page = ProductsSchema.parse(
         await printfulGet(
           `/v2/catalog-products?destination_country=US&limit=${CATALOG_PAGE}&offset=${query.offset}`,
-          token,
-          storeId,
+          credential,
         ),
       );
       return {
@@ -439,10 +477,10 @@ export const printfulCatalog: CatalogReader = (query, { token, storeId }) =>
     }
     try {
       const product = ProductSchema.parse(
-        await printfulGet(`/v2/catalog-products/${query.product}`, token, storeId),
+        await printfulGet(`/v2/catalog-products/${query.product}`, credential),
       ).data;
       const variants = VariantsSchema.parse(
-        await printfulGet(`/v2/catalog-products/${query.product}/catalog-variants`, token, storeId),
+        await printfulGet(`/v2/catalog-products/${query.product}/catalog-variants`, credential),
       ).data;
       return {
         kind: "product",

@@ -1,6 +1,7 @@
 import * as store from "@/main/store/store";
 import { publishActivity } from "@/main/activity";
 import { betNews } from "@/main/prompts/briefs";
+import { heldKeyIn } from "@/main/secrets";
 import type { Bet } from "@/shared/bets";
 import type {
   ActionAsk,
@@ -131,19 +132,43 @@ export const raiseOrderCard = (title: string, ask: Omit<ActionAsk, "type">): Tas
 };
 
 /**
+ * Refuse what the founder typed for the team (the room, an answer, an action's reply) when it
+ * holds a key IdleBiz itself uses: every run reads those, and the prompts carry them out.
+ */
+export const refuseHeldKey = (text: string): void => {
+  const held = heldKeyIn(text);
+  if (held !== null) {
+    throw new RefusalError(
+      `Nothing was sent: that holds IdleBiz's own ${held}, which never leaves IdleBiz, and your team reads what you send. IdleBiz already uses it for them; a key goes in where IdleBiz asks for it (the Budget panel, a product's Vercel button).`,
+    );
+  }
+};
+
+// a Stripe secret or restricted key, which no order card asks for
+const STRIPE_KEY_IN_TEXT = /\b[rs]k_(?:live|test)_[0-9A-Za-z]{8,}/u;
+
+const replyText = (reply: ActionReply): string =>
+  reply.kind === "cant" ? reply.reason : reply.note;
+
+/**
  * The founder settled an order card. No run carries it on, so what they said goes to the room,
  * where whoever answers the buyer reads it.
  */
 export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
+  const said = replyText(reply);
+  refuseHeldKey(said);
+  if (STRIPE_KEY_IN_TEXT.test(said)) {
+    throw new RefusalError(
+      "Nothing was sent: that holds a Stripe key, and what you type here goes to the team room. A key goes in the Budget panel; press Done here with no key once it is saved.",
+    );
+  }
   const card = store.closeOrderCard(taskId);
   if (!card) {
     throw new RefusalError("that order card is already settled");
   }
-  const said =
-    reply.kind === "cant"
-      ? `couldn't — ${reply.reason}`
-      : `done${reply.note === "" ? "" : ` — ${reply.note}`}`;
-  postToRoom({ kind: "founder" }, `📦 ${card.title}: ${said}`);
+  const told =
+    reply.kind === "cant" ? `couldn't — ${said}` : `done${said === "" ? "" : ` — ${said}`}`;
+  postToRoom({ kind: "founder" }, `📦 ${card.title}: ${told}`);
   publishActivity({
     kind: "order.card",
     message: card.title,

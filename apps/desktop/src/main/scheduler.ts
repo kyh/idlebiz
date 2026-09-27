@@ -10,13 +10,14 @@ import {
   announceBet,
   haltForBudget,
   postToRoom,
+  refuseHeldKey,
   settleOrderCard,
   ship,
 } from "@/main/company-actions";
 import { stripeInTestMode } from "@/main/metrics";
 import { metricsPulse } from "@/main/metrics-pulse";
 import { deployToVercel } from "@/main/deploy";
-import { stripePaymentLink } from "@/main/payment-links";
+import { stripeCheckoutAccess, stripePaymentLink } from "@/main/payment-links";
 import { printListing } from "@/main/print-listing";
 import { setVercelEnv } from "@/main/vercel-env";
 import type { KeepAwake } from "@/main/keep-awake";
@@ -450,6 +451,7 @@ class Scheduler {
       assign: (taskId, employeeId) => {
         this.queue(taskId, employeeId);
       },
+      checkoutAccess: stripeCheckoutAccess,
       company,
       createPaymentLink: stripePaymentLink,
       deploy: deployToVercel,
@@ -464,6 +466,7 @@ class Scheduler {
 
   /** Whole-token @slug or @first-name mentions wake the addressed employees. */
   founderMessage(text: string): void {
+    refuseHeldKey(text);
     postToRoom({ kind: "founder" }, text);
     for (const employeeId of resolveMentions(text, store.listEmployees())) {
       this.wakeEmployee(employeeId, founderPing(text));
@@ -476,11 +479,13 @@ class Scheduler {
     if (!emp) {
       throw new RefusalError(`no employee ${employeeId}`);
     }
+    refuseHeldKey(instruction);
     postToRoom({ kind: "founder" }, `@${emp.id} ${instruction}`, emp.id);
     this.wakeEmployee(employeeId, founderPing(instruction));
   }
 
   private resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
+    refuseHeldKey(answer);
     const continuation = store.resolveBlockedWithAnswer(taskId, answer);
     if (!continuation || !continuation.assigneeId) {
       throw new RefusalError(whenNotBlocked);
@@ -689,8 +694,11 @@ class Scheduler {
     this.runs.set(runId, inFlight);
     this.awake.hold(true);
     const at = { employeeId, runId, taskId: task.id };
-    publishActivity({ ...at, kind: "run.start" });
-    publishActivity({ ...at, kind: "status", message: "running" });
+    // the run is under way and holds the blocker: a start that cannot be told must not strand them
+    guarded(`announce run ${runId}`, () => {
+      publishActivity({ ...at, kind: "run.start" });
+      publishActivity({ ...at, kind: "status", message: "running" });
+    });
 
     void this.run(runId, task, employee, company, inFlight);
   }

@@ -132,7 +132,7 @@ interface ActiveCompany {
   products: Product[];
   /** Every print-on-demand item ever listed, a retired product's too: its payment link still takes money. */
   listings: Listing[];
-  /** Every paid order, a retired product's too, which still ships. */
+  /** Every paid checkout on the company's links, a retired product's too: a print still ships, a delivery is still owed. */
   orders: Order[];
   /** Sign-offs the founder gave that no run has used yet. */
   grants: Grant[];
@@ -941,6 +941,10 @@ export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot):
 // ---- listings ---------------------------------------------------------------
 export const listListings = (): Listing[] => [...current().listings];
 
+/** Listing ids are unique across the company's products (`newListingId`). */
+export const getListing = (id: string): Listing | null =>
+  current().listings.find((l) => l.id === id) ?? null;
+
 /** A new listing's id: its name's slug, free among every product's listings, skipped ones on disk too. */
 export const newListingId = (name: string): string => {
   const { company, listings } = current();
@@ -974,14 +978,12 @@ const saveOrder = (order: Order): void => {
 
 /**
  * A paid checkout, kept before Printful hears of it: a save that throws leaves it unkept, and
- * nothing is sent for it, so a restart always finds what it may already have sent.
+ * nothing is sent for it, so a restart always finds what it may already have sent. Only a sale
+ * needs its listing: an unreadable order may be one whose listing this save lost.
  */
 export const recordOrder = (order: Order): void => {
-  const { listings, orders } = current();
-  if (
-    order.kind !== "link" &&
-    !listings.some((l) => l.productId === order.productId && l.id === order.listingId)
-  ) {
+  const { orders } = current();
+  if (order.kind === "sale" && getListing(order.listingId)?.productId !== order.productId) {
     throw new Error(`no listing ${order.listingId} of ${order.productId} is kept`);
   }
   if (orders.some((o) => o.id === order.id)) {
@@ -1011,16 +1013,25 @@ export const updateSale = (
   return next;
 };
 
-const OrdersCursorSchema = z.object({ createdAfter: z.number().int() });
+/**
+ * Where reads of Stripe's checkouts go on from, in seconds (Stripe's `created[gt]`): one per key
+ * that has read, since a key of another mode or account lists none of this one's sessions, and
+ * `floor`, where a key that never read starts.
+ */
+const OrdersCursorSchema = z.object({
+  byKey: z.record(z.string(), z.number().int()),
+  floor: z.number().int(),
+});
+export type OrdersCursor = z.infer<typeof OrdersCursorSchema>;
 
-/** Stripe's `created[gt]` for the next read of checkouts, in seconds; null before the first. */
-export const ordersCursor = (): number | null =>
-  readJsonFile(ordersCursorFile(current().company.id), OrdersCursorSchema)?.createdAfter ?? null;
+/** Null before the first read. */
+export const ordersCursor = (): OrdersCursor | null =>
+  readJsonFile(ordersCursorFile(current().company.id), OrdersCursorSchema);
 
-export const setOrdersCursor = (createdAfter: number): void => {
+export const setOrdersCursor = (cursor: OrdersCursor): void => {
   atomicWrite(
     ordersCursorFile(current().company.id),
-    JSON.stringify(OrdersCursorSchema.parse({ createdAfter })),
+    JSON.stringify(OrdersCursorSchema.parse(cursor)),
   );
 };
 
@@ -2099,7 +2110,7 @@ const adoptRewordedRoutines = (active: ActiveCompany): void => {
  * sale an older company ever made on a link as new, each posted to the room. Its reads start now.
  */
 const adoptOrdersCursor = (): void => {
-  setOrdersCursor(Math.floor(Date.now() / 1000));
+  setOrdersCursor({ byKey: {}, floor: Math.floor(Date.now() / 1000) });
 };
 
 /** An older save's lead proposal, by its fixed title behind any "Continue: " an answer added. */

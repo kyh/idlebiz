@@ -25,6 +25,7 @@ export type EnvSetter = (req: EnvRequest) => Promise<EnvResult>;
 
 /** A value a teammate set on a product's project, which no deploy may ship. */
 export interface KeptEnvValue {
+  kind: "env";
   company: string;
   product: string;
   name: string;
@@ -51,7 +52,7 @@ export const keptEnvValues = (): KeptEnvValue[] =>
     const [company, product, name, ...rest] = key.split("/");
     return company === undefined || product === undefined || name === undefined || rest.length > 0
       ? []
-      : [{ company, name, product, value }];
+      : [{ company, kind: "env", name, product, value }];
   });
 
 const ENV_TIMEOUT_MS = 10_000;

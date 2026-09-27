@@ -1956,7 +1956,8 @@ describe("the save format", () => {
 
     expect(store.listRoutines().map((r) => r.instruction)).toEqual([seededText]);
     expect(readFileSync(file, "utf-8")).toContain(seededText);
-    expect(store.ordersCursor()).toBeGreaterThanOrEqual(adoptedAt);
+    expect(store.ordersCursor()?.byKey).toEqual({});
+    expect(store.ordersCursor()?.floor).toBeGreaterThanOrEqual(adoptedAt);
   });
 
   it("leaves a routine the founder reworded as it is", () => {

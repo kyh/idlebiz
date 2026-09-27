@@ -88,4 +88,3 @@ export const OrderSchema = z.discriminatedUnion("kind", [
 ]);
 export type Order = z.infer<typeof OrderSchema>;
 export type Sale = Extract<Order, { kind: "sale" }>;
-export type ListingOrder = Extract<Order, { kind: "sale" | "unreadable" }>;

@@ -1,6 +1,6 @@
 import { HttpError, getJson } from "@/main/lib/http";
-import { STRIPE_VERSION, isTestKey } from "@/main/metrics";
 import { STRIPE_SECRET_KEY, deleteSecret, getSecret, setSecret } from "@/main/secrets";
+import { STRIPE_API, isTestKey, stripeHeaders } from "@/main/stripe-api";
 import { errorMessage } from "@/shared/errors";
 import type { StripeKeyStatus } from "@/shared/integrations";
 import { RefusalError } from "@/shared/refusal";
@@ -17,7 +17,7 @@ const SERVER_KEY = /^[rs]k_(?:live|test)_[0-9A-Za-z]+$/u;
 
 // Stripe grants read with write, so any key that can make payment links can list
 // them; /v1/account would turn away a restricted key granted only what charging needs.
-const PROBE = "https://api.stripe.com/v1/payment_links?limit=1";
+const PROBE = `${STRIPE_API}/v1/payment_links?limit=1`;
 
 export const stripeKeyStatus = (): StripeKeyStatus => {
   const key = getSecret(STRIPE_SECRET_KEY);
@@ -49,7 +49,7 @@ export const saveStripeKey = async (key: string): Promise<void> => {
     );
   }
   try {
-    await getJson(PROBE, { Authorization: `Bearer ${key}`, "Stripe-Version": STRIPE_VERSION });
+    await getJson(PROBE, stripeHeaders(key));
   } catch (error) {
     throw new RefusalError(
       error instanceof HttpError

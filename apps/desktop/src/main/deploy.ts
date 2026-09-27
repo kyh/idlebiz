@@ -8,6 +8,7 @@ import type { Ignore } from "ignore";
 import { z } from "zod";
 import { HttpError, fetchOk } from "@/main/lib/http";
 import { VERCEL_API } from "@/main/vercel";
+import type { HeldKey } from "@/main/secrets";
 import type { KeptEnvValue } from "@/main/vercel-env";
 import type { VercelBinding } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
@@ -22,12 +23,15 @@ export type DeployTarget =
   | { kind: "bound"; binding: VercelBinding }
   | { kind: "new"; name: string };
 
+/** A value no deploy may ship: one set_env set on a product, or a key IdleBiz itself holds. */
+export type Unshippable = KeptEnvValue | HeldKey;
+
 /** A production deploy of one folder with the founder's token, refused while a file holds a value in `unshippable`. */
 export interface DeployRequest {
   cwd: string;
   token: string;
   target: DeployTarget;
-  unshippable: readonly KeptEnvValue[];
+  unshippable: readonly Unshippable[];
 }
 
 /**
@@ -130,11 +134,11 @@ interface Entry {
   mode: number;
 }
 
-/** A file of the deploy that holds a value set_env was given. */
+/** A file of the deploy that holds a value no deploy may ship. */
 interface Leak {
   kind: "leak";
   file: string;
-  held: KeptEnvValue;
+  held: Unshippable;
 }
 
 // a flag or a port turns up in any folder, and no key is this short
@@ -147,7 +151,7 @@ const MIN_UNSHIPPABLE_LENGTH = 8;
  */
 const entriesOf = async (
   root: string,
-  unshippable: readonly KeptEnvValue[],
+  unshippable: readonly Unshippable[],
 ): Promise<{ kind: "entries"; entries: Entry[] } | Leak> => {
   const rules = await ignoreRulesOf(root);
   const guarded = unshippable.filter((held) => held.value.length >= MIN_UNSHIPPABLE_LENGTH);
@@ -184,7 +188,9 @@ const entriesOf = async (
 
 /** What the agent reads for a leak: the file and the variable's name, never its value. */
 const leakReason = ({ file, held }: Leak): string =>
-  `Nothing was deployed: ${file} holds the value set_env set as ${held.name} on ${held.product}, and a deploy would publish it. Take it out of the folder, read it from process.env.${held.name} instead, then deploy again.`;
+  held.kind === "env"
+    ? `Nothing was deployed: ${file} holds the value set_env set as ${held.name} on ${held.product}, and a deploy would publish it. Take it out of the folder, read it from process.env.${held.name} instead, then deploy again.`
+    : `Nothing was deployed: ${file} holds IdleBiz's own ${held.name}, which never leaves IdleBiz and would be published. Take it out of the folder, then deploy again: what needs that key is a tool IdleBiz runs itself, or a key of the product's own, set with set_env.`;
 
 /**
  * Why the folder may not ship, read before the founder is asked to sign off on a deploy
@@ -193,7 +199,7 @@ const leakReason = ({ file, held }: Leak): string =>
  */
 export const unshippableIn = async (
   cwd: string,
-  unshippable: readonly KeptEnvValue[],
+  unshippable: readonly Unshippable[],
 ): Promise<string | null> => {
   try {
     const read = await entriesOf(cwd, unshippable);

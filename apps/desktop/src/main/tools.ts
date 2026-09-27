@@ -12,13 +12,14 @@ import {
   retireProduct,
   startProduct,
 } from "@/main/company-actions";
-import { isTestKey, measureRefusal } from "@/main/metrics";
-import type { PaymentLinker } from "@/main/payment-links";
-import { priceFloorCents } from "@/main/print-listing";
+import { measureRefusal } from "@/main/metrics";
+import type { PaymentLinker, StripeAccess } from "@/main/payment-links";
+import { STRIPE_FEE_LABEL, priceFloorCents } from "@/main/print-listing";
 import type { PrintListing } from "@/main/print-listing";
 import { printfulCredential } from "@/main/printful";
 import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
-import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
+import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "@/main/secrets";
+import { isTestKey } from "@/main/stripe-api";
 import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
@@ -35,7 +36,7 @@ import type {
   VercelBinding,
 } from "@/shared/domain";
 import { BadRequestError, errorMessage } from "@/shared/errors";
-import { formatUsd, plural } from "@/shared/format";
+import { formatCents, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
 import { RefusalError } from "@/shared/refusal";
 import type { JsonValue } from "@/shared/json";
@@ -64,6 +65,8 @@ export interface RunContext {
   deploy: Deployer;
   /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
   createPaymentLink: PaymentLinker;
+  /** Ask Stripe whether the founder's key reads checkouts, as a link owed a delivery needs. */
+  checkoutAccess: (key: string) => Promise<StripeAccess>;
   /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
   setEnv: EnvSetter;
   /** List a print-on-demand item with the founder's Vercel, Printful and Stripe keys, which the run itself never holds. */
@@ -164,6 +167,9 @@ const TEST_MODE =
 const NO_STRIPE_KEY =
   "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
 
+const NO_PRINTFUL_TOKEN =
+  "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.";
+
 const VERCEL_WAITING =
   "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
 
@@ -241,7 +247,7 @@ const sellingKeys = (
       ctx,
       "printful",
       `to print and ship ${JSON.stringify(name)}`,
-      "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.",
+      NO_PRINTFUL_TOKEN,
       "IdleBiz has no Printful token.",
     );
   return { printful, stripe, vercel };
@@ -320,9 +326,32 @@ const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuot
   }
 };
 
-/** End the call unless the founder's Stripe key can make the listing's shipping rate and read its paid orders. */
-const requireStripeAccess = async (ctx: RunContext, key: string): Promise<void> => {
-  const access = await ctx.printListing.stripeAccess(key);
+/** What a Stripe key must be granted for a tool, in the words the founder and the agent read. */
+interface StripeGrant {
+  can: string;
+  why: string;
+  permissions: string;
+}
+
+const PRINT_GRANT: StripeGrant = {
+  can: "make shipping rates or read checkouts",
+  permissions: "Write on Shipping Rates and Read on Checkout Sessions",
+  why: "which selling a print needs",
+};
+
+const DELIVERY_GRANT: StripeGrant = {
+  can: "read checkouts",
+  permissions: "Read on Checkout Sessions",
+  why: "which is how each buyer owed a delivery reaches the founder",
+};
+
+/** End the call unless Stripe says the founder's key has `grant`. */
+const requireStripeAccess = async (
+  ctx: RunContext,
+  asked: Promise<StripeAccess>,
+  grant: StripeGrant,
+): Promise<void> => {
+  const access = await asked;
   switch (access.kind) {
     case "granted": {
       return;
@@ -331,14 +360,14 @@ const requireStripeAccess = async (ctx: RunContext, key: string): Promise<void> 
       return needIntegration(
         ctx,
         "stripe",
-        `Stripe won't let IdleBiz's key make shipping rates or read checkouts, which selling a print needs (${access.said}): remove the key and paste one whose restricted permissions include Write on Shipping Rates and Read on Checkout Sessions, or your secret key`,
-        "Stripe won't let IdleBiz's key make shipping rates or read checkouts: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.",
-        "Stripe won't let IdleBiz's key make shipping rates or read checkouts.",
+        `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${access.said}): remove the key and paste one whose restricted permissions include ${grant.permissions}, or your secret key`,
+        `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
+        `Stripe won't let IdleBiz's key ${grant.can}.`,
       );
     }
     case "unreachable": {
       throw new RefusalError(
-        `Stripe could not be asked about shipping rates and checkouts (${access.reason}); try again.`,
+        `Stripe could not be asked whether IdleBiz's key can ${grant.can} (${access.reason}); try again.`,
       );
     }
     // no default
@@ -419,10 +448,7 @@ const orderEntry = (order: Order): string => {
   const listing =
     order.kind === "link"
       ? order.name
-      : (store
-          .listListings()
-          .find((l) => l.productId === order.productId && l.id === order.listingId)?.name ??
-        order.listingId);
+      : (store.getListing(order.listingId)?.name ?? order.listingId);
   const day = new Date(order.createdAt).toISOString().slice(0, 10);
   const lines = [`- ${day} · ${listing}`];
   if (order.kind === "sale") {
@@ -442,7 +468,7 @@ const orderEntry = (order: Order): string => {
   } else if (order.email !== null) {
     lines.push(`  ${order.email}`);
   }
-  lines[0] += ` · paid ${formatUsd(order.collectedCents / 100)} · ${orderStanding(order)}`;
+  lines[0] += ` · paid ${formatCents(order.collectedCents)} · ${orderStanding(order)}`;
   return lines.join("\n");
 };
 
@@ -590,7 +616,7 @@ const TOOLS = {
       product.vercel === null
         ? { kind: "new", name: product.id }
         : { binding: product.vercel, kind: "bound" };
-    const unshippable = keptEnvValues();
+    const unshippable = [...keptEnvValues(), ...heldKeys()];
     const leak = await unshippableIn(product.workspaceDir, unshippable);
     if (leak !== null) {
       return leak;
@@ -650,6 +676,10 @@ const TOOLS = {
         "Vercel is not connected.",
       );
     }
+    const held = heldKeyIn(value);
+    if (held !== null) {
+      return `${name} was not set: that value is IdleBiz's own ${held}, which never leaves IdleBiz. What needs it is a tool IdleBiz runs itself (create_payment_link, sell_print, deploy); a key the product needs of its own is one the founder makes for it, which an ask_boss action can ask them for.`;
+    }
     const replaces = teamSetEnv(product, name);
     const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
     if (!set.ok) {
@@ -678,7 +708,7 @@ const TOOLS = {
         return notTheBet;
       }
       const cents = Math.round(amountUsd * 100);
-      const price = formatUsd(cents / 100);
+      const price = formatCents(cents);
       const key = getSecret(STRIPE_SECRET_KEY);
       if (!key) {
         return askFounder(
@@ -692,8 +722,12 @@ const TOOLS = {
           "IdleBiz has no Stripe key to charge with.",
         );
       }
-      // quoted as JSON, so a name cannot pose as more of the action the founder signs
-      const action = `payment link ${JSON.stringify(name)} at ${price} on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
+      if (delivery !== undefined) {
+        await requireStripeAccess(ctx, ctx.checkoutAccess(key), DELIVERY_GRANT);
+      }
+      // quoted as JSON, so neither can pose as more of the action the founder signs; the delivery
+      // is signed too, since it is what the founder owes each buyer
+      const action = `payment link ${JSON.stringify(name)} at ${price} on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}${delivery === undefined ? "" : ` delivering ${JSON.stringify(delivery)}`}`;
       requireSignOff(ctx, action, "payments");
       const made = await ctx.createPaymentLink({
         bet: bet ?? null,
@@ -721,7 +755,7 @@ const TOOLS = {
         ctx,
         "printful",
         "to read Printful's catalog for what to sell",
-        "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.",
+        NO_PRINTFUL_TOKEN,
         "IdleBiz has no Printful token.",
       );
     const read = await ctx.printListing.catalog(
@@ -763,16 +797,16 @@ const TOOLS = {
       return `${product.name} has no Vercel project yet: deploy it with the print file, which makes one, then list it.`;
     }
     const priceCents = Math.round(priceUsd * 100);
-    const price = formatUsd(priceCents / 100);
+    const price = formatCents(priceCents);
     const keys = sellingKeys(ctx, product, name, price);
     const placements = await servedFiles(ctx, product, product.vercel, keys.vercel, urls);
     const quote = await quotePrint(ctx, { credential: keys.printful, placements, variantIds });
     const floor = priceFloorCents(quote);
-    const shipping = formatUsd(quote.shippingCents / 100);
+    const shipping = formatCents(quote.shippingCents);
     if (priceCents < floor) {
-      return `${price} would lose money on every sale: Printful charges up to ${formatUsd(quote.costCents / 100)} to print one and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to 4.4% + $0.30. The lowest price that loses nothing is ${formatUsd(floor / 100)}: price it above that, with the margin the bet needs.`;
+      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one and ship it in the US, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. The lowest price that loses nothing is ${formatCents(floor)}: price it above that, with the margin the bet needs.`;
     }
-    await requireStripeAccess(ctx, keys.stripe);
+    await requireStripeAccess(ctx, ctx.printListing.stripeAccess(keys.stripe), PRINT_GRANT);
     // the digest pins the design the founder signs for: a later deploy can change what the URL serves
     const printed = placements
       .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl} sha256:${p.sha256}`)
@@ -810,7 +844,7 @@ const TOOLS = {
     });
     post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
     const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
-    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatUsd(quote.costCents / 100)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
+    return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
   }),
   read_orders: define(TOOL_SPECS.read_orders, (ctx, { product: named }) => {
     const productId = productFor(ctx, named);

@@ -171,6 +171,33 @@ export const secretsUnder = (prefix: string): Map<string, string> => {
   return out;
 };
 
+/** A key IdleBiz itself uses, which never leaves main. */
+export interface HeldKey {
+  kind: "held";
+  name: string;
+  value: string;
+}
+
+// a flag or a port turns up in any text, and no key is this short
+const MIN_KEY_LENGTH = 8;
+
+/**
+ * Every key IdleBiz itself uses (Stripe's, Vercel's, Printful's…), by name: never a value set_env
+ * set, which a run may know, nor the Printful store, which is no secret. None of these may
+ * reach a run, a reply to one, a variable it sets or a folder it deploys.
+ */
+export const heldKeys = (): HeldKey[] =>
+  [...secretsUnder("")]
+    .filter(
+      ([name, value]) =>
+        !name.startsWith(ENV_PREFIX) && name !== PRINTFUL_STORE && value.length >= MIN_KEY_LENGTH,
+    )
+    .map(([name, value]) => ({ kind: "held", name, value }));
+
+/** The name of a key IdleBiz holds whose value `text` carries, or null. */
+export const heldKeyIn = (text: string): string | null =>
+  heldKeys().find(({ value }) => text.includes(value))?.name ?? null;
+
 export const setSecret = (key: string, value: string): void => {
   const secrets = readSecretsForUpdate() ?? { keys: new Map(), rest: {} };
   secrets.keys.set(key, { kind: "plain", text: value });

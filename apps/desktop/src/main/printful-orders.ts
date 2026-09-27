@@ -1,15 +1,6 @@
 import { z } from "zod";
-import { HttpError } from "@/main/lib/http";
-import { report } from "@/main/lib/report";
-import {
-  UNREADABLE_ANSWER,
-  printfulDelete,
-  printfulGet,
-  printfulPost,
-  printfulSays,
-} from "@/main/printful";
-import type { PrintfulCredential } from "@/main/printful";
-import { errorMessage } from "@/shared/errors";
+import { answering, printfulDelete, printfulGet, printfulPost, usdCents } from "@/main/printful";
+import type { PrintfulAnswer, PrintfulCredential } from "@/main/printful";
 import type { JsonValue } from "@/shared/json";
 import type { PrintPlacement } from "@/shared/listing";
 import type { Recipient } from "@/shared/order";
@@ -42,23 +33,6 @@ export interface PrintfulOrder {
   costs: PrintfulCosts;
 }
 
-/**
- * How Printful answered: `missing` is a 404; `refused` its turning the token away, which only a
- * new one fixes; `rejected` a refusal that asking again cannot change, such as an address it
- * cannot ship to; `down` no answer to act on, so the call is tried again later.
- */
-type PrintfulAnswer<T> =
-  | { kind: "ok"; value: T }
-  | { kind: "missing" }
-  | { kind: "refused" }
-  | { kind: "rejected"; reason: string }
-  | { kind: "down"; reason: string };
-
-const centsOf = (usd: string | null | undefined): number | null => {
-  const amount = usd === null || usd === undefined ? Number.NaN : Number(usd);
-  return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
-};
-
 const dollars = (cents: number): string => (cents / 100).toFixed(2);
 
 const orderOf = (answer: JsonValue): PrintfulOrder => {
@@ -66,34 +40,11 @@ const orderOf = (answer: JsonValue): PrintfulOrder => {
   return {
     costs:
       costs.calculation_status === "done"
-        ? { currency: costs.currency ?? null, kind: "done", totalCents: centsOf(costs.total) }
+        ? { currency: costs.currency ?? null, kind: "done", totalCents: usdCents(costs.total) }
         : { kind: costs.calculation_status },
     id,
     status,
   };
-};
-
-const answering = async <T>(what: string, call: () => Promise<T>): Promise<PrintfulAnswer<T>> => {
-  try {
-    return { kind: "ok", value: await call() };
-  } catch (error) {
-    if (error instanceof HttpError) {
-      if (error.refused) {
-        return { kind: "refused" };
-      }
-      if (error.status === 404) {
-        return { kind: "missing" };
-      }
-      // a 429 still there after the call's own retries is Printful being busy, not a refusal
-      const permanent = error.status >= 400 && error.status < 500 && error.status !== 429;
-      return { kind: permanent ? "rejected" : "down", reason: printfulSays(error) };
-    }
-    if (error instanceof z.ZodError) {
-      report(`printful ${what}`, error);
-      return { kind: "down", reason: UNREADABLE_ANSWER };
-    }
-    return { kind: "down", reason: errorMessage(error) };
-  }
 };
 
 /** One paid order as Printful is asked to print it: the listing's variant and design, at the listing's retail prices. */
@@ -182,10 +133,10 @@ export const printfulOrders: PrintfulOrders = {
       await printfulDelete(`/v2/orders/${id}`, credential);
       return null;
     }),
-  lookup: (externalId, { storeId, token }) =>
+  lookup: (externalId, credential) =>
     answering("lookup", async () =>
-      orderOf(await printfulGet(`/v2/orders/@${externalId}`, token, storeId)),
+      orderOf(await printfulGet(`/v2/orders/@${externalId}`, credential)),
     ),
-  read: (id, { storeId, token }) =>
-    answering("read", async () => orderOf(await printfulGet(`/v2/orders/${id}`, token, storeId))),
+  read: (id, credential) =>
+    answering("read", async () => orderOf(await printfulGet(`/v2/orders/${id}`, credential))),
 };

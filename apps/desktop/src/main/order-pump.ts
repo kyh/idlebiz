@@ -2,23 +2,27 @@ import { createHash } from "node:crypto";
 import * as store from "@/main/store/store";
 import { postToRoom, raiseOrderCard } from "@/main/company-actions";
 import { report } from "@/main/lib/report";
-import { readPrintFile } from "@/main/print-listing";
+import { VARIANT_FIELD } from "@/main/payment-links";
+import { netOfStripeCents, readPrintFile } from "@/main/print-listing";
 import { printfulCredential } from "@/main/printful";
 import type { PrintfulCredential } from "@/main/printful";
 import { printfulOrders } from "@/main/printful-orders";
 import type { PrintfulOrder } from "@/main/printful-orders";
 import { STRIPE_SECRET_KEY, getSecret } from "@/main/secrets";
-import { CHECKOUT_READ_LIMIT, readCheckouts } from "@/main/stripe-checkouts";
-import type { CheckoutSession } from "@/main/stripe-checkouts";
-import { formatUsd } from "@/shared/format";
+import { isTestKey } from "@/main/stripe-api";
+import { CHECKOUT_READ_LIMIT, readCheckouts, readPaymentStanding } from "@/main/stripe-checkouts";
+import type { CheckoutSession, PaymentStanding } from "@/main/stripe-checkouts";
+import type { OrdersCursor } from "@/main/store/store";
+import { formatCents } from "@/shared/format";
 import type { Listing } from "@/shared/listing";
-import type { ListingOrder, Order, Recipient, Sale } from "@/shared/order";
+import type { Order, Recipient, Sale } from "@/shared/order";
 
 // Each paid checkout on a listing's payment link becomes one Printful order, placed with the
 // founder's token here in main. The order is on disk before Printful hears of it, and its
 // external id is the checkout's hash, so a restart looks it up rather than make it twice. A
-// draft charges nothing; it is confirmed only on a read that shows it still a draft, priced
-// at no more than the buyer paid, so no restart confirms one twice or over that guard.
+// draft charges nothing; it is confirmed only on a read that shows it still a draft, priced at
+// no more than the buyer paid less Stripe's fee, with the payment neither refunded nor disputed,
+// so no restart confirms one twice or past that guard.
 // Whatever the pump cannot settle goes to the founder as a card: refunds are theirs. A paid
 // checkout on a create_payment_link link ships nothing, so it is kept too, and one whose link
 // names a delivery is carded to the founder, who alone can reach the buyer.
@@ -58,23 +62,17 @@ const ALARMING = new Set(["failed", "canceled", "onhold"]);
 export const orderIdOf = (sessionId: string): string =>
   createHash("sha256").update(sessionId).digest("base64url").slice(0, 32);
 
-const cents = (amount: number): string => formatUsd(amount / 100);
-
-const listingOf = (order: ListingOrder): Listing | null =>
-  store.listListings().find((l) => l.productId === order.productId && l.id === order.listingId) ??
-  null;
-
 /** How a card names an order: the buyer, what they bought, and where to find it in Stripe. */
 const describe = (order: Order): string => {
   const what =
     order.kind === "link"
       ? JSON.stringify(order.name)
-      : (listingOf(order)?.name ?? order.listingId);
+      : (store.getListing(order.listingId)?.name ?? order.listingId);
   const who =
     order.kind === "sale" ? `${order.recipient.name}'s ${what} (${order.variant.label})` : what;
   const email = order.email === null ? "" : `, ${order.email}`;
   const payment = order.paymentIntent ?? order.sessionId;
-  return `${who}${email}: paid ${cents(order.collectedCents)} on ${order.productId}, Stripe payment ${payment}`;
+  return `${who}${email}: paid ${formatCents(order.collectedCents)} on ${order.productId}, Stripe payment ${payment}`;
 };
 
 const cardTitle = (order: Order, trouble: string): string =>
@@ -82,10 +80,17 @@ const cardTitle = (order: Order, trouble: string): string =>
 
 const REFUND = "If it can't ship, refund the buyer in Stripe.";
 
-/** The founder's card for a sale that goes no further on its own, and the sale held until they settle it. */
+/**
+ * The founder's card for a sale that goes no further on its own, and the sale held until they
+ * settle it. Nobody paid a test-mode sale, so nobody is owed a card or a refund: the room hears.
+ */
 const hold = (sale: Sale, printfulId: number | null, trouble: string, why: string): void => {
   store.updateSale(sale.id, { stage: { kind: "held", printfulId, why } });
   const where = printfulId === null ? "" : ` Printful order ${printfulId}.`;
+  if (!sale.livemode) {
+    postToRoom({ kind: "office" }, `🧪 Test order ${sale.id.slice(0, 8)} stopped: ${why}${where}`);
+    return;
+  }
   raiseOrderCard(cardTitle(sale, trouble), {
     action: `Settle ${describe(sale)}`,
     draft: null,
@@ -102,20 +107,6 @@ const printfulTokenCard = (): void => {
   });
 };
 
-/** A send that failed for now: tried again on the next read, until the founder is asked. */
-const failedTry = (sale: Sale, tries: number, reason: string): void => {
-  if (tries + 1 < MAX_SEND_TRIES) {
-    store.updateSale(sale.id, { stage: { kind: "received", tries: tries + 1 } });
-    return;
-  }
-  hold(
-    sale,
-    null,
-    "IdleBiz could not send it to Printful",
-    `IdleBiz tried ${MAX_SEND_TRIES} times to send it to Printful, and nothing was placed: ${reason}. Place it by hand in Printful's dashboard.`,
-  );
-};
-
 /**
  * Keep what Printful says of a sale, and hand the founder a status that went wrong the first
  * time it is read, whichever call read it: a confirmation Printful's billing refuses answers
@@ -123,11 +114,11 @@ const failedTry = (sale: Sale, tries: number, reason: string): void => {
  */
 const noteStatus = (sale: Sale, printfulId: number, status: string, stage: Sale["stage"]): void => {
   store.updateSale(sale.id, { printfulStatus: status, stage });
-  if (ALARMING.has(status) && status !== sale.printfulStatus) {
+  if (sale.livemode && ALARMING.has(status) && status !== sale.printfulStatus) {
     raiseOrderCard(cardTitle(sale, `Printful marked it ${status}`), {
       action: `Check ${describe(sale)}`,
       draft: null,
-      instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks (a failed charge is retried once billing works). ${REFUND}`,
+      instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks: after a failed charge, fix your billing, then confirm the order again in Printful's dashboard. ${REFUND}`,
     });
   }
 };
@@ -142,6 +133,53 @@ const adopt = (sale: Sale, order: PrintfulOrder): void => {
       ? { checks: 0, kind: "pricing", printfulId: order.id }
       : { kind: "confirmed", printfulId: order.id },
   );
+};
+
+/**
+ * A send that failed for now: tried again on the next track, until the founder is asked. A
+ * create that timed out may still have made the draft, so Printful is asked once more first:
+ * a draft placed by hand beside it would print and charge twice.
+ */
+const failedTry = async (
+  sale: Sale,
+  tries: number,
+  reason: string,
+  credential: PrintfulCredential,
+): Promise<void> => {
+  if (tries + 1 < MAX_SEND_TRIES) {
+    store.updateSale(sale.id, { stage: { kind: "received", tries: tries + 1 } });
+    return;
+  }
+  const found = await printfulOrders.lookup(sale.id, credential);
+  switch (found.kind) {
+    case "ok": {
+      adopt(sale, found.value);
+      return;
+    }
+    case "refused": {
+      printfulTokenCard();
+      return;
+    }
+    case "missing": {
+      hold(
+        sale,
+        null,
+        "IdleBiz could not send it to Printful",
+        `IdleBiz tried ${MAX_SEND_TRIES} times to send it to Printful, and Printful has no order for it: ${reason}. Place it by hand in Printful's dashboard.`,
+      );
+      return;
+    }
+    case "rejected":
+    case "down": {
+      hold(
+        sale,
+        null,
+        "IdleBiz could not send it to Printful",
+        `IdleBiz tried ${MAX_SEND_TRIES} times to send it to Printful (${reason}), and Printful could not say whether one went through (${found.reason}). Look in Printful's dashboard for an order with external id ${sale.id} before placing it by hand, so it is not placed twice.`,
+      );
+    }
+    // no default
+  }
 };
 
 /**
@@ -167,7 +205,7 @@ const designCheck = async (
 
 /** Find the draft a run before a restart made, or make it, once the design is still the one signed. */
 const send = async (sale: Sale, tries: number, credential: PrintfulCredential): Promise<void> => {
-  const listing = listingOf(sale);
+  const listing = store.getListing(sale.listingId);
   if (listing === null) {
     hold(
       sale,
@@ -187,12 +225,12 @@ const send = async (sale: Sale, tries: number, credential: PrintfulCredential): 
     return;
   }
   if (found.kind !== "missing") {
-    failedTry(sale, tries, found.reason);
+    await failedTry(sale, tries, found.reason, credential);
     return;
   }
   const design = await designCheck(listing);
   if (design.kind === "unread") {
-    failedTry(sale, tries, design.reason);
+    await failedTry(sale, tries, design.reason, credential);
     return;
   }
   if (design.kind === "changed") {
@@ -236,18 +274,15 @@ const send = async (sale: Sale, tries: number, credential: PrintfulCredential): 
       );
       return;
     }
-    case "missing": {
-      failedTry(sale, tries, "Printful answered 404");
-      return;
-    }
+    case "missing":
     case "down": {
-      failedTry(sale, tries, made.reason);
+      await failedTry(sale, tries, made.reason, credential);
     }
     // no default
   }
 };
 
-/** A draft still being priced: read again on the next pulse, until the founder is asked. */
+/** A draft not yet confirmed: read again on the next pulse, until the founder is asked. */
 const recheck = (sale: Sale, printfulId: number, checks: number, reason: string): void => {
   if (checks + 1 < MAX_PRICING_CHECKS) {
     store.updateSale(sale.id, { stage: { checks: checks + 1, kind: "pricing", printfulId } });
@@ -256,9 +291,22 @@ const recheck = (sale: Sale, printfulId: number, checks: number, reason: string)
   hold(
     sale,
     printfulId,
-    "Printful has not priced it",
-    `Printful's draft is still unpriced after ${MAX_PRICING_CHECKS} reads (${reason}), so IdleBiz has not confirmed it. Check its cost in Printful's dashboard and confirm it there if it is no more than the buyer paid.`,
+    "IdleBiz could not confirm it",
+    `IdleBiz read Printful's draft ${MAX_PRICING_CHECKS} times without confirming it (last: ${reason}). Check in Printful's dashboard what it costs, and in Stripe that the buyer's payment still stands, then confirm it there if it costs no more than the buyer paid.`,
   );
+};
+
+/** Whether the buyer's money is still there, asked right before Printful charges the founder for it. */
+const paymentOf = (sale: Sale): Promise<PaymentStanding> => {
+  const key = getSecret(STRIPE_SECRET_KEY);
+  if (key === null || sale.paymentIntent === null) {
+    return Promise.resolve({
+      kind: "unread",
+      reason:
+        key === null ? "IdleBiz has no Stripe key to read the payment" : "Stripe named no payment",
+    });
+  }
+  return readPaymentStanding(key, sale.paymentIntent);
 };
 
 /**
@@ -283,7 +331,10 @@ const discard = async (
   });
 };
 
-/** Confirm a priced draft, on this read that shows it a draft, only when it costs no more than the buyer paid. */
+/**
+ * Confirm a priced draft, on this read that shows it a draft, only when it costs no more than the
+ * buyer paid less Stripe's fee, and the payment is neither refunded nor disputed.
+ */
 const confirm = async (
   sale: Sale,
   order: PrintfulOrder,
@@ -312,12 +363,32 @@ const confirm = async (
   }
   const costCents = costs.totalCents;
   store.updateSale(sale.id, { costCents });
-  if (costCents > sale.collectedCents) {
+  const kept = netOfStripeCents(sale.collectedCents);
+  if (costCents > kept) {
     hold(
       sale,
       order.id,
       "Printful wants more than the buyer paid",
-      `Printful charges ${cents(costCents)} to print and ship it, and the buyer paid ${cents(sale.collectedCents)}, so IdleBiz left it a draft rather than confirm it at a loss of ${cents(costCents - sale.collectedCents)} before Stripe's fee. Confirm it in Printful's dashboard to ship it anyway, or delete the draft.`,
+      `Printful charges ${formatCents(costCents)} to print and ship it, and the buyer paid ${formatCents(sale.collectedCents)}, of which Stripe's fee may leave ${formatCents(kept)}, so IdleBiz left it a draft rather than confirm it at a loss. Confirm it in Printful's dashboard to ship it anyway, or delete the draft.`,
+    );
+    return;
+  }
+  const payment = await paymentOf(sale);
+  if (payment.kind === "unread") {
+    recheck(
+      sale,
+      order.id,
+      checks,
+      `Stripe could not say whether the payment still stands: ${payment.reason}`,
+    );
+    return;
+  }
+  if (payment.kind === "taken") {
+    hold(
+      sale,
+      order.id,
+      "its payment was refunded or disputed",
+      `Stripe shows the buyer's payment refunded or disputed, so IdleBiz left Printful's draft unconfirmed. Delete the draft in Printful's dashboard, or confirm it there if the buyer is still owed it.`,
     );
     return;
   }
@@ -490,7 +561,8 @@ const saleOf = (
   if (recipient === null) {
     return { kind: "unreadable", why: "Stripe's checkout carries no whole US shipping address" };
   }
-  const chosen = session.custom_fields?.find((field) => field.key === "variant")?.dropdown?.value;
+  const chosen = session.custom_fields?.find((field) => field.key === VARIANT_FIELD)?.dropdown
+    ?.value;
   const [only] = listing.variants;
   const variant =
     listing.variants.length === 1 ? only : listing.variants.find((v) => String(v.id) === chosen);
@@ -517,20 +589,41 @@ const paidOn = (session: CheckoutSession, productId: string) => ({
   sessionId: session.id,
 });
 
-/** Keep a paid checkout on a listing's link as an order, and tell the room: the first sale is the game's milestone. */
-const take = (session: CheckoutSession, listing: Listing): void => {
-  const paid = { ...paidOn(session, listing.productId), listingId: listing.id };
-  const read = saleOf(session, listing);
-  if (read.kind === "unreadable") {
-    const order: Order = { ...paid, kind: "unreadable", why: read.why };
-    store.recordOrder(order);
+/**
+ * Keep a paid checkout IdleBiz cannot send, and hand it to the founder: the card is raised
+ * first, since cards dedupe by title and the kept order is what stops the next read retrying.
+ */
+const keepUnreadable = (
+  session: CheckoutSession,
+  productId: string,
+  listingId: string,
+  why: string,
+): void => {
+  const order: Order = { ...paidOn(session, productId), kind: "unreadable", listingId, why };
+  if (order.livemode) {
     raiseOrderCard(cardTitle(order, "IdleBiz cannot send it"), {
       action: `Settle ${describe(order)}`,
       draft: null,
-      instructions: `A buyer paid, but ${read.why}, so IdleBiz sent nothing to Printful. Place it by hand in Printful's dashboard if you can. ${REFUND}`,
+      instructions: `A buyer paid, but ${why}, so IdleBiz sent nothing to Printful. Place it by hand in Printful's dashboard if you can. ${REFUND}`,
     });
+  }
+  store.recordOrder(order);
+  if (!order.livemode) {
+    postToRoom(
+      { kind: "office" },
+      `🧪 Test order ${order.id.slice(0, 8)} on ${productId} was not sent to Printful: ${why}.`,
+    );
+  }
+};
+
+/** Keep a paid checkout on a listing's link as an order, and tell the room: the first sale is the game's milestone. */
+const take = (session: CheckoutSession, listing: Listing): void => {
+  const read = saleOf(session, listing);
+  if (read.kind === "unreadable") {
+    keepUnreadable(session, listing.productId, listing.id, read.why);
     return;
   }
+  const paid = { ...paidOn(session, listing.productId), listingId: listing.id };
   const { kind, ...sold } = read;
   store.recordOrder({
     ...paid,
@@ -545,13 +638,14 @@ const take = (session: CheckoutSession, listing: Listing): void => {
     : " (test mode: Printful only prices a draft, then it is deleted)";
   postToRoom(
     { kind: "office" },
-    `📦 Sold ${listing.name} (${read.variant.label}) for ${cents(paid.collectedCents)} on ${listing.productId}: it goes to Printful now${test}.`,
+    `📦 Sold ${listing.name} (${read.variant.label}) for ${formatCents(paid.collectedCents)} on ${listing.productId}: it goes to Printful now${test}.`,
   );
 };
 
 /**
  * Keep a paid checkout on a create_payment_link link, tell the room, and card the founder with
- * what the link says to deliver: nothing reaches a buyer from the team.
+ * what the link says to deliver: nothing reaches a buyer from the team. The card is raised
+ * before the order is kept, as in keepUnreadable.
  */
 const takeLinkSale = (session: CheckoutSession, productId: string): void => {
   const order: Order = {
@@ -560,48 +654,96 @@ const takeLinkSale = (session: CheckoutSession, productId: string): void => {
     kind: "link",
     name: session.line_items?.data[0]?.description ?? "a payment link's item",
   };
+  if (order.livemode && order.delivery !== null) {
+    raiseOrderCard(cardTitle(order, "deliver it"), {
+      action: `Send ${order.email ?? "the buyer"} what ${JSON.stringify(order.name)} promised`,
+      draft: null,
+      instructions: `${describe(order)}. The team says to send: ${order.delivery} Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
+    });
+  }
   store.recordOrder(order);
-  const sold = `💵 Sold ${JSON.stringify(order.name)} for ${cents(order.collectedCents)} on ${productId}`;
+  const sold = `💵 Sold ${JSON.stringify(order.name)} for ${formatCents(order.collectedCents)} on ${productId}`;
   if (!order.livemode) {
     postToRoom({ kind: "office" }, `${sold} (test mode: nobody paid).`);
     return;
   }
-  if (order.delivery === null) {
-    postToRoom({ kind: "office" }, `${sold}.`);
-    return;
-  }
-  postToRoom({ kind: "office" }, `${sold}: the founder delivers it.`);
-  raiseOrderCard(cardTitle(order, "deliver it"), {
-    action: `Send ${order.email ?? "the buyer"} what ${JSON.stringify(order.name)} promised`,
-    draft: null,
-    instructions: `${describe(order)}. The team says to send: ${order.delivery} Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
-  });
+  postToRoom(
+    { kind: "office" },
+    order.delivery === null ? `${sold}.` : `${sold}: the founder delivers it.`,
+  );
 };
 
-/**
- * Which of the company's links a checkout was made on: a listing's, or a create_payment_link
- * link, known by the product its tags name. Null for any other checkout on the account.
- */
-const soldOn = (
-  session: CheckoutSession,
-  onLink: ReadonlyMap<string, Listing>,
-): { kind: "listing"; listing: Listing } | { kind: "link"; productId: string } | null => {
+/** Which of the company's links a checkout was made on, or null for any other checkout on the account. */
+type SoldOn =
+  | { kind: "listing"; listing: Listing }
+  /** A listing's link whose listing this save no longer holds: paid, with nothing to print from. */
+  | { kind: "lost"; productId: string; listingId: string }
+  | { kind: "link"; productId: string };
+
+/** A link is the company's when it is a listing's, or its `product` tag names a product the company made. */
+const soldOn = (session: CheckoutSession, onLink: ReadonlyMap<string, Listing>): SoldOn | null => {
   const listing = onLink.get(session.payment_link ?? "");
   if (listing !== undefined) {
     return { kind: "listing", listing };
   }
   const tags = session.metadata;
   const productId = tags?.product;
-  return session.payment_link &&
-    productId &&
-    tags.listing === undefined &&
-    store.madeProduct(productId)
+  if (!session.payment_link || !productId || !store.madeProduct(productId)) {
+    return null;
+  }
+  return tags.listing === undefined
     ? { kind: "link", productId }
-    : null;
+    : { kind: "lost", listingId: tags.listing, productId };
+};
+
+const keep = (session: CheckoutSession, sold: SoldOn): void => {
+  switch (sold.kind) {
+    case "listing": {
+      take(session, sold.listing);
+      return;
+    }
+    case "lost": {
+      keepUnreadable(
+        session,
+        sold.productId,
+        sold.listingId,
+        `IdleBiz no longer holds the listing ${sold.listingId} it was bought from`,
+      );
+      return;
+    }
+    case "link": {
+      takeLinkSale(session, sold.productId);
+    }
+    // no default
+  }
 };
 
 /**
- * Keep every paid checkout on the company's links since the cursor, and move the cursor up to the
+ * Which key reads, as the cursor keeps it: its mode, and a digest that tells keys apart without
+ * holding one, since the save is read by every run.
+ */
+const readerOf = (key: string): string =>
+  `${isTestKey(key) ? "test" : "live"}:${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+
+/**
+ * Where a key's read goes on from: its own last read. A key that never read, in a mode another
+ * has (a rolled key, another account), starts from the oldest of that mode's reads; one of a
+ * mode never read starts from the floor. Whichever key read last, no key skips what it never read.
+ */
+const startOf = (cursor: OrdersCursor, reader: string): number => {
+  const own = cursor.byKey[reader];
+  if (own !== undefined) {
+    return own;
+  }
+  const mode = `${reader.split(":")[0]}:`;
+  const sameMode = Object.entries(cursor.byKey)
+    .filter(([other]) => other.startsWith(mode))
+    .map(([, at]) => at);
+  return sameMode.length > 0 ? Math.min(...sameMode) : cursor.floor;
+};
+
+/**
+ * Keep every paid checkout on the company's links since the key's cursor, and move it up to the
  * oldest that may still be paid: an open one (Stripe expires those within a day), or one whose
  * payment is still on its way.
  */
@@ -610,9 +752,24 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
   if (key === null) {
     return;
   }
-  const cursor = store.ordersCursor() ?? Math.floor(store.requireCompany().createdAt / 1000) - 1;
-  const read = await readCheckouts(key, cursor);
+  const cursor = store.ordersCursor() ?? {
+    byKey: {},
+    floor: Math.floor(store.requireCompany().createdAt / 1000) - 1,
+  };
+  const reader = readerOf(key);
+  const from = startOf(cursor, reader);
+  const moveTo = (next: number): void => {
+    store.setOrdersCursor({
+      ...cursor,
+      byKey: { ...cursor.byKey, [reader]: Math.max(from, next) },
+    });
+  };
+  const read = await readCheckouts(key, from);
   if (read.kind === "refused") {
+    // nothing sold yet is owed a read: a link with a delivery checks the grant as it is made
+    if (store.listListings().length === 0 && store.listOrders().length === 0) {
+      return;
+    }
     raiseOrderCard("Paid orders can't be read from Stripe", {
       action: "Let IdleBiz's Stripe key read checkouts",
       draft: null,
@@ -640,11 +797,7 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
     let unkept = false;
     if (session.payment_status === "paid") {
       try {
-        if (sold.kind === "listing") {
-          take(session, sold.listing);
-        } else {
-          takeLinkSale(session, sold.productId);
-        }
+        keep(session, sold);
       } catch (error) {
         report(`order ${session.id}`, error);
         unkept = true;
@@ -656,13 +809,13 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
     kept.add(session.id);
   }
   if (read.whole) {
-    store.setOrdersCursor(Math.max(cursor, waitFrom));
+    moveTo(waitFrom);
     return;
   }
   // Stripe lists newest first, so the older ones are out of reach of every read to come: the
   // founder is told, and the cursor moves up to what was read, or no read would ever catch up.
   const oldestRead = Math.min(...read.sessions.map((session) => session.created));
-  store.setOrdersCursor(Math.max(cursor, Math.min(waitFrom, oldestRead - 1)));
+  moveTo(Math.min(waitFrom, oldestRead - 1));
   raiseOrderCard("Paid orders may have been missed", {
     action: "Check Stripe for payments on IdleBiz's payment links",
     draft: null,

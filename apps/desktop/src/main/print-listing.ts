@@ -5,6 +5,7 @@ import { stripeShippedLink, stripeListingAccess } from "@/main/payment-links";
 import type { ShippedLinker, StripeAccess } from "@/main/payment-links";
 import { productionHosts } from "@/main/vercel";
 import { errorMessage } from "@/shared/errors";
+import { formatCents } from "@/shared/format";
 
 // Stripe keeps 2.9% + 30¢ of a US card payment, and 1.5% more of a card issued abroad, which a
 // US shipping address does not rule out. What the buyer pays, the price plus the shipping the
@@ -14,6 +15,13 @@ import { errorMessage } from "@/shared/errors";
 //   price ≥ (cost + 30¢) / (1 − 4.4%) − shipping
 const STRIPE_SHARE = 0.044;
 const STRIPE_FIXED_CENTS = 30;
+
+/** Stripe's dearest fee on a payment, as the agent and the founder read it. */
+export const STRIPE_FEE_LABEL = `${(STRIPE_SHARE * 100).toFixed(1)}% + ${formatCents(STRIPE_FIXED_CENTS)}`;
+
+/** What is left of a payment, in cents, once Stripe has taken its dearest fee. */
+export const netOfStripeCents = (collectedCents: number): number =>
+  Math.floor(collectedCents * (1 - STRIPE_SHARE)) - STRIPE_FIXED_CENTS;
 
 /** The lowest price, in cents, at which a sale loses nothing. */
 export const priceFloorCents = ({ costCents, shippingCents }: PrintQuote): number =>

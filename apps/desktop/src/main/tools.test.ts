@@ -76,6 +76,8 @@ const runAs = (employeeId: string) => {
       assigned.push(taskId);
       store.claimTask(taskId, assigneeId);
     },
+    checkoutAccess: () =>
+      Promise.reject(new Error("asked Stripe about checkouts without a test asking for it")),
     company,
     createPaymentLink: () => Promise.reject(new Error("charged without a test asking for it")),
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
@@ -582,7 +584,7 @@ describe("deploy", () => {
         cwd: product.workspaceDir,
         target: { binding: VERCEL, kind: "bound" },
         token: TOKEN,
-        unshippable: [],
+        unshippable: [{ kind: "held", name: "VERCEL_TOKEN", value: TOKEN }],
       },
     ]);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Held for the founder's sign-off");
@@ -683,6 +685,23 @@ describe("deploy", () => {
     expect(deploys).toEqual([]);
   });
 
+  it("refuses a folder holding a key IdleBiz itself uses, before the founder is asked", async () => {
+    const { ctx, asked, deploys } = deployingRun(DEPLOYED);
+    const product = store.setProductVercel("acme", VERCEL);
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founders_own", VERCEL_TOKEN: TOKEN }),
+    );
+    writeFileSync(path.join(product.workspaceDir, "pay.js"), 'const key = "sk_live_founders_own";');
+
+    const answer = await callTool(ctx, "POST /v1/deploy", {});
+
+    expect(answer).toContain("pay.js holds IdleBiz's own STRIPE_SECRET_KEY");
+    expect(answer).not.toContain("sk_live_founders_own");
+    expect(asked).toEqual([]);
+    expect(deploys).toEqual([]);
+  });
+
   it("asks for Vercel, not a sign-off, while no key is saved", async () => {
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Vercel is not connected");
@@ -713,6 +732,24 @@ const settingRun = (result: EnvResult = SET) => {
 };
 
 describe("set_env", () => {
+  it("refuses to set a key IdleBiz itself uses, naming only the key", async () => {
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founders_own", VERCEL_TOKEN: TOKEN }),
+    );
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    const answer = await callTool(ctx, "POST /v1/set-env", {
+      name: "STRIPE_KEY",
+      value: "sk_live_founders_own",
+    });
+
+    expect(answer).toContain("that value is IdleBiz's own STRIPE_SECRET_KEY");
+    expect(answer).not.toContain("sk_live_founders_own");
+    expect(sets).toEqual([]);
+  });
+
   it("sets the variable on the run's product's project with the founder's token, unsigned, and says when it takes effect", async () => {
     connectVercel();
     const { ctx, asked, sets } = settingRun();
@@ -754,7 +791,8 @@ describe("set_env", () => {
 
     await callTool(deploying, "POST /v1/deploy", {});
     expect(deploys[0]?.unshippable).toEqual([
-      { ...OPENAI, company: store.requireCompany().id, product: "acme" },
+      { ...OPENAI, company: store.requireCompany().id, kind: "env", product: "acme" },
+      { kind: "held", name: "VERCEL_TOKEN", value: TOKEN },
     ]);
     const saved = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
       (entry) => entry.isFile() && entry.name !== "secrets.json",
@@ -866,6 +904,7 @@ const chargingRun = (key: string | null = "sk_live_founder") => {
   const stripe = fakeStripe();
   const ctx: RunContext = {
     ...run.ctx,
+    checkoutAccess: () => Promise.resolve({ kind: "granted" }),
     createPaymentLink: stripePaymentLink,
     run: { ...run.ctx.run, productId: "acme" },
   };
@@ -957,7 +996,10 @@ describe("create_payment_link", () => {
 
   it("keeps a delivery on the link alone, where each checkout carries it to the founder's card", async () => {
     const { ctx, stripe } = chargingRun();
-    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+    store.grantApproval(
+      ctx.run.taskId,
+      'payment link "Pro plan" at $9.00 on acme delivering "Email the licence key from keys.txt"',
+    );
 
     const answer = await callTool(ctx, "POST /v1/payment-link", {
       ...LINK,
@@ -972,6 +1014,48 @@ describe("create_payment_link", () => {
     expect(Object.keys(stripe[1]?.form ?? {})).not.toContain(
       "payment_intent_data[metadata][delivery]",
     );
+  });
+
+  it("has the founder sign the delivery they owe each buyer, so another delivery is signed anew", async () => {
+    const { ctx, asked, stripe } = chargingRun();
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
+    const held = await callTool(ctx, "POST /v1/payment-link", {
+      ...LINK,
+      delivery: "Mail each buyer a signed print",
+    });
+
+    expect(held).toContain("Held for the founder's sign-off");
+    expect(asked).toEqual([
+      {
+        command:
+          'payment link "Pro plan" at $9.00 on acme delivering "Mail each buyer a signed print"',
+        rule: "payments",
+        type: "approval",
+      },
+    ]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("leaves a Stripe card, not a sign-off, for a delivery the key cannot read checkouts for", async () => {
+    const run = chargingRun();
+    const ctx: RunContext = {
+      ...run.ctx,
+      checkoutAccess: () =>
+        Promise.resolve({
+          kind: "refused",
+          said: "The provided key does not have rak_checkout_session_read",
+        }),
+    };
+
+    const answer = await callTool(ctx, "POST /v1/payment-link", {
+      ...LINK,
+      delivery: "Email the PDF",
+    });
+
+    expect(answer).toContain("Stripe won't let IdleBiz's key read checkouts");
+    expect(run.asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
+    expect(run.stripe).toEqual([]);
   });
 
   it("quotes the name in what the founder signs, so it cannot pose as the price", async () => {

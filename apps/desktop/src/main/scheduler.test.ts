@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -154,7 +154,35 @@ it("ignores queue drains after stop and resumes admission only after start", () 
   drain.stop();
 });
 
+/** A listener that fails as a full disk would, on a run's start alone. */
+const refuseRunStart = (e: ActivityEvent) => {
+  if (e.kind === "run.start") {
+    throw new Error("disk full");
+  }
+};
+
 describe("keeping the Mac awake", () => {
+  it("still runs, and lets go, when a run's start cannot be announced", async () => {
+    found();
+    const { driver, running } = scripted();
+    const power = fakeBlocker();
+    const drain = createScheduler(driver, keepAwake(power.blocker));
+    activityEvents.on("activity", refuseRunStart);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    queue("priya");
+    try {
+      drain.tick();
+    } finally {
+      activityEvents.off("activity", refuseRunStart);
+      logged.mockRestore();
+    }
+    expect(running.size).toBe(1);
+    expect(power.held.size).toBe(1);
+
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(power.held.size).toBe(0));
+  });
+
   it("holds one blocker while any run is in flight and lets go when the last ends", async () => {
     found();
     const { driver, running } = scripted();
@@ -997,6 +1025,31 @@ describe("an action only the founder can take", () => {
 
     expect(() => drain.resolveAction(task.id, { kind: "done", note: "" })).toThrow(RefusalError);
     expect(kindOf(task)).toBe("blocked");
+  });
+
+  it("sends none of IdleBiz's own keys to the team, whatever the founder types", async () => {
+    const { drain, task } = await blockedOn(POST);
+    const key = "sk_live_founders_own_key";
+    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
+    const card = store.raiseOrderCard("Order 1: deliver it", {
+      action: "Send Ada the memo",
+      draft: null,
+      instructions: "…",
+      type: "action",
+    });
+
+    for (const send of [
+      () => drain.resolveAction(task.id, { kind: "done", note: `use ${key}` }),
+      () => drain.resolveAction(card?.id ?? "", { kind: "done", note: key }),
+      () => drain.resolveAction(card?.id ?? "", { kind: "done", note: "rk_live_some0therKey" }),
+      () => drain.founderMessage(`@mae the key is ${key}`),
+      () => drain.directEmployee("mae", key),
+    ]) {
+      expect(send).toThrow(RefusalError);
+    }
+    expect(kindOf(task)).toBe("blocked");
+    expect(store.getTask(card?.id ?? "")?.state.kind).toBe("blocked");
+    expect(JSON.stringify(store.recentTeamMessages())).not.toContain(key);
   });
 
   it("settles an order card with no run, telling the room what the founder did", () => {

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { HttpError, getJson, postForm } from "@/main/lib/http";
-import { STRIPE_VERSION } from "@/main/metrics";
+import { STRIPE_API, stripeHeaders, stripeSays } from "@/main/stripe-api";
 import { errorMessage } from "@/shared/errors";
 import type { ListingVariant } from "@/shared/listing";
 
@@ -21,27 +21,13 @@ type PaymentLinkResult = { ok: true; url: string } | { ok: false; error: string 
 
 export type PaymentLinker = (req: PaymentLinkRequest) => Promise<PaymentLinkResult>;
 
-const API = "https://api.stripe.com";
-
 const Created = z.object({ id: z.string() });
 const Link = z.object({ url: z.url() });
 const LinkWithId = z.object({ id: z.string(), url: z.url() });
-const Refusal = z.object({ error: z.object({ message: z.string() }) });
 
 /** Each tag as a form field under `prefix`, the way Stripe reads a map. */
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [`${prefix}[${key}]`, value]));
-
-export const stripeHeaders = (key: string) => ({
-  Authorization: `Bearer ${key}`,
-  "Stripe-Version": STRIPE_VERSION,
-});
-
-/** Why Stripe refused, in its words when it gave any. */
-export const stripeSays = (error: HttpError): string => {
-  const said = Refusal.safeParse(error.answer);
-  return said.success ? said.data.error.message : error.message;
-};
 
 /** A payment link made on Stripe here in main, so an employee's process never holds the key. */
 export const stripePaymentLink: PaymentLinker = async ({
@@ -58,14 +44,14 @@ export const stripePaymentLink: PaymentLinker = async ({
   const onSessions = delivery === null ? tags : { ...tags, delivery };
   try {
     const price = Created.parse(
-      await postForm(`${API}/v1/prices`, headers, {
+      await postForm(`${STRIPE_API}/v1/prices`, headers, {
         currency: "usd",
         "product_data[name]": name,
         unit_amount: String(cents),
       }),
     );
     const link = Link.parse(
-      await postForm(`${API}/v1/payment_links`, headers, {
+      await postForm(`${STRIPE_API}/v1/payment_links`, headers, {
         "line_items[0][price]": price.id,
         "line_items[0][quantity]": "1",
         // the charge the app counts copies its payment's metadata, never the link's;
@@ -101,7 +87,7 @@ type ShippedLinkResult = { ok: true; id: string; url: string } | { ok: false; er
 export type ShippedLinker = (req: ShippedLinkRequest) => Promise<ShippedLinkResult>;
 
 /** The custom field a buyer picks the variant in; fulfilment reads the choice back by it. */
-const VARIANT_FIELD = "variant";
+export const VARIANT_FIELD = "variant";
 
 const variantChoice = (variants: readonly ListingVariant[]): Record<string, string> =>
   variants.length < 2
@@ -125,17 +111,12 @@ export type StripeAccess =
   | { kind: "refused"; said: string }
   | { kind: "unreachable"; reason: string };
 
-/**
- * Ask Stripe whether `key` reaches shipping rates, which a listing makes, and checkout sessions,
- * which is how each paid order is found, before the founder signs off on a listing: a restricted
- * key made before prints were sold is fixed first, rather than fail after the sign-off or leave
- * paid orders unsent. Only a read can be asked without making anything: write implies read, so
- * this catches a key with no grant on shipping rates, not one granted Read alone.
- */
-export const stripeListingAccess = async (key: string): Promise<StripeAccess> => {
+/** Whether `key` may make each read, as the founder is told to fix it. */
+const accessTo = async (key: string, reads: readonly string[]): Promise<StripeAccess> => {
   try {
-    await getJson(`${API}/v1/shipping_rates?limit=1`, stripeHeaders(key));
-    await getJson(`${API}/v1/checkout/sessions?limit=1`, stripeHeaders(key));
+    for (const read of reads) {
+      await getJson(`${STRIPE_API}${read}`, stripeHeaders(key));
+    }
     return { kind: "granted" };
   } catch (error) {
     if (error instanceof HttpError && error.refused) {
@@ -147,6 +128,22 @@ export const stripeListingAccess = async (key: string): Promise<StripeAccess> =>
     };
   }
 };
+
+const CHECKOUTS = "/v1/checkout/sessions?limit=1";
+
+/**
+ * Ask Stripe whether `key` reaches shipping rates, which a listing makes, and checkout sessions,
+ * which is how each paid order is found, before the founder signs off on a listing: a restricted
+ * key made before prints were sold is fixed first, rather than fail after the sign-off or leave
+ * paid orders unsent. Only a read can be asked without making anything: write implies read, so
+ * this catches a key with no grant on shipping rates, not one granted Read alone.
+ */
+export const stripeListingAccess = (key: string): Promise<StripeAccess> =>
+  accessTo(key, ["/v1/shipping_rates?limit=1", CHECKOUTS]);
+
+/** Whether `key` reads checkout sessions, which is how each buyer a link owes a delivery is found. */
+export const stripeCheckoutAccess = (key: string): Promise<StripeAccess> =>
+  accessTo(key, [CHECKOUTS]);
 
 /**
  * Stripe replays the first answer to a key for 24 hours, so a listing tried again after a
@@ -174,7 +171,7 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
     bet === null ? { listing, product } : { bet, listing, product };
   const post = (path: string, form: Record<string, string>) =>
     postForm(
-      `${API}${path}`,
+      `${STRIPE_API}${path}`,
       { ...stripeHeaders(key), "Idempotency-Key": idempotencyKey(listing, product, path, form) },
       form,
     );

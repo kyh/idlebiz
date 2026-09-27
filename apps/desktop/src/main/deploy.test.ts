@@ -338,7 +338,7 @@ describe("deploying through Vercel's API", () => {
     const vercel = fakeVercel();
 
     const result = await deployBound([
-      { company: "co", name: "OPENAI_API_KEY", product: "acme", value: key },
+      { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
     ]);
     expect(result).toEqual({
       kind: "failed",
@@ -351,8 +351,9 @@ describe("deploying through Vercel's API", () => {
   });
 
   it("finds the same leak before the founder is asked, and none in a folder it cannot read", async () => {
-    const held = {
+    const held: KeptEnvValue = {
       company: "co",
+      kind: "env",
       name: "OPENAI_API_KEY",
       product: "acme",
       value: "sk-proj-acme-runtime",
@@ -366,6 +367,18 @@ describe("deploying through Vercel's API", () => {
     await expect(unshippableIn(path.join(workspace, "gone"), [held])).resolves.toBeNull();
   });
 
+  it("refuses a folder holding a key IdleBiz itself uses, naming only the key", async () => {
+    const key = "sk_live_founders_own_key";
+    put("src/pay.js", `const stripe = "${key}";`);
+
+    const leak = await unshippableIn(workspace, [
+      { kind: "held", name: "STRIPE_SECRET_KEY", value: key },
+    ]);
+
+    expect(leak).toContain("src/pay.js holds IdleBiz's own STRIPE_SECRET_KEY");
+    expect(leak).not.toContain(key);
+  });
+
   it("scans only what it uploads, and no value too short to be a key", async () => {
     const key = "sk-proj-acme-runtime";
     put("index.html", "<p>on</p>");
@@ -375,8 +388,8 @@ describe("deploying through Vercel's API", () => {
 
     await expect(
       deployBound([
-        { company: "co", name: "OPENAI_API_KEY", product: "acme", value: key },
-        { company: "co", name: "FLAG", product: "acme", value: "on" },
+        { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
+        { company: "co", kind: "env", name: "FLAG", product: "acme", value: "on" },
       ]),
     ).resolves.toMatchObject({ kind: "deployed" });
     expect(vercel.created[0]?.files.map((f) => f.file)).toEqual(["index.html"]);
@@ -388,7 +401,9 @@ describe("deploying through Vercel's API", () => {
     const vercel = fakeVercel({ beforeAskingForFiles: () => put("index.html", key) });
 
     await expect(
-      deployBound([{ company: "co", name: "OPENAI_API_KEY", product: "acme", value: key }]),
+      deployBound([
+        { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
+      ]),
     ).resolves.toMatchObject({ kind: "failed" });
     expect([...vercel.stored.values()].map(String)).not.toContain(key);
   });

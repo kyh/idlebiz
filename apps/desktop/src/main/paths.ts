@@ -17,7 +17,7 @@ import { mkdirSync } from "node:fs";
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
 //     listings/<id>.json    a print-on-demand item on sale for a product: the Printful variants and design, its payment link
-//     orders/<id>.json      a paid checkout on a listing, and what became of it at Printful
+//     orders/<id>.json      a paid checkout on one of the company's payment links (a listing's or create_payment_link's), and what became of it
 //     workspace/            the first product's code
 //     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
@@ -26,7 +26,7 @@ import { mkdirSync } from "node:fs";
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
-//       orders-cursor.json    where the next read of Stripe's checkouts starts
+//       orders-cursor.json    where each Stripe key's next read of checkouts starts
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.

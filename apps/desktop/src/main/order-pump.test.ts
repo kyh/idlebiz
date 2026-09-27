@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +12,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-orders-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
+const { ordersDir } = await import("./paths");
 const { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } = await import("./order-pump");
 const { settleOrderCard } = await import("./company-actions");
 
@@ -72,6 +73,8 @@ interface WorldSetup {
   lostConfirmations?: number;
   /** The status a confirmation leaves the order in. */
   confirmedAs?: string;
+  /** Creates that make the draft but answer 500, as a timeout would. */
+  lostCreates?: number;
 }
 
 const notFound = () => Response.json({ code: 404 }, { status: 404 });
@@ -88,6 +91,7 @@ const fakeWorld = ({
   design = DESIGN,
   lostConfirmations = 0,
   confirmedAs = "pending",
+  lostCreates = 0,
 }: WorldSetup = {}) => {
   const checkoutReads: number[] = [];
   const orders = new Map<number, PrintfulOrder>();
@@ -101,7 +105,10 @@ const fakeWorld = ({
     /** Whether Stripe says every page has more after it. */
     endless: false,
     lostConfirmations,
+    lostCreates,
     orders,
+    /** Payments the founder refunded in Stripe. */
+    refunded: new Set<string>(),
     sessions,
   };
   const orderJson = (order: PrintfulOrder) => ({
@@ -131,6 +138,10 @@ const fakeWorld = ({
       status: "draft",
     };
     orders.set(order.id, order);
+    if (world.lostCreates > 0) {
+      world.lostCreates -= 1;
+      return new Response(null, { status: 500 });
+    }
     return Response.json(orderJson(order));
   };
   const confirm = (order: PrintfulOrder | undefined) => {
@@ -178,11 +189,22 @@ const fakeWorld = ({
   };
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     const { host, pathname, searchParams } = new URL(url);
+    // a key lists only the sessions of its own mode
+    const live = !new Headers(init?.headers).get("Authorization")?.includes("_test_");
     if (host === "api.stripe.com" && pathname === "/v1/checkout/sessions") {
       const after = Number(searchParams.get("created[gt]"));
       checkoutReads.push(after);
-      const data = world.sessions.filter((session) => session.created > after);
+      const data = world.sessions.filter(
+        (session) => session.created > after && session.livemode === live,
+      );
       return Promise.resolve(Response.json({ data, has_more: world.endless }));
+    }
+    if (host === "api.stripe.com" && pathname === "/v1/charges") {
+      const intent = searchParams.get("payment_intent") ?? "";
+      const refunded = world.refunded.has(intent) ? 3599 : 0;
+      return Promise.resolve(
+        Response.json({ data: [{ amount_refunded: refunded, disputed: false, paid: true }] }),
+      );
     }
     if (host === "acme-site.vercel.app") {
       return Promise.resolve(new Response(design, { headers: { "content-type": "image/png" } }));
@@ -246,6 +268,9 @@ const openShop = () => {
   saveSecrets();
   return productId;
 };
+
+/** Where each key's next read of checkouts starts. */
+const readFrom = () => Object.values(store.ordersCursor()?.byKey ?? {});
 
 const orderCards = () =>
   store.listOpenTasks().filter((t) => t.origin === "order" && t.state.kind === "blocked");
@@ -543,7 +568,7 @@ describe("the order pump", () => {
 
     await pumpOrders(NOW, "read");
 
-    expect(store.ordersCursor()).toBe(NOW_S - 3601);
+    expect(readFrom()).toEqual([NOW_S - 3601]);
     expect(orderCards().map((t) => t.title)).toEqual(["Paid orders may have been missed"]);
     expect(store.listOrders()).toHaveLength(1);
   });
@@ -560,7 +585,7 @@ describe("the order pump", () => {
     await pumpOrders(NOW, "read");
     const foundedAt = store.requireCompany().createdAt;
     expect(world.checkoutReads).toEqual([Math.floor(foundedAt / 1000) - 1]);
-    expect(store.ordersCursor()).toBe(openedAt - 1);
+    expect(readFrom()).toEqual([openedAt - 1]);
 
     // it expires unpaid: the cursor moves up to a little before the read
     world.sessions = [
@@ -569,11 +594,12 @@ describe("the order pump", () => {
     store.initStore();
     await pumpOrders(NOW, "read");
     expect(world.checkoutReads.at(-1)).toBe(openedAt - 1);
-    expect(store.ordersCursor()).toBe(NOW_S - 600);
+    expect(readFrom()).toEqual([NOW_S - 600]);
   });
 
   it("prices a test-mode checkout, then deletes its draft, since nobody paid, even one dearer than the payment", async () => {
     openShop();
+    saveSecrets("rk_test_founder");
     const world = fakeWorld({
       sessions: [checkout("cs_test", { livemode: false })],
       totalUsd: "36.50",
@@ -656,7 +682,6 @@ describe("the order pump", () => {
       sessions: [
         memo("cs_delivered"),
         memo("cs_tip", { metadata: { product: productId } }),
-        memo("cs_test", { livemode: false }),
         memo("cs_unpaid", { payment_status: "unpaid" }),
         memo("cs_foreign", { metadata: { delivery: "x", product: "someone-elses" } }),
         memo("cs_lost_listing", { metadata: { listing: "gone", product: productId } }),
@@ -669,13 +694,14 @@ describe("the order pump", () => {
     expect(store.listOrders()).toMatchObject([
       { delivery: "Email the PDF at memos/acme.pdf", kind: "link", name: "Acme teardown" },
       { delivery: null, kind: "link", sessionId: "cs_tip" },
-      { kind: "link", livemode: false, sessionId: "cs_test" },
+      { kind: "unreadable", listingId: "gone", sessionId: "cs_lost_listing" },
     ]);
     const cards = orderCards();
     expect(cards.map((t) => t.title)).toEqual([
+      `Order ${orderIdOf("cs_lost_listing").slice(0, 8)}: IdleBiz cannot send it`,
       `Order ${orderIdOf("cs_delivered").slice(0, 8)}: deliver it`,
     ]);
-    expect(cards[0]?.state).toMatchObject({
+    expect(cards[1]?.state).toMatchObject({
       ask: {
         action: 'Send ada@example.com what "Acme teardown" promised',
         instructions: `"Acme teardown", ada@example.com: paid $9.00 on ${productId}, Stripe payment pi_cs_delivered. The team says to send: Email the PDF at memos/acme.pdf Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
@@ -684,7 +710,6 @@ describe("the order pump", () => {
     expect(store.recentTeamMessages().map((m) => m.text)).toEqual([
       `💵 Sold "Acme teardown" for $9.00 on ${productId}: the founder delivers it.`,
       `💵 Sold "Acme teardown" for $9.00 on ${productId}.`,
-      `💵 Sold "Acme teardown" for $9.00 on ${productId} (test mode: nobody paid).`,
     ]);
 
     // a retired product's link still takes money, and its buyer is still owed
@@ -693,6 +718,139 @@ describe("the order pump", () => {
     world.sessions.push(memo("cs_after", { created: NOW_S + 60 }));
     await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
     expect(store.listOrders().at(-1)).toMatchObject({ productId, sessionId: "cs_after" });
-    expect(orderCards()).toHaveLength(2);
+    expect(orderCards()).toHaveLength(3);
+  });
+
+  it("keeps each key's place, so a live sale paid while a test key was saved is still taken", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_before")] });
+    await pumpOrders(NOW, "read");
+
+    saveSecrets("rk_test_founder");
+    world.sessions.push(checkout("cs_while_testing", { created: NOW_S + 600 }));
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+    await pumpOrders(NOW + 2 * CHECKOUTS_READ_MS, "read");
+    expect(store.listOrders().map((o) => o.sessionId)).toEqual(["cs_before"]);
+
+    saveSecrets();
+    await pumpOrders(NOW + 3 * CHECKOUTS_READ_MS, "read");
+    expect(store.listOrders().map((o) => o.sessionId)).toEqual(["cs_before", "cs_while_testing"]);
+    expect(world.checkoutReads.at(-1)).toBe(NOW_S - 600);
+  });
+
+  it("starts a rolled key where its mode's reads stopped, not from the founding", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    await pumpOrders(NOW, "read");
+
+    saveSecrets("rk_live_rolled");
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+
+    expect(world.checkoutReads).toEqual([
+      Math.floor(store.requireCompany().createdAt / 1000) - 1,
+      NOW_S - 600,
+    ]);
+  });
+
+  it("leaves a draft Printful prices above what Stripe's fee leaves of the payment", async () => {
+    openShop();
+    // $34.50 is under the $35.99 paid, but over the $34.10 Stripe's fee may leave
+    const world = fakeWorld({ sessions: [checkout("cs_paid")], totalUsd: "34.50" });
+
+    await pumpUntilSettled();
+
+    expect(world.confirmations).toBe(0);
+    expect(onlySale().stage).toMatchObject({ kind: "held", printfulId: 9001 });
+    const [card] = orderCards();
+    const ask = card?.state.kind === "blocked" ? card.state.ask : null;
+    expect(ask?.type === "action" ? ask.instructions : "").toContain(
+      "the buyer paid $35.99, of which Stripe's fee may leave $34.10",
+    );
+  });
+
+  it("never confirms a draft whose payment the founder refunded in Stripe", async () => {
+    openShop();
+    const world = fakeWorld({ pricingReads: 1, sessions: [checkout("cs_paid")] });
+    await pumpOrders(NOW, "read");
+    world.refunded.add("pi_cs_paid");
+
+    await pumpUntilSettled();
+
+    expect(world.confirmations).toBe(0);
+    expect(onlySale().stage).toMatchObject({ kind: "held", printfulId: 9001 });
+    expect(orderCards().map((t) => t.title)).toEqual([
+      `Order ${orderIdOf("cs_paid").slice(0, 8)}: its payment was refunded or disputed`,
+    ]);
+  });
+
+  it("finds the draft a last timed-out send made, rather than have the founder place a second", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    await pumpOrders(NOW, "read");
+    world.orders.clear();
+    // the last try: its create makes the draft, but the answer is lost
+    world.lostCreates = 1;
+    store.updateSale(onlySale().id, { stage: { kind: "received", tries: 5 } });
+
+    await pumpOrders(NOW + 600_000, "track");
+
+    expect(world.creates).toBe(2);
+    expect(onlySale().stage).toMatchObject({ kind: "pricing", printfulId: 9002 });
+    expect(orderCards()).toEqual([]);
+  });
+
+  it("cards the founder even when the order cannot be kept, and only once when it is", async () => {
+    const productId = openShop();
+    fakeWorld({ sessions: [checkout("cs_nowhere", { collected_information: null })] });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const orders = ordersDir(store.requireCompany().id);
+    mkdirSync(orders, { recursive: true });
+    chmodSync(orders, 0o555);
+    try {
+      await pumpOrders(NOW, "read");
+    } finally {
+      chmodSync(orders, 0o755);
+      logged.mockRestore();
+    }
+    expect(store.listOrders()).toEqual([]);
+    expect(orderCards()).toHaveLength(1);
+
+    await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
+    expect(store.listOrders()).toMatchObject([{ kind: "unreadable", productId }]);
+    expect(orderCards()).toHaveLength(1);
+  });
+
+  it("tells the room, not the founder, of a test-mode checkout it cannot send", async () => {
+    openShop();
+    saveSecrets("rk_test_founder");
+    fakeWorld({
+      sessions: [checkout("cs_test", { collected_information: null, livemode: false })],
+    });
+
+    await pumpOrders(NOW, "read");
+
+    expect(store.listOrders()).toMatchObject([{ kind: "unreadable", livemode: false }]);
+    expect(orderCards()).toEqual([]);
+    expect(store.recentTeamMessages().at(-1)?.text).toContain("🧪 Test order");
+  });
+
+  it("raises no card for a key that cannot read checkouts while nothing is sold", async () => {
+    store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "vc",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "sell deal memos",
+      name: "Acme",
+    });
+    saveSecrets();
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json({ error: { message: "no checkout read" } }, { status: 403 })),
+    );
+
+    await pumpOrders(NOW, "read");
+
+    expect(orderCards()).toEqual([]);
   });
 });
