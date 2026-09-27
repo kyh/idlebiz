@@ -288,8 +288,8 @@ third boundary.
   `created[gt]` cursor in `state/orders-cursor.json`, one per key that has read (named by its
   mode and a digest, never the key), since a key of another mode or account lists none of this
   one's sessions: a key new to a mode already read starts from the oldest of that mode's
-  cursors, one of a mode never read from the floor (the founding; an older save adopted reads
-  from then). Each is held behind any checkout that may still be paid and re-reads the last 10
+  cursors, one of a mode never read from the floor (the founding; a save adopted from format 6
+  or older reads from the adoption). Each is held behind any checkout that may still be paid and re-reads the last 10
   minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what
   it read and cards the founder. A session on a listing's link with `payment_status` `paid`
   (complete alone is not paid) is kept as an order, on disk before Printful hears of it;
@@ -336,8 +336,10 @@ third boundary.
   a link already off answers the same. A link Stripe makes while its product retires is still
   kept, and switched off at once. Format 6 and older kept no record of `create_payment_link`
   links, and Stripe's links carry no date, so an older save adopted lists its products in
-  `state/unrecorded-links.json`, the one file in `state/` whose loss costs something: nothing
-  writes it again, so deleted, those links are never looked for. Once one retires and a live
+  `state/unrecorded-links.json`, one of the two files in `state/` whose loss costs something:
+  nothing writes it again, so deleted, those links are never looked for. The other is such a
+  save's `state/orders-cursor.json`, whose floor is the adoption: deleted, reads start from the
+  founding and take every sale made on its links before then as new. Once one retires and a live
   key is saved, one read of the account's active links cards the founder with those tagged for it (none switched off by
   IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
   say where each of a retired product's links stands. A reset switches off every live link not

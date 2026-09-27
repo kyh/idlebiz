@@ -23,7 +23,7 @@ import { mkdirSync } from "node:fs";
 //     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
-//     state/                running state main keeps for itself; deleting it loses nothing canonical but unrecorded-links.json
+//     state/                running state main keeps for itself; deleting it loses nothing canonical but unrecorded-links.json and an adopted save's orders-cursor.json
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
@@ -48,7 +48,7 @@ export const companyWorkspace = (companySlug: string): string =>
 /** What teammates share across products, and the working directory of work no product owns. */
 export const companySharedDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "shared");
-/** Running state main keeps for itself: small JSON written as things happen, safe to delete but for unrecordedLinksFile.
+/** Running state main keeps for itself: small JSON written as things happen, safe to delete but for unrecordedLinksFile and an adopted save's ordersCursorFile.
  *  What the founder configured (metrics.json, approvals.json) is not state and stays beside COMPANY.md. */
 const stateDir = (companySlug: string): string => path.join(companyDir(companySlug), "state");
 /** The latest ship summaries, for the brief's "recently shipped" lines. */
@@ -57,7 +57,11 @@ export const recentShipsFile = (companySlug: string): string =>
 /** The founder's digest-in-progress: what has happened since they last looked. */
 export const sinceLastLookFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "since-last-look.json");
-/** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
+/**
+ * Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order
+ * already kept. A save adopted from format 6 or older kept none, so its floor is the adoption: deleted, it takes each sale
+ * made on its links before then as new.
+ */
 export const ordersCursorFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "orders-cursor.json");
 /**
