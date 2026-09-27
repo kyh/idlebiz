@@ -1154,6 +1154,23 @@ describe("bets", () => {
     expect(existsSync(companyWorkspace(co.id))).toBe(true);
   });
 
+  it("leaves a product boot could not read to the load report, and gives its code to no stand-in", () => {
+    const co = found();
+    const first = firstProduct();
+    const file = path.join(productsDir(co.id), first.id, "PRODUCT.md");
+    const written = readFileSync(file, "utf-8");
+    writeFileSync(file, "garbage");
+
+    const report = store.initStore();
+    expect(report.skipped.map((s) => s.kind)).toEqual(["product"]);
+    expect(store.listProducts()).toEqual([]);
+    expect(readdirSync(productsDir(co.id))).toEqual([first.id]);
+
+    writeFileSync(file, written);
+    store.initStore();
+    expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
+  });
+
   it("refuses to retire the first product when its code cannot follow, and nothing leaves", () => {
     const co = found();
     const first = firstProduct();
@@ -1593,6 +1610,32 @@ describe("founder approvals", () => {
     expect(store.consumeApproval("continue-deploy", "vercel deploy --prod")).toBe(false);
   });
 
+  it("leave with a run a restart ended, as they would had it settled", () => {
+    const co = found();
+    const mae = store.createEmployee(hire("Mae"));
+    const t = store.createTask({ assigneeId: mae.id, origin: "founder", title: "Push it" });
+    store.claimTask(t.id, mae.id);
+    const interrupted = store.lockTaskForRun(t.id, "run-1");
+    const waiting = store.createTask({ assigneeId: mae.id, origin: "founder", title: "Deploy" });
+    store.claimTask(waiting.id, mae.id);
+    if (!interrupted) {
+      throw new Error("the run did not lock");
+    }
+    writeFileSync(
+      path.join(tasksDir(co.id), t.id, "TASK.md"),
+      serializeDoc(taskToDoc({ ...interrupted, attempts: 4 })),
+    );
+    store.grantApproval(t.id, "git push origin main");
+    store.grantApproval(waiting.id, "vercel deploy --prod");
+
+    store.initStore();
+    expect(store.getTask(t.id)?.state.kind).toBe("dead");
+    expect(store.holdsApproval(t.id)).toBe(false);
+    expect(store.claimTask(t.id, mae.id)?.state.kind).toBe("queued");
+    expect(store.consumeApproval(t.id, "git push origin main")).toBe(false);
+    expect(store.consumeApproval(waiting.id, "vercel deploy --prod")).toBe(true);
+  });
+
   it("ignore the company-wide grants older saves kept", () => {
     const co = found();
     writeFileSync(path.join(root, co.id, "approvals.json"), JSON.stringify(["git push"]));
@@ -1995,5 +2038,70 @@ describe("the save format", () => {
     const report = store.initStore();
     expect(report.skipped[0]?.error).toContain("agentcompanies/v9");
     expect(store.listRoutines().map((r) => r.id)).not.toContain("foreign");
+  });
+
+  it("seeds no routine over, or beside, the only one it could not read", () => {
+    const co = store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "ecommerce",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "sell",
+      name: "Acme",
+    });
+    const dir = path.join(root, co.id, "routines");
+    expect(readdirSync(dir)).toEqual(["store-audit"]);
+    const file = path.join(dir, "store-audit", "ROUTINE.md");
+    const edited = "---\nbroken: [\n---\nMy own checklist.\n";
+    writeFileSync(file, edited);
+
+    const report = store.initStore();
+    expect(report.skipped.map((s) => s.kind)).toEqual(["routine"]);
+    expect(readFileSync(file, "utf-8")).toBe(edited);
+    expect(store.listRoutines()).toEqual([]);
+    expect(readdirSync(dir)).toEqual(["store-audit"]);
+  });
+
+  it("hands a format 2 leaver's dead letter to a lead the save no longer named", () => {
+    const co = foundTeam();
+    const dead = store.createTask({ assigneeId: "priya", origin: "founder", title: "Side work" });
+    writeDead(co.id, dead.id, "boom");
+    rmSync(employeeAgentDir(co.id, "priya"), { recursive: true });
+    const file = path.join(root, co.id, "COMPANY.md");
+    writeFileSync(file, readFileSync(file, "utf-8").replace(/\n {2}leaderId: .*/u, ""));
+    restamp(co.id, 2);
+
+    store.initStore();
+    expect(store.requireCompany().leaderId).toBe("mae");
+    expect(store.getTask(dead.id)).toMatchObject({ assigneeId: "mae", state: { kind: "dead" } });
+  });
+
+  it("closes a format 0 revenue bet still live as unmeasured, since no payment then carried its mark", () => {
+    const co = found();
+    const product = firstProduct().id;
+    const revenue = (title: string) =>
+      store.openBet({
+        budgetUsd: 2,
+        hypothesis: "a pro plan sells",
+        metric: "revenue",
+        productId: product,
+        target: 5,
+        title,
+        windowHours: 24,
+      });
+    const open = revenue("Pro plan");
+    const measuring = revenue("Team plan");
+    writeBetState(co.id, measuring.id, { kind: "measuring", until: Date.now() + 1000 });
+    const visitors = launch(product);
+    const work = store.createTask({ betId: open.id, origin: "work", title: "Sell it" });
+    unstamp(co.id);
+
+    store.initStore();
+    for (const id of [open.id, measuring.id]) {
+      expect(store.getBet(id)?.state).toMatchObject({ kind: "killed", moved: null });
+    }
+    expect(store.getBet(visitors.id)?.state).toEqual({ kind: "open" });
+    expect(stateOf(work.id)?.kind).toBe("dropped");
   });
 });

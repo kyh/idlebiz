@@ -81,6 +81,8 @@ allocator and the replay.
   `stripe trigger`) is money nobody paid, so it counts nowhere unless
   `IDLEBIZ_COUNT_TEST_MONEY=1` (AGENTS.md). Without it a test-mode key gives a bet no
   reading, not a zero, so a bet only it could read closes unmeasured, never as a loss.
+  An unstamped save's live revenue bet closes unmeasured too when adopted: its links tagged
+  only the product, so it could read none of its own money.
 - **Idle hands only spend against a fundable bet.** `allocate` decides everything about
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget
@@ -322,8 +324,9 @@ third boundary.
   a link already off answers the same. A link Stripe makes while its product retires is still
   kept, and switched off at once. Format 6 and older kept no record of `create_payment_link`
   links, and Stripe's links carry no date, so an older save adopted lists its products in
-  `state/unrecorded-links.json`; once one retires and a live key is saved, one read of the
-  account's active links cards the founder with those tagged for it (none switched off by
+  `state/unrecorded-links.json`, the one file in `state/` whose loss costs something: nothing
+  writes it again, so deleted, those links are never looked for. Once one retires and a live
+  key is saved, one read of the account's active links cards the founder with those tagged for it (none switched off by
   IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
   say where each of a retired product's links stands. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which

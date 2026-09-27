@@ -23,12 +23,12 @@ import { mkdirSync } from "node:fs";
 //     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
-//     state/                running state main keeps for itself; deleting it loses nothing canonical
+//     state/                running state main keeps for itself; deleting it loses nothing canonical but unrecorded-links.json
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
 //       orders-cursor.json    where each Stripe key's next read of checkouts starts
-//       unrecorded-links.json products an older save made that may have create_payment_link links no links/ file holds
+//       unrecorded-links.json products an older save made that may have create_payment_link links no links/ file holds; written once, at adoption
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -46,7 +46,7 @@ export const companyWorkspace = (companySlug: string): string =>
 /** What teammates share across products, and the working directory of work no product owns. */
 export const companySharedDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "shared");
-/** Running state main keeps for itself: small JSON written as things happen, safe to delete.
+/** Running state main keeps for itself: small JSON written as things happen, safe to delete but for unrecordedLinksFile.
  *  What the founder configured (metrics.json, approvals.json) is not state and stays beside COMPANY.md. */
 const stateDir = (companySlug: string): string => path.join(companyDir(companySlug), "state");
 /** The latest ship summaries, for the brief's "recently shipped" lines. */
@@ -58,7 +58,10 @@ export const sinceLastLookFile = (companySlug: string): string =>
 /** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
 export const ordersCursorFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "orders-cursor.json");
-/** Products an older save made, whose create_payment_link links IdleBiz never recorded: each is looked for at Stripe once it retires. */
+/**
+ * Products an older save made, whose create_payment_link links IdleBiz never recorded: each is looked for at Stripe once it
+ * retires. Written only when the save is adopted, so deleted, those links are never looked for and keep selling after it.
+ */
 export const unrecordedLinksFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "unrecorded-links.json");
 export const activityFile = (companySlug: string): string =>

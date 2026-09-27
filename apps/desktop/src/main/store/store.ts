@@ -72,7 +72,7 @@ import {
   productHasRoom,
   windowEnd,
 } from "@/shared/bets";
-import type { Bet, PolicyParams } from "@/shared/bets";
+import type { Bet, BetState, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
 import { ListingSchema } from "@/shared/listing";
@@ -399,6 +399,10 @@ const safeReaddir = (dir: string): string[] => {
   }
 };
 
+/** Whether `dir` holds any package, read or skipped: one boot skipped is the load report's to name, never replaced. */
+const holdsPackage = (dir: string, fileFor: (slug: string) => string): boolean =>
+  safeReaddir(dir).some((slug) => existsSync(fileFor(slug)));
+
 /** Report corrupt packages individually so one hand-edited file cannot prevent loading. */
 const loadPackages = <T extends { id: string }>(
   kind: LoadSkip["kind"],
@@ -593,6 +597,19 @@ export const revokeApprovals = (taskId: string): void => {
   const { grants } = current();
   if (grants.some((g) => g.taskId === taskId)) {
     writeGrants(grants.filter((g) => g.taskId !== taskId));
+  }
+};
+
+/** A restart ends a run as its settle would: a task no longer waiting to run keeps no sign-off. */
+const dropEndedGrants = (active: ActiveCompany): void => {
+  const ended = new Set(
+    active.tasks
+      .filter((t) => t.state.kind === "dead" || t.state.kind === "blocked")
+      .map((t) => t.id),
+  );
+  const kept = active.grants.filter((g) => !ended.has(g.taskId));
+  if (kept.length < active.grants.length) {
+    writeGrants(kept);
   }
 };
 
@@ -2031,9 +2048,27 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   return active;
 };
 
+/** Whether the company lost its last product; one boot could not read is still its own. */
+const lacksProduct = (active: ActiveCompany): boolean => {
+  const { id } = active.company;
+  return (
+    active.products.length === 0 && !holdsPackage(productsDir(id), (slug) => productFile(id, slug))
+  );
+};
+
+/** Whether the save named no lead on the roster and one was elected; unsaved. */
+const electMissingLead = (active: ActiveCompany): boolean => {
+  const { company, employees } = active;
+  if (employees.length === 0 || employees.some((e) => e.id === company.leaderId)) {
+    return false;
+  }
+  active.company = { ...company, leaderId: leadOf(employees) };
+  return true;
+};
+
 /** A company always has a product to work on; one that lost its last is given its mission back as one. */
 const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null): void => {
-  if (active.products.length === 0) {
+  if (lacksProduct(active)) {
     const first = firstProduct(active.company, vercel);
     mkdirSync(first.workspaceDir, { recursive: true });
     active.products.push(first);
@@ -2052,6 +2087,28 @@ const legacyVercel = (companyId: string): VercelBinding | null => {
     projectName: legacy.projectName ?? legacy.projectId,
     teamId: legacy.teamId ?? null,
   };
+};
+
+const UNMARKED_REVENUE =
+  "adopted from a build whose payment links carried no mark of this bet, so nothing could measure it";
+
+/**
+ * Format 0 judged a revenue bet on its product's whole revenue, and its links tagged only the
+ * product. A bet now counts only payments tagged for it, so one still live would read none of
+ * its own money and lose: it closes unmeasured, a verdict neither the replay nor the allocator
+ * counts. Its waiting work goes with it in adoptStoppedBetWork.
+ */
+const adoptUnmarkedRevenueBets = (active: ActiveCompany): void => {
+  const now = Date.now();
+  for (const bet of active.bets.filter((b) => b.claim.metric === "revenue" && !isClosed(b))) {
+    const state: BetState = {
+      closedAt: now,
+      kind: "killed",
+      moved: null,
+      reason: UNMARKED_REVENUE,
+    };
+    recordIn(active.bets, bet.id, { state }, saveBet);
+  }
 };
 
 /** Format 1 shelved an answered ask as done, its summary the answer: relabel it as the history it is. */
@@ -2257,9 +2314,11 @@ const adoptProposalOrigins = (active: ActiveCompany): void => {
 /**
  * An older build's release left the leaver's asks and dead letters on their id, which no
  * claim reaches: an answer queued a continuation nobody runs. Whoever an open task still
- * names off the roster is released now, known only by that id.
+ * names off the roster is released now, known only by that id, to a lead elected first: an
+ * older release of a lead left none.
  */
 const adoptOrphanedTasks = (active: ActiveCompany): void => {
+  electMissingLead(active);
   const roster = new Set(active.employees.map((e) => e.id));
   const leavers = new Set(
     active.tasks.flatMap((t) =>
@@ -2310,7 +2369,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
         saveRunState(e);
       }
     }
-    if (active.products.length === 0) {
+    if (lacksProduct(active)) {
       const vercel = legacyVercel(id);
       ensureFirstProduct(active, vercel);
       if (vercel !== null) {
@@ -2318,6 +2377,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
       }
     }
     dropRetiredRoutines(active);
+    adoptUnmarkedRevenueBets(active);
   }
   if (from < 2) {
     adoptAnsweredAsks(active);
@@ -2372,12 +2432,12 @@ export const initStore = (): LoadReport => {
       adoptOlderSave(active, format);
     }
     ensureFirstProduct(active, null);
+    dropEndedGrants(active);
     mkdirSync(company.workspaceDir, { recursive: true });
-    if (active.employees.length > 0 && !active.employees.some((e) => e.id === company.leaderId)) {
-      active.company = { ...company, leaderId: leadOf(active.employees) };
+    if (electMissingLead(active)) {
       saveCompany(active.company);
     }
-    if (active.routines.length === 0) {
+    if (!holdsPackage(routinesDir(company.id), (slug) => routineFile(company.id, slug))) {
       seedDefaultRoutines(company.id, company.businessType);
     }
     for (const employee of active.employees) {
