@@ -86,8 +86,40 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
     setDraft("");
   });
   const removing = useSubmission(removeStripeKey);
-  if (stripeKey.state === "set") {
-    return (
+  const key = draft.trim();
+  const sending = saving.submission.kind === "sending";
+  const set = stripeKey.state === "set";
+  const saveLabel = set ? "Replace key" : "Save";
+  // a key is replaced by pasting over it, never by removing it first: a pulse in that gap finds
+  // no key and hands every retiring link to the founder to switch off by hand
+  const entry = (
+    <div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="sk_… or rk_…"
+          type="password"
+          aria-label={set ? "New Stripe secret key" : "Stripe secret key"}
+          className="px-field flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => saving.submit(key)}
+          disabled={sending || key.length === 0}
+          className="px-btn-accent px-btn"
+        >
+          {sending ? "Checking…" : saveLabel}
+        </button>
+      </div>
+      <Failure submission={saving.submission} doing="save the key" />
+    </div>
+  );
+  if (stripeKey.state !== "set") {
+    return entry;
+  }
+  return (
+    <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-fg">
           ✓ key …{stripeKey.last4}
@@ -108,33 +140,9 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
         >
           Remove
         </button>
-        <Failure submission={removing.submission} doing="remove the key" />
       </div>
-    );
-  }
-  const key = draft.trim();
-  const sending = saving.submission.kind === "sending";
-  return (
-    <div>
-      <div className="flex gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="sk_… or rk_…"
-          type="password"
-          aria-label="Stripe secret key"
-          className="px-field flex-1"
-        />
-        <button
-          type="button"
-          onClick={() => saving.submit(key)}
-          disabled={sending || key.length === 0}
-          className="px-btn-accent px-btn"
-        >
-          {sending ? "Checking…" : "Save"}
-        </button>
-      </div>
-      <Failure submission={saving.submission} doing="save the key" />
+      <Failure submission={removing.submission} doing="remove the key" />
+      {entry}
     </div>
   );
 };

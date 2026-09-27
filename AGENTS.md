@@ -73,7 +73,7 @@ End-to-end suite — `pnpm e2e` builds the desktop app, then drives the build wi
 Playwright's Electron support (`apps/desktop/e2e/`); `pnpm -F @repo/desktop e2e` reruns it on
 the last build. It covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
-shown as set and, for Stripe, removable; a key refused is never saved), Printful token entry
+shown as set and, for Stripe, replaceable and removable; a key refused is never saved), Printful token entry
 (a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into
 secrets.json being sealed, a held command denied from #team, an action card answered, keys
 held into a window let go of when it closes, #team kept on its newest line, a long ask kept on
@@ -179,7 +179,8 @@ rather than crashing boot.
   `STRIPE_SECRET_KEY` in main (`main/payment-links.ts`) once the founder signs off; with no
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
-  waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
+  waited on it. A new key is pasted over the saved one, never after removing it: a pulse
+  between the two finds no key and hands each retiring link to the founder to switch off by hand. A restricted key needs Write on Payment Links, Prices and Products to charge,
   and Read on Charges for the revenue read below (without Connect) and for each paid print,
   whose payment the order pump reads before Printful is paid (with Connect too), Read on
   Checkout Sessions for the order pump, and Write on Shipping Rates to sell a print, which

@@ -827,7 +827,7 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
     raiseOrderCard("Paid orders can't be read from Stripe", {
       action: "Let IdleBiz's Stripe key read checkouts",
       draft: null,
-      instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, remove the key and paste one whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
+      instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
     });
     return;
   }

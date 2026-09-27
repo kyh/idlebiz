@@ -84,7 +84,7 @@ test("a Stripe key Stripe refuses is shown as refused and never saved", async ({
   expect(await readSecrets(root)).not.toHaveProperty("STRIPE_SECRET_KEY");
 });
 
-test("a Stripe key Stripe takes is kept sealed, shown as set and removable", async ({
+test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and removable", async ({
   launch,
   root,
 }) => {
@@ -106,8 +106,12 @@ test("a Stripe key Stripe takes is kept sealed, shown as set and removable", asy
   const secrets = await readSecrets(root);
   expect(secrets.STRIPE_SECRET_KEY).toMatch(SEALED);
 
-  await budget.getByRole("button", { name: "Remove" }).click();
-  await expect(budget.getByLabel("Stripe secret key")).toBeVisible();
+  await budget.getByLabel("New Stripe secret key").fill("sk_test_e2eGood5678");
+  await budget.getByRole("button", { name: "Replace key" }).click();
+  await expect(budget.getByText("✓ key …5678")).toBeVisible();
+
+  await budget.getByRole("button", { exact: true, name: "Remove" }).click();
+  await expect(budget.getByLabel("Stripe secret key", { exact: true })).toBeVisible();
   expect(await readSecrets(root)).not.toHaveProperty("STRIPE_SECRET_KEY");
 });
 
