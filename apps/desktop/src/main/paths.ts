@@ -38,6 +38,8 @@ export const ROOT_DIR = path.resolve(process.env.IDLEBIZ_ROOT_DIR ?? DEFAULT_ROO
 export const ON_REAL_SAVE = ROOT_DIR === DEFAULT_ROOT_DIR;
 
 export const companyDir = (companySlug: string): string => path.join(ROOT_DIR, companySlug);
+/** The cache every run may write, beside the companies: no company may be founded under its name, or every run could write that save. */
+export const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
 export const companyFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "COMPANY.md");
 /** The first product's code; a later product keeps its own in its package (productWorkspace). */

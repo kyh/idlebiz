@@ -380,6 +380,19 @@ describe("founding publication", () => {
     expect(store.listRoutines().map((r) => r.id)).toEqual(["playtest-session"]);
   });
 
+  it("never founds a company in the tool cache every run may write", () => {
+    const company = store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "software",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "ship",
+      name: "Caché",
+    });
+    expect(companyDir(company.id)).not.toBe(path.join(root, "cache"));
+  });
+
   it.each([false, true])(
     "ignores an interrupted stage with COMPANY.md present: %s",
     (hasCompanyFile) => {

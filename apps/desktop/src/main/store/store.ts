@@ -4,6 +4,7 @@ import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "
 import { report } from "@/main/lib/report";
 import {
   ROOT_DIR,
+  TOOL_CACHE_DIR,
   ensureAppDirs,
   companyDir,
   companyFile,
@@ -1949,7 +1950,11 @@ export const foundCompany = (input: {
   ) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
-  const id = uniqueSlug(input.name, [], (s) => existsSync(companyDir(s)));
+  const id = uniqueSlug(
+    input.name,
+    [],
+    (s) => companyDir(s) === TOOL_CACHE_DIR || existsSync(companyDir(s)),
+  );
   const co: Company = {
     autopilot: true,
     budget: input.budget,

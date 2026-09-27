@@ -52,7 +52,7 @@ import type {
   RunSession,
 } from "@/shared/domain";
 import * as store from "@/main/store/store";
-import { ROOT_DIR, employeeMemoryDir } from "@/main/paths";
+import { ROOT_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
 import type { Confinement, LivePage } from "@/shared/command-policy";
 import { RefusalError } from "@/shared/refusal";
@@ -340,8 +340,6 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
 // its own folders, so every cache a toolchain would keep in HOME is moved here, and updaters that
 // would rewrite a CLI the founder runs are off. TMPDIR is moved too: a run connects only to
 // sockets in its own folders, and the founder's TMPDIR is full of theirs.
-const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
-
 const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
 
 const TOOL_CACHE_ENV = {
