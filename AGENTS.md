@@ -178,9 +178,11 @@ rather than crashing boot.
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`main/stripe-key.ts`) and resumes the work that
   waited on it. A restricted key needs Write on Payment Links, Prices and Products to charge,
-  and Read on Charges for the revenue read below, Read on Checkout Sessions for
-  the order pump, and Write on Shipping Rates to sell a print, which `sell_print` checks with
-  a read of both (`stripeListingAccess`) before it asks for the sign-off. A link's optional
+  and Read on Charges for the revenue read below (without Connect) and for each paid print,
+  whose payment the order pump reads before Printful is paid (with Connect too), Read on
+  Checkout Sessions for the order pump, and Write on Shipping Rates to sell a print, which
+  `sell_print` checks with a read of all three (`stripeListingAccess`) before it asks for the
+  sign-off. A link's optional
   `delivery` (what the founder hands each buyer) rides on the link's metadata alone, is part of
   the action the founder signs, and needs Read on Checkout Sessions, which
   `create_payment_link` checks first (`stripeCheckoutAccess`). Its optional `afterPaymentUrl`

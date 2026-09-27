@@ -117,15 +117,17 @@ const ChargesSchema = z.object({
 /**
  * Whether the buyer's money is still there: `kept` when a paid charge of the payment has
  * nothing refunded and no dispute, with how it was paid (`card`, `klarna`…; null when Stripe
- * did not say), `taken` when some was refunded or disputed, and `unread` when Stripe could not
- * say, which the caller treats as not yet known.
+ * did not say), `taken` when some was refunded or disputed, `refused` when Stripe turned the key
+ * away, which asking again will not change, and `unread` when Stripe could not say, which the
+ * caller treats as not yet known.
  */
 export type PaymentStanding =
   | { kind: "kept"; method: string | null }
   | { kind: "taken" }
+  | { kind: "refused"; said: string }
   | { kind: "unread"; reason: string };
 
-/** Read the charges of `paymentIntent`, with the Read on Charges grant metrics already needs. */
+/** Read the charges of `paymentIntent`, with the Read on Charges grant selling a print needs. */
 export const readPaymentStanding = async (
   key: string,
   paymentIntent: string,
@@ -147,6 +149,9 @@ export const readPaymentStanding = async (
   } catch (error) {
     if (error instanceof z.ZodError) {
       report("stripe charges", error);
+    }
+    if (error instanceof HttpError && error.refused) {
+      return { kind: "refused", said: stripeSays(error) };
     }
     return {
       kind: "unread",

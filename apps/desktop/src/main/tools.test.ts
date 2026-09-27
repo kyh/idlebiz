@@ -1691,9 +1691,17 @@ const listAnswer = (status: number): Response =>
         { status },
       );
 
-/** Stripe's answer to a key reading checkouts or shipping rates, as the key's grants have it. */
-const stripeRead = (pathname: string, grants: { checkouts: number; shippingRates: number }) =>
-  listAnswer(pathname === "/v1/checkout/sessions" ? grants.checkouts : grants.shippingRates);
+/** Stripe's answer to a key reading checkouts, charges or shipping rates, as the key's grants have it. */
+const stripeRead = (
+  pathname: string,
+  grants: { charges: number; checkouts: number; shippingRates: number },
+) =>
+  listAnswer(
+    new Map([
+      ["/v1/checkout/sessions", grants.checkouts],
+      ["/v1/charges", grants.charges],
+    ]).get(pathname) ?? grants.shippingRates,
+  );
 
 /**
  * Vercel, the product's own site, Printful and Stripe, as far as listing a print goes. Printful
@@ -1705,6 +1713,7 @@ const fakeSellers = ({
   linkTimesOut = false,
   shippingRates = 200,
   checkouts = 200,
+  charges = 200,
 } = {}) => {
   const sent: Sent[] = [];
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
@@ -1726,7 +1735,7 @@ const fakeSellers = ({
       return Promise.resolve(new Response(DESIGN, { headers: { "content-type": fileType } }));
     }
     if (host === "api.stripe.com" && method === "GET") {
-      return Promise.resolve(stripeRead(pathname, { checkouts, shippingRates }));
+      return Promise.resolve(stripeRead(pathname, { charges, checkouts, shippingRates }));
     }
     if (host === "api.printful.com" && pathname.startsWith("/v2/catalog-variants/")) {
       const id = Number(pathname.split("/").at(-1));
@@ -1806,7 +1815,7 @@ describe("sell_print", () => {
     expect(outward(sent)).toHaveLength(6);
     expect(
       sent.filter((s) => s.host === "api.stripe.com" && s.method === "GET").map((s) => s.path),
-    ).toEqual(["/v1/shipping_rates", "/v1/checkout/sessions"]);
+    ).toEqual(["/v1/shipping_rates", "/v1/checkout/sessions", "/v1/charges"]);
   });
 
   it("once signed off, lists it on a US-only card-only link at Printful's shipping, tagged and saved", async () => {
@@ -1958,13 +1967,14 @@ describe("sell_print", () => {
   it.each([
     { grants: { shippingRates: 403 }, why: "make shipping rates" },
     { grants: { checkouts: 403 }, why: "read the checkouts that find each paid order" },
+    { grants: { charges: 403 }, why: "read the charges that show a paid order still stands" },
   ])(
     "asks the founder to fix a Stripe key that cannot $why before they sign",
     async ({ grants }) => {
       const { ctx, asked, sent } = sellingRun({}, grants);
 
       expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
-        "Stripe won't let IdleBiz's key make shipping rates or read checkouts: the founder has a Stripe card waiting",
+        "Stripe won't let IdleBiz's key make shipping rates or read checkouts and charges: the founder has a Stripe card waiting",
       );
       expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
       expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");

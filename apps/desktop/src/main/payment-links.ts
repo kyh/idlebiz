@@ -179,7 +179,7 @@ const variantChoice = (variants: readonly ListingVariant[]): Record<string, stri
         ),
       };
 
-/** Whether a key may make shipping rates and read checkouts, which a restricted key needs granted on their own. */
+/** Whether a key may make shipping rates and read checkouts and charges, which a restricted key needs granted on their own. */
 export type StripeAccess =
   | { kind: "granted" }
   | { kind: "refused"; said: string }
@@ -206,14 +206,15 @@ const accessTo = async (key: string, reads: readonly string[]): Promise<StripeAc
 const CHECKOUTS = "/v1/checkout/sessions?limit=1";
 
 /**
- * Ask Stripe whether `key` reaches shipping rates, which a listing makes, and checkout sessions,
- * which is how each paid order is found, before the founder signs off on a listing: a restricted
- * key made before prints were sold is fixed first, rather than fail after the sign-off or leave
- * paid orders unsent. Only a read can be asked without making anything: write implies read, so
- * this catches a key with no grant on shipping rates, not one granted Read alone.
+ * Ask Stripe whether `key` reaches shipping rates, which a listing makes, checkout sessions,
+ * which is how each paid order is found, and charges, which show its payment still stands before
+ * Printful is paid for it, before the founder signs off on a listing: a restricted key made before
+ * prints were sold is fixed first, rather than fail after the sign-off or leave paid orders
+ * unsent. Only a read can be asked without making anything: write implies read, so this catches a
+ * key with no grant on shipping rates, not one granted Read alone.
  */
 export const stripeListingAccess = (key: string): Promise<StripeAccess> =>
-  accessTo(key, ["/v1/shipping_rates?limit=1", CHECKOUTS]);
+  accessTo(key, ["/v1/shipping_rates?limit=1", CHECKOUTS, "/v1/charges?limit=1"]);
 
 /** Whether `key` reads checkout sessions, which is how each buyer a link owes a delivery is found. */
 export const stripeCheckoutAccess = (key: string): Promise<StripeAccess> =>

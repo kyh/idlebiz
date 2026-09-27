@@ -270,7 +270,7 @@ third boundary.
   Printful's own) to California, Alaska and Hawaii, and a price below the
   floor is refused before the founder is asked (`priceFloorCents`: the dearest estimate plus
   Stripe's 4.4% + 30¢ at its dearest, less the shipping the buyer pays), as is a Stripe key that cannot read
-  shipping rates or checkout sessions. Signed, it makes a Stripe price, a fixed shipping rate at
+  shipping rates, checkout sessions or charges. Signed, it makes a Stripe price, a fixed shipping rate at
   Printful's dearest shipping and a card-only payment link collecting US addresses only, a dropdown for
   the variant when there are several, tagged like `create_payment_link`'s and with
   `metadata[listing]`, each POST under an idempotency key of its fields, so a retry after a
@@ -298,7 +298,7 @@ third boundary.
   priced (a bounded number of reads) and confirmed only on a read that shows it still a draft
   costing no more than Stripe collected less its dearest fee on a card (`netOfStripeCents`), with
   the payment's charges read just before, neither refunded nor disputed and paid by card
-  (`readPaymentStanding`, Read on Charges; a listing's link takes only cards, but one made before
+  (`readPaymentStanding`, Read on Charges, whose refusal cards the founder at once; a listing's link takes only cards, but one made before
   it did may have taken Klarna or Affirm, whose fee is dearer), so no restart confirms twice or past that guard. A
   send whose last try failed asks Printful once more for a draft it may have made before the
   founder is told to place it by hand. A test-mode sale is priced, then its draft deleted (one

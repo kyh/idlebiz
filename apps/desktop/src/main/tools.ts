@@ -454,8 +454,8 @@ interface StripeGrant {
 }
 
 const PRINT_GRANT: StripeGrant = {
-  can: "make shipping rates or read checkouts",
-  permissions: "Write on Shipping Rates and Read on Checkout Sessions",
+  can: "make shipping rates or read checkouts and charges",
+  permissions: "Write on Shipping Rates, and Read on Checkout Sessions and Charges",
   why: "which selling a print needs",
 };
 

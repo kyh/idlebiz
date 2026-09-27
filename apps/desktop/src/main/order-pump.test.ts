@@ -99,6 +99,8 @@ const fakeWorld = ({
   const world = {
     /** Called as a confirmation arrives, before Printful acts on it. */
     beforeConfirm: (_order: PrintfulOrder): void => {},
+    /** Whether the key is turned away from reading charges, as one never granted Read on Charges is. */
+    chargesRefused: false,
     checkoutReads,
     confirmations: 0,
     creates: 0,
@@ -127,6 +129,19 @@ const fakeWorld = ({
       status: order.status,
     },
   });
+  const charges = (intent: string) =>
+    world.chargesRefused
+      ? Response.json({ error: { message: "lacks rak_charge_read" } }, { status: 403 })
+      : Response.json({
+          data: [
+            {
+              amount_refunded: world.refunded.has(intent) ? 3599 : 0,
+              disputed: false,
+              paid: true,
+              payment_method_details: { type: world.paidWith.get(intent) ?? "card" },
+            },
+          ],
+        });
   const byExternalId = (ext: string) => [...orders.values()].find((o) => o.external_id === ext);
   const create = (init: RequestInit | undefined) => {
     const body = parseJson(z.string().parse(init?.body));
@@ -205,21 +220,7 @@ const fakeWorld = ({
       return Promise.resolve(Response.json({ data, has_more: world.endless }));
     }
     if (host === "api.stripe.com" && pathname === "/v1/charges") {
-      const intent = searchParams.get("payment_intent") ?? "";
-      const refunded = world.refunded.has(intent) ? 3599 : 0;
-      const type = world.paidWith.get(intent) ?? "card";
-      return Promise.resolve(
-        Response.json({
-          data: [
-            {
-              amount_refunded: refunded,
-              disputed: false,
-              paid: true,
-              payment_method_details: { type },
-            },
-          ],
-        }),
-      );
+      return Promise.resolve(charges(searchParams.get("payment_intent") ?? ""));
     }
     const link = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
     if (host === "api.stripe.com" && link !== undefined && init?.method === "POST") {
@@ -844,6 +845,22 @@ describe("the order pump", () => {
     expect(orderCards().map((t) => t.title)).toEqual([
       `Order ${orderIdOf("cs_paid").slice(0, 8)}: its payment was refunded or disputed`,
     ]);
+  });
+
+  it("cards the founder at once, naming the grant, when the key cannot read the payment's charges", async () => {
+    openShop();
+    const world = fakeWorld({ sessions: [checkout("cs_paid")] });
+    world.chargesRefused = true;
+
+    await pumpUntilSettled(1);
+
+    expect(world.confirmations).toBe(0);
+    expect(onlySale().stage).toMatchObject({ kind: "held", printfulId: 9001 });
+    const cards = orderCards();
+    expect(cards.map((t) => t.title)).toEqual([
+      `Order ${orderIdOf("cs_paid").slice(0, 8)}: Stripe won't let IdleBiz read its payment`,
+    ]);
+    expect(JSON.stringify(cards[0]?.state)).toContain("Read on Charges");
   });
 
   it("finds the draft a last timed-out send made, rather than have the founder place a second", async () => {
