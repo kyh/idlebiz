@@ -73,7 +73,7 @@ import {
   productHasRoom,
   windowEnd,
 } from "@/shared/bets";
-import type { Bet, BetState, PolicyParams } from "@/shared/bets";
+import type { Bet, BetClaim, BetState, PolicyParams } from "@/shared/bets";
 import { errorMessage } from "@/shared/errors";
 import { parseJson } from "@/shared/json";
 import { ListingSchema } from "@/shared/listing";
@@ -2183,23 +2183,35 @@ const legacyVercel = (companyId: string): VercelBinding | null => {
 
 const UNMARKED_REVENUE =
   "adopted from a build whose payment links carried no mark of this bet, so nothing could measure it";
+const UNMARKED_USERS =
+  "adopted from a build that counted every visitor to the product as this bet's, so nothing could measure it";
 
 /**
- * Format 0 judged a revenue bet on its product's whole revenue, and its links tagged only the
- * product. A bet now counts only payments tagged for it, so one still live would read none of
- * its own money and lose: it closes unmeasured, a verdict neither the replay nor the allocator
- * counts. Its waiting work goes with it in adoptStoppedBetWork.
+ * Format 0 judged a bet on its product's whole number: a revenue bet on all its money, whose links
+ * tagged only the product, and a users bet on every visitor, with no path of its own ("/" as the
+ * codec reads it; namedPathRefusal refuses it to every bet since). Why such a bet cannot be
+ * measured, or null for a bet that carries its own mark.
  */
-const adoptUnmarkedRevenueBets = (active: ActiveCompany): void => {
+const unmarkedReason = (claim: BetClaim): string | null => {
+  if (claim.metric === "revenue") {
+    return UNMARKED_REVENUE;
+  }
+  return claim.landingPath === "/" ? UNMARKED_USERS : null;
+};
+
+/**
+ * A format 0 bet still live would read none of its own money, or visitors it did not bring: it
+ * closes unmeasured, a verdict neither the replay nor the allocator counts. Its waiting work goes
+ * with it in adoptStoppedBetWork.
+ */
+const adoptUnmarkedBets = (active: ActiveCompany): void => {
   const now = Date.now();
-  for (const bet of active.bets.filter((b) => b.claim.metric === "revenue" && !isClosed(b))) {
-    const state: BetState = {
-      closedAt: now,
-      kind: "killed",
-      moved: null,
-      reason: UNMARKED_REVENUE,
-    };
-    recordIn(active.bets, bet.id, { state }, saveBet);
+  for (const bet of active.bets.filter((b) => !isClosed(b))) {
+    const reason = unmarkedReason(bet.claim);
+    if (reason !== null) {
+      const state: BetState = { closedAt: now, kind: "killed", moved: null, reason };
+      recordIn(active.bets, bet.id, { state }, saveBet);
+    }
   }
 };
 
@@ -2541,7 +2553,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
       }
     }
     dropRetiredRoutines(active);
-    adoptUnmarkedRevenueBets(active);
+    adoptUnmarkedBets(active);
   }
   if (from < 2) {
     adoptAnsweredAsks(active);

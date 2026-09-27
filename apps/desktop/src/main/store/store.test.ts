@@ -2359,4 +2359,20 @@ describe("the save format", () => {
     expect(store.getBet(visitors.id)?.state).toEqual({ kind: "open" });
     expect(stateOf(work.id)?.kind).toBe("dropped");
   });
+
+  it("closes a format 0 users bet still live as unmeasured, since it counted every visitor to the product", () => {
+    const co = found();
+    const product = firstProduct().id;
+    const wholeSite = launch(product);
+    const marked = launch(product, "/launch");
+    const file = betFile(co.id, wholeSite.id);
+    writeFileSync(file, readFileSync(file, "utf-8").replace(/\n {2}landingPath: .*/u, ""));
+    const work = store.createTask({ betId: wholeSite.id, origin: "work", title: "Post it" });
+    unstamp(co.id);
+
+    store.initStore();
+    expect(store.getBet(wholeSite.id)?.state).toMatchObject({ kind: "killed", moved: null });
+    expect(store.getBet(marked.id)?.state).toEqual({ kind: "open" });
+    expect(stateOf(work.id)?.kind).toBe("dropped");
+  });
 });
