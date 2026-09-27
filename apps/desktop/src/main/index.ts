@@ -154,7 +154,10 @@ const ipcHandlers = {
     const { listFounderChoices } = await import("@/main/character/compositor");
     return await listFounderChoices(6);
   },
-  hasAuth: async () => ({ ok: await agentDriver.hasAnyRunner() }),
+  hasAuth: async () => ({
+    ok: await agentDriver.hasAnyRunner(),
+    signedOut: await agentDriver.signedOut(),
+  }),
   killBet: ({ betId, reason }) => killBet(betId, reason),
   killProduct: ({ productId, reason }) => retireProduct(productId, reason, null),
   launchAtLogin,
@@ -200,7 +203,7 @@ const ipcHandlers = {
   setMaxAgents: ({ maxAgents }) => store.setMaxAgents(maxAgents),
   shippingLog: store.shippingLog,
   startLogin: () => {
-    void startLogin((e) => broadcast("onAuthEvent", e));
+    void startLogin(agentDriver, (e) => broadcast("onAuthEvent", e));
     return { started: true };
   },
   stripeConnect: () => beginConnect(store.requireCompany().id),

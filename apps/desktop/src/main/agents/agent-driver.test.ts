@@ -18,7 +18,7 @@ import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { LivePage } from "@/shared/command-policy";
-import type { BlockedAsk } from "@/shared/domain";
+import type { AuthFlowEvent, BlockedAsk } from "@/shared/domain";
 import { parseJson } from "@/shared/json";
 import { RefusalError } from "@/shared/refusal";
 import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
@@ -47,6 +47,7 @@ const {
   resumeIn,
 } = await import("./agent-driver");
 const { browserNamespace, realPathOf, sealedCommand, signInCommand } = await import("./seal");
+const { startLogin } = await import("./onboarding");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -575,6 +576,18 @@ describe("ensureRepository", () => {
   });
 });
 
+/** A claude whose stored login always reads as signed in, and whose sign-in exits `exit`. */
+const storedLoginClaude = (exit: number): void => {
+  const cli = path.join(root, "claude");
+  const script = `case "$1 $2" in --version*) echo 1.0.0 ;; "auth login") exit ${exit} ;; *) echo '{"loggedIn": true}' ;; esac`;
+  writeFileSync(cli, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+  process.env.CLAUDE_BIN = cli;
+};
+const signingIn = {
+  message: "Signing in to Claude Code — your browser will open…",
+  type: "progress",
+};
+
 /** Point both CLIs at nothing, so looking for them spawns no real one. */
 const withoutClis = () => {
   const touched = ["CLAUDE_BIN", "CODEX_BIN"];
@@ -708,29 +721,44 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 3");
   });
 
-  it("reads a runner whose login a turn found refused as signed out, until it is looked for again", async () => {
-    const cli = path.join(root, "claude");
-    writeFileSync(
-      cli,
-      `#!/bin/sh\n[ "$1" = --version ] && echo 1.0.0 || echo '{"loggedIn": true}'\n`,
-      {
-        mode: 0o755,
-      },
-    );
-    process.env.CLAUDE_BIN = cli;
+  it("reads a runner whose login a turn found refused as signed out, however often its stored login is read again", async () => {
+    storedLoginClaude(0);
     const driver = createAgentDriver(
       () => Promise.resolve({ kind: "sealed" }),
       () => Promise.resolve(SEAL),
     );
     driver.init();
     expect(await driver.hasAnyRunner()).toBe(true);
+    expect(await driver.signedOut()).toEqual(["codex"]);
 
     driver.heed("claude", { error: "Failed to authenticate", kind: "signedOut" });
 
     expect(driver.signedIn("claude")).toBe(false);
     expect(await driver.hasAnyRunner()).toBe(false);
     await driver.refresh();
-    expect(driver.signedIn("claude")).toBe(true);
+    expect(await driver.signedOut()).toEqual(["claude", "codex"]);
+  });
+
+  it("signs a refused login in again, though its stored login reads as signed in, and counts it only once that sign-in succeeds", async () => {
+    const driver = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => Promise.resolve(SEAL),
+    );
+    storedLoginClaude(1);
+    driver.init();
+    driver.heed("claude", { error: "Failed to authenticate", kind: "signedOut" });
+    const heard: AuthFlowEvent[] = [];
+    await startLogin(driver, (e) => heard.push(e));
+    expect(heard).toContainEqual(signingIn);
+    expect(heard).not.toContainEqual({ type: "done" });
+    expect(driver.signedIn("claude")).toBe(false);
+
+    storedLoginClaude(0);
+    heard.length = 0;
+    await startLogin(driver, (e) => heard.push(e));
+    expect(heard).toContainEqual(signingIn);
+    expect(heard).toContainEqual({ type: "done" });
+    expect(await driver.signedOut()).toEqual(["codex"]);
   });
 
   it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {

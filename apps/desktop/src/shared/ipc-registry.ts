@@ -12,6 +12,7 @@ import {
   ProductDraftSchema,
 } from "@/shared/domain";
 import type {
+  AgentRunner,
   AuthFlowEvent,
   CharacterAssets,
   ChatOption,
@@ -125,7 +126,8 @@ export const SCHEMAS = {
 // A method's payload IS its schema's output; only results are declared here,
 // once per method (events list what they carry as their result).
 interface Results {
-  hasAuth: { ok: boolean };
+  /** Whether any CLI is signed in, and the runners that are not, whose employees wait on a sign-in. */
+  hasAuth: { ok: boolean; signedOut: AgentRunner[] };
   startLogin: { started: boolean };
   onAuthEvent: AuthFlowEvent;
   composeCharacter: CharacterAssets;

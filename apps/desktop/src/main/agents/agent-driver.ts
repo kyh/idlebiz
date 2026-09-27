@@ -507,6 +507,9 @@ class AgentDriver {
   private sealed: SealState | null = null;
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<AgentRunner, number>();
+  // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
+  // the stored login, which a revoked token still is
+  private readonly refusedLogins = new Set<AgentRunner>();
   private readonly checkSeal: () => Promise<SealState>;
   private readonly resolveSeal: (writable: readonly string[]) => Promise<Seal>;
 
@@ -603,7 +606,25 @@ class AgentDriver {
 
   availableRunners(): AgentRunner[] {
     // A signed-in CLI still needs its separately packaged ACP adapter.
-    return this.probes.filter((p) => isReady(p) && acpAgentInstalled(p.id)).map((p) => p.id);
+    return this.probes
+      .filter((p) => isReady(p) && acpAgentInstalled(p.id) && !this.refusedLogins.has(p.id))
+      .map((p) => p.id);
+  }
+
+  /** The runners not signed in, once the latest look for the CLIs settles: whoever runs on one waits. */
+  async signedOut(): Promise<AgentRunner[]> {
+    await this.probing;
+    return RUNNER_IDS.filter((runner) => !this.signedIn(runner));
+  }
+
+  /** Whether `probe`'s CLI needs a sign-in: installed, and either not signed in or signed in with a login a turn found refused. */
+  needsSignIn(probe: RunnerProbe): boolean {
+    return probe.installed && (!probe.authed || this.refusedLogins.has(probe.id));
+  }
+
+  /** The founder signed `runner` in again, so its turns may try the login anew. */
+  signedInAgain(runner: AgentRunner): void {
+    this.refusedLogins.delete(runner);
   }
 
   /** Round-robin across ready runners, preferring those without a usage limit. */
@@ -644,15 +665,14 @@ class AgentDriver {
 
   /**
    * What a turn's end says of its runner, whatever else the run says: a limit rests it, and a
-   * refused login reads as signed out until the CLIs are looked for again, since its login probe
-   * reads only what is stored, which a revoked token still is.
+   * refused login reads as signed out until the founder signs it in again.
    */
   heed(runner: AgentRunner, end: AcpTurnEnd): void {
     if (end.kind === "limited") {
       this.restingUntil.set(runner, end.resetsAt);
     }
     if (end.kind === "signedOut") {
-      this.probes = this.probes.filter((p) => p.id !== runner);
+      this.refusedLogins.add(runner);
     }
   }
 

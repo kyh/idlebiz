@@ -61,16 +61,31 @@ const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
 const CODEX_FILE_LOGIN =
   'If Codex keeps its login in your Keychain, which IdleBiz\'s sandbox closes to codex runs, first set cli_auth_credentials_store = "file" in ~/.codex/config.toml.';
 
-export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void> => {
+type SignIn = Pick<
+  typeof agentDriver,
+  "needsSignIn" | "refresh" | "sealRefusal" | "sealedSignIn" | "signedInAgain"
+>;
+
+const signInState = (driver: SignIn, p: Extract<RunnerProbe, { installed: true }>): string => {
+  if (!p.authed) {
+    return " — not signed in";
+  }
+  return driver.needsSignIn(p) ? " — its login was refused, signing in again" : " — signed in ✓";
+};
+
+export const startLogin = async (
+  driver: SignIn,
+  emit: (e: AuthFlowEvent) => void,
+): Promise<void> => {
   if (setupRunning) {
     emit({ message: "Setup already in progress…", type: "progress" });
     return;
   }
   setupRunning = true;
   try {
-    let probes = await agentDriver.refresh();
+    let probes = await driver.refresh();
     // no CLI is found without the seal, so installing one would not help
-    const refusal = await agentDriver.sealRefusal();
+    const refusal = await driver.sealRefusal();
     if (refusal !== null) {
       emit({ message: refusal, type: "error" });
       return;
@@ -78,7 +93,7 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
     for (const p of probes) {
       emit({
         message: p.installed
-          ? `Found ${label(p)} (${p.version ?? "unknown version"})${p.authed ? " — signed in ✓" : " — not signed in"}`
+          ? `Found ${label(p)} (${p.version ?? "unknown version"})${signInState(driver, p)}`
           : `${label(p)} not installed`,
         type: "progress",
       });
@@ -96,20 +111,22 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
         return;
       }
       emit({ message: "Claude Code installed.", type: "progress" });
-      probes = await agentDriver.refresh();
+      probes = await driver.refresh();
     }
 
     for (const p of probes) {
-      if (!p.installed || p.authed) {
+      if (!driver.needsSignIn(p)) {
         continue;
       }
       emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
-      const [cmd = SANDBOX_EXEC, ...args] = await agentDriver.sealedSignIn(p.id, [
+      const [cmd = SANDBOX_EXEC, ...args] = await driver.sealedSignIn(p.id, [
         p.bin,
         ...RUNNERS[p.id].loginArgs,
       ]);
       const code = await streamCommand(cmd, args, emit);
-      if (code !== 0) {
+      if (code === 0) {
+        driver.signedInAgain(p.id);
+      } else {
         emit({
           message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.${p.id === "codex" ? ` ${CODEX_FILE_LOGIN}` : ""}`,
           type: "progress",
@@ -117,8 +134,8 @@ export const startLogin = async (emit: (e: AuthFlowEvent) => void): Promise<void
       }
     }
 
-    probes = await agentDriver.refresh();
-    const ready = probes.filter(isReady);
+    probes = await driver.refresh();
+    const ready = probes.filter((p) => isReady(p) && !driver.needsSignIn(p));
     if (ready.length > 0) {
       emit({ message: `Workforce ready: ${ready.map(label).join(" + ")}.`, type: "progress" });
       emit({ type: "done" });

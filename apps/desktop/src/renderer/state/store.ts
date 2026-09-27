@@ -4,6 +4,7 @@ import type { Bet } from "@/shared/bets";
 import { taskIn } from "@/shared/domain";
 import type {
   ActionReply,
+  AgentRunner,
   AuthFlowEvent,
   Budget,
   Company,
@@ -34,6 +35,8 @@ interface State {
   bootFailure: string | null;
   /** A coding CLI is signed in, by main's probe or a login since; null until the probe answers. */
   authed: boolean | null;
+  /** Runners not signed in, a login a turn found refused included: everyone on one waits on a sign-in. */
+  signedOut: AgentRunner[];
   stripeStatus: StripeStatus;
   /** The key the team charges with; unset until main answers. */
   stripeKey: StripeKeyStatus;
@@ -77,6 +80,7 @@ let state: State = {
   products: [],
   resting: {},
   saveIssues: [],
+  signedOut: [],
   stripeKey: { state: "unset" },
   stripeStatus: { state: "disconnected" },
   stuckTasks: [],
@@ -514,7 +518,7 @@ const walkThroughDoor = async (roster: { employeeId: string; hired: boolean }): 
 const loadAuth = async (): Promise<void> => {
   try {
     const r = await bridge().hasAuth();
-    set({ authed: r.ok });
+    set({ authed: r.ok, signedOut: r.signedOut });
   } catch (error) {
     // left unknown, the office would wait forever; the gate at least offers a sign-in
     console.error("Could not check the CLI login", error);
@@ -577,6 +581,8 @@ export const initStore = (): void => {
   bridge().onAuthEvent((e: AuthFlowEvent) => {
     if (e.type === "done") {
       set({ authed: true });
+      // a runner whose sign-in failed beside one that is ready stays signed out
+      void loadAuth();
     }
   });
 };

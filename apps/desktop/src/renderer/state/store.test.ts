@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
 import type {
+  AgentRunner,
   AuthFlowEvent,
   Company,
   Employee,
@@ -63,6 +64,16 @@ const napping = (runner: "claude" | "codex", until: number): ActivityEvent => ({
   kind: "runner.resting",
   payload: { runner, until },
 });
+const refused = (employeeId: string): ActivityEvent => ({
+  ...stamp,
+  employeeId,
+  kind: "run.end",
+  payload: {
+    outcome: { error: "Failed to authenticate", kind: "signedOut" },
+    settled: "queued",
+    summary: "",
+  },
+});
 const hired = (employeeId: string): ActivityEvent => ({
   createdAt: 0,
   employeeId,
@@ -101,6 +112,7 @@ type Used =
 
 interface MainHolds {
   authed: boolean;
+  signedOut: AgentRunner[];
   employees: Employee[];
   resting: RestingRunners;
   room: TeamMessage[];
@@ -111,7 +123,13 @@ interface MainHolds {
  * test says, with what main held when it was asked; the rest answer at once.
  */
 const fakeMain = (late: readonly Late[]) => {
-  const main: MainHolds = { authed: true, employees: [employee("lead")], resting: {}, room: [] };
+  const main: MainHolds = {
+    authed: true,
+    employees: [employee("lead")],
+    resting: {},
+    room: [],
+    signedOut: [],
+  };
   const waiting: { method: Late; release: () => void }[] = [];
   const listeners = new Set<(e: ActivityEvent) => void>();
   const loginListeners = new Set<(e: AuthFlowEvent) => void>();
@@ -125,7 +143,7 @@ const fakeMain = (late: readonly Late[]) => {
   };
   const bridge: Pick<AppBridge, Used> = {
     getCompany: () => Promise.resolve(company),
-    hasAuth: () => Promise.resolve({ ok: main.authed }),
+    hasAuth: () => Promise.resolve({ ok: main.authed, signedOut: main.signedOut }),
     listBets: () => Promise.resolve([]),
     listEmployees: () => answerOf("listEmployees", main.employees),
     listProducts: () => Promise.resolve([]),
@@ -215,6 +233,7 @@ const read = (store: Store, select: (s: Seen) => string): string =>
 const feed = (s: Seen): string => s.feed.map(feedKey).join(" ");
 const roster = (s: Seen): string => s.employees.map((e) => `${e.id}:${e.status}`).join(" ");
 const boot = (s: Seen): string => `${s.booted} ${s.bootFailure ?? "-"}`;
+const signedOut = (s: Seen): string => s.signedOut.join(" ");
 const resting = (s: Seen): string =>
   Object.entries(s.resting)
     .map(([runner, until]) => `${runner}:${until}`)
@@ -343,8 +362,23 @@ describe("store", () => {
     expect(screen(store)).toBe("signed-out");
     await login({ message: "No signed-in coding CLI yet.", type: "error" });
     expect(screen(store)).toBe("signed-out");
+    main.authed = true;
     await login({ type: "done" });
     expect(screen(store)).toBe("office");
+  });
+
+  it("names a runner a turn found refused while another is still signed in, until a sign-in clears it", async () => {
+    const { bridge, emit, login, main } = fakeMain([]);
+    const store = await freshStore(bridge);
+    main.signedOut = ["codex"];
+    await emit(refused("lead"));
+    expect(screen(store)).toBe("office");
+    expect(read(store, signedOut)).toBe("codex");
+    await login({ type: "done" });
+    expect(read(store, signedOut)).toBe("codex");
+    main.signedOut = [];
+    await login({ type: "done" });
+    expect(read(store, signedOut)).toBe("");
   });
 
   it("says why the first refresh failed until a retry lands", async () => {

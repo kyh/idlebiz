@@ -422,8 +422,11 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt
   (`signedIn` in the driver), until a sign-in finds it again. A turn whose login the provider
   refused (a revoked token, `claude auth logout` mid-session) reads the runner as signed out
-  the same way (`heed`), since its probe reads only the login stored, and asks the renderer
-  whether any CLI is left.
+  the same way (`heed`) until the founder signs it in again, however often its probe, which
+  reads only the login stored, says signed in: the sign-in runs its login for it anyway. With
+  no CLI left the gate asks for that sign-in; with another still signed in the HUD names each
+  signed-out runner someone works on and who waits on it, the lead's steering included, beside
+  a Sign in button.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
   judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that

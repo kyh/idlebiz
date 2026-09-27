@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { RUNNERS } from "@repo/agent-driver/registry";
+import { linesOf, useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import { useNow } from "@/renderer/hooks/use-now";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
@@ -214,6 +216,43 @@ const RunControls = ({
   );
 };
 
+/** A runner signed out while another is still signed in: the gate never shows, so this is where it is signed in again. */
+const SignedOutRunners = ({ company, employees }: { company: Company; employees: Employee[] }) => {
+  const signedOut = useStore((s) => s.signedOut);
+  const { auth, login } = useAuthFlow();
+  const waiting = employees.filter((e) => signedOut.includes(e.runner));
+  if (waiting.length === 0) {
+    return null;
+  }
+  const runners = [...new Set(waiting.map((e) => RUNNERS[e.runner].displayName))].join(" and ");
+  const leadWaits = waiting.some((e) => e.id === company.leaderId);
+  const [line] = linesOf(auth).slice(-1);
+  return (
+    <div
+      role="alert"
+      className="px-inset pointer-events-auto absolute bottom-16 left-3 z-10 max-w-sm p-2 text-xs text-fg"
+    >
+      <div>
+        {runners} is signed out, so{" "}
+        {waiting.length === 1 ? "1 teammate waits" : `${waiting.length} teammates wait`} on it
+        {leadWaits ? ", the lead among them: no bet is measured, killed or opened" : ""}. Sign in
+        again to put them back to work.
+      </div>
+      {line === undefined ? null : <div className="mt-1 text-fg-dim">{line}</div>}
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={login}
+          disabled={auth.phase === "logging-in"}
+          className="px-btn-accent px-btn"
+        >
+          {auth.phase === "logging-in" ? "Signing in…" : "Sign in"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
   const company = useStore((s) => s.company);
   const employees = useStore((s) => s.employees);
@@ -241,6 +280,7 @@ export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
         nap={nap}
         onOpen={onOpen}
       />
+      <SignedOutRunners company={company} employees={employees} />
       <RunControls
         key={isOutOfBudget(company) ? "out-of-budget" : "in-budget"}
         company={company}
