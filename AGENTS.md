@@ -229,8 +229,9 @@ rather than crashing boot.
   refuses shows in the HUD — a Connect token as revoked, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one. Each product binds a project
-  of its own (a project another product holds is refused), and a binding resumes only the
-  Vercel asks about that product or about none: an ask names the product it is about
+  of its own (a project another product holds is refused). The first token saved, through
+  any product, resumes every Vercel ask, since it is what each product's deploy lacked; after
+  that a binding resumes only the Vercel asks about that product or about none: an ask names the product it is about
   (`productId`, saved as the task's `askProduct`), which a run may name other than its own,
   and its Inbox card opens that product's binding. A refused token shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten

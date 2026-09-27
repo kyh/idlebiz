@@ -21,6 +21,7 @@ import { stripeCheckoutAccess, stripePaymentLink } from "@/main/payment-links";
 import { printListing } from "@/main/print-listing";
 import { productionHosts } from "@/main/vercel";
 import { setVercelEnv } from "@/main/vercel-env";
+import type { VercelConnection } from "@/main/vercel-connect";
 import type { KeepAwake } from "@/main/keep-awake";
 import { callTool } from "@/main/tools";
 import type { RunContext } from "@/main/tools";
@@ -553,13 +554,16 @@ class Scheduler {
   }
 
   /**
-   * Resume the Vercel asks `productId`'s binding answers: those about it, and any that named no
-   * product. Another product's ask waits on that product's binding, never this one.
+   * Resume the Vercel asks `connection` answers: every one for the first token, else those about
+   * its product and any that named none. Another product's ask waits on that product's binding.
    */
-  resumeVercelAsks(productId: string): void {
+  resumeVercelAsks(connection: VercelConnection): void {
     this.resumeAsks(
       (ask) =>
-        ask.integration === "vercel" && (ask.productId === null || ask.productId === productId),
+        ask.integration === "vercel" &&
+        (connection.kind === "token" ||
+          ask.productId === null ||
+          ask.productId === connection.productId),
     );
   }
 

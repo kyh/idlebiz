@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { VercelConnection } from "./vercel-connect";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -111,14 +112,30 @@ it("binds a product with the saved token when none is given, leaving it as it wa
 
 it("saves a token with no project picked, leaving the product for its first deploy to bind", () => {
   const product = foundProduct();
-  const resumed: string[] = [];
-  initVercelConnect({ onConnected: (productId) => resumed.push(productId) });
+  const answered: VercelConnection[] = [];
+  initVercelConnect({ onConnected: (connection) => answered.push(connection) });
 
   saveVercelToken({ productId: product.id, token: "fresh-token" });
 
   expect(getSecret("VERCEL_TOKEN")).toBe("fresh-token");
   expect(store.requireProduct(product.id).vercel).toBeNull();
-  expect(resumed).toEqual([product.id]);
+  expect(answered).toEqual([{ kind: "token" }]);
+});
+
+it("answers every product with the first token, however it is saved, and only the one bound after", () => {
+  const product = foundProduct();
+  const answered: VercelConnection[] = [];
+  initVercelConnect({ onConnected: (connection) => answered.push(connection) });
+
+  connectVercel({ productId: product.id, projectId: "prj_a", projectName: "a", token: "first" });
+  saveVercelToken({ productId: product.id, token: "second" });
+  connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" });
+
+  expect(answered).toEqual([
+    { kind: "token" },
+    { kind: "product", productId: product.id },
+    { kind: "product", productId: product.id },
+  ]);
 });
 
 it("lists the saved token's projects when none is given", async () => {

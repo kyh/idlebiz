@@ -8,12 +8,30 @@ import type { Contract } from "@/shared/ipc-registry";
 
 const VERCEL_TOKEN_KEY = "VERCEL_TOKEN";
 
-let onConnected: (productId: string) => void = () => {
+/**
+ * What a connection gives the asks waiting on Vercel. The first token saved is what every
+ * product's deploy lacked, whichever product it came through; after that, a binding or a new
+ * token answers only its own product.
+ */
+export type VercelConnection = { kind: "token" } | { kind: "product"; productId: string };
+
+let onConnected: (connection: VercelConnection) => void = () => {
   /* empty */
 };
 
-export const initVercelConnect = (hooks: { onConnected: (productId: string) => void }): void => {
+export const initVercelConnect = (hooks: {
+  onConnected: (connection: VercelConnection) => void;
+}): void => {
   ({ onConnected } = hooks);
+};
+
+const saveToken = (productId: string, token: string | undefined): VercelConnection => {
+  if (token === undefined) {
+    return { kind: "product", productId };
+  }
+  const first = getSecret(VERCEL_TOKEN_KEY) === null;
+  setSecret(VERCEL_TOKEN_KEY, token);
+  return first ? { kind: "token" } : { kind: "product", productId };
 };
 
 /** The projects `token` can see, or the saved token's when none is given. */
@@ -38,11 +56,9 @@ export const listVercelProjects = async (
 export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void => {
   const { productId, token, projectId, projectName, teamId } = input;
   store.requireProduct(productId);
-  if (token !== undefined) {
-    setSecret(VERCEL_TOKEN_KEY, token);
-  }
+  const connection = saveToken(productId, token);
   store.setProductVercel(productId, { projectId, projectName, teamId: teamId ?? null });
-  onConnected(productId);
+  onConnected(connection);
 };
 
 /** Save a token with no project picked: the product's first deploy makes one named after it and binds it. */
@@ -51,8 +67,7 @@ export const saveVercelToken = ({
   token,
 }: Contract["vercelSaveToken"]["payload"]): void => {
   store.requireProduct(productId);
-  setSecret(VERCEL_TOKEN_KEY, token);
-  onConnected(productId);
+  onConnected(saveToken(productId, token));
 };
 
 export const disconnectVercel = (productId: string): void => {

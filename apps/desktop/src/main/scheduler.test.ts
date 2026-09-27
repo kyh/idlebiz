@@ -1151,9 +1151,21 @@ describe("an integration the founder connects", () => {
     const home = task.productId ?? "";
     expect(home).toBe("acme");
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
-    drain.resumeVercelAsks(side);
+    drain.resumeVercelAsks({ kind: "product", productId: side });
     expect(kindOf(task)).toBe("blocked");
-    drain.resumeVercelAsks(home);
+    drain.resumeVercelAsks({ kind: "product", productId: home });
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  it("resumes every product's Vercel ask once the first token is saved, whichever product it came through", async () => {
+    const { drain, task } = await blockedOn({
+      integration: "vercel",
+      productId: "acme",
+      reason: "to deploy Acme",
+      type: "integration",
+    });
+    store.createProduct({ description: "a side project", name: "Side" });
+    drain.resumeVercelAsks({ kind: "token" });
     expect(kindOf(task)).not.toBe("blocked");
   });
 
@@ -1161,16 +1173,16 @@ describe("an integration the founder connects", () => {
     const { drain, task } = await blockedOn(bindFor("side"));
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
     expect(side).toBe("side");
-    drain.resumeVercelAsks(task.productId ?? "");
+    drain.resumeVercelAsks({ kind: "product", productId: task.productId ?? "" });
     expect(kindOf(task)).toBe("blocked");
-    drain.resumeVercelAsks(side);
+    drain.resumeVercelAsks({ kind: "product", productId: side });
     expect(kindOf(task)).not.toBe("blocked");
   });
 
   it("resumes a Vercel ask that named no product on any binding", async () => {
     const { drain, task } = await blockedOn(bindFor(null), null);
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
-    drain.resumeVercelAsks(side);
+    drain.resumeVercelAsks({ kind: "product", productId: side });
     expect(kindOf(task)).not.toBe("blocked");
   });
 });

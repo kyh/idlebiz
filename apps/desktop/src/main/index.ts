@@ -394,9 +394,9 @@ const boot = async (): Promise<void> => {
     openExternal: (url) => shell.openExternal(url),
   });
   initVercelConnect({
-    onConnected: (productId) => {
+    onConnected: (connection) => {
       metricsPulse.now();
-      scheduler.resumeVercelAsks(productId);
+      scheduler.resumeVercelAsks(connection);
     },
   });
 
