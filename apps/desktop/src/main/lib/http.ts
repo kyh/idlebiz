@@ -8,11 +8,13 @@ export class HttpError extends Error {
   readonly status: number;
   /** The body it came with, when that was JSON: most APIs say why there. */
   readonly answer: JsonValue | null;
+  readonly headers: Headers;
 
-  constructor(status: number, url: string, answer: JsonValue | null = null) {
+  constructor(status: number, url: string, headers: Headers, answer: JsonValue | null = null) {
     super(`${url} -> ${status}`);
     this.name = "HttpError";
     this.status = status;
+    this.headers = headers;
     this.answer = answer;
   }
 
@@ -24,9 +26,9 @@ export class HttpError extends Error {
 
 const failure = async (res: Response, url: string): Promise<HttpError> => {
   try {
-    return new HttpError(res.status, url, parseJson(await res.text()));
+    return new HttpError(res.status, url, res.headers, parseJson(await res.text()));
   } catch {
-    return new HttpError(res.status, url);
+    return new HttpError(res.status, url, res.headers);
   }
 };
 

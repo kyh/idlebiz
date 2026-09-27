@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { z } from "zod";
 import type { ActivityEvent } from "@/shared/activity";
 import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
+import type { JsonValue } from "@/shared/json";
 import type { ChargeLink } from "@/shared/payment-link";
 import { BadRequestError } from "@/shared/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
@@ -1063,6 +1064,42 @@ const chargingRun = (key: string | null = "sk_live_founder") => {
   return { ...run, ctx, stripe };
 };
 
+interface StripeAnswer {
+  status: number;
+  body: JsonValue;
+}
+
+/**
+ * Stripe behind its idempotency layer: the first answer to a key, a failure too, is what every
+ * later request with that key gets back, marked replayed. A request carrying no key goes to
+ * `elsewhere`.
+ */
+const replayingStripe = (
+  answer: (endpoint: string) => StripeAnswer,
+  elsewhere: (url: string, init: RequestInit) => Promise<Response> = () =>
+    Promise.reject(new Error("only Stripe answers")),
+) => {
+  const answered = new Map<string, StripeAnswer>();
+  vi.stubGlobal("fetch", (url: string, init: RequestInit = {}) => {
+    const key = new Headers(init.headers).get("Idempotency-Key");
+    if (key === null) {
+      return elsewhere(url, init);
+    }
+    const replay = answered.get(key);
+    if (replay !== undefined) {
+      return Promise.resolve(
+        Response.json(replay.body, {
+          headers: { "Idempotent-Replayed": "true" },
+          status: replay.status,
+        }),
+      );
+    }
+    const fresh = answer(new URL(url).pathname);
+    answered.set(key, fresh);
+    return Promise.resolve(Response.json(fresh.body, { status: fresh.status }));
+  });
+};
+
 const UNLOCK = "https://play.acme.dev/unlock";
 const UNLOCK_ACTION = `payment link "Pro plan" at $9.00 on acme then send buyers to ${UNLOCK}`;
 
@@ -1224,6 +1261,29 @@ describe("create_payment_link", () => {
 
     expect(links).toBe(1);
     expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_1"]);
+  });
+
+  it("makes the link when signed for again after Stripe answered the create with a failure", async () => {
+    const { ctx } = chargingRun();
+    let failures = 1;
+    replayingStripe((endpoint): StripeAnswer => {
+      if (endpoint === "/v1/prices") {
+        return { body: { id: "price_1" }, status: 200 };
+      }
+      if (failures > 0) {
+        failures -= 1;
+        return { body: { error: { message: "An unknown error occurred" } }, status: 500 };
+      }
+      return { body: { id: "plink_pro", url: PAID_URL }, status: 200 };
+    });
+    const call = () => {
+      store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+      return callTool(ctx, "POST /v1/payment-link", LINK);
+    };
+
+    expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
+    expect(await call()).toContain(PAID_URL);
+    expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_pro"]);
   });
 
   it("tags the product alone when no bet is named, charging whole cents", async () => {
@@ -1955,6 +2015,30 @@ describe("sell_print", () => {
     expect(first).toHaveLength(3);
     expect(await keysOf()).toEqual(first);
     expect(store.listListings()).toEqual([]);
+  });
+
+  it("lists it when signed for again after Stripe answered the link's create with a failure", async () => {
+    const { ctx } = sellingRun();
+    const sellers = globalThis.fetch;
+    let failures = 1;
+    replayingStripe((endpoint): StripeAnswer => {
+      if (endpoint !== "/v1/payment_links") {
+        return { body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" }, status: 200 };
+      }
+      if (failures > 0) {
+        failures -= 1;
+        return { body: { error: { message: "An unknown error occurred" } }, status: 500 };
+      }
+      return { body: { id: "plink_1", url: LISTED_URL }, status: 200 };
+    }, sellers);
+    const call = () => {
+      store.grantApproval(ctx.run.taskId, PRINT_ACTION);
+      return callTool(ctx, "POST /v1/sell-print", PRINT);
+    };
+
+    expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
+    expect(await call()).toContain(LISTED_URL);
+    expect(store.listListings().map((l) => l.paymentLink.id)).toEqual(["plink_1"]);
   });
 
   it.each([

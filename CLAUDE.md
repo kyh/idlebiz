@@ -257,7 +257,8 @@ third boundary.
   refused before the sign-off while the key cannot read checkout sessions, since that read is
   how each buyer reaches the founder), each POST under an idempotency key of its fields, like
   `sell_print`'s, so a retry after a timeout gets back the link Stripe made rather than a second
-  one nothing saved knows. Its `afterPaymentUrl`, where each buyer lands once they
+  one nothing saved knows; Stripe replays a failure (a 500 too) for a day, so a key it answered
+  with one moves on to the next (`idempotentPost`). Its `afterPaymentUrl`, where each buyer lands once they
   have paid, must be https with no login or port on one of the product's verified production domains
   (`productionHosts`, as `sell_print`'s files), and main adds
   `session_id={CHECKOUT_SESSION_ID}`, which Stripe fills (`after_completion[type]=redirect`);

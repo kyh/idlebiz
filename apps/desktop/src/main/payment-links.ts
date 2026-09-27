@@ -3,6 +3,7 @@ import { z } from "zod";
 import { HttpError, getJson, postForm } from "@/main/lib/http";
 import { STRIPE_API, stripeHeaders, stripeSays } from "@/main/stripe-api";
 import { errorMessage } from "@/shared/errors";
+import type { JsonValue } from "@/shared/json";
 import type { ListingVariant } from "@/shared/listing";
 import { StripeLinkIdSchema } from "@/shared/payment-link";
 
@@ -54,26 +55,51 @@ const afterCompletion = (page: string | null): Record<string, string> =>
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [`${prefix}[${key}]`, value]));
 
+// each failure passed over took a sign-off of its own; this only stops a replay loop Stripe never sends
+const MAX_REPLAYED_FAILURES = 20;
+
 /**
  * Stripe replays the first answer to a key for 24 hours, so a link tried again after a timeout
  * gets back the price, rate and link Stripe already made, rather than a second live link tagged
  * for it that nothing saved knows, which retiring its product would never switch off. The key
  * covers every field sent, since Stripe refuses a key sent again with other fields; `owner` is
  * the product, and the listing for a print.
+ *
+ * Stripe replays a failure too, a 500 included, so a key it answered with one would fail every
+ * sign-off for a day. A replayed failure moves on to the next key in the sequence; a key whose
+ * request got no answer is never passed, so a retry after a timeout still finds what Stripe made.
+ * Stripe calls a 500's outcome indeterminate, so passing one can leave a second link, which a
+ * founder signing again for the same link accepts over a day with none.
  */
 const idempotentPost =
   (key: string, owner: readonly string[]) =>
-  (path: string, form: Readonly<Record<string, string>>) =>
-    postForm(
-      `${STRIPE_API}${path}`,
-      {
-        ...stripeHeaders(key),
-        "Idempotency-Key": `idlebiz-${createHash("sha256")
-          .update(JSON.stringify([...owner, path, form]))
-          .digest("hex")}`,
-      },
-      form,
-    );
+  (path: string, form: Readonly<Record<string, string>>): Promise<JsonValue> => {
+    const digest = createHash("sha256")
+      .update(JSON.stringify([...owner, path, form]))
+      .digest("hex");
+    const send = async (attempt: number): Promise<JsonValue> => {
+      try {
+        return await postForm(
+          `${STRIPE_API}${path}`,
+          {
+            ...stripeHeaders(key),
+            "Idempotency-Key": `idlebiz-${digest}${attempt === 0 ? "" : `-${attempt}`}`,
+          },
+          form,
+        );
+      } catch (error) {
+        if (
+          error instanceof HttpError &&
+          error.headers.get("Idempotent-Replayed") === "true" &&
+          attempt + 1 < MAX_REPLAYED_FAILURES
+        ) {
+          return await send(attempt + 1);
+        }
+        throw error;
+      }
+    };
+    return send(0);
+  };
 
 /** A payment link made on Stripe here in main, so an employee's process never holds the key. */
 export const stripePaymentLink: PaymentLinker = async ({
