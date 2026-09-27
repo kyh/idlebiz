@@ -2188,6 +2188,25 @@ const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null)
   }
 };
 
+/**
+ * A save from before products ran every task in workspace/, now its first product's code, and
+ * the company's own folder is shared/: its open work, left on no product, would run there.
+ */
+const adoptProductlessWork = (active: ActiveCompany): void => {
+  const [first] = active.products;
+  if (first === undefined) {
+    return;
+  }
+  active.tasks = active.tasks.map((t) => {
+    if (t.productId !== null) {
+      return t;
+    }
+    const adopted: Task = { ...t, productId: first.id };
+    saveTask(adopted);
+    return adopted;
+  });
+};
+
 /** The Vercel binding a save from before products kept on the company, for the first product to hold. */
 const legacyVercel = (companyId: string): VercelBinding | null => {
   const legacy = readMetricsConfig(companyId)?.vercel;
@@ -2582,6 +2601,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     if (lacksProduct(active)) {
       const vercel = legacyVercel(id);
       ensureFirstProduct(active, vercel);
+      adoptProductlessWork(active);
       if (vercel !== null) {
         writeMetricsConfig(id, { vercel: undefined });
       }

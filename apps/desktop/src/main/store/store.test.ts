@@ -269,6 +269,20 @@ describe("products", () => {
     expect(first?.vercel).toEqual({ projectId: "prj_old", projectName: "old", teamId: "team_9" });
     expect(readFileSync(path.join(root, co.id, "metrics.json"), "utf-8")).not.toContain("prj_old");
   });
+
+  it("gives work left open in a save from before products the first product, whose code it ran in", () => {
+    const co = found();
+    const task = store.createTask({ origin: "founder", title: "Fix the checkout bug" });
+    expect(task.productId).toBeNull();
+    rmSync(productsDir(co.id), { force: true, recursive: true });
+    unstamp(co.id);
+    store.initStore();
+    const [first] = store.listProducts();
+    expect(first?.workspaceDir).toBe(companyWorkspace(co.id));
+    expect(store.getTask(task.id)?.productId).toBe(first?.id);
+    store.initStore();
+    expect(store.getTask(task.id)?.productId).toBe(first?.id);
+  });
 });
 
 describe("scheduler queue admission", () => {
