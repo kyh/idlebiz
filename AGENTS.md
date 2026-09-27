@@ -242,8 +242,11 @@ rather than crashing boot.
   whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a
   `*_PROXY`, except its runner's own login (`providerEnv` in
   `packages/agent-driver/src/registry.ts`; `runEnv` in `main/agents/run-env.ts`). AWS access
-  keys sign for the whole account, so neither runner keeps them: a founder on Bedrock signs
-  in with an AWS profile or `AWS_BEARER_TOKEN_BEDROCK`.
+  keys sign for the whole account, so neither runner keeps them, and the seal hides `~/.aws`
+  (`LOGINS` in `seal.ts`), so no AWS profile loads either: a founder on Bedrock signs in with
+  `AWS_BEARER_TOKEN_BEDROCK` only. On Vertex, `GOOGLE_APPLICATION_CREDENTIALS` must name a key
+  file outside the sealed logins: gcloud's default credentials under `~/.config/gcloud` are
+  hidden too.
 - Every employee run starts sealed, under the Seatbelt profile `main/agents/seal.ts` renders
   and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
   what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`

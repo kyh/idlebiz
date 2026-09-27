@@ -99,8 +99,9 @@ export const RUNNERS = {
     displayName: "Claude Code",
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
-    // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, so
-    // Bedrock is a profile or that token; Vertex reads the path of Google's key file
+    // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, and
+    // the seal hides ~/.aws, so Bedrock is only that token; Vertex reads the path of Google's key
+    // file, which works only outside the sealed logins (not gcloud's default credentials)
     providerEnv: [
       "ANTHROPIC_",
       "CLAUDE_",
