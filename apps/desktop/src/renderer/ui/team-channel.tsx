@@ -29,9 +29,7 @@ const HeldCommand = ({
       <div className="text-warn">
         🔐 {by} · <span className="text-fg-dim">{describeRule(rule)}</span>
       </div>
-      <code className="px-code mt-1 block truncate" title={command}>
-        {command}
-      </code>
+      <code className="px-code mt-1 block">{command}</code>
       <div className="mt-1.5 flex justify-end">
         <ApprovalButtons decided={decided} decide={decide} />
       </div>

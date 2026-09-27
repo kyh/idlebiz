@@ -491,7 +491,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   `.px-btn` never applied (23 such declarations had accumulated). Before putting a utility on
   an element with a `.px-*` class, check px-kit.css for the same property: many set
   font-size, colour, background or padding (`.px-btn`, `.px-opt`, `.px-hint`, `.px-inset`…).
-  A variant is a kit modifier (`.px-hint-danger`, `.px-inset-hover`), never a utility. Size
+  `renderer/px-kit-overrides.test.ts` fails on one in any class string of the desktop
+  renderer that names a kit class; a class built at runtime goes unread. A variant is a kit modifier (`.px-hint-danger`, `.px-inset-hover`), never a utility. Size
   and colour belong in the kit as a class, never per-component. Cursors are the opposite:
   no kit class sets one, each app does by element. Icons are font glyphs, so "icon size" is
   font-size: use `.px-icon`.

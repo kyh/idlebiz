@@ -290,7 +290,8 @@ rather than crashing boot.
   `renderer/ui/modal.tsx` (Dialog) and `renderer/ui/choice-menu.tsx` (Toolbar) are the
   patterns. Don't hand-roll a dialog, menu or toggle.
 - **The px-kit beats Tailwind.** `.px-*` classes in `packages/px-kit/px-kit.css` are
-  unlayered, so they win over any Tailwind utility that sets the same property. Size and
+  unlayered, so they win over any Tailwind utility that sets the same property
+  (`renderer/px-kit-overrides.test.ts` fails on one in the desktop renderer). Size and
   colour belong in the kit as a class, never per-component. Full explanation in `CLAUDE.md`.
 - **Some icons deliberately use OS fonts.** VG5000 lacks recognizable equivalents for
   ⚙ settings, 💼 company, and ☕ idle; ❗ attention and ⚠ warnings retain their color cues.
