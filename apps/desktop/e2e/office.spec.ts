@@ -240,3 +240,28 @@ test("a long question keeps its lines and the dialogue stays on screen", async (
   await expect(dialogue.locator(".dlg-menu")).toBeInViewport({ ratio: 1 });
   await expect(page.getByTitle("Leave (esc)")).toBeInViewport({ ratio: 1 });
 });
+
+test("hovering the dialogue's menu leaves the typed answer where the founder is typing", async ({
+  launch,
+  root,
+}) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  await blockLead(root, founded, "e2e-color", "Which color?");
+  const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+  if (!lead) {
+    throw new Error("the founded company has no lead");
+  }
+
+  const { page } = await launch();
+  await page.getByRole("button", { name: /team/iu }).click();
+  await page.getByTitle(`Talk to ${lead.name}`).click();
+  const answer = page.locator(".dlg").getByPlaceholder("Your answer…");
+  await expect(answer).toBeFocused();
+  await page.keyboard.type("Blu");
+  await page.locator(".dlg-menu .px-menu-item").first().hover();
+  await page.keyboard.type("e");
+  await expect(answer).toBeFocused();
+  await expect(answer).toHaveValue("Blue");
+});

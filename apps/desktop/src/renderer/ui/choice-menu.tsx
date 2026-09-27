@@ -23,7 +23,8 @@ const isTextField = (el: Element | null): boolean =>
 
 /** An RPG choice window: a list with a ▶ cursor. Base UI's Toolbar owns the
  *  roving focus (↑↓, wrapping, Enter/Space on the item); the cursor IS the
- *  focused item, and the pointer moves it by hovering. The focused item answers
+ *  focused item, and the pointer moves it by hovering unless a text field has
+ *  the keys. The focused item answers
  *  Enter and Space itself, so the page's own Enter handler must not also fire.
  *  `data-composite-item-active` is read once, when the toolbar first registers
  *  its items: it makes the cursor's item the default tab stop, not the first.
@@ -99,7 +100,8 @@ export const ChoiceMenu = ({
           disabled={item.disabled}
           onFocus={() => menu.setCursor(i)}
           onPointerMove={(e) => {
-            if (e.pointerType !== "touch") {
+            // a pointer passing over must not pull keys out of an answer being typed beside the menu
+            if (e.pointerType !== "touch" && !isTextField(document.activeElement)) {
               e.currentTarget.focus();
             }
           }}
