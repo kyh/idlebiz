@@ -66,6 +66,38 @@ const fakeVercel = (...answers: (() => Response)[]) => {
 const created = () =>
   Response.json({ created: { key: "OPENAI_API_KEY" }, failed: [] }, { status: 201 });
 
+/** A create whose answer never arrives, then Vercel's list, its variable last changed `changedMsAgo`. */
+const lostAnswer = (changedMsAgo: number) => {
+  const reads: Record<string, string>[] = [];
+  vi.stubGlobal("fetch", (input: string, init: RequestInit = {}) => {
+    const url = new URL(input);
+    if (init.method === "POST") {
+      return Promise.reject(
+        new DOMException("The operation was aborted due to timeout", "TimeoutError"),
+      );
+    }
+    reads.push({ route: url.pathname, ...Object.fromEntries(url.searchParams) });
+    return Promise.resolve(
+      Response.json(
+        {
+          envs: [
+            { key: "OTHER", target: ["production"], type: "encrypted", value: "" },
+            {
+              key: "OPENAI_API_KEY",
+              target: ["production", "preview"],
+              type: "sensitive",
+              updatedAt: Date.now() - changedMsAgo,
+              value: "",
+            },
+          ],
+        },
+        { headers: { Date: new Date().toUTCString() } },
+      ),
+    );
+  });
+  return reads;
+};
+
 describe("setting a product's variable on Vercel", () => {
   it("upserts a name the team set, sensitive, for production and preview, in the bound project's team, as the founder", async () => {
     const calls = fakeVercel(created);
@@ -165,6 +197,24 @@ describe("setting a product's variable on Vercel", () => {
     vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
 
     await expect(setVercelEnv(REQUEST)).resolves.toEqual({ error: "fetch failed", ok: false });
+  });
+
+  describe("when Vercel's answer is lost", () => {
+    it("counts the variable set once Vercel lists it as changed since the call", async () => {
+      const reads = lostAnswer(0);
+
+      await expect(setVercelEnv({ ...REQUEST, replaces: false })).resolves.toEqual({ ok: true });
+      expect(reads).toEqual([{ route: "/v10/projects/prj_1/env", teamId: "team_1" }]);
+    });
+
+    it("leaves a variable Vercel last changed before the call the founder's", async () => {
+      lostAnswer(3_600_000);
+
+      await expect(setVercelEnv({ ...REQUEST, replaces: false })).resolves.toEqual({
+        error: "The operation was aborted due to timeout",
+        ok: false,
+      });
+    });
   });
 });
 

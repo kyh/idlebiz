@@ -95,6 +95,58 @@ const ENV_TIMEOUT_MS = 10_000;
 const Said = z.object({ code: z.string().optional(), message: z.string().optional() });
 const Refusal = z.object({ error: Said });
 const Answer = z.object({ failed: z.array(z.object({ error: Said })).default([]) });
+const Listed = z.object({
+  envs: z.array(
+    z.object({
+      key: z.string(),
+      target: z.union([z.array(z.string()), z.string()]).optional(),
+      type: z.string(),
+      updatedAt: z.number().optional(),
+    }),
+  ),
+});
+
+const envRoute = (binding: VercelBinding, query: URLSearchParams): string => {
+  if (binding.teamId !== null) {
+    query.set("teamId", binding.teamId);
+  }
+  return `${VERCEL_API}/v10/projects/${encodeURIComponent(binding.projectId)}/env?${query.toString()}`;
+};
+
+/**
+ * Whether the variable a call whose answer was lost sent now stands on the project, changed
+ * since `startedAt`: without this a create Vercel made reads as never made, so the team could
+ * never replace it and the deploy guard would never learn its value. Judged on Vercel's own
+ * clock (its Date header, less how long the call took here), so a skewed clock here never
+ * claims the founder's variable; the header's whole seconds only ever make it stricter.
+ */
+const landedSince = async (
+  { binding, name, token }: EnvRequest,
+  startedAt: number,
+): Promise<boolean> => {
+  try {
+    const res = await fetchOk(envRoute(binding, new URLSearchParams()), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(ENV_TIMEOUT_MS),
+    });
+    const vercelNow = Date.parse(res.headers.get("date") ?? "");
+    if (Number.isNaN(vercelNow)) {
+      return false;
+    }
+    const since = vercelNow - (Date.now() - startedAt);
+    return Listed.parse(await res.json()).envs.some(
+      (env) =>
+        env.key === name &&
+        env.type === "sensitive" &&
+        env.target?.includes("production") === true &&
+        env.target.includes("preview") &&
+        env.updatedAt !== undefined &&
+        env.updatedAt >= since,
+    );
+  } catch {
+    return false;
+  }
+};
 
 /** Vercel's words, less anything they quote of what was sent. */
 const reasonOf = (said: z.infer<typeof Said>, { token, value }: EnvRequest): string =>
@@ -111,13 +163,10 @@ const reasonOf = (said: z.infer<typeof Said>, { token, value }: EnvRequest): str
  */
 export const setVercelEnv: EnvSetter = async (req) => {
   const { binding, name, replaces, token, value } = req;
-  const query = new URLSearchParams(replaces ? { upsert: "true" } : {});
-  if (binding.teamId !== null) {
-    query.set("teamId", binding.teamId);
-  }
+  const startedAt = Date.now();
   try {
     const res = await fetchOk(
-      `${VERCEL_API}/v10/projects/${encodeURIComponent(binding.projectId)}/env?${query.toString()}`,
+      envRoute(binding, new URLSearchParams(replaces ? { upsert: "true" } : {})),
       {
         body: JSON.stringify({
           key: name,
@@ -136,7 +185,9 @@ export const setVercelEnv: EnvSetter = async (req) => {
       : { error: `Vercel turned it down: ${reasonOf(failed.error, req)}`, ok: false };
   } catch (error) {
     if (!(error instanceof HttpError)) {
-      return { error: errorMessage(error), ok: false };
+      return (await landedSince(req, startedAt))
+        ? { ok: true }
+        : { error: errorMessage(error), ok: false };
     }
     const said = Refusal.safeParse(error.answer);
     const why = said.success ? `: ${reasonOf(said.data.error, req)}` : "";
