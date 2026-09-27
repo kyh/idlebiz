@@ -24,7 +24,8 @@ export type Recipient = z.infer<typeof RecipientSchema>;
  * asked anything, so a restart finds it and looks it up by its external id rather than make it
  * twice; `tries` counts failed sends. `pricing` is a draft whose costs are being worked out,
  * `checks` the reads so far. `held` waits on the founder, who has a card saying `why`.
- * `test` was paid in test mode: priced, then its draft deleted, since nobody paid for it.
+ * `test` was paid in test mode: its draft deleted once priced, or once Printful never priced it,
+ * since nobody paid for it.
  */
 const OrderStageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("received"), tries: z.number().int().nonnegative() }),

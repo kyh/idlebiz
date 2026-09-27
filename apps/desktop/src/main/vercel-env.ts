@@ -35,16 +35,23 @@ export interface KeptEnvValue {
 
 type ProductRef = Pick<Product, "companyId" | "id">;
 
-const keptKey = ({ companyId, id }: ProductRef, name: string): string =>
-  `${ENV_PREFIX}${companyId}/${id}/${name}`;
+// Kept per project, not per product: the founder may rebind the product to a live project of
+// theirs, whose variable of the same name set_env never set.
+const keptKey = ({ companyId, id }: ProductRef, projectId: string, name: string): string =>
+  `${ENV_PREFIX}${companyId}/${id}/${encodeURIComponent(projectId)}/${name}`;
 
-/** Whether set_env set `name` on the product before, even a value this launch cannot open. */
-export const teamSetEnv = (product: ProductRef, name: string): boolean =>
-  hasSecret(keptKey(product, name));
+/** Whether set_env set `name` on the product's project before, even a value this launch cannot open. */
+export const teamSetEnv = (product: ProductRef, projectId: string, name: string): boolean =>
+  hasSecret(keptKey(product, projectId, name));
 
 /** Keep a value Vercel now holds, both as the team's name to replace and for the deploy guard. */
-export const keepEnvValue = (product: ProductRef, name: string, value: string): void => {
-  setSecret(keptKey(product, name), value);
+export const keepEnvValue = (
+  product: ProductRef,
+  projectId: string,
+  name: string,
+  value: string,
+): void => {
+  setSecret(keptKey(product, projectId, name), value);
 };
 
 /**
@@ -56,11 +63,13 @@ export const keepEnvValue = (product: ProductRef, name: string, value: string): 
  */
 export const unshippableEnvValues = (): KeptEnvValue[] =>
   [...secretsUnder(ENV_PREFIX)].flatMap(([key, value]) => {
-    const [company, product, name, ...rest] = key.split("/");
+    // a value kept before keys named the project (no project part) still guards every deploy
+    const [company, product, ...rest] = key.split("/");
+    const name = rest.at(-1);
     return company === undefined ||
       product === undefined ||
       name === undefined ||
-      rest.length > 0 ||
+      rest.length > 2 ||
       isPublicEnvName(name)
       ? []
       : [{ company, kind: "env", name, product, value }];

@@ -557,7 +557,9 @@ const orderStanding = (order: Order): string => {
       return `waiting on the founder: ${stage.why}`;
     }
     case "test": {
-      return `paid in test mode, so only priced as Printful draft ${stage.printfulId}, never sent`;
+      return order.costCents === null
+        ? `paid in test mode; Printful never priced draft ${stage.printfulId}, so it was deleted, never sent`
+        : `paid in test mode, so only priced as Printful draft ${stage.printfulId}, never sent`;
     }
     // no default
   }
@@ -854,7 +856,7 @@ const TOOLS = {
     if (kept !== null) {
       return `${name} was not set: that value is the one set_env keeps as ${kept.name} on ${kept.product}, server-only, and a ${prefix} name would build it into the page, where every visitor reads it. Server code reads it as process.env.${kept.name}; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).`;
     }
-    const replaces = teamSetEnv(product, name);
+    const replaces = teamSetEnv(product, product.vercel.projectId, name);
     const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
     if (!set.ok) {
       const notOurs = replaces
@@ -862,7 +864,7 @@ const TOOLS = {
         : `\nset_env only replaces a variable the team set: if ${product.vercel.projectName} already has ${name}, it is the founder's, so hand them an ask_boss action to change it.`;
       return `${name} was not set on ${product.name}: ${set.error}${notOurs}`;
     }
-    keepEnvValue(product, name, value);
+    keepEnvValue(product, product.vercel.projectId, name, value);
     post(ctx, `🔑 set ${name} on ${product.name}`);
     const where = `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview.`;
     return prefix === undefined
@@ -922,6 +924,9 @@ const TOOLS = {
       });
       if (!made.ok) {
         return `Stripe made no payment link: ${made.error}`;
+      }
+      if (store.getChargeLink(made.id) !== null) {
+        return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
       }
       store.recordChargeLink({
         betId: bet ?? null,

@@ -283,10 +283,49 @@ const send = async (sale: Sale, tries: number, credential: PrintfulCredential): 
   }
 };
 
+/** What Printful charges for a draft, in cents, once it has priced it in USD. */
+const usdCostOf = (costs: PrintfulOrder["costs"]): number | null =>
+  costs.kind === "done" && costs.currency === "USD" ? costs.totalCents : null;
+
+/**
+ * A test-mode sale, which nobody paid: its draft is deleted, priced or not, so the founder's
+ * Printful store holds no order nobody paid for, which confirming by hand would charge them for.
+ */
+const discard = async (
+  sale: Sale,
+  printfulId: number,
+  costCents: number | null,
+  credential: PrintfulCredential,
+): Promise<void> => {
+  const gone = await printfulOrders.discard(printfulId, credential);
+  if (gone.kind !== "ok" && gone.kind !== "missing") {
+    report(`test order ${sale.id}`, new Error(`Printful kept test draft ${printfulId}`));
+  }
+  store.updateSale(sale.id, {
+    costCents,
+    printfulStatus: gone.kind === "ok" || gone.kind === "missing" ? "deleted" : "draft",
+    stage: { kind: "test", printfulId },
+  });
+};
+
 /** A draft not yet confirmed: read again on the next pulse, until the founder is asked. */
-const recheck = (sale: Sale, printfulId: number, checks: number, reason: string): void => {
+const recheck = async (
+  sale: Sale,
+  printfulId: number,
+  checks: number,
+  reason: string,
+  credential: PrintfulCredential,
+): Promise<void> => {
   if (checks + 1 < MAX_PRICING_CHECKS) {
     store.updateSale(sale.id, { stage: { checks: checks + 1, kind: "pricing", printfulId } });
+    return;
+  }
+  if (!sale.livemode) {
+    await discard(sale, printfulId, null, credential);
+    postToRoom(
+      { kind: "office" },
+      `🧪 Test order ${sale.id.slice(0, 8)} was never priced, so its draft is deleted: ${reason}.`,
+    );
     return;
   }
   hold(
@@ -311,28 +350,6 @@ const paymentOf = (sale: Sale): Promise<PaymentStanding> => {
 };
 
 /**
- * A test-mode sale, which nobody paid: its priced draft is deleted, so the founder's Printful
- * store holds no order nobody paid for, which confirming by hand would charge them for.
- */
-const discard = async (
-  sale: Sale,
-  order: PrintfulOrder,
-  credential: PrintfulCredential,
-): Promise<void> => {
-  const { costs } = order;
-  const costCents = costs.kind === "done" && costs.currency === "USD" ? costs.totalCents : null;
-  const gone = await printfulOrders.discard(order.id, credential);
-  if (gone.kind !== "ok" && gone.kind !== "missing") {
-    report(`test order ${sale.id}`, new Error(`Printful kept test draft ${order.id}`));
-  }
-  store.updateSale(sale.id, {
-    costCents,
-    printfulStatus: gone.kind === "ok" || gone.kind === "missing" ? "deleted" : "draft",
-    stage: { kind: "test", printfulId: order.id },
-  });
-};
-
-/**
  * Confirm a priced draft, on this read that shows it a draft, only when it costs no more than the
  * buyer paid less Stripe's fee, and the payment is neither refunded nor disputed.
  */
@@ -344,11 +361,11 @@ const confirm = async (
 ): Promise<void> => {
   const { costs } = order;
   if (costs.kind === "calculating") {
-    recheck(sale, order.id, checks, "Printful is still working out its cost");
+    await recheck(sale, order.id, checks, "Printful is still working out its cost", credential);
     return;
   }
   if (!sale.livemode) {
-    await discard(sale, order, credential);
+    await discard(sale, order.id, usdCostOf(costs), credential);
     return;
   }
   if (costs.kind === "failed" || costs.currency !== "USD" || costs.totalCents === null) {
@@ -376,11 +393,12 @@ const confirm = async (
   }
   const payment = await paymentOf(sale);
   if (payment.kind === "unread") {
-    recheck(
+    await recheck(
       sale,
       order.id,
       checks,
       `Stripe could not say whether the payment still stands: ${payment.reason}`,
+      credential,
     );
     return;
   }
@@ -424,7 +442,7 @@ const confirm = async (
     // whether it went through, the next read says: a confirmed order is no longer a draft
     case "missing":
     case "down": {
-      recheck(sale, order.id, checks, "its confirmation got no answer");
+      await recheck(sale, order.id, checks, "its confirmation got no answer", credential);
     }
     // no default
   }
@@ -461,7 +479,7 @@ const price = async (
     }
     case "rejected":
     case "down": {
-      recheck(sale, printfulId, checks, read.reason);
+      await recheck(sale, printfulId, checks, read.reason, credential);
     }
     // no default
   }
@@ -772,8 +790,13 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
   };
   const read = await readCheckouts(key, from);
   if (read.kind === "refused") {
-    // nothing sold yet is owed a read: a link with a delivery checks the grant as it is made
-    if (store.listListings().length === 0 && store.listOrders().length === 0) {
+    // Only what can be owed wants a read: a print, a kept order, or a live link's delivery. The
+    // grant is checked as a delivery link is made, but a key saved since may lack it.
+    const owed =
+      store.listListings().length > 0 ||
+      store.listOrders().length > 0 ||
+      store.listChargeLinks().some((link) => link.livemode && link.delivery !== null);
+    if (!owed) {
       return;
     }
     raiseOrderCard("Paid orders can't be read from Stripe", {

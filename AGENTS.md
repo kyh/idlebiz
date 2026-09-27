@@ -228,7 +228,7 @@ rather than crashing boot.
   included, is CLAUDE.md's "What stays open". A product's own keys go on its bound project
   through `set_env`, unsigned: main sets the variable with `VERCEL_TOKEN`, sensitive for
   production and preview (`main/vercel-env.ts`), replacing only a name set_env set, and keeps
-  each value Vercel took in `secrets.json` under `ENV/<company>/<product>/<NAME>` (never the
+  each value Vercel took in `secrets.json` under `ENV/<company>/<product>/<project>/<NAME>` (never the
   save, which runs read) so `deploy` refuses a folder whose files hold any of them, before the
   sign-off is asked, naming the file and the variable, never the value. A public name
   (`NEXT_PUBLIC_`, `VITE_`…, `shared/env-name.ts`) is the exception: its value is built into the

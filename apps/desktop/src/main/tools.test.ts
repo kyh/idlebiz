@@ -945,6 +945,25 @@ describe("set_env", () => {
     expect([...refused.sets, ...sets].map((req) => req.replaces)).toEqual([false, false, true]);
   });
 
+  it("replaces a name only on the project the team set it on, never on one the product is rebound to", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+    await callTool(ctx, "POST /v1/set-env", OPENAI);
+
+    const founders = { projectId: "prj_live", projectName: "founder-live", teamId: null };
+    store.setProductVercel("acme", founders);
+    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    store.setProductVercel("acme", VERCEL);
+    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+
+    expect(sets.map(({ binding, replaces }) => [binding.projectId, replaces])).toEqual([
+      ["prj_1", false],
+      ["prj_live", false],
+      ["prj_1", true],
+    ]);
+  });
+
   it("sends the value without the whitespace a paste carries", async () => {
     connectVercel();
     const { ctx, sets } = settingRun();
@@ -1164,6 +1183,47 @@ describe("create_payment_link", () => {
     expect(answer).toContain(
       `Side was retired while Stripe made its payment link. Its link "Pro plan" ${PAID_URL} is switched off at Stripe `,
     );
+  });
+
+  it("gets back the link a timed-out create made when signed for again, rather than make a second", async () => {
+    const { ctx } = chargingRun();
+    const replays = new Map<string, Record<string, string>>();
+    let links = 0;
+    let timeouts = 1;
+    vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+      const endpoint = new URL(url).pathname;
+      const key = new Headers(init.headers).get("Idempotency-Key");
+      const replay = key === null ? undefined : replays.get(key);
+      if (replay !== undefined) {
+        return Promise.resolve(Response.json(replay));
+      }
+      if (endpoint === "/v1/prices") {
+        return Promise.resolve(Response.json({ id: "price_1" }));
+      }
+      links += 1;
+      const link = { id: `plink_${links}`, url: `https://buy.stripe.com/${links}` };
+      if (key !== null) {
+        replays.set(key, link);
+      }
+      if (timeouts > 0) {
+        timeouts -= 1;
+        return Promise.reject(
+          new DOMException("The operation was aborted due to timeout", "TimeoutError"),
+        );
+      }
+      return Promise.resolve(Response.json(link));
+    });
+    const call = () => {
+      store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+      return callTool(ctx, "POST /v1/payment-link", LINK);
+    };
+
+    expect(await call()).toContain("Stripe made no payment link");
+    expect(await call()).toContain("https://buy.stripe.com/1");
+    expect(await call()).toContain("https://buy.stripe.com/1");
+
+    expect(links).toBe(1);
+    expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_1"]);
   });
 
   it("tags the product alone when no bet is named, charging whole cents", async () => {

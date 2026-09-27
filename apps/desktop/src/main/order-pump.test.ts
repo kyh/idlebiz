@@ -885,4 +885,57 @@ describe("the order pump", () => {
 
     expect(orderCards()).toEqual([]);
   });
+
+  it("cards the founder when a key that cannot read checkouts leaves a link's buyers owed a delivery unread", async () => {
+    store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "vc",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: "sell deal memos",
+      name: "Acme",
+    });
+    store.recordChargeLink({
+      betId: null,
+      cents: 500,
+      createdAt: NOW - 1000,
+      delivery: "Email the PDF",
+      id: "plink_memo",
+      livemode: true,
+      name: "Memo",
+      productId: store.listProducts()[0]?.id ?? "",
+      state: { kind: "selling" },
+      url: "https://buy.stripe.com/memo",
+    });
+    saveSecrets("rk_live_rotated");
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json({ error: { message: "no checkout read" } }, { status: 403 })),
+    );
+
+    await pumpOrders(NOW, "read");
+
+    expect(orderCards().map((t) => t.title)).toEqual(["Paid orders can't be read from Stripe"]);
+  });
+
+  it("deletes a test-mode draft Printful never finishes pricing, rather than leave it to be confirmed by hand", async () => {
+    openShop();
+    saveSecrets("rk_test_founder");
+    const world = fakeWorld({
+      pricingReads: 1000,
+      sessions: [checkout("cs_test", { livemode: false })],
+    });
+
+    await pumpUntilSettled(25);
+
+    expect(world.discards).toBe(1);
+    expect(world.orders.size).toBe(0);
+    expect(onlySale()).toMatchObject({
+      costCents: null,
+      printfulStatus: "deleted",
+      stage: { kind: "test", printfulId: 9001 },
+    });
+    expect(orderCards()).toEqual([]);
+    expect(store.recentTeamMessages().at(-1)?.text).toContain("🧪 Test order");
+  });
 });

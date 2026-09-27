@@ -1022,6 +1022,8 @@ export const recordListing = (listing: Listing): void => {
 };
 
 // ---- payment links ----------------------------------------------------------
+export const listChargeLinks = (): ChargeLink[] => [...current().links];
+
 export const getChargeLink = (id: string): ChargeLink | null =>
   current().links.find((l) => l.id === id) ?? null;
 

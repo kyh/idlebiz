@@ -54,6 +54,27 @@ const afterCompletion = (page: string | null): Record<string, string> =>
 const underKey = (prefix: string, tags: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [`${prefix}[${key}]`, value]));
 
+/**
+ * Stripe replays the first answer to a key for 24 hours, so a link tried again after a timeout
+ * gets back the price, rate and link Stripe already made, rather than a second live link tagged
+ * for it that nothing saved knows, which retiring its product would never switch off. The key
+ * covers every field sent, since Stripe refuses a key sent again with other fields; `owner` is
+ * the product, and the listing for a print.
+ */
+const idempotentPost =
+  (key: string, owner: readonly string[]) =>
+  (path: string, form: Readonly<Record<string, string>>) =>
+    postForm(
+      `${STRIPE_API}${path}`,
+      {
+        ...stripeHeaders(key),
+        "Idempotency-Key": `idlebiz-${createHash("sha256")
+          .update(JSON.stringify([...owner, path, form]))
+          .digest("hex")}`,
+      },
+      form,
+    );
+
 /** A payment link made on Stripe here in main, so an employee's process never holds the key. */
 export const stripePaymentLink: PaymentLinker = async ({
   afterPayment,
@@ -64,20 +85,20 @@ export const stripePaymentLink: PaymentLinker = async ({
   bet,
   delivery,
 }) => {
-  const headers = stripeHeaders(key);
+  const post = idempotentPost(key, [product]);
   const tags: Record<string, string> = bet === null ? { product } : { bet, product };
   // the link's metadata alone reaches its checkout sessions, where the order pump reads it
   const onSessions = delivery === null ? tags : { ...tags, delivery };
   try {
     const price = Created.parse(
-      await postForm(`${STRIPE_API}/v1/prices`, headers, {
+      await post("/v1/prices", {
         currency: "usd",
         "product_data[name]": name,
         unit_amount: String(cents),
       }),
     );
     const link = LinkWithId.parse(
-      await postForm(`${STRIPE_API}/v1/payment_links`, headers, {
+      await post("/v1/payment_links", {
         "line_items[0][price]": price.id,
         "line_items[0][quantity]": "1",
         ...afterCompletion(afterPayment),
@@ -173,22 +194,6 @@ export const stripeCheckoutAccess = (key: string): Promise<StripeAccess> =>
   accessTo(key, [CHECKOUTS]);
 
 /**
- * Stripe replays the first answer to a key for 24 hours, so a listing tried again after a
- * timeout gets back the price, rate and link Stripe already made, rather than a second live
- * link tagged for it that no saved listing knows. The key covers every field sent, since Stripe
- * refuses a key sent again with other fields.
- */
-const idempotencyKey = (
-  listing: string,
-  product: string,
-  path: string,
-  form: Readonly<Record<string, string>>,
-): string =>
-  `idlebiz-${createHash("sha256")
-    .update(JSON.stringify([product, listing, path, form]))
-    .digest("hex")}`;
-
-/**
  * A print-on-demand item's payment link, tagged like any other so its money counts for the
  * product and the bet, and for the listing, so each paid order can be sent to Printful.
  */
@@ -196,12 +201,7 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
   const { bet, key, listing, name, priceCents, product, shippingCents, variants } = req;
   const tags: Record<string, string> =
     bet === null ? { listing, product } : { bet, listing, product };
-  const post = (path: string, form: Record<string, string>) =>
-    postForm(
-      `${STRIPE_API}${path}`,
-      { ...stripeHeaders(key), "Idempotency-Key": idempotencyKey(listing, product, path, form) },
-      form,
-    );
+  const post = idempotentPost(key, [product, listing]);
   try {
     const price = Created.parse(
       await post("/v1/prices", {

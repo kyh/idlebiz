@@ -255,7 +255,9 @@ third boundary.
   payment for its product and a named open revenue bet on it, and the link alone with the
   `delivery` its buyers are owed, which Stripe copies onto each checkout (a link with one is
   refused before the sign-off while the key cannot read checkout sessions, since that read is
-  how each buyer reaches the founder). Its `afterPaymentUrl`, where each buyer lands once they
+  how each buyer reaches the founder), each POST under an idempotency key of its fields, like
+  `sell_print`'s, so a retry after a timeout gets back the link Stripe made rather than a second
+  one nothing saved knows. Its `afterPaymentUrl`, where each buyer lands once they
   have paid, must be https with no login or port on one of the product's verified production domains
   (`productionHosts`, as `sell_print`'s files), and main adds
   `session_id={CHECKOUT_SESSION_ID}`, which Stripe fills (`after_completion[type]=redirect`);
@@ -295,8 +297,9 @@ third boundary.
   payment's charges read just before and neither refunded nor disputed
   (`readPaymentStanding`, Read on Charges), so no restart confirms twice or past that guard. A
   send whose last try failed asks Printful once more for a draft it may have made before the
-  founder is told to place it by hand. A test-mode sale is priced, then its draft deleted, and
-  anything that stops it goes to the room, never a card: nobody paid. A paid session on a
+  founder is told to place it by hand. A test-mode sale is priced, then its draft deleted (one
+  Printful never prices is deleted too), and anything that stops it goes to the room, never a
+  card: nobody paid. A paid session on a
   `create_payment_link` link (its `product` tag names a product of the company, live or retired,
   and it has no `metadata[listing]`) is kept as a `link` order and posted to the room, and a
   live one whose link names a `delivery` is carded to the founder with the buyer's email and
@@ -348,7 +351,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   creates a name set_env never set there, and replaces only one it did: the founder may bind a
   live project whose variables are theirs, and a sensitive one cannot be read back. Nothing is
   retried as a readable type. Main keeps each value Vercel took in `secrets.json`
-  (`ENV/<company>/<product>/<NAME>`, main's own copy never in the save, which runs read), and a
+  (`ENV/<company>/<product>/<project>/<NAME>`, per project, so a product rebound to a project of
+  the founder's replaces none of theirs; main's own copy never in the save, which runs read), and a
   deploy refuses a folder any of whose uploaded files holds one, from any product or company, or
   any key IdleBiz itself holds (`heldKeys` in `main/secrets.ts`), naming the file and the
   variable or key, never the value: a key in source ships publicly. Those keys never reach a
