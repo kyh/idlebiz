@@ -5,7 +5,7 @@ import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { text } from "node:stream/consumers";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { loopbackUrl, parseState } from "@repo/stripe-connect-protocol/protocol";
 import type { OAuthState } from "@repo/stripe-connect-protocol/protocol";
@@ -152,6 +152,20 @@ describe("Stripe flow ownership", () => {
     } finally {
       requests.unsubscribe(onRequest);
     }
+  });
+
+  it("waits out a founder who spends an hour creating their Stripe account", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await stripe.beginConnect(company.id);
+      vi.advanceTimersByTime(60 * 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "connecting" });
+    const response = await fetch(await callbackUrl(latestState(), "token-slow"));
+    expect(await response.text()).toContain("Stripe connected");
+    expect(getSecret("STRIPE_CONNECT_TOKEN")).toBe("token-slow");
   });
 
   it("waits for account revocation before opening a replacement authorization", async () => {

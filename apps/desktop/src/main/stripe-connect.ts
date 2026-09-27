@@ -23,17 +23,18 @@ import type { StripeStatus } from "@/shared/integrations";
 // this loopback flow. The platform secret stays on the web server.
 
 const WEB_BASE = process.env.IDLEBIZ_WEB_URL ?? "https://idlebiz.com";
-const FLOW_TIMEOUT_MS = 5 * 60_000;
 
 type Revocation = { kind: "revoked" } | { kind: "unconfirmed"; reason: string };
 
+// A flow has no deadline: a first-time founder signs up for Stripe inside it, which can
+// outlast any timeout, and the web callback spends the grant whether or not we still
+// listen. Start over, or a disconnect, is what replaces a stale one.
 interface PendingFlow {
   companyId: string;
   server: Server;
   nonce: string;
   /** This flow's key pair; the private half dies with the flow. */
   ring: Keyring;
-  timeout: ReturnType<typeof setTimeout>;
 }
 
 let pending: PendingFlow | null = null;
@@ -99,7 +100,6 @@ export const noteStripeRead = (companyId: string, read: RealSnapshot["stripe"]):
 };
 
 const closeFlow = (flow: PendingFlow): void => {
-  clearTimeout(flow.timeout);
   try {
     flow.server.close();
   } catch {
@@ -224,20 +224,7 @@ export const beginConnect = async (companyId: string): Promise<{ started: boolea
       return { started: false };
     }
 
-    const flow: PendingFlow = {
-      companyId,
-      nonce,
-      ring,
-      server,
-      timeout: setTimeout(() => {
-        if (pending !== flow) {
-          return;
-        }
-        closeFlow(flow);
-        fail("Stripe connection timed out — try again.");
-      }, FLOW_TIMEOUT_MS),
-    };
-    pending = flow;
+    pending = { companyId, nonce, ring, server };
     notify({ state: "connecting" });
 
     await openExternal(authorizeUrl(WEB_BASE, { key: ring.publicKey, nonce, port }));
