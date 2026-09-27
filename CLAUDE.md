@@ -560,7 +560,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip` · `pnpm e2e`
 `pnpm knip` checks unused files, exports and dependencies; it is not part of `verify`.
 `pnpm e2e` builds the desktop app and drives it with Playwright: macOS only, every test that
-founds a company (office, #team, key entry, sealing) skips without a signed-in CLI, never
+founds a company (office, #team, panels, key entry, sealing) skips without a signed-in CLI, never
 spends, not part of `verify` or CI (see `AGENTS.md`).
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
 real loopback requests and, on macOS, the seal and any installed CLI's gate; no Electron or
