@@ -215,7 +215,8 @@ rather than crashing boot.
   (`switchOffRetiredLinks` in `main/company-actions.ts`, run by the retirement and every pulse;
   `main/retired-links.test.ts`), asking again each pulse while Stripe does not answer, and a
   live link Stripe refuses or never answers for, or one with no key saved, is a card naming it
-  (a test-mode one, a line in the room). A reset switches off every live link first
+  (a test-mode one, a line in the room). A reset waits for each signed link Stripe is
+  still making and refuses a new one (`makingPaymentLink`), then switches off every live link
   (`switchOffBeforeReset`) and warns of what it could not, with each paid print Printful never
   confirmed (but a held one whose card the founder settled) and each paid order whose card still waits on the founder. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful

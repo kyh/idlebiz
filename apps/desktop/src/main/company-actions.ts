@@ -368,6 +368,28 @@ export const switchOffRetiredLinks = (): Promise<void> => {
   return lastSweep;
 };
 
+let resetting = false;
+const linksInMaking = new Set<Promise<void>>();
+
+/**
+ * Mark a signed payment link in the making, from asking Stripe until it is recorded, and answer
+ * the call that ends it. A reset waits for each before it switches off the company's links, and
+ * refuses a new one: a link Stripe makes once the save is gone would take money nothing records.
+ */
+export const makingPaymentLink = (): (() => void) => {
+  if (resetting) {
+    throw new RefusalError(
+      "Nothing was made: the founder is resetting the company, and the save that would record a payment link is being deleted.",
+    );
+  }
+  const made: PromiseWithResolvers<void> = Promise.withResolvers();
+  linksInMaking.add(made.promise);
+  return () => {
+    linksInMaking.delete(made.promise);
+    made.resolve();
+  };
+};
+
 /** Why a live link still takes money once the save is gone, or null once Stripe switched it off. */
 const switchedOffForReset = async (
   link: CompanyLink,
@@ -383,11 +405,14 @@ const switchedOffForReset = async (
 /**
  * Before a reset deletes the save, switch off with the founder's key every live payment link the
  * company still sells through, one at a time as the sweep does: once the save is gone nothing
- * records a link, ships its prints or hands its buyers what they paid for. Answers what the
+ * records a link, ships its prints or hands its buyers what they paid for, so it first waits for
+ * each link still in the making (`makingPaymentLink`). Answers what the
  * founder must still do by hand (links left on, paid prints Printful never confirmed and the
  * founder has not settled, paid orders whose card is still open, links older builds never recorded), or null when nothing is left.
  */
 export const switchOffBeforeReset = async (): Promise<string | null> => {
+  resetting = true;
+  await Promise.all(linksInMaking);
   if (store.getCompany() === null) {
     return null;
   }

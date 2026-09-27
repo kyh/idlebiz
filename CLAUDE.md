@@ -343,7 +343,8 @@ third boundary.
   key is saved, one read of the account's active links cards the founder with those tagged for it (none switched off by
   IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
   say where each of a retired product's links stands. A reset switches off every live link not
-  yet off before it deletes the save (`switchOffBeforeReset`), since nothing is left after to
+  yet off before it deletes the save (`switchOffBeforeReset`), once each signed link Stripe is
+  still making is recorded, and refuses a new one (`makingPaymentLink`), since nothing is left after to
   ship its prints or record a buyer, and its warning names each link Stripe left on, each paid
   print Printful never confirmed (but a held one whose card the founder settled), each paid order whose card still waits on the founder (a
   delivery, one IdleBiz cannot send) and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned

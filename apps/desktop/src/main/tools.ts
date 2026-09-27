@@ -11,6 +11,7 @@ import {
   postToRoom,
   retireProduct,
   startProduct,
+  makingPaymentLink,
   switchOffRetiredLinks,
 } from "@/main/company-actions";
 import { measureRefusal } from "@/main/metrics";
@@ -960,39 +961,44 @@ const TOOLS = {
         chargeAction({ afterPayment, bet, delivery, name, price, product: product.id }),
         "payments",
       );
-      const made = await ctx.createPaymentLink({
-        afterPayment,
-        bet: bet ?? null,
-        cents,
-        delivery: delivery ?? null,
-        key,
-        name,
-        product: product.id,
-      });
-      if (!made.ok) {
-        return `Stripe made no payment link: ${made.error}`;
+      const kept = makingPaymentLink();
+      try {
+        const made = await ctx.createPaymentLink({
+          afterPayment,
+          bet: bet ?? null,
+          cents,
+          delivery: delivery ?? null,
+          key,
+          name,
+          product: product.id,
+        });
+        if (!made.ok) {
+          return `Stripe made no payment link: ${made.error}`;
+        }
+        if (store.getChargeLink(made.id) !== null) {
+          return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
+        }
+        store.recordChargeLink({
+          betId: bet ?? null,
+          cents,
+          createdAt: Date.now(),
+          delivery: delivery ?? null,
+          id: made.id,
+          livemode: !isTestKey(key),
+          name,
+          productId: product.id,
+          state: { kind: "selling" },
+          url: made.url,
+        });
+        const retired = await madeWhileRetiring(product, made.id);
+        if (retired !== null) {
+          return retired;
+        }
+        const testMode = isTestKey(key) ? TEST_MODE : "";
+        return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${afterSale(made.id, delivery, afterPayment)}${testMode}`;
+      } finally {
+        kept();
       }
-      if (store.getChargeLink(made.id) !== null) {
-        return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
-      }
-      store.recordChargeLink({
-        betId: bet ?? null,
-        cents,
-        createdAt: Date.now(),
-        delivery: delivery ?? null,
-        id: made.id,
-        livemode: !isTestKey(key),
-        name,
-        productId: product.id,
-        state: { kind: "selling" },
-        url: made.url,
-      });
-      const retired = await madeWhileRetiring(product, made.id);
-      if (retired !== null) {
-        return retired;
-      }
-      const testMode = isTestKey(key) ? TEST_MODE : "";
-      return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${afterSale(made.id, delivery, afterPayment)}${testMode}`;
     },
   ),
   printful_catalog: define(TOOL_SPECS.printful_catalog, async (ctx, { offset, product }) => {
@@ -1067,6 +1073,7 @@ const TOOLS = {
     const action = `sell ${JSON.stringify(name)} (variants ${variantIds.join(", ")}) printing ${printed} at ${price} via Printful on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
     requireSignOff(ctx, action, "payments");
     const listingId = store.newListingId(name);
+    const kept = makingPaymentLink();
     try {
       const made = await ctx.printListing.publish({
         bet: bet ?? null,
@@ -1103,6 +1110,7 @@ const TOOLS = {
       const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
       return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} for each one it prints and ships. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
     } finally {
+      kept();
       store.releaseListingId(listingId);
     }
   }),
