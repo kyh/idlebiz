@@ -192,7 +192,7 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
     }
     case "blocked": {
       const asked = optStr(m, "blockedQuestion");
-      // absent: the task's own product, as with every Vercel ask an older save kept
+      // absent: the task's own product; adoptVercelAskProducts names the one an older save's ask was about
       const about = optStr(m, "askProduct") ?? optStr(m, "productId");
       return {
         ask: asked === null ? LOST_ASK : parseBlockedAsk(asked, about),

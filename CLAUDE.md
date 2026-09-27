@@ -18,7 +18,8 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   activity.jsonl).
 - COMPANY.md carries `format`. A save stamped higher than this build writes is refused
   (writers rebuild files from what they understand, so opening it would drop what a newer
-  build added); one stamped lower is adopted once in `adoptOlderSave`, the only home for
+  build added); one stamped lower is adopted once in `adoptOlderSave` (its answers first, in
+  `adoptOlderAnswers`, before boot recovers the runs a quit cut off), the only home for
   code that reads an old shape of a save, then stamped. Tolerant field reads in the codecs
   are not migrations. A frontmatter key the app does not know is still dropped on the next
   write of that file.
@@ -325,7 +326,8 @@ third boundary.
   `POST /v1/payment_links/<id>` with `active=false`), so it takes no new money; checkouts
   already paid still count and still ship, and one opened before the switch and paid after is
   kept like any other. Only a product whose package is under `retired/` and not `products/`
-  counts as retired (`isRetiredProduct`), so one boot could not read keeps its links. The
+  counts as retired (`isRetiredProduct`), so one boot could not read keeps its links, and its
+  paid checkouts are still kept as orders (`madeProduct`). The
   retirement is on disk before Stripe is asked and never depends on its answer; each link then
   records `switched-off`, `retrying` while Stripe is busy (429), failing (5xx) or out of reach,
   or `left-on` with why, raised first as one card per link naming it to switch off by hand in

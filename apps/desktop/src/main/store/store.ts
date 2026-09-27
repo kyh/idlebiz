@@ -896,12 +896,17 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
     if (!next) {
       continue;
     }
-    recordIn(active.tasks, t.id, next, saveTask);
-    if (isHistory(next)) {
-      shelveClosed(next);
-      moved.dropped += 1;
-    } else {
-      moved.rehomed += 1;
+    // one refused save must not keep the rest on the leaver; the next boot hands that one on
+    try {
+      recordIn(active.tasks, t.id, next, saveTask);
+      if (isHistory(next)) {
+        shelveClosed(next);
+        moved.dropped += 1;
+      } else {
+        moved.rehomed += 1;
+      }
+    } catch (error) {
+      report(`hand over task ${t.id}`, error);
     }
   }
   return moved;
@@ -960,9 +965,17 @@ export const requireProduct = (id: string): Product => {
 
 export const listProducts = (): Product[] => [...(current().products ?? [])];
 
-/** Whether `id` is a product of this company, live or retired: a retired product's paid orders still ship. */
-export const madeProduct = (id: string): boolean =>
-  getProduct(id) !== null || safeReaddir(retiredDir(current().company.id)).includes(id);
+/**
+ * Whether `id` is a product of this company, live, retired or one boot could not read: a
+ * retired product's paid orders still ship, and an unread one's are kept for when it reads again.
+ */
+export const madeProduct = (id: string): boolean => {
+  const companyId = current().company.id;
+  return (
+    getProduct(id) !== null ||
+    [productsDir(companyId), retiredDir(companyId)].some((dir) => safeReaddir(dir).includes(id))
+  );
+};
 
 /**
  * Whether `id` was retired: its package sits under retired/ and none under products/. A product
@@ -1434,6 +1447,13 @@ const retune = (active: ActiveCompany): void => {
   }
 };
 
+/**
+ * What a measuring bet keeps: work waiting on the founder, or carrying their answer while it
+ * can still run, since that step may be the one that moves the number.
+ */
+const keptWhileMeasuring = (t: Task, answered: ReadonlySet<string>): boolean =>
+  t.state.kind === "blocked" || (answered.has(t.id) && t.state.kind !== "dead");
+
 /** The work is shipped: stop spending and let the number answer. */
 export const measureBet = (betId: string, now: number): Bet => {
   const bet = getBet(betId);
@@ -1441,13 +1461,8 @@ export const measureBet = (betId: string, now: number): Bet => {
     throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
-  // work waiting on the founder, or carrying their answer, stays: that step may be the one that moves the number
   const answered = answeredOn(betId);
-  dropWork(
-    (t) => t.betId === betId && t.state.kind !== "blocked" && !answered.has(t.id),
-    BET_MEASURING,
-    now,
-  );
+  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t, answered), BET_MEASURING, now);
   return measuring;
 };
 
@@ -1739,7 +1754,7 @@ export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
     return null;
   }
   // its run would land in shared/, away from the product's code; it runs once the file reads again
-  if (t.productId !== null && !madeProduct(t.productId)) {
+  if (t.productId !== null && getProduct(t.productId) === null && !isRetiredProduct(t.productId)) {
     return null;
   }
   // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
@@ -2097,18 +2112,11 @@ const readCompanies = (): FoundSave[] => {
  * A run the last launch never saw settle: dropped with a bet or product that stopped taking
  * work, but for one carrying the founder's answer on a measuring bet, else counted as failed.
  */
-const recoverInterrupted = (
-  task: Task,
-  active: ActiveCompany,
-  unshelved: readonly Task[],
-  now: number,
-): Task => {
+const recoverInterrupted = (task: Task, active: ActiveCompany, now: number): Task => {
   const bet = active.bets.find((b) => b.id === task.betId) ?? null;
   const stopped = stoppedReason(task, bet, retiredIn(active.company.id));
   const carriesAnswer =
-    bet !== null &&
-    stopped === BET_MEASURING &&
-    answeredIn([...shippedOf(active), ...unshelved], bet.id).has(task.id);
+    bet !== null && stopped === BET_MEASURING && answeredIn(shippedOf(active), bet.id).has(task.id);
   if (stopped !== null && !carriesAnswer) {
     return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
   }
@@ -2117,27 +2125,33 @@ const recoverInterrupted = (
     : { ...task, state: { kind: "todo" } };
 };
 
-/** Recover the active company's interrupted runs and shelve its unshelved work. */
-const settleLoadedTasks = (active: ActiveCompany, tasks: Task[]): Task[] => {
-  const { company } = active;
-  const now = Date.now();
-  for (const [i, task] of tasks.entries()) {
-    if (task.state.kind !== "running") {
-      continue;
-    }
-    const recovered = recoverInterrupted(task, active, tasks, now);
-    tasks[i] = recovered;
-    saveTask(recovered);
-  }
+/** Shelve the history among `tasks`, returning the open work. */
+const shelveLoadedHistory = (active: ActiveCompany, tasks: Task[]): Task[] => {
   for (const task of tasks.filter(isHistory)) {
     try {
       shelve(task);
       active.shipped?.push(task);
     } catch (error) {
-      skip("task", taskFile(company.id, task.id), error);
+      skip("task", taskFile(active.company.id, task.id), error);
     }
   }
   return tasks.filter((task) => !isHistory(task));
+};
+
+/**
+ * Recover the runs the last launch never saw settle. Runs once an older save's answers are named
+ * (`adoptOlderAnswers`): recovery keeps a measuring bet's answered step only once it is.
+ */
+const recoverInterruptedRuns = (active: ActiveCompany): void => {
+  const now = Date.now();
+  for (const [i, task] of active.tasks.entries()) {
+    if (task.state.kind === "running") {
+      const recovered = recoverInterrupted(task, active, now);
+      active.tasks[i] = recovered;
+      saveTask(recovered);
+    }
+  }
+  active.tasks = shelveLoadedHistory(active, active.tasks);
 };
 
 const loadActiveCompany = (company: Company): ActiveCompany => {
@@ -2162,7 +2176,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     (slug) => taskFile(company.id, slug),
     (doc) => docToTask(doc, company.id),
   ).toSorted(byAge);
-  active.tasks = settleLoadedTasks(active, tasks);
+  active.tasks = shelveLoadedHistory(active, tasks);
   active.products = loadPackages(
     "product",
     productsDir(company.id),
@@ -2422,9 +2436,7 @@ const adoptStoppedBetWork = (active: ActiveCompany): void => {
     if (reason !== null) {
       const answered = answeredOn(bet.id);
       dropWork(
-        (t) =>
-          t.betId === bet.id &&
-          (reason === BET_CLOSED || (t.state.kind !== "blocked" && !answered.has(t.id))),
+        (t) => t.betId === bet.id && (reason === BET_CLOSED || !keptWhileMeasuring(t, answered)),
         reason,
         now,
       );
@@ -2571,17 +2583,19 @@ const adoptProposalOrigins = (active: ActiveCompany): void => {
 };
 
 /**
- * An older build's release left the leaver's asks and dead letters on their id, which no
- * claim reaches: an answer queued a continuation nobody runs. Whoever an open task still
- * names off the roster is released now, known only by that id, to a lead elected first: an
- * older release of a lead left none.
+ * A release cut short (a quit, a refused save) or an older build's left the leaver's asks and
+ * dead letters on their id, which no claim reaches: an answer queued a continuation nobody
+ * runs. Whoever an open task names off the roster, with no package under agents/ that boot
+ * merely could not read, is released now, known only by that id, to the lead elected before.
  */
-const adoptOrphanedTasks = (active: ActiveCompany): void => {
-  electMissingLead(active);
+const releaseOrphanedTasks = (active: ActiveCompany): void => {
   const roster = new Set(active.employees.map((e) => e.id));
+  const unread = heldIn(agentsDir(active.company.id));
   const leavers = new Set(
     active.tasks.flatMap((t) =>
-      t.assigneeId === null || roster.has(t.assigneeId) ? [] : [t.assigneeId],
+      t.assigneeId === null || roster.has(t.assigneeId) || unread(t.assigneeId)
+        ? []
+        : [t.assigneeId],
     ),
   );
   for (const leaver of leavers) {
@@ -2607,6 +2621,47 @@ const adoptStripeKeyAsks = (active: ActiveCompany): void => {
     ) {
       const keyAsk: TaskState = { ...state, ask: { ...state.ask, integration: "stripe-key" } };
       recordIn(active.tasks, t.id, { state: keyAsk }, saveTask);
+    }
+  }
+};
+
+/** The product each Vercel ask a tool raised names, as its reason words it. */
+const VERCEL_ASK_PRODUCT = [
+  /^to deploy (?<name>.+)$/u,
+  /^to bind (?<name>.+) to its Vercel project: one named ".*" already exists$/u,
+  /^to set \S+ on (?<name>.+)$/u,
+  /^to check where (?<name>.+) (?:serves its print files|sends buyers who paid)$/u,
+  /^Vercel turned IdleBiz's token away while checking (?<name>.+)'s domains$/u,
+];
+
+/**
+ * Format 10 and older could keep a Vercel ask without its product, which the codec reads as
+ * the task's own, but a run could ask about another product it named: its card opened the
+ * wrong product's panel, and binding the product it named never resumed it. The one its
+ * reason names, where exactly one product has that name, is the one it is about.
+ */
+const adoptVercelAskProducts = (active: ActiveCompany): void => {
+  for (const t of active.tasks) {
+    const { state } = t;
+    if (
+      state.kind !== "blocked" ||
+      state.ask.type !== "integration" ||
+      state.ask.integration !== "vercel" ||
+      optStr(
+        parseDoc(readTextIfPresent(taskFile(t.companyId, t.id)) ?? "").metadata,
+        "askProduct",
+      ) !== null
+    ) {
+      continue;
+    }
+    const { reason } = state.ask;
+    const name = VERCEL_ASK_PRODUCT.map((pattern) => pattern.exec(reason)?.groups?.name).find(
+      (named) => named !== undefined,
+    );
+    const [named, ...namesakes] = active.products.filter((p) => p.name === name);
+    if (named !== undefined && namesakes.length === 0 && named.id !== state.ask.productId) {
+      const ask = { ...state.ask, productId: named.id };
+      recordIn(active.tasks, t.id, { state: { ...state, ask } }, saveTask);
     }
   }
 };
@@ -2658,11 +2713,26 @@ const adoptSpeakers = (companyId: string): void => {
 };
 
 /**
+ * The first part of `adoptOlderSave`: name the answers an older save shelved, before boot
+ * recovers the runs the last launch cut off, since recovery reads them.
+ */
+const adoptOlderAnswers = (active: ActiveCompany, from: number): void => {
+  if (from < 2) {
+    adoptAnsweredAsks(active);
+  }
+  // before any step that reads answeredOn: a release or a measuring bet keeps an answer only once it is named
+  if (from < 8) {
+    adoptAnswerLinks(active);
+  }
+};
+
+/**
  * Bring a save written in format `from` up to this one, once: saveCompany
  * then stamps it, and none of this runs for it again. A step written for
  * format N runs only for saves stamped below it. Everything that reads an
- * old shape of the company's files belongs here, so it has a date it can be
- * deleted on; tolerant field reads inside the codecs are not migrations.
+ * old shape of the company's files belongs here or in `adoptOlderAnswers`,
+ * so it has a date it can be deleted on; tolerant field reads inside the
+ * codecs are not migrations. Runs once interrupted runs are recovered.
  */
 const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   const { id } = active.company;
@@ -2679,17 +2749,9 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     dropRetiredRoutines(active);
     adoptUnmarkedBets(active);
   }
-  if (from < 2) {
-    adoptAnsweredAsks(active);
-  }
-  // before any step that reads answeredOn: a release or a measuring bet keeps an answer only once it is named
-  if (from < 8) {
-    adoptAnswerLinks(active);
-  }
   if (from < 3) {
     adoptProductWorkspaces(active);
     adoptRetiredFirstWorkspace(active);
-    adoptOrphanedTasks(active);
   }
   if (from < 4) {
     adoptProposalOrigins(active);
@@ -2719,6 +2781,7 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
   if (from < 11) {
     adoptStripeKeyAsks(active);
     adoptSharedVercelProjects(active);
+    adoptVercelAskProducts(active);
   }
   saveCompany(active.company);
 };
@@ -2743,7 +2806,12 @@ export const initStore = (): LoadReport => {
   try {
     const active = loadActiveCompany(company);
     cache.active = active;
-    // three different jobs, in this order: adopt an older format, repair what must always hold, then serve
+    // three different jobs, in this order: adopt an older format (its answers before the runs a
+    // quit cut off are recovered), repair what must always hold, then serve
+    if (format < SAVE_FORMAT) {
+      adoptOlderAnswers(active, format);
+    }
+    recoverInterruptedRuns(active);
     if (format < SAVE_FORMAT) {
       adoptOlderSave(active, format);
     }
@@ -2753,6 +2821,7 @@ export const initStore = (): LoadReport => {
     if (electMissingLead(active)) {
       saveCompany(active.company);
     }
+    releaseOrphanedTasks(active);
     if (!holdsPackage(routinesDir(company.id), (slug) => routineFile(company.id, slug))) {
       seedDefaultRoutines(company.id, company.businessType);
     }

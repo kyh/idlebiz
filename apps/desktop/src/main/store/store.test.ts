@@ -1397,6 +1397,18 @@ describe("bets", () => {
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
   });
 
+  it("still counts a product boot could not read as the company's, so its paid orders are kept", () => {
+    const co = found();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    writeFileSync(path.join(productsDir(co.id), side.id, "PRODUCT.md"), "garbage");
+
+    store.initStore();
+
+    expect(store.getProduct(side.id)).toBeNull();
+    expect(store.madeProduct(side.id)).toBe(true);
+    expect(store.madeProduct("elsewhere")).toBe(false);
+  });
+
   it("holds queued work on a product boot could not read, rather than run it in shared/, until the file reads again", () => {
     const co = foundTeam();
     const side = store.createProduct({ description: "a side bet", name: "Side" });
@@ -1740,6 +1752,70 @@ describe("a release", () => {
   });
 });
 
+describe("a release cut short", () => {
+  it("hands on the leaver's work on the next boot, whatever the save's format", () => {
+    const co = foundTeam();
+    const bet = launch(firstProduct().id);
+    const ask = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Ask",
+    });
+    block(ask.id, "priya");
+    const side = store.createTask({ assigneeId: "priya", origin: "founder", title: "Side work" });
+    mkdirSync(alumniDir(co.id), { recursive: true });
+    renameSync(employeeAgentDir(co.id, "priya"), path.join(alumniDir(co.id), "priya"));
+
+    store.initStore();
+
+    expect(store.getTask(ask.id)).toMatchObject({ assigneeId: "mae", state: { kind: "blocked" } });
+    expect(stateOf(side.id)).toEqual({ kind: "dropped", reason: "priya was released" });
+  });
+
+  it("hands on the rest when one task's save is refused, and that one on the next boot", () => {
+    const co = foundTeam();
+    const bet = launch(firstProduct().id);
+    const [stuck, rest] = ["First", "Second"].map((title) => {
+      const t = store.createTask({ assigneeId: "priya", betId: bet.id, origin: "work", title });
+      block(t.id, "priya");
+      return t.id;
+    });
+    if (!stuck || !rest) {
+      throw new Error("no asks");
+    }
+    const dir = path.join(tasksDir(co.id), stuck);
+    chmodSync(dir, 0o555);
+    try {
+      expect(store.archiveEmployee("priya")).toMatchObject({ rehomed: 1 });
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(store.getTask(rest)?.assigneeId).toBe("mae");
+
+    store.initStore();
+
+    expect(store.getTask(stuck)?.assigneeId).toBe("mae");
+  });
+
+  it("leaves the work of someone boot could not read on them", () => {
+    const co = foundTeam();
+    const bet = launch(firstProduct().id);
+    const ask = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Ask",
+    });
+    block(ask.id, "priya");
+    writeFileSync(path.join(employeeAgentDir(co.id, "priya"), "AGENTS.md"), "garbage");
+
+    store.initStore();
+
+    expect(store.getTask(ask.id)?.assigneeId).toBe("priya");
+  });
+});
+
 describe("an answered ask", () => {
   it("is history superseded by its continuation, never a ship", () => {
     const co = foundTeam();
@@ -1759,6 +1835,28 @@ describe("an answered ask", () => {
       { id: ask.id, state: { by: next?.id, kind: "superseded" } },
     ]);
     expect(store.listOpenTasks().map((t) => t.id)).toEqual([next?.id]);
+  });
+
+  it("drops its continuation once dead when its bet measures, since no retry of it would run", () => {
+    const co = foundTeam();
+    const bet = launch(firstProduct().id);
+    const ask = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Ask",
+    });
+    block(ask.id, "priya");
+    const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+    if (!next) {
+      throw new Error("the answer went nowhere");
+    }
+    writeDead(co.id, next.id, "boom");
+    store.initStore();
+
+    store.measureBet(bet.id, 0);
+
+    expect(stateOf(next.id)).toEqual({ kind: "dropped", reason: "bet is measuring" });
   });
 
   it("hands its continuation the reason it existed", () => {
@@ -2074,6 +2172,53 @@ describe("the save format", () => {
     ]);
   });
 
+  it("reads a Vercel ask an older save kept without its product as about the product its reason names", () => {
+    const co = foundTeam();
+    const second = store.createProduct({ description: "x", name: "Second" });
+    const third = store.createProduct({ description: "y", name: "Third" });
+    const askFor = (reason: string) => {
+      const t = store.createTask({
+        assigneeId: "priya",
+        origin: "work",
+        productId: second.id,
+        title: reason,
+      });
+      store.claimTask(t.id, "priya");
+      store.lockTaskForRun(t.id, "run-1");
+      store.settleTask(t.id, "run-1", {
+        ask: { integration: "vercel", productId: second.id, reason, type: "integration" },
+        kind: "blocked",
+        summary: null,
+      });
+      const file = path.join(tasksDir(co.id), t.id, "TASK.md");
+      const doc = parseDoc(readFileSync(file, "utf-8"));
+      const { askProduct: _, ...metadata } = doc.metadata;
+      writeFileSync(file, serializeDoc({ ...doc, metadata }));
+      return t.id;
+    };
+    const asks = [
+      askFor('to bind Third to its Vercel project: one named "third" already exists'),
+      askFor("to deploy Third"),
+      askFor("to set API_KEY on Third"),
+      askFor("to check where Third serves its print files"),
+      askFor("Vercel turned IdleBiz's token away while checking Third's domains"),
+      askFor("to check where Third sends buyers who paid"),
+      askFor("to deploy Second"),
+      askFor("to deploy Nobody"),
+    ];
+    restamp(co.id, 7);
+
+    store.initStore();
+
+    const about = asks.map((id) => {
+      const state = stateOf(id);
+      return state?.kind === "blocked" && state.ask.type === "integration"
+        ? state.ask.productId
+        : undefined;
+    });
+    expect(about).toEqual([...Array.from({ length: 6 }, () => third.id), second.id, second.id]);
+  });
+
   it("keeps a Vercel project a format 10 save bound to two products on the older one, and tells the room", () => {
     const co = found();
     const first = firstProduct();
@@ -2189,6 +2334,25 @@ describe("the save format", () => {
       store.initStore();
 
       expect(stateOf(next.id)?.kind).toBe("todo");
+    },
+  );
+
+  it.each([1, 7])(
+    "keeps the continuation of an answer a format %i save shelved on a bet it left measuring, when the quit cut its run off",
+    (format) => {
+      const co = foundTeam();
+      const { bet, next } = shelveAnswer(co.id, format);
+      store.claimTask(next.id, "priya");
+      store.lockTaskForRun(next.id, "run-x");
+      writeBetState(co.id, bet.id, { kind: "measuring", until: windowEnd(bet, 0) });
+      restamp(co.id, format);
+
+      store.initStore();
+
+      expect(stateOf(next.id)).toMatchObject({
+        kind: "queued",
+        lastError: "Interrupted by app restart",
+      });
     },
   );
 
