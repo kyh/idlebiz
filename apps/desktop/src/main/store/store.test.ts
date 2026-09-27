@@ -1034,6 +1034,40 @@ describe("bets", () => {
     expect(store.getTask(untouched.id)?.state.kind).toBe("todo");
   });
 
+  it("announces a verdict whose work's save refuses the drop, and never runs that work", () => {
+    const co = found();
+    const product = firstProduct();
+    const bet = launch(product.id);
+    const priya = store.createEmployee({ ...hire("Priya") });
+    const stuck = store.createTask({
+      assigneeId: priya.id,
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    const dropped = store.createTask({
+      assigneeId: priya.id,
+      betId: bet.id,
+      origin: "work",
+      title: "Tweet it",
+    });
+    store.claimTask(stuck.id, priya.id);
+    store.setBetReading(bet.id, 60, 1);
+    const dir = path.join(tasksDir(co.id), stuck.id);
+    chmodSync(dir, 0o555);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(store.judgeBets(1, 0).map((b) => b.state.kind)).toEqual(["won"]);
+    } finally {
+      chmodSync(dir, 0o755);
+      vi.restoreAllMocks();
+    }
+    expect(stateOf(dropped.id)).toEqual({ kind: "dropped", reason: "bet closed" });
+    expect(stateOf(stuck.id)?.kind).toBe("queued");
+    expect(store.lockTaskForRun(stuck.id, "run-1")).toBeNull();
+    expect(stateOf(stuck.id)).toEqual({ kind: "dropped", reason: "bet closed" });
+  });
+
   it("drops a run's task when its bet stops taking work while it runs", () => {
     found();
     const product = firstProduct();

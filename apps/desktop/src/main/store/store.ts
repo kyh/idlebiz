@@ -1315,6 +1315,12 @@ export const listShippedTasks = (): Task[] => {
   return active.shipped.toSorted(newestFirst);
 };
 
+const dropTask = (taskId: string, reason: string, now: number): void => {
+  shelveClosed(
+    patchIn(current().tasks, taskId, entering({ kind: "dropped", reason }, now), saveTask),
+  );
+};
+
 /**
  * Drop the matching work that is waiting into history: no failure, and nothing
  * the founder can revive, since it would only bill a bet or product that takes
@@ -1324,11 +1330,15 @@ export const listShippedTasks = (): Task[] => {
  * (`recoverInterrupted`). A dead letter stays one: its run failed on its own.
  */
 const dropWork = (match: (t: Task) => boolean, reason: string, now: number): void => {
-  const { tasks } = current();
-  for (const t of tasks.filter(match)) {
+  for (const t of current().tasks.filter(match)) {
     const { kind } = t.state;
     if (kind === "todo" || kind === "queued" || kind === "blocked") {
-      shelveClosed(patchIn(tasks, t.id, entering({ kind: "dropped", reason }, now), saveTask));
+      // one refused save must not keep the rest from dropping; `lockTaskForRun` drops it before it runs
+      try {
+        dropTask(t.id, reason, now);
+      } catch (error) {
+        report(`drop task ${t.id}`, error);
+      }
     }
   }
 };
@@ -1431,7 +1441,11 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));
   if (closed.size > 0) {
     dropWork((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
-    retune(active);
+    try {
+      retune(active);
+    } catch (error) {
+      report("retune policy", error);
+    }
   }
   return changed;
 };
@@ -1665,13 +1679,19 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
   return patchTask(taskId, patch);
 };
 
-/** Acquire execution lock: queued -> running, stamp runId. Null if lost race or backing off. */
+/** Acquire execution lock: queued -> running, stamp runId. Null if lost race, backing off, or dropped as work its bet or product no longer takes. */
 export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
   const t = getTask(taskId);
   if (!t || t.state.kind !== "queued") {
     return null;
   }
   if (t.state.nextAttemptAt !== null && t.state.nextAttemptAt > Date.now()) {
+    return null;
+  }
+  // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
+  const stopped = stoppedWorkReason(t);
+  if (stopped !== null && stopped !== BET_MEASURING) {
+    dropTask(taskId, stopped, Date.now());
     return null;
   }
   return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
