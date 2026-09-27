@@ -51,6 +51,11 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   ActionAskSchema,
   z.object({
     integration: z.enum(INTEGRATION_NEEDS),
+    /**
+     * The product whose Vercel project answers a Vercel ask, which a run may name other than its
+     * own; null for the company's own keys (Stripe, Printful) and a Vercel ask any product answers.
+     */
+    productId: z.string().nullable(),
     reason: z.string(),
     type: z.literal("integration"),
   }),
@@ -62,6 +67,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
+export type IntegrationAsk = Extract<BlockedAsk, { type: "integration" }>;
 
 /**
  * The founder's reply to an action: they took the step, with anything it asked them to send

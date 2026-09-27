@@ -216,12 +216,27 @@ const printFileUrls = (placements: readonly PrintPlacement[]): PrintPlacement[] 
 /** Ask the founder for an integration, ending the call with what the agent should read. */
 const needIntegration = (
   ctx: RunContext,
-  integration: IntegrationNeed,
+  integration: Exclude<IntegrationNeed, "vercel">,
   reason: string,
   sent: string,
   why: string,
 ): never => {
-  throw new RefusalError(askFounder(ctx, { integration, reason, type: "integration" }, sent, why));
+  throw new RefusalError(
+    askFounder(ctx, { integration, productId: null, reason, type: "integration" }, sent, why),
+  );
+};
+
+/** Ask the founder for Vercel for `productId`, whose binding answers it, which ends the call. */
+const needVercel = (
+  ctx: RunContext,
+  productId: string,
+  reason: string,
+  sent: string,
+  why: string,
+): never => {
+  throw new RefusalError(
+    askFounder(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why),
+  );
 };
 
 /** The founder's keys a listing is made with. */
@@ -240,9 +255,9 @@ const sellingKeys = (
 ): SellingKeys => {
   const vercel =
     getSecret("VERCEL_TOKEN") ??
-    needIntegration(
+    needVercel(
       ctx,
-      "vercel",
+      product.id,
       `to check where ${product.name} serves its print files`,
       VERCEL_WAITING,
       "Vercel is not connected.",
@@ -277,9 +292,9 @@ const productHosts = async (
 ): Promise<string[]> => {
   const read = await ctx.productionHosts(binding, token);
   if (read.kind === "refused") {
-    return needIntegration(
+    return needVercel(
       ctx,
-      "vercel",
+      product.id,
       `Vercel turned IdleBiz's token away while checking ${product.name}'s domains`,
       "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting to connect it again. Continue with what you can — this task resumes automatically once connected.",
       "Vercel turned IdleBiz's token away.",
@@ -366,9 +381,9 @@ const afterPaymentPage = async (
   }
   const token =
     getSecret("VERCEL_TOKEN") ??
-    needIntegration(
+    needVercel(
       ctx,
-      "vercel",
+      product.id,
       `to check where ${product.name} sends buyers who paid`,
       VERCEL_WAITING,
       "Vercel is not connected.",
@@ -768,7 +783,12 @@ const TOOLS = {
   request_integration: define(TOOL_SPECS.request_integration, (ctx, { kind, reason }) =>
     askFounder(
       ctx,
-      { integration: kind, reason, type: "integration" },
+      {
+        integration: kind,
+        productId: kind === "vercel" ? ctx.run.productId : null,
+        reason,
+        type: "integration",
+      },
       `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
     ),
   ),
@@ -785,7 +805,12 @@ const TOOLS = {
     if (!token) {
       return askFounder(
         ctx,
-        { integration: "vercel", reason: `to deploy ${product.name}`, type: "integration" },
+        {
+          integration: "vercel",
+          productId: product.id,
+          reason: `to deploy ${product.name}`,
+          type: "integration",
+        },
         VERCEL_WAITING,
         "Vercel is not connected.",
       );
@@ -807,6 +832,7 @@ const TOOLS = {
         ctx,
         {
           integration: "vercel",
+          productId: product.id,
           reason: `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
           type: "integration",
         },
@@ -849,7 +875,12 @@ const TOOLS = {
     if (!token) {
       return askFounder(
         ctx,
-        { integration: "vercel", reason: `to set ${name} on ${product.name}`, type: "integration" },
+        {
+          integration: "vercel",
+          productId: product.id,
+          reason: `to set ${name} on ${product.name}`,
+          type: "integration",
+        },
         VERCEL_WAITING,
         "Vercel is not connected.",
       );
@@ -912,6 +943,7 @@ const TOOLS = {
           ctx,
           {
             integration: "stripe-key",
+            productId: null,
             reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
             type: "integration",
           },

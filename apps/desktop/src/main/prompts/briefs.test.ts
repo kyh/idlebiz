@@ -248,7 +248,7 @@ describe("the brief that carries the founder's answer", () => {
       "[approve:deploy]",
     ],
     [
-      { integration: "stripe", reason: "to take payments", type: "integration" },
+      { integration: "stripe", productId: null, reason: "to take payments", type: "integration" },
       "> a Stripe connection: to take payments",
       "[connect:stripe]",
     ],

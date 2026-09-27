@@ -73,11 +73,11 @@ export const problemOf = (lookup: Lookup): string | null => {
  */
 export const awaitsVercelToken = (
   productId: string,
-  asks: readonly { productId: string | null; state: { ask: BlockedAsk } }[],
+  asks: readonly { state: { ask: BlockedAsk } }[],
 ): boolean =>
   asks.some(
-    (t) =>
-      (t.productId === productId || t.productId === null) &&
-      t.state.ask.type === "integration" &&
-      t.state.ask.integration === "vercel",
+    ({ state: { ask } }) =>
+      ask.type === "integration" &&
+      ask.integration === "vercel" &&
+      (ask.productId === productId || ask.productId === null),
   );

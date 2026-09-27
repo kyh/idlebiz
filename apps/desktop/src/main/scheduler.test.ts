@@ -1099,14 +1099,23 @@ const blockedOn = async (ask: BlockedAsk, productId?: string | null) => {
   return { bet, drain, task };
 };
 
+const bindFor = (productId: string | null): BlockedAsk => ({
+  integration: "vercel",
+  productId,
+  reason: "to bind the product so its users bet can be measured",
+  type: "integration",
+});
+
 describe("an integration the founder connects", () => {
   const KEY: BlockedAsk = {
     integration: "stripe-key",
+    productId: null,
     reason: "to sell a plan through a payment link",
     type: "integration",
   };
   const READ: BlockedAsk = {
     integration: "stripe",
+    productId: null,
     reason: "to count revenue",
     type: "integration",
   };
@@ -1123,15 +1132,10 @@ describe("an integration the founder connects", () => {
     expect(kindOf(task)).not.toBe("blocked");
   });
 
-  const BIND: BlockedAsk = {
-    integration: "vercel",
-    reason: "to bind the product so its users bet can be measured",
-    type: "integration",
-  };
-
   it("resumes a product's Vercel ask only once that product is bound", async () => {
-    const { drain, task } = await blockedOn(BIND);
+    const { drain, task } = await blockedOn(bindFor("acme"));
     const home = task.productId ?? "";
+    expect(home).toBe("acme");
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
     drain.resumeVercelAsks(side);
     expect(kindOf(task)).toBe("blocked");
@@ -1139,8 +1143,18 @@ describe("an integration the founder connects", () => {
     expect(kindOf(task)).not.toBe("blocked");
   });
 
+  it("resumes a Vercel ask about another product once that product is bound, not the run's own", async () => {
+    const { drain, task } = await blockedOn(bindFor("side"));
+    const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+    expect(side).toBe("side");
+    drain.resumeVercelAsks(task.productId ?? "");
+    expect(kindOf(task)).toBe("blocked");
+    drain.resumeVercelAsks(side);
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
   it("resumes a Vercel ask that named no product on any binding", async () => {
-    const { drain, task } = await blockedOn(BIND, null);
+    const { drain, task } = await blockedOn(bindFor(null), null);
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
     drain.resumeVercelAsks(side);
     expect(kindOf(task)).not.toBe("blocked");

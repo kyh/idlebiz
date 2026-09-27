@@ -43,30 +43,33 @@ describe("the Vercel picker's lookup", () => {
   });
 });
 
-const waiting = (productId: string | null, ask: BlockedAsk) => ({
-  productId,
-  state: { ask },
+const waiting = (ask: BlockedAsk) => ({ state: { ask } });
+
+const vercelFor = (about: string | null): BlockedAsk => ({
+  integration: "vercel",
+  productId: about,
+  reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
+  type: "integration",
 });
 
 describe("a product bound to Vercel", () => {
-  const VERCEL: BlockedAsk = {
-    integration: "vercel",
-    reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
-    type: "integration",
-  };
-
   it("takes a new token while the team waits on Vercel for it, or for no product named", () => {
-    expect(awaitsVercelToken("acme", [waiting("acme", VERCEL)])).toBe(true);
-    expect(awaitsVercelToken("acme", [waiting(null, VERCEL)])).toBe(true);
+    expect(awaitsVercelToken("acme", [waiting(vercelFor("acme"))])).toBe(true);
+    expect(awaitsVercelToken("acme", [waiting(vercelFor(null))])).toBe(true);
   });
 
   it("only shows its binding while nobody waits on Vercel for it", () => {
     expect(awaitsVercelToken("acme", [])).toBe(false);
-    expect(awaitsVercelToken("acme", [waiting("side", VERCEL)])).toBe(false);
+    expect(awaitsVercelToken("acme", [waiting(vercelFor("side"))])).toBe(false);
     expect(
       awaitsVercelToken("acme", [
-        waiting("acme", { integration: "stripe", reason: "to count revenue", type: "integration" }),
-        waiting("acme", { question: "Ship it?", type: "question" }),
+        waiting({
+          integration: "stripe",
+          productId: null,
+          reason: "to count revenue",
+          type: "integration",
+        }),
+        waiting({ question: "Ship it?", type: "question" }),
       ]),
     ).toBe(false);
   });

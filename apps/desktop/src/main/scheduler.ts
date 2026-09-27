@@ -51,6 +51,7 @@ import type {
   ActionReply,
   Company,
   Employee,
+  IntegrationAsk,
   IntegrationNeed,
   Task,
   TaskStatus,
@@ -542,21 +543,21 @@ class Scheduler {
 
   /** Resume every ask waiting on one of `needs`, which the founder has just connected. */
   resumeIntegrationAsks(...needs: IntegrationNeed[]): void {
-    this.resumeAsks((_task, need) => needs.includes(need));
+    this.resumeAsks((ask) => needs.includes(ask.integration));
   }
 
   /**
-   * Resume the Vercel asks `productId`'s binding answers: its own, and any that named no
+   * Resume the Vercel asks `productId`'s binding answers: those about it, and any that named no
    * product. Another product's ask waits on that product's binding, never this one.
    */
   resumeVercelAsks(productId: string): void {
     this.resumeAsks(
-      (task, need) =>
-        need === "vercel" && (task.productId === null || task.productId === productId),
+      (ask) =>
+        ask.integration === "vercel" && (ask.productId === null || ask.productId === productId),
     );
   }
 
-  private resumeAsks(answers: (task: Task, need: IntegrationNeed) => boolean): void {
+  private resumeAsks(answers: (ask: IntegrationAsk) => boolean): void {
     if (!store.getCompany()) {
       return;
     }
@@ -565,7 +566,7 @@ class Scheduler {
       if (st.kind !== "blocked" || st.ask.type !== "integration") {
         continue;
       }
-      if (!answers(task, st.ask.integration)) {
+      if (!answers(st.ask)) {
         continue;
       }
       const continuation = store.resolveBlockedWithAnswer(

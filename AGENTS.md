@@ -227,7 +227,9 @@ rather than crashing boot.
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one. Each product binds a project
   of its own (a project another product holds is refused), and a binding resumes only the
-  Vercel asks of that product or of none. A refused token shows on
+  Vercel asks about that product or about none: an ask names the product it is about
+  (`productId`, saved as the task's `askProduct`), which a run may name other than its own,
+  and its Inbox card opens that product's binding. A refused token shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
   (`readJsonFileForUpdate` in `main/lib/fs.ts`; `metrics.json` too). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with

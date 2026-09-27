@@ -11,7 +11,7 @@ import { Modal } from "@/renderer/ui/modal";
 import { approvalScope, describeRule } from "@/shared/hold-rules";
 import { INTEGRATION_LABELS } from "@/shared/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { IntegrationNeed, Task, TaskIn } from "@/shared/domain";
+import type { IntegrationAsk, IntegrationNeed, Task, TaskIn } from "@/shared/domain";
 import { cn } from "cn";
 
 // Connecting resumes integration asks automatically; no text answer is needed.
@@ -140,9 +140,13 @@ export const Inbox = ({
     return null;
   }
   const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
-  // Stripe and Printful are the company's; Vercel binds the product the ask came from, or asks which
-  const connect = (need: IntegrationNeed, t: Task): void => {
-    onOpen(need === "vercel" ? { kind: "vercel", productId: t.productId } : { kind: "budget" });
+  // Stripe and Printful are the company's; Vercel binds the product the ask is about, or asks which
+  const connect = (ask: IntegrationAsk): void => {
+    onOpen(
+      ask.integration === "vercel"
+        ? { kind: "vercel", productId: ask.productId }
+        : { kind: "budget" },
+    );
   };
 
   const askRow = (t: TaskIn<"blocked">) => {
@@ -156,7 +160,7 @@ export const Inbox = ({
             by={nameOf(t.assigneeId)}
             integration={ask.integration}
             reason={ask.reason}
-            onConnect={(need) => connect(need, t)}
+            onConnect={() => connect(ask)}
           />
         );
       }

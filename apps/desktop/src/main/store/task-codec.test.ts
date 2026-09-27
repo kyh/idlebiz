@@ -135,8 +135,9 @@ describe("a blocked task's ask in TASK.md", () => {
     { question: "[connect:stripe] should I set up billing?", type: "question" },
     { question: "[approve] is this fine?", type: "question" },
     { question: "[ask] nested", type: "question" },
-    { integration: "vercel", reason: "need hosting", type: "integration" },
-    { integration: "stripe-key", reason: "to sell a plan", type: "integration" },
+    { integration: "vercel", productId: "widget", reason: "need hosting", type: "integration" },
+    { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
+    { integration: "stripe-key", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
     {
       action: "Post the launch thread on r/SideProject",
@@ -151,6 +152,17 @@ describe("a blocked task's ask in TASK.md", () => {
     },
   ])("round-trips %j", (ask) => {
     expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
+  });
+
+  it("reads an older save's Vercel ask as about its task's product", () => {
+    expect(askSavedAs("[connect:vercel] need hosting")).toEqual(
+      blocked({
+        integration: "vercel",
+        productId: "widget",
+        reason: "need hosting",
+        type: "integration",
+      }).state,
+    );
   });
 
   it("reads an approval without a rule id as an ask nothing recognised", () => {

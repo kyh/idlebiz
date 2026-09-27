@@ -693,11 +693,26 @@ describe("deploy", () => {
     expect(asked).toEqual([
       {
         integration: "vercel",
+        productId: "acme",
         reason: 'to bind Acme to its Vercel project: one named "acme" already exists',
         type: "integration",
       },
     ]);
     expect(store.getProduct("acme")?.vercel).toBeNull();
+  });
+
+  it("asks to bind the product it named, not the run's own, when that name is taken", async () => {
+    connectVercel();
+    const { ctx, asked } = deployingRun({ kind: "name-taken", name: "side" });
+    const side = store.createProduct({ description: "a side project", name: "Side" });
+    store.grantApproval(
+      ctx.run.taskId,
+      `deploy ${side.id} to production on a new Vercel project named ${side.id}`,
+    );
+
+    await callTool(ctx, "POST /v1/deploy", { product: side.id });
+
+    expect(asked).toMatchObject([{ integration: "vercel", productId: side.id }]);
   });
 
   it("refuses a folder holding a key set_env set before the founder is asked to sign off", async () => {
@@ -742,7 +757,7 @@ describe("deploy", () => {
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Vercel is not connected");
     expect(asked).toEqual([
-      { integration: "vercel", reason: "to deploy Acme", type: "integration" },
+      { integration: "vercel", productId: "acme", reason: "to deploy Acme", type: "integration" },
     ]);
     expect(deploys).toEqual([]);
   });
@@ -1023,7 +1038,12 @@ describe("set_env", () => {
 
     expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toContain("Vercel is not connected");
     expect(asked).toEqual([
-      { integration: "vercel", reason: "to set OPENAI_API_KEY on Acme", type: "integration" },
+      {
+        integration: "vercel",
+        productId: "acme",
+        reason: "to set OPENAI_API_KEY on Acme",
+        type: "integration",
+      },
     ]);
     expect(sets).toEqual([]);
   });
@@ -1439,6 +1459,7 @@ describe("create_payment_link", () => {
     expect(asked).toEqual([
       {
         integration: "stripe-key",
+        productId: null,
         reason: 'to sell "Pro plan" at $9.00 through a payment link',
         type: "integration",
       },
@@ -1617,6 +1638,7 @@ describe("create_payment_link", () => {
     expect(asked).toEqual([
       {
         integration: "vercel",
+        productId: "acme",
         reason: "to check where Acme sends buyers who paid",
         type: "integration",
       },
@@ -1662,6 +1684,7 @@ describe("create_payment_link", () => {
     expect(asked).toEqual([
       {
         integration: "vercel",
+        productId: "acme",
         reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
         type: "integration",
       },
@@ -2137,6 +2160,7 @@ describe("sell_print", () => {
     {
       ask: {
         integration: "printful",
+        productId: null,
         reason: 'to print and ship "Launch tee"',
         type: "integration",
       },
@@ -2146,6 +2170,7 @@ describe("sell_print", () => {
     {
       ask: {
         integration: "stripe-key",
+        productId: null,
         reason: 'to sell "Launch tee" at $28.00 through a payment link',
         type: "integration",
       },
@@ -2155,6 +2180,7 @@ describe("sell_print", () => {
     {
       ask: {
         integration: "vercel",
+        productId: "acme",
         reason: "to check where Acme serves its print files",
         type: "integration",
       },

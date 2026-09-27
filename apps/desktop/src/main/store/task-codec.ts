@@ -53,7 +53,8 @@ const serializeBlockedAsk = (a: BlockedAsk): string => {
   }
 };
 
-const parseBlockedAsk = (s: string): BlockedAsk => {
+/** `productId` is the product a Vercel ask is about. */
+const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
   if (s.startsWith(QUESTION_ESCAPE)) {
     return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
   }
@@ -71,7 +72,12 @@ const parseBlockedAsk = (s: string): BlockedAsk => {
   if (!integration) {
     return { question: s, type: "question" };
   }
-  return { integration, reason: (m?.groups?.reason ?? "").trim(), type: "integration" };
+  return {
+    integration,
+    productId: integration === "vercel" ? productId : null,
+    reason: (m?.groups?.reason ?? "").trim(),
+    type: "integration",
+  };
 };
 
 /** A state's own fields, written flat beside the status line; a null one gets no line. */
@@ -87,7 +93,11 @@ const stateFields = (st: TaskState): FrontmatterDoc["metadata"] => {
       return { runId: st.runId };
     }
     case "blocked": {
-      return { blockedQuestion: serializeBlockedAsk(st.ask), summary: st.summary };
+      return {
+        askProduct: st.ask.type === "integration" ? st.ask.productId : null,
+        blockedQuestion: serializeBlockedAsk(st.ask),
+        summary: st.summary,
+      };
     }
     case "done": {
       return { summary: st.summary };
@@ -182,7 +192,13 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
     }
     case "blocked": {
       const asked = optStr(m, "blockedQuestion");
-      return { ask: asked === null ? LOST_ASK : parseBlockedAsk(asked), kind: "blocked", summary };
+      // absent: the task's own product, as with every Vercel ask an older save kept
+      const about = optStr(m, "askProduct") ?? optStr(m, "productId");
+      return {
+        ask: asked === null ? LOST_ASK : parseBlockedAsk(asked, about),
+        kind: "blocked",
+        summary,
+      };
     }
     case "done": {
       return { kind: "done", summary };
