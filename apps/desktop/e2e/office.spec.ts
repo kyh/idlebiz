@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bridgeOf, closeFully, expect, foundCompany, test } from "./harness";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { z } from "zod";
 import type { Founded } from "./harness";
 
@@ -361,6 +361,72 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await expect(talk).toBeFocused();
   await expect(talk).toHaveValue("Ship the pricing page");
   await expect(dialogue.getByPlaceholder("Your answer…")).toHaveValue("");
+});
+
+// a fake key's shape, which main refuses to pass to the team
+const REFUSED_TEXT = "use sk_test_0000000000000000";
+
+/**
+ * Marks `field` once it is ever disabled. Chromium blurs a disabled field only at its next focus
+ * fixup, so a refusal that lands first leaves focus in place and only the mark shows the drop.
+ */
+const markWhenDisabled = (field: Locator): Promise<void> =>
+  field.evaluate((el) => {
+    new MutationObserver(() => {
+      if (el.hasAttribute("disabled")) {
+        el.dataset.wentDisabled = "true";
+      }
+    }).observe(el, { attributeFilter: ["disabled"] });
+  });
+
+test("Talk… keeps the keys after main refuses what was sent", async ({ launch }) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  const engineer = founded.employees.find((e) => e.id !== founded.company.leaderId);
+  if (!engineer) {
+    throw new Error("the founded company has only its lead");
+  }
+
+  const { page } = await launch();
+  await page.getByRole("button", { name: /team/iu }).click();
+  await page.getByTitle(`Talk to ${engineer.name}`).click();
+  const dialogue = page.locator(".dlg");
+  await dialogue
+    .locator(".dlg-menu")
+    .getByRole("button", { name: /Talk…/u })
+    .click();
+  const talk = dialogue.getByPlaceholder(`Tell ${engineer.name} what to do…`);
+  await expect(talk).toBeFocused();
+  await page.keyboard.type(REFUSED_TEXT);
+  await markWhenDisabled(talk);
+  await page.keyboard.press("Enter");
+  await expect(dialogue.getByText(/Nothing was sent/u)).toBeVisible();
+  await expect(talk).not.toHaveAttribute("data-went-disabled");
+  await expect(talk).toBeFocused();
+  await page.keyboard.type(" now");
+  await expect(talk).toHaveValue(`${REFUSED_TEXT} now`);
+});
+
+test("an answer main refuses in the inbox keeps the keys", async ({ launch, root }) => {
+  const founding = await launch();
+  const founded = await foundCompany(founding.page);
+  await closeFully(founding.app);
+  await blockLead(root, founded, "e2e-color", "Which color?");
+
+  const { page } = await launch();
+  await page.getByTitle(INBOX_BUTTON).click();
+  const inbox = page.getByRole("dialog", { name: "Inbox" });
+  const answer = inbox.getByPlaceholder("Your answer…");
+  await answer.click();
+  await page.keyboard.type(REFUSED_TEXT);
+  await markWhenDisabled(answer);
+  await page.keyboard.press("Enter");
+  await expect(inbox.getByText(/Nothing was sent/u)).toBeVisible();
+  await expect(answer).not.toHaveAttribute("data-went-disabled");
+  await expect(answer).toBeFocused();
+  await page.keyboard.type(" now");
+  await expect(answer).toHaveValue(`${REFUSED_TEXT} now`);
 });
 
 test("#team keeps the keys after a message is sent", async ({ launch }) => {

@@ -105,7 +105,7 @@ const TalkInput = ({
   <div className="flex items-center gap-2">
     <input
       value={value}
-      disabled={sending}
+      readOnly={sending}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter" && !e.nativeEvent.isComposing) {

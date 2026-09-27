@@ -52,7 +52,8 @@ export const AnswerForm = ({
           }}
           placeholder="Your answer…"
           className="px-field min-w-0 flex-1"
-          disabled={disabled}
+          readOnly={submission.kind === "sending"}
+          disabled={submission.kind === "sent"}
           autoFocus={autoFocus}
         />
         <button
