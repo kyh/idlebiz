@@ -1364,6 +1364,24 @@ describe("bets", () => {
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
   });
 
+  it("holds queued work on a product boot could not read, rather than run it in shared/, until the file reads again", () => {
+    const co = foundTeam();
+    const side = store.createProduct({ description: "a side bet", name: "Side" });
+    const task = store.createTask({ origin: "founder", productId: side.id, title: "Ship it" });
+    store.claimTask(task.id, "priya");
+    const file = path.join(productsDir(co.id), side.id, "PRODUCT.md");
+    const written = readFileSync(file, "utf-8");
+    writeFileSync(file, "garbage");
+
+    store.initStore();
+    expect(store.lockTaskForRun(task.id, "run-1")).toBeNull();
+    expect(stateOf(task.id)?.kind).toBe("queued");
+
+    writeFileSync(file, written);
+    store.initStore();
+    expect(store.lockTaskForRun(task.id, "run-1")?.state.kind).toBe("running");
+  });
+
   it("refuses to retire the first product when its code cannot follow, and nothing leaves", () => {
     const co = found();
     const first = firstProduct();

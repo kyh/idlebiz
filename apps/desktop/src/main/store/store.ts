@@ -1720,13 +1720,20 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
   return patchTask(taskId, patch);
 };
 
-/** Acquire execution lock: queued -> running, stamp runId. Null if lost race, backing off, or dropped as work its bet or product no longer takes. */
+/**
+ * Acquire execution lock: queued -> running, stamp runId. Null if lost race, backing off, waiting
+ * on a product boot could not read, or dropped as work its bet or product no longer takes.
+ */
 export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
   const t = getTask(taskId);
   if (!t || t.state.kind !== "queued") {
     return null;
   }
   if (t.state.nextAttemptAt !== null && t.state.nextAttemptAt > Date.now()) {
+    return null;
+  }
+  // its run would land in shared/, away from the product's code; it runs once the file reads again
+  if (t.productId !== null && !madeProduct(t.productId)) {
     return null;
   }
   // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
