@@ -254,7 +254,7 @@ third boundary.
   through Vercel's API with the founder's token, and Vercel builds it on its own machines
   (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
   the founder's own key (`main/payment-links.ts`; a Connect grant is read-only), tagging each
-  payment for its product and a named open revenue bet on it, and the link alone with the
+  payment for its product and a named revenue bet on it, open or measuring, and the link alone with the
   `delivery` its buyers are owed, which Stripe copies onto each checkout (a link with one is
   refused before the sign-off while the key cannot read checkout sessions, since that read is
   how each buyer reaches the founder), each POST under an idempotency key of its fields, like

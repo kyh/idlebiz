@@ -1449,7 +1449,7 @@ describe("create_payment_link", () => {
   it("raises no card for a link it could not make anyway", async () => {
     const { ctx, asked } = chargingRun(null);
     expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: "no-such-bet" })).toContain(
-      "is not an open revenue bet",
+      "is not a revenue bet on acme",
     );
     expect(asked).toEqual([]);
   });
@@ -1469,11 +1469,26 @@ describe("create_payment_link", () => {
 
     for (const bet of [elsewhere, visitors, killed, { id: "no-such-bet" }]) {
       expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
-        `"${bet.id}" is not an open revenue bet on acme — read_bets lists every live bet, what it counts and its product.`,
+        `"${bet.id}" is not a revenue bet on acme that is open or measuring — read_bets lists every live bet, what it counts and its product.`,
       );
     }
     expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
+  });
+
+  it("still makes a signed link for a bet the lead measures while it waited, since that money counts", async () => {
+    const { ctx, stripe } = chargingRun();
+    const bet = revenueBet();
+    store.grantApproval(
+      ctx.run.taskId,
+      `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`,
+    );
+    store.measureBet(bet.id, Date.now());
+
+    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toContain(
+      "Created a payment link",
+    );
+    expect(stripe).not.toEqual([]);
   });
 
   it("says a test key's link takes no real money", async () => {
@@ -2182,9 +2197,21 @@ describe("sell_print", () => {
   it("refuses a bet whose money the listing could not be counted for", async () => {
     const { ctx, sent } = sellingRun();
     expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: "no-such-bet" })).toContain(
-      '"no-such-bet" is not an open revenue bet on acme',
+      '"no-such-bet" is not a revenue bet on acme',
     );
     expect(sent).toEqual([]);
+  });
+
+  it("still lists a signed print for a bet the lead measures while it waited, since that money counts", async () => {
+    const { ctx, sent } = sellingRun();
+    const bet = revenueBet();
+    store.grantApproval(ctx.run.taskId, `${PRINT_ACTION} for bet ${bet.id}`);
+    store.measureBet(bet.id, Date.now());
+
+    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id })).toContain(
+      'Listed "Launch tee" on Acme',
+    );
+    expect(outward(sent).filter((s) => s.host === "api.stripe.com")).not.toEqual([]);
   });
 
   it("tells a product with no Vercel project to deploy the file first", async () => {

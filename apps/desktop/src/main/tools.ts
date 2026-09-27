@@ -168,9 +168,9 @@ const revenueBetRefusal = (bet: string, product: Product): string | null => {
   const claimed = store.getBet(bet);
   return claimed?.productId === product.id &&
     claimed.claim.metric === "revenue" &&
-    claimed.state.kind === "open"
+    (claimed.state.kind === "open" || claimed.state.kind === "measuring")
     ? null
-    : `"${bet}" is not an open revenue bet on ${product.id} — read_bets lists every live bet, what it counts and its product.`;
+    : `"${bet}" is not a revenue bet on ${product.id} that is open or measuring — read_bets lists every live bet, what it counts and its product.`;
 };
 
 const TEST_MODE =
