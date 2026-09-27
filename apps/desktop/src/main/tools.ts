@@ -68,7 +68,7 @@ export interface RunContext {
     origin: TaskOrigin;
   };
   asks: AskBox;
-  driver: Pick<typeof agentDriver, "pickRunner">;
+  driver: Pick<typeof agentDriver, "pickRunner" | "restingRunner" | "signedIn">;
   /** Queue a task for a teammate; a busy one picks it up on a later tick. */
   assign: (taskId: string, employeeId: string) => void;
   /** Deploy with the founder's Vercel key, which the run itself never holds. */
@@ -694,6 +694,23 @@ const fundingFor = (
   return bet;
 };
 
+const workLoad = (e: Employee): number =>
+  store.openTasksFor(e.id).filter((t) => t.state.kind === "queued" || t.state.kind === "running")
+    .length;
+
+/**
+ * Who takes a handoff for `role`: a teammate whose runner can start it now, then the one
+ * with the least work queued or running, so a fan-out spreads, then roster order.
+ */
+const delegateFor = (ctx: RunContext, role: string): Employee | undefined => {
+  const ready = (e: Employee): boolean =>
+    ctx.driver.signedIn(e.runner) && ctx.driver.restingRunner(e.runner) === null;
+  return store
+    .listEmployees()
+    .filter((e) => e.id !== ctx.employee.id && hasRole(role)(e))
+    .toSorted((a, b) => Number(ready(b)) - Number(ready(a)) || workLoad(a) - workLoad(b))[0];
+};
+
 // oxlint-disable-next-line sort-keys -- the order of TOOL_SPECS
 const TOOLS = {
   ask_boss: define(TOOL_SPECS.ask_boss, (ctx, body) => {
@@ -723,16 +740,13 @@ const TOOLS = {
     roomTranscript(store.recentTeamMessages(15), nameOf),
   ),
   delegate: define(TOOL_SPECS.delegate, (ctx, { role, title, description, product, bet }) => {
-    const { company, employee } = ctx;
+    const { company } = ctx;
     const funded = fundingFor(ctx, bet, product);
     const productId = funded?.productId ?? productFor(ctx, product);
     if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
       return store.noSuchProduct(productId);
     }
-    const mate = store
-      .listEmployees()
-      .filter((e) => e.id !== employee.id)
-      .find(hasRole(role));
+    const mate = delegateFor(ctx, role);
     if (!mate) {
       post(ctx, `(no "${role}" to delegate "${title}" to)`);
       return `No teammate matches the role "${role}" — do it yourself or pick another role.`;

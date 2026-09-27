@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ActivityEvent } from "@/shared/activity";
-import type { BlockedAsk, TaskOrigin } from "@/shared/domain";
+import type { AgentRunner, BlockedAsk, TaskOrigin } from "@/shared/domain";
 import type { JsonValue } from "@/shared/json";
 import type { ChargeLink } from "@/shared/payment-link";
 import { BadRequestError } from "@/shared/errors";
@@ -45,24 +45,24 @@ afterAll(() => {
   }
 });
 
-const hire = (name: string, title: string) =>
+const hire = (name: string, title: string, runner: AgentRunner = "claude") =>
   ({
     name,
     persona: "ships",
     role: "engineer",
-    runner: "claude",
+    runner,
     spriteSeed: name,
     title,
   }) as const;
 
-/** A run by `employeeId` in a fresh two-person company led by Mae. */
-const runAs = (employeeId: string) => {
+/** A run by `employeeId` in a fresh company led by Mae, of two unless `more` join them. */
+const runAs = (employeeId: string, more: readonly ReturnType<typeof hire>[] = []) => {
   const company = store.foundCompany({
     budget: { mode: "infinite" },
     businessType: "software",
     founderName: "Kai",
     founderSpriteSeed: "seed",
-    hires: [hire("Mae", "General Manager"), hire("Priya", "Engineer")],
+    hires: [hire("Mae", "General Manager"), hire("Priya", "Engineer"), ...more],
     mission: "ship",
     name: "Acme",
   });
@@ -84,7 +84,7 @@ const runAs = (employeeId: string) => {
     company,
     createPaymentLink: () => Promise.reject(new Error("charged without a test asking for it")),
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
-    driver: { pickRunner: () => "claude" },
+    driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     employee,
     printListing: {
       catalog: () =>
@@ -392,6 +392,39 @@ describe("company tools", () => {
       productId: bet?.productId,
     });
     expect(assigned).toEqual([task?.id]);
+  });
+
+  it("fans same-role work out across the teammates who have the least of it", async () => {
+    const { ctx } = runAs("mae", [hire("Sam", "Engineer"), hire("Ana", "Engineer")]);
+    for (const title of ["Page A", "Page B", "Page C", "Page D"]) {
+      await callTool(ctx, "POST /v1/delegate", { ...HANDOFF, title });
+    }
+    const holders = new Map(store.listOpenTasks().map((t) => [t.title, t.assigneeId]));
+    expect(["Page A", "Page B", "Page C", "Page D"].map((t) => holders.get(t))).toEqual([
+      "priya",
+      "sam",
+      "ana",
+      "priya",
+    ]);
+  });
+
+  it("delegates past a teammate whose runner cannot start the work", async () => {
+    const { ctx } = runAs("mae", [hire("Ana", "Engineer", "codex")]);
+    const resting: RunContext = {
+      ...ctx,
+      driver: {
+        ...ctx.driver,
+        restingRunner: (r) => (r === "claude" ? Date.now() + 60_000 : null),
+      },
+    };
+    expect(await callTool(resting, "POST /v1/delegate", HANDOFF)).toContain("to Ana");
+    const signedOut: RunContext = {
+      ...ctx,
+      driver: { ...ctx.driver, signedIn: (r) => r !== "claude" },
+    };
+    expect(await callTool(signedOut, "POST /v1/delegate", HANDOFF)).toContain("to Ana");
+    const nobody: RunContext = { ...ctx, driver: { ...ctx.driver, signedIn: () => false } };
+    expect(await callTool(nobody, "POST /v1/delegate", HANDOFF)).toContain("to Priya");
   });
 
   it("refuses work a bet's runs in flight would already spend", async () => {
