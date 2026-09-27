@@ -168,10 +168,14 @@ const book = (task: Task, costUsd: number): void => {
   }
 };
 
+/** Back on the queue from `until`, no attempt burned, unless its bet stopped taking work. */
+const park = (task: Task, runId: string, until: number, why: string): TaskStatus =>
+  store.parkTask(task.id, runId, until, why)?.kind === "dropped" ? "dropped" : "queued";
+
 /**
- * Usage limits and the app quitting park the task without consuming a retry. A task whose
- * bet stopped taking work while it ran is neither retried nor parked: it is dropped, and so
- * is its ask to the founder once that bet has closed.
+ * Usage limits, a refused login and the app quitting park the task without consuming a retry.
+ * A task whose bet stopped taking work while it ran is neither retried nor parked: it is
+ * dropped, and so is its ask to the founder once that bet has closed.
  */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskStatus => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
@@ -194,8 +198,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
       break;
     }
     case "resting": {
-      const parked = store.parkTask(task.id, runId, o.until, o.error);
-      status = parked?.kind === "dropped" ? "dropped" : "queued";
+      status = park(task, runId, o.until, o.error);
       publishActivity({
         ...at,
         kind: "runner.resting",
@@ -203,9 +206,12 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
       });
       break;
     }
+    case "signedOut": {
+      status = park(task, runId, Date.now(), o.error);
+      break;
+    }
     case "interrupted": {
-      const parked = store.parkTask(task.id, runId, Date.now(), "Interrupted by app quit");
-      status = parked?.kind === "dropped" ? "dropped" : "queued";
+      status = park(task, runId, Date.now(), "Interrupted by app quit");
       break;
     }
     case "failed": {

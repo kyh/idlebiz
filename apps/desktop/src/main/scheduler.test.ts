@@ -544,6 +544,28 @@ describe("settling a run", () => {
     });
   });
 
+  it("parks a run whose runner's login was refused, spending no attempt, until a sign-in finds it", async () => {
+    found();
+    const { driver, running, signedOut } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const task = queue("priya");
+    drain.tick();
+    const error = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
+    // the driver reads the runner as signed out before the run settles
+    signedOut.add("claude");
+    running.get("priya")?.({ ...done(), outcome: { error, kind: "signedOut" } });
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    drain.tick();
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 0,
+      state: { kind: "queued", lastError: error },
+    });
+
+    signedOut.delete("claude");
+    drain.tick();
+    expect(kindOf(task)).toBe("running");
+  });
+
   it("requeues runs cut short by a quit, no attempt spent, and starts nothing after them", async () => {
     found();
     const { driver, started } = scripted();

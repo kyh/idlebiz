@@ -129,6 +129,15 @@ describe("outcomeOf", () => {
     expect(outcomeOf(failed, null, false)).toEqual({ error: failed.error, kind: "failed" });
   });
 
+  it("parks the task, burning no attempt, when the runner's login was refused", () => {
+    const signedOut = { error: "Failed to authenticate", kind: "signedOut" } as const;
+    expect(outcomeOf(signedOut, null, false)).toEqual({
+      error: "Failed to authenticate",
+      kind: "signedOut",
+    });
+    expect(outcomeOf(signedOut, null, true)).toEqual({ kind: "interrupted" });
+  });
+
   it("does not hold the task to a turn the app stopped, unless it finished anyway", () => {
     expect(outcomeOf(failed, null, true)).toEqual({ kind: "interrupted" });
     expect(outcomeOf({ kind: "completed" }, null, true)).toEqual({ kind: "done" });
@@ -227,17 +236,17 @@ describe("PAGE_URLS", () => {
   });
 });
 
-describe("rest", () => {
+describe("a limit a turn hit", () => {
   it("parks a runner until its limit lifts, and only that runner", () => {
     const until = Date.now() + 60_000;
-    agentDriver.rest("claude", until);
+    agentDriver.heed("claude", { ...limited, resetsAt: until });
     expect(agentDriver.restingRunner("claude")).toBe(until);
     expect(agentDriver.restingRunner("codex")).toBeNull();
     expect(agentDriver.restingRunners()).toEqual({ claude: until });
   });
 
   it("wakes a runner once its limit has lifted", () => {
-    agentDriver.rest("codex", Date.now() - 1);
+    agentDriver.heed("codex", { ...limited, resetsAt: Date.now() - 1 });
     expect(agentDriver.restingRunner("codex")).toBeNull();
     expect(agentDriver.restingRunners()).not.toHaveProperty("codex");
   });
@@ -697,6 +706,31 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     expect(await driver.hasAnyRunner()).toBe(true);
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 2");
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 3");
+  });
+
+  it("reads a runner whose login a turn found refused as signed out, until it is looked for again", async () => {
+    const cli = path.join(root, "claude");
+    writeFileSync(
+      cli,
+      `#!/bin/sh\n[ "$1" = --version ] && echo 1.0.0 || echo '{"loggedIn": true}'\n`,
+      {
+        mode: 0o755,
+      },
+    );
+    process.env.CLAUDE_BIN = cli;
+    const driver = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => Promise.resolve(SEAL),
+    );
+    driver.init();
+    expect(await driver.hasAnyRunner()).toBe(true);
+
+    driver.heed("claude", { error: "Failed to authenticate", kind: "signedOut" });
+
+    expect(driver.signedIn("claude")).toBe(false);
+    expect(await driver.hasAnyRunner()).toBe(false);
+    await driver.refresh();
+    expect(driver.signedIn("claude")).toBe(true);
   });
 
   it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {

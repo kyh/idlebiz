@@ -41,6 +41,27 @@ const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 /** The agent's own account of a tool call, as the policy layer needs it. */
 const ToolCallDescription = z.object({ description: z.string().optional() });
 
+/** What ACP answers when a sign-in is needed, as the SDK numbers it. */
+const AUTH_REQUIRED = RequestError.authRequired().code;
+
+/** claude's `errorKind` values for a login or account its provider refused, which no retry clears. */
+const LOGIN_REFUSED_KINDS = new Set([
+  "account_on_hold",
+  "authentication_failed",
+  "cloud_credential_error",
+  "oauth_org_not_allowed",
+  "verification_required",
+]);
+
+const ErrorKind = z.object({ errorKind: z.string() });
+
+const signsOut = (error: RequestError): boolean => {
+  const data = ErrorKind.safeParse(error.data);
+  return (
+    error.code === AUTH_REQUIRED || (data.success && LOGIN_REFUSED_KINDS.has(data.data.errorKind))
+  );
+};
+
 /** How a client declares codex-acp's typed session failures (the JetBrains AIR extension). */
 const TYPED_FAILURES: ClientCapabilities = {
   _meta: { jetbrains: { air: { capabilities: ["sessionFailure"], version: 1 } } },
@@ -156,10 +177,15 @@ export interface AcpTurnOptions {
   onEvent: (e: AgentEvent) => void;
 }
 
-/** How a turn ended: the agent finished it, hit a usage limit or an overload, or something stopped it. */
+/**
+ * How a turn ended: the agent finished it, hit a usage limit or an overload, found its runner's
+ * login refused, or something stopped it.
+ */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
   | { readonly kind: "limited"; readonly resetsAt: number; readonly error: string }
+  /** No turn on this runner can go on until the founder signs it in again. */
+  | { readonly kind: "signedOut"; readonly error: string }
   | {
       readonly kind: "failed";
       readonly error: string;
@@ -214,6 +240,9 @@ const failureEnd = (meta: PromptResponse["_meta"]): AcpTurnEnd | null => {
   }
   const { actions, category, details, title } = parsed.data.jetbrains.air.sessionFailure;
   const error = details === undefined ? title : `${title}\n${details}`;
+  if (category === "access" && actions.includes("login")) {
+    return { error, kind: "signedOut" };
+  }
   if (category === "limit" && actions.includes("new_session")) {
     return { error, kind: "failed", sessionSpent: true };
   }
@@ -597,6 +626,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         await turn();
       } catch (error) {
         if (error instanceof RequestError) {
+          if (signsOut(error)) {
+            settle(result({ error: error.message, kind: "signedOut" }));
+            return;
+          }
           const limit = limitOf(error);
           settle(
             limit

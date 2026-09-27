@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "@/shared/activity";
-import type { Employee } from "@/shared/domain";
+import type { Employee, RunOutcome } from "@/shared/domain";
 import { reduceActivity } from "./activity-reducer";
 
 const stamp = { createdAt: 0, id: 1 };
@@ -40,6 +40,13 @@ const held = {
 };
 const working: Employee = { ...employee("priya"), status: "working" };
 const busy = { ...held, employees: [working] };
+
+const endedOn = (outcome: RunOutcome): ActivityEvent => ({
+  ...stamp,
+  ...inRun,
+  kind: "run.end",
+  payload: { outcome, settled: "queued", summary: "" },
+});
 
 describe("reduceActivity", () => {
   it("raises an ask in the inbox the moment the office shows it", () => {
@@ -138,6 +145,14 @@ describe("reduceActivity", () => {
       payload: { outcome: { kind: "done" }, settled: "done", summary: "" },
     };
     expect(reduceActivity(busy, ended).patch.employees?.map((e) => e.status)).toEqual(["idle"]);
+  });
+
+  it("asks again whether any CLI is signed in once a run found its runner signed out", () => {
+    const refused = endedOn({ error: "Failed to authenticate", kind: "signedOut" });
+    expect(reduceActivity(busy, refused).recheckAuth).toBe(true);
+    expect(reduceActivity(busy, endedOn({ error: "boom", kind: "failed" })).recheckAuth).toBe(
+      false,
+    );
   });
 
   it("keeps working someone handed more work mid-run", () => {

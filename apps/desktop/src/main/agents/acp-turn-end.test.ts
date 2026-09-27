@@ -138,6 +138,31 @@ describe("how a turn ends", () => {
   });
 });
 
+describe("a turn whose runner's login was refused", () => {
+  it("signs the runner out when the agent asks for a sign-in", async () => {
+    const refusal = JSON.stringify({
+      error: { code: -32_000, message: "Authentication required" },
+    });
+    const { end } = await turn(scriptedAgent(refusal));
+    expect(end).toEqual({ error: "Authentication required", kind: "signedOut" });
+  });
+
+  it("signs it out when the provider refused the login claude sent", async () => {
+    const message = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
+    const refusal = JSON.stringify({
+      error: { code: -32_603, data: { errorKind: "authentication_failed" }, message },
+    });
+    const { end } = await turn(scriptedAgent(refusal));
+    expect(end).toEqual({ error: message, kind: "signedOut" });
+  });
+
+  it("signs it out on codex's typed failure that only a login clears", async () => {
+    const title = "unexpected status 401 Unauthorized";
+    const { end } = await turn(failingAgent(typedError("access", ["login"], title)));
+    expect(end).toEqual({ error: title, kind: "signedOut" });
+  });
+});
+
 describe("a turn whose agent dies mid-prompt", () => {
   it("fails with what the agent said on stderr, not the connection it dropped", async () => {
     const { end } = await turn(agentThat(panics));

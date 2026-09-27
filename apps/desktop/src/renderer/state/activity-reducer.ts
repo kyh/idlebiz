@@ -39,6 +39,8 @@ export interface ActivityStep {
   reload: readonly Slice[];
   /** Someone joined or left: the office walks them through the door once the roster is fresh. */
   roster: { employeeId: string; hired: boolean } | null;
+  /** A run found its runner signed out, so main may have no signed-in CLI left. */
+  recheckAuth: boolean;
 }
 
 /** The slices each kind of event moves; a kind missing here is a compile error, not a silent default. */
@@ -77,7 +79,12 @@ const RELOAD_FOR = {
 export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
   const ring = held.activity;
   const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
-  const step: ActivityStep = { patch: { activity }, reload: RELOAD_FOR[e.kind], roster: null };
+  const step: ActivityStep = {
+    patch: { activity },
+    recheckAuth: e.kind === "run.end" && e.payload.outcome.kind === "signedOut",
+    reload: RELOAD_FOR[e.kind],
+    roster: null,
+  };
   if (FEED_KINDS.has(e.kind)) {
     step.patch.feed = [...held.feed, e].slice(-FEED_LINES);
   }

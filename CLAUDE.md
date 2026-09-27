@@ -412,7 +412,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   codex's reason. A runner is signed in only if its login probe, run sealed as its runs are,
   says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt
-  (`signedIn` in the driver), until a sign-in finds it again.
+  (`signedIn` in the driver), until a sign-in finds it again. A turn whose login the provider
+  refused (a revoked token, `claude auth logout` mid-session) reads the runner as signed out
+  the same way (`heed`), since its probe reads only the login stored, and asks the renderer
+  whether any CLI is left.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
   judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that

@@ -504,8 +504,19 @@ const walkThroughDoor = async (roster: { employeeId: string; hired: boolean }): 
   }
 };
 
+const loadAuth = async (): Promise<void> => {
+  try {
+    const r = await bridge().hasAuth();
+    set({ authed: r.ok });
+  } catch (error) {
+    // left unknown, the office would wait forever; the gate at least offers a sign-in
+    console.error("Could not check the CLI login", error);
+    set({ authed: false });
+  }
+};
+
 const onActivity = async (e: ActivityEvent): Promise<void> => {
-  const { patch, reload, roster } = reduceActivity(state, e);
+  const { patch, recheckAuth, reload, roster } = reduceActivity(state, e);
   // the event is newer than any answer still in flight, which must not undo it
   if (patch.employees) {
     order.patched("employees");
@@ -519,6 +530,9 @@ const onActivity = async (e: ActivityEvent): Promise<void> => {
   const refetch: readonly Slice[] =
     !state.company && (patch.employees || patch.resting) ? ["all"] : reload;
   await Promise.all(refetch.map((slice) => RELOAD[slice]()));
+  if (recheckAuth) {
+    await loadAuth();
+  }
   if (roster) {
     await walkThroughDoor(roster);
   }
@@ -534,17 +548,6 @@ const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
 };
 
 // ---- lifecycle -------------------------------------------------------------
-
-const loadAuth = async (): Promise<void> => {
-  try {
-    const r = await bridge().hasAuth();
-    set({ authed: r.ok });
-  } catch (error) {
-    // left unknown, the office would wait forever; the gate at least offers a sign-in
-    console.error("Could not check the CLI login", error);
-    set({ authed: false });
-  }
-};
 
 const loadStripeStatus = async (): Promise<void> => {
   set({ stripeStatus: await bridge().stripeStatus() });

@@ -11,6 +11,7 @@ import {
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import type {
   AcpAgent,
+  AcpTurnEnd,
   PermissionDecision,
   AcpTurnResult,
   PermissionRequest,
@@ -414,9 +415,18 @@ export const outcomeOf = (
   if (interrupted) {
     return { kind: "interrupted" };
   }
-  return end.kind === "limited"
-    ? { error: end.error, kind: "resting", until: end.resetsAt }
-    : { error: end.error, kind: "failed" };
+  switch (end.kind) {
+    case "limited": {
+      return { error: end.error, kind: "resting", until: end.resetsAt };
+    }
+    case "signedOut": {
+      return { error: end.error, kind: "signedOut" };
+    }
+    case "failed": {
+      return { error: end.error, kind: "failed" };
+    }
+    // no default
+  }
 };
 
 /** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
@@ -632,9 +642,18 @@ class AgentDriver {
     return until;
   }
 
-  /** Park a runner until its usage limit lifts; pickRunner prefers the awake ones meanwhile. */
-  rest(runner: AgentRunner, until: number): void {
-    this.restingUntil.set(runner, until);
+  /**
+   * What a turn's end says of its runner, whatever else the run says: a limit rests it, and a
+   * refused login reads as signed out until the CLIs are looked for again, since its login probe
+   * reads only what is stored, which a revoked token still is.
+   */
+  heed(runner: AgentRunner, end: AcpTurnEnd): void {
+    if (end.kind === "limited") {
+      this.restingUntil.set(runner, end.resetsAt);
+    }
+    if (end.kind === "signedOut") {
+      this.probes = this.probes.filter((p) => p.id !== runner);
+    }
   }
 
   /** One turn with no tools, files or memory: its final message, or a throw with why it ended short. */
@@ -652,9 +671,7 @@ class AgentDriver {
       prompt,
       systemPrompt: "",
     });
-    if (res.end.kind === "limited") {
-      this.rest(runner, res.end.resetsAt);
-    }
+    this.heed(runner, res.end);
     if (res.end.kind !== "completed") {
       throw new Error(res.end.error);
     }
@@ -786,10 +803,8 @@ class AgentDriver {
         systemPrompt: run.instructions,
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
-      // parked whatever else the run says: an ask raised before the limit hit must not hide it
-      if (res.end.kind === "limited") {
-        this.rest(emp.runner, res.end.resetsAt);
-      }
+      // an ask raised before the limit hit or the login was refused must not hide it
+      this.heed(emp.runner, res.end);
       const outcome = outcomeOf(res.end, tools.asks.current(), signal.aborted);
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
