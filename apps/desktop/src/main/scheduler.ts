@@ -351,7 +351,8 @@ class Scheduler {
       if (!isRoutineDue(r, company.createdAt, now)) {
         continue;
       }
-      const idle = employees.filter((e) => e.status === "idle");
+      // unmarked it stays due, for a later tick when someone's runner can start it
+      const idle = employees.filter((e) => e.status === "idle" && this.canStart(e));
       const assignee = (r.role === null ? undefined : idle.find(hasRole(r.role))) ?? idle[0];
       if (!assignee) {
         continue;
@@ -370,6 +371,11 @@ class Scheduler {
         productId: store.attentionProduct()?.id ?? null,
       });
     }
+  }
+
+  /** Whether the employee's runner could start a run now: signed in and not resting. */
+  private canStart(emp: Employee): boolean {
+    return this.driver.signedIn(emp.runner) && this.driver.restingRunner(emp.runner) === null;
   }
 
   private brief(
@@ -399,7 +405,7 @@ class Scheduler {
       if (emp.status !== "idle") {
         continue;
       }
-      if (!this.driver.signedIn(emp.runner) || this.driver.restingRunner(emp.runner) !== null) {
+      if (!this.canStart(emp)) {
         continue;
       }
       const open = store
@@ -661,11 +667,7 @@ class Scheduler {
       return false;
     }
     const employee = store.getEmployee(task.assigneeId);
-    return (
-      employee !== null &&
-      this.driver.signedIn(employee.runner) &&
-      this.driver.restingRunner(employee.runner) === null
-    );
+    return employee !== null && this.canStart(employee);
   }
 
   /**

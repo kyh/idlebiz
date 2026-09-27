@@ -785,6 +785,8 @@ const blockOnLead = (origin: TaskOrigin) => {
   });
 };
 
+const routinesFiled = () => store.listOpenTasks().filter((t) => t.origin === "routine");
+
 const proposing = () =>
   store.openTasksFor("priya").filter((t) => t.origin === "propose" && t.state.kind === "running");
 
@@ -874,7 +876,30 @@ describe("a file the save refuses on every tick", () => {
       vi.useRealTimers();
     }
     expect(proposing()).toHaveLength(1);
-    expect(store.listOpenTasks().filter((t) => t.origin === "routine")).toEqual([]);
+    expect(routinesFiled()).toEqual([]);
+  });
+});
+
+describe("a due routine", () => {
+  it("goes only to someone whose runner can start it, and waits till one can", () => {
+    found(UNCAPPED, "game-studio");
+    const { driver, signedOut } = scripted();
+    const drain = createScheduler(driver, asleep);
+    vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
+    try {
+      signedOut.add("claude").add("codex");
+      drain.start();
+      drain.stop();
+      expect(routinesFiled()).toEqual([]);
+      expect(store.listRoutines()[0]?.lastRunAt).toBeNull();
+
+      signedOut.delete("codex");
+      drain.start();
+      drain.stop();
+      expect(routinesFiled()).toMatchObject([{ assigneeId: "ana" }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
