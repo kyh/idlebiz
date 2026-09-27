@@ -23,7 +23,7 @@ import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } fro
 import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "@/main/secrets";
 import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
 import type { productionHosts } from "@/main/vercel";
-import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
+import { keepEnvValue, teamSetEnv, unshippableEnvValues } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
 import { betLedger, betMark, roomTranscript } from "@/main/prompts/briefs";
 import { RUN_COST_ESTIMATE_USD, betGoal, betMoney, hasRoomFor, isSpentOut } from "@/shared/bets";
@@ -38,6 +38,7 @@ import type {
   TaskOrigin,
   VercelBinding,
 } from "@/shared/domain";
+import { isPublicEnvName, publicValueRefusal } from "@/shared/env-name";
 import { BadRequestError, errorMessage } from "@/shared/errors";
 import { formatCents, plural } from "@/shared/format";
 import type { HoldRuleId } from "@/shared/hold-rules";
@@ -772,7 +773,7 @@ const TOOLS = {
       product.vercel === null
         ? { kind: "new", name: product.id }
         : { binding: product.vercel, kind: "bound" };
-    const unshippable = [...keptEnvValues(), ...heldKeys()];
+    const unshippable = [...unshippableEnvValues(), ...heldKeys()];
     const leak = await unshippableIn(product.workspaceDir, unshippable);
     if (leak !== null) {
       return leak;
@@ -839,6 +840,10 @@ const TOOLS = {
     if (holdsStripeSecretKey(value)) {
       return `${name} was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see "Checking who paid").`;
     }
+    const exposed = publicValueRefusal(name, value);
+    if (exposed !== null) {
+      return exposed;
+    }
     const replaces = teamSetEnv(product, name);
     const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
     if (!set.ok) {
@@ -849,7 +854,10 @@ const TOOLS = {
     }
     keepEnvValue(product, name, value);
     post(ctx, `🔑 set ${name} on ${product.name}`);
-    return `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview. It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`;
+    const where = `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview.`;
+    return isPublicEnvName(name)
+      ? `${where} It takes effect on the next deploy, whose build puts it in the page for every visitor to read.`
+      : `${where} It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`;
   }),
   create_payment_link: define(
     TOOL_SPECS.create_payment_link,

@@ -355,9 +355,12 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   tool reads the folder for that before it asks for the sign-off, and the deploy again over what
   it uploads. Only values of 8 characters or more are scanned. It is a tripwire, not a boundary:
   an encoded or split key passes, and nothing scans what the founder pushes by hand. Vercel's
-  own names and the prefixes a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`…) are
-  refused as a name (`shared/env-name.ts`), and a set_env call's title, its curl line, is logged
-  as `set_env` alone.
+  own names are refused as a name (`shared/env-name.ts`). A name with a prefix a framework
+  builds into the page (`NEXT_PUBLIC_`, `VITE_`…) is set, so a publishable key (`pk_`) stays out
+  of the source, but never over a value shaped like a secret (`publicValueRefusal`: Stripe's
+  `sk_`/`rk_`/`whsec_`, a private key block, GitHub, OpenAI, Anthropic, AWS, Resend and Slack
+  keys), and the deploy guard skips its value (`unshippableEnvValues`), which the build ships
+  anyway. A set_env call's title, its curl line, is logged as `set_env` alone.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits

@@ -76,17 +76,11 @@ describe("tool specs", () => {
     ["NOW_REGION", false],
     ["NODE_ENV", false],
     ["TZ", false],
-    ["NEXT_PUBLIC_STRIPE_KEY", false],
-    ["VITE_API_KEY", false],
+    ["NEXT_PUBLIC_STRIPE_KEY", true],
+    ["VITE_STRIPE_KEY", true],
   ])("takes %s as a variable to set: %s", (name, ok) => {
     const { body, example } = TOOL_SPECS.set_env;
     expect(body.safeParse({ ...example, name }).success).toBe(ok);
-  });
-
-  it("tells an agent why a name the page would show is refused", () => {
-    const { body, example } = TOOL_SPECS.set_env;
-    const parsed = body.safeParse({ ...example, name: "NEXT_PUBLIC_STRIPE_KEY" });
-    expect(parsed.error?.issues[0]?.message).toContain("where every visitor reads it");
   });
 
   it("tells the lead each metric's floor", () => {

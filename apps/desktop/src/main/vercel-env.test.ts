@@ -8,7 +8,8 @@ import { parseJson } from "@/shared/json";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-env-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { keepEnvValue, keptEnvValues, setVercelEnv, teamSetEnv } = await import("./vercel-env");
+const { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } =
+  await import("./vercel-env");
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -169,12 +170,14 @@ describe("setting a product's variable on Vercel", () => {
 describe("the values a deploy may not ship", () => {
   const acme = { companyId: "co", id: "acme" };
 
-  it("keeps one value a name per product of each company, replaced when the name is set again", () => {
+  it("keeps one value a name per product of each company, replaced when the name is set again, and lets a deploy ship a public one", () => {
     keepEnvValue(acme, "OPENAI_API_KEY", "sk-proj-old");
     keepEnvValue(acme, "OPENAI_API_KEY", "sk-proj-new");
     keepEnvValue({ companyId: "next-co", id: "acme" }, "RESEND_API_KEY", "re_next_key");
+    keepEnvValue(acme, "NEXT_PUBLIC_STRIPE_KEY", "pk_live_acmePublishable");
 
-    expect(keptEnvValues()).toEqual([
+    expect(teamSetEnv(acme, "NEXT_PUBLIC_STRIPE_KEY")).toBe(true);
+    expect(unshippableEnvValues()).toEqual([
       { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
       {
         company: "next-co",

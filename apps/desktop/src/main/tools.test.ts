@@ -783,6 +783,54 @@ describe("set_env", () => {
     expect(sets.map(({ value }) => value)).toEqual(["rk_live_checkoutReadOnly1"]);
   });
 
+  it("sets a publishable key under a public name, and lets a deploy ship a file holding it", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    const product = store.setProductVercel("acme", VERCEL);
+    const publishable = "pk_live_acmePublishable1";
+
+    expect(
+      await callTool(ctx, "POST /v1/set-env", {
+        name: "NEXT_PUBLIC_STRIPE_KEY",
+        value: publishable,
+      }),
+    ).toBe(
+      "Set NEXT_PUBLIC_STRIPE_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy, whose build puts it in the page for every visitor to read.",
+    );
+    expect(sets.map(({ name }) => name)).toEqual(["NEXT_PUBLIC_STRIPE_KEY"]);
+
+    writeFileSync(path.join(product.workspaceDir, "pay.js"), `const pk = "${publishable}";`);
+    const deploys: DeployRequest[] = [];
+    const deploying: RunContext = {
+      ...ctx,
+      deploy: (req) => {
+        deploys.push(req);
+        return Promise.resolve(DEPLOYED);
+      },
+    };
+    store.grantApproval(ctx.run.taskId, BOUND_ACTION);
+
+    expect(await callTool(deploying, "POST /v1/deploy", {})).toContain("Deployed Acme");
+    expect(deploys[0]?.unshippable).toEqual([{ kind: "held", name: "VERCEL_TOKEN", value: TOKEN }]);
+  });
+
+  it("refuses a secret under a public name, pointing at a server-only one", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    const answer = await callTool(ctx, "POST /v1/set-env", {
+      name: "VITE_STRIPE_KEY",
+      value: "rk_live_checkoutReadOnly1",
+    });
+
+    expect(answer).toBe(
+      "VITE_STRIPE_KEY was not set: that value looks like a Stripe secret or restricted key, and a VITE_ name is built into the page, where every visitor reads it. Set it under a server-only name, one without that prefix, which only server code reads as process.env.NAME; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).",
+    );
+    expect(sets).toEqual([]);
+    expect(store.recentTeamMessages()).toEqual([]);
+  });
+
   it("sets the variable on the run's product's project with the founder's token, unsigned, and says when it takes effect", async () => {
     connectVercel();
     const { ctx, asked, sets } = settingRun();
@@ -894,12 +942,12 @@ describe("set_env", () => {
     expect(sets).toEqual([]);
   });
 
-  it("refuses a name Vercel keeps, or one the page would show, as the caller's error", async () => {
+  it("refuses a name Vercel keeps as the caller's error", async () => {
     connectVercel();
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    for (const name of ["VERCEL_URL", "NODE_ENV", "NEXT_PUBLIC_KEY", "openai_key"]) {
+    for (const name of ["VERCEL_URL", "NODE_ENV", "openai_key"]) {
       await expect(callTool(ctx, "POST /v1/set-env", { ...OPENAI, name })).rejects.toThrow(
         BadRequestError,
       );

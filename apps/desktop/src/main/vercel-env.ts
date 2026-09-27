@@ -3,6 +3,7 @@ import { HttpError, fetchOk } from "@/main/lib/http";
 import { ENV_PREFIX, hasSecret, secretsUnder, setSecret } from "@/main/secrets";
 import { VERCEL_API } from "@/main/vercel";
 import type { Product, VercelBinding } from "@/shared/domain";
+import { isPublicEnvName } from "@/shared/env-name";
 import { errorMessage } from "@/shared/errors";
 
 /** One variable for a product's bound project, set with the founder's token. */
@@ -23,7 +24,7 @@ export type EnvResult = { ok: true } | { ok: false; error: string };
 
 export type EnvSetter = (req: EnvRequest) => Promise<EnvResult>;
 
-/** A value a teammate set on a product's project, which no deploy may ship. */
+/** A value a teammate set on a product's project under a server-only name, which no deploy may ship. */
 export interface KeptEnvValue {
   kind: "env";
   company: string;
@@ -46,11 +47,20 @@ export const keepEnvValue = (product: ProductRef, name: string, value: string): 
   setSecret(keptKey(product, name), value);
 };
 
-/** Every value set_env set, in any company (secrets.json is every company's, and never the save, which runs read): one product's key ships as publicly from another's folder. */
-export const keptEnvValues = (): KeptEnvValue[] =>
+/**
+ * Every value set_env set under a server-only name, in any company (secrets.json is every
+ * company's, and never the save, which runs read): one product's key ships as publicly from
+ * another's folder. A value under a public name is built into the page anyway, so a file
+ * holding it ships nothing new.
+ */
+export const unshippableEnvValues = (): KeptEnvValue[] =>
   [...secretsUnder(ENV_PREFIX)].flatMap(([key, value]) => {
     const [company, product, name, ...rest] = key.split("/");
-    return company === undefined || product === undefined || name === undefined || rest.length > 0
+    return company === undefined ||
+      product === undefined ||
+      name === undefined ||
+      rest.length > 0 ||
+      isPublicEnvName(name)
       ? []
       : [{ company, kind: "env", name, product, value }];
   });
