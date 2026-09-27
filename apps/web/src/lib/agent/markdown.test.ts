@@ -64,6 +64,30 @@ describe("renderProsePageMarkdown", () => {
   });
 });
 
+describe("what the site claims the app does", () => {
+  const everyPage = [renderHomeMarkdown(), ...prosePages.map(renderProsePageMarkdown)];
+
+  it("never lists a push beside the deploys and payment links the app signs for, since nothing pushes code", () => {
+    for (const markdown of everyPage) {
+      expect(markdown).not.toMatch(
+        /(?:deploy|payment link)[^.]*\bpush|\bpush[^.]*(?:deploy|payment link)/iu,
+      );
+    }
+  });
+
+  it("does not promise the sandbox keeps every credential out of reach, since a claude run reaches the Keychain", () => {
+    for (const markdown of everyPage) {
+      expect(markdown).not.toMatch(/credentials[^.]*out of reach/iu);
+    }
+  });
+
+  it("names Printful among who receives buyers' details and whose key the app stores", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toMatch(/Printful[^.]*(?:name|address)/iu);
+    expect(markdown).toMatch(/Stripe, Vercel and Printful keys/u);
+  });
+});
+
 describe("renderNotFoundMarkdown", () => {
   it("names the missing path and points at recovery surfaces", () => {
     const body = renderNotFoundMarkdown("/nope");

@@ -401,6 +401,9 @@ const MUST_ALLOW = [
   "./node_modules/.bin/vercel ls",
   "stripe customers list",
   "rm -rf $HOME_BACKUP/tmp",
+  // The seal alone judges where a run writes: no rule holds a write outside the workspace.
+  "rm -rf ../x",
+  "cp x ~/y",
   // Quoted text is an argument, whatever it says.
   "git commit -m 'wip; gh pr merge later'",
   "git commit -m \"$(cat <<'EOF'\nfix: hold git push; vercel deploy later\nEOF\n)\"",

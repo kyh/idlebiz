@@ -413,9 +413,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
   may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
-  payments, sends, remote copies, pipe-to-shell, credential reads, writes and deletes outside
-  the workspace) is signed for once, exactly, with the same grant a signed tool takes. It is
-  not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk), and codex
+  payments, sends, remote copies, pipe-to-shell, credential reads) is signed for once,
+  exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk), and codex
   still honours `allow` decisions in the founder's `~/.codex/rules`, which run a command
   unasked (inside the seal).
   - An `agent-browser` verb is read where agent-browser reads it, the first word its global

@@ -31,8 +31,8 @@ export const siteSummary =
 
 export const homeIntro: string[] = [
   "You found a company, hire a team, and point it at a business. Each employee is a live claude or codex session with its own role, memory and instructions. They pick up tasks, write code and docs in a workspace on your disk, talk to each other in #team, and ship products while the pixel-art office runs in the background.",
-  "Nothing is simulated. When an employee wants to do something public — deploy a site to Vercel, push a branch, or create a Stripe payment link — the game stops and asks you first. The dashboard reads your actual Stripe revenue and Vercel analytics, so the money on screen is real money.",
-  "Every run bills against your own CLI login and runs inside a macOS sandbox that keeps your credentials, shell config and the app itself out of reach. The whole company is saved as human-readable Markdown under ~/.idlebiz, so you can read, diff or edit it by hand.",
+  "Nothing is simulated. When an employee wants to do something public — deploy a site to Vercel, create a Stripe payment link or list a print-on-demand product — the game stops and asks you first. Nothing pushes code for you: you push by hand from a fresh clone of the workspace. The dashboard reads your actual Stripe revenue and Vercel analytics, so the money on screen is real money.",
+  "Every run bills against your own CLI login and runs inside a macOS sandbox that seals your SSH keys, cloud logins, shell config and the app itself. The sandbox is not airtight: a run can still use the network and read other files in your home folder, and a claude run can reach your Keychain, since Claude Code keeps its own login there. The whole company is saved as human-readable Markdown under ~/.idlebiz, so you can read, diff or edit it by hand.",
 ];
 
 export const whenToUse: LinkItem[] = [
@@ -83,7 +83,7 @@ export const aboutPage: ProsePage = {
     },
     {
       kind: "paragraph",
-      text: "Safety is part of the design, not an afterthought. Every run starts inside a macOS Seatbelt sandbox that seals your SSH keys, cloud logins, shell startup files and the app itself. Deploys, git pushes and payment links go through tools that wait for your sign-off on the exact action. A spending cap stops the scheduler before a run starts, not after.",
+      text: "Safety is part of the design, not an afterthought. Every run starts inside a macOS Seatbelt sandbox that seals your SSH keys, cloud logins, shell startup files and the app itself. Deploys, payment links and print listings go through tools that wait for your sign-off on the exact action. No tool pushes code: you push by hand from a fresh clone. A spending cap stops the scheduler before a run starts, not after.",
     },
     { kind: "heading", text: "Who makes it" },
     {
@@ -178,11 +178,11 @@ export const privacyPage: ProsePage = {
     { kind: "heading", text: "The desktop app" },
     {
       kind: "paragraph",
-      text: "Your company — employees, tasks, memory, workspace files and the activity log — lives on your Mac under ~/.idlebiz. Stripe and Vercel keys you enter are encrypted with the macOS Keychain and read only by the app. There is no telemetry and no crash reporting to us; logs stay in ~/Library/Logs/IdleBiz.",
+      text: "Your company — employees, tasks, memory, workspace files and the activity log — lives on your Mac under ~/.idlebiz. Stripe, Vercel and Printful keys you enter are encrypted with the macOS Keychain and never handed to your employees. There is no telemetry and no crash reporting to us; logs stay in ~/Library/Logs/IdleBiz.",
     },
     {
       kind: "paragraph",
-      text: "Employees are sessions of your own claude or codex CLI, so the prompts and files they work with go to Anthropic or OpenAI under your account and their privacy terms. When you approve a deploy, push or payment link, the app talks to Vercel, your git host or Stripe with your credentials.",
+      text: "Employees are sessions of your own claude or codex CLI, so the prompts and files they work with go to Anthropic or OpenAI under your account and their privacy terms, including the buyer emails and shipping addresses they read to answer orders. When you approve a deploy, payment link or print listing, the app talks to Vercel, Stripe or Printful with your credentials. For each paid print order, the app sends Printful the buyer's name, email, phone and shipping address and the print files, so Printful can print and ship it.",
     },
     { kind: "heading", text: "Your choices" },
     {

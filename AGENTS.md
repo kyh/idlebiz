@@ -85,8 +85,8 @@ of `pnpm verify` or CI:
   keys to the real Vercel and Stripe APIs, so they need the network; where a key is taken,
   main's `fetch` answers those APIs and Printful's from canned JSON (`stubServices`), so no
   real account or key is needed.
-- Quit `pnpm dev:desktop` first: an unpackaged launch shares its userData and so its
-  single-instance lock, and the suite refuses to start while that is held.
+- It runs beside `pnpm dev:desktop`: each launch's isolated root gets its own userData, and so
+  its own single-instance lock (`main/index.ts`).
 - It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds over the preload
   bridge with a hand-written team (no casting run), a $0 cap and autopilot off; the
   scheduler checks the budget before it spawns anything, so no run can start. It directs
