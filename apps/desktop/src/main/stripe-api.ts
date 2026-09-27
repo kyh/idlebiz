@@ -26,3 +26,10 @@ export const stripeSays = (error: HttpError): string => {
 
 /** Whether `key` is a Stripe key in test mode, whose charges nobody paid. */
 export const isTestKey = (key: string): boolean => /^[rs]k_test_/u.test(key);
+
+/**
+ * Whether `text` carries a Stripe secret key, which does anything in the account it belongs to:
+ * no product or teammate ever holds one, only a restricted key granted what it needs.
+ */
+export const holdsStripeSecretKey = (text: string): boolean =>
+  /\bsk_(?:live|test)_[0-9A-Za-z]{8,}/u.test(text);

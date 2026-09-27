@@ -21,7 +21,7 @@ import type { PrintListing } from "@/main/print-listing";
 import { printfulCredential } from "@/main/printful";
 import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "@/main/printful";
 import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "@/main/secrets";
-import { isTestKey } from "@/main/stripe-api";
+import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
 import type { productionHosts } from "@/main/vercel";
 import { keepEnvValue, keptEnvValues, teamSetEnv } from "@/main/vercel-env";
 import type { EnvSetter } from "@/main/vercel-env";
@@ -187,6 +187,9 @@ const fileUrlRefusal = (url: URL): string | null => {
   if (url.username !== "" || url.password !== "") {
     return `${url.href} carries a login: a print file has to be public, since Printful fetches it with none.`;
   }
+  if (url.port !== "") {
+    return `${url.href} names port ${url.port}: Vercel serves the product only on https's own port, so name the URL without one.`;
+  }
   return null;
 };
 
@@ -325,6 +328,9 @@ const afterPaymentRefusal = (url: URL): string | null => {
   }
   if (url.username !== "" || url.password !== "") {
     return `${url.href} carries a login: the page buyers land on has to be public, since they arrive with none.`;
+  }
+  if (url.port !== "") {
+    return `${url.href} names port ${url.port}: Vercel serves the product only on https's own port, so name the page without one.`;
   }
   if (url.searchParams.has(CHECKOUT_SESSION_PARAM)) {
     return `${url.href} already has a ${CHECKOUT_SESSION_PARAM}: IdleBiz adds it, filled with each buyer's checkout session, so name the page without it.`;
@@ -829,6 +835,9 @@ const TOOLS = {
     const held = heldKeyIn(value);
     if (held !== null) {
       return `${name} was not set: that value is IdleBiz's own ${held}, which never leaves IdleBiz. What needs it is a tool IdleBiz runs itself (create_payment_link, sell_print, deploy); a key the product needs of its own is one the founder makes for it, which an ask_boss action can ask them for.`;
+    }
+    if (holdsStripeSecretKey(value)) {
+      return `${name} was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see "Checking who paid").`;
     }
     const replaces = teamSetEnv(product, name);
     const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });

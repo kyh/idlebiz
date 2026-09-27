@@ -86,10 +86,30 @@ describe("standingInstructions", () => {
   it("has a game's paid unlock checked on its server, with a key of the product's own the founder makes", () => {
     const text = instructionsFor("game-studio");
     expect(text).toMatch(/paid unlock[^\n]*afterPaymentUrl[^\n]*Checking who paid/u);
-    expect(text).toContain('its `payment_status` is `"paid"` and its `payment_link` is the id');
-    expect(text).toContain("Create restricted key");
-    expect(text).toContain("granting only Checkout Sessions: Read");
+    expect(text).toContain(
+      'only `payment_status` `"paid"` on the id create_payment_link answered with unlocks',
+    );
+    expect(text).toContain(
+      "Create restricted key, in live mode unless create_payment_link said Stripe is in test mode; start from no permissions, set only Checkout Sessions to Read, then Create key",
+    );
     expect(text).toContain("set_env as `STRIPE_CHECKOUT_READ_KEY`");
+  });
+
+  it("has a purchase read from Stripe once, then trusted on a signed cookie, with a payment still clearing kept", () => {
+    const text = instructionsFor("game-studio");
+    expect(text).toContain("Ask Stripe once per purchase");
+    expect(text).toContain("keep it with set_env too");
+    expect(text).toContain('createHmac("sha256", secret)');
+    expect(text).toContain('if (res === null || !res.ok) return "retry";');
+    expect(text).toContain('return session.status === "complete" ? "processing" : "refused";');
+    expect(text).toContain('A Stripe 429 or 5xx means ask again later, never "not paid".');
+  });
+
+  it("says a paid session id unlocks for whoever holds it, and how to tie a purchase to one buyer", () => {
+    const text = instructionsFor("game-studio");
+    expect(text).toContain("anyone who has one unlocks");
+    expect(text).toContain("nothing may show, log or link it");
+    expect(text).toContain("`customer_details.email`");
   });
 
   it("has the founder deliver what a link sold through its cards, never through ask_boss", () => {

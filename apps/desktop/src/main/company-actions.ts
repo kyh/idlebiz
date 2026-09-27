@@ -5,7 +5,7 @@ import { readActiveLinks, switchOffPaymentLink } from "@/main/payment-links";
 import type { ActiveLinksRead } from "@/main/payment-links";
 import { betNews } from "@/main/prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "@/main/secrets";
-import { isTestKey } from "@/main/stripe-api";
+import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
 import type { Bet } from "@/shared/bets";
 import type {
   ActionAsk,
@@ -128,6 +128,11 @@ export const refuseHeldKey = (text: string): void => {
       `Nothing was sent: that holds IdleBiz's own ${held}, which never leaves IdleBiz, and your team reads what you send. IdleBiz already uses it for them; a key goes in where IdleBiz asks for it (the Budget panel, a product's Vercel button).`,
     );
   }
+  if (holdsStripeSecretKey(text)) {
+    throw new RefusalError(
+      "Nothing was sent: that holds a Stripe secret key (sk_), which can charge, refund and pay out on your whole account, and your team reads what you send. A Stripe key the team asks for is a restricted one (rk_): Create restricted key in Stripe's dashboard, start from no permissions, and grant only what they named.",
+    );
+  }
 };
 
 // a Stripe secret or restricted key, which no order card asks for
@@ -155,12 +160,12 @@ const switchedOffByHand = (title: string): void => {
  */
 export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
   const said = replyText(reply);
-  refuseHeldKey(said);
   if (STRIPE_KEY_IN_TEXT.test(said)) {
     throw new RefusalError(
       "Nothing was sent: that holds a Stripe key, and what you type here goes to the team room. A key goes in the Budget panel; press Done here with no key once it is saved.",
     );
   }
+  refuseHeldKey(said);
   const card = store.closeOrderCard(taskId);
   if (!card) {
     throw new RefusalError("that order card is already settled");

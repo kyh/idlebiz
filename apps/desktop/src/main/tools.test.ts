@@ -752,6 +752,37 @@ describe("set_env", () => {
     expect(sets).toEqual([]);
   });
 
+  it.each(["sk_live_foundersUnrestricted1", "sk_test_foundersUnrestricted1"])(
+    "refuses a Stripe secret key IdleBiz does not hold: %s",
+    async (value) => {
+      connectVercel();
+      const { ctx, sets } = settingRun();
+      store.setProductVercel("acme", VERCEL);
+
+      const answer = await callTool(ctx, "POST /v1/set-env", { name: "STRIPE_KEY", value });
+
+      expect(answer).toBe(
+        "STRIPE_KEY was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see \"Checking who paid\").",
+      );
+      expect(answer).not.toContain(value);
+      expect(sets).toEqual([]);
+    },
+  );
+
+  it("sets a restricted Stripe key the founder made for the product", async () => {
+    connectVercel();
+    const { ctx, sets } = settingRun();
+    store.setProductVercel("acme", VERCEL);
+
+    expect(
+      await callTool(ctx, "POST /v1/set-env", {
+        name: "STRIPE_CHECKOUT_READ_KEY",
+        value: "rk_live_checkoutReadOnly1",
+      }),
+    ).toContain("Set STRIPE_CHECKOUT_READ_KEY on Acme's Vercel project");
+    expect(sets.map(({ value }) => value)).toEqual(["rk_live_checkoutReadOnly1"]);
+  });
+
   it("sets the variable on the run's product's project with the founder's token, unsigned, and says when it takes effect", async () => {
     connectVercel();
     const { ctx, asked, sets } = settingRun();
@@ -1291,6 +1322,10 @@ describe("create_payment_link", () => {
       said: "already has a session_id: IdleBiz adds it",
     },
     {
+      page: "https://play.acme.dev:8443/unlock",
+      said: "https://play.acme.dev:8443/unlock names port 8443: Vercel serves the product only on https's own port, so name the page without one.",
+    },
+    {
       page: "https://acme.example.com/unlock",
       said: "https://acme.example.com/unlock is not on Acme's production domains (acme-site.vercel.app, play.acme.dev): buyers who paid are sent only to a page the product itself serves, where its server checks their checkout.",
     },
@@ -1338,6 +1373,64 @@ describe("create_payment_link", () => {
       },
     ]);
     expect(hostsAsked).toEqual([]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("signs the bet, the delivery and the landing page in that order, and sends Stripe all three", async () => {
+    const { ctx, asked, stripe } = landingRun();
+    const bet = revenueBet();
+    const action = `payment link "Pro plan" at $9.00 on acme for bet ${bet.id} delivering "A thank-you email" then send buyers to ${UNLOCK}`;
+    const call = { ...LINK, afterPaymentUrl: UNLOCK, bet: bet.id, delivery: "A thank-you email" };
+
+    expect(await callTool(ctx, "POST /v1/payment-link", call)).toContain(
+      `Held for the founder's sign-off on "${action}".`,
+    );
+    expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
+    expect(stripe).toEqual([]);
+
+    store.grantApproval(ctx.run.taskId, action);
+    expect(await callTool(ctx, "POST /v1/payment-link", call)).toContain(
+      "The founder gets a card for each paid checkout, with the buyer's email and your delivery.",
+    );
+    expect(stripe[1]?.form).toMatchObject({
+      "after_completion[redirect][url]": `${UNLOCK}?session_id={CHECKOUT_SESSION_ID}`,
+      "after_completion[type]": "redirect",
+      "metadata[bet]": bet.id,
+      "metadata[delivery]": "A thank-you email",
+    });
+  });
+
+  it("leaves a Vercel card when Vercel turns the token away while checking the landing page", async () => {
+    const { ctx, asked, stripe } = landingRun();
+    const refused: RunContext = {
+      ...ctx,
+      productionHosts: () => Promise.resolve({ kind: "refused" }),
+    };
+
+    expect(
+      await callTool(refused, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK }),
+    ).toContain("Vercel turned IdleBiz's token away");
+    expect(asked).toEqual([
+      {
+        integration: "vercel",
+        reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
+        type: "integration",
+      },
+    ]);
+    expect(stripe).toEqual([]);
+  });
+
+  it("asks again later when Vercel cannot say where the landing page is served", async () => {
+    const { ctx, asked, stripe } = landingRun();
+    const unreachable: RunContext = {
+      ...ctx,
+      productionHosts: () => Promise.resolve({ kind: "unreachable", reason: "timed out" }),
+    };
+
+    expect(
+      await callTool(unreachable, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK }),
+    ).toBe("Vercel could not say where Acme is served (timed out); try again.");
+    expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
   });
 
@@ -1714,6 +1807,10 @@ describe("sell_print", () => {
     {
       said: "carries a login",
       url: "https://me:pw@acme-site.vercel.app/print/tee-1.png",
+    },
+    {
+      said: "https://acme-site.vercel.app:8443/print/tee-1.png names port 8443: Vercel serves the product only on https's own port, so name the URL without one.",
+      url: "https://acme-site.vercel.app:8443/print/tee-1.png",
     },
     {
       said: "https://cdn.example.com/tee.png is not on Acme's production domains (acme-site.vercel.app)",

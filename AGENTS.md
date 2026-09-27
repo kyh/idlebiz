@@ -187,7 +187,7 @@ rather than crashing boot.
   (`productionHosts`), with `session_id={CHECKOUT_SESSION_ID}` added
   (`after_completion[type]=redirect`), and is signed too (`then send buyers to <url>`): the
   product's own server reads that session with a Checkout Sessions: Read key the founder makes
-  for it, which is how a paid unlock checks who paid. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
+  for it (`set_env` refuses any `sk_` key), which is how a paid unlock checks who paid. Employees read Printful's catalog with `printful_catalog` (`printfulCatalog` in
   `main/printful.ts`) and list a print with `sell_print` (`main/print-listing.ts`): main checks
   the print files against the product's verified production domains (`productionHosts` in
   `main/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates

@@ -131,7 +131,12 @@ allocator and the replay.
   `afterPaymentUrl` sends each buyer back to a route of the product's with `session_id`, and
   the route reads that checkout session with a restricted key of the product's own (Checkout
   Sessions: Read, which the founder makes on an `ask_boss` action and the team keeps with
-  `set_env`; IdleBiz's own key is refused there), unlocking only a session `paid` on its link.
+  `set_env`; IdleBiz's own key and any `sk_` secret key are refused there), unlocking only a
+  session `paid` on its link. It asks Stripe once per purchase, since reads count against the
+  founder's whole account, then trusts a cookie it signs with a secret of its own; a session
+  still `unpaid` (a bank debit clearing) is kept to check again, and a 429 or 5xx is never "not
+  paid". A paid session id unlocks for whoever holds it, which the instructions say, with how
+  to tie a purchase to one buyer where the product has sign-in or a database.
   The instructions teach it under "Checking who paid", with a Next.js route. What only the
   founder can hand over, a link's `delivery` says, and the order pump cards the founder for
   each paid checkout on it; the instructions never have an `ask_boss` card deliver, which would
@@ -245,7 +250,7 @@ third boundary.
   `delivery` its buyers are owed, which Stripe copies onto each checkout (a link with one is
   refused before the sign-off while the key cannot read checkout sessions, since that read is
   how each buyer reaches the founder). Its `afterPaymentUrl`, where each buyer lands once they
-  have paid, must be https with no login on one of the product's verified production domains
+  have paid, must be https with no login or port on one of the product's verified production domains
   (`productionHosts`, as `sell_print`'s files), and main adds
   `session_id={CHECKOUT_SESSION_ID}`, which Stripe fills (`after_completion[type]=redirect`);
   `sell_print` lists a
@@ -343,7 +348,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   run by the founder's hand either: an action's reply, a question's answer, a room message
   and an order card's note holding one are refused (`refuseHeldKey` in
   `main/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key),
-  and so is `set_env` given one. The deploy
+  and so is `set_env` given one. Both also refuse any Stripe secret key (`sk_`,
+  `holdsStripeSecretKey`), IdleBiz's or not: it charges, refunds and pays out on the whole
+  account with no sign-off, so a Stripe key the team asks for is a restricted one. What a
+  restricted key was granted no API reads, so an `rk_` passes on the founder's word. The deploy
   tool reads the folder for that before it asks for the sign-off, and the deploy again over what
   it uploads. Only values of 8 characters or more are scanned. It is a tripwire, not a boundary:
   an encoded or split key passes, and nothing scans what the founder pushes by hand. Vercel's

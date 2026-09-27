@@ -1052,6 +1052,30 @@ describe("an action only the founder can take", () => {
     expect(JSON.stringify(store.recentTeamMessages())).not.toContain(key);
   });
 
+  it("sends the team no Stripe secret key, and a restricted one they asked for", async () => {
+    const { drain, task } = await blockedOn(POST);
+    const secret = "sk_live_foundersUnrestricted1";
+
+    for (const send of [
+      () => drain.resolveAction(task.id, { kind: "done", note: `here: ${secret}` }),
+      () => drain.resolveAction(task.id, { kind: "cant", reason: "sk_test_onlyTheTestOne1" }),
+      () => drain.founderMessage(`@mae use ${secret}`),
+      () => drain.directEmployee("mae", secret),
+    ]) {
+      expect(send).toThrow(
+        "Nothing was sent: that holds a Stripe secret key (sk_), which can charge, refund and pay out on your whole account",
+      );
+    }
+    expect(kindOf(task)).toBe("blocked");
+    expect(JSON.stringify(store.recentTeamMessages())).not.toContain(secret);
+
+    const continuation = drain.resolveAction(task.id, {
+      kind: "done",
+      note: "rk_live_checkoutReadOnly1",
+    });
+    expect(continuation.description).toContain("rk_live_checkoutReadOnly1");
+  });
+
   it("settles an order card with no run, telling the room what the founder did", () => {
     found();
     const drain = createScheduler(scripted().driver, asleep);
