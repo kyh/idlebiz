@@ -376,7 +376,7 @@ const boot = async (): Promise<void> => {
     openWindow: ensureWindow,
     setAutopilot: (on) => {
       if (store.getCompany()) {
-        setAutopilot(on);
+        guarded("tray autopilot", () => setAutopilot(on));
       }
     },
   });

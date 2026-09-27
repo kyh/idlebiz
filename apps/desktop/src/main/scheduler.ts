@@ -551,14 +551,13 @@ class Scheduler {
     }
   }
 
-  /** Coalesce identical requests still waiting for the same employee. */
+  /**
+   * Coalesce identical requests still waiting for the same employee. Filed even at the budget
+   * cap, as `queue` claims: the founder's word waits for the cap to be raised, never lost.
+   */
   wakeEmployee(employeeId: string, brief: TaskBrief): Task | null {
     const emp = store.getEmployee(employeeId);
     if (!emp) {
-      return null;
-    }
-    const company = store.getCompany();
-    if (!company || !admit(company)) {
       return null;
     }
     const waiting = store

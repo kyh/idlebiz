@@ -35,3 +35,16 @@ test("retiring the selected product shows the whole company again", async ({ lau
   await expect(products.getByText("Bets", { exact: true })).toBeVisible();
   await expect(products.getByText("Shipping log", { exact: true })).toBeVisible();
 });
+
+test("Start while out of budget says why and leaves the office paused", async ({ launch }) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { page } = await launch();
+  await page.getByRole("button", { name: /Start/u }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Out of budget — raise the cap in Budget first.",
+  );
+  await expect(page.getByRole("button", { name: /Start/u })).toBeVisible();
+});

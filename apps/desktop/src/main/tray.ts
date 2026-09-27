@@ -2,6 +2,7 @@ import { Menu, Notification, Tray, app, nativeImage } from "electron";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
 import * as store from "@/main/store/store";
+import { isOutOfBudget } from "@/shared/domain";
 import { earliestReset, napLabel, usageLabel } from "@/shared/format";
 
 // macOS template images use black and alpha; the system recolors them for the menu bar.
@@ -172,10 +173,12 @@ class AppTray {
       { enabled: false, label: statusLine(s) },
       ...(s.company
         ? [
-            {
-              click: (): void => host.setAutopilot(!autopilot),
-              label: autopilot ? "Pause the office" : "Start the office",
-            },
+            autopilot || !isOutOfBudget(s.company)
+              ? {
+                  click: (): void => host.setAutopilot(!autopilot),
+                  label: autopilot ? "Pause the office" : "Start the office",
+                }
+              : { enabled: false, label: "Out of budget — raise the cap to start" },
           ]
         : []),
       { type: "separator" },

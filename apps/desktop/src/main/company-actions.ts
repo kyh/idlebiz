@@ -7,6 +7,7 @@ import { betNews } from "@/main/prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "@/main/secrets";
 import { holdsStripeSecretKey, isTestKey } from "@/main/stripe-api";
 import type { Bet } from "@/shared/bets";
+import { isOutOfBudget } from "@/shared/domain";
 import type {
   ActionAsk,
   ActionReply,
@@ -70,6 +71,10 @@ export const startProduct = (input: ProductDraft, by: string | null): Product =>
 
 /** Turn autopilot on or off, from the HUD or the tray. */
 export const setAutopilot = (on: boolean): Company => {
+  // the next tick would halt it again, so starting would read as the office stopping on its own
+  if (on && isOutOfBudget(store.requireCompany())) {
+    throw new RefusalError("Out of budget — raise the cap in Budget first.");
+  }
   const company = store.setAutopilot(on);
   publishActivity({ kind: "autopilot.changed", payload: { on } });
   return company;

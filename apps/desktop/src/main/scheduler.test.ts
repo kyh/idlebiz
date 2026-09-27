@@ -21,6 +21,7 @@ const store = await import("./store/store");
 const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { activityEvents } = await import("./activity");
 const { createScheduler } = await import("./scheduler");
+const { setAutopilot } = await import("./company-actions");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -151,6 +152,38 @@ it("ignores queue drains after stop and resumes admission only after start", () 
   expect(store.getCompany()?.autopilot).toBe(false);
   expect(kindOf(task)).toBe("queued");
   expect(store.getEmployee("priya")?.status).toBe("idle");
+  drain.stop();
+});
+
+it("files the founder's pings at the cap, to run once the cap is raised", () => {
+  found({ capUsd: 0, mode: "capped" });
+  const { driver, started } = scripted();
+  const drain = createScheduler(driver, asleep);
+  drain.start();
+
+  drain.directEmployee("priya", "daily standup");
+  drain.founderMessage("@mae hello");
+
+  expect(store.listQueuedTasks().map((t) => t.assigneeId)).toEqual(["priya", "mae"]);
+  expect(started()).toBe(0);
+
+  store.setBudget(UNCAPPED);
+  drain.tick();
+
+  expect(started()).toBe(2);
+  drain.stop();
+});
+
+it("refuses to start autopilot while the office is out of budget", () => {
+  found({ capUsd: 0, mode: "capped" });
+  const drain = createScheduler(scripted().driver, asleep);
+  drain.start();
+
+  expect(() => setAutopilot(true)).toThrow(RefusalError);
+  expect(store.getCompany()?.autopilot).toBe(false);
+
+  store.setBudget(UNCAPPED);
+  expect(setAutopilot(true).autopilot).toBe(true);
   drain.stop();
 });
 

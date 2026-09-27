@@ -205,6 +205,11 @@ const RunControls = ({
       >
         <span className="px-icon px-icon-solo">⚙</span>
       </button>
+      {submission.kind === "failed" ? (
+        <div role="alert" className="px-inset px-hint px-hint-danger self-center px-2 py-1">
+          {submission.message}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -236,7 +241,11 @@ export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
         nap={nap}
         onOpen={onOpen}
       />
-      <RunControls company={company} onOpen={onOpen} />
+      <RunControls
+        key={isOutOfBudget(company) ? "out-of-budget" : "in-budget"}
+        company={company}
+        onOpen={onOpen}
+      />
     </>
   );
 };
