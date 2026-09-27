@@ -226,7 +226,7 @@ const SignedOutRunners = ({ company, employees }: { company: Company; employees:
   }
   const runners = [...new Set(waiting.map((e) => RUNNERS[e.runner].displayName))].join(" and ");
   const leadWaits = waiting.some((e) => e.id === company.leaderId);
-  const [line] = linesOf(auth).slice(-1);
+  const lines = linesOf(auth);
   return (
     <div
       role="alert"
@@ -238,7 +238,11 @@ const SignedOutRunners = ({ company, employees }: { company: Company; employees:
         {leadWaits ? ", the lead among them: no bet is measured, killed or opened" : ""}. Sign in
         again to put them back to work.
       </div>
-      {line === undefined ? null : <div className="mt-1 text-fg-dim">{line}</div>}
+      {lines.length > 0 ? (
+        <div className="mt-1 max-h-20 overflow-y-auto whitespace-pre-line text-fg-dim">
+          {lines.join("\n")}
+        </div>
+      ) : null}
       <div className="mt-2 flex justify-end">
         <button
           type="button"

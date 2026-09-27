@@ -20,7 +20,10 @@ export const AuthStep = ({
   onLogin: () => void;
   aside?: React.ReactNode;
 }) => {
-  const lines = linesOf(auth);
+  const attempt = linesOf(auth);
+  // the onboarding's sign-in is done once any runner is ready, so here done means connected
+  const lines =
+    auth.phase === "signed-in" && attempt.length > 0 ? [...attempt, "Connected ✓"] : attempt;
   return (
     <div className="flex w-full flex-col gap-2">
       {lines.length > 0 ? (

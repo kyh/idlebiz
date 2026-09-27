@@ -10,7 +10,7 @@ export type Auth =
   | { phase: "login-failed"; lines: readonly string[] }
   | { phase: "signed-in"; lines: readonly string[] };
 
-type Attempt = Extract<Auth, { lines: readonly string[] }>;
+export type Attempt = Extract<Auth, { lines: readonly string[] }>;
 
 export const linesOf = (a: Auth): readonly string[] => ("lines" in a ? a.lines : []);
 const withLine = (attempt: Attempt | null, line: string): readonly string[] => [
@@ -25,6 +25,31 @@ const probed = (authed: boolean | null): Auth => {
   return authed ? { lines: [], phase: "signed-in" } : { phase: "signed-out" };
 };
 
+/**
+ * A login's progress after one event. Done adds no line: another runner may be what signed in
+ * while the one the founder is signing in to failed, and its last line says how to finish it.
+ */
+export const nextAttempt = (attempt: Attempt | null, e: AuthFlowEvent): Attempt => {
+  switch (e.type) {
+    case "url": {
+      return {
+        lines: withLine(attempt, "Your browser opened — authorize there, then come back."),
+        phase: "logging-in",
+      };
+    }
+    case "progress": {
+      return { lines: withLine(attempt, e.message), phase: "logging-in" };
+    }
+    case "done": {
+      return { lines: attempt?.lines ?? [], phase: "signed-in" };
+    }
+    case "error": {
+      return { lines: withLine(attempt, `Hmm — ${e.message}`), phase: "login-failed" };
+    }
+    // no default
+  }
+};
+
 /** The store's CLI probe until a login starts here, then that login's progress. */
 export const useAuthFlow = (onSignedIn?: () => void) => {
   const authed = useStore((s) => s.authed);
@@ -34,31 +59,9 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
   useEffect(
     () =>
       bridge().onAuthEvent((e: AuthFlowEvent) => {
-        switch (e.type) {
-          case "url": {
-            setAttempt((a) => ({
-              lines: withLine(a, "Your browser opened — authorize there, then come back."),
-              phase: "logging-in",
-            }));
-            break;
-          }
-          case "progress": {
-            setAttempt((a) => ({ lines: withLine(a, e.message), phase: "logging-in" }));
-            break;
-          }
-          case "done": {
-            setAttempt((a) => ({ lines: withLine(a, "Connected ✓"), phase: "signed-in" }));
-            signedIn();
-            break;
-          }
-          case "error": {
-            setAttempt((a) => ({
-              lines: withLine(a, `Hmm — ${e.message}`),
-              phase: "login-failed",
-            }));
-            break;
-          }
-          // no default
+        setAttempt((a) => nextAttempt(a, e));
+        if (e.type === "done") {
+          signedIn();
         }
       }),
     [],
