@@ -163,6 +163,8 @@ export const TeamChannel = () => {
       : [],
   );
 
+  // The field goes readOnly while a send is in flight, never disabled: a disabled
+  // field drops focus, and the office takes the keys the founder types next.
   const send = () => {
     const text = draft.trim();
     if (text && submission.kind !== "sending") {
@@ -210,7 +212,7 @@ export const TeamChannel = () => {
       <div className="flex gap-1 p-1.5">
         <input
           value={draft}
-          disabled={submission.kind === "sending"}
+          readOnly={submission.kind === "sending"}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

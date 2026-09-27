@@ -363,6 +363,24 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await expect(dialogue.getByPlaceholder("Your answer…")).toHaveValue("");
 });
 
+test("#team keeps the keys after a message is sent", async ({ launch }) => {
+  const founding = await launch();
+  await foundCompany(founding.page);
+  await closeFully(founding.app);
+
+  const { page } = await launch();
+  const field = page.locator(".px-window").filter({ hasText: "# team" }).getByRole("textbox");
+  await field.click();
+  await page.keyboard.type("first");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("first", { exact: true })).toBeVisible();
+  await expect(field).toHaveValue("");
+  await expect(field).toBeFocused();
+  expect(await page.evaluate(`${SCENE}.input.keyboard.enabled`)).toBe(false);
+  await page.keyboard.type("second");
+  await expect(field).toHaveValue("second");
+});
+
 test("the dialogue's cursor stays on Talk… when a row is added ahead of it meanwhile", async ({
   launch,
 }) => {
