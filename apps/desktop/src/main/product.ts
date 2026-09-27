@@ -3,7 +3,7 @@ import path from "node:path";
 import { shell } from "electron";
 import * as store from "@/main/store/store";
 import { latestDeployment } from "@/main/vercel";
-import { judgeOpening } from "@/main/workspace-open";
+import { judgeAgentPath, judgeOpening } from "@/main/workspace-open";
 import type { Opening } from "@/main/workspace-open";
 import type { ProductStatus } from "@/shared/integrations";
 import { RefusalError } from "@/shared/refusal";
@@ -36,13 +36,12 @@ const openTarget = async (opening: Opening): Promise<void> => {
 };
 
 /**
- * Open a path relative to a workspace, or an absolute path inside one, with the
- * OS default app ("" is shared/ itself). Agents write paths relative to the
- * workspace they ran in, so the path is tried against shared/ and every
- * product's workspace, and the first that has it wins.
+ * Open a path an agent wrote with the OS default app ("" is shared/ itself). Agents write
+ * paths relative to the workspace they ran in, so a relative one is tried against shared/
+ * and every product's workspace, and the first that has it wins.
  */
 export const openWorkspacePath = async (rel: string): Promise<void> => {
-  const opening = judgeOpening(
+  const opening = judgeAgentPath(
     [store.requireCompany().workspaceDir, ...store.listProducts().map((p) => p.workspaceDir)],
     rel,
   );

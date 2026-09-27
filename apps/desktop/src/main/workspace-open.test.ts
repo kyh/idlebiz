@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { judgeOpening } from "./workspace-open";
+import { judgeAgentPath, judgeOpening } from "./workspace-open";
 
 const outside = realpathSync.native(mkdtempSync(path.join(tmpdir(), "idlebiz-outside-")));
 const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "idlebiz-workspace-")));
@@ -97,5 +97,33 @@ describe("judgeOpening", () => {
     ])("reveals %j, which its attributes mark as an app", (rel, real) => {
       expect(judgeOpening([root], rel)).toEqual({ kind: "reveal", path: real });
     });
+  });
+});
+
+describe("judgeAgentPath", () => {
+  const save = realpathSync.native(mkdtempSync(path.join(tmpdir(), "idlebiz-save-")));
+  const shared = path.join(save, "acme", "shared");
+  const first = path.join(save, "acme", "workspace");
+  const second = path.join(save, "acme", "products", "side-quest", "workspace");
+  for (const dir of [shared, first, second]) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "index.html"), "<p>hi</p>\n");
+  }
+  const roots = [shared, first, second];
+  afterAll(() => rmSync(save, { force: true, recursive: true }));
+
+  it.each([
+    [path.join(second, "index.html"), second],
+    [path.join(first, "index.html"), first],
+    ["/Users/else/.idlebiz/acme/products/side-quest/workspace/index.html", second],
+    ["/Users/else/.idlebiz/acme/workspace/index.html", first],
+    ["/Users/else/.idlebiz/acme/shared/index.html", shared],
+    ["index.html", shared],
+  ])("opens %j under the root it names", (token, dir) => {
+    expect(judgeAgentPath(roots, token)?.path).toBe(path.join(dir, "index.html"));
+  });
+
+  it("refuses an absolute path that names no workspace", () => {
+    expect(judgeAgentPath(roots, "/etc/index.html")).toBeNull();
   });
 });

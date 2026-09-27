@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { bridge } from "@/renderer/bridge";
-import { ASSET_TOKEN, relFromToken } from "@/renderer/ui/asset-token";
+import { ASSET_TOKEN } from "@/renderer/ui/asset-token";
 
 // Renders agent text with clickable assets: URLs open in the browser, and
 // anything that looks like a file path opens with the OS default app (guarded
@@ -12,7 +12,7 @@ const openAsset = async (token: string): Promise<void> => {
     return;
   }
   try {
-    await bridge().openCompanyPath({ rel: relFromToken(token) });
+    await bridge().openCompanyPath({ rel: token });
   } catch {
     // a path main refuses is dropped on purpose; the text stays as it was
   }

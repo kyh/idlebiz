@@ -82,3 +82,24 @@ export const judgeOpening = (roots: readonly string[], rel: string): Opening | n
   }
   return null;
 };
+
+/**
+ * What a click on a path an agent wrote may open. A path inside a root is taken as written. An
+ * absolute one outside them names a root on another machine or in a copied save: it is
+ * re-rooted from its workspace/ or shared/, under the root whose folder and parent it names
+ * first, so a same-named file of another product never opens in its place.
+ */
+export const judgeAgentPath = (roots: readonly string[], token: string): Opening | null => {
+  const asWritten = judgeOpening(roots, token);
+  const root = path.isAbsolute(token) ? /\/(?:workspace|shared)\//u.exec(token) : null;
+  if (asWritten !== null || root === null) {
+    return asWritten;
+  }
+  const named = token.slice(0, root.index + root[0].length);
+  const names = (dir: string): boolean =>
+    named.endsWith(`/${path.basename(path.dirname(dir))}/${path.basename(dir)}/`);
+  return judgeOpening(
+    [...roots.filter(names), ...roots.filter((dir) => !names(dir))],
+    token.slice(named.length),
+  );
+};
