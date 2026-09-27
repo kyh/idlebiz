@@ -548,7 +548,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   onboard, hire or run anything. There is no seeded save.
 - **CLI-free surfaces**: `apps/web` and the onboarding modal, both reachable with no company.
 - **`pnpm dev:desktop` stops this checkout's desktop dev session first**; `dev:web`,
-  `verify` and unrelated processes on TCP 9222 survive, and startup fails while that port is
+  `verify`, `e2e` and unrelated processes on TCP 9222 survive, and startup fails while that port is
   occupied. It runs Turbo in loose env mode, so shell env reaches Electron.
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.

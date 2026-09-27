@@ -27,7 +27,7 @@ There is no bootstrap script and nothing to seed.
 **`pnpm dev:desktop` is not a plain dev server.** It runs `pnpm dev:kill` first
 (`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session — its
 turbo watch, electron-vite and Electron — then kills any that remain after three seconds.
-`pnpm dev:web`, `pnpm verify` and tests survive it. It leaves unrelated processes on TCP
+`pnpm dev:web`, `pnpm verify`, tests and a running `pnpm e2e` survive it. It leaves unrelated processes on TCP
 **9222** alone and refuses to start while that port is occupied.
 
 ## The one hard prerequisite

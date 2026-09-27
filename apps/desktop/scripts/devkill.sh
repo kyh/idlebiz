@@ -5,8 +5,9 @@
 # its own and electron-vite just restarts it.
 #
 # Every pattern is anchored to this repo's absolute path and to the desktop session, so
-# `pnpm dev:web`, `pnpm verify` and tests here, a dev server in another checkout — or any
-# other Electron app you have open — survive.
+# `pnpm dev:web`, `pnpm verify`, tests and `pnpm e2e`'s app here, a dev server in another
+# checkout — or any other Electron app you have open — survive. The binary's path alone
+# would take e2e's app too: Playwright launches the same Electron.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -19,17 +20,34 @@ PATTERNS=(
   "$ROOT/node_modules/\.bin/\.\./turbo/bin/turbo watch dev .*@repo/desktop"  # turbo shim
   "$ROOT/node_modules/\.pnpm/@turbo.*/bin/turbo watch dev .*@repo/desktop"   # turbo watch dev
   "$ROOT/apps/desktop/node_modules/.*/electron-vite\.js dev"                 # electron-vite dev server
-  "$ROOT/node_modules/\.pnpm/electron@"                                      # the Electron app + its helper processes
+  "$ROOT/node_modules/\.pnpm/electron@.* --remote-debugging-port=9222( |$)"  # the dev app, if electron-vite is gone
 )
+
+descendants() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null || true); do
+    echo "$child"
+    descendants "$child"
+  done
+}
+
+# each match with everything under it: electron-vite's Electron and its helper processes
+session() {
+  local pattern pid
+  for pattern in "${PATTERNS[@]}"; do
+    for pid in $(pgrep -f -- "$pattern" 2>/dev/null || true); do
+      [ "$pid" = "$SELF" ] && continue
+      echo "$pid"
+      descendants "$pid"
+    done
+  done
+}
 
 # TERM first so Electron can finish the write it is in the middle of (the save is
 # markdown packages and an append-only log); KILL whatever is still there after.
 targets=()
-for pattern in "${PATTERNS[@]}"; do
-  for pid in $(pgrep -f -- "$pattern" 2>/dev/null || true); do
-    [ "$pid" = "$SELF" ] && continue
-    targets+=("$pid")
-  done
+for pid in $(session); do
+  targets+=("$pid")
 done
 # the debug port's holder too, but only if it is this checkout's: a Chrome you are
 # driving over 9222 is not ours to kill
@@ -69,6 +87,6 @@ done
 
 port=free
 lsof -ti tcp:9222 >/dev/null 2>&1 && port=BUSY
-left=$(pgrep -f -- "$ROOT/node_modules/\.pnpm/electron@" 2>/dev/null | wc -l | tr -d ' ')
-echo "devkill: killed $killed; port 9222 $port; electron left: ${left:-0}"
+left=$(session | wc -l | tr -d ' ')
+echo "devkill: killed $killed; port 9222 $port; session left: ${left:-0}"
 [ "$port" = free ] && [ "${left:-0}" -eq 0 ]
