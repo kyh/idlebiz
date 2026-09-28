@@ -8,7 +8,7 @@ import type { Submission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { ActionCard } from "@/renderer/ui/action-card";
-import { trailOf } from "@/renderer/ui/activity-trail";
+import { tasksMovedBy, trailOf } from "@/renderer/ui/activity-trail";
 import type { Said } from "@/renderer/ui/activity-trail";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { RichText } from "@/renderer/ui/linkify";
@@ -182,22 +182,21 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
     () => activity.filter((a) => "employeeId" in a && a.employeeId === emp.id),
     [activity, emp.id],
   );
-  // Only a status event moves a task, so a new one is what makes the task list
-  // stale — and a refetch worth making. Not the feed length: the feed is a
+  // Keyed on the event that moved their tasks, not the feed length: the feed is a
   // 300-event ring, and a length-keyed refetch stops once it fills.
-  const lastStatusId = mine.findLast((a) => a.kind === "status")?.id ?? null;
+  const movedBy = tasksMovedBy(activity, emp.id);
   const fetched = useAsync(
     async () => ({
       list: await listTasksFor(emp.id),
       options: await bridge().employeeOptions({ employeeId: emp.id }),
     }),
-    [emp.id, lastStatusId],
+    [emp.id, movedBy],
   );
   const { list: tasks, options } = fetched.kind === "ready" ? fetched.value : NOTHING_FETCHED;
 
   // only questions and actions are answered here; integration asks live in the
   // inbox where the [Connect] button is. A stale list still shows its ask: any
-  // status event of theirs makes it stale, and dropping the form until the
+  // event that moves their tasks makes it stale, and dropping the form until the
   // refetch lands would wipe what the founder is typing. An answered form stays
   // sent, and main refuses an ask answered elsewhere.
   const asked = tasks
