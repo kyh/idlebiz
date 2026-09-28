@@ -77,20 +77,35 @@ const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
     );
   }
   return (
-    <div className="flex items-center justify-between gap-2">
-      {stripeStatus.state === "error" ? (
-        <span className="text-xs text-danger">{stripeStatus.message}</span>
-      ) : (
-        <span className="text-xs text-fg-dim">Not connected</span>
-      )}
-      <button
-        type="button"
-        onClick={() => connecting.submit()}
-        disabled={connecting.submission.kind === "sending"}
-        className="px-btn-accent px-btn"
-      >
-        {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
-      </button>
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        {stripeStatus.state === "error" ? (
+          <span className="text-xs text-danger">{stripeStatus.message}</span>
+        ) : (
+          <span className="text-xs text-fg-dim">Not connected</span>
+        )}
+        <div className="flex gap-2">
+          {stripeStatus.state === "error" && stripeStatus.bound && (
+            <button
+              type="button"
+              onClick={() => disconnecting.submit()}
+              disabled={disconnecting.submission.kind === "sending"}
+              className="px-btn"
+            >
+              Disconnect
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => connecting.submit()}
+            disabled={connecting.submission.kind === "sending"}
+            className="px-btn-accent px-btn"
+          >
+            {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
+          </button>
+        </div>
+      </div>
+      <Failure submission={disconnecting.submission} doing="disconnect" />
     </div>
   );
 };

@@ -229,7 +229,8 @@ rather than crashing boot.
   the one whose `metrics.json` holds the connected account: that one reads through
   `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
   on (`stripeCredential` in `main/metrics.ts`). The Connect token is read-only. A key Stripe
-  refuses shows in the HUD — a Connect token as revoked, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
+  refuses shows in the Budget panel — a Connect token as revoked, with Disconnect beside Reconnect
+  while main still holds its grant, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one. Each product binds a project
   of its own (a project another product holds is refused). The first token saved, through

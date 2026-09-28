@@ -61,12 +61,21 @@ export const initStripeConnect = (hooks: {
   ({ notify, onConnected, openExternal } = hooks);
 };
 
+/** A refused grant still reads through its token until the founder disconnects, so the error offers that too. */
+const errorStatus = (companyId: string, message: string): StripeStatus => ({
+  bound:
+    readMetricsConfig(companyId)?.stripeAccount !== undefined &&
+    getSecret(STRIPE_CONNECT_TOKEN) !== null,
+  message,
+  state: "error",
+});
+
 export const getStripeStatus = (companyId: string): StripeStatus => {
   if (pending) {
     return { state: "connecting" };
   }
   if (lastError) {
-    return { message: lastError.message, state: "error" };
+    return errorStatus(companyId, lastError.message);
   }
   const account = readMetricsConfig(companyId)?.stripeAccount;
   if (account && getSecret(STRIPE_CONNECT_TOKEN)) {
@@ -75,13 +84,13 @@ export const getStripeStatus = (companyId: string): StripeStatus => {
   return { state: "disconnected" };
 };
 
-const fail = (message: string): void => {
+const fail = (companyId: string, message: string): void => {
   lastError = { from: "flow", message };
-  notify({ message, state: "error" });
+  notify(errorStatus(companyId, message));
 };
 
 const REFUSED: Record<StripeCredential["via"], string> = {
-  connect: "Stripe access was revoked — reconnect in the HUD.",
+  connect: "Stripe access was revoked — reconnect or disconnect Stripe in the Budget panel.",
   own: "Stripe won't let your charging key read charges — grant it Read on Charges, replace it, or connect Stripe.",
 };
 
@@ -91,7 +100,7 @@ export const noteStripeRead = (companyId: string, read: RealSnapshot["stripe"]):
     const message = REFUSED[read.via];
     if (lastError?.message !== message) {
       lastError = { from: "pulse", message };
-      notify({ message, state: "error" });
+      notify(errorStatus(companyId, message));
     }
   } else if (read?.answer !== "unanswered" && lastError?.from === "pulse") {
     lastError = null;
@@ -140,12 +149,13 @@ const handleCallback = async (flow: PendingFlow, params: URLSearchParams): Promi
     return false;
   }
   if (!callback || callback.nonce !== flow.nonce) {
-    fail("Stripe callback rejected (bad nonce).");
+    fail(flow.companyId, "Stripe callback rejected (bad nonce).");
     return false;
   }
   const { outcome } = callback;
   if (outcome.kind === "failed") {
     fail(
+      flow.companyId,
       outcome.error === "access_denied"
         ? "Stripe connection cancelled."
         : `Stripe: ${outcome.error}`,
@@ -157,7 +167,7 @@ const handleCallback = async (flow: PendingFlow, params: URLSearchParams): Promi
     return false;
   }
   if (!account) {
-    fail("Stripe callback rejected (envelope not ours).");
+    fail(flow.companyId, "Stripe callback rejected (envelope not ours).");
     return false;
   }
   closeFlow(flow);
@@ -177,7 +187,7 @@ const finishCallback = async (
     ok = await handleCallback(flow, params);
   } catch (error) {
     if (current === generation) {
-      fail(errorMessage(error));
+      fail(flow.companyId, errorMessage(error));
     }
   }
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -237,7 +247,7 @@ export const beginConnect = async (companyId: string): Promise<{ started: boolea
     if (pending?.server === server) {
       closeFlow(pending);
     }
-    fail(errorMessage(error));
+    fail(companyId, errorMessage(error));
     throw error;
   }
 };
@@ -283,7 +293,7 @@ export const disconnectStripe = async (companyId: string): Promise<void> => {
       revoking = null;
     }
     if (outcome.kind === "unconfirmed" && current === generation) {
-      fail(`Disconnected here, but ${stillListed(outcome.reason)}`);
+      fail(companyId, `Disconnected here, but ${stillListed(outcome.reason)}`);
     }
   }
 };

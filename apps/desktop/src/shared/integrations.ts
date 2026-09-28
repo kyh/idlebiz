@@ -3,7 +3,8 @@ export type StripeStatus =
   | { state: "disconnected" }
   | { state: "connecting" }
   | { state: "connected"; accountId: string; livemode: boolean }
-  | { state: "error"; message: string };
+  /** `bound` while main still holds a Connect grant, which a disconnect drops. */
+  | { state: "error"; message: string; bound: boolean };
 
 /** The founder's own Stripe key as the renderer sees it: enough to tell which key it is, never the key. */
 export type StripeKeyStatus =
