@@ -1134,14 +1134,18 @@ for (const target of targets) {
       return Outcomes.parse(parseJson(spawnSync(bin, args, { encoding: "utf-8" }).stdout));
     };
 
-    it("answers only in the run's own folders and its own runner's agent-browser namespace", async () => {
-      const workspace = path.join(short, ".idlebiz/acme/workspace");
+    it("answers only in the run's own folders and the agent-browser namespace of its runner and folders", async () => {
+      const save = path.join(short, ".idlebiz");
+      const workspace = path.join(save, "acme/workspace");
       const namespaces = path.join(short, ".agent-browser/namespaces");
-      const [inWorkspace, claude, codex, ...founders] = await Promise.all(
+      const daemon = (runner: "claude" | "codex", folders: readonly string[]) =>
+        `.agent-browser/namespaces/${browserNamespace(save, runner, folders)}/run/d.sock`;
+      const [inWorkspace, claude, codex, otherFolders, ...founders] = await Promise.all(
         [
           ".idlebiz/acme/workspace/tmp/tsx-501/1.pipe",
-          `.agent-browser/namespaces/${browserNamespace(path.join(short, ".idlebiz"), "claude")}/run/d.sock`,
-          `.agent-browser/namespaces/${browserNamespace(path.join(short, ".idlebiz"), "codex")}/run/d.sock`,
+          daemon("claude", [workspace]),
+          daemon("codex", []),
+          daemon("claude", []),
           ".agent-browser/default.sock",
           ".ssh/agent.sock",
           "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
@@ -1153,9 +1157,9 @@ for (const target of targets) {
         ].map((name) => listen(path.join(short, name))),
       );
       expect(path.dirname(path.dirname(claude ?? ""))).toBe(
-        path.join(namespaces, browserNamespace(path.join(short, ".idlebiz"), "claude")),
+        path.join(namespaces, browserNamespace(save, "claude", [workspace])),
       );
-      const blocked = [...founders, codex ?? ""];
+      const blocked = [...founders, codex ?? "", otherFolders ?? ""];
       expect(
         await connect("claude", [inWorkspace ?? "", claude ?? "", ...blocked], {
           writable: [workspace],

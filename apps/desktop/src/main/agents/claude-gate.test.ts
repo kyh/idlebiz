@@ -69,8 +69,14 @@ const MessagesRequest = z.object({
 
 const Listening = z.object({ port: z.number() });
 
-/** What the stand-in model says in a turn: a last word, or one command. */
-type Move = { type: "text"; text: string } | { type: "tool_use"; command: string };
+/** One call of claude's own tools: a shell command, or a file read. */
+interface ToolCall {
+  name: "Bash" | "Read";
+  input: Record<string, string>;
+}
+
+/** What the stand-in model says in a turn: a last word, or one tool call. */
+type Move = { type: "text"; text: string } | { type: "tool_use"; call: ToolCall };
 
 type ModelEvent =
   | {
@@ -91,7 +97,7 @@ type ModelEvent =
       index: 0;
       content_block:
         | { type: "text"; text: "" }
-        | { type: "tool_use"; id: string; name: "Bash"; input: Record<string, string> };
+        | { type: "tool_use"; id: string; name: ToolCall["name"]; input: Record<string, string> };
     }
   | {
       type: "content_block_delta";
@@ -134,13 +140,13 @@ const streamed = (move: Move): string =>
         ] satisfies ModelEvent[])
       : ([
           {
-            content_block: { id: "toolu_1", input: {}, name: "Bash", type: "tool_use" },
+            content_block: { id: "toolu_1", input: {}, name: move.call.name, type: "tool_use" },
             index: 0,
             type: "content_block_start",
           },
           {
             delta: {
-              partial_json: JSON.stringify({ command: move.command }),
+              partial_json: JSON.stringify(move.call.input),
               type: "input_json_delta",
             },
             index: 0,
@@ -157,11 +163,11 @@ const streamed = (move: Move): string =>
   ]);
 
 /**
- * A Messages API that runs `command` through the Bash tool, then says "done"; a request of
- * claude's own that offers no Bash tool gets "done" too. Each command's output lands in `outputs`,
+ * A Messages API that makes `call`, then says "done"; a request of claude's own that offers no
+ * Bash tool gets "done" too. Each call's output lands in `outputs`,
  * and the tools each request offering Bash offers land in `offered`.
  */
-const standInModel = (command: () => string, outputs: string[], offered: string[]): Server =>
+const standInModel = (call: () => ToolCall, outputs: string[], offered: string[]): Server =>
   createServer((req, res) => {
     let body = "";
     req.on("data", (chunk: Buffer) => {
@@ -181,7 +187,7 @@ const standInModel = (command: () => string, outputs: string[], offered: string[
       res.end(
         streamed(
           offersBash && results.length === 0
-            ? { command: command(), type: "tool_use" }
+            ? { call: call(), type: "tool_use" }
             : { text: "done", type: "text" },
         ),
       );
@@ -218,7 +224,7 @@ const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> 
 
 describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let model: Server | null = null;
-  let command = "true";
+  let call: ToolCall = { input: { command: "true" }, name: "Bash" };
   const outputs: string[] = [];
   const offered: string[] = [];
   let base = "";
@@ -228,7 +234,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let remote = "";
 
   beforeAll(async () => {
-    const listening = standInModel(() => command, outputs, offered);
+    const listening = standInModel(() => call, outputs, offered);
     model = listening;
     listening.listen(0, "127.0.0.1");
     await once(listening, "listening");
@@ -287,9 +293,9 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     }
   });
 
-  /** One turn running `next`, every ask answered `allow`, and what holdFor made of each. */
-  const turn = async (next: string, allow: boolean) => {
-    command = next;
+  /** One turn making `next`, every ask answered `allow`, and what holdFor made of each. */
+  const turnOf = async (next: ToolCall, allow: boolean) => {
+    call = next;
     const state = await sealRuns();
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
@@ -327,6 +333,10 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     const pushed = execFileSync("git", ["for-each-ref"], { cwd: remote }).toString();
     return { asks, mcpStarted: existsSync(path.join(base, "mcp-started")), pushed, result };
   };
+
+  /** One turn running shell `command`, as `turnOf`. */
+  const turn = (command: string, allow: boolean) =>
+    turnOf({ input: { command }, name: "Bash" }, allow);
 
   it(
     "asks before a push, which holdFor holds and a denial stops",
@@ -375,6 +385,21 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     expect(result.end).toEqual({ kind: "completed" });
     expect(mcpStarted).toBe(false);
   });
+
+  it(
+    "reads a file outside its own folders with its own tool, unheld, as a bare `cat` would",
+    { timeout: 60_000 },
+    async () => {
+      const outside = path.join(base, "notes-elsewhere.txt");
+      writeFileSync(outside, "read from outside");
+      const { asks, result } = await turnOf({ input: { file_path: outside }, name: "Read" }, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
+        { held: null, tool: { kind: "read" } },
+      ]);
+      expect(outputs.join("\n")).toContain("read from outside");
+    },
+  );
 
   it("runs each command inside the seal", { timeout: 60_000 }, async () => {
     const secrets = path.join(root, "secrets.json");

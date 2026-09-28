@@ -85,6 +85,19 @@ describe("toolAskOf", () => {
   });
 
   it.each([
+    { kind: "read", rawInput: { file_path: "/etc/hosts" }, title: "Read /etc/hosts" },
+    { kind: "search", rawInput: { path: "/tmp", pattern: "TODO" }, title: 'grep "TODO" /tmp' },
+    { kind: "search", rawInput: { pattern: "**/*.md" }, title: "Find `**/*.md`" },
+  ])(
+    "lets claude's own reads through wherever they look, as a bare `cat` runs: $title",
+    async (request) => {
+      const tool = ask(request);
+      expect(tool).toEqual({ kind: "read" });
+      expect(await judge(tool)).toBeNull();
+    },
+  );
+
+  it.each([
     { kind: "think", title: "Update TODOs: ship" },
     { kind: "other", title: "NotebookEdit" },
     { kind: undefined, title: "vercel deploy --prod" },

@@ -29,11 +29,12 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
+import { refuseDeniedTools } from "@/main/agents/claude-denies";
 import { runEnv } from "@/main/agents/run-env";
 import {
-  browserNamespace,
   browserSocketDir,
   machineSeal,
+  namespaceUnder,
   realPathOf,
   SANDBOX_EXEC,
   sealedCommand,
@@ -53,7 +54,7 @@ import type {
   RunSession,
 } from "@/shared/domain";
 import * as store from "@/main/store/store";
-import { ROOT_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "@/main/paths";
+import { TOOL_CACHE_DIR, employeeMemoryDir } from "@/main/paths";
 import { holdFor } from "@/shared/command-policy";
 import type { Confinement, LivePage } from "@/shared/command-policy";
 import { RefusalError } from "@/shared/refusal";
@@ -70,24 +71,27 @@ const unpacked = (file: string): string =>
 const runnerEnv = (runner: AgentRunner): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
 
+// One temp folder the runs share, outside their working trees: see TOOL_CACHE_ENV.
+const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
+
 /**
  * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:
  * unset, each session's Chrome gets a fresh profile under TMPDIR, never the founder's, while one
  * fixed profile would keep every session but the first from starting, since Chrome locks it.
- * The namespace is the runner's own, and so are its daemons: only its runs, or a read made the
- * way one of them would make it, ever start one there.
+ * The namespace is that of the run's runner and folders, and so are its daemons: only such runs,
+ * or a read made the way one of them would make it, ever start one there. A screenshot named no
+ * path lands in the runs' temp folder, not agent-browser's own in HOME, which no run writes.
  */
-const browserEnv = (runner: AgentRunner) => ({
+const browserEnv = (seal: Seal, runner: AgentRunner) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
-  AGENT_BROWSER_NAMESPACE: browserNamespace(ROOT_DIR, runner),
+  AGENT_BROWSER_NAMESPACE: namespaceUnder(seal, runner),
+  AGENT_BROWSER_SCREENSHOT_DIR: path.join(RUN_TMPDIR, "screenshots"),
   AGENT_BROWSER_SOCKET_DIR: browserSocketDir(),
 });
 
-/** The folder `runner`'s daemons listen in, which a run cannot make: only write inside it. */
-const makeBrowserNamespace = (runner: AgentRunner): void => {
-  mkdirSync(path.join(browserSocketDir(), "namespaces", browserNamespace(ROOT_DIR, runner)), {
-    recursive: true,
-  });
+/** The folder the daemons of `runner`'s runs under `seal` listen in, which a run cannot make: only write inside it. */
+const makeBrowserNamespace = (seal: Seal, runner: AgentRunner): void => {
+  mkdirSync(seal.namespaces[runner].path, { recursive: true });
 };
 
 /**
@@ -105,7 +109,7 @@ export const acpAgentFor = (
   const adapter: RunnerAdapter = RUNNERS[runner];
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
-    ...browserEnv(runner),
+    ...browserEnv(seal, runner),
     ...more,
     // The packaged executable is Electron; child agents need its Node mode.
     ELECTRON_RUN_AS_NODE: "1",
@@ -250,7 +254,7 @@ const sealedBrowser =
   (seal: Seal, runner: AgentRunner): BrowserCli =>
   async (args) => {
     const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
-    const env = { ...runnerEnv(runner), ...browserEnv(runner) };
+    const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
     const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
     return stdout;
   };
@@ -341,8 +345,6 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
 // its own folders, so every cache a toolchain would keep in HOME is moved here, and updaters that
 // would rewrite a CLI the founder runs are off. TMPDIR is moved too: a run connects only to
 // sockets in its own folders, and the founder's TMPDIR is full of theirs.
-const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
-
 const TOOL_CACHE_ENV = {
   BUN_INSTALL_CACHE_DIR: path.join(TOOL_CACHE_DIR, "bun"),
   COREPACK_HOME: path.join(TOOL_CACHE_DIR, "corepack"),
@@ -774,7 +776,10 @@ class AgentDriver {
     mkdirSync(memory, { recursive: true });
     mkdirSync(RUN_TMPDIR, { recursive: true });
     const seal = await this.seal(confinement.writable);
-    makeBrowserNamespace(emp.runner);
+    if (emp.runner === "claude") {
+      await refuseDeniedTools(seal.runners.claude.folder, run.workspace);
+    }
+    makeBrowserNamespace(seal, emp.runner);
     if (emp.runner === "claude") {
       // where claude keeps each folder's transcripts and memory, which a run cannot make
       mkdirSync(seal.claudeProjects.projects, { recursive: true });
@@ -782,10 +787,7 @@ class AgentDriver {
     if (run.workspace !== company.workspaceDir) {
       await ensureRepository(run.workspace);
     }
-    const livePage = livePageOf(
-      sealedBrowser(seal, emp.runner),
-      browserNamespace(ROOT_DIR, emp.runner),
-    );
+    const livePage = livePageOf(sealedBrowser(seal, emp.runner), namespaceUnder(seal, emp.runner));
     const handle = controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;

@@ -419,14 +419,24 @@ describe("acpAgentFor", () => {
     expect(command.slice(-2)).toEqual([process.execPath, expect.stringContaining(adapter)]);
   });
 
-  it("starts agent-browser's Chrome without a sandbox of its own, in its runner's own daemons", () => {
+  it("starts agent-browser's Chrome without a sandbox of its own, in the daemons of its runner and folders", () => {
     const codex = acpAgentFor("codex", SEAL).env;
     const claude = acpAgentFor("claude", SEAL).env;
     expect(codex.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
-    expect(codex.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace(root, "codex"));
-    expect(claude.AGENT_BROWSER_NAMESPACE).toBe(browserNamespace(root, "claude"));
-    expect(browserNamespace(root, "claude")).not.toBe(browserNamespace(root, "codex"));
+    expect(codex.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-x");
+    expect(claude.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-c");
+    expect(browserNamespace(root, "claude", [])).not.toBe(browserNamespace(root, "codex", []));
+    const workspace = path.join(root, "acme/workspace");
+    expect(browserNamespace(root, "claude", [workspace])).not.toBe(
+      browserNamespace(root, "claude", [path.join(root, "acme/products/b/workspace")]),
+    );
     expect(codex.AGENT_BROWSER_SOCKET_DIR).toBe(path.join(homedir(), ".agent-browser"));
+  });
+
+  it("saves a screenshot named no path in the runs' temp folder, which a run writes", () => {
+    expect(acpAgentFor("claude", SEAL).env.AGENT_BROWSER_SCREENSHOT_DIR).toBe(
+      path.join(root, "cache", "tmp", "screenshots"),
+    );
   });
 
   it("runs codex in the mode that asks for everything and sandboxes nothing itself", () => {
@@ -796,6 +806,35 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
         path.join(root, "cache"),
       ],
     ]);
+  });
+});
+
+describe("a claude run the founder's own settings would cut off from the company", () => {
+  it("does not start, and says which rule of theirs to remove", async () => {
+    const configDir = path.join(root, "founder-claude");
+    mkdirSync(configDir, { recursive: true });
+    const settings = path.join(configDir, "settings.json");
+    writeFileSync(settings, JSON.stringify({ permissions: { deny: ["Bash(curl:*)"] } }));
+    const driver = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () =>
+        Promise.resolve({
+          ...SEAL,
+          runners: { ...SEAL.runners, claude: { ...SEAL.runners.claude, folder: configDir } },
+        }),
+    );
+    driver.init();
+    const company = found();
+    const [emp] = store.listEmployees();
+    const [product] = store.listProducts();
+    if (emp === undefined || product === undefined) {
+      throw new Error("founded without a hire or a product");
+    }
+    const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
+    const tools = { asks: askBox(() => {}), call: () => Promise.resolve(null) };
+    const run = driver.runTask(emp, company, task, () => {}, tools, new AbortController().signal);
+    await expect(run).rejects.toBeInstanceOf(RefusalError);
+    await expect(run).rejects.toThrow(`deny Bash(curl:*) (${settings})`);
   });
 });
 

@@ -347,7 +347,8 @@ export const TOOL_NAMES = Object.keys(TOOL_SPECS).filter(
 
 const HEADERS = `-H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`;
 
-const curlOf = (name: ToolName): string => {
+/** A tool as an employee is taught to call it. */
+export const curlOf = (name: ToolName): string => {
   const { method, path, example } = TOOL_SPECS[name];
   const url = `"$IDLEBIZ_API_URL${path}"`;
   return method === "GET"

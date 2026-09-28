@@ -192,7 +192,7 @@ third boundary.
     workspace, the shared one, its memory, the save's `cache/`), its runner's state in its home
     (`state` in `RUNNER_HOMES`: sessions, logs, caches, databases, codex's refreshed login;
     claude's transcripts and memory of the run's own folder only), TMPDIR, macOS's per-user temp and cache folders,
-    `/private/tmp`, its runner's agent-browser namespace, node CLIs'
+    `/private/tmp`, the agent-browser namespace of its runner and folders, node CLIs'
     `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `TOOL_CACHE_ENV`
     (`agent-driver.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
     and turns CLI updaters off.
@@ -224,11 +224,13 @@ third boundary.
     claude's `projects/` folder. A run writes no git config, so its commits are
     named by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
   - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders' and its
-    runner's agent-browser namespace (`browserNamespace`, keyed by save and runner): no ssh,
-    gpg or 1Password agent, container engine, app `SingletonSocket` (which hands the running
-    app a URL), claude's or the codex app's sockets, the founder's own agent-browser daemons or
-    the other runner's. Those of them in a folder it writes (launchd's, an ssh-agent's, main's
-    `SSH_AUTH_SOCK`, `/tmp/cc-socks`, the codex app's) cannot be moved or replaced either.
+    agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
+    folders, since a daemon keeps the seal and working directory of the run that started it and
+    idles past it): no ssh, gpg or 1Password agent, container engine, app `SingletonSocket`
+    (which hands the running app a URL), claude's or the codex app's sockets, the founder's own
+    agent-browser daemons or those of the other runner or of runs with other folders. Those of
+    them in a folder it writes (launchd's, an ssh-agent's, main's `SSH_AUTH_SOCK`,
+    `/tmp/cc-socks`, the codex app's) cannot be moved or replaced either.
     Loopback 9222 and 9229 are closed: the dev renderer's debug port holds the founder's
     approve button. LaunchServices opens nothing; the Apple Event CLIs (`osascript`,
     `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
@@ -425,7 +427,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   the founder; the company is reached with curl. A codex session loads the founder's codex config with every
   MCP server turned off by the name `codex mcp list` gives it, apps and plugins whole
   (`codexMcpOff` in `main/agents/agent-driver.ts`); one it cannot list refuses the run with
-  codex's reason. A runner is signed in only if its login probe, run sealed as its runs are,
+  codex's reason. A deny rule in the founder's claude settings outranks the flag tier's ask
+  rules and would refuse a company tool's curl before IdleBiz is asked, the turn still ending as
+  done, so a claude run whose settings (managed, user or the workspace's) deny one does not
+  start, and says which rule (`refuseDeniedTools` in `main/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
   says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt
   (`signedIn` in the driver), until a sign-in finds it again. A turn whose login the provider
@@ -463,7 +468,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     own folders. codex asking to widen its own sandbox is refused with no card: once widened,
     nothing else in the run would ask. An MCP server that asks anyway is leased for the run;
     one nothing can name never is. A web read by the agent's own tool runs,
-    as a bare `curl` does; an ask IdleBiz cannot recognise is held once, exactly. A signature
+    as a bare `curl` does, and so does a file read by claude's Read, Grep or Glob, as a bare
+    `cat` does; an ask IdleBiz cannot recognise is held once, exactly. A signature
     only ever picks the runner's one-time option. Both runners' wire formats end in
     `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
 - **What stays open**, on purpose or for want of a rule:

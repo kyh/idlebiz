@@ -245,7 +245,7 @@ export interface Seal {
   preferences: string;
   /** Loopback ports no run reaches: a debugger listening there takes orders from anyone. */
   debugPorts: readonly number[];
-  /** Per runner, the agent-browser namespace its runs start their daemons in. */
+  /** Per runner, the agent-browser namespace its runs with these folders start their daemons in. */
   namespaces: Record<AgentRunner, Reach>;
   /**
    * Where claude keeps each folder's transcripts and memory, which the founder's own sessions
@@ -653,12 +653,25 @@ const darwinUserCacheDir = async (): Promise<string> => {
 };
 
 /**
- * The agent-browser namespace a `runner`'s runs on `save` start their daemons in, apart from the
- * founder's own and the other runner's: a daemon reads what the run that started it can. Short:
- * the daemon's socket path under it must fit in 103 bytes.
+ * The agent-browser namespace a `runner`'s runs on `save` that write `folders` start their
+ * daemons in, apart from the founder's own, the other runner's and those of runs with other
+ * folders: a daemon reads and writes what the run that started it could, from that run's
+ * working directory, however long it outlives the run. Short: the daemon's socket path under it
+ * must fit in 103 bytes.
  */
-export const browserNamespace = (save: string, runner: AgentRunner): string =>
-  `idlebiz-${createHash("sha256").update(`${save}\0${runner}`).digest("hex").slice(0, 8)}`;
+export const browserNamespace = (
+  save: string,
+  runner: AgentRunner,
+  folders: readonly string[],
+): string =>
+  `idlebiz-${createHash("sha256")
+    .update([save, runner, ...folders].join("\0"))
+    .digest("hex")
+    .slice(0, 8)}`;
+
+/** The agent-browser namespace `runner`'s runs under `seal` start their daemons in. */
+export const namespaceUnder = (seal: Seal, runner: AgentRunner): string =>
+  path.basename(seal.namespaces[runner].path);
 
 /** Where agent-browser keeps its daemons' sockets for a run, whatever the founder's env says. */
 export const browserSocketDir = (): string => path.join(homedir(), ".agent-browser");
@@ -708,13 +721,19 @@ export const sealFor = async ({
   ]);
   const homes = { claude, codex };
   const scratchReaches = await reachesOf([...new Set(scratch)]);
-  const namespaceOf = (runner: AgentRunner): Reach => ({
-    match: "subpath",
-    path: path.join(realHome, ".agent-browser", "namespaces", browserNamespace(save, runner)),
-  });
-  const namespaces = { claude: namespaceOf("claude"), codex: namespaceOf("codex") };
   const own = await ownFolders(save, writable);
   const [cwd] = own;
+  const folders = own.map(({ path: at }) => at);
+  const namespaceOf = (runner: AgentRunner): Reach => ({
+    match: "subpath",
+    path: path.join(
+      realHome,
+      ".agent-browser",
+      "namespaces",
+      browserNamespace(save, runner, folders),
+    ),
+  });
+  const namespaces = { claude: namespaceOf("claude"), codex: namespaceOf("codex") };
   const roots = [
     ...scratchReaches,
     ...claude.state,

@@ -14,6 +14,8 @@ export type ToolAsk =
   | { kind: "network"; host: string | null }
   /** A read of the web by the agent's own tool (claude's WebFetch and WebSearch). */
   | { kind: "fetch" }
+  /** A read of files by the agent's own tool (claude's Read, Grep and Glob). The run's seal decides what it may read. */
+  | { kind: "read" }
   /** Anything else, known by nothing but its title. */
   | { kind: "unknown"; title: string };
 
@@ -73,6 +75,10 @@ export const toolAskOf = (request: {
   }
   if (request.kind === "fetch") {
     return { kind: "fetch" };
+  }
+  // codex asks for a command as "execute" however it reads, so these are only the agent's own tools
+  if (request.kind === "read" || request.kind === "search") {
+    return { kind: "read" };
   }
   const network = NetworkInput.safeParse(request.rawInput);
   if (network.success) {

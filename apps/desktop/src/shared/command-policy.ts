@@ -152,11 +152,13 @@ const leadingOptions = (words: Words, from: number, grammar: Grammar): Options =
 interface Arguments {
   flags: Flag[];
   operands: string[];
+  /** Each option that took the next word as its value, and where that word stands. */
+  valueWords: { name: string; at: number }[];
 }
 
 /** A program's words as pflag and curl read them: options wherever they sit among the operands (`gh api path -f x`). */
 const argumentsOf = (args: Words, grammar: Grammar): Arguments => {
-  const read: Arguments = { flags: [], operands: [] };
+  const read: Arguments = { flags: [], operands: [], valueWords: [] };
   let at = 0;
   while (at < args.length) {
     const word = args[at] ?? "";
@@ -169,6 +171,11 @@ const argumentsOf = (args: Words, grammar: Grammar): Arguments => {
       read.operands.push(word);
     }
     read.flags.push(...(taken?.flags ?? []));
+    // a cluster ends at the option that takes a value, so that option is its last
+    const valued = taken?.next === true ? taken.flags.at(-1) : undefined;
+    if (valued !== undefined) {
+      read.valueWords.push({ at: at + 1, name: valued.name });
+    }
     at += taken?.next === true ? 2 : 1;
   }
   return read;
@@ -857,6 +864,11 @@ const WGET: Sending = {
   targets: new Set(),
 };
 
+const FETCHERS = new Map([
+  ["curl", CURL],
+  ["wget", WGET],
+]);
+
 const sends = (args: Words, sending: Sending): boolean =>
   argumentsOf(args, sending.grammar).flags.some(
     (flag) =>
@@ -885,18 +897,48 @@ const fetchesApi = (args: Words, sending: Sending): boolean => {
   );
 };
 
+/**
+ * Where in `args` a fetch sent only to the game's API takes a body as a word of its own: data
+ * the API reads, which neither the shell nor the fetch takes a setting from.
+ */
+const apiBodies = (args: Words, sending: Sending): number[] =>
+  fetchesApi(args, sending)
+    ? argumentsOf(args, sending.grammar)
+        .valueWords.filter(({ name }) => sending.bodies.has(name))
+        .map(({ at }) => at)
+    : [];
+
 /** Settings outside a fetch's words that send it elsewhere: a proxy, a config file, or the API's name given a new value. */
 const REROUTES_FETCHES =
   /proxy\w*\+?=|CURL_HOME|XDG_CONFIG_HOME|WGETRC|(?<!\$\{?)IDLEBIZ_API_URL/iu;
+
+/**
+ * Every text of `command` a shell or a fetch could take such a setting from: its words, what
+ * its redirections name and what it is fed, less the bodies its `calls` send only to the game's
+ * API and, when `scripted`, its first word, a quoted script whose own commands are read apart.
+ */
+const settingsOf = (command: Command, calls: readonly Call[], scripted = false): string[] => {
+  const skip = new Set(scripted ? [0] : []);
+  for (const call of calls) {
+    const sending = FETCHERS.get(call.program);
+    // a call's words are the last of its command's
+    const start = command.words.length - call.args.length;
+    for (const at of sending === undefined ? [] : apiBodies(call.args, sending)) {
+      skip.add(start + at);
+    }
+  }
+  return [
+    ...command.words.filter((_, at) => !skip.has(at)),
+    ...command.redirects,
+    ...command.input,
+    ...command.printed.flat(),
+  ];
+};
 
 const COPIERS = new Set(["rsync", "scp"]);
 const REMOTE_PATH = /^[\w.-]+@[\w.-]+:/u;
 const REMOTE_LOGIN = /^[\w.-]+@[\w.-]+/u;
 
-const FETCHERS = new Map([
-  ["curl", CURL],
-  ["wget", WGET],
-]);
 const INTERPRETERS = wordsOf("bash dash python python3 sh zsh");
 
 /** A path argument that leaves the workspace behind. */
@@ -1032,11 +1074,15 @@ const MAX_SCRIPT_DEPTH = 8;
 /** A program word with a blank or an operator in it is a whole script someone quoted. */
 const SCRIPT_IN_A_WORD = /[\s;&|<>()`$]/u;
 
+const quotesScript = (command: Command): boolean => SCRIPT_IN_A_WORD.test(command.words[0] ?? "");
+
 /** What a command line runs, as calls, and whether any of it reads a script from its input. */
 interface Reading {
   pipelines: Call[][];
   /** `bash`, `source /dev/stdin`, `eval "$(cat)"`: what the line is fed may run. */
   reads: boolean;
+  /** Every text of it a setting could be read from (`settingsOf`), at every level it was read. */
+  settings: string[];
 }
 
 /**
@@ -1056,12 +1102,14 @@ const pipelinesOf = (
   verbatim = true,
 ): Reading => {
   if (depth > MAX_SCRIPT_DEPTH) {
+    // No script is followed this deep, so a wrapper's words are read where they stand: `watch … git push "$x"`.
+    const flat = lexFlat(line).map((pipeline) =>
+      pipeline.map((command) => ({ command, stage: stageOf(command, false, true) })),
+    );
     return {
-      // No script is followed this deep, so a wrapper's words are read where they stand: `watch … git push "$x"`.
-      pipelines: lexFlat(line).map((pipeline) =>
-        pipeline.flatMap((command) => stageOf(command, false, true).calls),
-      ),
+      pipelines: flat.map((pipeline) => pipeline.flatMap(({ stage }) => stage.calls)),
       reads: true,
+      settings: flat.flat().flatMap(({ command, stage }) => settingsOf(command, stage.calls)),
     };
   }
   const readOnce = (text: string, literal: boolean): Reading => {
@@ -1069,7 +1117,7 @@ const pipelinesOf = (
     const key = JSON.stringify([text, literal]);
     const known = readTexts.get(key);
     if (known !== undefined) {
-      return { pipelines: [], reads: known };
+      return { pipelines: [], reads: known, settings: [] };
     }
     // Until read, a text that meets itself again is taken to read its input.
     readTexts.set(key, true);
@@ -1078,6 +1126,7 @@ const pipelinesOf = (
     return reading;
   };
   let reads = false;
+  const settings: string[] = [];
   const lexed = lexLine(line);
   const pipelines = lexed.pipelines.flatMap((pipeline) => {
     const stages = pipeline.map((command) => stageOf(command, verbatim));
@@ -1092,12 +1141,17 @@ const pipelinesOf = (
     const fedReadings = texts.map((text) => readOnce(text, false));
     // codex shows an approval's script whole, quoted into one word when it holds a `'`:
     // no program is named that, so it is the script the shell will run.
-    const quotedScripts = pipeline.flatMap((command) => {
-      const [program] = command.words;
-      return program !== undefined && SCRIPT_IN_A_WORD.test(program)
-        ? [readOnce(program, false)]
-        : [];
-    });
+    const quotedScripts = pipeline.flatMap((command) =>
+      quotesScript(command) ? [readOnce(command.words[0] ?? "", false)] : [],
+    );
+    for (const [index, command] of pipeline.entries()) {
+      // an assignment's value is the shell's to set, whatever a script reading of it finds
+      const scripted = quotesScript(command) && !ASSIGNMENT.test(command.words[0] ?? "");
+      settings.push(...settingsOf(command, stages[index]?.calls ?? [], scripted));
+    }
+    settings.push(
+      ...[...scripts, ...fedReadings, ...quotedScripts].flatMap((reading) => reading.settings),
+    );
     reads ||=
       fed ||
       stages.some((stage) => stage.runsPrinted) ||
@@ -1113,6 +1167,7 @@ const pipelinesOf = (
   return {
     pipelines: lexed.divergent ? [...pipelines, ...tailsOf(lexFlat(line))] : pipelines,
     reads,
+    settings,
   };
 };
 
@@ -1485,8 +1540,8 @@ const heldBrowserAct = async (
 export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Rule };
 
 export const classifyCommand = (command: string): CommandVerdict => {
-  const { pipelines } = pipelinesOf(command);
-  const rerouted = REROUTES_FETCHES.test(command);
+  const { pipelines, settings } = pipelinesOf(command);
+  const rerouted = settings.some((text) => REROUTES_FETCHES.test(text));
   const toApi = (call: Call): boolean => {
     const sending = FETCHERS.get(call.program);
     return !rerouted && sending !== undefined && fetchesApi(call.args, sending);
@@ -1561,6 +1616,10 @@ export const holdFor = async (
   }
   if (tool.kind === "fetch") {
     // a read, as a bare `curl <url>` is: the shell rules hold only what sends
+    return null;
+  }
+  if (tool.kind === "read") {
+    // as a bare `cat` is: the seal keeps what no run may read
     return null;
   }
   if (tool.kind === "unknown") {
