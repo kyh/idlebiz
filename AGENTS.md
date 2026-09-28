@@ -225,10 +225,11 @@ rather than crashing boot.
   place orders in exactly one store (`main/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the Stripe key
-  for every company but
-  the one whose `metrics.json` holds the connected account: that one reads through
-  `STRIPE_CONNECT_TOKEN` instead, taking the connected account as the one the key charges
-  on (`stripeCredential` in `main/metrics.ts`). The Connect token is read-only. A key Stripe
+  whenever one is saved, since every payment link and so every tagged charge is on its
+  account; only with no key does the company whose `metrics.json` holds the connected
+  account read through `STRIPE_CONNECT_TOKEN` (`stripeCredential` in `main/metrics.ts`), so
+  a grant on another account, or one revoked, never stands between a bet and its money. The
+  Connect token is read-only. A key Stripe
   refuses shows in the Budget panel — a Connect token as revoked, with Disconnect beside Reconnect
   while main still holds its grant, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
   `main/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:

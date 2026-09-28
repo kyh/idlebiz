@@ -179,36 +179,28 @@ export interface StripeCredential {
 }
 
 /**
- * secrets.json is shared by every company and a Connect token outlives the
- * company that connected it, so only that company reads it, in place of the
- * founder's own key: the connected account is taken as the one that key charges
- * on, and reading both would count every charge twice. Every other company reads
- * the own key. A key left blank in the file is no key.
+ * The founder's own key reads whenever one is saved: it makes every payment link, so its
+ * account is the one a bet's tagged money lands on, and a Connect grant, which may be
+ * another account or revoked, never stands between them. Only with no key does the
+ * company that connected Stripe read through its token: secrets.json is shared by every
+ * company and the token outlives the company that connected it. A key left blank in the
+ * file is no key.
  */
 export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | null => {
-  const token = cfg?.stripeAccount ? getSecret(STRIPE_CONNECT_TOKEN) : null;
-  if (token) {
-    return { key: token, via: "connect" };
-  }
   const own = getSecret(STRIPE_SECRET_KEY);
-  return own ? { key: own, via: "own" } : null;
+  if (own) {
+    return { key: own, via: "own" };
+  }
+  const token = cfg?.stripeAccount ? getSecret(STRIPE_CONNECT_TOKEN) : null;
+  return token ? { key: token, via: "connect" } : null;
 };
 
 /** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
 const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
 
-/**
- * While test money does not count, none counts when either key is in test mode: the one that
- * reads sees only test charges, and the founder's own key makes every link, so a live Connect
- * token beside a test key reads a zero for money its links could only take in test mode.
- */
-const countsNoMoney = (credential: StripeCredential): boolean => {
-  if (countsTestMoney()) {
-    return false;
-  }
-  const charging = getSecret(STRIPE_SECRET_KEY);
-  return isTestKey(credential.key) || (charging !== null && isTestKey(charging));
-};
+/** While test money does not count, a key in test mode counts none: it sees only test charges. */
+const countsNoMoney = (credential: StripeCredential): boolean =>
+  !countsTestMoney() && isTestKey(credential.key);
 
 /** Whether the company reads Stripe with a key in test mode, whose charges count for nothing. */
 export const stripeInTestMode = (companyId: string): boolean => {

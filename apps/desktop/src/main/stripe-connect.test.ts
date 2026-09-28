@@ -267,7 +267,7 @@ describe("Stripe disconnect", () => {
 
 describe("Stripe read health", () => {
   const ownKeyRefused =
-    "Stripe won't let your charging key read charges — grant it Read on Charges, replace it, or connect Stripe.";
+    "Stripe won't let your charging key read charges — grant it Read on Charges or replace it.";
   const connectRefused =
     "Stripe access was revoked — reconnect or disconnect Stripe in the Budget panel.";
 

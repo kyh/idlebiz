@@ -229,13 +229,44 @@ describe("stripeCredential", () => {
     expect(stripeCredential({ stripeAccount })).toEqual({ key: "connected", via: "connect" });
   });
 
-  it("reads the founder's own key for every company", () => {
+  it("reads the founder's own key for every company, the connected one too", () => {
     writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"connected","STRIPE_SECRET_KEY":"own"}');
 
     expect(stripeCredential(null)).toEqual({ key: "own", via: "own" });
     expect(stripeCredential({})).toEqual({ key: "own", via: "own" });
-    expect(stripeCredential({ stripeAccount })).toEqual({ key: "connected", via: "connect" });
+    expect(stripeCredential({ stripeAccount })).toEqual({ key: "own", via: "own" });
   });
+
+  it.each([
+    ["revoked", () => new Response("{}", { status: 401 })],
+    ["of another account", () => Response.json({ data: [charge("ch_other", 5000)] })],
+  ])(
+    "counts a revenue bet's money on the charging key's account while the Connect token is %s",
+    async (_, connected) => {
+      writeFileSync(
+        secretsFile,
+        '{"STRIPE_CONNECT_TOKEN":"sk_live_granted","STRIPE_SECRET_KEY":"sk_live_charging"}',
+      );
+      vi.stubGlobal("fetch", (_url: string, init: RequestInit) =>
+        Promise.resolve(
+          new Headers(init.headers).get("Authorization") === "Bearer sk_live_charging"
+            ? Response.json({ data: [charge("ch_bet", 2500, { bet: "pricing" })] })
+            : connected(),
+        ),
+      );
+
+      const snap = await fetchRealMetrics(
+        stripeCredential({ stripeAccount }),
+        [],
+        [revenueBet("pricing", 0)],
+      );
+      vi.unstubAllGlobals();
+
+      expect(snap.stripe).toEqual({ answer: "accepted", via: "own" });
+      expect(snap.betReadings.get("pricing")?.reading).toBe(25);
+      expect(snap.revenue).toBe(25);
+    },
+  );
 
   it("takes a key left blank for no key", () => {
     writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"","STRIPE_SECRET_KEY":""}');
@@ -392,8 +423,11 @@ describe("fetchRealMetrics reading Stripe", () => {
     expect(test.betReadings.get("pricing")?.reading).toBe(7);
   });
 
-  it("gives a bet no reading through a live Connect token while the charging key is in test mode", async () => {
-    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_links"}');
+  it("gives a bet no reading while the charging key is in test mode, a live account connected or not", async () => {
+    writeFileSync(
+      secretsFile,
+      '{"STRIPE_SECRET_KEY":"sk_test_links","STRIPE_CONNECT_TOKEN":"sk_live_granted"}',
+    );
     stripe((endpoint) =>
       endpoint.startsWith("/v1/charges")
         ? Response.json({ data: [] })
@@ -401,7 +435,7 @@ describe("fetchRealMetrics reading Stripe", () => {
     );
 
     const snap = await fetchRealMetrics(
-      { key: "sk_live_granted", via: "connect" },
+      stripeCredential({ stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true } }),
       [],
       [revenueBet("pricing", 0)],
     );

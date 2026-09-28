@@ -376,11 +376,11 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
             </div>
             <StripeConnection stripeStatus={stripeStatus} />
             <div className="pt-2 text-sm leading-snug text-fg">
-              Charging key: lets the team create payment links, each one you sign off. Without
-              Connect it also reads revenue, so a restricted key needs Read on Charges too. Read on
-              Checkout Sessions is how paid orders are found, so a link that names a delivery needs
-              it, and selling prints needs it with Read on Charges and Write on Shipping Rates,
-              Connect or not.
+              Charging key: lets the team create payment links, each one you sign off. It also reads
+              revenue in place of Connect, since its account is the one the links charge on, so a
+              restricted key needs Read on Charges too. Read on Checkout Sessions is how paid orders
+              are found, so a link that names a delivery needs it, and selling prints needs it with
+              Write on Shipping Rates.
             </div>
             <ChargingKey stripeKey={stripeKey} />
           </div>
