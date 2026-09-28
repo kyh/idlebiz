@@ -25,7 +25,7 @@ interface PaymentLinkRequest {
  * another key gets past; `failed` is anything else. Either reason is in Stripe's words when it
  * gave any.
  */
-export type LinkResult =
+type LinkResult =
   | { kind: "made"; id: string; url: string }
   | { kind: "refused"; said: string }
   | { kind: "failed"; error: string };

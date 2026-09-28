@@ -347,7 +347,9 @@ rather than crashing boot.
   (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
-  its login (`claude-gate.test.ts`, `codex-gate.test.ts`); all skip elsewhere. Command policy
+  its login (`claude-gate.test.ts`, `codex-gate.test.ts`), and, where `agent-browser` is
+  installed, the real agent-browser under a run's seal (`browser-gate.test.ts`); all skip
+  elsewhere. Command policy
   rules each need a matching example; everyday commands must remain allowed. Drive anything
   requiring a window live instead, or cover it in the e2e suite.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
