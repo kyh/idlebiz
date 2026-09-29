@@ -31,9 +31,10 @@ import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 // still asks IdleBiz first, so holdFor still judges it; that it offers no plan mode, whose exit
 // would ask the founder to approve a plan; that no MCP server of the founder's starts;
 // that the model is offered IdleBiz's skills and none of the founder's, nor their instructions,
-// while the env of their settings still reaches the run and the model and effort they picked
-// are the ones asked; and that a run cannot rewrite the settings or account file the founder's
-// own claude loads, and still runs and keeps its transcript.
+// but the notes the team keeps in the workspace's AGENTS.md, while the env of their settings
+// still reaches the run and the model and effort they picked are the ones asked; and that a run
+// cannot rewrite the settings or account file the founder's own claude loads, and still runs and
+// keeps its transcript.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -348,7 +349,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const { port } = Listening.parse(model?.address());
     const agent = await asFounderAt(home, async () =>
-      standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills)),
+      standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills, workspace)),
     );
     const result = await runAcpTurn({
       agent,
@@ -438,6 +439,21 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
         "claude-api",
       ]) {
         expect(requests).not.toContain(mark);
+      }
+    },
+  );
+
+  it(
+    "is handed the notes the team keeps in the workspace's AGENTS.md, once, as the team's",
+    { timeout: 60_000 },
+    async () => {
+      writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
+      const { result } = await turn("true", true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(sent.length).toBeGreaterThan(0);
+      for (const request of sent) {
+        expect(request.split("TEAM_NOTES_MARK")).toHaveLength(2);
+        expect(request).toContain("Teammates wrote them, not the founder");
       }
     },
   );

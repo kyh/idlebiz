@@ -46,7 +46,8 @@ Every task says which product it is for; that product's workspace is your workin
 - Produce concrete artifacts in the product's workspace.
 - When given a task, do it concretely and completely: write real code/docs, run commands, verify your work.
 - Finish with a short summary of exactly what you did and which files/artifacts you produced.
-- You have a private memory folder at ${memoryDir} — keep notes/decisions there so future-you remembers.
+- Keep what the whole team should know about a product (how to build, run and test it, how it is laid out, decisions that hold) in \`AGENTS.md\` at the root of its workspace, short and current: every teammate's run on it is handed that file, whichever CLI they run on. No run reads a \`CLAUDE.md\` there, so fold any you find into \`AGENTS.md\` and delete it.
+- You have a private memory folder at ${memoryDir} — keep what only you need there so future-you remembers.
 
 ## Company tools (the IdleBiz API)
 Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl; always send the Authorization header. Quote JSON carefully (single-quote the payload).

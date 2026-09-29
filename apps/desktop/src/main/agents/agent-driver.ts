@@ -33,6 +33,8 @@ import { bundledSkillsDir } from "@/main/agents/bundled-skills";
 import { refuseDeniedTools } from "@/main/agents/claude-denies";
 import { claudeUserSettings } from "@/main/agents/claude-user-settings";
 import { runEnv } from "@/main/agents/run-env";
+import { readTeamNotes } from "@/main/agents/team-notes";
+import { teamNotesPrompt } from "@/main/prompts/team-notes";
 import {
   browserSocketDir,
   machineSeal,
@@ -215,18 +217,27 @@ export const codexSessionEnv = async (
 
 /**
  * `runner`'s session under `seal`, loading the skills in `skills` and none of the founder's, nor
- * any MCP server of theirs, but signing in as their CLI does.
+ * any MCP server of theirs, but signing in as their CLI does, and handed the notes the team keeps
+ * in `workspace`, where it works on a product.
  */
 export const sessionAgent = async (
   runner: AgentRunner,
   seal: Seal,
   skills: string,
+  workspace: string | null,
 ): Promise<AcpAgent> => {
   if (runner === "codex") {
-    return acpAgentFor(runner, seal, { skills, userSettings: {} }, await codexSessionEnv(seal));
+    const setup = { skills, teamNotes: null, userSettings: {} };
+    return acpAgentFor(runner, seal, setup, await codexSessionEnv(seal));
   }
   const { env, settings } = await claudeUserSettings(seal.runners.claude.folder);
-  return acpAgentFor(runner, seal, { skills, userSettings: settings }, env);
+  const notes = workspace === null ? null : await readTeamNotes(workspace);
+  const setup = {
+    skills,
+    teamNotes: notes === null ? null : teamNotesPrompt(notes),
+    userSettings: settings,
+  };
+  return acpAgentFor(runner, seal, setup, env);
 };
 
 /**
@@ -704,7 +715,7 @@ class AgentDriver {
   async completeOneShot(prompt: string): Promise<string> {
     const runner = this.pickRunner(0);
     const res = await runAcpTurn({
-      agent: await sessionAgent(runner, await this.seal([]), this.skills()),
+      agent: await sessionAgent(runner, await this.seal([]), this.skills(), null),
       cwd: tmpdir(),
       idleTimeoutMs: 3 * 60_000,
       maxSessionMs: 5 * 60_000,
@@ -816,7 +827,7 @@ class AgentDriver {
     try {
       const res = await runAcpTurn({
         addDirs,
-        agent: await sessionAgent(emp.runner, seal, this.skills()),
+        agent: await sessionAgent(emp.runner, seal, this.skills(), run.workspace),
         cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV, ...gitIdentity(emp, company) },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,

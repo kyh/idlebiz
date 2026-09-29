@@ -36,7 +36,7 @@ const browse = (seal: Seal, cwd: string, ...args: string[]) => {
   const { output, status } = spawnSync(bin, rest, {
     cwd,
     encoding: "utf-8",
-    env: acpAgentFor("claude", seal, { skills: root, userSettings: {} }).env,
+    env: acpAgentFor("claude", seal, { skills: root, teamNotes: null, userSettings: {} }).env,
     timeout: 45_000,
   });
   return { output: output.join(""), status };

@@ -74,6 +74,12 @@ export interface ClaudeUserSettings {
 export interface SessionSetup {
   skills: string;
   userSettings: ClaudeUserSettings;
+  /**
+   * The notes the team keeps in AGENTS.md at the root of the run's workspace, framed for the
+   * model, or null for none. codex reads that file itself, so only a claude session, which loads
+   * no project instructions, is handed them, beside its system prompt.
+   */
+  teamNotes: string | null;
 }
 
 export interface SessionStart {
@@ -109,8 +115,8 @@ const claudeLoggedIn = (output: string): boolean => {
  * connectors load either: those act as the player, signed in as them, and a run reaches the
  * company with curl, not MCP.
  */
-const claudeSession = ({ skills, userSettings }: SessionSetup): SessionStart => ({
-  meta: {
+const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
+  const meta: NonNullable<SessionStart["meta"]> = {
     claudeCode: {
       options: {
         allowDangerouslySkipPermissions: false,
@@ -133,9 +139,12 @@ const claudeSession = ({ skills, userSettings }: SessionSetup): SessionStart => 
         strictMcpConfig: true,
       },
     },
-  },
-  readDirs: [],
-});
+  };
+  if (teamNotes !== null) {
+    meta.systemPrompt = { append: teamNotes };
+  }
+  return { meta, readDirs: [] };
+};
 
 /**
  * codex has no setting that leaves all the player's skills out: the seal keeps its runs from

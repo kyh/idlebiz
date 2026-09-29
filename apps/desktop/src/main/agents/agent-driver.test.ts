@@ -100,7 +100,7 @@ const SEAL: Seal = {
 
 const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
 
-const SETUP = { skills: SKILLS, userSettings: {} };
+const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
 const limited = { error: "You've hit your session limit", kind: "limited", resetsAt: 99 } as const;
@@ -512,12 +512,21 @@ describe("acpAgentFor", () => {
     expect(sessionMeta).toBeUndefined();
   });
 
+  it("hands the team's notes to a claude session beside its system prompt, and none to codex, which reads them itself", () => {
+    const setup = { ...SETUP, teamNotes: "# Team notes" };
+    expect(acpAgentFor("claude", SEAL, setup).sessionMeta).toMatchObject({
+      systemPrompt: { append: "# Team notes" },
+    });
+    expect(acpAgentFor("claude", SEAL, SETUP).sessionMeta).not.toHaveProperty("systemPrompt");
+    expect(acpAgentFor("codex", SEAL, setup).sessionMeta).toBeUndefined();
+  });
+
   it("signs a claude session in, and picks its model, as the founder's settings did", () => {
     const userSettings = { apiKeyHelper: "~/bin/anthropic-key", model: "haiku" };
     const agent = acpAgentFor(
       "claude",
       SEAL,
-      { skills: SKILLS, userSettings },
+      { skills: SKILLS, teamNotes: null, userSettings },
       {
         AGENT_BROWSER_ARGS: "",
         ANTHROPIC_BASE_URL: "https://gateway.example.com",

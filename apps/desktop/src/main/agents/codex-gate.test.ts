@@ -27,8 +27,9 @@ import { parseJson } from "@/shared/json";
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
 // sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it, even
 // one the founder's rules allow, starts no MCP server of theirs, offers the model IdleBiz's skills
-// and none of the founder's (their plugins' included), nor their instructions or memories, leaves
-// no skill for a later run, and runs, but cannot rewrite, the config their own codex loads.
+// and none of the founder's (their plugins' included), nor their instructions or memories, but
+// the workspace's AGENTS.md once, leaves no skill for a later run, and runs, but cannot rewrite,
+// the config their own codex loads.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -263,7 +264,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
-      const setup = { skills, userSettings: {} };
+      const setup = { skills, teamNotes: null, userSettings: {} };
       return acpAgentFor(
         "codex",
         seal,
@@ -352,6 +353,20 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         "FOUNDER_MEMORY_MARK",
       ]) {
         expect(requests).not.toContain(mark);
+      }
+    },
+  );
+
+  it(
+    "reads the notes the team keeps in the workspace's AGENTS.md itself, once",
+    { timeout: 60_000 },
+    async () => {
+      writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
+      const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(sent.length).toBeGreaterThan(0);
+      for (const request of sent) {
+        expect(request.split("TEAM_NOTES_MARK")).toHaveLength(2);
       }
     },
   );

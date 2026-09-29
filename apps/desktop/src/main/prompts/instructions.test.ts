@@ -75,6 +75,12 @@ describe("standingInstructions", () => {
     expect(text).toMatch(/cannot make a git repository[^\n]*`git clone`[^\n]*`git init`[^\n]*tar/u);
   });
 
+  it("has the team keep a product's notes in its workspace's AGENTS.md, a CLAUDE.md folded in", () => {
+    const text = instructionsFor("software");
+    expect(text).toContain("in `AGENTS.md` at the root of its workspace");
+    expect(text).toContain("fold any you find into `AGENTS.md`");
+  });
+
   it("never tells a run to push, only that the founder does", () => {
     for (const type of BUSINESS_TYPE_IDS) {
       for (const lead of [false, true]) {

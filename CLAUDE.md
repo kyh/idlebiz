@@ -8,7 +8,7 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   packages (COMPANY.md, agents/<slug>/AGENTS.md â€” its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
-  get products/<slug>/workspace/), listings/<id>.json for each print a product sells through
+  get products/<slug>/workspace/, whose root AGENTS.md is the team's notes on it), listings/<id>.json for each print a product sells through
   Printful, links/<id>.json for each `create_payment_link` link (by Stripe's id), and
   orders/<id>.json for each paid checkout on one of the company's links, a listing's or
   `create_payment_link`'s (outside the product's package, so all outlive its retirement: its
@@ -462,7 +462,14 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   did. So does the model they picked, with its effort (`model`, `effortLevel`, `modelSettings`,
   `alwaysThinkingEnabled`, `modelOverrides`), in the flag tier: claude would otherwise run its
   default, and claude-agent-acp, which reads their user settings, sets a model only when it
-  thinks claude picked another. A codex
+  thinks claude picked another. A product's notes for teammates are `AGENTS.md` at its
+  workspace's root, for both runners: codex reads it itself, and a claude session, which loads
+  no project's CLAUDE.md, is handed it beside its system prompt (`systemPrompt.append` in its
+  session `_meta`), read by main as the run starts (`readTeamNotes` in
+  `main/agents/team-notes.ts`), framed as the team's notes, never the founder's word
+  (`main/prompts/team-notes.ts`), and cut at 32 KiB, as codex cuts it. Main reads it unsealed,
+  so only as a plain file of its own: never through a symlink or a hard link a run left there.
+  The standing instructions have every teammate keep it, a CLAUDE.md folded in. A codex
   session loads the founder's codex config with every MCP server turned off by the name
   `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
   `main/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
