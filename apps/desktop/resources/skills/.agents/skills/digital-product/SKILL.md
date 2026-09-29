@@ -25,8 +25,13 @@ instructions win wherever this differs from them: every tool named here is descr
 - **Read, never scrape.** Research is a person reading pages: your own web tools, `curl`, or
   `agent-browser open` plus `snapshot`/`screenshot`. A handful of pages per source, notes by
   hand. No crawling, no paging through listings in a loop, no sign-in, no disguising the
-  browser. Google Trends has no official API and Amazon forbids automated scraping: if either
-  shows a captcha or refuses, stop there and work from what you have.
+  browser. The team has no API for Google Trends or Amazon, and both turn automated reading
+  away: if either shows a captcha, asks you to sign in or refuses, stop there and work from
+  what you have.
+- **Filters by URL, never by click.** Clicking, typing or choosing on a page that is not your
+  own build is held for the founder. Open a sorted or filtered view by its URL
+  (`agent-browser open`, `curl`), as the Trends link below does; where a filter has no URL,
+  read what the page shows.
 - **Honest.** No income or results claims ("make $X", "guaranteed"), no invented credentials,
   experience, case studies or testimonials, no fake, bought, solicited or incentivised reviews,
   no copied text, structure or art.
@@ -69,9 +74,14 @@ next product in it starts from them.
 
 ### Mine the three-star reviews
 
-- [ ] For each top competitor, read its three-star reviews (the product page's rating
-      filter). Those buyers wanted the thing and say exactly what was missing. One-star
-      reviews are mostly delivery and format complaints; five-star ones say little.
+- [ ] For each top competitor, read its three-star reviews. Those buyers wanted the thing
+      and say exactly what was missing. One-star reviews are mostly delivery and format
+      complaints; five-star ones say little.
+- [ ] On Amazon, read only the reviews on the product page itself: its full review list and
+      star filters ask you to sign in. Pick the three-star ones out of what that page shows.
+      Where the same kind of product sells somewhere whose reviews open signed out (check with
+      one `curl -I` or `agent-browser open`), read more there, through a URL filter if it has
+      one.
 - [ ] Note, per competitor: what readers wanted and did not get, what felt padded, dated,
       generic or too advanced, and complaints about the format.
 - [ ] Reviews are research. Never quote a reviewer in public copy.
@@ -121,24 +131,32 @@ Channel: <the one place the launch goes, and its rules on self-promotion>
       least 10) fits a free sample meant to test a channel before the paid version exists.
 - [ ] **Landing page** on the product's deploy: who it is for, the problem, what is inside,
       the free section, the price, one buy button, what happens after paying.
-  - `users` bet: the page sits under its landing path, `/b/<bet slug>` (with the one rewrite
-    in "Marking a bet's traffic"), or the new section the lead named as `landingPath` when the
-    bet is this page. Every link anyone places points there.
+  - `users` bet: every link anyone places points at its landing path, `/b/<bet slug>`, or the
+    new section the lead named as `landingPath` when the bet is this page. `/b/<bet slug>` must
+    serve this page, but the one rewrite in "Marking a bet's traffic" serves the home page
+    there. On a storefront with more than the home page, add a rewrite of that exact path to
+    this page, listed before `/b/:bet`, since Vercel takes the first that matches:
+    `{"source":"/b/<bet slug>","destination":"/<this page>"}`.
   - `revenue` bet: any page, but its buy button is the link made for that bet.
 - [ ] **Unlock route** first, as "Checking who paid" in your instructions shows: a server route
       such as `/unlock`, deployed to production, because `afterPaymentUrl` must already be
       live there.
-- [ ] **Keys**: an ask_boss action for the founder to make the restricted key (Checkout
-      Sessions: Read only, exactly as "Checking who paid" words it), then set_env it as
-      `STRIPE_CHECKOUT_READ_KEY`. Make `UNLOCK_SIGNING_SECRET` with `openssl rand -base64 32`
-      and set_env it too. A variable takes effect on the next deploy.
+- [ ] **Keys**: one read key and one signing secret serve every item on the product, so skip
+      this when an earlier item already set them; note in the product's workspace once they
+      are, so the next item knows. Otherwise, an ask_boss action for the founder to make the
+      restricted key (Checkout Sessions: Read only, exactly as "Checking who paid" words it),
+      then set_env it as `STRIPE_CHECKOUT_READ_KEY`. Make `UNLOCK_SIGNING_SECRET` with
+      `openssl rand -base64 32` and set_env it too. A variable takes effect on the next deploy.
 - [ ] **Payment link**: create_payment_link with `name` (what the buyer gets), `amountUsd`,
       `"bet":"<slug>"` and `afterPaymentUrl` `https://<production domain>/unlock`; `delivery`
       only when the founder hands something over. Call again once the founder signs off.
 - [ ] Put the link's id in the unlock check and its URL on the buy button, then deploy again.
 - [ ] One link per item per revenue bet: the bet tag is fixed when the link is made, so a new
-      bet on the same item needs a new link, and the unlock accepts each of the item's link
-      ids. Several items get a link id and a cookie each.
+      bet on the same item needs a new link.
+- [ ] "Checking who paid" checks one link. With several links, map each link id to its item
+      (a new bet's link to the same item as the last), pick the item from the session's
+      `payment_link` in the unlock route, refuse an id the map lacks, keep a cookie per item
+      with the item in what it signs, and redirect to that item's page rather than `/`.
 - [ ] **Check** before the lead calls it live: `curl -I` the landing page and `/unlock` (with
       no `session_id` it sends the visitor home), and the paid part refuses without the
       cookie. Never load a users bet's path in a way the analytics would record.
