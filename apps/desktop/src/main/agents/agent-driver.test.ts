@@ -76,22 +76,29 @@ const SEAL: Seal = {
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       folder: "/Users/me/.claude",
       home: [{ match: "subpath", path: "/Users/me/.claude" }],
+      skills: [],
       state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
       account: [],
       folder: "/Users/me/.codex",
       home: [{ match: "subpath", path: "/Users/me/.codex" }],
+      skills: [{ match: "subpath", path: "/Users/me/.codex/skills" }],
       state: [{ match: "prefix", path: "/Users/me/.codex/auth.json" }],
     },
   },
   runsAsFounder: [],
   save: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
   scratch: [{ match: "subpath", path: "/private/tmp" }],
+  skillFolders: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace/.agents" }],
   sockets: [{ match: "subpath", path: "/private/var/run/com.apple.launchd.x/Listeners" }],
   unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/secrets.json" }],
   writable: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace" }],
 };
+
+const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
+
+const SETUP = { signIn: {}, skills: SKILLS };
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
 const limited = { error: "You've hit your session limit", kind: "limited", resetsAt: 99 } as const;
@@ -414,14 +421,14 @@ describe("acpAgentFor", () => {
     ["claude", "claude-agent-acp"],
     ["codex", "codex-acp"],
   ] as const)("starts a %s session inside that runner's seal", (runner, adapter) => {
-    const { command } = acpAgentFor(runner, SEAL);
+    const { command } = acpAgentFor(runner, SEAL, SETUP);
     expect(command.slice(0, -2)).toEqual(sealedCommand(SEAL, runner, []));
     expect(command.slice(-2)).toEqual([process.execPath, expect.stringContaining(adapter)]);
   });
 
   it("starts agent-browser's Chrome without a sandbox of its own, in the daemons of its runner and folders", () => {
-    const codex = acpAgentFor("codex", SEAL).env;
-    const claude = acpAgentFor("claude", SEAL).env;
+    const codex = acpAgentFor("codex", SEAL, SETUP).env;
+    const claude = acpAgentFor("claude", SEAL, SETUP).env;
     expect(codex.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
     expect(codex.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-x");
     expect(claude.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-c");
@@ -434,17 +441,17 @@ describe("acpAgentFor", () => {
   });
 
   it("saves a screenshot named no path in the runs' temp folder, which a run writes", () => {
-    expect(acpAgentFor("claude", SEAL).env.AGENT_BROWSER_SCREENSHOT_DIR).toBe(
+    expect(acpAgentFor("claude", SEAL, SETUP).env.AGENT_BROWSER_SCREENSHOT_DIR).toBe(
       path.join(root, "cache", "tmp", "screenshots"),
     );
   });
 
   it("runs codex in the mode that asks for everything and sandboxes nothing itself", () => {
-    expect(acpAgentFor("codex", SEAL).sessionModeId).toBe("external-sandbox");
+    expect(acpAgentFor("codex", SEAL, SETUP).sessionModeId).toBe("external-sandbox");
   });
 
   it("loads none of the founder's MCP servers or claude.ai connectors into a claude session", () => {
-    expect(acpAgentFor("claude", SEAL).sessionMeta).toMatchObject({
+    expect(acpAgentFor("claude", SEAL, SETUP).sessionMeta).toMatchObject({
       claudeCode: {
         options: {
           settings: {
@@ -463,7 +470,7 @@ describe("acpAgentFor", () => {
       features: { apps: false, plugins: false },
       mcp_servers: { gmail: { enabled: false }, linear: { enabled: false } },
     });
-    expect(acpAgentFor("codex", SEAL, off).env).toMatchObject(off);
+    expect(acpAgentFor("codex", SEAL, SETUP, off).env).toMatchObject(off);
   });
 
   it("starts no codex run whose MCP servers it could not list, and says why", async () => {
@@ -479,12 +486,58 @@ describe("acpAgentFor", () => {
   });
 
   it("lets a claude shell command run as long as a deploy may take to answer", () => {
-    const { BASH_DEFAULT_TIMEOUT_MS: timeout } = acpAgentFor("claude", SEAL).env;
+    const { BASH_DEFAULT_TIMEOUT_MS: timeout } = acpAgentFor("claude", SEAL, SETUP).env;
     expect(Number(timeout)).toBeGreaterThan(DEPLOY_TIMEOUT_MS);
   });
 
+  it("loads IdleBiz's skills into a claude session, and no settings, skills or plugins of the founder's or claude's own", () => {
+    const { readDirs, sessionMeta } = acpAgentFor("claude", SEAL, SETUP);
+    expect(sessionMeta).toMatchObject({
+      claudeCode: {
+        options: {
+          plugins: [{ path: path.join(SKILLS, ".agents"), type: "local" }],
+          settingSources: [],
+          settings: { disableBundledSkills: true },
+        },
+      },
+    });
+    expect(readDirs).toEqual([]);
+  });
+
+  it("hands a codex session IdleBiz's skills to read, beside the run's own folders", () => {
+    const { readDirs, sessionMeta } = acpAgentFor("codex", SEAL, SETUP);
+    expect(readDirs).toEqual([SKILLS]);
+    expect(sessionMeta).toBeUndefined();
+  });
+
+  it("signs a claude session in as the founder's settings did, never loosening what IdleBiz sets", () => {
+    const signIn = { apiKeyHelper: "~/bin/anthropic-key", permissions: "loose", sandbox: "on" };
+    const agent = acpAgentFor(
+      "claude",
+      SEAL,
+      { signIn, skills: SKILLS },
+      {
+        AGENT_BROWSER_ARGS: "",
+        ANTHROPIC_BASE_URL: "https://gateway.example.com",
+      },
+    );
+    expect(agent.sessionMeta).toMatchObject({
+      claudeCode: {
+        options: {
+          settings: {
+            apiKeyHelper: "~/bin/anthropic-key",
+            permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit"] },
+            sandbox: { enabled: false },
+          },
+        },
+      },
+    });
+    expect(agent.env.ANTHROPIC_BASE_URL).toBe("https://gateway.example.com");
+    expect(agent.env.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
+  });
+
   it("keeps claude's own sandbox off, whatever the founder's settings say", () => {
-    expect(acpAgentFor("claude", SEAL).sessionMeta).toMatchObject({
+    expect(acpAgentFor("claude", SEAL, SETUP).sessionMeta).toMatchObject({
       claudeCode: { options: { settings: { sandbox: { enabled: false } } } },
     });
   });
@@ -809,35 +862,6 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   });
 });
 
-describe("a claude run the founder's own settings would cut off from the company", () => {
-  it("does not start, and says which rule of theirs to remove", async () => {
-    const configDir = path.join(root, "founder-claude");
-    mkdirSync(configDir, { recursive: true });
-    const settings = path.join(configDir, "settings.json");
-    writeFileSync(settings, JSON.stringify({ permissions: { deny: ["Bash(curl:*)"] } }));
-    const driver = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () =>
-        Promise.resolve({
-          ...SEAL,
-          runners: { ...SEAL.runners, claude: { ...SEAL.runners.claude, folder: configDir } },
-        }),
-    );
-    driver.init();
-    const company = found();
-    const [emp] = store.listEmployees();
-    const [product] = store.listProducts();
-    if (emp === undefined || product === undefined) {
-      throw new Error("founded without a hire or a product");
-    }
-    const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
-    const tools = { asks: askBox(() => {}), call: () => Promise.resolve(null) };
-    const run = driver.runTask(emp, company, task, () => {}, tools, new AbortController().signal);
-    await expect(run).rejects.toBeInstanceOf(RefusalError);
-    await expect(run).rejects.toThrow(`deny Bash(curl:*) (${settings})`);
-  });
-});
-
 /** An ACP agent whose one message is the names of the variables it was started with. */
 const ENV_NAMING_AGENT = `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
@@ -883,7 +907,7 @@ describe("the environment an agent is spawned with", () => {
   });
 
   it("holds none of IdleBiz's keys, even when main's own env has them", async () => {
-    const agent = acpAgentFor("claude", SEAL);
+    const agent = acpAgentFor("claude", SEAL, SETUP);
     const { end, summary } = await runAcpTurn({
       agent: { ...agent, command: [process.execPath, "-e", ENV_NAMING_AGENT] },
       cwd,

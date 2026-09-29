@@ -58,18 +58,21 @@ const SEAL: Seal = {
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       folder: "/Users/me/.claude",
       home: [{ match: "subpath", path: "/Users/me/.claude" }],
+      skills: [],
       state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
       account: [],
       folder: "/Users/me/.codex",
       home: [{ match: "subpath", path: "/Users/me/.codex" }],
+      skills: [{ match: "subpath", path: "/Users/me/.codex/skills" }],
       state: [{ match: "prefix", path: "/Users/me/.codex/auth.json" }],
     },
   },
   runsAsFounder: [],
   save: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
   scratch: [{ match: "subpath", path: "/private/tmp" }],
+  skillFolders: [],
   sockets: [],
   unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/secrets.json" }],
   writable: [],
@@ -246,8 +249,8 @@ describe("sealedCommand", () => {
       ...SEAL,
       debugPorts: [],
       runners: {
-        claude: { account: [], folder: "/Users/me/.claude", home: [], state: [] },
-        codex: { account: [], folder: "/Users/me/.codex", home: [], state: [] },
+        claude: { account: [], folder: "/Users/me/.claude", home: [], skills: [], state: [] },
+        codex: { account: [], folder: "/Users/me/.codex", home: [], skills: [], state: [] },
       },
       save: [],
       scratch: [],
@@ -570,6 +573,42 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
+  it("keeps the founder's skills from a codex run, which loads every one it can read, one linked in from elsewhere too", async () => {
+    const inHome = plant(".codex/skills/review/SKILL.md");
+    const system = plant(".codex/skills/.system/imagegen/SKILL.md");
+    const shared = plant(".agents/skills/deploy/SKILL.md");
+    link(".agents/skills/dots", "dotfiles/skills/dots/");
+    plant("dotfiles/skills/dots/SKILL.md");
+    const reads = [inHome, system, shared, at(".agents/skills/dots/SKILL.md")];
+    expect(await tryAs("codex", { reads })).toEqual(all(reads, "EPERM"));
+    expect(await tryAs("claude", { reads: [shared] })).toEqual({ [shared]: "read" });
+  });
+
+  it("keeps a run from making `.agents`, where codex finds skills, in its own folders, and leaves it the rest", async () => {
+    const [workspace = "", memory = "", cache = ""] = own();
+    const skills = [workspace, memory, cache].map((folder) => path.join(folder, ".agents"));
+    const nested = path.join(workspace, "src/.agents");
+    expect(
+      await tryAs("codex", {
+        dirs: [...skills, nested],
+        symlinks: [[at("tmp"), path.join(workspace, "linked")]],
+      }),
+    ).toEqual({
+      ...all(skills, "EPERM"),
+      [nested]: "made",
+      [path.join(workspace, "linked")]: "linked",
+    });
+    expect(
+      await tryAs("claude", {
+        moves: [[path.join(workspace, "linked"), path.join(workspace, ".agents")]],
+        symlinks: [[at("tmp"), path.join(memory, ".agents")]],
+      }),
+    ).toEqual({
+      [path.join(workspace, "linked")]: "EPERM",
+      [path.join(memory, ".agents")]: "EPERM",
+    });
+  });
+
   it.each(["claude", "codex"] as const)(
     "lets a %s run write its runner's state but nothing else in its home, which the founder's own sessions load and run",
     async (runner) => {
@@ -615,7 +654,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".codex/AGENTS.override.md",
               ".codex/rules/default.rules",
               ".codex/prompts/a.md",
-              ".codex/skills/a/SKILL.md",
               ".codex/plugins/a.json",
               ".codex/packages/standalone/bin/codex",
               ".codex/.env",
@@ -1294,6 +1332,14 @@ describe.skipIf(!onMac)("sealRuns", () => {
     expect(seal.writable).toEqual([
       { match: "subpath", path: path.join(realpathSync(root), "acme/workspace") },
     ]);
+    expect(seal.skillFolders).toEqual([
+      { match: "subpath", path: path.join(realpathSync(root), "acme/workspace/.agents") },
+    ]);
+    expect(seal.runners.codex.skills).toEqual([
+      { match: "subpath", path: path.join(home, ".codex/skills") },
+      { match: "subpath", path: path.join(home, ".agents/skills") },
+    ]);
+    expect(seal.runners.claude.skills).toEqual([]);
     expect(seal.debugPorts).toEqual([9222, 9229]);
     expect(seal.sockets).toEqual(
       expect.arrayContaining(

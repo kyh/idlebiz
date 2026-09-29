@@ -122,6 +122,8 @@ export interface AcpAgent {
   sessionModeId: string;
   /** Sent as `_meta` when the session is created or resumed — see `RunnerAdapter`. */
   sessionMeta?: NewSessionRequest["_meta"];
+  /** Folders every session is handed besides the turn's `addDirs`, to read — see `RunnerAdapter`. */
+  readDirs?: readonly string[];
   /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
   usagePerRequest?: true;
   /** Declare typed session failures on initialize — see `RunnerAdapter`. */
@@ -535,7 +537,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           protocolVersion: PROTOCOL_VERSION,
         });
 
-        const additionalDirectories = opts.addDirs ?? [];
+        const additionalDirectories = [...(opts.addDirs ?? []), ...(opts.agent.readDirs ?? [])];
 
         // Resume without replaying history; a rejected session id falls back to fresh.
         const resume = async (): Promise<string | undefined> => {

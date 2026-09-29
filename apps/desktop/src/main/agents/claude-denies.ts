@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { RefusalError } from "@/shared/refusal";
@@ -44,26 +43,18 @@ export const deniesCommand = (rule: string, command: string): boolean => {
 };
 
 /**
- * Refuses a claude run that the founder's own claude settings would cut off from the company: a
- * deny rule outranks the ask rules the session adds, so each tool's curl would be refused before
- * IdleBiz is asked, and the turn would still end as done. `configDir` is where the founder's
- * claude keeps its settings, `cwd` the project the run loads its settings from.
+ * Refuses a claude run that managed settings (`file`), the one tier of the founder's machine a
+ * run's session still loads, would cut off from the company: a deny rule outranks the ask rules
+ * the session adds, so each tool's curl would be refused before IdleBiz is asked, and the turn
+ * would still end as done.
  */
-export const refuseDeniedTools = async (configDir: string, cwd: string): Promise<void> => {
+export const refuseDeniedTools = async (file: string = MANAGED_SETTINGS): Promise<void> => {
   const commands = TOOL_NAMES.map(curlOf);
-  const files = [
-    MANAGED_SETTINGS,
-    path.join(configDir, "settings.json"),
-    path.join(cwd, ".claude", "settings.json"),
-    path.join(cwd, ".claude", "settings.local.json"),
-  ];
-  for (const file of files) {
-    const rules = await denyRulesIn(file);
-    const rule = rules.find((denied) => commands.some((command) => deniesCommand(denied, command)));
-    if (rule !== undefined) {
-      throw new RefusalError(
-        `Your Claude Code settings deny ${rule} (${file}), and a claude employee reaches the company's tools only with curl, so it did not start. Remove that rule to let claude employees work.`,
-      );
-    }
+  const rules = await denyRulesIn(file);
+  const rule = rules.find((denied) => commands.some((command) => deniesCommand(denied, command)));
+  if (rule !== undefined) {
+    throw new RefusalError(
+      `Your Claude Code managed settings deny ${rule} (${file}), and a claude employee reaches the company's tools only with curl, so it did not start. Remove that rule to let claude employees work.`,
+    );
   }
 };

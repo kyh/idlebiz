@@ -268,17 +268,19 @@ rather than crashing boot.
   (`LOGINS` in `seal.ts`), so no AWS profile loads either: a founder on Bedrock signs in with
   `AWS_BEARER_TOKEN_BEDROCK` only. On Vertex, `GOOGLE_APPLICATION_CREDENTIALS` must name a key
   file outside the sealed logins: gcloud's default credentials under `~/.config/gcloud` are
-  hidden too.
+  hidden too. A claude session loads none of the founder's settings, so the `env` of their
+  claude user settings reaches the run the same way, filtered alike, beside the sign-in helpers
+  named there (`claudeSignIn` in `main/agents/claude-sign-in.ts`).
 - Every employee run starts sealed, under the Seatbelt profile `main/agents/seal.ts` renders
   and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
-  what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`
-  and the other runner's home. Writes are denied but for the run's own folders (workspace,
+  what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`,
+  the other runner's home and, for codex, the founder's skills. Writes are denied but for the run's own folders (workspace,
   shared, memory, the save's `cache/`), its runner's state (`state` in `RUNNER_HOMES`, a list
   of names in the home: a CLI upgrade that writes a new one fails with `EPERM` there until it is
   added), temp and per-user cache folders and its agent-browser namespace. So in the runner's
   home it writes nothing that CLI loads or runs (claude's `~/.claude.json` included) and no
   other folder's claude `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
-  `.mcp.json` or `.codex/`.
+  `.mcp.json` or `.codex/`, nor `.agents` in its own folders, where codex finds skills.
   It connects to no unix socket but its own folders' and its namespace's, to no loopback
   debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
@@ -413,6 +415,8 @@ rather than crashing boot.
   idle loop; it alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is
   in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
+  `agents/bundled-skills.ts` (where IdleBiz's skills ship, `resources/skills`),
+  `agents/claude-sign-in.ts` (what of the founder's claude settings still signs a run in),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
   (the two OAuth connections, same shape), `stripe-api.ts` (what every Stripe call shares),

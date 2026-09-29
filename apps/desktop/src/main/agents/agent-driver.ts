@@ -2,7 +2,7 @@ import { isReady, probeRunners, runnerBin } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import type { RunnerAdapter } from "@repo/agent-driver/registry";
+import type { RunnerAdapter, SessionSetup } from "@repo/agent-driver/registry";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_MS,
@@ -29,7 +29,9 @@ import { z } from "zod";
 import { parseJson } from "@/shared/json";
 import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
+import { bundledSkillsDir } from "@/main/agents/bundled-skills";
 import { refuseDeniedTools } from "@/main/agents/claude-denies";
+import { claudeSignIn } from "@/main/agents/claude-sign-in";
 import { runEnv } from "@/main/agents/run-env";
 import {
   browserSocketDir,
@@ -98,19 +100,22 @@ const makeBrowserNamespace = (seal: Seal, runner: AgentRunner): void => {
  * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
  * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
  * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails. `more` joins the adapter's env: for codex, the founder's MCP servers
- * `codexMcpOff` turns off.
+ * command they run fails. `setup` is where IdleBiz's skills are and how the founder's claude signs
+ * in. `more` joins the adapter's env over main's: for codex, the founder's MCP servers
+ * `codexMcpOff` turns off; for claude, the env of their user settings.
  */
 export const acpAgentFor = (
   runner: AgentRunner,
   seal: Seal,
+  setup: SessionSetup,
   more: Record<string, string> = {},
 ): AcpAgent => {
   const adapter: RunnerAdapter = RUNNERS[runner];
+  const session = adapter.session(setup);
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
-    ...browserEnv(seal, runner),
     ...more,
+    ...browserEnv(seal, runner),
     // The packaged executable is Electron; child agents need its Node mode.
     ELECTRON_RUN_AS_NODE: "1",
   };
@@ -128,7 +133,8 @@ export const acpAgentFor = (
       unpacked(resolveFromApp.resolve(adapter.acpEntry)),
     ]),
     env,
-    sessionMeta: adapter.sessionMeta,
+    readDirs: session.readDirs,
+    sessionMeta: session.meta,
     sessionModeId: adapter.sessionModeId,
     typedFailures: adapter.typedFailures,
     usagePerRequest: adapter.usagePerRequest,
@@ -204,11 +210,21 @@ export const codexMcpOff = async (
   return mcpOffConfig(listed);
 };
 
-/** `runner`'s session under `seal`, loading none of the founder's MCP servers. */
-const sessionAgent = async (runner: AgentRunner, seal: Seal): Promise<AcpAgent> =>
-  runner === "claude"
-    ? acpAgentFor(runner, seal)
-    : acpAgentFor(runner, seal, await codexMcpOff(seal));
+/**
+ * `runner`'s session under `seal`, loading the skills in `skills` and none of the founder's, nor
+ * any MCP server of theirs, but signing in as their CLI does.
+ */
+export const sessionAgent = async (
+  runner: AgentRunner,
+  seal: Seal,
+  skills: string,
+): Promise<AcpAgent> => {
+  if (runner === "codex") {
+    return acpAgentFor(runner, seal, { signIn: {}, skills }, await codexMcpOff(seal));
+  }
+  const { env, helpers } = await claudeSignIn(seal.runners.claude.folder);
+  return acpAgentFor(runner, seal, { signIn: helpers, skills }, env);
+};
 
 /**
  * The URL of the top page, then of every frame found under it; null where the
@@ -514,13 +530,16 @@ class AgentDriver {
   private readonly refusedLogins = new Set<AgentRunner>();
   private readonly checkSeal: () => Promise<SealState>;
   private readonly resolveSeal: (writable: readonly string[]) => Promise<Seal>;
+  private readonly skills: () => string;
 
   constructor(
     checkSeal: () => Promise<SealState>,
     resolveSeal: (writable: readonly string[]) => Promise<Seal>,
+    skills: () => string,
   ) {
     this.checkSeal = checkSeal;
     this.resolveSeal = resolveSeal;
+    this.skills = skills;
   }
 
   /** Runs wait on the seal's check, and never start unsealed. */
@@ -682,7 +701,7 @@ class AgentDriver {
   async completeOneShot(prompt: string): Promise<string> {
     const runner = this.pickRunner(0);
     const res = await runAcpTurn({
-      agent: await sessionAgent(runner, await this.seal([])),
+      agent: await sessionAgent(runner, await this.seal([]), this.skills()),
       cwd: tmpdir(),
       idleTimeoutMs: 3 * 60_000,
       maxSessionMs: 5 * 60_000,
@@ -777,7 +796,7 @@ class AgentDriver {
     mkdirSync(RUN_TMPDIR, { recursive: true });
     const seal = await this.seal(confinement.writable);
     if (emp.runner === "claude") {
-      await refuseDeniedTools(seal.runners.claude.folder, run.workspace);
+      await refuseDeniedTools();
     }
     makeBrowserNamespace(seal, emp.runner);
     if (emp.runner === "claude") {
@@ -794,7 +813,7 @@ class AgentDriver {
     try {
       const res = await runAcpTurn({
         addDirs,
-        agent: await sessionAgent(emp.runner, seal),
+        agent: await sessionAgent(emp.runner, seal, this.skills()),
         cwd: run.workspace,
         env: { ...handle.env, ...TOOL_CACHE_ENV, ...gitIdentity(emp, company) },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
@@ -837,12 +856,13 @@ class AgentDriver {
 
 /**
  * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
- * `resolveSeal` gives its own folders then: tests script both, the app checks and resolves this
- * machine's.
+ * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names:
+ * tests script all three, the app checks and resolves this machine's and the bundled skills.
  */
 export const createAgentDriver = (
   checkSeal: () => Promise<SealState> = sealRuns,
   resolveSeal: (writable: readonly string[]) => Promise<Seal> = machineSeal,
-): AgentDriver => new AgentDriver(checkSeal, resolveSeal);
+  skills: () => string = bundledSkillsDir,
+): AgentDriver => new AgentDriver(checkSeal, resolveSeal, skills);
 
 export const agentDriver = createAgentDriver();

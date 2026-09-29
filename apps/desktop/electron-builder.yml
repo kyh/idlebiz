@@ -5,11 +5,14 @@ directories:
 files:
   - .output/app/**/*
   - package.json
-# Runtime assets native code reads (sharp cannot see inside the asar): beside
-# the asar in Contents/Resources, found through process.resourcesPath.
+# Runtime assets native code reads (sharp and the claude CLI cannot see inside
+# the asar): beside the asar in Contents/Resources, found through
+# process.resourcesPath.
 extraResources:
   - from: resources/employee-sheets
     to: employee-sheets
+  - from: resources/skills
+    to: skills
 asarUnpack:
   # All of node_modules, not a hand-picked list. The ACP agents are spawned as
   # child processes, and nothing inside an asar archive can be executed — but

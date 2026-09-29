@@ -1,6 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -17,7 +25,8 @@ import { parseJson } from "@/shared/json";
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
 // sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it,
-// starts no MCP server of the founder's, and runs, but cannot rewrite, the config their own
+// starts no MCP server of the founder's, offers the model IdleBiz's skills and none of the
+// founder's, leaves no skill for a later run, and runs, but cannot rewrite, the config their own
 // codex loads.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
@@ -35,6 +44,15 @@ type Move = { tool: "exec_command"; cmd: string } | { tool: "apply_patch"; patch
 const ResponsesRequest = z.object({ input: z.array(z.looseObject({ type: z.string() })) });
 
 const Listening = z.object({ port: z.number() });
+
+/** Where `name` is described as `marker`, for a request that lists it to be found by. */
+const plantSkill = (skills: string, name: string, marker: string): void => {
+  mkdirSync(path.join(skills, name), { recursive: true });
+  writeFileSync(
+    path.join(skills, name, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${marker}. Use it for any work at all.\n---\n\n${marker}\n`,
+  );
+};
 
 /** What the stand-in model says in a turn: a last word, or one tool call. */
 type ModelItem =
@@ -84,14 +102,15 @@ const callOf = (move: Move): ModelItem =>
       }
     : { call_id: "call_1", input: move.patch, name: "apply_patch", type: "custom_tool_call" };
 
-/** A Responses API that makes `move` first, then says "done". */
-const standInModel = (move: () => Move): Server =>
+/** A Responses API that makes `move` first, then says "done"; each request lands whole in `sent`. */
+const standInModel = (move: () => Move, sent: string[]): Server =>
   createServer((req, res) => {
     let body = "";
     req.on("data", (chunk: Buffer) => {
       body += chunk.toString();
     });
     req.on("end", () => {
+      sent.push(body);
       const parsed = ResponsesRequest.safeParse(parseJson(body));
       const answered =
         parsed.success && parsed.data.input.some((item) => item.type.endsWith("_call_output"));
@@ -127,14 +146,16 @@ const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> 
 describe.skipIf(!codexRuns)("codex inside the seal", () => {
   let model: Server | null = null;
   let move: Move = { cmd: "true", tool: "exec_command" };
+  const sent: string[] = [];
   let base = "";
+  let skills = "";
   let home = "";
   let codexHome = "";
   let workspace = "";
   let remote = "";
 
   beforeAll(async () => {
-    const listening = standInModel(() => move);
+    const listening = standInModel(() => move, sent);
     model = listening;
     listening.listen(0, "127.0.0.1");
     await once(listening, "listening");
@@ -151,7 +172,14 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   });
 
   beforeEach(() => {
+    sent.length = 0;
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-run-"));
+    // IdleBiz's skills as shipped, and one more
+    skills = path.join(base, "skills");
+    cpSync(path.resolve(import.meta.dirname, "../../../resources/skills"), skills, {
+      recursive: true,
+    });
+    plantSkill(path.join(skills, ".agents", "skills"), "bundled-gate", "BUNDLED_SKILL_MARK");
     const { port } = Listening.parse(model?.address());
     home = path.join(base, "home");
     // where the founder's codex keeps its config, so the seal treats it as theirs
@@ -172,6 +200,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         `args = ["-c", "touch ${path.join(base, "mcp-started")}; exec cat"]`,
       ].join("\n"),
     );
+    // both places codex loads the founder's own skills from
+    plantSkill(path.join(codexHome, "skills"), "founder-gate", "FOUNDER_SKILL_MARK");
+    plantSkill(path.join(home, ".agents", "skills"), "founder-agents-gate", "FOUNDER_AGENTS_MARK");
     remote = path.join(base, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", remote]);
     // a run's own folders are always in the save
@@ -206,7 +237,8 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
-      return acpAgentFor("codex", seal, await codexMcpOff(seal, { CODEX_HOME: codexHome }));
+      const setup = { signIn: {}, skills };
+      return acpAgentFor("codex", seal, setup, await codexMcpOff(seal, { CODEX_HOME: codexHome }));
     });
     const result = await runAcpTurn({
       agent,
@@ -268,6 +300,25 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const { mcpStarted, result } = await turn({ cmd: "true", tool: "exec_command" }, true);
     expect(result.end).toEqual({ kind: "completed" });
     expect(mcpStarted).toBe(false);
+  });
+
+  it("is offered IdleBiz's skills and none of the founder's", { timeout: 60_000 }, async () => {
+    const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+    expect(result.end).toEqual({ kind: "completed" });
+    const requests = sent.join("\n");
+    expect(requests).toContain("bundled-gate");
+    expect(requests).toContain("BUNDLED_SKILL_MARK");
+    expect(requests).not.toContain("FOUNDER_SKILL_MARK");
+    expect(requests).not.toContain("FOUNDER_AGENTS_MARK");
+  });
+
+  it("leaves no skill in its workspace for a later run to load", { timeout: 60_000 }, async () => {
+    const skill = path.join(workspace, ".agents", "skills", "planted", "SKILL.md");
+    const cmd = `touch ran; mkdir -p ${path.dirname(skill)} && echo planted > ${skill}`;
+    const { result } = await turn({ cmd, tool: "exec_command" }, true);
+    expect(result.end).toEqual({ kind: "completed" });
+    expect(existsSync(path.join(workspace, "ran"))).toBe(true);
+    expect(existsSync(path.join(workspace, ".agents"))).toBe(false);
   });
 
   it("runs each command inside the seal", { timeout: 60_000 }, async () => {

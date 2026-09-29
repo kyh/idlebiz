@@ -36,6 +36,15 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
 - Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.
+- Employee runs load IdleBiz's own skills and none of the founder's. They live at
+  `apps/desktop/resources/skills/.agents/skills/<name>/SKILL.md` (Agent Skills format:
+  frontmatter `name` and `description`, then the body), shipped beside the asar
+  (`extraResources`) and found by `bundledSkillsDir` (`main/agents/bundled-skills.ts`). The
+  hidden `.agents` is forced: codex-acp takes skills only from `<folder>/.agents/skills` of a
+  folder a session is handed, and `.agents` is also the claude plugin `idlebiz`
+  (`.agents/.claude-plugin/plugin.json`), whose skills folder is the same one; claude names
+  each `idlebiz:<name>`. Adding one is adding its folder there; the gate tests prove both
+  runners are offered it. No `allowed-tools` and no `!` shell lines in a SKILL.md.
 - Verify changes live: `pnpm dev:desktop` exposes CDP on :9222 (use agent-browser).
   Under headless automation the Phaser boot stalls (document.hidden) â€” force
   `window.__game.scene.start("office")` and step `game.loop.step(t)` to render.
@@ -187,7 +196,10 @@ third boundary.
   became a symlink since boot is sealed where it leads from the next run on.
   - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
     credentials, cloud and deploy CLIs, browser and chat-app profiles, agent-browser's saved
-    logins), `secrets.json` with every name that starts with it, and the other runner's home.
+    logins), `secrets.json` with every name that starts with it, the other runner's home, and,
+    for a codex run, the founder's skills (`$CODEX_HOME/skills`, codex's own `.system` ones in
+    it, and `~/.agents/skills`: `skills` in `RUNNER_HOMES`), since codex loads every skill it
+    can read and no setting leaves those out.
   - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its
     workspace, the shared one, its memory, the save's `cache/`), its runner's state in its home
     (`state` in `RUNNER_HOMES`: sessions, logs, caches, databases, codex's refreshed login;
@@ -209,7 +221,9 @@ third boundary.
     commits, branches, stashes, merges, rebases and gcs (so no config, hooks, `commondir`,
     `worktrees/`, `modules/` or alternates), `.claude/settings*.json`, `.mcp.json`, `.codex/`,
     and the `.git`/`.claude` folders themselves. Seatbelt checks a moved folder where it lands,
-    never what it carries, so these hold in TMPDIR and `cache/` too.
+    never what it carries, so these hold in TMPDIR and `cache/` too. Nor is `.agents` written
+    in any of the run's own folders (`Seal.skillFolders`), where codex finds skills in its
+    working directory and in each folder it is handed, so no run leaves one for the next.
   - Nor does a run write claude's account file (`account` in `RUNNER_HOMES`: `~/.claude.json`
     with every name that starts with it, or the one in `CLAUDE_CONFIG_DIR`), its backups or the
     legacy `.config.json` claude reads in its place: the MCP servers named there, user-wide or
@@ -417,19 +431,29 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     the founder say so. A shell `git push` is still held under `git-push`, and signed it runs as
     any command does: on a claude run git reaches a credential helper that reads the Keychain
     (gh's), so it can push over https as the founder. Refuse it.
-- **A run loads the founder's CLI setup, less their MCP.** A claude session loads the
-  founder's user, project and local settings (CLAUDE.md, skills, plugins, hooks), under the
-  flag tier its session options set (`packages/agent-driver/src/registry.ts`), which outranks
-  them: claude's own sandbox off, ask rules for shell and edits that beat any allow rule, no
-  bypass mode, no plan mode (its exit asks to approve a plan, which would block the task on a
-  founder card that changes nothing), and none of their MCP servers or claude.ai connectors
-  (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`), which act signed in as
-  the founder; the company is reached with curl. A codex session loads the founder's codex config with every
-  MCP server turned off by the name `codex mcp list` gives it, apps and plugins whole
-  (`codexMcpOff` in `main/agents/agent-driver.ts`); one it cannot list refuses the run with
-  codex's reason. A deny rule in the founder's claude settings outranks the flag tier's ask
-  rules and would refuse a company tool's curl before IdleBiz is asked, the turn still ending as
-  done, so a claude run whose settings (managed, user or the workspace's) deny one does not
+- **A run signs in as the founder's CLI and loads nothing else of theirs.** A claude session
+  loads no setting source (`settingSources: []`, `packages/agent-driver/src/registry.ts`): not
+  the founder's user settings (their CLAUDE.md and rules, skills, plugins, hooks, permissions),
+  nor a project's or a local one, which a run could otherwise write for the next to load. What
+  remains is managed policy and the flag tier its session options set: claude's own sandbox
+  off, ask rules for shell and edits, no bypass mode, no plan mode (its exit asks to approve a
+  plan, which would block the task on a founder card that changes nothing), no skills of
+  claude's own (`disableBundledSkills`), IdleBiz's as a plugin, and none of their MCP servers
+  or claude.ai connectors (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`),
+  which act signed in as the founder; the company is reached with curl. A sign-in kept in their
+  settings rather than their shell still reaches the run (`claudeSignIn` in
+  `main/agents/claude-sign-in.ts`): their settings' `env` (a Bedrock or Vertex switch, a
+  gateway's URL and token), through `runEnv` as the shell's env goes, and the helpers claude runs
+  for a key or a cloud login (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
+  `gcpAuthRefresh`), which run sealed, so one that reads `~/.aws` or gcloud's login fails as it
+  did. claude-agent-acp still reads the founder's user settings for the model it picks. A codex
+  session loads the founder's codex config with every MCP server turned off by the name
+  `codex mcp list` gives it, apps and plugins whole (`codexMcpOff` in
+  `main/agents/agent-driver.ts`); one it cannot list refuses the run with codex's reason. No
+  codex setting leaves the founder's skills out, so the seal keeps a codex run from reading
+  them, and IdleBiz's folder is handed to the session to read (`readDirs`). A deny rule in
+  managed settings outranks the flag tier's ask rules and would refuse a company tool's curl
+  before IdleBiz is asked, the turn still ending as done, so a claude run under one does not
   start, and says which rule (`refuseDeniedTools` in `main/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
   says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt

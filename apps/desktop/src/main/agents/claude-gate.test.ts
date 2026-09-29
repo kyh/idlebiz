@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -29,22 +30,37 @@ import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 // keep that sandbox off, so a command runs inside the seal instead of failing to nest, and
 // still asks IdleBiz first, so holdFor still judges it; that it offers no plan mode, whose exit
 // would ask the founder to approve a plan; that no MCP server of the founder's starts;
-// and that a run cannot rewrite the settings or account file the founder's own claude loads,
-// and still runs and keeps its transcript.
+// that the model is offered IdleBiz's skills and none of the founder's, nor their instructions,
+// while the env of their settings still reaches the run; and that a run cannot rewrite the
+// settings or account file the founder's own claude loads, and still runs and keeps its
+// transcript.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { acpAgentFor } = await import("./agent-driver");
+const { sessionAgent } = await import("./agent-driver");
 const { machineSeal, realPathOf, sealRuns } = await import("./seal");
 
 const claudeRuns =
   process.platform === "darwin" && spawnSync(runnerBin("claude"), ["--version"]).status === 0;
 
-/** A founder's settings that would sandbox, and skip asking for, every command. */
+/**
+ * A founder's settings that would sandbox, and skip asking for, every command, with an env a
+ * sign-in kept there would set.
+ */
 const FOUNDER_SETTINGS = {
+  env: { IDLEBIZ_GATE_SIGN_IN: "from-settings" },
   permissions: { allow: ["Bash"] },
   sandbox: { autoAllowBashIfSandboxed: true, enabled: true },
+};
+
+/** Where `name` is described as `marker`, for a request that lists it to be found by. */
+const plantSkill = (skills: string, name: string, marker: string): void => {
+  mkdirSync(path.join(skills, name), { recursive: true });
+  writeFileSync(
+    path.join(skills, name, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${marker}. Use it for any work at all.\n---\n\n${marker}\n`,
+  );
 };
 
 /** A tool's output as claude hands it back: text, or blocks of it. */
@@ -164,10 +180,15 @@ const streamed = (move: Move): string =>
 
 /**
  * A Messages API that makes `call`, then says "done"; a request of claude's own that offers no
- * Bash tool gets "done" too. Each call's output lands in `outputs`,
- * and the tools each request offering Bash offers land in `offered`.
+ * Bash tool gets "done" too. Each call's output lands in `outputs`, the tools each request
+ * offering Bash offers in `offered`, and each such request whole in `sent`.
  */
-const standInModel = (call: () => ToolCall, outputs: string[], offered: string[]): Server =>
+const standInModel = (
+  call: () => ToolCall,
+  outputs: string[],
+  offered: string[],
+  sent: string[],
+): Server =>
   createServer((req, res) => {
     let body = "";
     req.on("data", (chunk: Buffer) => {
@@ -182,6 +203,7 @@ const standInModel = (call: () => ToolCall, outputs: string[], offered: string[]
       const offersBash = tools.includes("Bash");
       if (offersBash) {
         offered.push(...tools);
+        sent.push(body);
       }
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.end(
@@ -227,14 +249,16 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let call: ToolCall = { input: { command: "true" }, name: "Bash" };
   const outputs: string[] = [];
   const offered: string[] = [];
+  const sent: string[] = [];
   let base = "";
+  let skills = "";
   let home = "";
   let configDir = "";
   let workspace = "";
   let remote = "";
 
   beforeAll(async () => {
-    const listening = standInModel(() => call, outputs, offered);
+    const listening = standInModel(() => call, outputs, offered, sent);
     model = listening;
     listening.listen(0, "127.0.0.1");
     await once(listening, "listening");
@@ -253,13 +277,22 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   beforeEach(() => {
     outputs.length = 0;
     offered.length = 0;
+    sent.length = 0;
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-run-"));
+    // IdleBiz's skills as shipped, and one more
+    skills = path.join(base, "skills");
+    cpSync(path.resolve(import.meta.dirname, "../../../resources/skills"), skills, {
+      recursive: true,
+    });
+    plantSkill(path.join(skills, ".agents", "skills"), "bundled-gate", "BUNDLED_SKILL_MARK");
     home = path.join(base, "home");
     // where the founder's claude keeps its config, so the seal treats it as theirs
     configDir = path.join(home, ".claude");
     // main makes it before every claude run, which cannot
     mkdirSync(path.join(configDir, "projects"), { recursive: true });
     writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(FOUNDER_SETTINGS));
+    plantSkill(path.join(configDir, "skills"), "founder-gate", "FOUNDER_SKILL_MARK");
+    writeFileSync(path.join(configDir, "CLAUDE.md"), "FOUNDER_INSTRUCTIONS_MARK\n");
     // a server of the founder's, which leaves a mark if a run starts it
     const founderServer = {
       args: ["-c", `touch ${path.join(base, "mcp-started")}; exec cat`],
@@ -283,6 +316,9 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     git("add", ".");
     git("commit", "-qm", "a");
     git("remote", "add", "origin", remote);
+    // what the project would load, had a run written it
+    plantSkill(path.join(workspace, ".claude", "skills"), "project-gate", "PROJECT_SKILL_MARK");
+    writeFileSync(path.join(workspace, "CLAUDE.md"), "PROJECT_INSTRUCTIONS_MARK\n");
   });
 
   // an ended turn's claude may still be writing its session into its config dir
@@ -304,7 +340,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const { port } = Listening.parse(model?.address());
     const agent = await asFounderAt(home, async () =>
-      standInAgent(acpAgentFor("claude", await machineSeal([workspace]))),
+      standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills)),
     );
     const result = await runAcpTurn({
       agent,
@@ -374,6 +410,32 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       expect(offered).not.toContain("ExitPlanMode");
     },
   );
+
+  it(
+    "is offered IdleBiz's skills and none of the founder's, the project's or claude's own, nor their instructions",
+    { timeout: 60_000 },
+    async () => {
+      const { result } = await turn("true", true);
+      expect(result.end).toEqual({ kind: "completed" });
+      const requests = sent.join("\n");
+      expect(requests).toContain("idlebiz:bundled-gate");
+      expect(requests).toContain("BUNDLED_SKILL_MARK");
+      for (const mark of [
+        "FOUNDER_SKILL_MARK",
+        "FOUNDER_INSTRUCTIONS_MARK",
+        "PROJECT_SKILL_MARK",
+        "PROJECT_INSTRUCTIONS_MARK",
+        "claude-api",
+      ]) {
+        expect(requests).not.toContain(mark);
+      }
+    },
+  );
+
+  it("signs in with the env of the founder's settings", { timeout: 60_000 }, async () => {
+    await turn("echo sign-in=$IDLEBIZ_GATE_SIGN_IN", true);
+    expect(outputs.join("\n")).toContain("sign-in=from-settings");
+  });
 
   it("gives its shell commands time to wait out a deploy", { timeout: 60_000 }, async () => {
     await turn("echo timeout=$BASH_DEFAULT_TIMEOUT_MS", true);

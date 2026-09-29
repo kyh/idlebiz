@@ -12,8 +12,12 @@ export interface RunnerAdapter {
    * `permissions.defaultMode` claude reads from the player's user, project or local settings.
    */
   sessionModeId: string;
-  /** Sent as `_meta` on session/new and session/resume: the adapter's own session options. */
-  sessionMeta?: NewSessionRequest["_meta"];
+  /**
+   * How a session starts loading IdleBiz's skills and none of the player's: the `_meta` sent on
+   * session/new and session/resume (the adapter's own session options), and folders it is handed
+   * besides the run's own, to read.
+   */
+  session: (setup: SessionSetup) => SessionStart;
   /** Adapter env var pointing at the player's CLI; bundled optional binaries may be absent. */
   binEnvVar?: string;
   /**
@@ -43,6 +47,24 @@ export interface RunnerAdapter {
   typedFailures?: true;
 }
 
+/**
+ * What of a session's start is the run's to say. `skills` is the folder of IdleBiz's skills, each
+ * at `.agents/skills/<name>/SKILL.md` in it: codex-acp takes skills only from `.agents/skills` in
+ * a folder a session is handed, and `.agents` is also a claude plugin (its manifest in
+ * `.claude-plugin/`), whose skills are that same folder. `signIn` is what of the player's claude
+ * user settings signs their CLI in (`apiKeyHelper` and the like), which a session no longer loads.
+ */
+export interface SessionSetup {
+  skills: string;
+  signIn: Readonly<Record<string, string>>;
+}
+
+export interface SessionStart {
+  meta?: NewSessionRequest["_meta"];
+  /** Folders handed to the session besides the run's own, which it only reads. */
+  readDirs: readonly string[];
+}
+
 const claudeAuthStatus = z.object({ loggedIn: z.boolean() });
 
 /** `claude auth status` prints JSON with a loggedIn flag, after whatever else it says. */
@@ -62,33 +84,48 @@ const claudeLoggedIn = (output: string): boolean => {
 };
 
 /**
- * With bypass off, no settings tier can start a session in it. `settings` is the flag tier:
- * its ask rules beat allow rules from any tier, and its values outrank the player's user,
- * project and local settings, which stay loaded for their instructions, skills and plugins.
- * None of their MCP servers or claude.ai connectors load: those act as the player, signed in
- * as them, and a run reaches the company with curl, not MCP.
+ * With bypass off, no settings tier can start a session in it. No setting source is loaded: not
+ * the player's user settings (their CLAUDE.md, skills, plugins, hooks), nor a project's or a
+ * local one, which a run could write for the next to load. What remains is managed policy and
+ * `settings`, the flag tier, whose ask rules beat allow rules from any tier. Its skills are
+ * IdleBiz's, as a plugin, and none of claude's own. None of the player's MCP servers or claude.ai
+ * connectors load either: those act as the player, signed in as them, and a run reaches the
+ * company with curl, not MCP. `signIn` goes first, so nothing of the player's outranks the rest.
  */
-const claudeSessionMeta = {
-  claudeCode: {
-    options: {
-      allowDangerouslySkipPermissions: false,
-      settings: {
-        disableClaudeAiConnectors: true,
-        // Plan mode's exit asks to approve a plan: IdleBiz would hold that for the founder to
-        // sign, blocking the task over a step that changes no boundary.
-        permissions: {
-          ask: ["Bash", "Edit", "Write", "NotebookEdit"],
-          deny: ["mcp__*", "EnterPlanMode", "ExitPlanMode"],
+const claudeSession = ({ signIn, skills }: SessionSetup): SessionStart => ({
+  meta: {
+    claudeCode: {
+      options: {
+        allowDangerouslySkipPermissions: false,
+        plugins: [{ path: `${skills}/.agents`, type: "local" }],
+        settingSources: [],
+        settings: {
+          ...signIn,
+          disableBundledSkills: true,
+          disableClaudeAiConnectors: true,
+          // Plan mode's exit asks to approve a plan: IdleBiz would hold that for the founder to
+          // sign, blocking the task over a step that changes no boundary.
+          permissions: {
+            ask: ["Bash", "Edit", "Write", "NotebookEdit"],
+            deny: ["mcp__*", "EnterPlanMode", "ExitPlanMode"],
+          },
+          // Off: the run is already inside a Seatbelt profile, and one cannot apply inside
+          // another. On, every command would fail, and a sandboxed one would skip the Bash ask.
+          sandbox: { autoAllowBashIfSandboxed: false, enabled: false },
         },
-        // Off whatever the player's settings say: the run is already inside a Seatbelt profile,
-        // and one cannot apply inside another. On, every command would fail, and a sandboxed
-        // one would skip the Bash ask.
-        sandbox: { autoAllowBashIfSandboxed: false, enabled: false },
+        strictMcpConfig: true,
       },
-      strictMcpConfig: true,
     },
   },
-};
+  readDirs: [],
+});
+
+/**
+ * codex has no setting that leaves the player's skills out: the seal keeps its runs from reading
+ * them. codex-acp hands `.agents/skills` in each folder a session is handed to codex as a skill
+ * root, so IdleBiz's folder is handed over too.
+ */
+const codexSession = ({ skills }: SessionSetup): SessionStart => ({ readDirs: [skills] });
 
 export const RUNNERS = {
   claude: {
@@ -108,7 +145,7 @@ export const RUNNERS = {
       "AWS_BEARER_TOKEN_BEDROCK",
       "GOOGLE_APPLICATION_CREDENTIALS",
     ],
-    sessionMeta: claudeSessionMeta,
+    session: claudeSession,
     sessionModeId: "default",
   },
   codex: {
@@ -122,6 +159,7 @@ export const RUNNERS = {
     loginArgs: ["login"],
     // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY
     providerEnv: ["OPENAI_", "CODEX_", "AWS_BEARER_TOKEN_BEDROCK", "AZURE_OPENAI_"],
+    session: codexSession,
     // Added by the app's patch of codex-acp (patches/): no sandbox of codex's own, which cannot
     // start inside the run's, and approval "untrusted", so codex asks before every command and
     // patch it does not know is safe. codex-acp's own modes either sandbox or never ask.

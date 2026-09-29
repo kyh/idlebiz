@@ -79,7 +79,10 @@ const LOGINS = [
  * sibling it renames over it; one ending in a slash is only that folder. `account` is where the
  * CLI records the founder's account, in the home and beside it in HOME, each with every name that
  * starts with it: only the sign-in writes it. claude's transcripts and memory are `projects/`,
- * of which a run writes only its own folder's (`Seal.claudeProjects`).
+ * of which a run writes only its own folder's (`Seal.claudeProjects`). `skills` are the founder's
+ * skills its runs would load, in the home and in HOME, which they cannot even read: codex loads
+ * every one it can read, with no setting that leaves them out, while a claude session loads no
+ * user settings, so none of theirs.
  */
 const RUNNER_HOMES = {
   claude: {
@@ -87,6 +90,7 @@ const RUNNER_HOMES = {
     account: [".claude.json"],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
+    skills: { home: [], user: [] },
     state: [
       "sessions/",
       "todos/",
@@ -111,6 +115,8 @@ const RUNNER_HOMES = {
     account: [],
     dir: ".codex",
     override: "CODEX_HOME",
+    // its own skills are installed in `skills/.system`, and go with the rest
+    skills: { home: ["skills"], user: [".agents/skills"] },
     state: [
       "sessions/",
       "archived_sessions/",
@@ -140,7 +146,13 @@ const RUNNER_HOMES = {
   },
 } as const satisfies Record<
   AgentRunner,
-  { account: readonly string[]; dir: string; override: string; state: readonly string[] }
+  {
+    account: readonly string[];
+    dir: string;
+    override: string;
+    skills: { home: readonly string[]; user: readonly string[] };
+    state: readonly string[];
+  }
 >;
 
 /**
@@ -212,6 +224,8 @@ interface RunnerHome {
   home: readonly Reach[];
   state: readonly Reach[];
   account: readonly Reach[];
+  /** The founder's skills this runner's runs would load, which they cannot read. */
+  skills: readonly Reach[];
 }
 
 /**
@@ -239,6 +253,11 @@ export interface Seal {
   runsAsFounder: readonly Reach[];
   /** Sockets in a folder a run writes, of what acts as the founder: no run moves or replaces one. */
   sockets: readonly Reach[];
+  /**
+   * `.agents` in each of the run's own folders, where codex finds skills in a folder a session
+   * is handed or works in: no run writes one, so none leaves a skill for a later run to load.
+   */
+  skillFolders: readonly Reach[];
   /** The save, which a run writes only its own folders of, where it is named and where it resolves. */
   save: readonly Reach[];
   /** The founder's ~/Library/Preferences, where node CLIs keep theirs. */
@@ -326,6 +345,7 @@ const commandUnder = (
   const other = RUNNER_IDS.filter((id) => id !== runner);
   const unreadable = [
     ...seal.unreadable,
+    ...seal.runners[runner].skills,
     ...other.flatMap((id) => [...seal.runners[id].home, ...seal.runners[id].account]),
   ];
   const { account, home, state } = seal.runners[runner];
@@ -365,7 +385,7 @@ const commandUnder = (
     ...allow("file-write*", [...seal.writable, ...inHome].map(reach)),
     // Seatbelt obeys the last rule a path matches: every rule from here on holds inside the
     // folders allowed above.
-    ...deny("file-write*", [...kept.map(reach), ...seal.sockets.map(reach)]),
+    ...deny("file-write*", [...kept, ...seal.sockets, ...seal.skillFolders].map(reach)),
     `(deny file-write* (require-any ${[...OPENED_AS_FOUNDER, projectCodex].join(" ")}))`,
     // nor is either folder they sit in removed, moved or made, which would carry them out from
     // under the rules above
@@ -619,7 +639,7 @@ const runnerHomeOf = async (
   runner: AgentRunner,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
-  const { account, dir, override, state } = RUNNER_HOMES[runner];
+  const { account, dir, override, skills, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
@@ -638,6 +658,10 @@ const runnerHomeOf = async (
     account: await reachesOf(accounts, "prefix"),
     folder: await realPathOf(folder),
     home: await reachOf(folder),
+    skills: await reachesOf([
+      ...skills.home.map((name) => path.join(folder, name)),
+      ...skills.user.map((name) => path.join(home, name)),
+    ]),
     state: states.flat(),
   };
 };
@@ -767,6 +791,7 @@ export const sealFor = async ({
     runsAsFounder: candidates.filter(inRoot),
     save: await reachOf(save),
     scratch: scratchReaches,
+    skillFolders: await reachesOf(folders.map((folder) => path.join(folder, ".agents"))),
     sockets: [
       ...(await reachesOf(SCRATCH_SOCKETS)),
       ...(sshAgent === null ? [] : await reachOf(sshAgent)),
