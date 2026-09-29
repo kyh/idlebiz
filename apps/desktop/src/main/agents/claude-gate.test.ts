@@ -418,7 +418,9 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       const { result } = await turn("true", true);
       expect(result.end).toEqual({ kind: "completed" });
       const requests = sent.join("\n");
-      expect(requests).toContain("idlebiz:bundled-gate");
+      for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
+        expect(requests).toContain(`idlebiz:${name}`);
+      }
       expect(requests).toContain("BUNDLED_SKILL_MARK");
       for (const mark of [
         "FOUNDER_SKILL_MARK",

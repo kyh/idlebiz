@@ -44,7 +44,12 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS â€
   folder a session is handed, and `.agents` is also the claude plugin `idlebiz`
   (`.agents/.claude-plugin/plugin.json`), whose skills folder is the same one; claude names
   each `idlebiz:<name>`. Adding one is adding its folder there; the gate tests prove both
-  runners are offered it. No `allowed-tools` and no `!` shell lines in a SKILL.md.
+  runners are offered each one shipped. No `allowed-tools` and no `!` shell lines in a
+  SKILL.md (`bundled-skills.test.ts` holds each to that, and to a `name` matching its folder).
+  The first, `digital-product`, is the playbook for selling a guide, template or unlock
+  direct, through the product's own page and create_payment_link, so a bet counts each sale.
+  A skill is prose no test renders from `tool-specs.ts`: a change to a tool or rule one cites
+  (a bet's floor, the unlock's key) changes that skill in the same commit.
 - Verify changes live: `pnpm dev:desktop` exposes CDP on :9222 (use agent-browser).
   Under headless automation the Phaser boot stalls (document.hidden) â€” force
   `window.__game.scene.start("office")` and step `game.loop.step(t)` to render.

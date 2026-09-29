@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -306,7 +307,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
     expect(result.end).toEqual({ kind: "completed" });
     const requests = sent.join("\n");
-    expect(requests).toContain("bundled-gate");
+    for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
+      expect(requests).toContain(name);
+    }
     expect(requests).toContain("BUNDLED_SKILL_MARK");
     expect(requests).not.toContain("FOUNDER_SKILL_MARK");
     expect(requests).not.toContain("FOUNDER_AGENTS_MARK");
