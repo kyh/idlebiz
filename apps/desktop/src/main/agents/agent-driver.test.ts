@@ -98,7 +98,7 @@ const SEAL: Seal = {
 
 const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
 
-const SETUP = { signIn: {}, skills: SKILLS };
+const SETUP = { skills: SKILLS, userSettings: {} };
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
 const limited = { error: "You've hit your session limit", kind: "limited", resetsAt: 99 } as const;
@@ -510,12 +510,12 @@ describe("acpAgentFor", () => {
     expect(sessionMeta).toBeUndefined();
   });
 
-  it("signs a claude session in as the founder's settings did, never loosening what IdleBiz sets", () => {
-    const signIn = { apiKeyHelper: "~/bin/anthropic-key", permissions: "loose", sandbox: "on" };
+  it("signs a claude session in, and picks its model, as the founder's settings did", () => {
+    const userSettings = { apiKeyHelper: "~/bin/anthropic-key", model: "haiku" };
     const agent = acpAgentFor(
       "claude",
       SEAL,
-      { signIn, skills: SKILLS },
+      { skills: SKILLS, userSettings },
       {
         AGENT_BROWSER_ARGS: "",
         ANTHROPIC_BASE_URL: "https://gateway.example.com",
@@ -526,6 +526,7 @@ describe("acpAgentFor", () => {
         options: {
           settings: {
             apiKeyHelper: "~/bin/anthropic-key",
+            model: "haiku",
             permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit"] },
             sandbox: { enabled: false },
           },

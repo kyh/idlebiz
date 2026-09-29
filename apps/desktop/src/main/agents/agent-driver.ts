@@ -31,7 +31,7 @@ import { createRequire } from "node:module";
 import { controlPlane } from "@/main/control-plane";
 import { bundledSkillsDir } from "@/main/agents/bundled-skills";
 import { refuseDeniedTools } from "@/main/agents/claude-denies";
-import { claudeSignIn } from "@/main/agents/claude-sign-in";
+import { claudeUserSettings } from "@/main/agents/claude-user-settings";
 import { runEnv } from "@/main/agents/run-env";
 import {
   browserSocketDir,
@@ -100,8 +100,8 @@ const makeBrowserNamespace = (seal: Seal, runner: AgentRunner): void => {
  * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
  * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
  * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails. `setup` is where IdleBiz's skills are and how the founder's claude signs
- * in. `more` joins the adapter's env over main's: for codex, the founder's MCP servers
+ * command they run fails. `setup` is where IdleBiz's skills are, and how the founder's claude signs
+ * in and which model it picks. `more` joins the adapter's env over main's: for codex, the founder's MCP servers
  * `codexMcpOff` turns off; for claude, the env of their user settings.
  */
 export const acpAgentFor = (
@@ -220,10 +220,10 @@ export const sessionAgent = async (
   skills: string,
 ): Promise<AcpAgent> => {
   if (runner === "codex") {
-    return acpAgentFor(runner, seal, { signIn: {}, skills }, await codexMcpOff(seal));
+    return acpAgentFor(runner, seal, { skills, userSettings: {} }, await codexMcpOff(seal));
   }
-  const { env, helpers } = await claudeSignIn(seal.runners.claude.folder);
-  return acpAgentFor(runner, seal, { signIn: helpers, skills }, env);
+  const { env, settings } = await claudeUserSettings(seal.runners.claude.folder);
+  return acpAgentFor(runner, seal, { skills, userSettings: settings }, env);
 };
 
 /**

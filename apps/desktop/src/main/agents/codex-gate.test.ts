@@ -238,7 +238,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
-      const setup = { signIn: {}, skills };
+      const setup = { skills, userSettings: {} };
       return acpAgentFor("codex", seal, setup, await codexMcpOff(seal, { CODEX_HOME: codexHome }));
     });
     const result = await runAcpTurn({

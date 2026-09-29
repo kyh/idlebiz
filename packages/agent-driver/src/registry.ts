@@ -48,15 +48,32 @@ export interface RunnerAdapter {
 }
 
 /**
+ * What of the player's claude user settings a session still carries, by their names there, since
+ * it loads none of them: what signs their CLI in, and the model and effort they picked, which
+ * claude would otherwise leave for its default and bill them for. Only these, so nothing of the
+ * player's can loosen what the session sets beside them.
+ */
+export interface ClaudeUserSettings {
+  alwaysThinkingEnabled?: boolean;
+  apiKeyHelper?: string;
+  awsAuthRefresh?: string;
+  awsCredentialExport?: string;
+  effortLevel?: string;
+  gcpAuthRefresh?: string;
+  model?: string;
+  modelOverrides?: Readonly<Record<string, string>>;
+  modelSettings?: Readonly<Record<string, { effortLevel?: string }>>;
+}
+
+/**
  * What of a session's start is the run's to say. `skills` is the folder of IdleBiz's skills, each
  * at `.agents/skills/<name>/SKILL.md` in it: codex-acp takes skills only from `.agents/skills` in
  * a folder a session is handed, and `.agents` is also a claude plugin (its manifest in
- * `.claude-plugin/`), whose skills are that same folder. `signIn` is what of the player's claude
- * user settings signs their CLI in (`apiKeyHelper` and the like), which a session no longer loads.
+ * `.claude-plugin/`), whose skills are that same folder.
  */
 export interface SessionSetup {
   skills: string;
-  signIn: Readonly<Record<string, string>>;
+  userSettings: ClaudeUserSettings;
 }
 
 export interface SessionStart {
@@ -90,9 +107,9 @@ const claudeLoggedIn = (output: string): boolean => {
  * `settings`, the flag tier, whose ask rules beat allow rules from any tier. Its skills are
  * IdleBiz's, as a plugin, and none of claude's own. None of the player's MCP servers or claude.ai
  * connectors load either: those act as the player, signed in as them, and a run reaches the
- * company with curl, not MCP. `signIn` goes first, so nothing of the player's outranks the rest.
+ * company with curl, not MCP.
  */
-const claudeSession = ({ signIn, skills }: SessionSetup): SessionStart => ({
+const claudeSession = ({ skills, userSettings }: SessionSetup): SessionStart => ({
   meta: {
     claudeCode: {
       options: {
@@ -100,7 +117,7 @@ const claudeSession = ({ signIn, skills }: SessionSetup): SessionStart => ({
         plugins: [{ path: `${skills}/.agents`, type: "local" }],
         settingSources: [],
         settings: {
-          ...signIn,
+          ...userSettings,
           disableBundledSkills: true,
           disableClaudeAiConnectors: true,
           // Plan mode's exit asks to approve a plan: IdleBiz would hold that for the founder to

@@ -31,9 +31,9 @@ import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 // still asks IdleBiz first, so holdFor still judges it; that it offers no plan mode, whose exit
 // would ask the founder to approve a plan; that no MCP server of the founder's starts;
 // that the model is offered IdleBiz's skills and none of the founder's, nor their instructions,
-// while the env of their settings still reaches the run; and that a run cannot rewrite the
-// settings or account file the founder's own claude loads, and still runs and keeps its
-// transcript.
+// while the env of their settings still reaches the run and the model and effort they picked
+// are the ones asked; and that a run cannot rewrite the settings or account file the founder's
+// own claude loads, and still runs and keeps its transcript.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -46,10 +46,12 @@ const claudeRuns =
 
 /**
  * A founder's settings that would sandbox, and skip asking for, every command, with an env a
- * sign-in kept there would set.
+ * sign-in kept there would set, and a model and effort other than claude's defaults.
  */
 const FOUNDER_SETTINGS = {
+  effortLevel: "low",
   env: { IDLEBIZ_GATE_SIGN_IN: "from-settings" },
+  model: "sonnet",
   permissions: { allow: ["Bash"] },
   sandbox: { autoAllowBashIfSandboxed: true, enabled: true },
 };
@@ -81,6 +83,12 @@ const MessagesRequest = z.object({
     }),
   ),
   tools: z.array(z.looseObject({ name: z.string() })).optional(),
+});
+
+/** The model a request asks for, and how hard it is to think. */
+const Asked = z.object({
+  model: z.string(),
+  output_config: z.object({ effort: z.string() }).optional(),
 });
 
 const Listening = z.object({ port: z.number() });
@@ -437,6 +445,17 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   it("signs in with the env of the founder's settings", { timeout: 60_000 }, async () => {
     await turn("echo sign-in=$IDLEBIZ_GATE_SIGN_IN", true);
     expect(outputs.join("\n")).toContain("sign-in=from-settings");
+  });
+
+  it("asks for the model and effort the founder's settings pick", { timeout: 60_000 }, async () => {
+    const { result } = await turn("true", true);
+    expect(result.end).toEqual({ kind: "completed" });
+    const asked = sent.map((body) => Asked.parse(parseJson(body)));
+    expect(asked).not.toEqual([]);
+    for (const request of asked) {
+      expect(request.model).toMatch(/sonnet/u);
+      expect(request.output_config).toEqual({ effort: "low" });
+    }
   });
 
   it("gives its shell commands time to wait out a deploy", { timeout: 60_000 }, async () => {

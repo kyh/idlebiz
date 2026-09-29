@@ -446,12 +446,15 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   claude's own (`disableBundledSkills`), IdleBiz's as a plugin, and none of their MCP servers
   or claude.ai connectors (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`),
   which act signed in as the founder; the company is reached with curl. A sign-in kept in their
-  settings rather than their shell still reaches the run (`claudeSignIn` in
-  `main/agents/claude-sign-in.ts`): their settings' `env` (a Bedrock or Vertex switch, a
+  settings rather than their shell still reaches the run (`claudeUserSettings` in
+  `main/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
   gateway's URL and token), through `runEnv` as the shell's env goes, and the helpers claude runs
   for a key or a cloud login (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
   `gcpAuthRefresh`), which run sealed, so one that reads `~/.aws` or gcloud's login fails as it
-  did. claude-agent-acp still reads the founder's user settings for the model it picks. A codex
+  did. So does the model they picked, with its effort (`model`, `effortLevel`, `modelSettings`,
+  `alwaysThinkingEnabled`, `modelOverrides`), in the flag tier: claude would otherwise run its
+  default, and claude-agent-acp, which reads their user settings, sets a model only when it
+  thinks claude picked another. A codex
   session loads the founder's codex config with every MCP server turned off by the name
   `codex mcp list` gives it, apps and plugins whole (`codexMcpOff` in
   `main/agents/agent-driver.ts`); one it cannot list refuses the run with codex's reason. No

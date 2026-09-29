@@ -270,7 +270,8 @@ rather than crashing boot.
   file outside the sealed logins: gcloud's default credentials under `~/.config/gcloud` are
   hidden too. A claude session loads none of the founder's settings, so the `env` of their
   claude user settings reaches the run the same way, filtered alike, beside the sign-in helpers
-  named there (`claudeSignIn` in `main/agents/claude-sign-in.ts`).
+  and the model and effort named there (`claudeUserSettings` in
+  `main/agents/claude-user-settings.ts`).
 - Every employee run starts sealed, under the Seatbelt profile `main/agents/seal.ts` renders
   and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
   what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`,
@@ -416,7 +417,8 @@ rather than crashing boot.
   in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship, `resources/skills`),
-  `agents/claude-sign-in.ts` (what of the founder's claude settings still signs a run in),
+  `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:
+  its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
   (the two OAuth connections, same shape), `stripe-api.ts` (what every Stripe call shares),
