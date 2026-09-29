@@ -79,10 +79,12 @@ const LOGINS = [
  * sibling it renames over it; one ending in a slash is only that folder. `account` is where the
  * CLI records the founder's account, in the home and beside it in HOME, each with every name that
  * starts with it: only the sign-in writes it. claude's transcripts and memory are `projects/`,
- * of which a run writes only its own folder's (`Seal.claudeProjects`). `skills` are the founder's
- * skills its runs would load, in the home and in HOME, which they cannot even read: codex loads
- * every one it can read, with no setting that leaves them out, while a claude session loads no
- * user settings, so none of theirs.
+ * of which a run writes only its own folder's (`Seal.claudeProjects`). `personal` is what of the
+ * founder's own its runs would load, in the home and in HOME, which they cannot even read: codex
+ * loads every skill it can read, with no setting that leaves them all out, and their instructions
+ * (`AGENTS.md`, or `AGENTS.override.md` in its place), whatever its config says; their memories
+ * are kept from its prompt by the session's config, and from its reads here. A claude session
+ * loads no user settings, so none of theirs.
  */
 const RUNNER_HOMES = {
   claude: {
@@ -90,7 +92,7 @@ const RUNNER_HOMES = {
     account: [".claude.json"],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
-    skills: { home: [], user: [] },
+    personal: { home: [], user: [] },
     state: [
       "sessions/",
       "todos/",
@@ -116,7 +118,10 @@ const RUNNER_HOMES = {
     dir: ".codex",
     override: "CODEX_HOME",
     // its own skills are installed in `skills/.system`, and go with the rest
-    skills: { home: ["skills"], user: [".agents/skills"] },
+    personal: {
+      home: ["skills", "AGENTS.md", "AGENTS.override.md", "memories"],
+      user: [".agents/skills"],
+    },
     state: [
       "sessions/",
       "archived_sessions/",
@@ -150,7 +155,7 @@ const RUNNER_HOMES = {
     account: readonly string[];
     dir: string;
     override: string;
-    skills: { home: readonly string[]; user: readonly string[] };
+    personal: { home: readonly string[]; user: readonly string[] };
     state: readonly string[];
   }
 >;
@@ -224,8 +229,11 @@ interface RunnerHome {
   home: readonly Reach[];
   state: readonly Reach[];
   account: readonly Reach[];
-  /** The founder's skills this runner's runs would load, which they cannot read. */
-  skills: readonly Reach[];
+  /**
+   * The founder's own skills, instructions and memories this runner's runs would load, which they
+   * cannot read.
+   */
+  personal: readonly Reach[];
 }
 
 /**
@@ -345,7 +353,7 @@ const commandUnder = (
   const other = RUNNER_IDS.filter((id) => id !== runner);
   const unreadable = [
     ...seal.unreadable,
-    ...seal.runners[runner].skills,
+    ...seal.runners[runner].personal,
     ...other.flatMap((id) => [...seal.runners[id].home, ...seal.runners[id].account]),
   ];
   const { account, home, state } = seal.runners[runner];
@@ -639,7 +647,7 @@ const runnerHomeOf = async (
   runner: AgentRunner,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
-  const { account, dir, override, skills, state } = RUNNER_HOMES[runner];
+  const { account, dir, override, personal, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
@@ -658,9 +666,9 @@ const runnerHomeOf = async (
     account: await reachesOf(accounts, "prefix"),
     folder: await realPathOf(folder),
     home: await reachOf(folder),
-    skills: await reachesOf([
-      ...skills.home.map((name) => path.join(folder, name)),
-      ...skills.user.map((name) => path.join(home, name)),
+    personal: await reachesOf([
+      ...personal.home.map((name) => path.join(folder, name)),
+      ...personal.user.map((name) => path.join(home, name)),
     ]),
     state: states.flat(),
   };

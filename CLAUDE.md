@@ -202,9 +202,12 @@ third boundary.
   - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
     credentials, cloud and deploy CLIs, browser and chat-app profiles, agent-browser's saved
     logins), `secrets.json` with every name that starts with it, the other runner's home, and,
-    for a codex run, the founder's skills (`$CODEX_HOME/skills`, codex's own `.system` ones in
-    it, and `~/.agents/skills`: `skills` in `RUNNER_HOMES`), since codex loads every skill it
-    can read and no setting leaves those out.
+    for a codex run, what of the founder's own it would load (`personal` in `RUNNER_HOMES`):
+    their skills (`$CODEX_HOME/skills`, codex's own `.system` ones in it, and
+    `~/.agents/skills`), since codex loads every skill it can read and no setting leaves them
+    all out; their instructions (`AGENTS.md` and `AGENTS.override.md` in its home), which it
+    loads whatever its config says; and their `memories/`. A plugin's skills (in
+    `plugins/cache`) stay readable: the session config turning plugins off keeps them out.
   - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its
     workspace, the shared one, its memory, the save's `cache/`), its runner's state in its home
     (`state` in `RUNNER_HOMES`: sessions, logs, caches, databases, codex's refreshed login;
@@ -436,7 +439,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     the founder say so. A shell `git push` is still held under `git-push`, and signed it runs as
     any command does: on a claude run git reaches a credential helper that reads the Keychain
     (gh's), so it can push over https as the founder. Refuse it.
-- **A run signs in as the founder's CLI and loads nothing else of theirs.** A claude session
+- **A run signs in as the founder's CLI, on the model they picked, and loads nothing else of theirs.** A claude session
   loads no setting source (`settingSources: []`, `packages/agent-driver/src/registry.ts`): not
   the founder's user settings (their CLAUDE.md and rules, skills, plugins, hooks, permissions),
   nor a project's or a local one, which a run could otherwise write for the next to load. What
@@ -456,10 +459,12 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   default, and claude-agent-acp, which reads their user settings, sets a model only when it
   thinks claude picked another. A codex
   session loads the founder's codex config with every MCP server turned off by the name
-  `codex mcp list` gives it, apps and plugins whole (`codexMcpOff` in
-  `main/agents/agent-driver.ts`); one it cannot list refuses the run with codex's reason. No
-  codex setting leaves the founder's skills out, so the seal keeps a codex run from reading
-  them, and IdleBiz's folder is handed to the session to read (`readDirs`). A deny rule in
+  `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
+  `main/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
+  out. One it cannot list refuses the run with codex's reason. No codex setting leaves all the
+  founder's own skills out, nor their instructions, so the seal keeps a codex run from reading
+  them (their memories too), and IdleBiz's folder is handed to the session to read
+  (`readDirs`). The codex gate test plants each of these and checks none reaches the model. A deny rule in
   managed settings outranks the flag tier's ask rules and would refuse a company tool's curl
   before IdleBiz is asked, the turn still ending as done, so a claude run under one does not
   start, and says which rule (`refuseDeniedTools` in `main/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,

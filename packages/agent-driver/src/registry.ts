@@ -138,9 +138,9 @@ const claudeSession = ({ skills, userSettings }: SessionSetup): SessionStart => 
 });
 
 /**
- * codex has no setting that leaves the player's skills out: the seal keeps its runs from reading
- * them. codex-acp hands `.agents/skills` in each folder a session is handed to codex as a skill
- * root, so IdleBiz's folder is handed over too.
+ * codex has no setting that leaves all the player's skills out: the seal keeps its runs from
+ * reading them, and their plugins' are left out with plugins. codex-acp hands `.agents/skills` in
+ * each folder a session is handed to codex as a skill root, so IdleBiz's folder is handed over.
  */
 const codexSession = ({ skills }: SessionSetup): SessionStart => ({ readDirs: [skills] });
 

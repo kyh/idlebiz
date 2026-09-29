@@ -58,14 +58,14 @@ const SEAL: Seal = {
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       folder: "/Users/me/.claude",
       home: [{ match: "subpath", path: "/Users/me/.claude" }],
-      skills: [],
+      personal: [],
       state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
       account: [],
       folder: "/Users/me/.codex",
       home: [{ match: "subpath", path: "/Users/me/.codex" }],
-      skills: [{ match: "subpath", path: "/Users/me/.codex/skills" }],
+      personal: [{ match: "subpath", path: "/Users/me/.codex/skills" }],
       state: [{ match: "prefix", path: "/Users/me/.codex/auth.json" }],
     },
   },
@@ -249,8 +249,8 @@ describe("sealedCommand", () => {
       ...SEAL,
       debugPorts: [],
       runners: {
-        claude: { account: [], folder: "/Users/me/.claude", home: [], skills: [], state: [] },
-        codex: { account: [], folder: "/Users/me/.codex", home: [], skills: [], state: [] },
+        claude: { account: [], folder: "/Users/me/.claude", home: [], personal: [], state: [] },
+        codex: { account: [], folder: "/Users/me/.codex", home: [], personal: [], state: [] },
       },
       save: [],
       scratch: [],
@@ -584,6 +584,21 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(await tryAs("claude", { reads: [shared] })).toEqual({ [shared]: "read" });
   });
 
+  it("keeps the founder's instructions and memories from a codex run, which cannot write them either", async () => {
+    const personal = [
+      plant(".codex/AGENTS.md"),
+      plant(".codex/AGENTS.override.md"),
+      plant(".codex/memories/memory_summary.md"),
+    ];
+    const config = plant(".codex/config.toml");
+    expect(await tryAs("codex", { reads: [...personal, config] })).toEqual({
+      ...all(personal, "EPERM"),
+      [config]: "read",
+    });
+    expect(await tryAs("codex", { writes: personal })).toEqual(all(personal, "EPERM"));
+    expect(await tryAs("claude", { reads: personal })).toEqual(all(personal, "EPERM"));
+  });
+
   it("keeps a run from making `.agents`, where codex finds skills, in its own folders, and leaves it the rest", async () => {
     const [workspace = "", memory = "", cache = ""] = own();
     const skills = [workspace, memory, cache].map((folder) => path.join(folder, ".agents"));
@@ -650,8 +665,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
           : [
               ".codex/config.toml",
               ".codex/hooks.json",
-              ".codex/AGENTS.md",
-              ".codex/AGENTS.override.md",
               ".codex/rules/default.rules",
               ".codex/prompts/a.md",
               ".codex/plugins/a.json",
@@ -659,7 +672,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".codex/.env",
               ".codex/.env.local",
               ".codex/shell_snapshots/a.sh",
-              ".codex/memories/memory_summary.md",
               ".codex/computer-use/Codex Computer Use.app/Contents/MacOS/run",
               ".codex/worktrees/a/app/package.json",
               ".codex/vendor_imports/skills/a/SKILL.md",
@@ -1335,11 +1347,14 @@ describe.skipIf(!onMac)("sealRuns", () => {
     expect(seal.skillFolders).toEqual([
       { match: "subpath", path: path.join(realpathSync(root), "acme/workspace/.agents") },
     ]);
-    expect(seal.runners.codex.skills).toEqual([
+    expect(seal.runners.codex.personal).toEqual([
       { match: "subpath", path: path.join(home, ".codex/skills") },
+      { match: "subpath", path: path.join(home, ".codex/AGENTS.md") },
+      { match: "subpath", path: path.join(home, ".codex/AGENTS.override.md") },
+      { match: "subpath", path: path.join(home, ".codex/memories") },
       { match: "subpath", path: path.join(home, ".agents/skills") },
     ]);
-    expect(seal.runners.claude.skills).toEqual([]);
+    expect(seal.runners.claude.personal).toEqual([]);
     expect(seal.debugPorts).toEqual([9222, 9229]);
     expect(seal.sockets).toEqual(
       expect.arrayContaining(

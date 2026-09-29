@@ -275,7 +275,7 @@ rather than crashing boot.
 - Every employee run starts sealed, under the Seatbelt profile `main/agents/seal.ts` renders
   and hands `sandbox-exec -p`; CLAUDE.md ("Two boundaries hold a run") has the whole model and
   what it leaves open. Reads are open but for the founder's logins (`LOGINS`), `secrets.json`,
-  the other runner's home and, for codex, the founder's skills. Writes are denied but for the run's own folders (workspace,
+  the other runner's home and, for codex, the founder's skills, instructions and memories. Writes are denied but for the run's own folders (workspace,
   shared, memory, the save's `cache/`), its runner's state (`state` in `RUNNER_HOMES`, a list
   of names in the home: a CLI upgrade that writes a new one fails with `EPERM` there until it is
   added), temp and per-user cache folders and its agent-browser namespace. So in the runner's

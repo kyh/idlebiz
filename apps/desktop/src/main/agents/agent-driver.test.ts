@@ -35,13 +35,13 @@ const {
   acpAgentFor,
   agentDriver,
   askBox,
-  codexMcpOff,
+  codexSessionEnv,
   createAgentDriver,
   decidePermission,
   ensureRepository,
   gitIdentity,
   livePageOf,
-  mcpOffConfig,
+  codexSessionConfig,
   memoryAfter,
   outcomeOf,
   resumeIn,
@@ -76,14 +76,14 @@ const SEAL: Seal = {
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       folder: "/Users/me/.claude",
       home: [{ match: "subpath", path: "/Users/me/.claude" }],
-      skills: [],
+      personal: [],
       state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
       account: [],
       folder: "/Users/me/.codex",
       home: [{ match: "subpath", path: "/Users/me/.codex" }],
-      skills: [{ match: "subpath", path: "/Users/me/.codex/skills" }],
+      personal: [{ match: "subpath", path: "/Users/me/.codex/skills" }],
       state: [{ match: "prefix", path: "/Users/me/.codex/auth.json" }],
     },
   },
@@ -464,20 +464,20 @@ describe("acpAgentFor", () => {
     });
   });
 
-  it("hands codex the founder's MCP servers to turn off", () => {
-    const off = mcpOffConfig('[{"name":"gmail","enabled":true},{"name":"linear"}]');
+  it("hands codex the founder's MCP servers, plugins and memories to turn off", () => {
+    const off = codexSessionConfig('[{"name":"gmail","enabled":true},{"name":"linear"}]');
     expect(parseJson(off.CODEX_CONFIG)).toEqual({
-      features: { apps: false, plugins: false },
+      features: { apps: false, memories: false, plugins: false },
       mcp_servers: { gmail: { enabled: false }, linear: { enabled: false } },
     });
     expect(acpAgentFor("codex", SEAL, SETUP, off).env).toMatchObject(off);
   });
 
   it("starts no codex run whose MCP servers it could not list, and says why", async () => {
-    expect(() => mcpOffConfig("Error: unknown flag --json")).toThrow(RefusalError);
+    expect(() => codexSessionConfig("Error: unknown flag --json")).toThrow(RefusalError);
     vi.stubEnv("CODEX_BIN", path.join(root, "no-codex"));
     try {
-      await expect(codexMcpOff(SEAL)).rejects.toThrow(
+      await expect(codexSessionEnv(SEAL)).rejects.toThrow(
         /could not list your codex MCP servers to keep them out of the run \(.+\)/u,
       );
     } finally {

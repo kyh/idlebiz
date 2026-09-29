@@ -27,13 +27,13 @@ import { parseJson } from "@/shared/json";
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
 // sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it,
 // starts no MCP server of the founder's, offers the model IdleBiz's skills and none of the
-// founder's, leaves no skill for a later run, and runs, but cannot rewrite, the config their own
-// codex loads.
+// founder's (their plugins' included), nor their instructions or memories, leaves no skill for a
+// later run, and runs, but cannot rewrite, the config their own codex loads.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { acpAgentFor, codexMcpOff } = await import("./agent-driver");
+const { acpAgentFor, codexSessionEnv } = await import("./agent-driver");
 const { machineSeal, realPathOf, sealRuns } = await import("./seal");
 
 const codexRuns =
@@ -199,11 +199,30 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         "[mcp_servers.founder]",
         'command = "/bin/sh"',
         `args = ["-c", "touch ${path.join(base, "mcp-started")}; exec cat"]`,
+        '[plugins."founder-plugin@founder-market"]',
+        "enabled = true",
+        "[features]",
+        "memories = true",
       ].join("\n"),
     );
-    // both places codex loads the founder's own skills from
+    // every place codex loads the founder's own skills from: theirs, and an enabled plugin's
     plantSkill(path.join(codexHome, "skills"), "founder-gate", "FOUNDER_SKILL_MARK");
     plantSkill(path.join(home, ".agents", "skills"), "founder-agents-gate", "FOUNDER_AGENTS_MARK");
+    const plugin = path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "founder-market",
+      "founder-plugin",
+      "1",
+    );
+    mkdirSync(path.join(plugin, ".codex-plugin"), { recursive: true });
+    writeFileSync(path.join(plugin, ".codex-plugin", "plugin.json"), '{"name":"founder-plugin"}');
+    plantSkill(path.join(plugin, "skills"), "plugin-gate", "FOUNDER_PLUGIN_MARK");
+    // their instructions, and what their own sessions left in codex's memory
+    writeFileSync(path.join(codexHome, "AGENTS.md"), "FOUNDER_INSTRUCTIONS_MARK\n");
+    mkdirSync(path.join(codexHome, "memories"));
+    writeFileSync(path.join(codexHome, "memories", "memory_summary.md"), "FOUNDER_MEMORY_MARK\n");
     remote = path.join(base, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", remote]);
     // a run's own folders are always in the save
@@ -239,7 +258,12 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
       const setup = { skills, userSettings: {} };
-      return acpAgentFor("codex", seal, setup, await codexMcpOff(seal, { CODEX_HOME: codexHome }));
+      return acpAgentFor(
+        "codex",
+        seal,
+        setup,
+        await codexSessionEnv(seal, { CODEX_HOME: codexHome }),
+      );
     });
     const result = await runAcpTurn({
       agent,
@@ -303,17 +327,28 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     expect(mcpStarted).toBe(false);
   });
 
-  it("is offered IdleBiz's skills and none of the founder's", { timeout: 60_000 }, async () => {
-    const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
-    expect(result.end).toEqual({ kind: "completed" });
-    const requests = sent.join("\n");
-    for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
-      expect(requests).toContain(name);
-    }
-    expect(requests).toContain("BUNDLED_SKILL_MARK");
-    expect(requests).not.toContain("FOUNDER_SKILL_MARK");
-    expect(requests).not.toContain("FOUNDER_AGENTS_MARK");
-  });
+  it(
+    "is offered IdleBiz's skills and none of the founder's, their plugins', instructions or memories",
+    { timeout: 60_000 },
+    async () => {
+      const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      const requests = sent.join("\n");
+      for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
+        expect(requests).toContain(name);
+      }
+      expect(requests).toContain("BUNDLED_SKILL_MARK");
+      for (const mark of [
+        "FOUNDER_SKILL_MARK",
+        "FOUNDER_AGENTS_MARK",
+        "FOUNDER_PLUGIN_MARK",
+        "FOUNDER_INSTRUCTIONS_MARK",
+        "FOUNDER_MEMORY_MARK",
+      ]) {
+        expect(requests).not.toContain(mark);
+      }
+    },
+  );
 
   it("leaves no skill in its workspace for a later run to load", { timeout: 60_000 }, async () => {
     const skill = path.join(workspace, ".agents", "skills", "planted", "SKILL.md");

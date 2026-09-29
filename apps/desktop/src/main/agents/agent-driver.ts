@@ -100,9 +100,9 @@ const makeBrowserNamespace = (seal: Seal, runner: AgentRunner): void => {
  * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
  * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
  * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails. `setup` is where IdleBiz's skills are, and how the founder's claude signs
- * in and which model it picks. `more` joins the adapter's env over main's: for codex, the founder's MCP servers
- * `codexMcpOff` turns off; for claude, the env of their user settings.
+ * command they run fails. `setup` is where IdleBiz's skills are, and how the founder's claude
+ * signs in and which model it picks. `more` joins the adapter's env over main's: for codex, the
+ * session config `codexSessionEnv` makes; for claude, the env of their user settings.
  */
 export const acpAgentFor = (
   runner: AgentRunner,
@@ -164,9 +164,11 @@ const unlisted = (why: string): RefusalError =>
 
 /**
  * The session config that turns off every server `listed` (what `codex mcp list --json` printed)
- * names, and the apps and plugins that bring servers of their own.
+ * names; apps and plugins, which bring servers of their own, and skills the seal leaves a run to
+ * read (plugins keep theirs in `plugins/cache`); and memories, which would put what the founder's
+ * own sessions taught codex into the run's prompt.
  */
-export const mcpOffConfig = (listed: string) => {
+export const codexSessionConfig = (listed: string) => {
   let servers: z.infer<typeof CodexMcpServers>;
   try {
     servers = CodexMcpServers.parse(parseJson(listed));
@@ -174,19 +176,20 @@ export const mcpOffConfig = (listed: string) => {
     throw unlisted("codex answered in a shape IdleBiz does not read");
   }
   const config = {
-    features: { apps: false, plugins: false },
+    features: { apps: false, memories: false, plugins: false },
     mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
   };
   return { CODEX_CONFIG: JSON.stringify(config) };
 };
 
 /**
- * The adapter env that keeps every MCP server of the founder's out of a codex run: they act as
- * the founder, signed in as them. codex has no switch that loads none, and a session's config is
- * merged over theirs, so each is turned off by the name `codex mcp list` gives it, listed as the
- * run would load them (`env` is the run's own, a CODEX_HOME in it included).
+ * The adapter env whose session config keeps every MCP server of the founder's out of a codex run
+ * (`codexSessionConfig`): they act as the founder, signed in as them. codex has no switch that
+ * loads none, and a session's config is merged over theirs, so each is turned off by the name
+ * `codex mcp list` gives it, listed as the run would load them (`env` is the run's own, a
+ * CODEX_HOME in it included).
  */
-export const codexMcpOff = async (
+export const codexSessionEnv = async (
   seal: Seal,
   env: Record<string, string> = {},
 ): Promise<Record<string, string>> => {
@@ -207,7 +210,7 @@ export const codexMcpOff = async (
     const [said = ""] = failed.success ? failed.data.stderr.trim().split("\n", 1) : [];
     throw unlisted(said === "" ? "codex did not answer" : said);
   }
-  return mcpOffConfig(listed);
+  return codexSessionConfig(listed);
 };
 
 /**
@@ -220,7 +223,7 @@ export const sessionAgent = async (
   skills: string,
 ): Promise<AcpAgent> => {
   if (runner === "codex") {
-    return acpAgentFor(runner, seal, { skills, userSettings: {} }, await codexMcpOff(seal));
+    return acpAgentFor(runner, seal, { skills, userSettings: {} }, await codexSessionEnv(seal));
   }
   const { env, settings } = await claudeUserSettings(seal.runners.claude.folder);
   return acpAgentFor(runner, seal, { skills, userSettings: settings }, env);
