@@ -22,13 +22,14 @@ import { z } from "zod";
 import { holdFor } from "@/shared/command-policy";
 import type { Hold } from "@/shared/command-policy";
 import { parseJson } from "@/shared/json";
+import { readTeamNotes } from "./team-notes";
 
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
 // sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it, even
 // one the founder's rules allow, starts no MCP server of theirs, offers the model IdleBiz's skills
 // and none of the founder's (their plugins' included), nor their instructions or memories, but
-// the workspace's AGENTS.md once, leaves no skill for a later run, and runs, but cannot rewrite,
+// the workspace's AGENTS.md once, whole, and picked as main picks it for a claude run, leaves no skill for a later run, and runs, but cannot rewrite,
 // the config their own codex loads.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
@@ -192,6 +193,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       [
         'model = "gpt-5.4"',
         'model_provider = "stand-in"',
+        // notes a claude run would not be handed: another file's, or fewer bytes of AGENTS.md
+        'project_doc_fallback_filenames = ["CLAUDE.md"]',
+        "project_doc_max_bytes = 4",
         "[model_providers.stand-in]",
         'name = "stand-in"',
         `base_url = "http://127.0.0.1:${port}/v1"`,
@@ -358,7 +362,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   );
 
   it(
-    "reads the notes the team keeps in the workspace's AGENTS.md itself, once",
+    "reads the notes the team keeps in the workspace's AGENTS.md itself, once, whole, as a claude run is handed them",
     { timeout: 60_000 },
     async () => {
       writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
@@ -368,6 +372,27 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       for (const request of sent) {
         expect(request.split("TEAM_NOTES_MARK")).toHaveLength(2);
       }
+    },
+  );
+
+  it(
+    "reads AGENTS.override.md in AGENTS.md's place, as main picks for a claude run, and no CLAUDE.md the founder's config falls back to",
+    { timeout: 120_000 },
+    async () => {
+      writeFileSync(path.join(workspace, "CLAUDE.md"), "CLAUDE_MD_MARK\n");
+      await turn({ cmd: "true", tool: "exec_command" }, true);
+      expect(sent.length).toBeGreaterThan(0);
+      expect(sent.join("\n")).not.toContain("CLAUDE_MD_MARK");
+      sent.length = 0;
+      writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
+      writeFileSync(path.join(workspace, "AGENTS.override.md"), "OVERRIDE_MARK\n");
+      const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(sent.length).toBeGreaterThan(0);
+      const requests = sent.join("\n");
+      expect(requests).toContain("OVERRIDE_MARK");
+      expect(requests).not.toContain("TEAM_NOTES_MARK");
+      expect(await readTeamNotes(workspace)).toEqual({ cut: false, text: "OVERRIDE_MARK" });
     },
   );
 

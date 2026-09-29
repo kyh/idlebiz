@@ -33,7 +33,7 @@ import { bundledSkillsDir } from "@/main/agents/bundled-skills";
 import { refuseDeniedTools } from "@/main/agents/claude-denies";
 import { claudeUserSettings } from "@/main/agents/claude-user-settings";
 import { runEnv } from "@/main/agents/run-env";
-import { readTeamNotes } from "@/main/agents/team-notes";
+import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "@/main/agents/team-notes";
 import { teamNotesPrompt } from "@/main/prompts/team-notes";
 import {
   browserSocketDir,
@@ -168,7 +168,9 @@ const unlisted = (why: string): RefusalError =>
  * The session config that turns off every server `listed` (what `codex mcp list --json` printed)
  * names; apps and plugins, which bring servers of their own, and skills the seal leaves a run to
  * read (plugins keep theirs in `plugins/cache`); and memories, which would put what the founder's
- * own sessions taught codex into the run's prompt.
+ * own sessions taught codex into the run's prompt. It reads a workspace's notes as a claude run is
+ * handed them (`readTeamNotes`): `AGENTS.md` or its override, never another name their config
+ * falls back to, and as much of it.
  */
 export const codexSessionConfig = (listed: string) => {
   let servers: z.infer<typeof CodexMcpServers>;
@@ -180,6 +182,8 @@ export const codexSessionConfig = (listed: string) => {
   const config = {
     features: { apps: false, memories: false, plugins: false },
     mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
+    project_doc_fallback_filenames: [],
+    project_doc_max_bytes: TEAM_NOTES_MAX_BYTES,
   };
   return { CODEX_CONFIG: JSON.stringify(config) };
 };

@@ -669,17 +669,22 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it.each(["claude", "codex"] as const)(
-    "lets a %s run keep the team's notes in its workspace's AGENTS.md, and fold a CLAUDE.md into it",
+    "lets a %s run keep the team's notes in its workspace's AGENTS.md, and fold a CLAUDE.md and an override into it",
     async (runner) => {
       const [workspace = ""] = own();
       const notes = path.join(workspace, "AGENTS.md");
       const claudeMd = path.join(workspace, "CLAUDE.md");
+      const override = path.join(workspace, "AGENTS.override.md");
       writeFileSync(claudeMd, "old notes");
-      expect(await tryAs(runner, { reads: [claudeMd], writes: [notes] })).toEqual({
-        [claudeMd]: "read",
+      writeFileSync(override, "older notes");
+      expect(
+        await tryAs(runner, { reads: [claudeMd, override], writes: [notes, claudeMd] }),
+      ).toEqual({
+        [claudeMd]: "written",
         [notes]: "written",
+        [override]: "read",
       });
-      expect(await tryAs(runner, { removes: [claudeMd] })).toEqual({ [claudeMd]: "removed" });
+      expect(await tryAs(runner, { removes: [override] })).toEqual({ [override]: "removed" });
     },
   );
 

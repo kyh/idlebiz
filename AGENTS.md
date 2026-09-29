@@ -394,7 +394,7 @@ rather than crashing boot.
 - **A product's notes for teammates are `AGENTS.md` at its workspace's root**, for both
   runners: codex reads it itself; a claude run, which loads no CLAUDE.md, is handed it beside
   its system prompt (`readTeamNotes` in `main/agents/team-notes.ts`), as the team's notes, never
-  the founder's word. Not to be confused with an employee's own `agents/<slug>/AGENTS.md`.
+  the founder's word, picked and cut as codex's session config has codex pick and cut them. Not to be confused with an employee's own `agents/<slug>/AGENTS.md`.
 - **Prose an employee reads lives in `main/prompts/`.** The store persists it and the
   scheduler gathers what it is grounded in; neither authors text. `instructions.ts` says how
   each business type earns (`BUSINESS_MODELS`; VC sells information, never investment) and

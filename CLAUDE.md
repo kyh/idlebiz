@@ -467,9 +467,16 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   no project's CLAUDE.md, is handed it beside its system prompt (`systemPrompt.append` in its
   session `_meta`), read by main as the run starts (`readTeamNotes` in
   `main/agents/team-notes.ts`), framed as the team's notes, never the founder's word
-  (`main/prompts/team-notes.ts`), and cut at 32 KiB, as codex cuts it. Main reads it unsealed,
-  so only as a plain file of its own: never through a symlink or a hard link a run left there.
-  The standing instructions have every teammate keep it, a CLAUDE.md folded in. A codex
+  (`main/prompts/team-notes.ts`), and cut at 32 KiB, before a character the cut would split.
+  Main picks it as codex does, `AGENTS.override.md` in its place when there is one, and codex's
+  session config pins what their config could change (`project_doc_fallback_filenames` empty,
+  `project_doc_max_bytes` at the same 32 KiB), so both runners read the same notes. Main reads
+  it unsealed, so only a file of the workspace's own root: through a link only to a file beside
+  it (the common `AGENTS.md` -> `CLAUDE.md`), never one leading further, where a folder on the
+  way could turn into a link between resolving and opening, and never a hard link. The standing
+  instructions say it is the team's word, not the founder's, and have every teammate keep it as a plain file, fold an
+  override into it and leave a CLAUDE.md as `@AGENTS.md`, which the founder's own claude
+  follows. A codex
   session loads the founder's codex config with every MCP server turned off by the name
   `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
   `main/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
@@ -534,6 +541,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   - the runners' shared ground: every run writes `cache/` and a product's workspace, so code a
     codex run leaves there (a package script, a `node_modules/.bin` shim) runs in the next
     claude run, with the Keychain and claude's login;
+  - the team's notes: any run writes a product's `AGENTS.md`, and every later run on it reads
+    it, a claude run's in its system prompt, so one run's words steer the next; framing them
+    as teammates' (which they can close themselves) is all that stands against that;
   - a program a run builds can still send Apple Events (macOS asks the founder first: refuse
     it), and a debugger listening on a port other than 9222 or 9229 takes its orders;
   - the founder's git run inside a workspace (push from a fresh clone);

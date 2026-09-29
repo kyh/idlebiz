@@ -75,10 +75,12 @@ describe("standingInstructions", () => {
     expect(text).toMatch(/cannot make a git repository[^\n]*`git clone`[^\n]*`git init`[^\n]*tar/u);
   });
 
-  it("has the team keep a product's notes in its workspace's AGENTS.md, a CLAUDE.md folded in", () => {
+  it("has the team keep a product's notes in its workspace's AGENTS.md, what a CLAUDE.md held moved in", () => {
     const text = instructionsFor("software");
     expect(text).toContain("in `AGENTS.md` at the root of its workspace");
-    expect(text).toContain("fold any you find into `AGENTS.md`");
+    expect(text).toContain("Teammates write it, not the founder");
+    expect(text).toMatch(/`AGENTS.override.md`[^\n]*fold any into `AGENTS.md` and delete it/u);
+    expect(text).toMatch(/`CLAUDE.md`: move what one holds into `AGENTS.md`[^\n]*`@AGENTS.md`/u);
   });
 
   it("never tells a run to push, only that the founder does", () => {

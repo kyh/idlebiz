@@ -42,10 +42,35 @@ describe("readTeamNotes", () => {
     expect(await readTeamNotes(workspace)).toMatchObject({ cut: false });
   });
 
-  it("never reads through a link a run left in its place, to a file the seal keeps from it", async () => {
+  it("cuts before a character the limit would split, never inside it", async () => {
+    writeFileSync(notes(), `${"a".repeat(TEAM_NOTES_MAX_BYTES - 1)}é`);
+    expect(await readTeamNotes(workspace)).toEqual({
+      cut: true,
+      text: "a".repeat(TEAM_NOTES_MAX_BYTES - 1),
+    });
+  });
+
+  it("reads AGENTS.override.md in AGENTS.md's place, as codex does", async () => {
+    writeFileSync(notes(), "shared");
+    writeFileSync(path.join(workspace, "AGENTS.override.md"), "override");
+    expect(await readTeamNotes(workspace)).toEqual({ cut: false, text: "override" });
+  });
+
+  it("reads through a link to a file beside it, as a CLAUDE.md the notes once lived in", async () => {
+    writeFileSync(path.join(workspace, "CLAUDE.md"), "pnpm build");
+    symlinkSync("CLAUDE.md", notes());
+    expect(await readTeamNotes(workspace)).toEqual({ cut: false, text: "pnpm build" });
+  });
+
+  it("never reads through a link a run left in its place to anything but a file beside it, nor a hard link", async () => {
     const sealed = path.join(box, "id_ed25519");
     writeFileSync(sealed, "PRIVATE KEY");
     symlinkSync(sealed, notes());
+    expect(await readTeamNotes(workspace)).toBeNull();
+    rmSync(notes());
+    mkdirSync(path.join(workspace, "docs"));
+    writeFileSync(path.join(workspace, "docs", "notes.md"), "pnpm build");
+    symlinkSync("docs/notes.md", notes());
     expect(await readTeamNotes(workspace)).toBeNull();
     rmSync(notes());
     linkSync(sealed, notes());

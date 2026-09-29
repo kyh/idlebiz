@@ -24,6 +24,7 @@ import { RefusalError } from "@/shared/refusal";
 import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 import type { BrowserCli } from "./agent-driver";
 import type { Seal, SealState } from "./seal";
+import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
 
 const execFileAsync = promisify(execFile);
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
@@ -466,11 +467,13 @@ describe("acpAgentFor", () => {
     });
   });
 
-  it("hands codex the founder's MCP servers, plugins and memories to turn off", () => {
+  it("hands codex the founder's MCP servers, plugins and memories to turn off, and the notes a claude run reads", () => {
     const off = codexSessionConfig('[{"name":"gmail","enabled":true},{"name":"linear"}]');
     expect(parseJson(off.CODEX_CONFIG)).toEqual({
       features: { apps: false, memories: false, plugins: false },
       mcp_servers: { gmail: { enabled: false }, linear: { enabled: false } },
+      project_doc_fallback_filenames: [],
+      project_doc_max_bytes: TEAM_NOTES_MAX_BYTES,
     });
     expect(acpAgentFor("codex", SEAL, SETUP, off).env).toMatchObject(off);
   });
