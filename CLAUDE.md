@@ -208,6 +208,11 @@ third boundary.
     all out; their instructions (`AGENTS.md` and `AGENTS.override.md` in its home), which it
     loads whatever its config says; and their `memories/`. A plugin's skills (in
     `plugins/cache`) stay readable: the session config turning plugins off keeps them out.
+    Their rules (`$CODEX_HOME/rules`), whose `allow` decisions run a command without asking,
+    and which no setting of the app server's leaves out, a codex run finds missing (`absent`
+    in `RUNNER_HOMES`, denied `with errno ENOENT`) rather than refused: codex refuses to start
+    a session on a rules folder it cannot read. The admin's `/etc/codex/rules` still loads, and
+    so would a trusted project's `.codex/rules`, but no run makes a `.codex` folder.
   - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its
     workspace, the shared one, its memory, the save's `cache/`), its runner's state in its home
     (`state` in `RUNNER_HOMES`: sessions, logs, caches, databases, codex's refreshed login;
@@ -462,9 +467,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
   `main/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
   out. One it cannot list refuses the run with codex's reason. No codex setting leaves all the
-  founder's own skills out, nor their instructions, so the seal keeps a codex run from reading
-  them (their memories too), and IdleBiz's folder is handed to the session to read
-  (`readDirs`). The codex gate test plants each of these and checks none reaches the model. A deny rule in
+  founder's own skills out, nor their instructions or rules, so the seal keeps a codex run from
+  reading them (their memories too), and IdleBiz's folder is handed to the session to read
+  (`readDirs`). The codex gate test plants each of these and checks none reaches the model, and that a push
+  their rules allow still asks. A deny rule in
   managed settings outranks the flag tier's ask rules and would refuse a company tool's curl
   before IdleBiz is asked, the turn still ending as done, so a claude run under one does not
   start, and says which rule (`refuseDeniedTools` in `main/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
@@ -482,9 +488,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
   may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
   payments, sends, remote copies, pipe-to-shell, credential reads) is signed for once,
-  exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk), and codex
-  still honours `allow` decisions in the founder's `~/.codex/rules`, which run a command
-  unasked (inside the seal).
+  exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
+  would run a command the founder's `~/.codex/rules` allow without asking, so its runs find no
+  rules there (above).
   - An `agent-browser` verb is read where agent-browser reads it, the first word its global
     options leave, and any verb but a listed page read is held unless the session's live page,
     read from the browser before the command runs (a click can land anywhere), is loopback with

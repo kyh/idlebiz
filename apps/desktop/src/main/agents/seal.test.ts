@@ -55,6 +55,7 @@ const SEAL: Seal = {
   preferences: "/Users/me/Library/Preferences",
   runners: {
     claude: {
+      absent: [],
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       folder: "/Users/me/.claude",
       home: [{ match: "subpath", path: "/Users/me/.claude" }],
@@ -62,6 +63,7 @@ const SEAL: Seal = {
       state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
+      absent: [{ match: "subpath", path: "/Users/me/.codex/rules" }],
       account: [],
       folder: "/Users/me/.codex",
       home: [{ match: "subpath", path: "/Users/me/.codex" }],
@@ -165,6 +167,16 @@ describe("sealedCommand", () => {
     );
   });
 
+  it("has codex runs find the founder's codex rules missing, and claude runs find none of codex's home", () => {
+    const codex = readBack(sealedCommand(SEAL, "codex", []));
+    const claude = readBack(sealedCommand(SEAL, "claude", []));
+    const hidden = codex.lineOf("deny", "file-read* file-write*", "/Users/me/.codex/rules");
+    expect(codex.lines[hidden]).toMatch(/\(with errno ENOENT\)\)$/u);
+    expect(codex.lines.slice(hidden + 1).some((line) => line.includes("file-"))).toBe(false);
+    expect(claude.params).not.toContain("/Users/me/.codex/rules");
+    expect(claude.denied("file-read* file-write*")).toContain("/Users/me/.codex");
+  });
+
   it("closes the Keychain to codex runs whichever program asks, and leaves it to claude's", () => {
     const keychain = /\(deny mach-lookup \(global-name "com\.apple\.SecurityServer"\)/u;
     const claude = readBack(sealedCommand(SEAL, "claude", [])).profile;
@@ -249,8 +261,22 @@ describe("sealedCommand", () => {
       ...SEAL,
       debugPorts: [],
       runners: {
-        claude: { account: [], folder: "/Users/me/.claude", home: [], personal: [], state: [] },
-        codex: { account: [], folder: "/Users/me/.codex", home: [], personal: [], state: [] },
+        claude: {
+          absent: [],
+          account: [],
+          folder: "/Users/me/.claude",
+          home: [],
+          personal: [],
+          state: [],
+        },
+        codex: {
+          absent: [],
+          account: [],
+          folder: "/Users/me/.codex",
+          home: [],
+          personal: [],
+          state: [],
+        },
       },
       save: [],
       scratch: [],
@@ -599,6 +625,24 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(await tryAs("claude", { reads: personal })).toEqual(all(personal, "EPERM"));
   });
 
+  it("has a codex run find no rules of the founder's, which codex refuses to start on unreadable, nor any linked in from elsewhere", async () => {
+    const file = plant(".codex/rules/default.rules");
+    const rules = [file, at(".codex/rules")];
+    const config = plant(".codex/config.toml");
+    expect(await tryAs("codex", { reads: [...rules, config] })).toEqual({
+      ...all(rules, "ENOENT"),
+      [config]: "read",
+    });
+    expect(await tryAs("codex", { writes: [file] })).toEqual({ [file]: "ENOENT" });
+    expect(await tryAs("claude", { reads: rules })).toEqual(all(rules, "EPERM"));
+    rmSync(at(".codex/rules"), { recursive: true });
+    const target = link(".codex/rules", "dotfiles/rules/");
+    const linked = [plant("dotfiles/rules/default.rules"), at(".codex/rules/default.rules")];
+    expect(await tryAs("codex", { reads: [target, ...linked] })).toEqual(
+      all([target, ...linked], "ENOENT"),
+    );
+  });
+
   it("keeps a run from making `.agents`, where codex finds skills, in its own folders, and leaves it the rest", async () => {
     const [workspace = "", memory = "", cache = ""] = own();
     const skills = [workspace, memory, cache].map((folder) => path.join(folder, ".agents"));
@@ -665,7 +709,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
           : [
               ".codex/config.toml",
               ".codex/hooks.json",
-              ".codex/rules/default.rules",
               ".codex/prompts/a.md",
               ".codex/plugins/a.json",
               ".codex/packages/standalone/bin/codex",
@@ -1355,6 +1398,10 @@ describe.skipIf(!onMac)("sealRuns", () => {
       { match: "subpath", path: path.join(home, ".agents/skills") },
     ]);
     expect(seal.runners.claude.personal).toEqual([]);
+    expect(seal.runners.codex.absent).toEqual([
+      { match: "subpath", path: path.join(home, ".codex/rules") },
+    ]);
+    expect(seal.runners.claude.absent).toEqual([]);
     expect(seal.debugPorts).toEqual([9222, 9229]);
     expect(seal.sockets).toEqual(
       expect.arrayContaining(

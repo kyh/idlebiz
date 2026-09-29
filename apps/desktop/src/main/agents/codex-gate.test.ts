@@ -25,10 +25,10 @@ import { parseJson } from "@/shared/json";
 
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
-// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it,
-// starts no MCP server of the founder's, offers the model IdleBiz's skills and none of the
-// founder's (their plugins' included), nor their instructions or memories, leaves no skill for a
-// later run, and runs, but cannot rewrite, the config their own codex loads.
+// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it, even
+// one the founder's rules allow, starts no MCP server of theirs, offers the model IdleBiz's skills
+// and none of the founder's (their plugins' included), nor their instructions or memories, leaves
+// no skill for a later run, and runs, but cannot rewrite, the config their own codex loads.
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -223,6 +223,12 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     writeFileSync(path.join(codexHome, "AGENTS.md"), "FOUNDER_INSTRUCTIONS_MARK\n");
     mkdirSync(path.join(codexHome, "memories"));
     writeFileSync(path.join(codexHome, "memories", "memory_summary.md"), "FOUNDER_MEMORY_MARK\n");
+    // a rule of theirs, which would run a push without asking
+    mkdirSync(path.join(codexHome, "rules"));
+    writeFileSync(
+      path.join(codexHome, "rules", "default.rules"),
+      'prefix_rule(pattern=["git", "push"], decision="allow")\n',
+    );
     remote = path.join(base, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", remote]);
     // a run's own folders are always in the save
@@ -289,7 +295,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   };
 
   it(
-    "asks before a push, which holdFor holds and a denial stops",
+    "asks before a push, though a rule of the founder's allows it, which holdFor holds and a denial stops",
     { timeout: 60_000 },
     async () => {
       const { asks, pushed } = await turn(

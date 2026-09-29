@@ -84,10 +84,13 @@ const LOGINS = [
  * loads every skill it can read, with no setting that leaves them all out, and their instructions
  * (`AGENTS.md`, or `AGENTS.override.md` in its place), whatever its config says; their memories
  * are kept from its prompt by the session's config, and from its reads here. A claude session
- * loads no user settings, so none of theirs.
+ * loads no user settings, so none of theirs. `absent` is what of the founder's its runs read as
+ * missing, since the runner refuses to start on it unreadable: codex's rules, whose `allow`
+ * decisions run a command without asking IdleBiz, and which codex loads whatever its config says.
  */
 const RUNNER_HOMES = {
   claude: {
+    absent: [],
     // its MCP servers, user-wide and per project, start in the founder's own sessions, unsealed
     account: [".claude.json"],
     dir: ".claude",
@@ -114,6 +117,7 @@ const RUNNER_HOMES = {
     ],
   },
   codex: {
+    absent: ["rules"],
     account: [],
     dir: ".codex",
     override: "CODEX_HOME",
@@ -152,6 +156,7 @@ const RUNNER_HOMES = {
 } as const satisfies Record<
   AgentRunner,
   {
+    absent: readonly string[];
     account: readonly string[];
     dir: string;
     override: string;
@@ -234,6 +239,8 @@ interface RunnerHome {
    * cannot read.
    */
   personal: readonly Reach[];
+  /** What of the founder's this runner's runs read as missing, which they cannot write either. */
+  absent: readonly Reach[];
 }
 
 /**
@@ -322,6 +329,10 @@ const rule =
     filters.length === 0 ? [] : [`(${action} ${operations} ${filters.join(" ")})`];
 const allow = rule("allow");
 const deny = rule("deny");
+const hide = (filters: readonly string[]): string[] =>
+  filters.length === 0
+    ? []
+    : [`(deny file-read* file-write* ${filters.join(" ")} (with errno ENOENT))`];
 
 /** Whether `at` is `root` or inside it. */
 const inside = (root: string, at: string): boolean => {
@@ -406,6 +417,7 @@ const commandUnder = (
     ]),
     AGENT_SOCKET_WRITES,
     ...deny("file-read* file-write*", unreadable.map(reach)),
+    ...hide(seal.runners[runner].absent.map(reach)),
     ...allow(
       "network-outbound",
       [...seal.writable, seal.namespaces[runner]].map((at) => `(remote unix-socket ${reach(at)})`),
@@ -647,7 +659,7 @@ const runnerHomeOf = async (
   runner: AgentRunner,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
-  const { account, dir, override, personal, state } = RUNNER_HOMES[runner];
+  const { absent, account, dir, override, personal, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const folder = inHome ? path.join(home, dir) : path.resolve(moved);
@@ -663,6 +675,7 @@ const runnerHomeOf = async (
     ...(inHome ? [path.join(home, name)] : []),
   ]);
   return {
+    absent: await reachesOf(absent.map((name) => path.join(folder, name))),
     account: await reachesOf(accounts, "prefix"),
     folder: await realPathOf(folder),
     home: await reachOf(folder),

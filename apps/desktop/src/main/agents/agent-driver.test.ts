@@ -73,6 +73,7 @@ const SEAL: Seal = {
   preferences: "/Users/me/Library/Preferences",
   runners: {
     claude: {
+      absent: [],
       account: [{ match: "prefix", path: "/Users/me/.claude.json" }],
       folder: "/Users/me/.claude",
       home: [{ match: "subpath", path: "/Users/me/.claude" }],
@@ -80,6 +81,7 @@ const SEAL: Seal = {
       state: [{ match: "subpath", path: "/Users/me/.claude/sessions" }],
     },
     codex: {
+      absent: [{ match: "subpath", path: "/Users/me/.codex/rules" }],
       account: [],
       folder: "/Users/me/.codex",
       home: [{ match: "subpath", path: "/Users/me/.codex" }],
