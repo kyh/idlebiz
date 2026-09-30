@@ -39,7 +39,9 @@ const office = (
 });
 
 /** The east room's spot as a workstation: its chair cell becomes furniture. */
-const eastSeat: Partial<OfficeLayoutData> = { seats: [{ role: "work", ...eastSpot }] };
+const eastSeat: Partial<OfficeLayoutData> = {
+  seats: [{ behindChair: false, role: "work", ...eastSpot }],
+};
 
 describe("walk grid", () => {
   const grid = walkGridOf(office(OPEN));

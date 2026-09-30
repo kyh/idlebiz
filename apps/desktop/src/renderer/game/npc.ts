@@ -2,7 +2,7 @@
 // what npc-look decides, sit down, sort among the furniture. The roster, the seating and
 // the door they share with everyone else are npcs.ts's.
 import type Phaser from "phaser";
-import { idleFrame, SEAT_CROP } from "@/renderer/game/character-sheet";
+import { CHAR_ORIGIN_X, idleFrame, risenOriginY, SEAT_CROP } from "@/renderer/game/character-sheet";
 import type { CharacterAnims, Dir } from "@/renderer/game/character-sheet";
 import { stepToward } from "@/renderer/game/movement";
 import type { NpcAttachments } from "@/renderer/game/npc-attachments";
@@ -17,9 +17,11 @@ import type { WalkGrid } from "@/shared/office-grid";
 export interface Seat {
   readonly x: number;
   readonly y: number;
-  /** Depth its occupant renders at while seated — above the workstation, so the chair
-   *  back doesn't swallow them. Computed by seat-depth.ts from the built room. */
+  /** Depth its occupant renders at while seated — above the workstation, or under a chair
+   *  back that faces the camera. Computed by seat-depth.ts from the built room. */
   readonly depth: number;
+  /** How far up the screen its occupant draws: set only behind a chair back (seat-depth.ts). */
+  readonly rise: number;
 }
 
 interface WalkPlan {
@@ -52,6 +54,13 @@ const NPC_SPEED = 64;
 const setDepthIfChanged = (sprite: Phaser.GameObjects.Sprite, depth: number): void => {
   if (sprite.depth !== depth) {
     sprite.setDepth(depth);
+  }
+};
+
+const riseIfChanged = (sprite: Phaser.GameObjects.Sprite, rise: number): void => {
+  const originY = risenOriginY(rise);
+  if (sprite.originY !== originY) {
+    sprite.setOrigin(CHAR_ORIGIN_X, originY);
   }
 };
 
@@ -145,8 +154,9 @@ export const stepAlong = (npc: Npc, plan: WalkPlan, dt: number): void => {
 /**
  * Seated employees are drawn as a bust lifted above their workstation — the pack paints
  * its seated workers over the chair with the desk in front, which y-sorting alone can't
- * do (a chair's floor contact is south of its occupant, so it would hide them). Walkers
- * y-sort normally, on their soles.
+ * do (a chair's floor contact is south of its occupant, so it would hide them). Behind a
+ * chair back they stay under it, risen so their head clears it. Walkers y-sort normally,
+ * on their soles.
  */
 export const applyDepth = (npc: Npc): void => {
   const { seat } = npc;
@@ -154,11 +164,13 @@ export const applyDepth = (npc: Npc): void => {
     if (!npc.sprite.isCropped) {
       npc.sprite.setCrop(SEAT_CROP.x, SEAT_CROP.y, SEAT_CROP.w, SEAT_CROP.h);
     }
+    riseIfChanged(npc.sprite, seat.rise);
     setDepthIfChanged(npc.sprite, seat.depth);
     return;
   }
   if (npc.sprite.isCropped) {
     npc.sprite.setCrop();
   }
+  riseIfChanged(npc.sprite, 0);
   setDepthIfChanged(npc.sprite, characterDepth(npc.sprite.y));
 };

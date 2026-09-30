@@ -97,9 +97,10 @@ describe("bustOverlaps", () => {
 
 describe("seatDepth", () => {
   const base = characterDepth(seat.y);
+  const front = { ...seat, behindChair: false };
 
   it("sits just above its own floor line when nothing overlaps", () => {
-    expect(seatDepth(seat, [], () => solid(1, 1))).toBeCloseTo(base + 0.25);
+    expect(seatDepth(front, [], () => solid(1, 1))).toBeCloseTo(base + 0.25);
   });
 
   it("lifts to the topmost overlapping entity-band image, and no further", () => {
@@ -109,12 +110,12 @@ describe("seatDepth", () => {
       // above, but off to the side
       image({ depth: base + 30, x: 200 }),
     ];
-    expect(seatDepth(seat, room, () => solid(40, 80))).toBeCloseTo(base + 9.25);
+    expect(seatDepth(front, room, () => solid(40, 80))).toBeCloseTo(base + 9.25);
   });
 
   it("ignores what is already below the sitter and everything overhead", () => {
     const room = [image({ depth: base - 1 }), image({ depth: DEPTH.overhead + 1 })];
-    expect(seatDepth(seat, room, () => solid(40, 80))).toBeCloseTo(base + 0.25);
+    expect(seatDepth(front, room, () => solid(40, 80))).toBeCloseTo(base + 0.25);
   });
 
   it("decodes only the textures whose bounds reach the seat", () => {
@@ -124,10 +125,41 @@ describe("seatDepth", () => {
       image({ depth: base + 2 }),
       image({ depth: base + 3, y: 200 }),
     ];
-    seatDepth(seat, room, (img) => {
+    seatDepth(front, room, (img) => {
       read.push(img.depth);
       return solid(40, 80);
     });
     expect(read).toEqual([base + 2]);
+  });
+
+  describe("behind a chair back", () => {
+    const behind = { ...seat, behindChair: true };
+    const desk = image({ depth: base - 20 });
+    const chair = image({ depth: base + 1.5 });
+
+    it("stays under the chair south of the sitter and over the desk north of them", () => {
+      const depth = seatDepth(behind, [desk, chair], () => solid(40, 80));
+      expect(depth).toBeGreaterThan(desk.depth);
+      expect(depth).toBeLessThan(chair.depth);
+    });
+
+    it("y-sorts on the seat, so a walker passing south of the chair still draws over them", () => {
+      expect(seatDepth(behind, [desk, chair], () => solid(40, 80))).toBe(base);
+      expect(characterDepth(seat.y + 1)).toBeGreaterThan(base);
+    });
+
+    it("never reads a texture", () => {
+      let reads = 0;
+      seatDepth(behind, [chair], () => {
+        reads += 1;
+        return solid(40, 80);
+      });
+      expect(reads).toBe(0);
+    });
+  });
+
+  it("lifts the same room's front-facing sitter over the chair", () => {
+    const chair = image({ depth: base + 1.5 });
+    expect(seatDepth(front, [chair], () => solid(40, 80))).toBeGreaterThan(chair.depth);
   });
 });

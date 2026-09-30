@@ -28,6 +28,9 @@ export const SEAT_CROP = {
   y: 0,
 } as const;
 
+/** The origin that draws a sprite `rise` px up the screen from where it stands. */
+export const risenOriginY = (rise: number): number => CHAR_ORIGIN_Y + rise / FRAME_H;
+
 /** Silhouette of that bust around its origin — what a seat tests for overlap. */
 export const BUST = {
   halfWidth: 10,
