@@ -32,7 +32,13 @@ const facingSchema = z.enum(DIRS);
 const sitSideSchema = z.enum(SIT_SIDES);
 
 const seatSchema = z.discriminatedUnion("role", [
-  z.object({ role: z.literal("work"), x: z.number(), y: z.number() }),
+  z.object({
+    /** The chair shows the camera its back, so it paints over whoever sits in it. */
+    behindChair: z.boolean(),
+    role: z.literal("work"),
+    x: z.number(),
+    y: z.number(),
+  }),
   z.object({ role: z.literal("rest"), sit: sitSideSchema, x: z.number(), y: z.number() }),
 ]);
 export type OfficeSeat = z.infer<typeof seatSchema>;

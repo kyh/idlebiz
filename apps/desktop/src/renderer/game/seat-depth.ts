@@ -5,6 +5,8 @@
 // is always SOUTH of whoever sits in it, so y-sort buries the sitter behind the chair.
 // A seat is lifted just above the topmost thing its occupant's bust actually overlaps
 // and no further, so a colleague walking past the front of the desk still occludes them.
+// A chair that shows the camera its back is the exception: it stands between the sitter
+// and the camera, so there the sitter y-sorts behind it and draws higher up the screen.
 import { BUST } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
 import { characterDepth } from "@/shared/office-depth";
@@ -14,6 +16,18 @@ import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;
+
+/**
+ * How far up the screen a sitter behind a chair back draws, in px. They sit north of the
+ * chair's back, and at their floor point the pack's chair back hides all but their crown.
+ */
+export const BEHIND_CHAIR_RISE = 12;
+
+/** A workstation as the seat test sees it: where its occupant sits, and whether its
+ *  chair's back faces the camera. */
+export interface SeatSpot extends PixelPoint {
+  readonly behindChair: boolean;
+}
 
 /** A placed room image as the seat test sees it: its bounds, band and flips. */
 export interface RoomImage {
@@ -84,14 +98,18 @@ export const bustOverlaps = (
 /**
  * Depth a seated employee renders at: just above the topmost entity-band image their
  * bust overlaps. Overhead props are meant to stay above actors, so a seat never lifts
- * past them.
+ * past them. Behind a chair back they y-sort on the seat, under the chair south of them
+ * and over the desk north of them.
  */
 export const seatDepth = <T extends RoomImage>(
-  seat: PixelPoint,
+  seat: SeatSpot,
   room: readonly T[],
   maskOf: (image: T) => OpaqueMask | null,
 ): number => {
   let depth = characterDepth(seat.y);
+  if (seat.behindChair) {
+    return depth;
+  }
   for (const image of room) {
     if (image.depth <= depth || image.depth >= DEPTH.overhead) {
       continue;
