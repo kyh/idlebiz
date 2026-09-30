@@ -1,15 +1,15 @@
 import { cacheLife, cacheTag } from "next/cache";
+import Link from "next/link";
 import { z } from "zod";
 
 import { siteConfig } from "@/lib/site-config";
-import { homeIntro, whenToUse } from "@/lib/agent/site-content";
+import { homeIntro, prosePages, whenToUse } from "@/lib/agent/site-content";
 import { homeGraph } from "@/lib/agent/structured-data";
 import { pageMetadata } from "@/lib/page-metadata";
 import { OfficeLife } from "@/app/office-life";
 import { WindowCard } from "@/app/window-card";
 import { Cta } from "@/app/cta";
 import { JsonLd } from "@/app/json-ld";
-import { SiteFooter } from "@/app/site-footer";
 
 export const metadata = pageMetadata("/", null);
 
@@ -132,7 +132,22 @@ const Page = async () => {
         </ul>
       </section>
 
-      <SiteFooter />
+      <footer className="mt-8 flex items-center gap-4 text-[11px] text-chrome-hi">
+        <a href={`https://github.com/${GITHUB_REPO}`} className="no-underline hover:text-light">
+          GitHub
+        </a>
+        <nav aria-label="Site" className="sr-only">
+          {prosePages.map((page) => (
+            <Link key={page.path} href={page.path} prefetch={false} tabIndex={-1}>
+              {page.title}
+            </Link>
+          ))}
+        </nav>
+        <span aria-hidden>·</span>
+        <span>© 2026 kyh</span>
+        <span aria-hidden>·</span>
+        <span>{siteConfig.name} is in early development</span>
+      </footer>
     </main>
   );
 };
