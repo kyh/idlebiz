@@ -48,6 +48,20 @@ const instructionsFor = (businessType: BusinessTypeId, lead = false): string =>
   });
 
 describe("standingInstructions", () => {
+  it("says the lead picks what to build when the founder gave no pitch", () => {
+    const text = standingInstructions({
+      company: { ...company("software"), mission: null },
+      employee,
+      lead: false,
+      memoryDir: "/tmp/memory",
+      products: [],
+    });
+    expect(text).toMatch(
+      /## Company mission\nThe founder gave no pitch: what the company builds is the lead's pick/u,
+    );
+    expect(instructionsFor("software")).toContain("## Company mission\na deal-flow newsletter");
+  });
+
   it("keeps a VC to selling information, and says why it never takes investment money", () => {
     const text = instructionsFor("vc");
     expect(text).toContain("sells information, never investment");

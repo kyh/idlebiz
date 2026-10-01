@@ -206,6 +206,23 @@ describe("products", () => {
     expect(existsSync(path.join(productsDir(co.id), first?.id ?? "", "PRODUCT.md"))).toBe(true);
   });
 
+  it("founds a company with no pitch, its first product left for the team to name", () => {
+    store.foundCompany({
+      budget: { mode: "infinite" },
+      businessType: "software",
+      founderName: "Kai",
+      founderSpriteSeed: "seed",
+      hires: [],
+      mission: null,
+      name: "Acme",
+    });
+    store.initStore();
+    expect(store.getCompany()?.mission).toBeNull();
+    expect(store.listProducts()[0]?.description).toBe(
+      "The first thing the team builds; its AGENTS.md says what it is.",
+    );
+  });
+
   it("gives a save without a shared folder one at boot", () => {
     const co = found();
     rmSync(co.workspaceDir, { recursive: true });

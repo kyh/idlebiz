@@ -58,15 +58,17 @@ export const companyToDoc = (co: Company): FrontmatterDoc => {
   metadata.spentUsd = co.spentUsd;
   metadata.createdAt = co.createdAt;
   metadata.format = SAVE_FORMAT;
+  const fields: FrontmatterDoc["fields"] = {};
+  if (co.mission !== null) {
+    fields.description = co.mission;
+  }
+  fields.kind = "company";
+  fields.name = co.name;
+  fields.schema = PACKAGE_SCHEMA;
+  fields.slug = co.id;
   return {
-    body: `# ${co.name}\n\n${co.mission}\n`,
-    fields: {
-      description: co.mission,
-      kind: "company",
-      name: co.name,
-      schema: PACKAGE_SCHEMA,
-      slug: co.id,
-    },
+    body: co.mission === null ? `# ${co.name}\n` : `# ${co.name}\n\n${co.mission}\n`,
+    fields,
     metadata,
   };
 };
@@ -90,6 +92,7 @@ export const docToCompany = (doc: FrontmatterDoc): Company => {
   const f = doc.fields;
   const m = doc.metadata;
   const id = reqStr(f, "slug");
+  const description = optStr(f, "description");
   return {
     autopilot: optBool(m, "autopilot", true),
     budget: parseBudget(m),
@@ -100,7 +103,7 @@ export const docToCompany = (doc: FrontmatterDoc): Company => {
     id,
     leaderId: optStr(m, "leaderId"),
     maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
-    mission: optStr(f, "description") ?? "",
+    mission: description === null || description === "" ? null : description,
     name: reqStr(f, "name"),
     revenueUsd: nullableNum(m, "revenueUsd"),
     ships: optNum(m, "ships", 0),

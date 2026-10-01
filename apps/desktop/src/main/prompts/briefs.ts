@@ -224,6 +224,11 @@ const assignmentBrief = (
         focus: product,
         lines: [
           `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet can take another run: each is spent out, waiting on the founder, or has what is left covered by runs already going. Opening the next one is your job this run.`,
+          ...(company.mission === null
+            ? [
+                `The founder gave no pitch: what ${company.name} builds is your pick. Choose something its business type can sell with the tools here, say in the team room what the team will try and why, and keep it in the product's AGENTS.md. Bets whose number does not move get killed, so pick, bet small and move on.`,
+              ]
+            : []),
           widen ? newGround : `${where}.`,
           `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
@@ -292,7 +297,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
 
   const description = [
     `You are operating autonomously to grow ${company.name}.`,
-    `Mission: ${company.mission}`,
+    `Mission: ${company.mission ?? "none given — the team picks what to build"}`,
     `Business type: ${businessTypeById(company.businessType).label}.`,
     `Your role: ${employee.title}.`,
     `Your team: ${roster}.`,

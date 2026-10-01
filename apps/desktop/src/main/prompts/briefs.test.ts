@@ -155,11 +155,11 @@ describe("the brief's budget", () => {
   });
 });
 
-const proposal = (widen: boolean, newProduct: boolean): string =>
+const proposal = (widen: boolean, newProduct: boolean, co: Company = company): string =>
   autonomousBrief({
     assignment: { kind: "propose", newProduct, product, widen },
     bets: [],
-    company,
+    company: co,
     employee,
     employees: [employee],
     nameOf: () => "Priya",
@@ -177,6 +177,15 @@ describe("the brief that asks for the next bet", () => {
     expect(full).not.toContain("create_product");
     expect(full).toContain("a channel it has never tried — App (app) has room for one.");
     expect(full).toContain("already runs 5 products, all it can: a new one needs kill_product");
+  });
+
+  it("leaves what to build to the lead when the founder gave no pitch", () => {
+    const text = proposal(false, true, { ...company, mission: null });
+    expect(text).toContain("Mission: none given — the team picks what to build");
+    expect(text).toContain("The founder gave no pitch: what Acme builds is your pick.");
+    expect(text).toContain("say in the team room what the team will try and why");
+    expect(text).toContain("Call open_bet");
+    expect(proposal(false, true)).not.toContain("gave no pitch");
   });
 
   it("says why no open bet takes a run, rather than that none has budget left", () => {

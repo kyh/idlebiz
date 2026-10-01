@@ -13,19 +13,23 @@ const HIRE_HINTS = {
 
 export const foundingTeamPrompt = (
   companyName: string,
-  mission: string,
+  mission: string | null,
   businessType: BusinessTypeId,
 ): string => {
   const typeHint =
     businessType === "custom"
       ? ""
       : `\nBusiness type: ${businessTypeById(businessType).label}. ${HIRE_HINTS[businessType]}`;
+  const pitch =
+    mission === null
+      ? "Pitch: none. The founder left what to build to the team, so the lead picks the first product and the team tries it: cast people who can choose one, build it and find its buyers."
+      : `Pitch: ${mission}`;
   return `You are casting the founding team of a startup for a business-sim game.
 
 Company: ${companyName}
-Pitch: ${mission}${typeHint}
+${pitch}${typeHint}
 
-Invent 5 distinct hires tailored to THIS pitch — whatever business it is. List first the one who runs the company day to day: they decide what the team bets its time and money on, hire and let go, and hand out the work, so give them a title that says so (General Manager, Head of Product, Studio Director…) and a persona that decides rather than builds. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; a deal-flow newsletter needs sourcing + analysis + writing; a print shop needs product + design + marketing). Each person gets:
+Invent 5 distinct hires tailored to THIS ${mission === null ? "business" : "pitch"} — whatever business it is. List first the one who runs the company day to day: they decide what the team bets its time and money on, hire and let go, and hand out the work, so give them a title that says so (General Manager, Head of Product, Studio Director…) and a persona that decides rather than builds. Mix the roles sensibly (a game needs gameplay + art + audio; a newsletter needs research + writing + editing; a deal-flow newsletter needs sourcing + analysis + writing; a print shop needs product + design + marketing). Each person gets:
 - name: a memorable first name (diverse, varied)
 - role: a short lowercase role key like "engineer", "pixel-artist", "writer"
 - title: their job title

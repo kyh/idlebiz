@@ -8,7 +8,16 @@ import {
   MAX_AGENTS,
   MAX_TASK_ATTEMPTS,
   MaxAgentsSchema,
+  missionFromPitch,
 } from "./domain";
+
+describe("missionFromPitch", () => {
+  it("keeps a pitch, and reads a blank one as none, leaving the pick to the team", () => {
+    expect(missionFromPitch("  a to-do app\n")).toBe("a to-do app");
+    expect(missionFromPitch("")).toBeNull();
+    expect(missionFromPitch(" \n ")).toBeNull();
+  });
+});
 
 describe("resolveMentions", () => {
   const roster = [

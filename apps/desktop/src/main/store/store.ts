@@ -941,7 +941,7 @@ export const archiveEmployee = (
 const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   companyId: co.id,
   createdAt: co.createdAt,
-  description: co.mission,
+  description: co.mission ?? "The first thing the team builds; its AGENTS.md says what it is.",
   id: uniqueSlug(co.name, [], heldIn(productsDir(co.id), retiredDir(co.id))),
   lastShipAt: null,
   name: co.name,
@@ -1991,7 +1991,7 @@ const saveEntries = (): string[] =>
 
 export const foundCompany = (input: {
   name: string;
-  mission: string;
+  mission: string | null;
   businessType: BusinessTypeId;
   founderName: string;
   founderSpriteSeed: string;
