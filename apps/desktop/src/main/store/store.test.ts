@@ -16,7 +16,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KILL_GRACE_MS, windowEnd } from "@/shared/bets";
 import type { BetState } from "@/shared/bets";
 import type { Budget } from "@/shared/domain";
-import { taskIn } from "@/shared/domain";
+import { UNNAMED_PRODUCT_DESCRIPTION, taskIn } from "@/shared/domain";
 import type { Listing } from "@/shared/listing";
 import { RefusalError } from "@/shared/refusal";
 import { approvalAnswer, runPreamble } from "@/main/prompts/briefs";
@@ -218,9 +218,52 @@ describe("products", () => {
     });
     store.initStore();
     expect(store.getCompany()?.mission).toBeNull();
-    expect(store.listProducts()[0]?.description).toBe(
-      "The first thing the team builds; its AGENTS.md says what it is.",
+    expect(store.listProducts()[0]?.description).toBe(UNNAMED_PRODUCT_DESCRIPTION);
+  });
+
+  it("names a product the lead picked, keeping its slug, on disk and in every agent's instructions", () => {
+    found();
+    const emp = store.createEmployee({ ...hire("Quinn") });
+    const [first] = store.listProducts();
+    const id = first?.id ?? "";
+    const named = store.nameProduct(id, {
+      description: " Invoices that chase themselves. ",
+      name: " Ledgerly ",
+    });
+    expect(named).toMatchObject({
+      description: "Invoices that chase themselves.",
+      id,
+      name: "Ledgerly",
+    });
+    store.initStore();
+    expect(store.getProduct(id)).toMatchObject({
+      description: "Invoices that chase themselves.",
+      name: "Ledgerly",
+    });
+    expect(store.employeeInstructions(emp.id)).toContain(
+      `**Ledgerly** (\`${id}\`) — Invoices that chase themselves.`,
     );
+  });
+
+  it.each([
+    ["an empty name", { description: "x", name: "  " }],
+    ["a name past 80 characters", { description: "x", name: "n".repeat(81) }],
+    ["an empty description", { description: "", name: "Ledgerly" }],
+    ["a description past 600 characters", { description: "d".repeat(601), name: "Ledgerly" }],
+  ])("refuses to name a product with %s", (_what, draft) => {
+    found();
+    const [first] = store.listProducts();
+    expect(() => store.nameProduct(first?.id ?? "", draft)).toThrow(RefusalError);
+    expect(store.listProducts()[0]?.name).toBe(first?.name);
+  });
+
+  it("refuses to name a product it does not have, or one it retired", () => {
+    found();
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    store.killProduct(gadget.id, "dud", null);
+    const draft = { description: "x", name: "Ledgerly" };
+    expect(() => store.nameProduct("nope", draft)).toThrow('No product "nope" here');
+    expect(() => store.nameProduct(gadget.id, draft)).toThrow(`${gadget.id} is retired`);
   });
 
   it("gives a save without a shared folder one at boot", () => {

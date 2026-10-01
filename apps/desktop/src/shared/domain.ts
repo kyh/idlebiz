@@ -357,6 +357,10 @@ export const ProductDraftSchema = z.strictObject({
 });
 export type ProductDraft = z.infer<typeof ProductDraftSchema>;
 
+/** What a company founded with no pitch says its first product is, until the lead names it. */
+export const UNNAMED_PRODUCT_DESCRIPTION =
+  "The first thing the team builds, unnamed until the lead picks what it is.";
+
 /** Why a bet or a product was given up on; it lands in BET.md and as a line in the room. */
 export const KillReasonSchema = z.string().trim().min(1).max(200);
 

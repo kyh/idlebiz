@@ -98,6 +98,11 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
     message: z.string(),
     payload: z.object({ productId: z.string() }),
   }),
+  /** The lead named a product; the message is its new name. */
+  event("product.named", byWhom, {
+    message: z.string(),
+    payload: z.object({ productId: z.string() }),
+  }),
   event("product.killed", byWhom, {
     message: z.string(),
     payload: z.object({ productId: z.string(), reason: z.string() }),

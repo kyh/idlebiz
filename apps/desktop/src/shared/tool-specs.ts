@@ -264,6 +264,14 @@ export const TOOL_SPECS = {
     method: "POST",
     path: "/v1/create-product",
   }),
+  name_product: tool({
+    body: ProductDraftSchema.extend({ product: z.string().min(1).optional() }),
+    doc: 'give a product the name and one-line description of what it is, once you have picked it: the room, the founder\'s panels and every teammate\'s instructions show them. It names your run\'s product; name another with `"product":"<slug>"`. Its slug, workspace, bets and links stay as they are.',
+    example: { description: "...", name: "...", product: "product-slug" },
+    leadOnly: "Only the team lead names a product — suggest a name in the team room.",
+    method: "POST",
+    path: "/v1/name-product",
+  }),
   kill_product: tool({
     body: SLUG_AND_REASON,
     doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. IdleBiz switches off its payment links at Stripe, sell_print's and create_payment_link's, so it takes no new money, and hands the founder any Stripe would not switch off, and any an older IdleBiz made without keeping a record, to switch off by hand; each order already paid still ships and still counts, and read_orders still reads its orders and says where each link stands, by its slug. The last product cannot be killed: start its successor first.",

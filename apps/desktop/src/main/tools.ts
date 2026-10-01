@@ -8,6 +8,7 @@ import type { DeployTarget, Deployer } from "@/main/deploy";
 import {
   announceBet,
   killBet,
+  nameProduct,
   postToRoom,
   retireProduct,
   startProduct,
@@ -1207,6 +1208,14 @@ const TOOLS = {
     const product = startProduct({ description, name }, ctx.employee.id);
     post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
     return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Fund work on it with open_bet and "product":"${product.id}", then delegate against that bet.`;
+  }),
+  name_product: define(TOOL_SPECS.name_product, (ctx, { product: named, ...draft }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to name — create_product first.";
+    }
+    const product = nameProduct(productId, draft, ctx.employee);
+    return `${product.id} is now "${product.name}": ${product.description}`;
   }),
   kill_product: define(TOOL_SPECS.kill_product, async (ctx, { slug, reason }) => {
     const retired = await retireProduct(slug, reason, ctx.employee.id);

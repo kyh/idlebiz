@@ -120,8 +120,10 @@ import type {
 import {
   DEFAULT_MAX_AGENTS,
   LastShipSchema,
+  ProductDraftSchema,
   RunMetricsSchema,
   SpeakerSchema,
+  UNNAMED_PRODUCT_DESCRIPTION,
   afterFailure,
   entering,
   leadOf,
@@ -941,7 +943,7 @@ export const archiveEmployee = (
 const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   companyId: co.id,
   createdAt: co.createdAt,
-  description: co.mission ?? "The first thing the team builds; its AGENTS.md says what it is.",
+  description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
   id: uniqueSlug(co.name, [], heldIn(productsDir(co.id), retiredDir(co.id))),
   lastShipAt: null,
   name: co.name,
@@ -1029,6 +1031,35 @@ export const createProduct = (named: ProductDraft): Product => {
   mkdirSync(product.workspaceDir, { recursive: true });
   saveProduct(product);
   list.push(product);
+  for (const e of listEmployees()) {
+    saveEmployee(e);
+  }
+  return product;
+};
+
+export const noSuchProduct = (productId: string): string =>
+  `No product "${productId}" here — the products are ${listProducts()
+    .map((p) => p.id)
+    .join(", ")}.`;
+
+/**
+ * Give a live product the name and description the lead picked for it. Its slug stays, since
+ * its workspace, bets, links and orders are all keyed by it.
+ */
+export const nameProduct = (productId: string, named: ProductDraft): Product => {
+  if (getProduct(productId) === null) {
+    throw new RefusalError(
+      isRetiredProduct(productId)
+        ? `${productId} is retired: name a live product.`
+        : noSuchProduct(productId),
+    );
+  }
+  const draft = ProductDraftSchema.safeParse(named);
+  if (!draft.success) {
+    throw new RefusalError(z.prettifyError(draft.error));
+  }
+  const product = patchProduct(productId, draft.data);
+  // every agent's instructions list the products by name
   for (const e of listEmployees()) {
     saveEmployee(e);
   }
@@ -1268,11 +1299,6 @@ const patchBet = (id: string, patch: Partial<Bet>): Bet =>
   patchIn(current().bets, id, patch, saveBet);
 
 /** What a tool is told when it names a product the company does not have. */
-export const noSuchProduct = (productId: string): string =>
-  `No product "${productId}" here — the products are ${listProducts()
-    .map((p) => p.id)
-    .join(", ")}.`;
-
 /**
  * Open a bet, on a product with room for another. A users bet lands on its own
  * path unless it names one; a named path over the whole site or /b, or one

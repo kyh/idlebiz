@@ -119,6 +119,7 @@ const RELOAD_FOR = {
   "product.created": ["products"],
   // retiring a product drops its waiting work
   "product.killed": ["products", "bets", "tasks"],
+  "product.named": ["products"],
   // An ask exists the moment it is raised, and a dead letter the moment it dies.
   // Every way back out (answered, approved, retried, resumed on connect) goes
   // through the scheduler's assign, which says `status: queued`. The inbox must

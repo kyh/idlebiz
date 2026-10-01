@@ -10,6 +10,7 @@ import type {
   Task,
   TeamMessage,
 } from "@/shared/domain";
+import { UNNAMED_PRODUCT_DESCRIPTION } from "@/shared/domain";
 import { formatUsd } from "@/shared/format";
 
 const company: Company = {
@@ -155,16 +156,21 @@ describe("the brief's budget", () => {
   });
 });
 
-const proposal = (widen: boolean, newProduct: boolean, co: Company = company): string =>
+const proposal = (
+  widen: boolean,
+  newProduct: boolean,
+  co: Company = company,
+  focus: Product = product,
+): string =>
   autonomousBrief({
-    assignment: { kind: "propose", newProduct, product, widen },
+    assignment: { kind: "propose", newProduct, product: focus, widen },
     bets: [],
     company: co,
     employee,
     employees: [employee],
     nameOf: () => "Priya",
     problems: [],
-    products: [product],
+    products: [focus],
     room: [],
     ships: [],
     stripeTestMode: false,
@@ -183,9 +189,18 @@ describe("the brief that asks for the next bet", () => {
     const text = proposal(false, true, { ...company, mission: null });
     expect(text).toContain("Mission: none given — the team picks what to build");
     expect(text).toContain("The founder gave no pitch: what Acme builds is your pick.");
+    expect(text).not.toContain("name_product");
     expect(text).toContain("say in the team room what the team will try and why");
     expect(text).toContain("Call open_bet");
     expect(proposal(false, true)).not.toContain("gave no pitch");
+  });
+
+  it("has the lead name the first product with name_product while it still waits on that pick", () => {
+    const unnamed = { ...product, description: UNNAMED_PRODUCT_DESCRIPTION };
+    const text = proposal(false, true, { ...company, mission: null }, unnamed);
+    expect(text).toContain(
+      `give ${product.name} (${product.id}) its name and a one-line description of it with name_product`,
+    );
   });
 
   it("says why no open bet takes a run, rather than that none has budget left", () => {
