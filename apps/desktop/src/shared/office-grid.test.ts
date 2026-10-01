@@ -40,7 +40,7 @@ const office = (
 
 /** The east room's spot as a workstation: its chair cell becomes furniture. */
 const eastSeat: Partial<OfficeLayoutData> = {
-  seats: [{ behindChair: false, role: "work", ...eastSpot }],
+  seats: [{ facing: "down", role: "work", ...eastSpot }],
 };
 
 describe("walk grid", () => {

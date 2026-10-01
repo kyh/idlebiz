@@ -21,7 +21,7 @@ import { NpcManager } from "@/renderer/game/npcs";
 import { OFFICE } from "@/renderer/game/office-layout";
 import type { PixelPoint } from "@/renderer/game/office-layout";
 import { poseForToolKind } from "@/renderer/game/office-poses";
-import { BEHIND_CHAIR_RISE, seatDepth } from "@/renderer/game/seat-depth";
+import { BEHIND_CHAIR_RISE, behindChair, seatDepth } from "@/renderer/game/seat-depth";
 import { textureMasks } from "@/renderer/game/texture-masks";
 import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 import { characterDepth } from "@/shared/office-depth";
@@ -324,7 +324,8 @@ export class OfficeScene extends Scene {
       .filter((seat) => seat.role === "work")
       .map((seat) => ({
         depth: seatDepth(seat, room, (image) => masks(image.texture.key)),
-        rise: seat.behindChair ? BEHIND_CHAIR_RISE : 0,
+        facing: seat.facing,
+        rise: behindChair(seat) ? BEHIND_CHAIR_RISE : 0,
         x: seat.x,
         y: seat.y,
       }));

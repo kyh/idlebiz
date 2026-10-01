@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { characterDepth, DEPTH } from "@/shared/office-depth";
 import { bustOverlapRect, bustOverlaps, seatDepth } from "./seat-depth";
-import type { RoomImage } from "./seat-depth";
+import type { RoomImage, SeatSpot } from "./seat-depth";
 import type { OpaqueMask } from "./opaque-mask";
 
 // A seat at (100, 100): the bust spans x 90..110 and y 62..100 (height 38 above the origin).
@@ -97,7 +97,7 @@ describe("bustOverlaps", () => {
 
 describe("seatDepth", () => {
   const base = characterDepth(seat.y);
-  const front = { ...seat, behindChair: false };
+  const front: SeatSpot = { ...seat, facing: "down" };
 
   it("sits just above its own floor line when nothing overlaps", () => {
     expect(seatDepth(front, [], () => solid(1, 1))).toBeCloseTo(base + 0.25);
@@ -133,7 +133,7 @@ describe("seatDepth", () => {
   });
 
   describe("behind a chair back", () => {
-    const behind = { ...seat, behindChair: true };
+    const behind: SeatSpot = { ...seat, facing: "up" };
     const desk = image({ depth: base - 20 });
     const chair = image({ depth: base + 1.5 });
 

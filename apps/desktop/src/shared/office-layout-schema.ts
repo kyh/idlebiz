@@ -33,8 +33,8 @@ const sitSideSchema = z.enum(SIT_SIDES);
 
 const seatSchema = z.discriminatedUnion("role", [
   z.object({
-    /** The chair shows the camera its back, so it paints over whoever sits in it. */
-    behindChair: z.boolean(),
+    /** Which way its occupant faces their screen. */
+    facing: facingSchema,
     role: z.literal("work"),
     x: z.number(),
     y: z.number(),

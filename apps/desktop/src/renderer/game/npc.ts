@@ -22,6 +22,8 @@ export interface Seat {
   readonly depth: number;
   /** How far up the screen its occupant draws: set only behind a chair back (seat-depth.ts). */
   readonly rise: number;
+  /** Which way its occupant faces their screen. */
+  readonly facing: Dir;
 }
 
 interface WalkPlan {
@@ -84,7 +86,7 @@ export const applyLook = (npc: Npc): void => {
   const { emote, stance } = lookOf({
     activity: npc.activity,
     asking: npc.asking,
-    atDesk: atSeat(npc),
+    desk: npc.seat && atSeat(npc) ? npc.seat.facing : null,
     phase: npc.phase,
     waiting: npc.waiting,
     walking: npc.plan !== null,
@@ -92,7 +94,7 @@ export const applyLook = (npc: Npc): void => {
   npc.attachments.showEmote(emote);
   if (stance?.kind === "typing") {
     // the sheet has no typing strip: walking in place, facing the screen, reads as typing
-    npc.sprite.play(npc.anims.walk.up, true);
+    npc.sprite.play(npc.anims.walk[stance.facing], true);
   } else if (stance) {
     standFacing(npc, stance.facing);
   }
