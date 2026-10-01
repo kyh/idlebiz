@@ -110,6 +110,14 @@ describe("reduceActivity", () => {
     };
     expect(reduceActivity(held, pulse).reload).toEqual(["company", "products", "bets"]);
     expect(reduceActivity(held, killed).reload).toEqual(["products", "bets", "tasks"]);
+    const named: ActivityEvent = {
+      ...stamp,
+      employeeId: "mae",
+      kind: "product.named",
+      message: "Ledgerly",
+      payload: { productId: "side" },
+    };
+    expect(reduceActivity(held, named).reload).toEqual(["products"]);
     const said: ActivityEvent = { ...stamp, ...inRun, kind: "message", message: "On it" };
     expect(reduceActivity(held, said).reload).toEqual([]);
   });

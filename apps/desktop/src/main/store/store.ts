@@ -1058,6 +1058,9 @@ export const nameProduct = (productId: string, named: ProductDraft): Product => 
   if (!draft.success) {
     throw new RefusalError(z.prettifyError(draft.error));
   }
+  if (draft.data.description === UNNAMED_PRODUCT_DESCRIPTION) {
+    throw new RefusalError("Describe what the product is, in a line of your own.");
+  }
   const product = patchProduct(productId, draft.data);
   // every agent's instructions list the products by name
   for (const e of listEmployees()) {

@@ -250,6 +250,7 @@ describe("products", () => {
     ["a name past 80 characters", { description: "x", name: "n".repeat(81) }],
     ["an empty description", { description: "", name: "Ledgerly" }],
     ["a description past 600 characters", { description: "d".repeat(601), name: "Ledgerly" }],
+    ["the unnamed placeholder", { description: UNNAMED_PRODUCT_DESCRIPTION, name: "Ledgerly" }],
   ])("refuses to name a product with %s", (_what, draft) => {
     found();
     const [first] = store.listProducts();
