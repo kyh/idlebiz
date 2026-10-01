@@ -7,7 +7,12 @@ import {
   ledgerOrder,
 } from "@/shared/bets";
 import type { Bet } from "@/shared/bets";
-import { INTEGRATION_LABELS, businessTypeById, isLead } from "@/shared/domain";
+import {
+  INTEGRATION_LABELS,
+  UNNAMED_PRODUCT_DESCRIPTION,
+  businessTypeById,
+  isLead,
+} from "@/shared/domain";
 import type {
   ActionReply,
   BlockedAsk,
@@ -172,6 +177,15 @@ interface AssignmentBrief {
   lines: string[];
 }
 
+/** With no pitch the lead picks what to build, and names the product still waiting on that pick. */
+const noPitch = (company: Company, products: readonly Product[]): string => {
+  const unnamed = products.find((p) => p.description === UNNAMED_PRODUCT_DESCRIPTION);
+  const naming = unnamed
+    ? `, give ${unnamed.name} (${unnamed.id}) its name and a one-line description of it with name_product`
+    : "";
+  return `The founder gave no pitch: what ${company.name} builds is your pick. Choose something its business type can sell with the tools here${naming}, say in the team room what the team will try and why, and keep it in the product's AGENTS.md. Bets whose number does not move get killed, so pick, bet small and move on.`;
+};
+
 const assignmentBrief = (
   assignment: Assignment,
   {
@@ -224,6 +238,7 @@ const assignmentBrief = (
         focus: product,
         lines: [
           `NOTHING IS FUNDED RIGHT NOW: the team only spends against bets, and no open bet can take another run: each is spent out, waiting on the founder, or has what is left covered by runs already going. Opening the next one is your job this run.`,
+          ...(company.mission === null ? [noPitch(company, products)] : []),
           widen ? newGround : `${where}.`,
           `Call open_bet with a falsifiable hypothesis, what it should bring in ("users" or "revenue") and how much of it, a budget cap in USD small enough to lose, and how many hours the number gets to answer. One teammate run costs about ${formatUsd(RUN_COST_ESTIMATE_USD)}; spending it out stops the work but does not start the clock — you do, with measure_bet, once the work is really live. Then delegate the first pieces of work to it with "bet":"<slug>".`,
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
@@ -292,7 +307,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
 
   const description = [
     `You are operating autonomously to grow ${company.name}.`,
-    `Mission: ${company.mission}`,
+    `Mission: ${company.mission ?? "none given — the team picks what to build"}`,
     `Business type: ${businessTypeById(company.businessType).label}.`,
     `Your role: ${employee.title}.`,
     `Your team: ${roster}.`,

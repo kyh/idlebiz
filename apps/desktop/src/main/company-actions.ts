@@ -14,6 +14,7 @@ import type {
   ActionAsk,
   ActionReply,
   Company,
+  Employee,
   Product,
   ProductDraft,
   Speaker,
@@ -70,6 +71,22 @@ export const startProduct = (input: ProductDraft, by: string | null): Product =>
     message: product.name,
     payload: { productId: product.id },
   });
+  return product;
+};
+
+/** The lead names a product once they know what it is, most often the first one of a company with no pitch. */
+export const nameProduct = (productId: string, named: ProductDraft, by: Employee): Product => {
+  const product = store.nameProduct(productId, named);
+  publishActivity({
+    employeeId: by.id,
+    kind: "product.named",
+    message: product.name,
+    payload: { productId: product.id },
+  });
+  postToRoom(
+    { kind: "office" },
+    `🏷 ${by.name} named the product: ${product.name} — ${product.description}`,
+  );
   return product;
 };
 

@@ -2677,6 +2677,62 @@ describe("read_orders", () => {
   });
 });
 
+describe("name_product", () => {
+  it("names the run's product for the lead, and tells the room and the feed", async () => {
+    const { ctx } = runAs("mae");
+    const [first] = store.listProducts();
+    const id = first?.id ?? "";
+    const heard: ActivityEvent[] = [];
+    const listen = (e: ActivityEvent): void => {
+      heard.push(e);
+    };
+    activityEvents.on("activity", listen);
+    let answer: string | null = null;
+    try {
+      answer = await callTool(
+        { ...ctx, run: { ...ctx.run, productId: id } },
+        "POST /v1/name-product",
+        { description: "Invoices that chase themselves.", name: "Ledgerly" },
+      );
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+    expect(answer).toBe(`${id} is now "Ledgerly": Invoices that chase themselves.`);
+    expect(store.getProduct(id)?.name).toBe("Ledgerly");
+    expect(store.recentTeamMessages().map(({ from, text }) => ({ from, text }))).toEqual([
+      {
+        from: { kind: "office" },
+        text: "🏷 Mae named the product: Ledgerly — Invoices that chase themselves.",
+      },
+    ]);
+    expect(heard.find((e) => e.kind === "product.named")).toMatchObject({
+      employeeId: "mae",
+      message: "Ledgerly",
+      payload: { productId: id },
+    });
+  });
+
+  it("names the product it is given, and answers a store refusal as the sentence to read", async () => {
+    const { ctx } = runAs("mae");
+    const gadget = store.createProduct({ description: "x", name: "Gadget" });
+    const draft = { description: "A thing.", name: "Widget" };
+    await callTool(ctx, "POST /v1/name-product", { ...draft, product: gadget.id });
+    expect(store.getProduct(gadget.id)?.name).toBe("Widget");
+    expect(await callTool(ctx, "POST /v1/name-product", { ...draft, product: "nope" })).toContain(
+      'No product "nope" here',
+    );
+  });
+
+  it("turns anyone but the lead away", async () => {
+    const { ctx } = runAs("priya");
+    const before = store.listProducts()[0]?.name;
+    expect(
+      await callTool(ctx, "POST /v1/name-product", { description: "x", name: "Mine" }),
+    ).toContain("Only the team lead names a product");
+    expect(store.listProducts()[0]?.name).toBe(before);
+  });
+});
+
 describe("kill_product", () => {
   it("retires the product and says which of its payment links Stripe switched off", async () => {
     writeFileSync(

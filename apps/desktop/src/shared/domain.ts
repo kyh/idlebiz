@@ -210,6 +210,9 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   },
 ];
 
+/** A blank pitch leaves what the company builds to the team. */
+export const missionFromPitch = (pitch: string): string | null => pitch.trim() || null;
+
 export const businessTypeById = (id: BusinessTypeId): BusinessType => {
   const found = BUSINESS_TYPES.find((b) => b.id === id);
   if (!found) {
@@ -231,7 +234,8 @@ export const isOutOfBudget = (co: Company): boolean =>
 export interface Company {
   id: string;
   name: string;
-  mission: string;
+  /** The founder's pitch; null when they left what to build to the team. */
+  mission: string | null;
   businessType: BusinessTypeId;
   /** What teammates share across products, and the working directory of work no product owns. */
   workspaceDir: string;
@@ -352,6 +356,10 @@ export const ProductDraftSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
 });
 export type ProductDraft = z.infer<typeof ProductDraftSchema>;
+
+/** What a company founded with no pitch says its first product is, until the lead names it. */
+export const UNNAMED_PRODUCT_DESCRIPTION =
+  "The first thing the team builds, unnamed until the lead picks what it is.";
 
 /** Why a bet or a product was given up on; it lands in BET.md and as a line in the room. */
 export const KillReasonSchema = z.string().trim().min(1).max(200);

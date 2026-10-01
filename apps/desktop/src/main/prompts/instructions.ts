@@ -4,7 +4,7 @@ import { toolDocs } from "@/shared/tool-specs";
 /** How each kind of business turns its work into a real dollar, with the tools the team has. */
 const BUSINESS_MODELS = {
   custom:
-    "Whatever the pitch is, it earns through the same tools as every business here: create_payment_link for anything sold once, sell_print for a printed item shipped to US buyers. Pick what fits the mission.",
+    "Whatever the business is, it earns through the same tools as every business here: create_payment_link for anything sold once, sell_print for a printed item shipped to US buyers. Pick what fits it.",
   ecommerce:
     "A shop that sells goods online, from a storefront deployed on Vercel. Physical goods are printed on demand: find a product and its variants with printful_catalog, deploy the design as a PNG at print size on the product's own domain, and list it with sell_print, which refuses a price that would lose money. Printful prints and ships each paid order itself, to US addresses only, so sell to US buyers. Nobody on the team holds stock, packs or ships, and no tool buys inventory or resells another supplier's goods. read_orders shows who bought what, so you can answer a buyer; refunds, and anything Printful needs a person for, are the founder's. Digital goods (templates, printables, presets) sell through create_payment_link: a download the storefront's server hands over once it has checked the purchase (see \"Checking who paid\"), or a delivery naming the file the founder sends each buyer.",
   "game-studio":
@@ -13,6 +13,9 @@ const BUSINESS_MODELS = {
     'A software company: a web app people use, deployed on Vercel. It earns by charging once through create_payment_link: for a lifetime paid tier the app unlocks once its server has checked the purchase (see "Checking who paid"), or for something the founder hands each buyer, such as a done-for-you setup, named in the link\'s delivery.',
   vc: "A venture firm that sells information, never investment. It earns from what it knows about startups: deal memos, startup teardowns and a paid deal-flow newsletter, each sold once through create_payment_link (one memo, a pack of them, a season of issues paid up front), downloaded from the site once its server has checked the purchase (see \"Checking who paid\") or sent by the founder as the link's delivery, and free teardowns on its site to bring readers in. It never offers, takes or promises money as an investment: no fund, no stake, no SAFE, no pooled money, no promised return, and no tip to a reader to buy or sell a particular security. Investing others' money and selling securities are regulated, and Stripe's terms forbid taking payment for them: one such charge can close the founder's Stripe account.",
 } satisfies Record<BusinessTypeId, string>;
+
+const NO_MISSION =
+  "The founder gave no pitch: what the company builds is the lead's pick, tried through bets that the numbers keep or kill. The team room and each product's AGENTS.md say what it is.";
 
 // Rendered into AGENTS.md by the store. The driver sends them to every new session, and again
 // to a resumed one whenever they changed.
@@ -33,7 +36,7 @@ You are ${e.name}, the ${e.title || e.role} at "${co.name}", a startup.
 ${e.persona}
 
 ## Company mission
-${co.mission}
+${co.mission ?? NO_MISSION}
 
 ## How ${co.name} makes money
 ${BUSINESS_MODELS[co.businessType]}

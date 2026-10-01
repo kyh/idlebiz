@@ -156,7 +156,7 @@ const CandidatesSchema = z.array(HireCandidateSchema).min(3).max(8);
 
 export const generateCandidates = async (input: {
   companyName: string;
-  mission: string;
+  mission: string | null;
   businessType: BusinessTypeId;
 }): Promise<HireCandidate[]> => {
   const prompt = foundingTeamPrompt(input.companyName, input.mission, input.businessType);

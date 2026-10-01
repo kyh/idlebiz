@@ -23,7 +23,12 @@ import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import type { Menu, MenuItem } from "@/renderer/ui/choice-menu";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { TypeCursor } from "@/renderer/ui/type-cursor";
-import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, businessTypeById } from "@/shared/domain";
+import {
+  BUSINESS_TYPES,
+  DEFAULT_FOUNDER_SEED,
+  businessTypeById,
+  missionFromPitch,
+} from "@/shared/domain";
 import type { Budget, BusinessTypeId } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import type { HireProposal } from "@/shared/hire";
@@ -113,11 +118,13 @@ const FAILED_ITEMS: readonly MenuItem[] = [
 ];
 const OPEN_FAILED_ITEMS: readonly MenuItem[] = [{ label: "Try again" }];
 
-const teamScript = (team: Team): readonly string[] => {
+const teamScript = (team: Team, pitched: boolean): readonly string[] => {
   switch (team.kind) {
     case "cast": {
       return [
-        "Boom. Founding team, cast for that exact pitch. I know people.",
+        pitched
+          ? "Boom. Founding team, cast for that exact pitch. I know people."
+          : "Boom. Founding team, cast to find the idea themselves. They'll tell you what they try first.",
         "From here the team lead hires and fires on their own. You steer with the budget.",
       ];
     }
@@ -139,6 +146,7 @@ const scriptFor = (
   founderName: string,
   companyName: string,
   team: Team,
+  pitched: boolean,
 ): readonly string[] => {
   const you = founderName || "founder";
   const co = companyName || "your company";
@@ -149,7 +157,7 @@ const scriptFor = (
     case "intro": {
       return [
         "Hey! Welcome to the world of IDLEBIZ!",
-        "Chad Runwayson. I write checks. That office down the street? I own the building — and tonight it's yours, every floor of it, if you've got a pitch.",
+        "Chad Runwayson. I write checks. That office down the street? I own the building — and tonight it's yours, every floor of it, if you've got the nerve.",
         "This world runs on employees. They live in your coding CLI — Claude Code or Codex — and they write real code, in a real folder, on your computer. Real usage, too.",
       ];
     }
@@ -172,11 +180,11 @@ const scriptFor = (
     }
     case "pitch": {
       return [
-        `Now the pitch. What will ${co} build? Be specific — your employees start on it tonight.`,
+        `Now the pitch. What will ${co} build? Got nothing? Leave it blank — the team picks something and tells you.`,
       ];
     }
     case "team": {
-      return teamScript(team);
+      return teamScript(team, pitched);
     }
     case "budget": {
       return [
@@ -430,7 +438,7 @@ const hintFor = (step: Step, look: number, looks: number, capUsd: number | null)
       return "Enter ↵";
     }
     case "pitch": {
-      return "Enter ↵ · Shift+Enter for a new line";
+      return "Enter ↵ · blank lets the team pick · Shift+Enter for a new line";
     }
     case "look": {
       return looks > 1 ? `${look + 1} / ${looks} · ← → to browse` : null;
@@ -561,7 +569,11 @@ export const Onboarding = () => {
   // a beat on "Connected ✓" before the founder's own step
   const { auth, login } = useAuthFlow(() => window.setTimeout(() => setStep("founder"), 700));
 
-  const script = useScript(`${step}:${team.kind}`, scriptFor(step, founderName, companyName, team));
+  const mission = missionFromPitch(pitch);
+  const script = useScript(
+    `${step}:${team.kind}`,
+    scriptFor(step, founderName, companyName, team, mission !== null),
+  );
 
   /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
   const castTeam = () => {
@@ -576,7 +588,7 @@ export const Onboarding = () => {
         const h = await bridge().generateHires({
           businessType: biz ?? "custom",
           companyName: companyName.trim(),
-          mission: pitch.trim(),
+          mission,
         });
         setTeam({ hires: h, kind: "cast" });
       } catch (error) {
@@ -600,7 +612,7 @@ export const Onboarding = () => {
         founderName: founderName.trim(),
         founderSpriteSeed: choices[look] ?? DEFAULT_FOUNDER_SEED,
         hires: team.hires,
-        mission: pitch.trim(),
+        mission,
         name: companyName.trim(),
       });
     } catch (error) {
@@ -734,9 +746,7 @@ export const Onboarding = () => {
         break;
       }
       case "pitch": {
-        if (pitch.trim()) {
-          castTeam();
-        }
+        castTeam();
         break;
       }
       // a menu answered above, or there is nothing to confirm yet

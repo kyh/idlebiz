@@ -98,7 +98,9 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         <div className="px-inset p-3 text-sm text-fg">
           <div className="text-xs uppercase tracking-wide text-fg-dim">Company</div>
           <div className="mt-1">{company.name}</div>
-          <div className="text-xs text-fg-dim">{company.mission}</div>
+          {company.mission === null ? null : (
+            <div className="text-xs text-fg-dim">{company.mission}</div>
+          )}
           <div className="mt-1 truncate text-xs text-fg-dim">{company.workspaceDir}</div>
         </div>
 
