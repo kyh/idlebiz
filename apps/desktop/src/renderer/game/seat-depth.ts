@@ -8,6 +8,7 @@
 // A chair that shows the camera its back is the exception: it stands between the sitter
 // and the camera, so there the sitter y-sorts behind it and draws higher up the screen.
 import { BUST } from "@/renderer/game/character-sheet";
+import type { Dir } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
 import { characterDepth } from "@/shared/office-depth";
 import type { PixelPoint } from "@/shared/office-layout-schema";
@@ -23,11 +24,13 @@ const SEAT_LIFT = 0.25;
  */
 export const BEHIND_CHAIR_RISE = 12;
 
-/** A workstation as the seat test sees it: where its occupant sits, and whether its
- *  chair's back faces the camera. */
+/** A workstation as the seat test sees it: where its occupant sits and which way they face. */
 export interface SeatSpot extends PixelPoint {
-  readonly behindChair: boolean;
+  readonly facing: Dir;
 }
+
+/** Whoever faces up, away from the camera, has their chair's back between them and it. */
+export const behindChair = (seat: SeatSpot): boolean => seat.facing === "up";
 
 /** A placed room image as the seat test sees it: its bounds, band and flips. */
 export interface RoomImage {
@@ -107,7 +110,7 @@ export const seatDepth = <T extends RoomImage>(
   maskOf: (image: T) => OpaqueMask | null,
 ): number => {
   let depth = characterDepth(seat.y);
-  if (seat.behindChair) {
+  if (behindChair(seat)) {
     return depth;
   }
   for (const image of room) {

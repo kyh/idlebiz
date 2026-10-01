@@ -14,67 +14,67 @@
   },
   "seats": [
     {
-      "behindChair": false,
+      "facing": "down",
       "role": "work",
       "x": 112,
       "y": 212
     },
     {
-      "behindChair": false,
+      "facing": "down",
       "role": "work",
       "x": 304,
       "y": 212
     },
     {
-      "behindChair": false,
+      "facing": "down",
       "role": "work",
       "x": 144,
       "y": 84
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 144,
       "y": 180
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 240,
       "y": 180
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 336,
       "y": 180
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 112,
       "y": 308
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 208,
       "y": 308
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 304,
       "y": 308
     },
     {
-      "behindChair": true,
+      "facing": "up",
       "role": "work",
       "x": 400,
       "y": 308
     },
     {
-      "behindChair": false,
+      "facing": "left",
       "role": "work",
       "x": 432,
       "y": 462

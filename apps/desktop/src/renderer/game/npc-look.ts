@@ -27,8 +27,11 @@ export type Phase = "queued" | "entering" | "settled" | "leaving";
 /** "!" when they wait on the founder, "…" while they think. */
 export type Emote = "alert" | "think";
 
-/** Standing still facing a way, or hands on the keyboard at their desk. */
-export type Stance = { readonly kind: "still"; readonly facing: Dir } | { readonly kind: "typing" };
+/** Standing still facing a way, or hands on the keyboard at their desk, facing its screen. */
+export interface Stance {
+  readonly kind: "still" | "typing";
+  readonly facing: Dir;
+}
 
 interface Look {
   readonly emote: Emote | null;
@@ -45,8 +48,8 @@ export interface Situation {
   readonly waiting: boolean;
   /** On their way somewhere. */
   readonly walking: boolean;
-  /** On their seat, as opposed to away from it or deskless. */
-  readonly atDesk: boolean;
+  /** Which way their screen is while they sit at it; null away from their seat or deskless. */
+  readonly desk: Dir | null;
 }
 
 const emoteOf = ({ activity, asking, waiting }: Situation): Emote | null => {
@@ -56,15 +59,15 @@ const emoteOf = ({ activity, asking, waiting }: Situation): Emote | null => {
   return activity.kind === "working" && activity.pose === "thinking" ? "think" : null;
 };
 
-const stanceOf = ({ activity, atDesk }: Situation): Stance => {
+const stanceOf = ({ activity, desk }: Situation): Stance => {
   if (activity.kind === "idle") {
     return { facing: "down", kind: "still" };
   }
-  if (atDesk && activity.kind === "working" && activity.pose === "typing") {
-    return { kind: "typing" };
+  if (desk && activity.kind === "working" && activity.pose === "typing") {
+    return { facing: desk, kind: "typing" };
   }
   // reading / thinking / blocked: still, facing the screen (or the room, deskless)
-  return { facing: atDesk ? "up" : "down", kind: "still" };
+  return { facing: desk ?? "down", kind: "still" };
 };
 
 export const lookOf = (situation: Situation): Look => {
