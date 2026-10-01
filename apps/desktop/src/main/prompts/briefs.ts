@@ -307,7 +307,7 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
 
   const description = [
     `You are operating autonomously to grow ${company.name}.`,
-    `Mission: ${company.mission ?? "none given — the team picks what to build"}`,
+    `Mission: ${company.mission ?? "none given — the lead picks what to build"}`,
     `Business type: ${businessTypeById(company.businessType).label}.`,
     `Your role: ${employee.title}.`,
     `Your team: ${roster}.`,

@@ -58,16 +58,17 @@ export const companyToDoc = (co: Company): FrontmatterDoc => {
   metadata.spentUsd = co.spentUsd;
   metadata.createdAt = co.createdAt;
   metadata.format = SAVE_FORMAT;
+  const mission = co.mission === "" ? null : co.mission;
   const fields: FrontmatterDoc["fields"] = {};
-  if (co.mission !== null) {
-    fields.description = co.mission;
+  if (mission !== null) {
+    fields.description = mission;
   }
   fields.kind = "company";
   fields.name = co.name;
   fields.schema = PACKAGE_SCHEMA;
   fields.slug = co.id;
   return {
-    body: co.mission === null ? `# ${co.name}\n` : `# ${co.name}\n\n${co.mission}\n`,
+    body: mission === null ? `# ${co.name}\n` : `# ${co.name}\n\n${mission}\n`,
     fields,
     metadata,
   };

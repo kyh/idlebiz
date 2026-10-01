@@ -33,14 +33,15 @@ describe("company codec", () => {
     },
   );
 
-  it("writes no description and no mission line for a company with no pitch", () => {
-    const text = written({ ...acme, mission: null });
+  it.each([null, ""])("writes no description and no mission line for mission %j", (mission) => {
+    const text = written({ ...acme, mission });
     expect(text).not.toContain("description:");
     expect(text.trimEnd().endsWith("# Acme")).toBe(true);
   });
 
   it("reads an empty description as no mission", () => {
-    const text = written(acme).replace('"A to-do app that plans itself."', '""');
-    expect(docToCompany(parseDoc(text)).mission).toBeNull();
+    const doc = companyToDoc(acme);
+    doc.fields.description = "";
+    expect(docToCompany(parseDoc(serializeDoc(doc))).mission).toBeNull();
   });
 });

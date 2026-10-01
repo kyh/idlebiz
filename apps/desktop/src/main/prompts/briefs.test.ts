@@ -187,7 +187,7 @@ describe("the brief that asks for the next bet", () => {
 
   it("leaves what to build to the lead when the founder gave no pitch", () => {
     const text = proposal(false, true, { ...company, mission: null });
-    expect(text).toContain("Mission: none given — the team picks what to build");
+    expect(text).toContain("Mission: none given — the lead picks what to build");
     expect(text).toContain("The founder gave no pitch: what Acme builds is your pick.");
     expect(text).not.toContain("name_product");
     expect(text).toContain("say in the team room what the team will try and why");
