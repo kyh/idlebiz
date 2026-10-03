@@ -284,7 +284,9 @@ rather than crashing boot.
   home it writes nothing that CLI loads or runs (claude's `~/.claude.json` included) and no
   other folder's claude `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
   `.mcp.json` or `.codex/`, nor `.agents` in its own folders, where codex finds skills.
-  It connects to no unix socket but its own folders' and its namespace's, to no loopback
+  It connects to no unix socket but its own folders', its namespace's and its own line to the
+  company (`IDLEBIZ_API_SOCKET`, a socket main opens per run: another run could read its token
+  from its env, never reach its socket), to no loopback
   debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
@@ -348,7 +350,7 @@ rather than crashing boot.
   (`walkGridOf` in `shared/office-grid.ts`).
 - **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
-  requests. On macOS it also runs the seal on canary files under a stand-in home
+  and socket requests. On macOS it also runs the seal on canary files under a stand-in home
   (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
@@ -420,7 +422,7 @@ rather than crashing boot.
   every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
   domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop; it alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is
-  in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
+  in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only that run's seal reaches, that the agents curl back into),
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship, `resources/skills`),
   `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:
@@ -453,7 +455,7 @@ rather than crashing boot.
   (walking as pure math).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
-  prices usage, and tracks rate limits. Source-only, no build step.
+  prices usage, and classes failures (auth, usage limit, overload, context, other). Source-only, no build step.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
   and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,

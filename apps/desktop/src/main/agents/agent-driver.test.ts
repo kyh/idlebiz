@@ -65,6 +65,7 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
+  apiSocket: [],
   claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
   debugPorts: [9222],
   namespaces: {
@@ -104,7 +105,18 @@ const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
 const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 
 const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
-const limited = { error: "You've hit your session limit", kind: "limited", resetsAt: 99 } as const;
+const limited = {
+  cause: "usage-limit",
+  error: "You've hit your session limit",
+  kind: "limited",
+  resetsAt: 99,
+} as const;
+const overloaded = {
+  cause: "overloaded",
+  error: "API Error: 529 Overloaded",
+  kind: "limited",
+  resetsAt: 0,
+} as const;
 
 describe("addUsage", () => {
   it("counts both attempts of a retried turn, dollars as already priced", () => {
@@ -260,6 +272,116 @@ describe("a limit a turn hit", () => {
     agentDriver.heed("codex", { ...limited, resetsAt: Date.now() - 1 });
     expect(agentDriver.restingRunner("codex")).toBeNull();
     expect(agentDriver.restingRunners()).not.toHaveProperty("codex");
+  });
+});
+
+describe("an overloaded provider", () => {
+  const minute = 60_000;
+  const driver = createAgentDriver(
+    () => Promise.resolve({ kind: "sealed" }),
+    () => Promise.resolve(SEAL),
+    () => SKILLS,
+    () => null,
+  );
+
+  /** How long the next overload rests codex, by the end heed hands back. */
+  const restAfterOverload = (): number => {
+    const before = Date.now();
+    const end = driver.heed("codex", overloaded);
+    const until = end.kind === "limited" ? end.resetsAt : 0;
+    expect(driver.restingRunner("codex")).toBe(until);
+    return Math.round((until - before) / minute);
+  };
+
+  it("rests the runner for a minute, doubling with each in a row up to a quarter hour", () => {
+    expect([1, 2, 3, 4, 5, 6].map(restAfterOverload)).toEqual([1, 2, 4, 8, 15, 15]);
+  });
+
+  it("starts at a minute again once a turn ends another way", () => {
+    const fresh = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => Promise.resolve(SEAL),
+      () => SKILLS,
+      () => null,
+    );
+    const rest = (): number => {
+      const before = Date.now();
+      const end = fresh.heed("claude", overloaded);
+      return Math.round(((end.kind === "limited" ? end.resetsAt : 0) - before) / minute);
+    };
+    expect(rest()).toBe(1);
+    expect(rest()).toBe(2);
+    const held = fresh.restingRunner("claude");
+    fresh.heed("claude", failed);
+    // the next asks a minute, so the 2m rest still holding stands
+    const end = fresh.heed("claude", overloaded);
+    expect(end.kind === "limited" ? end.resetsAt : 0).toBe(held);
+    // and the one after asks 2m, not the 8m a streak never broken would
+    expect(rest()).toBe(2);
+  });
+
+  it("never shortens a usage limit's rest, which a turn still in flight may end under", () => {
+    const fresh = createAgentDriver(
+      () => Promise.resolve({ kind: "sealed" }),
+      () => Promise.resolve(SEAL),
+      () => SKILLS,
+      () => null,
+    );
+    const lifts = Date.now() + 3 * 3_600_000;
+    fresh.heed("claude", { ...limited, resetsAt: lifts });
+    expect(fresh.heed("claude", overloaded)).toMatchObject({ resetsAt: lifts });
+    expect(outcomeOf(fresh.heed("claude", overloaded), null, false)).toMatchObject({
+      kind: "resting",
+      until: lifts,
+    });
+  });
+});
+
+/** A driver whose check holds, keeping its runners' rests in `rest`. */
+const driverOn = (rest: string | null) =>
+  createAgentDriver(
+    () => Promise.resolve({ kind: "sealed" }),
+    () => Promise.resolve(SEAL),
+    () => SKILLS,
+    () => rest,
+  );
+
+describe("a rest the last launch left", () => {
+  const box = mkdtempSync(path.join(tmpdir(), "idlebiz-rest-"));
+  const file = path.join(box, "state", "runner-rest.json");
+  afterAll(() => rmSync(box, { force: true, recursive: true }));
+
+  it("holds after a restart, so no parked task spawns once to be refused", async () => {
+    const lifts = Date.now() + 3_600_000;
+    driverOn(file).heed("claude", { ...limited, resetsAt: lifts });
+    expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ claude: lifts });
+
+    const restarted = driverOn(file);
+    restarted.init();
+    await restarted.sealRefusal();
+    expect(restarted.restingRunners()).toEqual({ claude: lifts });
+  });
+
+  it("drops a rest that lifted while the app was closed, and reads a missing or broken file as none", async () => {
+    writeFileSync(file, JSON.stringify({ claude: Date.now() - 1, codex: Date.now() + 60_000 }));
+    const restarted = driverOn(file);
+    restarted.init();
+    await restarted.sealRefusal();
+    expect(Object.keys(restarted.restingRunners())).toEqual(["codex"]);
+
+    writeFileSync(file, "{ not json");
+    const broken = driverOn(file);
+    broken.init();
+    expect(broken.restingRunners()).toEqual({});
+
+    const missing = driverOn(path.join(box, "missing", "runner-rest.json"));
+    missing.init();
+    expect(missing.restingRunners()).toEqual({});
+
+    const none = driverOn(null);
+    none.init();
+    expect(none.restingRunners()).toEqual({});
+    expect(none.heed("codex", { ...limited, resetsAt: Date.now() + 60_000 }).kind).toBe("limited");
   });
 });
 

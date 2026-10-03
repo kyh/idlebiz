@@ -250,8 +250,8 @@ third boundary.
     macOS's git; without Apple's command line tools the run goes on in a plain folder) and
     claude's `projects/` folder. A run writes no git config, so its commits are
     named by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
-  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders' and its
-    agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
+  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders', its line to
+    the company (`apiSocket`, below) and its agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
     folders, since a daemon keeps the seal and working directory of the run that started it and
     idles past it): no ssh, gpg or 1Password agent, container engine, app `SingletonSocket`
     (which hands the running app a URL), claude's or the codex app's sockets, the founder's own
@@ -263,6 +263,20 @@ third boundary.
     `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
     program runs but `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a
     `mach-lookup` deny of securityd, which holds against a copied binary too).
+  - _Who calls the company is the socket, not a secret._ Each run reaches its tools over its own
+    unix socket, an HTTP server main opens for that run alone (`controlPlane.registerRun`) at
+    `<save>/.run/<id>`, mode 0600 in a 0700 folder (`~/.idlebiz-run/<save digest>/` when that
+    path passes the 103 bytes macOS allows a socket; past both the run does not start,
+    `runSocketPath`). Runs are processes of the founder's own user, so any run can read another's
+    env (`ps -E`, or the `KERN_PROCARGS2` sysctl, which needs no setuid program, so keeping
+    `/bin/ps` would not close it), its bearer token included, and a token alone would let a
+    teammate call lead-only tools as the lead. So a run's seal lets it connect to its own socket
+    (`Seal.apiSocket`) and names no other run's, in folders no run writes (the save, HOME), and
+    each socket's server binds the run it was made for: a token presented on another run's socket
+    is refused. The bearer stays as a second check. The env carries `IDLEBIZ_API_SOCKET` and
+    `IDLEBIZ_RUN_TOKEN`, and the taught call is `curl --unix-socket "$IDLEBIZ_API_SOCKET"
+http://idlebiz/...` (`curlOf`), which the command policy reads as the company's API only with
+    that socket (`fetchesApi`). A socket closes as its run settles; boot sweeps what a crash left.
   - _Checked before use._ Boot runs `checkSeal`, no model call: under each runner's profile a
     canary must be unreadable, a file where no rule allows a write must not be made, and the
     runtime must start. Until it holds the scheduler starts nothing and autopilot files nothing; a
@@ -496,7 +510,15 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   reads only the login stored, says signed in: the sign-in runs its login for it anyway. With
   no CLI left the gate asks for that sign-in; with another still signed in the HUD names each
   signed-out runner someone works on and who waits on it, the lead's steering included, beside
-  a Sign in button.
+  a Sign in button. A failed turn is classed by what its adapter says before its prose
+  (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
+  category and actions): `auth` signs the runner out as above; `usage-limit` rests it until the
+  reset the provider reported (claude's `_claude/rateLimit` on usage updates; codex-acp keeps its
+  rate limits to itself, so its text) or else the time its text names; `overloaded` rests it 1m,
+  doubling with each overload in a row up to 15m (`overloadBackoffMs`) and starting over once a
+  turn ends any other way, since a busy provider clears in minutes; `context` spends the session.
+  A rest never shortens one holding, and is kept in `state/runner-rest.json`, so a restart does not
+  spawn each parked task once to be refused; it is not critical: lost, that is all it costs.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
   judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
@@ -647,5 +669,5 @@ Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip` �
 founds a company (office, #team, panels, key entry, sealing) skips without a signed-in CLI, never
 spends, not part of `verify` or CI (see `AGENTS.md`).
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
-real loopback requests and, on macOS, the seal and any installed CLI's gate; no Electron or
+real loopback and socket requests and, on macOS, the seal and any installed CLI's gate; no Electron or
 Phaser)

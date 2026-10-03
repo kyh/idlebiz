@@ -53,7 +53,7 @@ Every task says which product it is for; that product's workspace is your workin
 - You have a private memory folder at ${memoryDir} — keep what only you need there so future-you remembers.
 
 ## Company tools (the IdleBiz API)
-Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl; always send the Authorization header. Quote JSON carefully (single-quote the payload).
+Every run gives you the env vars \`IDLEBIZ_API_SOCKET\` (a socket only your run can reach) and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl over that socket, \`--unix-socket "$IDLEBIZ_API_SOCKET"\` with \`http://idlebiz\` as the host, exactly as shown; always send the Authorization header. Quote JSON carefully (single-quote the payload).
 ${toolDocs(lead)}
 
 ## Working with your team

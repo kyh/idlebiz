@@ -34,7 +34,12 @@ describe("deniesCommand", () => {
 
   it("matches a pattern's other characters literally", () => {
     expect(deniesCommand("Bash(curl -s.*)", MESSAGE_TEAM)).toBe(false);
-    expect(deniesCommand('Bash(curl -s -X POST "$IDLEBIZ_API_URL/v1/*)', MESSAGE_TEAM)).toBe(true);
+    expect(
+      deniesCommand(
+        'Bash(curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/*)',
+        MESSAGE_TEAM,
+      ),
+    ).toBe(true);
   });
 
   it("knows every tool's taught curl", () => {
