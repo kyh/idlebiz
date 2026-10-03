@@ -115,11 +115,44 @@ describe("how a turn ends", () => {
     const before = Date.now();
     const { end } = await turn(scriptedAgent(refusal));
     expect(end).toMatchObject({
+      cause: "usage-limit",
       error: "You've hit your limit · try again in 2 hours",
       kind: "limited",
     });
     const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
     expect(resetsAt).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
+  });
+
+  it("rests until the reset claude reported on its usage updates, over what its text names", async () => {
+    const lifts = Math.floor((Date.now() + 45 * 60_000) / 1000);
+    const rateLimit = { resetsAt: lifts, status: "rejected" };
+    const update = {
+      _meta: { "_claude/rateLimit": rateLimit },
+      sessionUpdate: "usage_update",
+      size: 200_000,
+      used: 10,
+    };
+    const { end } = await turn(
+      agentThat(`send({ method: "session/update", params: { sessionId: "s1", update: ${JSON.stringify(update)} } });
+send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: "You've hit your limit · try again in 2 hours" } });`),
+    );
+    expect(end).toMatchObject({ cause: "usage-limit", kind: "limited", resetsAt: lifts * 1000 });
+  });
+
+  it("rests only a short first backoff when claude says its provider is overloaded", async () => {
+    const refusal = JSON.stringify({
+      error: {
+        code: -32_603,
+        data: { errorKind: "overloaded" },
+        message: "API Error: 529 Overloaded",
+      },
+    });
+    const before = Date.now();
+    const { end } = await turn(scriptedAgent(refusal));
+    expect(end).toMatchObject({ cause: "overloaded", kind: "limited" });
+    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
+    expect(resetsAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(resetsAt).toBeLessThan(before + 5 * 60_000);
   });
 
   it("fails, never rests, when the watchdog ends it, though its text names a session limit", async () => {
@@ -188,7 +221,7 @@ describe("a turn the agent ended on a typed failure", () => {
     const title = "You've hit your usage limit. Try again in 2 hours.";
     const before = Date.now();
     const { end } = await turn(failingAgent(typedError("limit", [], title)));
-    expect(end).toMatchObject({ error: title, kind: "limited" });
+    expect(end).toMatchObject({ cause: "usage-limit", error: title, kind: "limited" });
     const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
     expect(resetsAt).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
 
@@ -196,13 +229,14 @@ describe("a turn the agent ended on a typed failure", () => {
     expect(rate.end.kind).toBe("limited");
   });
 
-  it("rests on an overloaded service, for a default park when it names no time", async () => {
+  it("rests on an overloaded service for a short first backoff, not a usage limit's park", async () => {
     const title = "Selected model is at capacity. Please try a different model.";
     const before = Date.now();
     const { end } = await turn(failingAgent(typedError("service", ["retry"], title)));
-    expect(end).toMatchObject({ error: title, kind: "limited" });
+    expect(end).toMatchObject({ cause: "overloaded", error: title, kind: "limited" });
     const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
-    expect(resetsAt).toBeGreaterThanOrEqual(before + 30 * 60_000);
+    expect(resetsAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(resetsAt).toBeLessThan(before + 5 * 60_000);
   });
 
   it("fails, never rests, on a service fault typed exactly as an overload but not one", async () => {

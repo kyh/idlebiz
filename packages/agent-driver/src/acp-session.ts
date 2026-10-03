@@ -11,7 +11,14 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import { zeroUsage } from "./events";
-import { liftsAt, limitOf, readsAsLimit } from "./rate-limit";
+import {
+  OVERLOAD_BACKOFF_MS,
+  classOfRequestError,
+  classOfTypedFailure,
+  liftsAt,
+  rateLimitResetIn,
+} from "./rate-limit";
+import type { FailureClass } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
@@ -40,27 +47,6 @@ const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
 const ToolCallDescription = z.object({ description: z.string().optional() });
-
-/** What ACP answers when a sign-in is needed, as the SDK numbers it. */
-const AUTH_REQUIRED = RequestError.authRequired().code;
-
-/** claude's `errorKind` values for a login or account its provider refused, which no retry clears. */
-const LOGIN_REFUSED_KINDS = new Set([
-  "account_on_hold",
-  "authentication_failed",
-  "cloud_credential_error",
-  "oauth_org_not_allowed",
-  "verification_required",
-]);
-
-const ErrorKind = z.object({ errorKind: z.string() });
-
-const signsOut = (error: RequestError): boolean => {
-  const data = ErrorKind.safeParse(error.data);
-  return (
-    error.code === AUTH_REQUIRED || (data.success && LOGIN_REFUSED_KINDS.has(data.data.errorKind))
-  );
-};
 
 /** How a client declares codex-acp's typed session failures (the JetBrains AIR extension). */
 const TYPED_FAILURES: ClientCapabilities = {
@@ -185,7 +171,13 @@ export interface AcpTurnOptions {
  */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
-  | { readonly kind: "limited"; readonly resetsAt: number; readonly error: string }
+  | {
+      readonly kind: "limited";
+      /** A usage limit lifts at `resetsAt`; an overload's is its first backoff, which the caller may lengthen. */
+      readonly cause: "usage-limit" | "overloaded";
+      readonly resetsAt: number;
+      readonly error: string;
+    }
   /** No turn on this runner can go on until the founder signs it in again. */
   | { readonly kind: "signedOut"; readonly error: string }
   | {
@@ -229,29 +221,54 @@ const titleLine = (title: string): string => {
 };
 
 /**
- * How a turn ends on the typed failure its agent reported, or null when it reported none. A
- * warning is one the turn got past. A limit rests the runner, unless only a new session can go
- * on. A service fault rests it only when its text tells of an overload: codex-acp types an
- * overload exactly as its catch-all for every error it cannot place, which it did not retry, and
- * resting on one of those would retry a deterministic fault forever. Failing is bounded by attempts.
+ * How a turn ends on a failure of class `failure`: a refused login signs its runner out, a usage
+ * limit rests it until the reset the provider `reported` or the `error` names, an overload rests it
+ * for a first short backoff, a session out of room is spent, and anything else fails the task,
+ * which is bounded by attempts.
  */
-const failureEnd = (meta: PromptResponse["_meta"]): AcpTurnEnd | null => {
+const endOf = (failure: FailureClass, error: string, reported: number | null): AcpTurnEnd => {
+  switch (failure) {
+    case "auth": {
+      return { error, kind: "signedOut" };
+    }
+    case "usage-limit": {
+      return {
+        cause: "usage-limit",
+        error,
+        kind: "limited",
+        resetsAt: liftsAt(error, new Date(), reported),
+      };
+    }
+    case "overloaded": {
+      return {
+        cause: "overloaded",
+        error,
+        kind: "limited",
+        resetsAt: Date.now() + OVERLOAD_BACKOFF_MS,
+      };
+    }
+    case "context": {
+      return { error, kind: "failed", sessionSpent: true };
+    }
+    case "other": {
+      return { error, kind: "failed" };
+    }
+    // no default
+  }
+};
+
+/**
+ * How a turn ends on the typed failure its agent reported, or null when it reported none. A
+ * warning is one the turn got past.
+ */
+const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): AcpTurnEnd | null => {
   const parsed = SessionFailureMeta.safeParse(meta);
   if (!parsed.success || parsed.data.jetbrains.air.sessionFailure.severity !== "error") {
     return null;
   }
   const { actions, category, details, title } = parsed.data.jetbrains.air.sessionFailure;
   const error = details === undefined ? title : `${title}\n${details}`;
-  if (category === "access" && actions.includes("login")) {
-    return { error, kind: "signedOut" };
-  }
-  if (category === "limit" && actions.includes("new_session")) {
-    return { error, kind: "failed", sessionSpent: true };
-  }
-  if (category === "limit" || (category === "service" && readsAsLimit(error))) {
-    return { error, kind: "limited", resetsAt: liftsAt(error) };
-  }
-  return { error, kind: "failed" };
+  return endOf(classOfTypedFailure({ actions, category, text: error }), error, reported);
 };
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
@@ -331,6 +348,8 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     // per request, their sum; for any other agent `used` is its context size, so the largest
     let reportedTokens = 0;
     let lastRequestTokens: number | undefined;
+    // when the provider said its rate limit lifts, while it refuses requests (claude's usage updates)
+    let reportedReset: number | null = null;
 
     // ACP has no message-end marker. Flush prose before a tool call or at turn end.
     const flushMessage = (): void => {
@@ -508,6 +527,12 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
           return;
         }
+        if (update.sessionUpdate === "usage_update") {
+          const reset = rateLimitResetIn(update._meta);
+          if (reset !== undefined) {
+            reportedReset = reset;
+          }
+        }
         if (update.sessionUpdate === "usage_update" && prompted) {
           if (!opts.agent.usagePerRequest) {
             reportedTokens = Math.max(reportedTokens, update.used);
@@ -602,7 +627,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             outputTokens: scaled(u.outputTokens ?? 0),
           };
         }
-        return { failure: failureEnd(res._meta), stopReason: res.stopReason };
+        return { failure: failureEnd(res._meta, reportedReset), stopReason: res.stopReason };
       });
       // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr
       if (failure?.kind === "failed") {
@@ -628,16 +653,8 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         await turn();
       } catch (error) {
         if (error instanceof RequestError) {
-          if (signsOut(error)) {
-            settle(result({ error: error.message, kind: "signedOut" }));
-            return;
-          }
-          const limit = limitOf(error);
-          settle(
-            limit
-              ? result({ error: error.message, kind: "limited", resetsAt: limit.resetsAt })
-              : failed(error.message),
-          );
+          // only the agent's own rejection is read: a watchdog's or a crash's text never is
+          settle(result(endOf(classOfRequestError(error), error.message, reportedReset)));
           return;
         }
         // Anything else is the connection dropping, and a dying agent drops it before its exit

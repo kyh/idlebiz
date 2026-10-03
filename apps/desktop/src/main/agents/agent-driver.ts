@@ -17,6 +17,7 @@ import type {
   PermissionRequest,
 } from "@repo/agent-driver/acp-session";
 import { addUsage } from "@repo/agent-driver/events";
+import { overloadBackoffMs } from "@repo/agent-driver/rate-limit";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -58,7 +59,8 @@ import type {
   RunSession,
 } from "@/shared/domain";
 import * as store from "@/main/store/store";
-import { TOOL_CACHE_DIR, employeeMemoryDir } from "@/main/paths";
+import { TOOL_CACHE_DIR, employeeMemoryDir, runnerRestFile } from "@/main/paths";
+import { atomicWrite, readJsonFile } from "@/main/lib/fs";
 import { holdFor } from "@/shared/command-policy";
 import type { Confinement, LivePage } from "@/shared/command-policy";
 import { RefusalError } from "@/shared/refusal";
@@ -155,6 +157,12 @@ const acpAgentInstalled = (runner: AgentRunner): boolean => {
 const execFileAsync = promisify(execFile);
 
 const CodexMcpServers = z.array(z.object({ name: z.string() }));
+
+/** The rests a launch keeps for the next: epoch ms per runner. */
+const RestingRunnersSchema = z.object({
+  claude: z.number().optional(),
+  codex: z.number().optional(),
+});
 
 const ExecFailure = z.object({ stderr: z.string() });
 
@@ -543,6 +551,8 @@ class AgentDriver {
   private sealed: SealState | null = null;
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<AgentRunner, number>();
+  // runner -> overloads in a row, each resting it twice as long as the one before
+  private readonly overloads = new Map<AgentRunner, number>();
   // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
   // the stored login, which a revoked token still is
   private readonly refusedLogins = new Set<AgentRunner>();
@@ -552,21 +562,54 @@ class AgentDriver {
     apiSocket: string | null,
   ) => Promise<Seal>;
   private readonly skills: () => string;
+  private readonly restFile: () => string | null;
 
   constructor(
     checkSeal: () => Promise<SealState>,
     resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>,
     skills: () => string,
+    restFile: () => string | null,
   ) {
     this.checkSeal = checkSeal;
     this.resolveSeal = resolveSeal;
     this.skills = skills;
+    this.restFile = restFile;
   }
 
-  /** Runs wait on the seal's check, and never start unsealed. */
+  /** Runs wait on the seal's check, and never start unsealed; a rest the last launch saw still holds. */
   init(): void {
+    this.loadRest();
     this.sealing = this.settleSeal();
     this.probing = this.probe();
+  }
+
+  /** The rests the last launch left, those not yet lifted. */
+  private loadRest(): void {
+    const file = this.restFile();
+    const saved = file === null ? null : readJsonFile(file, RestingRunnersSchema);
+    for (const runner of RUNNER_IDS) {
+      const until = saved?.[runner];
+      if (until !== undefined && until > Date.now()) {
+        this.restingUntil.set(runner, until);
+      }
+    }
+  }
+
+  /**
+   * Keeps the rests for the next launch. Not critical state: lost, each task waiting on a resting
+   * runner spawns once more after a restart, to be refused and parked again, so a write that fails
+   * is reported and the run goes on.
+   */
+  private saveRest(): void {
+    const file = this.restFile();
+    if (file === null) {
+      return;
+    }
+    try {
+      atomicWrite(file, JSON.stringify(this.restingRunners(), null, 2));
+    } catch (error) {
+      report("runner rest", error);
+    }
   }
 
   /** A refusal is written to main's log as well as told to the founder. */
@@ -709,16 +752,27 @@ class AgentDriver {
   }
 
   /**
-   * What a turn's end says of its runner, whatever else the run says: a limit rests it, and a
-   * refused login reads as signed out until the founder signs it in again.
+   * What a turn's end says of its runner, whatever else the run says, and the end as the runner
+   * now stands: a usage limit rests it until it lifts, an overload for a backoff that doubles with
+   * each one in a row (1m, 2m, 4m… up to 15m) and starts over once a turn ends any other way, and a
+   * refused login reads as signed out until the founder signs it in again. A rest never shortens
+   * one already holding, which a turn still in flight may end under.
    */
-  heed(runner: AgentRunner, end: AcpTurnEnd): void {
-    if (end.kind === "limited") {
-      this.restingUntil.set(runner, end.resetsAt);
-    }
+  heed(runner: AgentRunner, end: AcpTurnEnd): AcpTurnEnd {
+    const overloaded = end.kind === "limited" && end.cause === "overloaded";
+    const streak = overloaded ? (this.overloads.get(runner) ?? 0) + 1 : 0;
+    this.overloads.set(runner, streak);
     if (end.kind === "signedOut") {
       this.refusedLogins.add(runner);
     }
+    if (end.kind !== "limited") {
+      return end;
+    }
+    const asked = overloaded ? Date.now() + overloadBackoffMs(streak) : end.resetsAt;
+    const resetsAt = Math.max(asked, this.restingRunner(runner) ?? 0);
+    this.restingUntil.set(runner, resetsAt);
+    this.saveRest();
+    return { ...end, resetsAt };
   }
 
   /** One turn with no tools, files or memory: its final message, or a throw with why it ended short. */
@@ -736,9 +790,9 @@ class AgentDriver {
       prompt,
       systemPrompt: "",
     });
-    this.heed(runner, res.end);
-    if (res.end.kind !== "completed") {
-      throw new Error(res.end.error);
+    const end = this.heed(runner, res.end);
+    if (end.kind !== "completed") {
+      throw new Error(end.error);
     }
     return res.summary;
   }
@@ -873,8 +927,8 @@ class AgentDriver {
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // an ask raised before the limit hit or the login was refused must not hide it
-      this.heed(emp.runner, res.end);
-      const outcome = outcomeOf(res.end, tools.asks.current(), signal.aborted);
+      const end = this.heed(emp.runner, res.end);
+      const outcome = outcomeOf(end, tools.asks.current(), signal.aborted);
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();
@@ -882,10 +936,17 @@ class AgentDriver {
   }
 }
 
+/** Where the active company keeps its runners' rests; null before one is founded. */
+const activeRestFile = (): string | null => {
+  const company = store.getCompany();
+  return company === null ? null : runnerRestFile(company.id);
+};
+
 /**
  * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
- * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names:
- * tests script all three, the app checks and resolves this machine's and the bundled skills.
+ * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names, and
+ * keeping its runners' rests in `restFile`: tests script them, the app checks and resolves this
+ * machine's, the bundled skills and the active company's state.
  */
 export const createAgentDriver = (
   checkSeal: () => Promise<SealState> = sealRuns,
@@ -894,6 +955,7 @@ export const createAgentDriver = (
     apiSocket: string | null,
   ) => Promise<Seal> = machineSeal,
   skills: () => string = bundledSkillsDir,
-): AgentDriver => new AgentDriver(checkSeal, resolveSeal, skills);
+  restFile: () => string | null = activeRestFile,
+): AgentDriver => new AgentDriver(checkSeal, resolveSeal, skills, restFile);
 
 export const agentDriver = createAgentDriver();

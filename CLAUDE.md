@@ -510,7 +510,15 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   reads only the login stored, says signed in: the sign-in runs its login for it anyway. With
   no CLI left the gate asks for that sign-in; with another still signed in the HUD names each
   signed-out runner someone works on and who waits on it, the lead's steering included, beside
-  a Sign in button.
+  a Sign in button. A failed turn is classed by what its adapter says before its prose
+  (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
+  category and actions): `auth` signs the runner out as above; `usage-limit` rests it until the
+  reset the provider reported (claude's `_claude/rateLimit` on usage updates; codex-acp keeps its
+  rate limits to itself, so its text) or else the time its text names; `overloaded` rests it 1m,
+  doubling with each overload in a row up to 15m (`overloadBackoffMs`) and starting over once a
+  turn ends any other way, since a busy provider clears in minutes; `context` spends the session.
+  A rest never shortens one holding, and is kept in `state/runner-rest.json`, so a restart does not
+  spawn each parked task once to be refused; it is not critical: lost, that is all it costs.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
   judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
