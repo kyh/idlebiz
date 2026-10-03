@@ -3,12 +3,14 @@ import { siteConfig } from "@/lib/site-config";
 import {
   gettingStarted,
   homeIntro,
+  isPlainRun,
   siteLinks,
   siteSummary,
   whenToUse,
 } from "@/lib/agent/site-content";
-import type { LinkItem, ProseBlock, ProsePage } from "@/lib/agent/site-content";
+import type { LinkItem, ProseBlock, ProsePage, Run } from "@/lib/agent/site-content";
 
+/** A page of this site gets its full URL; an in-page anchor, mail and other sites stay as written. */
 const absoluteUrl = (href: string): string =>
   href.startsWith("/") ? `${siteConfig.url}${href}` : href;
 
@@ -20,14 +22,51 @@ const renderList = (items: LinkItem[]): string =>
     })
     .join("\n");
 
+const renderRun = (run: Run): string => {
+  if (isPlainRun(run)) {
+    return run;
+  }
+  if (run.kind === "strong") {
+    return `**${run.text}**`;
+  }
+  return `[${run.text}](${absoluteUrl(run.href)})`;
+};
+
+const renderRuns = (runs: Run[]): string => runs.map((run) => renderRun(run)).join("");
+
+/** One GFM table row; a pipe inside a cell is escaped so it cannot split the cell. */
+const tableRow = (cells: string[]): string =>
+  `| ${cells.map((cell) => cell.replaceAll("|", String.raw`\|`)).join(" | ")} |`;
+
 const renderBlock = (block: ProseBlock): string => {
-  if (block.kind === "heading") {
-    return `## ${block.text}`;
+  switch (block.kind) {
+    case "heading": {
+      return `## ${block.text}`;
+    }
+    case "subheading": {
+      return `### ${block.text}`;
+    }
+    case "list": {
+      return renderList(block.items);
+    }
+    case "bullets": {
+      return block.items.map((item) => `- ${renderRuns(item)}`).join("\n");
+    }
+    case "table": {
+      return [
+        tableRow(block.columns),
+        tableRow(block.columns.map(() => "---")),
+        ...block.rows.map((row) => tableRow(row)),
+      ].join("\n");
+    }
+    case "rule": {
+      return "---";
+    }
+    case "paragraph": {
+      return renderRuns(block.runs);
+    }
+    // no default
   }
-  if (block.kind === "list") {
-    return renderList(block.items);
-  }
-  return block.text;
 };
 
 const document = (lines: string[]): string => `${lines.join("\n").trimEnd()}\n`;
