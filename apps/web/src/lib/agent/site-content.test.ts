@@ -30,6 +30,11 @@ const runsOf = (block: ProseBlock): Run[] => {
   if (block.kind === "bullets") {
     return block.items.flat();
   }
+  if (block.kind === "list") {
+    return block.items.flatMap(({ href, label }): Run[] =>
+      href ? [{ href, kind: "link", text: label }] : [],
+    );
+  }
   return [];
 };
 

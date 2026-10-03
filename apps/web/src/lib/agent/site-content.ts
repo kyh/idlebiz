@@ -283,7 +283,7 @@ const privacySections: Section[] = [
     ),
     p(
       strong("Information the desktop app keeps on your Mac."),
-      " The desktop app runs on your Mac and sends nothing about you or your company to us beyond the Stripe Connect exchange described above. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter, and the Stripe Connect token, are stored in ~/.idlebiz encrypted with the macOS Keychain, and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. We do not receive any of this information; the services the app sends it to at your direction are described in ",
+      " The desktop app runs on your Mac and sends nothing about you or your company to us beyond the Stripe Connect exchange described above. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter, and the Stripe Connect token, are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. We do not receive any of this information; the services the app sends it to at your direction are described in ",
       link(SHARE, anchor(SHARE)),
       ".",
     ),
@@ -1050,9 +1050,9 @@ const termsSections: Section[] = [
     p(
       "3.2 ",
       strong("Cookies and Tracking Technologies."),
-      ' The Site may use cookies, web beacons, pixels, and similar tracking technologies ("',
+      ' The Site does not use cookies, web beacons, pixels, or similar tracking technologies ("',
       strong("Tracking Technologies"),
-      '") to collect information about your use of the Site. For details on what Tracking Technologies the Site uses, what information they collect, and how you can manage your preferences, please refer to the ',
+      '") to collect information about your use of the Site. For details on what the Site and the desktop app store and collect, and how you can manage it, please refer to the ',
       link(`${TRACKING} section of our Privacy Policy`, `/privacy${anchor(TRACKING)}`),
       ".",
     ),

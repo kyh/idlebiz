@@ -20,8 +20,14 @@ describe("ProsePageView", () => {
   });
 
   it("renders a table with a header cell for each column", () => {
-    expect(privacy).toContain("<table");
-    expect(privacy).toContain('<th scope="col"');
+    const columns = privacyPage.blocks.flatMap((block) =>
+      block.kind === "table" ? [block.columns.length] : [],
+    );
+    expect(columns.length).toBeGreaterThan(0);
+    expect(privacy.match(/<table/gu)).toHaveLength(columns.length);
+    expect(privacy.match(/<th scope="col"/gu)).toHaveLength(
+      columns.reduce((sum, count) => sum + count, 0),
+    );
     expect(privacy).toContain("<td");
   });
 
