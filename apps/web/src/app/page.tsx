@@ -3,7 +3,7 @@ import Link from "next/link";
 import { z } from "zod";
 
 import { siteConfig } from "@/lib/site-config";
-import { homeIntro, prosePages, whenToUse } from "@/lib/agent/site-content";
+import { homeIntro, servedPages, whenToUse } from "@/lib/agent/site-content";
 import { homeGraph } from "@/lib/agent/structured-data";
 import { pageMetadata } from "@/lib/page-metadata";
 import { OfficeLife } from "@/app/office-life";
@@ -137,7 +137,7 @@ const Page = async () => {
           GitHub
         </a>
         <nav aria-label="Site" className="sr-only">
-          {prosePages.map((page) => (
+          {servedPages.map((page) => (
             <Link key={page.path} href={page.path} prefetch={false} tabIndex={-1}>
               {page.title}
             </Link>
