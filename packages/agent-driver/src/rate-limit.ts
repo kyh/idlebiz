@@ -152,7 +152,11 @@ export const rateLimitResetIn = (meta: unknown): number | null | undefined => {
     return undefined;
   }
   const { resetsAt, status } = parsed.data["_claude/rateLimit"];
-  return status === "rejected" && resetsAt !== undefined ? epochMs(resetsAt) : null;
+  if (status !== "rejected") {
+    return null;
+  }
+  // still refusing with no reset named: say nothing, so a reset an earlier update named stands
+  return resetsAt === undefined ? undefined : epochMs(resetsAt);
 };
 
 /** Wall-clock minutes in an IANA zone; null for an unknown zone. */

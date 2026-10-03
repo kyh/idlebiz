@@ -108,6 +108,30 @@ describe("run-scoped control-plane requests", () => {
     },
   );
 
+  it("refuses a request still reading its body when the plane stops", async () => {
+    const calls: string[] = [];
+    const handle = await controlPlane.registerRun((route) => {
+      calls.push(route);
+      return Promise.resolve("created");
+    });
+    try {
+      const { status } = await call(
+        handle.socket,
+        "/v1/create-product",
+        handle.env.IDLEBIZ_RUN_TOKEN,
+        JSON.stringify({ description: "Ships widgets", name: "Widget" }),
+        () => {
+          controlPlane.stop();
+        },
+      );
+      expect(status).toBe(401);
+      expect(calls).toEqual([]);
+    } finally {
+      handle.release();
+      await controlPlane.start();
+    }
+  });
+
   it("serves an answer a tool gives only once its work is done", async () => {
     const { promise: called, resolve: arrive } = Promise.withResolvers<string>();
     const { promise: deployed, resolve: finish } = Promise.withResolvers<string>();

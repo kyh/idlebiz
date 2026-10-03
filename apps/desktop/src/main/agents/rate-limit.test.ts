@@ -110,11 +110,12 @@ describe("rateLimitResetIn", () => {
     );
   });
 
-  it("is null once it allows requests, and says nothing of an update without one", () => {
+  it("is null once it allows requests, and says nothing of an update naming no reset", () => {
     expect(
       rateLimitResetIn({ "_claude/rateLimit": { resetsAt: 1, status: "allowed_warning" } }),
     ).toBeNull();
-    expect(rateLimitResetIn({ "_claude/rateLimit": { status: "rejected" } })).toBeNull();
+    // still refused with no reset named: a reset an earlier update named must stand
+    expect(rateLimitResetIn({ "_claude/rateLimit": { status: "rejected" } })).toBeUndefined();
     expect(rateLimitResetIn(null)).toBeUndefined();
     expect(rateLimitResetIn({ other: true })).toBeUndefined();
   });

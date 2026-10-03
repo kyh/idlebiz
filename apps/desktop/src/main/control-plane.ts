@@ -164,7 +164,7 @@ export class ControlPlane {
   private readonly root: string;
   private readonly home: string;
   /** Every live run's server, by its socket. */
-  private readonly servers = new Map<string, Server>();
+  private readonly servers = new Map<string, { run: Run; server: Server }>();
 
   constructor(root: string = ROOT_DIR, home: string = homedir()) {
     this.root = root;
@@ -182,7 +182,9 @@ export class ControlPlane {
   }
 
   stop(): void {
-    for (const [socket, server] of this.servers) {
+    for (const [socket, { run, server }] of this.servers) {
+      // a request already reading its body must find no caller once the plane is down
+      run.caller = null;
       this.close(socket, server);
     }
     this.started = false;
@@ -203,7 +205,7 @@ export class ControlPlane {
     await listen(server, socket);
     // the folder is the founder's alone, so nobody connects before this narrows the socket
     await chmod(socket, 0o600);
-    this.servers.set(socket, server);
+    this.servers.set(socket, { run, server });
     return {
       env: { IDLEBIZ_API_SOCKET: socket, IDLEBIZ_RUN_TOKEN: token },
       release: () => {

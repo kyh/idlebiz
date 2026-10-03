@@ -455,7 +455,7 @@ rather than crashing boot.
   (walking as pure math).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
-  prices usage, and classes failures (auth, usage limit, overload, context) to rest a runner by. Source-only, no build step.
+  prices usage, and classes failures (auth, usage limit, overload, context, other). Source-only, no build step.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
   and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,

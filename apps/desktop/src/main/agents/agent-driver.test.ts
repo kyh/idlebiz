@@ -374,6 +374,10 @@ describe("a rest the last launch left", () => {
     broken.init();
     expect(broken.restingRunners()).toEqual({});
 
+    const missing = driverOn(path.join(box, "missing", "runner-rest.json"));
+    missing.init();
+    expect(missing.restingRunners()).toEqual({});
+
     const none = driverOn(null);
     none.init();
     expect(none.restingRunners()).toEqual({});
