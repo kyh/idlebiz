@@ -358,7 +358,8 @@ const HEADERS = `-H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`;
 /** A tool as an employee is taught to call it. */
 export const curlOf = (name: ToolName): string => {
   const { method, path, example } = TOOL_SPECS[name];
-  const url = `"$IDLEBIZ_API_URL${path}"`;
+  // the run's own socket says who calls; the host names nothing curl resolves
+  const url = `--unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz${path}`;
   return method === "GET"
     ? `curl -s ${url} ${HEADERS}`
     : `curl -s -X POST ${url} ${HEADERS} -H "content-type: application/json" -d '${JSON.stringify(example)}'`;

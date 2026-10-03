@@ -250,8 +250,8 @@ third boundary.
     macOS's git; without Apple's command line tools the run goes on in a plain folder) and
     claude's `projects/` folder. A run writes no git config, so its commits are
     named by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
-  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders' and its
-    agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
+  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders', its line to
+    the company (`apiSocket`, below) and its agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
     folders, since a daemon keeps the seal and working directory of the run that started it and
     idles past it): no ssh, gpg or 1Password agent, container engine, app `SingletonSocket`
     (which hands the running app a URL), claude's or the codex app's sockets, the founder's own
@@ -263,6 +263,20 @@ third boundary.
     `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
     program runs but `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a
     `mach-lookup` deny of securityd, which holds against a copied binary too).
+  - _Who calls the company is the socket, not a secret._ Each run reaches its tools over its own
+    unix socket, an HTTP server main opens for that run alone (`controlPlane.registerRun`) at
+    `<save>/.run/<id>`, mode 0600 in a 0700 folder (`~/.idlebiz-run/<save digest>/` when that
+    path passes the 103 bytes macOS allows a socket; past both the run does not start,
+    `runSocketPath`). Runs are processes of the founder's own user, so any run can read another's
+    env (`ps -E`, or the `KERN_PROCARGS2` sysctl, which needs no setuid program, so keeping
+    `/bin/ps` would not close it), its bearer token included, and a token alone would let a
+    teammate call lead-only tools as the lead. So a run's seal lets it connect to its own socket
+    (`Seal.apiSocket`) and names no other run's, in folders no run writes (the save, HOME), and
+    each socket's server binds the run it was made for: a token presented on another run's socket
+    is refused. The bearer stays as a second check. The env carries `IDLEBIZ_API_SOCKET` and
+    `IDLEBIZ_RUN_TOKEN`, and the taught call is `curl --unix-socket "$IDLEBIZ_API_SOCKET"
+http://idlebiz/...` (`curlOf`), which the command policy reads as the company's API only with
+    that socket (`fetchesApi`). A socket closes as its run settles; boot sweeps what a crash left.
   - _Checked before use._ Boot runs `checkSeal`, no model call: under each runner's profile a
     canary must be unreadable, a file where no rule allows a write must not be made, and the
     runtime must start. Until it holds the scheduler starts nothing and autopilot files nothing; a
@@ -647,5 +661,5 @@ Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip` �
 founds a company (office, #team, panels, key entry, sealing) skips without a signed-in CLI, never
 spends, not part of `verify` or CI (see `AGENTS.md`).
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
-real loopback requests and, on macOS, the seal and any installed CLI's gate; no Electron or
+real loopback and socket requests and, on macOS, the seal and any installed CLI's gate; no Electron or
 Phaser)

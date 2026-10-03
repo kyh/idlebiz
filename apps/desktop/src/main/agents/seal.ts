@@ -269,6 +269,12 @@ export interface Seal {
   /** Sockets in a folder a run writes, of what acts as the founder: no run moves or replaces one. */
   sockets: readonly Reach[];
   /**
+   * The run's own line to the company, a socket main listens on in a folder no run writes (the
+   * save's or HOME's): this run connects to it, and no other run's seal names it, so no run calls
+   * as another (main/control-plane.ts). Empty for a seal of no run, a probe's or a sign-in's.
+   */
+  apiSocket: readonly Reach[];
+  /**
    * `.agents` in each of the run's own folders, where codex finds skills in a folder a session
    * is handed or works in: no run writes one, so none leaves a skill for a later run to load.
    */
@@ -291,7 +297,8 @@ export interface Seal {
 // A sealed process cannot exec a setuid program, and /bin/ps is one: version managers (fnm) walk
 // the process tree with it, and claude's shell snapshot runs them. It only reads.
 // git's Keychain helper signs as the founder with no file to seal.
-// A run connects to no socket but its own (a later rule), DNS's and syslog's: the founder's
+// A run connects to no socket but its own folders' and its line to the company (a later rule),
+// DNS's and syslog's: the founder's
 // TMPDIR and /tmp are full of what answers as the founder, from each Chromium or Electron app's
 // SingletonSocket, which hands the running app a URL to open, to ssh and container agents.
 const BASE_PROFILE = String.raw`(version 1)
@@ -420,7 +427,9 @@ const commandUnder = (
     ...hide(seal.runners[runner].absent.map(reach)),
     ...allow(
       "network-outbound",
-      [...seal.writable, seal.namespaces[runner]].map((at) => `(remote unix-socket ${reach(at)})`),
+      [...seal.writable, seal.namespaces[runner], ...seal.apiSocket].map(
+        (at) => `(remote unix-socket ${reach(at)})`,
+      ),
     ),
     ...deny(
       "network-outbound",
@@ -723,6 +732,7 @@ export const browserSocketDir = (): string => path.join(homedir(), ".agent-brows
 
 /** The seal of a run under `home`, resolved as it stands on disk now. */
 export const sealFor = async ({
+  apiSocket = null,
   clis,
   debugPorts,
   env,
@@ -756,6 +766,8 @@ export const sealFor = async ({
   clis: readonly string[];
   /** The run's own folders, each in the save, its working directory first. */
   writable: readonly string[];
+  /** The socket main answers this run's company tools on, when it is a run's seal. */
+  apiSocket?: string | null;
 }): Promise<Seal> => {
   const realHome = await realPathOf(home);
   const under = (names: readonly string[]): Promise<Reach[]> =>
@@ -801,6 +813,7 @@ export const sealFor = async ({
       root.match === "prefix" ? at.startsWith(root.path) : inside(root.path, at),
     );
   return {
+    apiSocket: apiSocket === null ? [] : await reachOf(apiSocket),
     claudeProjects: {
       own: cwd === undefined ? null : claudeProjectOf(claude.folder, cwd.path),
       projects: path.join(claude.folder, "projects"),
@@ -823,16 +836,20 @@ export const sealFor = async ({
 };
 
 /**
- * The seal of a run that writes `writable`, resolved as this machine stands now: its home, main's
- * PATH and the CLIs on it. Each run resolves its own: a login that turns into a symlink after
+ * The seal of a run that writes `writable` and calls the company on `apiSocket`, resolved as this
+ * machine stands now: its home, main's PATH and the CLIs on it. Each run resolves its own: a login that turns into a symlink after
  * boot is sealed where it leads from the next run on.
  */
-export const machineSeal = async (writable: readonly string[]): Promise<Seal> => {
+export const machineSeal = async (
+  writable: readonly string[],
+  apiSocket: string | null = null,
+): Promise<Seal> => {
   const agent = process.env.SSH_AUTH_SOCK;
   const cache = await darwinUserCacheDir();
   // macOS's own libraries write its per-user temp folder whatever TMPDIR says
   const temps = [tmpdir(), path.join(path.dirname(cache), "T")];
   return await sealFor({
+    apiSocket,
     clis: RUNNER_IDS.map(runnerBin),
     debugPorts: DEBUG_PORTS,
     env: process.env,

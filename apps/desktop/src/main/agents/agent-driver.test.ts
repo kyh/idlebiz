@@ -65,6 +65,7 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
+  apiSocket: [],
   claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
   debugPorts: [9222],
   namespaces: {

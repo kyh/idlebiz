@@ -38,7 +38,7 @@ interface Call {
 
 interface Rule {
   id: RuleId;
-  /** Whether a pipeline runs something this rule holds; `toApi` says whether a fetch reaches only the game's own loopback API. */
+  /** Whether a pipeline runs something this rule holds; `toApi` says whether a fetch reaches only the game's own API (its socket, or loopback). */
   holds: (pipeline: readonly Call[], toApi: (call: Call) => boolean) => boolean;
 }
 
@@ -829,6 +829,8 @@ interface Sending {
   targets: ReadonlySet<string>;
   /** Options that send it somewhere its words do not name: a proxy, or URLs read from a file. */
   reroutes: ReadonlySet<string>;
+  /** Options whose value is the unix socket it connects to in place of the URL's host. */
+  sockets: ReadonlySet<string>;
 }
 
 /** curl never abbreviates a long option. */
@@ -842,12 +844,14 @@ const CURL: Sending = {
     --connect-timeout --cookie --cookie-jar --data --data-ascii --data-binary --data-raw
     --data-urlencode --dump-header --form --form-string --header --json --max-time --output
     --proxy --referer --request --retry --upload-file --url --user --user-agent --write-out
+    --unix-socket --abstract-unix-socket
   `),
   methods: new Set(["-X", "--request"]),
   reroutes: wordsOf(`
     -K -x --config --connect-to --doh-url --preproxy --proxy --proxy1.0 --resolve --socks4
-    --socks4a --socks5 --socks5-hostname
+    --socks4a --socks5 --socks5-hostname --abstract-unix-socket
   `),
+  sockets: new Set(["--unix-socket"]),
   targets: new Set(["--url"]),
 };
 
@@ -861,6 +865,7 @@ const WGET: Sending = {
   `),
   methods: new Set(["--method"]),
   reroutes: new Set(["-B", "-e", "-i", "--base", "--config", "--execute", "--input-file"]),
+  sockets: new Set(),
   targets: new Set(),
 };
 
@@ -876,23 +881,42 @@ const sends = (args: Words, sending: Sending): boolean =>
       (sending.methods.has(flag.name) && WRITE_METHODS.has(flag.value?.toUpperCase() ?? "")),
   );
 
-/**
- * The game's API as the run's env names it, or a loopback URL, with nothing after it that
- * could name another host: no userinfo (`http://localhost:80@evil`) and no expansion.
- */
-const API_TARGET =
-  /^(?:\$IDLEBIZ_API_URL|\$\{IDLEBIZ_API_URL\}|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?)(?:[/?#][\w./?#=&%-]*)?$/u;
+/** What follows a host that names no other: no userinfo (`http://localhost:80@evil`) and no expansion. */
+const PATH_ONLY = String.raw`(?:[/?#][\w./?#=&%-]*)?$`;
 
-/** Whether a fetch's words send it only to the game's API: a body is data it carries, never where it goes. */
+/** A loopback URL. */
+const LOOPBACK_TARGET = new RegExp(
+  String.raw`^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?${PATH_ONLY}`,
+  "u",
+);
+
+/** The game's API as a run calls it over its socket: the host is only a name, and no port. */
+const SOCKET_TARGET = new RegExp(String.raw`^http:\/\/idlebiz${PATH_ONLY}`, "u");
+
+/** The run's own socket to the game's API, as its env names it. */
+const API_SOCKET = /^(?:\$IDLEBIZ_API_SOCKET|\$\{IDLEBIZ_API_SOCKET\})$/u;
+
+/**
+ * Whether a fetch's words send it only to the game's API: over the run's own socket, or to a
+ * loopback URL. A body is data it carries, never where it goes. A socket other than the run's
+ * sends it wherever that socket leads.
+ */
 const fetchesApi = (args: Words, sending: Sending): boolean => {
   const { flags, operands } = argumentsOf(args, sending.grammar);
   const targets = [
     ...operands,
     ...flags.flatMap((flag) => (sending.targets.has(flag.name) ? [flag.value ?? ""] : [])),
   ];
+  const sockets = flags.filter((flag) => sending.sockets.has(flag.name));
+  const overSocket = sockets.length > 0;
   return (
     targets.length > 0 &&
-    targets.every((target) => API_TARGET.test(target)) &&
+    sockets.every((flag) => API_SOCKET.test(flag.value ?? "")) &&
+    targets.every((target) =>
+      overSocket
+        ? SOCKET_TARGET.test(target) || LOOPBACK_TARGET.test(target)
+        : LOOPBACK_TARGET.test(target),
+    ) &&
     !flags.some((flag) => sending.reroutes.has(flag.name))
   );
 };
@@ -908,9 +932,9 @@ const apiBodies = (args: Words, sending: Sending): number[] =>
         .map(({ at }) => at)
     : [];
 
-/** Settings outside a fetch's words that send it elsewhere: a proxy, a config file, or the API's name given a new value. */
+/** Settings outside a fetch's words that send it elsewhere: a proxy, a config file, or the API's socket given a new value. */
 const REROUTES_FETCHES =
-  /proxy\w*\+?=|CURL_HOME|XDG_CONFIG_HOME|WGETRC|(?<!\$\{?)IDLEBIZ_API_URL/iu;
+  /proxy\w*\+?=|CURL_HOME|XDG_CONFIG_HOME|WGETRC|(?<!\$\{?)IDLEBIZ_API_SOCKET/iu;
 
 /**
  * Every text of `command` a shell or a fetch could take such a setting from: its words, what

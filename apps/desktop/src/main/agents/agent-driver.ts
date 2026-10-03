@@ -487,7 +487,7 @@ export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
   };
 };
 
-/** What a run can reach of the company: its tools over the loopback API, and the one ask it may leave the founder. */
+/** What a run can reach of the company: its tools over its own socket, and the one ask it may leave the founder. */
 export interface RunTools {
   call: ToolCaller;
   asks: AskBox;
@@ -547,12 +547,15 @@ class AgentDriver {
   // the stored login, which a revoked token still is
   private readonly refusedLogins = new Set<AgentRunner>();
   private readonly checkSeal: () => Promise<SealState>;
-  private readonly resolveSeal: (writable: readonly string[]) => Promise<Seal>;
+  private readonly resolveSeal: (
+    writable: readonly string[],
+    apiSocket: string | null,
+  ) => Promise<Seal>;
   private readonly skills: () => string;
 
   constructor(
     checkSeal: () => Promise<SealState>,
-    resolveSeal: (writable: readonly string[]) => Promise<Seal>,
+    resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>,
     skills: () => string,
   ) {
     this.checkSeal = checkSeal;
@@ -620,13 +623,16 @@ class AgentDriver {
     return state.kind === "refused" ? state.reason : null;
   }
 
-  /** The seal a run writing `writable` starts under, resolved for that run once the check holds. */
-  private async seal(writable: readonly string[]): Promise<Seal> {
+  /**
+   * The seal a run writing `writable` and calling the company on `apiSocket` starts under,
+   * resolved for that run once the check holds.
+   */
+  private async seal(writable: readonly string[], apiSocket: string | null = null): Promise<Seal> {
     const state = await this.sealing;
     if (state.kind === "refused") {
       throw new RefusalError(state.reason);
     }
-    return await this.resolveSeal(writable);
+    return await this.resolveSeal(writable, apiSocket);
   }
 
   async hasAnyRunner(): Promise<boolean> {
@@ -812,23 +818,27 @@ class AgentDriver {
     // a run cannot make its own folders, only write in them
     mkdirSync(memory, { recursive: true });
     mkdirSync(RUN_TMPDIR, { recursive: true });
-    const seal = await this.seal(confinement.writable);
-    if (emp.runner === "claude") {
-      await refuseDeniedTools();
-    }
-    makeBrowserNamespace(seal, emp.runner);
-    if (emp.runner === "claude") {
-      // where claude keeps each folder's transcripts and memory, which a run cannot make
-      mkdirSync(seal.claudeProjects.projects, { recursive: true });
-    }
-    if (run.workspace !== company.workspaceDir) {
-      await ensureRepository(run.workspace);
-    }
-    const livePage = livePageOf(sealedBrowser(seal, emp.runner), namespaceUnder(seal, emp.runner));
-    const handle = controlPlane.registerRun(tools.call);
+    // the run's own socket, which its seal alone lets it connect to: the boundary between runs
+    const handle = await controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
     let sawOutput = false;
     try {
+      const seal = await this.seal(confinement.writable, handle.socket);
+      if (emp.runner === "claude") {
+        await refuseDeniedTools();
+      }
+      makeBrowserNamespace(seal, emp.runner);
+      if (emp.runner === "claude") {
+        // where claude keeps each folder's transcripts and memory, which a run cannot make
+        mkdirSync(seal.claudeProjects.projects, { recursive: true });
+      }
+      if (run.workspace !== company.workspaceDir) {
+        await ensureRepository(run.workspace);
+      }
+      const livePage = livePageOf(
+        sealedBrowser(seal, emp.runner),
+        namespaceUnder(seal, emp.runner),
+      );
       const res = await runAcpTurn({
         addDirs,
         agent: await sessionAgent(emp.runner, seal, this.skills(), run.workspace),
@@ -879,7 +889,10 @@ class AgentDriver {
  */
 export const createAgentDriver = (
   checkSeal: () => Promise<SealState> = sealRuns,
-  resolveSeal: (writable: readonly string[]) => Promise<Seal> = machineSeal,
+  resolveSeal: (
+    writable: readonly string[],
+    apiSocket: string | null,
+  ) => Promise<Seal> = machineSeal,
   skills: () => string = bundledSkillsDir,
 ): AgentDriver => new AgentDriver(checkSeal, resolveSeal, skills);
 

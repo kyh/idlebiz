@@ -102,10 +102,10 @@ describe("tool specs", () => {
 
   it("renders the call an agent can paste", () => {
     expect(toolDocs(false)).toContain(
-      `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"action":"Post the launch thread on r/SideProject","draft":"...","instructions":"..."}'`,
+      `curl -s -X POST --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/ask-boss -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"action":"Post the launch thread on r/SideProject","draft":"...","instructions":"..."}'`,
     );
     expect(toolDocs(false)).toContain(
-      `curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`,
+      `curl -s --unix-socket "$IDLEBIZ_API_SOCKET" http://idlebiz/v1/team-chat -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`,
     );
   });
 });
