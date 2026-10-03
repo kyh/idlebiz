@@ -352,11 +352,7 @@ const privacySections: Section[] = [
       li(
         "audit our internal processes for compliance with legal and contractual requirements or our internal policies;",
       ),
-      li(
-        "enforce the terms and conditions that govern the Service, including our ",
-        link("Terms of Use", "/terms"),
-        "; and",
-      ),
+      li("enforce the terms and conditions that govern the Service; and"),
       li(
         "prevent, identify, investigate and deter fraudulent, harmful, unauthorized, unethical or illegal activity, including cyberattacks and identity theft.",
       ),
@@ -1293,10 +1289,14 @@ export const termsPage: ProsePage = {
   title: "Terms of Use",
 };
 
-export const prosePages: ProsePage[] = [aboutPage, contactPage, privacyPage, termsPage];
+/** The pages the site links to: the home page, the footer and llms.txt list each one. */
+export const prosePages: ProsePage[] = [aboutPage, contactPage, privacyPage];
+
+/** Every prose page served and in the sitemap; the Terms of Use is never linked from the site. */
+export const servedPages: ProsePage[] = [...prosePages, termsPage];
 
 export const findProsePage = (path: string): ProsePage | undefined =>
-  prosePages.find((page) => page.path === path);
+  servedPages.find((page) => page.path === path);
 
 export const siteLinks: LinkItem[] = [
   { href: "/", label: "Home", text: "what IdleBiz is and the download" },

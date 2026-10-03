@@ -6,7 +6,7 @@ import {
   renderNotFoundMarkdown,
   renderProsePageMarkdown,
 } from "./markdown";
-import { privacyPage, prosePages, termsPage } from "./site-content";
+import { privacyPage, prosePages, servedPages, termsPage } from "./site-content";
 import type { ProsePage } from "./site-content";
 
 const h2Sections = (markdown: string): string[] =>
@@ -52,7 +52,7 @@ describe("renderHomeMarkdown", () => {
 
 describe("renderProsePageMarkdown", () => {
   it("renders each trust page with enough real content", () => {
-    for (const page of prosePages) {
+    for (const page of servedPages) {
       const markdown = renderProsePageMarkdown(page);
       expect(markdown.startsWith(`# ${page.heading}\n`)).toBe(true);
       expect(markdown.length).toBeGreaterThan(500);
@@ -104,7 +104,7 @@ describe("renderProsePageMarkdown", () => {
 });
 
 describe("what the site claims the app does", () => {
-  const everyPage = [renderHomeMarkdown(), ...prosePages.map(renderProsePageMarkdown)];
+  const everyPage = [renderHomeMarkdown(), ...servedPages.map(renderProsePageMarkdown)];
 
   it("never lists a push beside the deploys and payment links the app signs for, since nothing pushes code", () => {
     for (const markdown of everyPage) {

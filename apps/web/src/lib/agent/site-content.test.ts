@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import sitemap from "@/app/sitemap";
 import { siteConfig } from "@/lib/site-config";
 
 import { renderProsePageMarkdown } from "./markdown";
@@ -15,6 +16,8 @@ import {
   legalSourcePath,
   privacyPage,
   prosePages,
+  servedPages,
+  siteLinks,
   termsPage,
 } from "./site-content";
 import type { ProseBlock, ProsePage, Run } from "./site-content";
@@ -64,7 +67,7 @@ describe("heading anchors", () => {
   });
 
   it("back every in-page link on every page", () => {
-    for (const page of prosePages) {
+    for (const page of servedPages) {
       for (const href of linksOf(page)) {
         const [pathname, fragment] = href.split("#");
         if (fragment === undefined) {
@@ -178,9 +181,18 @@ describe("the Terms of Use", () => {
     expect(markdown).not.toMatch(/MIT License|licensed under the/u);
   });
 
-  it("links the Privacy Policy, which links back", () => {
+  it("links the Privacy Policy", () => {
     expect(linksOf(termsPage)).toContain("/privacy");
-    expect(linksOf(privacyPage)).toContain("/terms");
+  });
+
+  it("is served and in the sitemap, though no page of the site links to it", () => {
+    expect(findProsePage(termsPage.path)).toBe(termsPage);
+    expect(sitemap().map(({ url }) => url)).toContain(`${siteConfig.url}${termsPage.path}`);
+    expect(prosePages).not.toContain(termsPage);
+    expect(siteLinks.map(({ href }) => href)).not.toContain(termsPage.path);
+    for (const page of servedPages) {
+      expect(linksOf(page).map((href) => href.split("#")[0])).not.toContain(termsPage.path);
+    }
   });
 
   it("resolves disputes before JAMS in San Francisco County, under California law", () => {
@@ -227,7 +239,7 @@ describe("both legal documents", () => {
   });
 
   it("give every table row one cell per column", () => {
-    for (const page of prosePages) {
+    for (const page of servedPages) {
       for (const block of page.blocks) {
         if (block.kind === "table") {
           for (const row of block.rows) {
