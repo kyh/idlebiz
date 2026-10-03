@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { aboutPage } from "./site-content";
+import { aboutPage, privacyPage, termsPage } from "./site-content";
 import { homeGraph, organization, pageGraph, serializeJsonLd } from "./structured-data";
 
 describe("homeGraph", () => {
@@ -28,6 +28,15 @@ describe("pageGraph", () => {
     const [, page] = pageGraph(aboutPage)["@graph"];
     expect(page?.["@type"]).toBe("AboutPage");
     expect(page?.url).toBe("https://idlebiz.com/about");
+  });
+
+  it("types each legal document as a WebPage at its own URL", () => {
+    for (const legal of [privacyPage, termsPage]) {
+      const [, page] = pageGraph(legal)["@graph"];
+      expect(page?.["@type"]).toBe("WebPage");
+      expect(page?.name).toBe(legal.title);
+      expect(page?.url).toBe(`https://idlebiz.com${legal.path}`);
+    }
   });
 });
 

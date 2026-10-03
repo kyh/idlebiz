@@ -6,7 +6,8 @@ import {
   renderNotFoundMarkdown,
   renderProsePageMarkdown,
 } from "./markdown";
-import { privacyPage, prosePages } from "./site-content";
+import { privacyPage, prosePages, termsPage } from "./site-content";
+import type { ProsePage } from "./site-content";
 
 const h2Sections = (markdown: string): string[] =>
   markdown.split("\n").filter((line) => line.startsWith("## "));
@@ -60,7 +61,45 @@ describe("renderProsePageMarkdown", () => {
 
   it("tells the founder what Disconnect sends to this site", () => {
     const markdown = renderProsePageMarkdown(privacyPage);
-    expect(markdown).toMatch(/\[Stripe Connect\]\([^)]*\): .*when you disconnect/iu);
+    expect(markdown).toMatch(
+      /When you disconnect, or reset everything, the app sends that token and your Stripe account ID back to our website once/u,
+    );
+  });
+
+  it("renders a table as a GFM pipe table under its header row", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toContain(
+      "\n| Purpose | Categories of personal information involved | Legal basis |\n| --- | --- | --- |\n| Service delivery and operations |",
+    );
+  });
+
+  it("escapes a pipe inside a cell, so it cannot split the cell", () => {
+    const page: ProsePage = {
+      blocks: [{ columns: ["Which"], kind: "table", rows: [["this | that"]] }],
+      description: "A table.",
+      heading: "Table",
+      path: "/table",
+      schemaType: "WebPage",
+      title: "Table",
+    };
+    expect(renderProsePageMarkdown(page)).toContain(String.raw`| this \| that |`);
+  });
+
+  it("renders bold terms, subheadings, in-page anchors and a divider", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toContain("- **Contact data**, such as your name and email address");
+    expect(markdown).toContain("\n### Data Processing outside Europe\n");
+    expect(markdown).toContain(
+      "[Personal information we collect](#personal-information-we-collect)",
+    );
+    expect(markdown).toMatch(/\n---\n\nThis template was prepared and made publicly available/u);
+  });
+
+  it("makes a link to another page of the site absolute, and leaves mail as it is", () => {
+    const markdown = renderProsePageMarkdown(termsPage);
+    expect(markdown).toContain("[idlebiz.com/privacy](https://idlebiz.com/privacy)");
+    expect(markdown).toContain("(https://idlebiz.com/privacy#tracking--other-technologies)");
+    expect(markdown).toContain("[kai@kyh.io](mailto:kai@kyh.io)");
   });
 });
 
