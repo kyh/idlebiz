@@ -6,7 +6,7 @@ import {
   renderNotFoundMarkdown,
   renderProsePageMarkdown,
 } from "./markdown";
-import { privacyPage, prosePages, servedPages, termsPage } from "./site-content";
+import { privacyPage, servedPages, termsPage } from "./site-content";
 import type { ProsePage } from "./site-content";
 
 const h2Sections = (markdown: string): string[] =>
@@ -28,10 +28,11 @@ describe("renderLlmsTxt", () => {
     expect(guidance).toBeLessThan(llms.indexOf("## "));
   });
 
-  it("links every page with an absolute URL", () => {
-    for (const page of prosePages) {
+  it("links every page with an absolute URL, the Terms of Use included", () => {
+    for (const page of servedPages) {
       expect(llms).toContain(`(https://idlebiz.com${page.path})`);
     }
+    expect(llms).toContain("- [Terms of Use](https://idlebiz.com/terms): ");
     expect(llms).not.toMatch(/\]\(\//u);
   });
 

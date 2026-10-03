@@ -3,7 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ProsePageView } from "@/app/prose-page";
-import { generalLegalCredit, privacyPage, termsPage } from "@/lib/agent/site-content";
+import {
+  generalLegalCredit,
+  privacyPage,
+  prosePages,
+  servedPages,
+  termsPage,
+} from "@/lib/agent/site-content";
 import type { ProsePage } from "@/lib/agent/site-content";
 
 const html = (page: ProsePage): string =>
@@ -34,6 +40,16 @@ describe("ProsePageView", () => {
   it("renders bold terms and links inside a paragraph", () => {
     expect(privacy).toContain("<li><strong>Contact data</strong>, such as your name");
     expect(privacy).toContain('<a href="mailto:kai@kyh.io" class="underline">kai@kyh.io</a>');
+  });
+
+  it("shows no link to the Terms of Use on any page, in its text or its footer", () => {
+    for (const page of servedPages) {
+      const markup = html(page);
+      for (const listed of prosePages) {
+        expect(markup, page.path).toContain(`href="${listed.path}"`);
+      }
+      expect(markup, page.path).not.toContain(`href="${termsPage.path}`);
+    }
   });
 
   it("ends each legal document with General Legal's credit, after a divider", () => {

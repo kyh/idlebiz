@@ -1289,18 +1289,23 @@ export const termsPage: ProsePage = {
   title: "Terms of Use",
 };
 
-/** The pages the site links to: the home page, the footer and llms.txt list each one. */
+/** The pages the visible footer links. */
 export const prosePages: ProsePage[] = [aboutPage, contactPage, privacyPage];
 
-/** Every prose page served and in the sitemap; the Terms of Use is never linked from the site. */
+/**
+ * Every prose page: each is served, in the sitemap and in the agent-facing lists (llms.txt,
+ * the Markdown home and 404 pages, and the home page's hidden nav). The Terms of Use is
+ * linked from those alone, never from anything a sighted visitor sees.
+ */
 export const servedPages: ProsePage[] = [...prosePages, termsPage];
 
 export const findProsePage = (path: string): ProsePage | undefined =>
   servedPages.find((page) => page.path === path);
 
+/** For agents only: llms.txt and the Markdown home and 404 pages list these. */
 export const siteLinks: LinkItem[] = [
   { href: "/", label: "Home", text: "what IdleBiz is and the download" },
-  ...prosePages.map((page) => ({ href: page.path, label: page.title, text: page.description })),
+  ...servedPages.map((page) => ({ href: page.path, label: page.title, text: page.description })),
   { href: "/llms.txt", label: "llms.txt", text: "this site, summarised for agents" },
   { href: "/sitemap.xml", label: "Sitemap", text: "every page" },
 ];

@@ -5,7 +5,12 @@ import { describe, expect, it } from "vitest";
 import sitemap from "@/app/sitemap";
 import { siteConfig } from "@/lib/site-config";
 
-import { renderProsePageMarkdown } from "./markdown";
+import {
+  renderHomeMarkdown,
+  renderLlmsTxt,
+  renderNotFoundMarkdown,
+  renderProsePageMarkdown,
+} from "./markdown";
 import {
   findProsePage,
   generalLegalCredit,
@@ -185,11 +190,15 @@ describe("the Terms of Use", () => {
     expect(linksOf(termsPage)).toContain("/privacy");
   });
 
-  it("is served and in the sitemap, though no page of the site links to it", () => {
+  it("is served, in the sitemap and in the lists agents read, but not in the visible footer or any page's text", () => {
+    const termsUrl = `${siteConfig.url}${termsPage.path}`;
     expect(findProsePage(termsPage.path)).toBe(termsPage);
-    expect(sitemap().map(({ url }) => url)).toContain(`${siteConfig.url}${termsPage.path}`);
+    expect(sitemap().map(({ url }) => url)).toContain(termsUrl);
+    expect(siteLinks.map(({ href }) => href)).toContain(termsPage.path);
+    for (const list of [renderLlmsTxt(), renderHomeMarkdown(), renderNotFoundMarkdown("/nope")]) {
+      expect(list).toContain(`[${termsPage.title}](${termsUrl})`);
+    }
     expect(prosePages).not.toContain(termsPage);
-    expect(siteLinks.map(({ href }) => href)).not.toContain(termsPage.path);
     for (const page of servedPages) {
       expect(linksOf(page).map((href) => href.split("#")[0])).not.toContain(termsPage.path);
     }
