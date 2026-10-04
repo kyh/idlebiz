@@ -6,7 +6,7 @@ declare global {
   var appBridge: AppBridge | undefined;
 }
 
-/** The bridge to main. Absent only with no main to reach, where nothing that calls this can work. */
+/** The bridge to main. Absent only before main.tsx installs it, and in a test that set none. */
 export const bridge = (): AppBridge => {
   const b = globalThis.appBridge;
   if (!b) {

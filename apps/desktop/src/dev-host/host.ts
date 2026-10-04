@@ -1,43 +1,36 @@
 // The dev host: main as the desktop shell runs it, with a browser where the shell's window would be.
 // It starts the built main (`.output/main/index.js`) on this node, says hello as the shell does (the
-// checkout's resources, and the mock keychain's password a development build seals with), and
-// answers main's asks of a native app itself: a message box, a notification and the menu-bar icon
-// are logged, the login item is unavailable, a relaunch starts main again.
+// checkout's resources, the page main serves, and the mock keychain's password a development build
+// seals with), and answers main's asks of a native app itself: a message box, a notification and
+// the menu-bar icon are logged, the login item is unavailable, a relaunch starts main again.
 //
-// A page reaches main through `middleware`, mounted on the origin that serves the page (the dev
-// server's under `pnpm dev:browser`, the built page's in e2e): POST `<bridge>/invoke` and a
-// server-sent stream of main's events at `<bridge>/events`, both behind a token minted per host,
-// which the page reads from its URL's fragment. Nothing of this ships: the app's window reaches main
-// through the shell (src-tauri/src/commands.rs).
+// A browser reaches main as the shell's window does: on main's own page (src/main/page-server.ts),
+// signed in by a link `handoff` asks main for. Nothing of this ships.
 
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { text } from "node:stream/consumers";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
+import { handoffSchema } from "@/main/host";
 import { MOCK_KEYCHAIN_PASSWORD } from "@/main/lib/os-crypt";
 import { createPeer } from "@/main/relay/rpc";
 import type { Peer } from "@/main/relay/rpc";
-import { DEV_BRIDGE_PATH } from "@/shared/dev-bridge";
 import { errorMessage } from "@/shared/errors";
-import { jsonValueSchema, parseJson } from "@/shared/json";
-import type { JsonValue } from "@/shared/json";
+import { jsonValueSchema } from "@/shared/json";
 
 export const DESKTOP_DIR = path.resolve(import.meta.dirname, "../..");
 const MAIN_ENTRY = path.join(DESKTOP_DIR, ".output/main/index.js");
+/** The page as `pnpm build` leaves it, which main serves when no dev server is named. */
+const PAGE_DIR = path.join(DESKTOP_DIR, ".output/renderer");
 
 /** How long a quit waits for main to stop its runs, as the shell waits (main_process.rs). */
 const QUIT_TIMEOUT_MS = 45_000;
 /** How long main has to exit once its stdin closes, before SIGKILL. */
 const EXIT_GRACE_MS = 5000;
-/** The largest invoke a page sends: a pasted key, a long answer to a question. */
-const MAX_INVOKE_BYTES = 1024 * 1024;
 
 export interface DevHostOptions {
   /** The save main opens (`IDLEBIZ_ROOT_DIR`); the environment's when absent. */
@@ -48,6 +41,8 @@ export interface DevHostOptions {
   env?: NodeJS.ProcessEnv;
   /** Where the host's own lines and main's stderr go. */
   log: (line: string) => void;
+  /** Vite's dev server, whose files main hands the page in place of the built ones. */
+  pageDevUrl?: string;
 }
 
 /** What main asked the system to open: a URL in the browser, a file or folder in Finder. */
@@ -57,10 +52,8 @@ export interface Opening {
 }
 
 export interface DevHost {
-  /** The URL fragment a page carries to reach main, without its `#`. */
-  fragment: string;
-  /** Answers the bridge's paths; anything else goes to `next`. */
-  middleware: (request: IncomingMessage, response: ServerResponse, next: () => void) => void;
+  /** A link that signs a browser in to main's page, once, within five minutes, as the window is. */
+  handoff: () => Promise<string>;
   /** Stops main's runs and starts main again, as a relaunch does. */
   restartMain: () => Promise<void>;
   /** Stops main's runs, then main. */
@@ -78,14 +71,12 @@ interface Main {
   peer: Peer;
 }
 
-const invokeSchema = z.object({ method: z.string().min(1), payload: jsonValueSchema.optional() });
 const messageBoxSchema = z.object({
   detail: z.string().nullable(),
   kind: z.enum(["info", "warning", "error"]),
   message: z.string(),
 });
 const openingSchema = z.object({ kind: z.enum(["path", "reveal", "url"]), target: z.string() });
-const eventSchema = z.object({ channel: z.string(), data: jsonValueSchema });
 const noteSchema = z.object({ body: z.string(), title: z.string() });
 
 /** Main's environment as the shell gives it: no `NODE_*` (a loader, an inspector, a mode). */
@@ -102,44 +93,6 @@ const mainEnv = (options: DevHostOptions): NodeJS.ProcessEnv => {
   return { ...env, ...options.env };
 };
 
-const sameToken = (given: string | null, token: string): boolean => {
-  if (given === null) {
-    return false;
-  }
-  const a = Buffer.from(given);
-  const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
-const bearer = (request: IncomingMessage): string | null => {
-  const header = request.headers.authorization;
-  return header?.startsWith("Bearer ") === true ? header.slice("Bearer ".length) : null;
-};
-
-/**
- * An invoke's body, or null for one past the cap or no invoke at all. The cap is held to the length
- * the request declares, which node's parser holds the body to, so no bigger body is ever read: a
- * page's fetch of a string body always declares it.
- */
-const readInvoke = async (request: IncomingMessage) => {
-  const declared = Number(request.headers["content-length"]);
-  if (!Number.isSafeInteger(declared) || declared > MAX_INVOKE_BYTES) {
-    return null;
-  }
-  const body = await text(request);
-  try {
-    const parsed = invokeSchema.safeParse(parseJson(body));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-};
-
-const sendJson = (response: ServerResponse, status: number, body: JsonValue): void => {
-  response.writeHead(status, { "cache-control": "no-store", "content-type": "application/json" });
-  response.end(JSON.stringify(body));
-};
-
 const exitOf = (child: MainChild): string =>
   child.exitCode === null ? String(child.signalCode) : `code ${child.exitCode}`;
 
@@ -151,8 +104,6 @@ const linesOf = (stream: Readable) =>
 
 export const startDevHost = async (options: DevHostOptions): Promise<DevHost> => {
   const { log } = options;
-  const token = randomBytes(24).toString("base64url");
-  const streams = new Set<ServerResponse>();
   const copied: string[] = [];
   const opened: Opening[] = [];
   // main's own ask to restart it, heard once the restart below exists
@@ -161,13 +112,6 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
   // a restart and a stop wait their turn, so main is never started twice over one save
   let turn: Promise<void> = Promise.resolve();
   let stopped = false;
-
-  const broadcast = (channel: string, data: JsonValue): void => {
-    const frame = `event: ${channel}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const stream of streams) {
-      stream.write(frame);
-    }
-  };
 
   const listen = (peer: Peer): void => {
     peer.handle("host.messageBox", messageBoxSchema, (box) => {
@@ -184,9 +128,6 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       return null;
     });
     peer.handle("host.loginItem", z.object({ on: z.boolean().nullable() }), () => "unavailable");
-    peer.on("event", eventSchema, ({ channel, data }) => {
-      broadcast(channel, data);
-    });
     peer.on("host.notify", noteSchema, ({ body, title }) => {
       log(`[host] notification: ${title} — ${body}`);
     });
@@ -272,6 +213,8 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
         {
           openedAtLogin: false,
           packaged: false,
+          pageDevUrl: options.pageDevUrl ?? null,
+          pageDir: PAGE_DIR,
           resourcesDir: path.join(DESKTOP_DIR, "resources"),
           safeStoragePassword: MOCK_KEYCHAIN_PASSWORD,
         },
@@ -320,10 +263,6 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
   const stop = async (): Promise<void> => {
     await queue(async () => {
       stopped = true;
-      for (const stream of streams) {
-        stream.end();
-      }
-      streams.clear();
       if (main !== null) {
         await stopMain(main);
         main = null;
@@ -331,81 +270,14 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     });
   };
 
-  const invoke = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    if (!sameToken(bearer(request), token)) {
-      sendJson(response, 401, { message: "the dev host's token is missing or wrong", ok: false });
-      return;
-    }
-    const call = await readInvoke(request);
-    if (call === null) {
-      sendJson(response, 400, { message: "an invoke is {method, payload?}", ok: false });
-      return;
-    }
+  const handoff = async (): Promise<string> => {
     if (main === null) {
-      sendJson(response, 503, { message: "IdleBiz is still starting.", ok: false });
-      return;
+      throw new Error("main is not running");
     }
-    // a call with no payload carries none, as the shell relays it (commands.rs)
-    const params: JsonValue =
-      call.payload === undefined
-        ? { method: call.method }
-        : { method: call.method, payload: call.payload };
-    try {
-      sendJson(response, 200, await main.peer.request("invoke", params, jsonValueSchema));
-    } catch (error) {
-      sendJson(response, 503, { message: errorMessage(error), ok: false });
-    }
-  };
-
-  const answerInvoke = async (request: IncomingMessage, response: ServerResponse) => {
-    try {
-      await invoke(request, response);
-    } catch (error) {
-      sendJson(response, 500, { message: errorMessage(error), ok: false });
-    }
-  };
-
-  const events = (url: URL, response: ServerResponse): void => {
-    if (!sameToken(url.searchParams.get("token"), token)) {
-      sendJson(response, 401, { message: "the dev host's token is missing or wrong", ok: false });
-      return;
-    }
-    response.writeHead(200, {
-      "cache-control": "no-store",
-      connection: "keep-alive",
-      "content-type": "text/event-stream",
-    });
-    response.write(": main's events\n\n");
-    streams.add(response);
-    response.on("close", () => {
-      streams.delete(response);
-    });
-  };
-
-  const middleware: DevHost["middleware"] = (request, response, next) => {
-    const url = new URL(request.url ?? "/", "http://localhost");
-    if (url.pathname === `${DEV_BRIDGE_PATH}/invoke` && request.method === "POST") {
-      void answerInvoke(request, response);
-      return;
-    }
-    if (url.pathname === `${DEV_BRIDGE_PATH}/events` && request.method === "GET") {
-      events(url, response);
-      return;
-    }
-    if (url.pathname.startsWith(`${DEV_BRIDGE_PATH}/`)) {
-      sendJson(response, 404, { message: `the dev host answers no ${url.pathname}`, ok: false });
-      return;
-    }
-    return next();
+    const { handoffUrl } = await main.peer.request("handoff", null, handoffSchema);
+    return handoffUrl;
   };
 
   main = await startMain();
-  return {
-    copied,
-    fragment: `bridge=${token}`,
-    middleware,
-    opened,
-    restartMain,
-    stop,
-  };
+  return { copied, handoff, opened, restartMain, stop };
 };

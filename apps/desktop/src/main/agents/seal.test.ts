@@ -47,7 +47,7 @@ afterAll(() => {
 
 const SEAL: Seal = {
   claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
-  debugPorts: [9222],
+  closedPorts: [9222],
   namespaces: {
     claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
     codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },
@@ -259,7 +259,7 @@ describe("sealedCommand", () => {
   it("leaves out a rule with nothing to reach, which would reach everything", () => {
     const bare: Seal = {
       ...SEAL,
-      debugPorts: [],
+      closedPorts: [],
       runners: {
         claude: {
           absent: [],
@@ -442,7 +442,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   const seal = (more: Partial<Parameters<typeof sealFor>[0]> = {}): Promise<Seal> =>
     sealFor({
       clis: [],
-      debugPorts: [],
+      closedPorts: [],
       env: {},
       home,
       mainOnly: [at(".idlebiz/secrets.json")],
@@ -1225,7 +1225,7 @@ for (const target of targets) {
     ) => {
       const sealed = await sealFor({
         clis: [],
-        debugPorts: [],
+        closedPorts: [],
         env: {},
         home: short,
         mainOnly: [],
@@ -1322,7 +1322,7 @@ for (const target of targets) {
       ipv6.listen(port, "::1");
       await once(ipv6, "listening");
       const targets = [`127.0.0.1#${port}`, `::1#${port}`, `localhost#${port}`];
-      expect(await connect("codex", targets, { debugPorts: [port] })).toEqual(
+      expect(await connect("codex", targets, { closedPorts: [port] })).toEqual(
         all(targets, "EPERM"),
       );
       expect(await connect("codex", targets.slice(0, 2))).toEqual(
@@ -1422,7 +1422,7 @@ describe.skipIf(!onMac)("sealRuns", () => {
       { match: "subpath", path: path.join(home, ".codex/rules") },
     ]);
     expect(seal.runners.claude.absent).toEqual([]);
-    expect(seal.debugPorts).toEqual([9222, 9229, 31_100]);
+    expect(seal.closedPorts).toEqual([9222, 9229, 31_100]);
     expect(seal.sockets).toEqual(
       expect.arrayContaining(
         [
@@ -1432,6 +1432,22 @@ describe.skipIf(!onMac)("sealRuns", () => {
         ].map((at) => ({ match: "subpath", path: at })),
       ),
     );
+  });
+
+  it("closes the port main serves the window's page on, while it answers", async () => {
+    const { startPageServer } = await import("@/main/page-server");
+    const page = await startPageServer({
+      dispatch: () => Promise.resolve(null),
+      page: { kind: "dev", origin: "http://localhost:1" },
+    });
+    try {
+      const seal = await machineSeal([]);
+      expect(seal.closedPorts).toEqual([9222, 9229, 31_100, page.port]);
+    } finally {
+      await page.stop();
+    }
+    const after = await machineSeal([]);
+    expect(after.closedPorts).toEqual([9222, 9229, 31_100]);
   });
 
   it("finds a runner's home where the founder moved it", async () => {

@@ -1,7 +1,8 @@
 //! The shell's one state: main, the child that owns the save, and the moves around it. A launch
-//! starts main, says hello with what only the shell knows (where the resources are, whether the
-//! login item launched it, the Keychain's password), and opens the window, or keeps to the menu bar
-//! when the login item launched it. A quit asks main to stop its runs before anything ends.
+//! starts main, says hello with what only the shell knows (where the resources and the built page
+//! are, whether the login item launched it, the Keychain's password), and opens the window on
+//! main's page, or keeps to the menu bar when the login item launched it. A quit asks main to stop
+//! its runs before anything ends.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -134,9 +135,20 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
     if let Some(shell) = app.try_state::<Shell>() {
         *shell.lock() = Some(Arc::clone(&process));
     }
+    // under `tauri dev` main hands the page the dev server's files, so an edit reloads in place
+    // while the window keeps main's origin
+    let page_dev_url = app
+        .config()
+        .build
+        .dev_url
+        .as_ref()
+        .filter(|_| tauri::is_dev())
+        .map(ToString::to_string);
     let hello = json!({
         "openedAtLogin": opened_at_login,
         "packaged": bundled,
+        "pageDevUrl": page_dev_url,
+        "pageDir": resolved.page_dir,
         "resourcesDir": resolved.resources_dir,
         "safeStoragePassword": keychain::safe_storage_password(bundled),
     });

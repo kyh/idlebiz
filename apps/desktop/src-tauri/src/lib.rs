@@ -1,9 +1,8 @@
-//! The IdleBiz desktop shell: a Rust window over the office page, main (the node process that owns
-//! the save, the keys and the runs) as the one child it supervises, and what only a native app can
-//! do for both: the menu-bar icon, message boxes, notifications, the clipboard, Finder, the login
-//! item and keeping the Mac awake.
+//! The IdleBiz desktop shell: a Rust window over the office page main serves, main (the node process
+//! that owns the save, the keys and the runs) as the one child it supervises, and what only a native
+//! app can do for main: the menu-bar icon, message boxes, notifications, the clipboard, Finder, the
+//! login item and keeping the Mac awake. The page reaches no command of the shell's.
 
-mod commands;
 mod host;
 mod keep_awake;
 mod keychain;
@@ -65,7 +64,6 @@ pub fn run() {
                 .build(),
         )
         .manage(Shell::new(bundled))
-        .invoke_handler(tauri::generate_handler![commands::main_invoke])
         .setup(|app| {
             #[cfg(unix)]
             quit_on_signals(app.handle());

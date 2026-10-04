@@ -18,7 +18,7 @@ tool-agnostic guide for coding agents — meant to be run, not just read. Claude
 pnpm install
 pnpm verify        # static gate: typecheck · lint · format · test · build
 pnpm dev:web       # landing page → http://localhost:3000
-pnpm dev:browser   # the office in a browser → the URL it prints (http://localhost:31100/#bridge=…)
+pnpm dev:browser   # the office in a browser → http://localhost:31100/ (signs the browser in to main)
 pnpm dev:desktop   # the app's own window (tauri dev)
 pnpm e2e           # builds the page and main, then drives them in Chromium (local only)
 ```
@@ -83,8 +83,8 @@ Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wron
 
 End-to-end suite — `pnpm e2e` builds the page and main, then drives them with Playwright in
 Chromium (`apps/desktop/e2e/`): each launch starts the built main through the dev host
-(`src/dev-host/host.ts`), which answers main's asks of a native app as the shell would, and serves
-the built page under the shell's own content security policy beside the dev host's bridge.
+(`src/dev-host/host.ts`), which answers main's asks of a native app as the shell would, and opens
+the built page main serves on the handoff link main hands it, as the shell's window opens.
 `pnpm -F @repo/desktop e2e` reruns it on the last build. The shell itself (the window, the
 menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test` and driven by hand.
 The suite covers the title screen, a founded company's
@@ -123,11 +123,12 @@ agent-browser snapshot          # accessibility tree with @eN refs
 agent-browser screenshot /tmp/web.png
 ```
 
-Runtime, desktop — drive the office in a browser. `pnpm dev:browser` runs main as the shell does
-behind the dev host's bridge, on the dev server's own origin, and prints the page's URL with the
-bridge's token in its fragment. The app's window is WKWebView, which no automation attaches to on
-the Mac, so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at the real
-window.
+Runtime, desktop — drive the office in a browser. `pnpm dev:browser` runs main as the shell does,
+and main serves the page, its files from the dev server, as it serves the window. Open
+`http://localhost:31100/`: each visit asks the main running then for a one-time handoff and lands
+the browser on main's page, signed in, so after an edit to main restarts it, the same address
+lands on the new one. The app's window is WKWebView, which no automation attaches to on the Mac,
+so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at the real window.
 
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
@@ -137,8 +138,8 @@ window.
 > onboarding and employee runs still bill the signed-in CLI.
 
 ```sh
-IDLEBIZ_ROOT_DIR="$(mktemp -d)" pnpm dev:browser   # prints http://localhost:31100/#bridge=…
-agent-browser open 'http://localhost:31100/#bridge=…'
+IDLEBIZ_ROOT_DIR="$(mktemp -d)" pnpm dev:browser   # serves http://localhost:31100/
+agent-browser open http://localhost:31100/
 agent-browser snapshot
 ```
 
@@ -169,14 +170,14 @@ bundled seeded save. Employee runs still use the signed-in CLI.
 
 ## Platform matrix
 
-| Platform            | Dev command        | Agent-verifiable at runtime?                     |
-| ------------------- | ------------------ | ------------------------------------------------ |
-| Desktop, in browser | `pnpm dev:browser` | **Yes** — agent-browser at the URL it prints     |
-| Desktop, its window | `pnpm dev:desktop` | By eye: WKWebView takes no automation on the Mac |
-| Web (Next.js)       | `pnpm dev:web`     | **Yes** — headless via agent-browser             |
+| Platform            | Dev command        | Agent-verifiable at runtime?                      |
+| ------------------- | ------------------ | ------------------------------------------------- |
+| Desktop, in browser | `pnpm dev:browser` | **Yes** — agent-browser at http://localhost:31100 |
+| Desktop, its window | `pnpm dev:desktop` | By eye: WKWebView takes no automation on the Mac  |
+| Web (Next.js)       | `pnpm dev:web`     | **Yes** — headless via agent-browser              |
 
-The browser and the window run the same page over the same main: only the host differs (the dev
-host's bridge, or the shell's `main_invoke` command).
+The browser and the window run the same page, which main serves, over the same main: only the host
+that runs main differs (the dev host, or the shell).
 
 ## Configuration
 
@@ -312,7 +313,7 @@ rather than crashing boot.
   other folder's claude `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
   `.mcp.json` or `.codex/`, nor `.agents` in its own folders, where codex finds skills.
   It connects to no unix socket but its own folders' and its namespace's, to no loopback
-  debug port (9222, 9229) nor the dev server's (31100), and a codex run reaches no Keychain: a codex whose login is there
+  debug port (9222, 9229), the dev server's (31100) or the one main serves the window's page on, and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
   `TOOL_CACHE_ENV` in `main/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
@@ -390,9 +391,11 @@ rather than crashing boot.
   zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its
   schema's output — declare the schema, never a parallel type. Main dispatches every method
   from one `IpcHandlers` map (`main/lib/ipc-handler.ts`), so a channel without one fails to
-  compile. The window's call reaches main as an `invoke` over main's stdio (JSON-RPC 2.0, one
-  message a line: `main/relay/rpc.ts`, `src-tauri/src/relay.rs`), relayed unread by the shell's
-  one command, `main_invoke`; main's events come back as Tauri events under each channel's name.
+  compile. The page calls main on its own origin, since main serves it (`main/page-server.ts`):
+  `POST /__idlebiz/invoke` with `{method, payload?}`, and main's events come back on one
+  server-sent stream, `/__idlebiz/events`, under each channel's name. The shell reaches no part of
+  it: it talks to main over main's stdio (JSON-RPC 2.0, one message a line: `main/relay/rpc.ts`,
+  `src-tauri/src/relay.rs`), and the page reaches no command of the shell's.
   A handler's throw crosses as an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the page rethrows
   bare, so the founder reads the store's sentence; frame and payload checks still throw. A throw
   that is not a `RefusalError` (`shared/refusal.ts`) is a fault and is reported too.
@@ -455,19 +458,18 @@ rather than crashing boot.
 
 ## Map
 
-- `apps/desktop/src-tauri` — the shell, Rust: the window over the bundled page and its
-  navigation pin (`window.rs`, `navigation.rs`), main as its one child (`main_process.rs` over
-  the relay's framing in `relay.rs`, `runtime.rs` for where node, main and the resources are),
-  what main asks of a native app (`host.rs`: message boxes, the clipboard, Finder, notifications;
-  `tray.rs`, `login_item.rs`, `keep_awake.rs`, `keychain.rs`), main's log (`main_log.rs`), and the
-  page's one command (`commands.rs`). `capabilities/main.json` grants the window that command and
-  the event listener, nothing else.
-- `apps/desktop/src/dev-host` — main behind a token bridge on the page's own origin, for a
-  browser: `pnpm dev:browser` and the e2e suite (`host.ts`), and the shell's content security
-  policy for a page Tauri does not serve (`policy.ts`).
+- `apps/desktop/src-tauri` — the shell, Rust: the window over main's page, opened on the handoff
+  main hands it, and its navigation pin (`window.rs`, `navigation.rs`), main as its one child
+  (`main_process.rs` over the relay's framing in `relay.rs`, `runtime.rs` for where node, main,
+  the built page and the resources are), what main asks of a native app (`host.rs`: message
+  boxes, the clipboard, Finder, notifications; `tray.rs`, `login_item.rs`, `keep_awake.rs`,
+  `keychain.rs`), and main's log (`main_log.rs`). No capability grants the page a command.
+- `apps/desktop/src/dev-host` — main as the shell runs it, for a browser: `pnpm dev:browser` and
+  the e2e suite (`host.ts`), which ask it for the handoff the shell's window opens on.
 - `apps/desktop/src/main` — the control plane. `index.ts` (boot on the shell's hello, the relay,
   quit), `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio
-  channel), `store/store.ts` (the one company in memory,
+  channel), `page-server.ts` (the window's page on loopback: the handoff, the guards, the calls
+  and the event stream; `page-session.ts` the sign-in), `store/store.ts` (the one company in memory,
   every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
   domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop; it alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is

@@ -66,7 +66,7 @@ afterAll(() => {
 
 const SEAL: Seal = {
   claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
-  debugPorts: [9222],
+  closedPorts: [9222],
   namespaces: {
     claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
     codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },

@@ -1,10 +1,11 @@
 # IdleBiz
 
 Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a
-business. Main app: `apps/desktop`: a Rust shell (`src-tauri`, clippy pedantic) around the
-office page (Vite + React + Phaser) and main, the node process that owns the save, the keys and
-the runs, its one child, reached over main's stdio (strict TS — no `any`, no `!`, no `as`). Full
-map and workflow in `AGENTS.md`.
+business. Main app: `apps/desktop`: a Rust shell (`src-tauri`, clippy pedantic) around main, the
+node process that owns the save, the keys and the runs, its one child, reached over main's stdio,
+and the office page (Vite + React + Phaser), which main serves the shell's window on loopback,
+signed in by a one-time handoff, as kyh/inteligir's server serves its window (strict TS — no
+`any`, no `!`, no `as`). Full map and workflow in `AGENTS.md`.
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
@@ -55,8 +56,9 @@ map and workflow in `AGENTS.md`.
   direct, through the product's own page and create_payment_link, so a bet counts each sale.
   A skill is prose no test renders from `tool-specs.ts`: a change to a tool or rule one cites
   (a bet's floor, the unlock's key) changes that skill in the same commit.
-- Verify changes live: `pnpm dev:browser` serves the office to a browser, main behind it as the
-  shell runs it, at the URL it prints (`http://localhost:31100/#bridge=…`; use agent-browser).
+- Verify changes live: `pnpm dev:browser` runs main as the shell runs it and serves its page to a
+  browser: open `http://localhost:31100/`, which signs the browser in to the main running then
+  (use agent-browser; after an edit to main restarts it, open that address again).
   `pnpm dev:desktop` opens the app's own window, which no automation drives on the Mac (WKWebView).
   Under headless automation the Phaser boot stalls (document.hidden) — force
   `window.__game.scene.start("office")` and step `game.loop.step(t)` to render.
@@ -265,8 +267,10 @@ third boundary.
     agent-browser daemons or those of the other runner or of runs with other folders. Those of
     them in a folder it writes (launchd's, an ssh-agent's, main's `SSH_AUTH_SOCK`,
     `/tmp/cc-socks`, the codex app's) cannot be moved or replaced either.
-    Loopback 9222, 9229 and 31100 are closed: Chrome's DevTools port, node's inspector, and the
-    dev server, whose bridge to main (`pnpm dev:browser`) holds the founder's approve button. LaunchServices opens nothing; the Apple Event CLIs (`osascript`,
+    Loopback 9222, 9229 and 31100 are closed, and so is the port main serves the window's page on
+    (`pagePorts`), which holds the founder's approve button: Chrome's DevTools port, node's
+    inspector, and the dev server, which reads any file of the checkout to whoever asks and under
+    `pnpm dev:browser` signs a browser in to main's page. LaunchServices opens nothing; the Apple Event CLIs (`osascript`,
     `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
     program runs but `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a
     `mach-lookup` deny of securityd, which holds against a copied binary too).

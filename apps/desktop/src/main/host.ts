@@ -1,7 +1,8 @@
 // What main asks of the app that runs it, the desktop shell or the dev host: what only a native app
 // does (a message box, the clipboard, Finder and the browser, the menu-bar icon, a notification,
 // the login item, keeping the Mac awake, a relaunch), and the facts of this launch the shell
-// alone knows. Each is a request or a notification over the relay; tests set a fake.
+// alone knows, the page main serves its window among them. Each is a request or a notification
+// over the relay; tests set a fake.
 
 import { z } from "zod";
 import type { Peer } from "@/main/relay/rpc";
@@ -11,12 +12,21 @@ export const launchSchema = z.object({
   // a launch at login starts in the menu bar
   openedAtLogin: z.boolean(),
   packaged: z.boolean(),
+  // Vite's dev server, whose files main hands the page in place of the built ones, so it reloads in
+  // place: `tauri dev`'s and `pnpm dev:browser`'s. Null in a packaged app, which serves what it ships
+  pageDevUrl: z.string().nullable(),
+  // the window's page as built, which main serves it (page-server.ts): the checkout's
+  // `.output/renderer`, or the bundle's own copy
+  pageDir: z.string().min(1),
   // where the app's own read-only files are: the bundle's resources, or the checkout's
   resourcesDir: z.string().min(1),
   // the Keychain's Safe Storage password, which seals secrets.json; null when it would not answer
   safeStoragePassword: z.string().nullable(),
 });
 export type Launch = z.infer<typeof launchSchema>;
+
+/** What main answers the shell's `handoff`: a link into its page, and the origin it is on. */
+export const handoffSchema = z.object({ handoffUrl: z.string(), origin: z.string() });
 
 interface MessageBox {
   kind: "info" | "warning" | "error";

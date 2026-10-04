@@ -1,4 +1,4 @@
-// The Mac app: the shell, the node beside it and main as a resource, signed, notarized when
+// The Mac app: the shell, the node beside it, and main and the page it serves as resources, signed, notarized when
 // apps/desktop/.env holds the notary's key, and the release's dmg in .output/bin. The release
 // material is read HERE, in the one process that packs, rather than from the shell's environment.
 // A pack with no Developer ID stops unless IDLEBIZ_PACK_UNSIGNED=1 asks for an ad-hoc one, and a
@@ -159,6 +159,8 @@ const config = {
     },
     resources: {
       "../.output/notices/": "notices/",
+      // the window's page, which main serves it (src-tauri/src/runtime.rs names it)
+      "../.output/renderer/": "page/",
       "../.output/staged-main/": "main/",
       "../resources/employee-sheets/": "employee-sheets/",
       // not `node/`: tauri-build copies the sidecar and the resources into one target folder, where

@@ -4,13 +4,13 @@
 
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{keep_awake, login_item, tray, window};
+use crate::{keep_awake, login_item, tray};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -49,12 +49,6 @@ struct CopyText {
 #[derive(Deserialize)]
 struct LoginItem {
     on: Option<bool>,
-}
-
-#[derive(Deserialize)]
-struct WindowEvent {
-    channel: String,
-    data: Value,
 }
 
 #[derive(Deserialize)]
@@ -130,15 +124,6 @@ pub fn answer<R: Runtime>(
 /// Hears one notification of main's, in the order main sent them.
 pub fn hear<R: Runtime>(app: &AppHandle<R>, method: &str, params: Value) {
     let heard = match method {
-        "event" => parsed::<WindowEvent>(method, params).map(|event| {
-            // the page listens under the channel's own name (`shared/ipc-channels.ts`)
-            if let Err(error) = app.emit_to(window::MAIN, &event.channel, event.data) {
-                eprintln!(
-                    "[shell] could not hand the window {}: {error}",
-                    event.channel
-                );
-            }
-        }),
         "host.tray" => parsed(method, params).map(|model| tray::draw(app, &model)),
         "host.keepAwake" => parsed::<KeepAwake>(method, params).map(|request| {
             keep_awake::hold(app, request.on);

@@ -1,7 +1,7 @@
-//! What the window may show: its own origin, the bundle's (or the dev server's under `tauri dev`).
-//! Any other web page opens in the browser instead, and nothing else loads, so a link in an
-//! agent-written page, a dropped file or an injected script cannot navigate the founder's window
-//! away from the bridge to main. The same pin as kyh/inteligir's shell.
+//! What the window may show: main's own page, on the loopback origin main serves it from. Any other
+//! web page opens in the browser instead, and nothing else loads, so a link in an agent-written page,
+//! a dropped file or an injected script cannot navigate the founder's window away from main. The
+//! same pin as kyh/inteligir's shell.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -31,6 +31,16 @@ pub fn comparable_origin(url: &Url) -> Option<String> {
 
 pub fn is_web_url(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
+}
+
+/// The origin of main's page, from the link main hands the shell: plain http on 127.0.0.1, at the
+/// port main bound, and nothing else, since the window pinned to it holds the founder's approve
+/// button.
+pub fn page_origin(url: &Url) -> Option<String> {
+    let loopback = url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port().is_some_and(|port| port != 0);
+    comparable_origin(url).filter(|_| loopback)
 }
 
 /// Compared by origin, never by prefix: `http://127.0.0.1:4664` prefixes `http://127.0.0.1:46640`.
@@ -132,6 +142,24 @@ mod tests {
             classify(&url("http://user@127.0.0.1:4664/"), "http://127.0.0.1:4664"),
             Verdict::OpenExternally
         );
+    }
+
+    #[test]
+    fn main_s_page_is_plain_http_on_loopback_at_a_port() {
+        assert_eq!(
+            page_origin(&url("http://127.0.0.1:52100/?handoff=n")).as_deref(),
+            Some("http://127.0.0.1:52100")
+        );
+        for refused in [
+            "https://127.0.0.1:52100/",
+            "http://localhost:52100/",
+            "http://127.0.0.1/",
+            "http://example.com:52100/",
+            "http://me@127.0.0.1:52100/",
+            "tauri://localhost/",
+        ] {
+            assert_eq!(page_origin(&url(refused)), None, "{refused}");
+        }
     }
 
     #[test]

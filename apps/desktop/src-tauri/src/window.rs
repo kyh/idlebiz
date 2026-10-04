@@ -1,14 +1,17 @@
-//! The one window: the page the bundle carries (the dev server's under `tauri dev`), pinned to its
-//! own origin, opening no second window and holding no device permission. Closing it hides it: the
-//! office keeps working in the menu bar, the dock icon goes with the window, and Open brings the
-//! same page back. What the founder does with it (looks away, hides it, brings it back) goes to
-//! main, which keeps when the office was last seen.
+//! The one window: main's own page, served on loopback and signed in by a one-time handoff link
+//! main hands the shell, as kyh/inteligir's window is its server's page. It is pinned to that
+//! origin, opens no second window, holds no device permission, and reaches no command of the
+//! shell's: the page calls main on its own origin. Closing it hides it: the office keeps working in
+//! the menu bar, the dock icon goes with the window, and Open brings the same page back. What the
+//! founder does with it (looks away, hides it, brings it back) goes to main, which keeps when the
+//! office was last seen.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use serde_json::json;
+use serde::Deserialize;
+use serde_json::{Value, json};
 use tauri::webview::{NewWindowResponse, PageLoadEvent, PermissionResponse};
 use tauri::window::Color;
 use tauri::{
@@ -21,18 +24,31 @@ use crate::shell;
 
 pub const MAIN: &str = "main";
 
-/// The page's own origin: the dev server's under `tauri dev`, else Tauri's embedded assets.
-fn page_origin<R: Runtime>(app: &AppHandle<R>) -> String {
-    let dev_url = app
-        .config()
-        .build
-        .dev_url
-        .clone()
-        .filter(|_| tauri::is_dev());
-    let url = dev_url.or_else(|| Url::parse("tauri://localhost").ok());
-    url.as_ref()
-        .and_then(navigation::comparable_origin)
-        .unwrap_or_default()
+/// What main answers `handoff` with (`apps/desktop/src/main/index.ts`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Handoff {
+    origin: String,
+    handoff_url: String,
+}
+
+/// The link the window opens on, and the origin it is pinned to: asked of main for each window
+/// made, since a link left unused for five minutes signs nothing in. Blocks on main's answer, so
+/// never on the main thread.
+fn handoff<R: Runtime>(app: &AppHandle<R>) -> Result<(Url, String), String> {
+    let main = shell::main(app).ok_or_else(|| "IdleBiz is still starting.".to_owned())?;
+    let answer = tauri::async_runtime::block_on(main.request("handoff", &Value::Null))?;
+    let handoff: Handoff = serde_json::from_value(answer)
+        .map_err(|error| format!("main answered a handoff the shell cannot read: {error}"))?;
+    let url = Url::parse(&handoff.handoff_url)
+        .map_err(|error| format!("main's handoff is not a link: {error}"))?;
+    match navigation::page_origin(&url) {
+        Some(origin) if origin == handoff.origin => Ok((url, origin)),
+        _ => Err(format!(
+            "main's page must be on loopback, at the origin it names, not {}",
+            handoff.origin
+        )),
+    }
 }
 
 fn open_externally<R: Runtime>(app: &AppHandle<R>, opens: &ExternalOpens, url: &Url) {
@@ -74,16 +90,17 @@ fn watch<R: Runtime>(window: &WebviewWindow<R>) {
 
 /// The one window, made if it is not there yet. Idempotent: a second launch's Show can make it while
 /// a starting shell is about to, and the label is taken once, by whichever of the two is first.
-pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
+/// Blocks on main's handoff, so never on the main thread.
+pub fn create<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
     if let Some(window) = app.get_webview_window(MAIN) {
         return Ok(window);
     }
-    let pinned_origin = page_origin(app);
+    let (url, pinned_origin) = handoff(app)?;
     let opens = Arc::new(ExternalOpens::new());
     let navigating = (app.clone(), Arc::clone(&opens));
     let opening = (app.clone(), opens);
     let shown = AtomicBool::new(false);
-    let built = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let built = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::External(url))
         .title("IdleBiz")
         .inner_size(1280.0, 800.0)
         .background_color(Color(0x12, 0x14, 0x1c, 0xff))
@@ -107,7 +124,8 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>>
         // a game asks for nothing a device grants: no camera, microphone, location or notification
         .on_permission_request(|_, _| PermissionResponse::Deny)
         // the first load alone: a later one (a reload) must not bring back a window Close hid, nor
-        // take the focus from whatever has it. Main hears it shown once it is
+        // take the focus from whatever has it. Main hears it shown once it is. Nothing of the URL is
+        // logged: a handoff's link carries a nonce until its redirect drops it
         .on_page_load(move |window, payload| {
             if payload.event() != PageLoadEvent::Finished || shown.swap(true, Ordering::Relaxed) {
                 return;
@@ -125,9 +143,9 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>>
         ) => {
             return app
                 .get_webview_window(MAIN)
-                .ok_or(tauri::Error::WindowNotFound);
+                .ok_or_else(|| tauri::Error::WindowNotFound.to_string());
         }
-        Err(error) => return Err(error),
+        Err(error) => return Err(error.to_string()),
     };
     watch(&window);
     Ok(window)
@@ -139,11 +157,15 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
     if let Err(error) = app.set_dock_visibility(true) {
         eprintln!("[shell] could not show the dock icon: {error}");
     }
-    // a window made here is shown, and main told, by its first load
+    // a window made here is shown, and main told, by its first load; it waits on main's handoff, so
+    // off the thread that asked, which is the main thread
     let Some(window) = app.get_webview_window(MAIN) else {
-        if let Err(error) = create(app) {
-            eprintln!("[shell] could not make the window: {error}");
-        }
+        let making = app.clone();
+        std::thread::spawn(move || {
+            if let Err(error) = create(&making) {
+                eprintln!("[shell] could not make the window: {error}");
+            }
+        });
         return;
     };
     match window

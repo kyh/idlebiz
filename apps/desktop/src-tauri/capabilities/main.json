@@ -1,7 +1,0 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "main",
-  "description": "The office window: the relay to main, and hearing main's events. The page is the bundle's own (the dev server's under `tauri dev`); no other page loads in it (src/window.rs).",
-  "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "allow-main-invoke"]
-}

@@ -7,24 +7,10 @@
   "build": {
     "beforeDevCommand": "pnpm run dev:page",
     "devUrl": "http://localhost:31100",
-    "frontendDist": "../.output/renderer",
     "removeUnusedCommands": true
   },
   "app": {
-    "windows": [],
-    "security": {
-      "csp": {
-        "default-src": "'self'",
-        "script-src": "'self'",
-        "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data: blob:",
-        "connect-src": "'self' ipc: http://ipc.localhost",
-        "object-src": "'none'",
-        "base-uri": "'none'",
-        "form-action": "'none'",
-        "frame-ancestors": "'none'"
-      }
-    }
+    "windows": []
   },
   "bundle": {
     "active": true,

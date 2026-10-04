@@ -1,30 +1,22 @@
-import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
 import type { Browser, BrowserContext, JSHandle, Page } from "@playwright/test";
-import { DESKTOP_DIR, startDevHost } from "@/dev-host/host";
+import { startDevHost } from "@/dev-host/host";
 import type { DevHost } from "@/dev-host/host";
-import { pagePolicy } from "@/dev-host/policy";
 import type { Company, Employee, Product } from "@/shared/domain";
 import type { HireProposal } from "@/shared/hire";
 import type { AppBridge } from "@/shared/ipc-registry";
 import { jsonRecordSchema, parseJson } from "@/shared/json";
 import type { JsonRecord, JsonValue } from "@/shared/json";
-import { z } from "zod";
 
 declare global {
   // What install-bridge.ts sets on the window; renderer/bridge.ts declares it for the app.
   var appBridge: AppBridge | undefined;
 }
-
-/** The built page, as the shell's window loads it from the bundle. */
-const PAGE_DIR = path.join(DESKTOP_DIR, ".output/renderer");
 
 interface Launched {
   page: Page;
@@ -43,8 +35,8 @@ interface Fixtures {
   /** A fresh save root for this test, deleted after it. */
   root: string;
   /**
-   * Start the built main on `root` and open the built page on it in Chromium, as the dev host
-   * runs them; whatever is still open closes when the test ends.
+   * Start the built main on `root` and open the page it serves in Chromium, signed in by a handoff
+   * as the shell's window is; whatever is still open closes when the test ends.
    */
   launch: (options?: LaunchOptions) => Promise<Launched>;
 }
@@ -65,72 +57,6 @@ const runsStarted = async (root: string): Promise<number> => {
     }
   }
   return started;
-};
-
-const CONTENT_TYPES = new Map([
-  [".css", "text/css"],
-  [".html", "text/html; charset=utf-8"],
-  [".js", "text/javascript"],
-  [".json", "application/json"],
-  [".png", "image/png"],
-  [".svg", "image/svg+xml"],
-  [".webp", "image/webp"],
-  [".woff2", "font/woff2"],
-]);
-
-/** One file of the built page, under the shell's policy; nothing outside the page's folder. */
-const servePageFile = async (
-  url: string,
-  response: ServerResponse,
-  policy: string,
-): Promise<void> => {
-  const { pathname } = new URL(url, "http://localhost");
-  const file = path.join(PAGE_DIR, decodeURIComponent(pathname === "/" ? "/index.html" : pathname));
-  if (!file.startsWith(`${PAGE_DIR}${path.sep}`) || !existsSync(file)) {
-    response.writeHead(404).end();
-    return;
-  }
-  response.writeHead(200, {
-    "content-security-policy": policy,
-    "content-type": CONTENT_TYPES.get(path.extname(file)) ?? "application/octet-stream",
-  });
-  response.end(await readFile(file));
-};
-
-const answerPageFile = async (url: string, response: ServerResponse, policy: string) => {
-  try {
-    await servePageFile(url, response, policy);
-  } catch {
-    response.writeHead(500).end();
-  }
-};
-
-interface Served {
-  url: string;
-  close: () => Promise<void>;
-}
-
-/** The built page and the dev host's bridge on one loopback origin, as `pnpm dev:browser` has them. */
-const servePage = async (host: DevHost): Promise<Served> => {
-  const policy = pagePolicy({ desktopDir: DESKTOP_DIR });
-  const server = createServer((request, response) => {
-    host.middleware(request, response, () => {
-      void answerPageFile(request.url ?? "/", response, policy);
-    });
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const { port } = z.object({ port: z.number() }).parse(server.address());
-  return {
-    close: async () => {
-      const closed = once(server, "close");
-      // the event stream holds its connection open
-      server.closeAllConnections();
-      server.close();
-      await closed;
-    },
-    url: `http://127.0.0.1:${port}/#${host.fragment}`,
-  };
 };
 
 /** What main gets for one call in place of the API's answer (e2e/stub-services.ts). */
@@ -185,33 +111,26 @@ const start = async (
     nodeArgs: options.stubServices ? ["--import", STUB_SERVICES] : [],
     root,
   });
-  let served: Served | null = null;
   let context: BrowserContext | null = null;
   let closing: Promise<void> | null = null;
-  // each step whatever the one before it did, so a context that will not close still lets the
-  // page's server and main go
+  // each step whatever the one before it did, so a context that will not close still lets main go
   const close = async (): Promise<void> => {
     closing ??= (async () => {
       try {
         await context?.close();
       } finally {
-        try {
-          await served?.close();
-        } finally {
-          await host.stop();
-        }
+        await host.stop();
       }
     })();
     await closing;
   };
   try {
-    served = await servePage(host);
     context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(served.url);
+    await page.goto(await host.handoff());
     return { close, opened: host.opened, page };
   } catch (error) {
-    // a launch that failed part way leaks nothing it made: the page's server, the context, main
+    // a launch that failed part way leaks nothing it made: the context, main
     await close();
     throw error;
   }

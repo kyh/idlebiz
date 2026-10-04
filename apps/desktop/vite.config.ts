@@ -1,12 +1,14 @@
 // Two outputs from one config. The page (`vite build`, and the dev server): React and Phaser, which
-// the shell's window loads as the bundle's own and the dev host serves to a browser. Main
+// main serves the shell's window on its own origin (src/main/page-server.ts). Main
 // (`vite build --mode main`): one node bundle the shell runs on the node it ships. Main bundles its
 // dependencies, but for sharp, which is native and loads from node_modules, and the ACP adapters,
 // which it never imports: it resolves them there and runs each as its own process.
 //
-// The dev server builds main too, before it serves the page and again on each change: `tauri dev`
-// restarts the shell when main changes, and `--mode browser` runs main itself, behind the dev
-// host's bridge on the page's own origin (src/dev-host/host.ts).
+// The dev server answers the page's files to main, which hands them on, so the page keeps main's
+// origin and still reloads in place; its hot-reload socket dials this server directly. It builds
+// main too, before it serves and again on each change: `tauri dev` restarts the shell when main
+// changes, and `--mode browser` runs main itself, as the shell does (src/dev-host/host.ts), with
+// `/` here the way into main's page.
 
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
@@ -15,15 +17,15 @@ import { build, defineConfig, isRunnableDevEnvironment } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import type * as DevHostModule from "./src/dev-host/host.ts";
 import type { DevHost } from "./src/dev-host/host.ts";
-import { pagePolicy } from "./src/dev-host/policy.ts";
-import { DEV_PORT } from "./src/shared/dev-bridge.ts";
 import { errorMessage } from "./src/shared/errors.ts";
+import { pagePolicy } from "./src/shared/page-policy.ts";
+import { DEV_PORT } from "./src/shared/page-routes.ts";
 
 const configDir = import.meta.dirname;
 const alias = { "@": path.resolve(configDir, "src") };
 
-// A page the dev server serves gets no policy from Tauri, so the dev server writes the shell's into
-// it, opened to its own socket, which hot reload rides. At the end of the head: a meta policy
+// Main stamps no policy on the page Vite answers, whose hot reload runs inline scripts, so the dev
+// server writes the page's own into it, opened to its socket. At the end of the head: a meta policy
 // covers only what follows it, and the dev server's own preamble for React's refresh is inline.
 const devContentSecurityPolicy = (): Plugin => ({
   apply: "serve",
@@ -31,7 +33,7 @@ const devContentSecurityPolicy = (): Plugin => ({
   transformIndexHtml: () => [
     {
       attrs: {
-        content: pagePolicy({ connect: ["ws://localhost:*"], desktopDir: configDir, meta: true }),
+        content: pagePolicy({ connect: [`ws://localhost:${DEV_PORT}`], meta: true }),
         "http-equiv": "Content-Security-Policy",
       },
       injectTo: "head",
@@ -111,17 +113,36 @@ const devMain = (mode: string): Plugin => ({
     const { startDevHost } = await ssr.runner.import<typeof DevHostModule>(
       path.resolve(configDir, "src/dev-host/host.ts"),
     );
-    host = await startDevHost({
+    const started = await startDevHost({
       log: (line) => {
         server.config.logger.info(line);
       },
+      pageDevUrl: `http://localhost:${DEV_PORT}`,
     });
-    server.middlewares.use(host.middleware);
-    const { fragment } = host;
+    host = started;
+    // `/` here is the way into main's page: each visit a fresh link from the main running now, so the
+    // one address outlives a restart of main, whose page is on a port of its own. Main asks for the
+    // page by name (`/index.html`), so this answers browsers alone
+    server.middlewares.use((request, response, next) => {
+      if (request.url !== "/" || request.method !== "GET") {
+        next();
+        return;
+      }
+      void (async () => {
+        try {
+          response.writeHead(303, {
+            "cache-control": "no-store",
+            location: await started.handoff(),
+          });
+          response.end();
+        } catch (error) {
+          response.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
+          response.end(`IdleBiz's main is not up yet (${errorMessage(error)}): try again.`);
+        }
+      })();
+    });
     server.httpServer?.once("listening", () => {
-      server.config.logger.info(
-        `\n  IdleBiz in a browser: http://localhost:${DEV_PORT}/#${fragment}\n`,
-      );
+      server.config.logger.info(`\n  IdleBiz in a browser: http://localhost:${DEV_PORT}/\n`);
     });
   },
   name: "idlebiz-dev-main",
@@ -155,6 +176,11 @@ export default defineConfig(({ mode }) =>
         publicDir: path.resolve(configDir, "public"),
         resolve: { alias },
         root: path.resolve(configDir, "src/renderer"),
-        server: { port: DEV_PORT, strictPort: true },
+        server: {
+          // the page's files reach the page through main, but its hot-reload socket dials here
+          hmr: { clientPort: DEV_PORT, host: "localhost" },
+          port: DEV_PORT,
+          strictPort: true,
+        },
       },
 );

@@ -1,15 +1,17 @@
 // Main: the one process that owns the save, the keys and the runs. It runs as the desktop shell's
-// node child (or the dev host's), and speaks to the window only through it, over its stdio
-// (`relay/stdio.ts`): no port carries the founder's approve button. The shell says hello with the
-// facts of this launch, and main boots; it invokes main's IPC methods for the window, and main asks
-// it for what only a native app does (`host.ts`). Stdin's end is the shell going away.
+// node child (or the dev host's), which speaks to it over its stdio (`relay/stdio.ts`): the shell
+// says hello with the facts of this launch, and main boots; main asks it for what only a native app
+// does (`host.ts`), and it asks main for a handoff into the window's page. Main serves that page
+// itself, and answers its calls and sends it its events on the page's own origin
+// (`page-server.ts`), whose port the seal closes to every employee run. Stdin's end is the shell
+// going away.
 
 import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { host, hostOver, launchSchema, setHost } from "@/main/host";
 import type { Launch } from "@/main/host";
 import { ipcDispatcher } from "@/main/lib/ipc-handler";
-import type { IpcDispatch, IpcHandlers } from "@/main/lib/ipc-handler";
+import type { IpcHandlers } from "@/main/lib/ipc-handler";
 import { broadcast, setEventSink } from "@/main/lib/broadcast";
 import { suspendWrites } from "@/main/lib/fs";
 import { osCryptSealer } from "@/main/lib/os-crypt";
@@ -20,6 +22,8 @@ import { agentDriver } from "@/main/agents/agent-driver";
 import { notingSeal } from "@/main/agents/seal";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { controlPlane } from "@/main/control-plane";
+import { devPageOrigin, startPageServer } from "@/main/page-server";
+import type { PageServer, PageSource } from "@/main/page-server";
 import { openProduct, openWorkspacePath, productStatus } from "@/main/product";
 import { chatOptions } from "@/main/prompts/chat-options";
 import {
@@ -59,7 +63,6 @@ import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "@/m
 import { ON_REAL_SAVE, ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 import type { IntegrationNeed } from "@/shared/domain";
-import { jsonValueSchema } from "@/shared/json";
 
 initLog();
 
@@ -294,6 +297,9 @@ const bootSettled = async (): Promise<void> => {
   }
 };
 
+// the window's page and main's door for it, once the boot has started it
+let page: PageServer | null = null;
+
 // Every exit waits the agents out, and runs once however many ways it is asked for: the
 // shell's Quit, the shell going away, a relaunch.
 let quitting: Promise<void> | null = null;
@@ -305,6 +311,7 @@ const quit = async (): Promise<void> => {
       await stopAgents();
     } finally {
       controlPlane.stop();
+      await page?.stop();
     }
   })();
   await quitting;
@@ -325,7 +332,16 @@ for (const signal of ["SIGTERM", "SIGINT"] satisfies NodeJS.Signals[]) {
   process.once(signal, quitAndExit);
 }
 
-let dispatch: IpcDispatch | null = null;
+// where the page's files come from: what main ships beside it, or under a development shell Vite
+const pageSourceOf = (launch: Launch): PageSource => {
+  if (launch.pageDevUrl === null) {
+    return { dir: launch.pageDir, kind: "built" };
+  }
+  if (launch.packaged) {
+    throw new Error("a packaged IdleBiz serves only the page it ships");
+  }
+  return { kind: "dev", origin: devPageOrigin(launch.pageDevUrl) };
+};
 
 const boot = async (launch: Launch): Promise<void> => {
   setHost(hostOver(peer), launch);
@@ -338,10 +354,12 @@ const boot = async (launch: Launch): Promise<void> => {
   await adoptShellPath();
   agentDriver.init();
   await controlPlane.start();
-  setEventSink((channel, data) => {
-    peer.notify("event", { channel, data });
+  const served = await startPageServer({
+    dispatch: ipcDispatcher(ipcHandlers),
+    page: pageSourceOf(launch),
   });
-  dispatch = ipcDispatcher(ipcHandlers);
+  page = served;
+  setEventSink(served.broadcast);
 
   activityEvents.on("activity", (e) => broadcast("onActivity", e));
   scheduler.start();
@@ -393,14 +411,15 @@ peer.handle("hello", launchSchema, async (launch) => {
   return null;
 });
 
-peer.handle(
-  "invoke",
-  z.object({ method: z.string(), payload: jsonValueSchema.optional() }),
-  async ({ method, payload }) =>
-    dispatch === null
-      ? { message: "IdleBiz is still starting.", ok: false }
-      : await dispatch(method, payload),
-);
+// a one-time link into the window's page, which the shell opens its window on: asked for each
+// window it makes, since a link left unused for five minutes signs nothing in
+peer.handle("handoff", z.null(), () => {
+  if (page === null) {
+    throw new Error("IdleBiz is still starting.");
+  }
+  const { handoffUrl, origin } = page.handoff();
+  return { handoffUrl, origin };
+});
 
 // the shell closes main's stdin once this answers, and main exits then
 peer.handle("quit", z.null(), async () => {

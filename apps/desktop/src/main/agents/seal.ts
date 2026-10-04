@@ -19,7 +19,8 @@ import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { z } from "zod";
 import { ROOT_DIR } from "@/main/paths";
 import { SECRETS_PATH } from "@/main/secrets";
-import { DEV_PORT } from "@/shared/dev-bridge";
+import { pagePorts } from "@/main/page-server";
+import { DEV_PORT } from "@/shared/page-routes";
 import type { AgentRunner, LoadReport } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import { RefusalError } from "@/shared/refusal";
@@ -214,10 +215,12 @@ const SCRATCH_SOCKETS = [
  */
 const TERMINAL_SHIMS = ["cmux-cli-shims"];
 
-// Chrome's DevTools port (a browser the founder debugs, signed in as them), node's inspector and
-// the dev server, whose bridge reaches main (`pnpm dev:browser`): each answers anyone on loopback,
-// and the bridge carries the founder's approve button.
-const DEBUG_PORTS = [9222, 9229, DEV_PORT];
+// Chrome's DevTools port (a browser the founder debugs, signed in as them), node's inspector, and
+// Vite's dev server, which reads any file of the checkout to whoever asks (`/@fs`) and under
+// `pnpm dev:browser` signs a browser in to main's page: each answers anyone on loopback as the
+// founder. Main's own page port, which carries the founder's approve button, is closed beside them
+// (`pagePorts`).
+const CLOSED_PORTS = [9222, 9229, DEV_PORT];
 
 /** The /dev nodes a toolchain writes: output sinks, terminals, dtrace's helper. */
 const DEV_NODES = String.raw`(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/dtracehelper") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/ttys[0-9]+$") (subpath "/dev/fd"))`;
@@ -279,8 +282,11 @@ export interface Seal {
   save: readonly Reach[];
   /** The founder's ~/Library/Preferences, where node CLIs keep theirs. */
   preferences: string;
-  /** Loopback ports no run reaches: a debugger listening there takes orders from anyone. */
-  debugPorts: readonly number[];
+  /**
+   * Loopback ports no run reaches: a debugger listening there takes orders from anyone, and main's
+   * page answers the founder's own window.
+   */
+  closedPorts: readonly number[];
   /** Per runner, the agent-browser namespace its runs with these folders start their daemons in. */
   namespaces: Record<AgentRunner, Reach>;
   /**
@@ -426,7 +432,7 @@ const commandUnder = (
     ),
     ...deny(
       "network-outbound",
-      seal.debugPorts.map((port) => `(remote tcp "localhost:${port}")`),
+      seal.closedPorts.map((port) => `(remote tcp "localhost:${port}")`),
     ),
   ].join("\n");
   const defines = params.flatMap((value, at) => ["-D", `P${at}=${value}`]);
@@ -726,7 +732,7 @@ export const browserSocketDir = (): string => path.join(homedir(), ".agent-brows
 /** The seal of a run under `home`, resolved as it stands on disk now. */
 export const sealFor = async ({
   clis,
-  debugPorts,
+  closedPorts,
   env,
   home,
   mainOnly,
@@ -743,7 +749,7 @@ export const sealFor = async ({
   /** Folders a terminal runs the founder's programs from that main's PATH need not name. */
   shims: readonly string[];
   /** Loopback ports whose listener would take orders from anyone, as the founder. */
-  debugPorts: readonly number[];
+  closedPorts: readonly number[];
   /** Main's env, where a runner's home may have been moved. */
   env: Readonly<Record<string, string | undefined>>;
   /** What only main touches, with every name that starts with it: main writes a file through `<file>.tmp`. */
@@ -807,7 +813,7 @@ export const sealFor = async ({
       own: cwd === undefined ? null : claudeProjectOf(claude.folder, cwd.path),
       projects: path.join(claude.folder, "projects"),
     },
-    debugPorts,
+    closedPorts,
     namespaces,
     preferences: path.join(realHome, "Library", "Preferences"),
     runners: homes,
@@ -836,7 +842,7 @@ export const machineSeal = async (writable: readonly string[]): Promise<Seal> =>
   const temps = [tmpdir(), path.join(path.dirname(cache), "T")];
   return await sealFor({
     clis: RUNNER_IDS.map(runnerBin),
-    debugPorts: DEBUG_PORTS,
+    closedPorts: [...CLOSED_PORTS, ...pagePorts()],
     env: process.env,
     home: homedir(),
     mainOnly: [SECRETS_PATH],
