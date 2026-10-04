@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TOOL_NAMES, TOOL_SPECS, toolDocs } from "./tool-specs";
+import { lexLine } from "./shell-lexer";
+import { TOOL_NAMES, TOOL_SPECS, commandOf, toolDocs, verbOf } from "./tool-specs";
 
 describe("tool specs", () => {
   it.each(TOOL_NAMES)("%s teaches a request its own body accepts", (name) => {
@@ -102,10 +103,16 @@ describe("tool specs", () => {
 
   it("renders the call an agent can paste", () => {
     expect(toolDocs(false)).toContain(
-      `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -H "content-type: application/json" -d '{"action":"Post the launch thread on r/SideProject","draft":"...","instructions":"..."}'`,
+      `\`idlebiz ask-boss '{"action":"Post the launch thread on r/SideProject","draft":"...","instructions":"..."}'\``,
     );
-    expect(toolDocs(false)).toContain(
-      `curl -s "$IDLEBIZ_API_URL/v1/team-chat" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`,
-    );
+    expect(toolDocs(false)).toContain("`idlebiz read-team-chat`");
+  });
+
+  it.each(TOOL_NAMES)("teaches %s as the words a shell hands the command", (name) => {
+    const body = JSON.stringify(TOOL_SPECS[name].example);
+    const [pipeline] = lexLine(commandOf(name)).pipelines;
+    expect(pipeline?.map((command) => command.words)).toEqual([
+      ["idlebiz", verbOf(name), ...(body === "{}" ? [] : [body])],
+    ]);
   });
 });

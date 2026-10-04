@@ -362,6 +362,11 @@ const MUST_ALLOW = [
   'curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"',
   'curl -s -X POST "$IDLEBIZ_API_URL/v1/delegate" -d \'{"role":"engineer"}\'',
   "curl -s http://127.0.0.1:8842/v1/team-chat",
+  // the company's tools, whose requests are data the game reads, never commands
+  `idlebiz message-team '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
+  `idlebiz ask-boss '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
+  `idlebiz ask-boss - <<'EOF'\n{"question":"Can't we vercel deploy --prod today?"}\nEOF`,
+  `idlebiz deploy 2>&1 | tail -5`,
   // Regression: reporting a blocked command must not trigger that command's rule.
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/message-team" -H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN" -d '{"text":"Ran git push origin main. Held at the tool boundary."}'`,
   `curl -s -X POST "$IDLEBIZ_API_URL/v1/ask-boss" -d '{"question":"Should I npm publish this, or vercel deploy it first?"}'`,
@@ -531,14 +536,14 @@ describe("classifyCommand", () => {
     },
   );
 
-  it("runs every company tool's documented curl unasked", () => {
-    const curls = [...toolDocs(true).matchAll(/`(?<curl>curl [^`]+)`$/gmu)].map(
-      (match) => match.groups?.curl ?? "",
+  it("runs every company tool's documented command unasked", () => {
+    const commands = [...toolDocs(true).matchAll(/`(?<command>idlebiz [^`]+)`$/gmu)].map(
+      (match) => match.groups?.command ?? "",
     );
-    expect(curls.length).toBeGreaterThan(10);
-    for (const curl of curls) {
-      expect({ curl, verdict: classifyCommand(curl) }).toEqual({
-        curl,
+    expect(commands.length).toBeGreaterThan(10);
+    for (const command of commands) {
+      expect({ command, verdict: classifyCommand(command) }).toEqual({
+        command,
         verdict: { decision: "allow" },
       });
     }

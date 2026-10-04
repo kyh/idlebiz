@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { RefusalError } from "../refusal";
-import { TOOL_NAMES, curlOf } from "../tool-specs";
+import { TOOL_NAMES, commandOf } from "../tool-specs";
 
 /** macOS's managed settings, which outrank every other tier of claude's. */
 const MANAGED_SETTINGS = "/Library/Application Support/ClaudeCode/managed-settings.json";
@@ -27,7 +27,7 @@ const escaped = (text: string): string => text.replaceAll(/[$()*+.?[\\\]^{|}]/gu
 
 /**
  * Whether claude's deny `rule` stops `command` in its Bash tool: `Bash` alone, a prefix
- * (`Bash(curl:*)`) or a pattern whose `*` stands for anything (`Bash(curl *)`).
+ * (`Bash(idlebiz:*)`) or a pattern whose `*` stands for anything (`Bash(idlebiz *)`).
  */
 export const deniesCommand = (rule: string, command: string): boolean => {
   const named = BASH_RULE.exec(rule.trim());
@@ -45,16 +45,16 @@ export const deniesCommand = (rule: string, command: string): boolean => {
 /**
  * Refuses a claude run that managed settings (`file`), the one tier of the founder's machine a
  * run's session still loads, would cut off from the company: a deny rule outranks the ask rules
- * the session adds, so each tool's curl would be refused before IdleBiz is asked, and the turn
- * would still end as done.
+ * the session adds, so each tool's `idlebiz` command would be refused before IdleBiz is asked,
+ * and the turn would still end as done.
  */
 export const refuseDeniedTools = async (file: string = MANAGED_SETTINGS): Promise<void> => {
-  const commands = TOOL_NAMES.map(curlOf);
+  const commands = TOOL_NAMES.map(commandOf);
   const rules = await denyRulesIn(file);
   const rule = rules.find((denied) => commands.some((command) => deniesCommand(denied, command)));
   if (rule !== undefined) {
     throw new RefusalError(
-      `Your Claude Code managed settings deny ${rule} (${file}), and a claude employee reaches the company's tools only with curl, so it did not start. Remove that rule to let claude employees work.`,
+      `Your Claude Code managed settings deny ${rule} (${file}), and a claude employee reaches the company's tools only with the idlebiz command, so it did not start. Remove that rule to let claude employees work.`,
     );
   }
 };

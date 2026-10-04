@@ -1,12 +1,12 @@
 // Main, the server `idlebiz serve` runs: the one process that owns the save, the keys and the runs.
 // It runs as the desktop shell's node child (or the dev host's), which speaks to it over its stdio
 // (`relay/stdio.ts`), and its first import is its boot (commands/serve.ts loads it for `serve`
-// alone). The shell
-// says hello with the facts of this launch, and main boots; main asks it for what only a native app
-// does (`host.ts`), and it asks main for a handoff into the window's page. Main serves that page
-// itself, and answers its calls and sends it its events on the page's own origin
-// (`page-server.ts`), whose port the seal closes to every employee run. Stdin's end is the shell
-// going away.
+// alone). The shell says hello with the facts of this launch, and main boots; main asks it for
+// what only a native app does (`host.ts`), and it asks main for a handoff into the window's page.
+// Main serves that page itself, and answers its calls and sends it its events on the page's own
+// origin (`page-server.ts`), whose port the seal closes to every employee run. The runs reach the
+// company through the control plane instead (`control-plane.ts`), with the `idlebiz` command main
+// writes them at boot (`agent-launcher.ts`). Stdin's end is the shell going away.
 
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -18,6 +18,7 @@ import { RPC_PREFIX } from "@repo/contract/routes";
 import type { IntegrationNeed } from "@repo/domain/domain";
 import { packageFile } from "../paths";
 import { activityEvents } from "./activity";
+import { writeAgentLauncher } from "./agent-launcher";
 import { agentDriver } from "./agents/agent-driver";
 import { setAutopilot, switchOffBeforeReset } from "./company-actions";
 import { controlPlane } from "./control-plane";
@@ -35,7 +36,7 @@ import { metricsPulse } from "./metrics-pulse";
 import { createPageRouter } from "./page-router";
 import { devPageOrigin, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
-import { ON_REAL_SAVE, ROOT_DIR } from "./paths";
+import { ON_REAL_SAVE, ROOT_DIR, RUN_BIN_DIR } from "./paths";
 import { stdioPeer } from "./relay/stdio";
 import { createScheduler } from "./scheduler";
 import { checkSecrets, setSealer } from "./secrets";
@@ -225,6 +226,8 @@ const boot = async (launch: Launch): Promise<void> => {
   }
   await adoptShellPath();
   agentDriver.init();
+  // the command the runs call the company's tools with: this node, on the CLI it was started from
+  writeAgentLauncher(RUN_BIN_DIR, process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
   // the largest call a page makes: a pasted key, a long answer to a question
   const rpc = new RPCHandler(createPageRouter({ resetGame, scheduler, stripeReady }), {

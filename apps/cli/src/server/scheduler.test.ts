@@ -21,7 +21,7 @@ const store = await import("./store/store");
 const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { writeMetricsConfig } = await import("./store/metrics-config");
 const { activityEvents } = await import("./activity");
-const { createScheduler } = await import("./scheduler");
+const { createScheduler, loggedToolName } = await import("./scheduler");
 const { setAutopilot } = await import("./company-actions");
 
 beforeEach(() => {
@@ -1296,5 +1296,20 @@ describe("an action only the founder can take", () => {
       from: { kind: "founder" },
       text: "📦 Order 1: Printful marked it failed: couldn't — on holiday",
     });
+  });
+});
+
+describe("a tool call's title in the activity log", () => {
+  it.each([
+    `idlebiz set-env '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
+    `idlebiz set_env - <<'EOF'\n{"name":"OPENAI_API_KEY","value":"sk-proj-1"}\nEOF`,
+    `curl -s -X POST "$IDLEBIZ_API_URL/v1/set-env" -d '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
+  ])("keeps none of the value set_env was given: %s", (title) => {
+    expect(loggedToolName(title)).toBe("set_env");
+  });
+
+  it("keeps every other title as it is", () => {
+    const title = `idlebiz message-team '{"text":"shipped"}'`;
+    expect(loggedToolName(title)).toBe(title);
   });
 });

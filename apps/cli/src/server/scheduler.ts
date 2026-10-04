@@ -29,7 +29,7 @@ import { RUN_COST_ESTIMATE_USD, allocate } from "@repo/domain/bets";
 import type { Allocation } from "@repo/domain/bets";
 import { errorMessage } from "@repo/domain/errors";
 import { RefusalError } from "./refusal";
-import { TOOL_SPECS } from "./tool-specs";
+import { TOOL_SPECS, verbOf } from "./tool-specs";
 import {
   actionAnswer,
   approvalAnswer,
@@ -74,9 +74,12 @@ const isWorking = (employeeId: string): boolean =>
 
 const empName = (id: string): string => store.getEmployee(id)?.name ?? "someone";
 
-/** A set_env call is titled with its curl line, value and all, and activity.jsonl keeps a title for good. */
-const loggedToolName = (title: string): string =>
-  title.includes(TOOL_SPECS.set_env.path) ? "set_env" : title;
+/** What names set_env in a call's title: its name, its verb or its route. */
+const SET_ENV_MARKS = ["set_env", verbOf("set_env"), TOOL_SPECS.set_env.path];
+
+/** A set_env call is titled with its command line, value and all, and activity.jsonl keeps a title for good. */
+export const loggedToolName = (title: string): string =>
+  SET_ENV_MARKS.some((mark) => title.includes(mark)) ? "set_env" : title;
 
 const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };

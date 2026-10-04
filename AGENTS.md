@@ -473,7 +473,7 @@ rather than crashing boot.
   every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
   domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop; it alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is
-  in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents curl back into),
+  in flight — never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents' `idlebiz` command calls back into; `agent-launcher.ts` writes that command at boot),
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship, `resources/skills`),
   `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:

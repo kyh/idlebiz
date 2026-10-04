@@ -147,7 +147,8 @@ allocator and the replay.
   what makes the task lock correct.
 - **A company tool is described once**, in `shared/tool-specs.ts`: route, body, lead-only
   refusal, doc and example. The agents' instructions are rendered from it, `main/tools.ts`
-  binds each implementation to its spec, and `control-plane.ts` is only transport. A change
+  binds each implementation to its spec, `idlebiz <tool>` is the client a run types it with
+  (`commands/tools.ts`), and `control-plane.ts` is only transport. A change
   everyone should hear about (a bet, a product, autopilot) goes through
   `main/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's IPC.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
@@ -436,7 +437,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   deploy guard skips a public name's value (`unshippableEnvValues`), which the build ships
   anyway; that trusts the name, not the framework, so a prefix the product's framework does not
   read (`VITE_` in a Next.js app) leaves a value server-only and unguarded. A set_env call's
-  title, its curl line, is logged as `set_env` alone.
+  title, its command line, is logged as `set_env` alone.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits
@@ -466,7 +467,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   plan, which would block the task on a founder card that changes nothing), no skills of
   claude's own (`disableBundledSkills`), IdleBiz's as a plugin, and none of their MCP servers
   or claude.ai connectors (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`),
-  which act signed in as the founder; the company is reached with curl. A sign-in kept in their
+  which act signed in as the founder; the company is reached with the `idlebiz` command, which
+  main writes at boot and puts first on each run's PATH (`agent-launcher.ts`), a client of the
+  control plane that sends nowhere but loopback. A sign-in kept in their
   settings rather than their shell still reaches the run (`claudeUserSettings` in
   `main/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
   gateway's URL and token), through `runEnv` as the shell's env goes, and the helpers claude runs
@@ -498,8 +501,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   reading them (their memories too), and IdleBiz's folder is handed to the session to read
   (`readDirs`). The codex gate test plants each of these and checks none reaches the model, and that a push
   their rules allow still asks. A deny rule in
-  managed settings outranks the flag tier's ask rules and would refuse a company tool's curl
-  before IdleBiz is asked, the turn still ending as done, so a claude run under one does not
+  managed settings outranks the flag tier's ask rules and would refuse a company tool's
+  `idlebiz` command before IdleBiz is asked, the turn still ending as done, so a claude run under one does not
   start, and says which rule (`refuseDeniedTools` in `main/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
   says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt

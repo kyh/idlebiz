@@ -53,7 +53,7 @@ Every task says which product it is for; that product's workspace is your workin
 - You have a private memory folder at ${memoryDir} — keep what only you need there so future-you remembers.
 
 ## Company tools (the IdleBiz API)
-Every run gives you the env vars \`IDLEBIZ_API_URL\` and \`IDLEBIZ_RUN_TOKEN\`. Call company tools with curl; always send the Authorization header. Quote JSON carefully (single-quote the payload).
+Call each with the \`idlebiz\` command in your shell: \`idlebiz <tool>\`, then its request as one single-quoted JSON argument, or \`-\` with the JSON on stdin, which keeps an apostrophe or many lines intact (\`idlebiz ask-boss - <<'EOF'\` … \`EOF\`). It prints the answer, or why the call was refused; \`idlebiz <tool> --help\` repeats a tool's doc.
 ${toolDocs(lead)}
 
 ## Working with your team

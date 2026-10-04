@@ -9,13 +9,16 @@ import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@repo/d
 import { EnvNameSchema } from "./env-name";
 import { formatUsd } from "@repo/domain/format";
 import { CATALOG_PAGE, PrintPlacementSchema } from "./listing";
+import { shellQuote } from "./lib/shell-quote";
 
 // Every company tool, described once: the route the control plane serves, the
 // body it parses, who may call it, and what the agent is told — docs and the
 // example are rendered from here, so a renamed field cannot leave the prose
-// teaching agents a request that now answers 400. Bodies are strict because a
-// key an agent guessed (`bet_id` for `bet`) would otherwise be dropped and its
-// optional field quietly defaulted.
+// teaching agents a request that now answers 400. An agent calls each as a verb
+// of the `idlebiz` command (commands/tools.ts), which reads this table and
+// nothing of the server's. Bodies are strict because a key an agent guessed
+// (`bet_id` for `bet`) would otherwise be dropped and its optional field
+// quietly defaulted.
 
 const EMPTY = z.strictObject({});
 const SLUG_AND_REASON = z.strictObject({ reason: KillReasonSchema, slug: z.string().min(1) });
@@ -64,7 +67,7 @@ export interface ToolSpec<B extends z.ZodType> {
   /** Headcount, the portfolio and the bets are the lead's alone; anyone else is told who to take it to. */
   leadOnly: string | null;
   doc: string;
-  /** A request that parses, shown to the agent as the curl payload. */
+  /** A request that parses, shown to the agent as the command's argument. */
   example: z.input<B>;
 }
 
@@ -353,19 +356,17 @@ export const TOOL_NAMES = Object.keys(TOOL_SPECS).filter(
   (name): name is ToolName => name in TOOL_SPECS,
 );
 
-const HEADERS = `-H "Authorization: Bearer $IDLEBIZ_RUN_TOKEN"`;
+/** The verb an agent types for a tool: its name as a command-line word. */
+export const verbOf = (name: ToolName): string => name.replaceAll("_", "-");
 
-/** A tool as an employee is taught to call it. */
-export const curlOf = (name: ToolName): string => {
-  const { method, path, example } = TOOL_SPECS[name];
-  const url = `"$IDLEBIZ_API_URL${path}"`;
-  return method === "GET"
-    ? `curl -s ${url} ${HEADERS}`
-    : `curl -s -X POST ${url} ${HEADERS} -H "content-type: application/json" -d '${JSON.stringify(example)}'`;
+/** A tool as an employee is taught to call it: its verb, and its example as the one argument. */
+export const commandOf = (name: ToolName): string => {
+  const body = JSON.stringify(TOOL_SPECS[name].example);
+  return body === "{}" ? `idlebiz ${verbOf(name)}` : `idlebiz ${verbOf(name)} ${shellQuote(body)}`;
 };
 
 /** The tool list as an employee's instructions carry it; the lead's tools only for the lead. */
 export const toolDocs = (lead: boolean): string =>
   TOOL_NAMES.filter((name) => lead || TOOL_SPECS[name].leadOnly === null)
-    .map((name) => `- **${name}** — ${TOOL_SPECS[name].doc}\n  \`${curlOf(name)}\``)
+    .map((name) => `- **${name}** — ${TOOL_SPECS[name].doc}\n  \`${commandOf(name)}\``)
     .join("\n");

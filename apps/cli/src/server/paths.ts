@@ -40,6 +40,8 @@ export const ON_REAL_SAVE = ROOT_DIR === DEFAULT_ROOT_DIR;
 export const companyDir = (companySlug: string): string => path.join(ROOT_DIR, companySlug);
 /** The cache every run may write, beside the companies: no company is founded or loaded under its name, or every run could write that save. */
 export const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
+/** Where main writes the `idlebiz` command each run finds first on its PATH (agent-launcher.ts), which no run writes: no company is founded or loaded under its name either. */
+export const RUN_BIN_DIR = path.join(ROOT_DIR, "bin");
 export const companyFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "COMPANY.md");
 /** The first product's code; a later product keeps its own in its package (productWorkspace). */

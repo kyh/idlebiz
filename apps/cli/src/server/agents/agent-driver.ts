@@ -58,7 +58,8 @@ import type {
   RunSession,
 } from "@repo/domain/domain";
 import * as store from "../store/store";
-import { TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
+import { RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
+import { pathWithLauncher } from "../agent-launcher";
 import { holdFor } from "../command-policy";
 import type { Confinement, LivePage } from "../command-policy";
 import { RefusalError } from "../refusal";
@@ -119,7 +120,7 @@ export const acpAgentFor = (
     env[adapter.binEnvVar] = runnerBin(runner);
   }
   if (runner === "claude") {
-    // claude kills a shell command after 2 minutes by default: a deploy's curl would die before
+    // claude kills a shell command after 2 minutes by default: `idlebiz deploy` would die before
     // Vercel answers, with the founder's sign-off already spent on it
     env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
   }
@@ -823,11 +824,18 @@ class AgentDriver {
     const leases = new Set<string>();
     let sawOutput = false;
     try {
+      const agent = await sessionAgent(emp.runner, seal, this.skills(), run.workspace);
       const res = await runAcpTurn({
         addDirs,
-        agent: await sessionAgent(emp.runner, seal, this.skills(), run.workspace),
+        agent,
         cwd: run.workspace,
-        env: { ...handle.env, ...TOOL_CACHE_ENV, ...gitIdentity(emp, company) },
+        env: {
+          ...handle.env,
+          ...TOOL_CACHE_ENV,
+          ...gitIdentity(emp, company),
+          // the company's tools are the `idlebiz` command, main's own whatever else PATH holds
+          PATH: pathWithLauncher(RUN_BIN_DIR, agent.env.PATH),
+        },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         instructionsChanged: run.instructionsChanged,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,

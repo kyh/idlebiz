@@ -4,6 +4,7 @@ import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "
 import { report } from "../lib/report";
 import {
   ROOT_DIR,
+  RUN_BIN_DIR,
   TOOL_CACHE_DIR,
   ensureAppDirs,
   companyDir,
@@ -2005,13 +2006,16 @@ export const killProduct = (productId: string, reason: string, by: string | null
 };
 
 // ---- founding and boot -------------------------------------------------------
-/** Publish a complete company with one directory rename; boot ignores staging directories. */
-/** The root's entries a company may be in: dot folders are main's own, and the tool cache is every run's to write. */
+/** The folders beside the companies that main keeps for the runs: the cache they write and the command they call. */
+const KEPT_FOR_RUNS = new Set([RUN_BIN_DIR, TOOL_CACHE_DIR]);
+
+/** The root's entries a company may be in: dot folders are main's own, and those it keeps for the runs are theirs. */
 const saveEntries = (): string[] =>
   safeReaddir(ROOT_DIR).filter(
-    (entry) => !entry.startsWith(".") && companyDir(entry) !== TOOL_CACHE_DIR,
+    (entry) => !entry.startsWith(".") && !KEPT_FOR_RUNS.has(companyDir(entry)),
   );
 
+/** Publish a complete company with one directory rename; boot ignores staging directories. */
 export const foundCompany = (input: {
   name: string;
   mission: string | null;
@@ -2030,7 +2034,7 @@ export const foundCompany = (input: {
   const id = uniqueSlug(
     input.name,
     [],
-    (s) => companyDir(s) === TOOL_CACHE_DIR || existsSync(companyDir(s)),
+    (s) => KEPT_FOR_RUNS.has(companyDir(s)) || existsSync(companyDir(s)),
   );
   const co: Company = {
     autopilot: true,
