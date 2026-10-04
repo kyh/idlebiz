@@ -791,12 +791,17 @@ describe("the order pump", () => {
       { delivery: null, kind: "link", sessionId: "cs_tip" },
       { kind: "unreadable", listingId: "gone", sessionId: "cs_lost_listing" },
     ]);
+    // one read raises both, often within one millisecond, where newest-first keeps the order they
+    // were raised in: which comes first is the clock's, not the assertion
     const cards = orderCards();
-    expect(cards.map((t) => t.title)).toEqual([
-      `Order ${orderIdOf("cs_lost_listing").slice(0, 8)}: IdleBiz cannot send it`,
-      `Order ${orderIdOf("cs_delivered").slice(0, 8)}: deliver it`,
-    ]);
-    expect(cards[1]?.state).toMatchObject({
+    expect(cards).toHaveLength(2);
+    expect(cards.map((t) => t.title)).toEqual(
+      expect.arrayContaining([
+        `Order ${orderIdOf("cs_lost_listing").slice(0, 8)}: IdleBiz cannot send it`,
+        `Order ${orderIdOf("cs_delivered").slice(0, 8)}: deliver it`,
+      ]),
+    );
+    expect(cards.find((t) => t.title.endsWith(": deliver it"))?.state).toMatchObject({
       ask: {
         action: 'Send ada@example.com what "Acme teardown" promised',
         instructions: `"Acme teardown", ada@example.com: paid $9.00 on ${productId}, Stripe payment pi_cs_delivered. The team says to send: Email the PDF at memos/acme.pdf Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
