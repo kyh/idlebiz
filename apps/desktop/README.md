@@ -86,7 +86,7 @@ appindicator for its menu-bar icon (`libayatana-appindicator3-dev`).
 
 1. fetches the node the app runs main on, pinned by sha-256 (`scripts/fetch-node.ts`), into
    `src-tauri/binaries/` (`bundle.externalBin`, beside the shell in `Contents/MacOS`) with its
-   licence for `Contents/Resources/node`;
+   licence for `Contents/Resources/notices/node`;
 2. builds the page and main, and stages main with its production dependencies (the ACP adapters,
    sharp) by `pnpm deploy`, the workspace's patches applied (`scripts/stage-main.ts`), into
    `Contents/Resources/main`;
