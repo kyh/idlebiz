@@ -1,6 +1,8 @@
 // The Mac app: the shell, the node beside it and main as a resource, signed, notarized when
 // apps/desktop/.env holds the notary's key, and the release's dmg in .output/bin. The release
 // material is read HERE, in the one process that packs, rather than from the shell's environment.
+// A pack with no Developer ID stops unless IDLEBIZ_PACK_UNSIGNED=1 asks for an ad-hoc one, and a
+// release (IDLEBIZ_RELEASE=1, which release:publish sets) stops unless it is signed and notarized.
 //
 // `bundle.resources` and `externalBin` live in the config this writes, never in tauri.conf.json:
 // tauri-build copies both on every cargo build, so a clippy run would copy main's 600 MB, and a
@@ -73,7 +75,8 @@ const notaryEnv = (): Notary | null => {
   };
 };
 
-// the Developer ID the keychain holds, or `-` for an ad-hoc pack, which opens on the Mac that built it
+// the Developer ID the keychain holds, or `-` for an ad-hoc pack, which opens on the Mac that built
+// it and is made only when asked for: a missing certificate must not pass for a signed build
 const signingIdentity = (): string => {
   if (process.env.IDLEBIZ_PACK_UNSIGNED === "1") {
     return "-";
@@ -84,9 +87,26 @@ const signingIdentity = (): string => {
   const listed = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], {
     encoding: "utf-8",
   });
-  const match = /"(?<identity>Developer ID Application: [^"]+)"/u.exec(listed.stdout);
-  return match?.groups?.identity ?? "-";
+  const identity = /"(?<identity>Developer ID Application: [^"]+)"/u.exec(listed.stdout)?.groups
+    ?.identity;
+  if (identity === undefined) {
+    throw new Error(
+      "the keychain holds no Developer ID Application identity: install one, name it in APPLE_SIGNING_IDENTITY, or set IDLEBIZ_PACK_UNSIGNED=1 for an ad-hoc pack that opens on this Mac alone",
+    );
+  }
+  return identity;
 };
+
+// what Tauri reads to notarize: only .env's may reach it, so a stale export in the shell never
+// notarizes a pack .env did not ask for
+const NOTARY_VARIABLES = new Set([
+  "APPLE_API_ISSUER",
+  "APPLE_API_KEY",
+  "APPLE_API_KEY_PATH",
+  "APPLE_ID",
+  "APPLE_PASSWORD",
+  "APPLE_TEAM_ID",
+]);
 
 const findOne = async (dir: string, suffix: string): Promise<string> => {
   const entries = await readdir(dir);
@@ -105,6 +125,11 @@ if (process.platform !== "darwin") {
 const identity = signingIdentity();
 const signed = identity !== "-";
 const notary = signed ? notaryEnv() : null;
+if (process.env.IDLEBIZ_RELEASE === "1" && notary === null) {
+  throw new Error(
+    "a release is signed with a Developer ID and notarized: apps/desktop/.env names no complete notary key",
+  );
+}
 log(signed ? `signing as ${identity}` : "signing ad-hoc: this pack opens only on this Mac");
 log(
   notary === null
@@ -148,9 +173,12 @@ const configFile = path.join(packageRoot, ".output", "tauri.package.conf.json");
 await writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`);
 
 await rm(bundleDir, { force: true, recursive: true });
+const inherited = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !NOTARY_VARIABLES.has(name)),
+);
 run("pnpm", ["exec", "tauri", "build", "--config", configFile], {
   cwd: packageRoot,
-  env: { ...process.env, ...notary },
+  env: { ...inherited, ...notary },
 });
 
 await rm(outDir, { force: true, recursive: true });

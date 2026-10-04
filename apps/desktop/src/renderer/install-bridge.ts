@@ -21,14 +21,20 @@ interface Transport {
 const tauriTransport: Transport = {
   invoke: async (method, payload) => await invoke<JsonValue>("main_invoke", { method, payload }),
   listen: (channel, listener) => {
+    // Tauri registers a listener asynchronously, so an event can still arrive after the cleanup
+    // ran and before the unlisten lands: the flag, cleared at once, keeps it from a stale listener
+    let active = true;
     const listening = listen<JsonValue>(channel, (event) => {
-      listener(event.payload);
+      if (active) {
+        listener(event.payload);
+      }
     });
     const stop = async (): Promise<void> => {
       const unlisten = await listening;
       unlisten();
     };
     return () => {
+      active = false;
       void stop();
     };
   },

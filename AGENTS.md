@@ -23,7 +23,11 @@ pnpm dev:desktop   # the app's own window (tauri dev)
 pnpm e2e           # builds the page and main, then drives them in Chromium (local only)
 ```
 
-No database, no Docker, no server to provision — `pnpm install` really is the whole setup.
+No database, no Docker, no server to provision: past `pnpm install`, the one thing to install is
+Rust through rustup, since `pnpm verify` runs clippy and `cargo test` over the shell and
+`pnpm dev:desktop` builds it (`apps/desktop/rust-toolchain.toml` pins the toolchain, and the first
+`cargo` call installs it; on Linux, Tauri's prerequisites too: `libwebkit2gtk-4.1-dev`,
+`libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `libssl-dev`, `build-essential`).
 There is no bootstrap script and nothing to seed.
 
 **`pnpm dev:desktop` and `pnpm dev:browser` are not plain dev servers.** Each runs `pnpm dev:kill`
@@ -82,7 +86,8 @@ Chromium (`apps/desktop/e2e/`): each launch starts the built main through the de
 (`src/dev-host/host.ts`), which answers main's asks of a native app as the shell would, and serves
 the built page under the shell's own content security policy beside the dev host's bridge.
 `pnpm -F @repo/desktop e2e` reruns it on the last build. The shell itself (the window, the
-menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test` and driven by hand. It covers the title screen, a founded company's
+menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test` and driven by hand.
+The suite covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
 shown as set and, for Stripe, replaceable and removable; a key refused is never saved), Printful token entry
 (a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into

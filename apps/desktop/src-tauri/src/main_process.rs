@@ -7,15 +7,16 @@
 //! appended to its log.
 //!
 //! Main's stdin is also its lifeline. The shell closes it only once main has answered `quit`, so a
-//! shell that crashed or was killed ends main too, and main stops its runs on the way out. There
-//! is no restart: main owns the save, and a second one under a first that has not let go would
-//! race it.
+//! shell that crashed or was killed ends main too, and main stops its runs on the way out. A thread
+//! of its own writes it, so a main that stops reading holds that thread alone: never a quit's
+//! wait, which then ends main the hard way. There is no restart: main owns the save, and a second
+//! one under a first that has not let go would race it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -71,7 +72,8 @@ type Answer = oneshot::Sender<Result<Value, String>>;
 
 pub struct MainProcess {
     pid: u32,
-    stdin: Mutex<Option<ChildStdin>>,
+    /// Lines for main's stdin, which the writer thread writes; none once the shell closed it.
+    to_main: Mutex<Option<mpsc::Sender<String>>>,
     pending: Mutex<HashMap<u64, Answer>>,
     next_id: AtomicU64,
     exit: Exit,
@@ -108,9 +110,24 @@ impl MainProcess {
         let mut child: Child = command
             .spawn()
             .map_err(|error| format!("main could not start ({}): {error}", spec.node.display()))?;
+        let (to_main, lines) = mpsc::channel::<String>();
+        if let Some(mut stdin) = child.stdin.take() {
+            thread::spawn(move || {
+                for line in lines {
+                    let written = stdin
+                        .write_all(line.as_bytes())
+                        .and_then(|()| stdin.write_all(b"\n"))
+                        .and_then(|()| stdin.flush());
+                    if written.is_err() {
+                        break;
+                    }
+                }
+                // dropping `stdin` closes main's lifeline, once every queued line is written
+            });
+        }
         let process = Arc::new(Self {
             pid: child.id(),
-            stdin: Mutex::new(child.stdin.take()),
+            to_main: Mutex::new(Some(to_main)),
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(0),
             exit: Exit::default(),
@@ -179,16 +196,16 @@ impl MainProcess {
         lock(&self.log).append(line);
     }
 
+    /// Queues a line for main; false once main is gone or its stdin closed. Read after a request
+    /// is pending, `exited` is what keeps it from waiting on a main that can no longer answer: the
+    /// watcher fails every pending request only once it has set it.
     fn write(&self, line: &str) -> bool {
-        let mut stdin = lock(&self.stdin);
-        let Some(pipe) = stdin.as_mut() else {
+        if lock(&self.exit.state).exited {
             return false;
-        };
-        let written = pipe
-            .write_all(line.as_bytes())
-            .and_then(|()| pipe.write_all(b"\n"))
-            .and_then(|()| pipe.flush());
-        written.is_ok()
+        }
+        lock(&self.to_main)
+            .as_ref()
+            .is_some_and(|lines| lines.send(line.to_owned()).is_ok())
     }
 
     fn settle(&self, id: u64, outcome: Result<Value, String>) {
@@ -219,6 +236,10 @@ impl MainProcess {
     /// Main stops its runs and answers, then its stdin closes and it exits; one that does not is
     /// killed. Blocks: a quit has no later step to wait in.
     pub fn stop(&self) {
+        self.stop_within(QUIT_TIMEOUT);
+    }
+
+    fn stop_within(&self, quit_timeout: Duration) {
         {
             let mut state = lock(&self.exit.state);
             if state.exited || state.stopping {
@@ -227,12 +248,12 @@ impl MainProcess {
             state.stopping = true;
         }
         let answered = tauri::async_runtime::block_on(async {
-            tokio::time::timeout(QUIT_TIMEOUT, self.request("quit", &Value::Null)).await
+            tokio::time::timeout(quit_timeout, self.request("quit", &Value::Null)).await
         });
         if !matches!(answered, Ok(Ok(_))) {
             self.note("[shell] main did not answer quit in time; closing it anyway");
         }
-        lock(&self.stdin).take();
+        lock(&self.to_main).take();
         if !self.wait_exit(EXIT_GRACE) {
             self.note("[shell] main did not exit once its stdin closed; sending SIGKILL");
             kill(self.pid);
@@ -283,8 +304,8 @@ mod tests {
     use super::*;
 
     /// A main that speaks the relay and nothing else: it answers `echo` and `refuse`, asks the shell
-    /// for `host.ping` when told to `ask` and says what it heard back as `pong`, and exits when told
-    /// to `die` or when its stdin closes.
+    /// for `host.ping` when told to `ask` and says what it heard back as `pong`, stops reading its
+    /// stdin when told to `wedge`, and exits when told to `die` or when its stdin closes.
     const FAKE_MAIN: &str = r#"
 const readline = require("node:readline");
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
@@ -298,6 +319,7 @@ readline
     else if (message.method === "refuse") send({ id: message.id, error: { code: -32000, message: "no" } });
     else if (message.method === "ask") send({ id: 900, method: "host.ping", params: message.params });
     else if (message.method === "die") process.exit(3);
+    else if (message.method === "wedge") { process.stdin.pause(); setInterval(() => {}, 1000); }
     else if (message.method === "quit") send({ id: message.id, result: null });
     else if (message.id === 900) send({ method: "pong", params: message.result ?? message.error });
   })
@@ -404,6 +426,32 @@ send({ method: "hi", params: { n: 1 } });
         assert!(log.contains(" main is up\n"), "{log}");
         assert!(log.contains(" [main] not a message\n"), "{log}");
         assert!(log.contains(" main exited (code 0)\n"), "{log}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_main_that_stops_reading_is_stopped_all_the_same() -> Result<(), Box<dyn std::error::Error>>
+    {
+        if !has_node() {
+            return Ok(());
+        }
+        let started = start(tempfile::tempdir()?)?;
+        started.heard.recv_timeout(WAIT)?;
+        started.main.notify("wedge", &Value::Null);
+        thread::sleep(Duration::from_millis(300));
+        let (stopped_by, stopped) = mpsc::channel();
+        let main = Arc::clone(&started.main);
+        thread::spawn(move || {
+            // more than the pipe holds, for a main that no longer reads any of it
+            let filler = json!("x".repeat(4096));
+            for _ in 0..64 {
+                main.notify("filler", &filler);
+            }
+            main.stop_within(Duration::from_millis(300));
+            let _ = stopped_by.send(());
+        });
+        stopped.recv_timeout(EXIT_GRACE * 2 + WAIT)?;
+        assert!(lock(&started.main.exit.state).exited);
         Ok(())
     }
 

@@ -260,7 +260,11 @@ const markSeen = (throttled: boolean): void => {
 const windowSchema = z.object({ state: z.enum(["blurred", "minimized", "hidden", "shown"]) });
 
 const windowChanged = ({ state }: z.infer<typeof windowSchema>): void => {
-  markSeen(state === "blurred");
+  // leaving the office marks it seen, as the Electron window's blur, hide and minimize did; coming
+  // back must not, or the next digest would start at the return and miss what happened while away
+  if (state !== "shown") {
+    markSeen(state === "blurred");
+  }
   if (state === "hidden" || state === "shown") {
     appTray.setWindowless(state === "hidden");
   }
@@ -278,11 +282,24 @@ const sealSecrets = (launch: Launch): void => {
   }
 };
 
+// the boot hello started, until it settles: a quit asked mid-boot waits it out, since what the boot
+// starts after the quit stopped everything (the scheduler, the control plane) would outlive it
+let booting: Promise<void> | null = null;
+
+const bootSettled = async (): Promise<void> => {
+  try {
+    await booting;
+  } catch {
+    // a failed boot was reported to the shell, which says so and quits
+  }
+};
+
 // Every exit waits the agents out, and runs once however many ways it is asked for: the
 // shell's Quit, the shell going away, a relaunch.
 let quitting: Promise<void> | null = null;
 const quit = async (): Promise<void> => {
   quitting ??= (async () => {
+    await bootSettled();
     metricsPulse.stop();
     try {
       await stopAgents();
@@ -366,7 +383,8 @@ const boot = async (launch: Launch): Promise<void> => {
 
 peer.handle("hello", launchSchema, async (launch) => {
   try {
-    await boot(launch);
+    booting = boot(launch);
+    await booting;
   } catch (error) {
     // the shell says it in a box, with where the log is, and quits; main goes when stdin closes
     report("boot", error);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Pack the signed, notarized app (`pnpm package`), then publish its dmg as the release tagged
-# v<version>: a draft first, made public only once the dmg is up, so the site's download link
-# never resolves a release with nothing to download.
+# Pack the signed, notarized app (`pnpm package`, which refuses a release that is either less),
+# then publish its dmg as the release tagged v<version>: a draft first, made public only once the
+# dmg is up, so the site's download link never resolves a release with nothing to download.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." # -> apps/desktop
 
@@ -27,7 +27,7 @@ if gh release view "$TAG" >/dev/null 2>&1 ||
   exit 1
 fi
 
-pnpm run package
+IDLEBIZ_RELEASE=1 pnpm run package
 
 gh release create "$TAG" \
   --draft \

@@ -16,6 +16,7 @@ const ENTITLEMENTS = path.join(packageRoot, "resources", "entitlements.mac.plist
 // the magic numbers a Mach-O file, or a fat one, opens with
 const MACH_O_MAGIC = new Set([
   0xfe_ed_fa_ce, 0xfe_ed_fa_cf, 0xce_fa_ed_fe, 0xcf_fa_ed_fe, 0xca_fe_ba_be, 0xbe_ba_fe_ca,
+  0xca_fe_ba_bf, 0xbf_ba_fe_ca,
 ]);
 
 const isMachO = async (file: string): Promise<boolean> => {

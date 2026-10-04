@@ -14,9 +14,16 @@ import path from "node:path";
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const repoRoot = path.resolve(packageRoot, "..", "..");
 
-// what pnpm writes beside the package for a later install, and the links its bins get; nothing at
-// runtime reads either, and a link in Resources is one more thing the signature has to explain
-const PRUNED = ["pnpm-lock.yaml", "pnpm-workspace.yaml", "node_modules/.pnpm", "node_modules/.bin"];
+// what pnpm writes beside the package for a later install, the links its bins get, and the README
+// its packlist takes whatever `files` says; nothing at runtime reads any of them, and a link in
+// Resources is one more thing the signature has to explain
+const PRUNED = [
+  "README.md",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "node_modules/.pnpm",
+  "node_modules/.bin",
+];
 // main's bundle and its dependencies: nothing else may reach the bundle
 const KEPT = new Set(["assets", "index.js", "node_modules", "package.json"]);
 

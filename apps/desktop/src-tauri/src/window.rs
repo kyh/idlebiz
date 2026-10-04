@@ -5,6 +5,7 @@
 //! main, which keeps when the office was last seen.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use serde_json::json;
@@ -71,12 +72,18 @@ fn watch<R: Runtime>(window: &WebviewWindow<R>) {
     });
 }
 
+/// The one window, made if it is not there yet. Idempotent: a second launch's Show can make it while
+/// a starting shell is about to, and the label is taken once, by whichever of the two is first.
 pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        return Ok(window);
+    }
     let pinned_origin = page_origin(app);
     let opens = Arc::new(ExternalOpens::new());
     let navigating = (app.clone(), Arc::clone(&opens));
     let opening = (app.clone(), opens);
-    let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let shown = AtomicBool::new(false);
+    let built = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("IdleBiz")
         .inner_size(1280.0, 800.0)
         .background_color(Color(0x12, 0x14, 0x1c, 0xff))
@@ -99,15 +106,29 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>>
         })
         // a game asks for nothing a device grants: no camera, microphone, location or notification
         .on_permission_request(|_, _| PermissionResponse::Deny)
-        .on_page_load(|window, payload| {
-            if payload.event() == PageLoadEvent::Finished {
-                let shown = window.show().and_then(|()| window.set_focus());
-                if let Err(error) = shown {
-                    eprintln!("[shell] could not show the window: {error}");
-                }
+        // the first load alone: a later one (a reload) must not bring back a window Close hid, nor
+        // take the focus from whatever has it. Main hears it shown once it is
+        .on_page_load(move |window, payload| {
+            if payload.event() != PageLoadEvent::Finished || shown.swap(true, Ordering::Relaxed) {
+                return;
+            }
+            match window.show().and_then(|()| window.set_focus()) {
+                Ok(()) => told(window.app_handle(), "shown"),
+                Err(error) => eprintln!("[shell] could not show the window: {error}"),
             }
         })
-        .build()?;
+        .build();
+    let window = match built {
+        Ok(window) => window,
+        Err(
+            tauri::Error::WindowLabelAlreadyExists(_) | tauri::Error::WebviewLabelAlreadyExists(_),
+        ) => {
+            return app
+                .get_webview_window(MAIN)
+                .ok_or(tauri::Error::WindowNotFound);
+        }
+        Err(error) => return Err(error),
+    };
     watch(&window);
     Ok(window)
 }
@@ -118,15 +139,19 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
     if let Err(error) = app.set_dock_visibility(true) {
         eprintln!("[shell] could not show the dock icon: {error}");
     }
-    let shown = match app.get_webview_window(MAIN) {
-        Some(window) => window
-            .unminimize()
-            .and_then(|()| window.show())
-            .and_then(|()| window.set_focus()),
-        None => create(app).map(|_| ()),
+    // a window made here is shown, and main told, by its first load
+    let Some(window) = app.get_webview_window(MAIN) else {
+        if let Err(error) = create(app) {
+            eprintln!("[shell] could not make the window: {error}");
+        }
+        return;
     };
-    if let Err(error) = shown {
-        eprintln!("[shell] could not show the window: {error}");
+    match window
+        .unminimize()
+        .and_then(|()| window.show())
+        .and_then(|()| window.set_focus())
+    {
+        Ok(()) => told(app, "shown"),
+        Err(error) => eprintln!("[shell] could not show the window: {error}"),
     }
-    told(app, "shown");
 }

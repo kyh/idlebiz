@@ -17,6 +17,7 @@ import type * as DevHostModule from "./src/dev-host/host.ts";
 import type { DevHost } from "./src/dev-host/host.ts";
 import { pagePolicy } from "./src/dev-host/policy.ts";
 import { DEV_PORT } from "./src/shared/dev-bridge.ts";
+import { errorMessage } from "./src/shared/errors.ts";
 
 const configDir = import.meta.dirname;
 const alias = { "@": path.resolve(configDir, "src") };
@@ -66,7 +67,13 @@ const watchMain = async (rebuilt: () => void): Promise<Watching> => {
       reject(event.error);
     }
   });
-  await firstBuild;
+  try {
+    await firstBuild;
+  } catch (error) {
+    // nothing will close a watcher whose first build failed but this
+    await watcher.close();
+    throw error;
+  }
   return { close: async () => await watcher.close() };
 };
 
@@ -75,10 +82,19 @@ const devMain = (mode: string): Plugin => ({
   configureServer: async (server: ViteDevServer) => {
     let host: DevHost | null = null;
     const watching = await watchMain(() => {
-      if (host !== null) {
-        server.config.logger.info("[host] main changed: restarting it");
-        void host.restartMain();
+      const running = host;
+      if (running === null) {
+        return;
       }
+      server.config.logger.info("[host] main changed: restarting it");
+      // a main that fails to boot is said, and the next edit tries again
+      void (async () => {
+        try {
+          await running.restartMain();
+        } catch (error) {
+          server.config.logger.error(`[host] main did not start again: ${errorMessage(error)}`);
+        }
+      })();
     });
     server.httpServer?.once("close", () => {
       void watching.close();

@@ -10,9 +10,9 @@ export interface KeepAwake {
 }
 
 /**
- * The shell's assertion stops idle sleep only: closing the lid still sleeps the Mac, and a run in
- * flight then waits for it to wake. Holding the display awake would keep a screen lit that nobody
- * is watching.
+ * The shell's assertion (a user-initiated activity) stops idle sleep and App Nap only: closing the
+ * lid still sleeps the Mac, and a run in flight then waits for it to wake. Holding the display awake
+ * would keep a screen lit that nobody is watching.
  */
 export const keepAwake = (blocker: PowerBlocker): KeepAwake => {
   let held: number | null = null;

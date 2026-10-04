@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
-import type { Browser, JSHandle, Page } from "@playwright/test";
+import type { Browser, BrowserContext, JSHandle, Page } from "@playwright/test";
 import { DESKTOP_DIR, startDevHost } from "@/dev-host/host";
 import type { DevHost } from "@/dev-host/host";
 import { pagePolicy } from "@/dev-host/policy";
@@ -185,23 +185,34 @@ const start = async (
     nodeArgs: options.stubServices ? ["--import", STUB_SERVICES] : [],
     root,
   });
+  let served: Served | null = null;
+  let context: BrowserContext | null = null;
+  let closing: Promise<void> | null = null;
+  // each step whatever the one before it did, so a context that will not close still lets the
+  // page's server and main go
+  const close = async (): Promise<void> => {
+    closing ??= (async () => {
+      try {
+        await context?.close();
+      } finally {
+        try {
+          await served?.close();
+        } finally {
+          await host.stop();
+        }
+      }
+    })();
+    await closing;
+  };
   try {
-    const served = await servePage(host);
-    const context = await browser.newContext();
-    let closing: Promise<void> | null = null;
-    const close = async (): Promise<void> => {
-      closing ??= (async () => {
-        await context.close();
-        await served.close();
-        await host.stop();
-      })();
-      await closing;
-    };
+    served = await servePage(host);
+    context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(served.url);
     return { close, opened: host.opened, page };
   } catch (error) {
-    await host.stop();
+    // a launch that failed part way leaks nothing it made: the page's server, the context, main
+    await close();
     throw error;
   }
 };

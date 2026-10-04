@@ -1,5 +1,6 @@
-// The window's channels to main, which the page builds its bridge from (renderer/install-bridge.ts)
-// and main dispatches by (main/lib/ipc-handler.ts). Schemas and typed contracts live in
+// The window's IPC channels: the calls the page makes of main and the events main broadcasts to it,
+// which the page builds its bridge from (renderer/install-bridge.ts) and main dispatches and sends
+// by (main/lib/ipc-handler.ts, main/lib/broadcast.ts). Schemas and typed contracts live in
 // ipc-registry.ts.
 
 export const CHANNELS = {

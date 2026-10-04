@@ -6,7 +6,7 @@
        the vendor runtimes main runs. Nothing else here does, and each further
        entitlement (unsigned executable memory, dyld variables, unsigned libraries)
        widens what a signed, notarized app will run. The pack signs every Mach-O it
-       ships, sharp's included (scripts/sign-resources.mjs), so library validation
+       ships, sharp's included (scripts/sign-resources.ts), so library validation
        holds. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>

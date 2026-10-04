@@ -12,6 +12,9 @@ export const stdioPeer = (onHostGone: () => void): Peer => {
   const elsewhere: typeof process.stdout.write = process.stderr.write.bind(process.stderr);
   process.stdout.write = elsewhere;
   const peer = createPeer({
+    failed: (method, reason) => {
+      console.error(`[relay] what main does on ${method} failed: ${reason}`);
+    },
     stray: (line) => {
       console.error(`[relay] a line from the host that is no message: ${line.slice(0, 200)}`);
     },

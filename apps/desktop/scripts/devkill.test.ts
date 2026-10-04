@@ -53,8 +53,9 @@ describe("devkill", () => {
 
   it("stops what tauri dev started, whatever its command line", async () => {
     const helper = path.join(checkout, "helper-pid");
+    // as pnpm's shim leaves it: it execs node on `.bin/../`, which path.join would fold away
     const tauri = standIn(
-      `node ${path.join(checkout, "apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js")} dev --additional-watch-folders .output/main`,
+      `node ${checkout}/apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js dev --additional-watch-folders .output/main`,
       `bash -c "sleep 60 & echo \\$! > ${helper}; wait"`,
     );
     await sleep(200);

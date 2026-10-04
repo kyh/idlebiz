@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
@@ -55,7 +55,10 @@ pub fn resolve(exe: &Path, resource_dir: &Path) -> Result<Runtime, String> {
         main_entry: resource_dir.join("main").join("index.js"),
         resources_dir: resource_dir.to_path_buf(),
     };
-    for required in [&runtime.node, &runtime.main_entry] {
+    // main reads the skills and the sheets as it hires and runs, long after it booted
+    let skills = runtime.resources_dir.join("skills");
+    let sheets = runtime.resources_dir.join("employee-sheets");
+    for required in [&runtime.node, &runtime.main_entry, &skills, &sheets] {
         if !required.exists() {
             return Err(format!(
                 "this install is incomplete: {} is missing. Reinstall IdleBiz.",
@@ -85,9 +88,25 @@ where
 
 /// The save main opens, as `apps/desktop/src/main/paths.ts` resolves it: `IDLEBIZ_ROOT_DIR`, or
 /// `~/.idlebiz`. Main inherits the shell's working directory, so a relative override names one
-/// folder for both.
+/// folder for both, read as `path.resolve` reads it.
 pub fn root_dir(home: &Path, override_dir: Option<&Path>, cwd: &Path) -> PathBuf {
-    override_dir.map_or_else(|| home.join(".idlebiz"), |dir| cwd.join(dir))
+    override_dir.map_or_else(|| home.join(".idlebiz"), |dir| resolved(&cwd.join(dir)))
+}
+
+/// `path.resolve`'s lexical reading: `.` dropped and `..` taking back the folder before it (never
+/// past the root), so one save is spelled one way by the shell and by main.
+fn resolved(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Where main's log goes: `~/Library/Logs/IdleBiz` for the app, where a report has always found
@@ -172,6 +191,23 @@ mod tests {
     }
 
     #[test]
+    fn a_bundle_missing_its_skills_is_a_broken_install() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let contents = dir.path().join("IdleBiz.app").join("Contents");
+        let resources = contents.join("Resources");
+        std::fs::create_dir_all(contents.join("MacOS"))?;
+        std::fs::write(contents.join("MacOS").join("node"), "")?;
+        std::fs::create_dir_all(resources.join("main"))?;
+        std::fs::write(resources.join("main").join("index.js"), "")?;
+        std::fs::create_dir_all(resources.join("employee-sheets"))?;
+        let refused = resolve(&contents.join("MacOS").join("IdleBiz"), &resources);
+        assert!(refused.is_err_and(|reason| reason.contains("skills")));
+        std::fs::create_dir_all(resources.join("skills"))?;
+        assert!(resolve(&contents.join("MacOS").join("IdleBiz"), &resources).is_ok());
+        Ok(())
+    }
+
+    #[test]
     fn resolves_the_save_as_main_does() {
         let home = Path::new("/Users/me");
         assert_eq!(
@@ -185,6 +221,14 @@ mod tests {
         assert_eq!(
             root_dir(home, Some(Path::new("/tmp/save")), Path::new("/repo")),
             PathBuf::from("/tmp/save")
+        );
+        assert_eq!(
+            root_dir(home, Some(Path::new("./a/../b/./c/")), Path::new("/repo")),
+            PathBuf::from("/repo/b/c")
+        );
+        assert_eq!(
+            root_dir(home, Some(Path::new("../../../..")), Path::new("/repo")),
+            PathBuf::from("/")
         );
     }
 

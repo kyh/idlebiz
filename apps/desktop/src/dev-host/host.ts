@@ -116,12 +116,17 @@ const bearer = (request: IncomingMessage): string | null => {
   return header?.startsWith("Bearer ") === true ? header.slice("Bearer ".length) : null;
 };
 
-/** An invoke's body, or null for one past the cap or no invoke at all. */
+/**
+ * An invoke's body, or null for one past the cap or no invoke at all. The cap is held to the length
+ * the request declares, which node's parser holds the body to, so no bigger body is ever read: a
+ * page's fetch of a string body always declares it.
+ */
 const readInvoke = async (request: IncomingMessage) => {
-  const body = await text(request);
-  if (body.length > MAX_INVOKE_BYTES) {
+  const declared = Number(request.headers["content-length"]);
+  if (!Number.isSafeInteger(declared) || declared > MAX_INVOKE_BYTES) {
     return null;
   }
+  const body = await text(request);
   try {
     const parsed = invokeSchema.safeParse(parseJson(body));
     return parsed.success ? parsed.data : null;
@@ -209,9 +214,10 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
         log(`[host] main did not answer quit: ${errorMessage(error)}`);
       }
     };
-    await Promise.race([answered(), sleep(QUIT_TIMEOUT_MS)]);
+    // unreferenced, so a deadline its race no longer needs holds no process open
+    await Promise.race([answered(), sleep(QUIT_TIMEOUT_MS, undefined, { ref: false })]);
     running.child.stdin.end();
-    await Promise.race([exited, sleep(EXIT_GRACE_MS)]);
+    await Promise.race([exited, sleep(EXIT_GRACE_MS, undefined, { ref: false })]);
     if (isRunning(running.child) && running.child.pid !== undefined) {
       // main leads its own group: what it started and did not end goes with it
       process.kill(-running.child.pid, "SIGKILL");
@@ -229,6 +235,9 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       stdio: ["pipe", "pipe", "pipe"],
     });
     const peer = createPeer({
+      failed: (method, reason) => {
+        log(`[dev-host] what the host does on ${method} failed: ${reason}`);
+      },
       stray: (line) => {
         log(`[main] ${line}`);
       },
@@ -246,6 +255,11 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     child.stdin.on("error", (error) => {
       // a write after main is gone fails here, not as an uncaught error in the host
       log(`[host] main's stdin: ${error.message}`);
+    });
+    // a child that never ran exits never: its hello fails with the reason instead of waiting on it
+    child.once("error", (error) => {
+      peer.close(`main could not start: ${error.message}`);
+      log(`[host] main could not start: ${error.message}`);
     });
     child.once("exit", () => {
       peer.close("main is gone");
@@ -294,7 +308,13 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     });
   };
   asks.addEventListener("relaunch", () => {
-    void restartMain();
+    void (async () => {
+      try {
+        await restartMain();
+      } catch (error) {
+        log(`[host] main did not start again: ${errorMessage(error)}`);
+      }
+    })();
   });
 
   const stop = async (): Promise<void> => {

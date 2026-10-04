@@ -42,8 +42,9 @@ session() {
 }
 
 # TERM first so the shell and main can finish the write they are in the middle of (the save is
-# markdown packages and an append-only log) and main can stop its runs; KILL whatever is still
-# there after.
+# markdown packages and an append-only log) and main can stop its runs, which takes it up to seven
+# seconds (the scheduler's two, then each agent's five to leave before its group is killed); KILL
+# whatever is still there after ten.
 targets=()
 for pid in $(session); do
   targets+=("$pid")
@@ -73,7 +74,7 @@ for pid in "${targets[@]:-}"; do
   [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null && killed=$((killed + 1))
 done
 n=0
-while any_alive && [ $n -lt 15 ]; do
+while any_alive && [ $n -lt 50 ]; do
   sleep 0.2
   n=$((n + 1))
 done

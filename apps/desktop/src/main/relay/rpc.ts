@@ -31,6 +31,8 @@ export interface PeerOptions {
   write: (line: string) => void;
   // a line that is no message, or answers nothing asked
   stray: (line: string) => void;
+  // a listener that threw: said, never thrown on into whatever read the line
+  failed: (method: string, reason: string) => void;
 }
 
 export interface Peer {
@@ -108,7 +110,11 @@ export const createPeer = (options: PeerOptions): Peer => {
       listeners.set(method, (params) => {
         const parsed = schema.safeParse(params ?? null);
         if (parsed.success) {
-          listener(parsed.data);
+          try {
+            listener(parsed.data);
+          } catch (error) {
+            options.failed(method, errorMessage(error));
+          }
         }
         return parsed.success;
       });
@@ -134,10 +140,16 @@ export const createPeer = (options: PeerOptions): Peer => {
         return;
       }
       pending.delete(id);
-      if (error === undefined) {
-        waiting.resolve(result ?? null);
-      } else {
+      // exactly one of the two, as JSON-RPC and the shell's own parser have it: an answer with
+      // neither is no success, whatever the asker's schema would make of a null
+      if (error !== undefined && result === undefined) {
         waiting.reject(new Error(error.message));
+      } else if (error === undefined && result !== undefined) {
+        waiting.resolve(result);
+      } else {
+        waiting.reject(
+          new Error(`the answer to request ${String(id)} held neither one result nor one error`),
+        );
       }
     },
     async request(method, params, schema) {

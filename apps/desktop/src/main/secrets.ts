@@ -25,9 +25,12 @@ export const ENV_PREFIX = "ENV/";
 const SEALED = "sealed:v1:";
 
 const README =
-  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, PRINTFUL_TOKEN, sealed with the macOS Keychain. IdleBiz uses them itself for its reads, deploys, payment links and print listings; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe and Printful: the Budget panel). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<project>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
+  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, PRINTFUL_TOKEN, sealed with a key from the macOS Keychain's password. IdleBiz uses them itself for its reads, deploys, payment links and print listings; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe and Printful: the Budget panel). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<project>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
 
-/** Encrypts a value for the file and decrypts it back; main's is the Keychain's (lib/os-crypt.ts). */
+/**
+ * Encrypts a value for the file and decrypts it back. Main's derives its key from the Keychain's
+ * password and does the encryption itself, as Chromium's OSCrypt did (lib/os-crypt.ts).
+ */
 export interface Sealer {
   seal: (plain: string) => Buffer;
   open: (sealed: Buffer) => string;

@@ -97,10 +97,12 @@ appindicator for its menu-bar icon (`libayatana-appindicator3-dev`).
 5. runs `tauri build` with a config of its own (the resources, the sidecar, the signing identity,
    macOS 13.5 as the floor, node 24's), and copies the dmg to `.output/bin`.
 
-It signs with the Developer ID the keychain holds (`APPLE_SIGNING_IDENTITY` names another;
-`IDLEBIZ_PACK_UNSIGNED=1` packs ad-hoc, for this Mac alone) and notarizes with
-`apps/desktop/.env`'s App Store Connect key. `pnpm -F @repo/desktop release:publish` packs, then
-publishes the dmg as the release tagged `v<version>`, where the site's download link finds it.
+It signs with the Developer ID the keychain holds (`APPLE_SIGNING_IDENTITY` names another; with
+none it stops, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack, for this Mac alone) and
+notarizes with `apps/desktop/.env`'s App Store Connect key, or says it did not when `.env` names
+none. `pnpm -F @repo/desktop release:publish` packs as a release (`IDLEBIZ_RELEASE=1`), which
+stops unless the pack is both signed and notarized, then publishes the dmg as the release tagged
+`v<version>`, where the site's download link finds it.
 
 ## What is deliberately not here
 

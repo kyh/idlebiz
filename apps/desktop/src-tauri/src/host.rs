@@ -154,11 +154,10 @@ pub fn hear<R: Runtime>(app: &AppHandle<R>, method: &str, params: Value) {
                 eprintln!("[shell] could not post a notification: {error}");
             }
         }),
-        // the save is gone and main has stopped its runs: the app starts again on a new one.
-        // A restart asked off the main thread holds its thread for good, so it takes its own
+        // the save is gone and main has stopped its runs: the app starts again on a new one,
+        // through `RunEvent::Exit`, which stops this main before the next one starts
         "host.relaunch" => {
-            let app = app.clone();
-            std::thread::spawn(move || app.restart());
+            app.request_restart();
             Ok(())
         }
         _ => Err(format!("the shell hears no {method}")),

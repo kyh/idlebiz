@@ -4,6 +4,7 @@
 //! when the login item launched it. A quit asks main to stop its runs before anything ends.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde_json::{Value, json};
@@ -47,9 +48,16 @@ pub fn tell_main<R: Runtime>(app: &AppHandle<R>, method: &str, params: &Value) {
     }
 }
 
+/// Whether a fatal box has been shown: a main that dies as it boots fails its hello and is lost at
+/// once, on two threads, and the founder hears it once.
+static FAILED: AtomicBool = AtomicBool::new(false);
+
 /// Said once and fatal: the office has nothing to show without main.
 fn fail<R: Runtime>(app: &AppHandle<R>, title: &str, reason: &str) {
     eprintln!("[shell] {title}: {reason}");
+    if FAILED.swap(true, Ordering::SeqCst) {
+        return;
+    }
     app.dialog()
         .message(reason)
         .title(title)

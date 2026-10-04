@@ -6,18 +6,21 @@ import type { Peer } from "./rpc";
 // two peers wired back to back, as main and the shell are over a pipe
 const pair = () => {
   const strays: string[] = [];
+  const failures: string[] = [];
   const peers = new Map<"a" | "b", Peer>();
   const a = createPeer({
+    failed: (method, reason) => failures.push(`a:${method}: ${reason}`),
     stray: (line) => strays.push(`a:${line}`),
     write: (line) => peers.get("b")?.receive(line),
   });
   const b = createPeer({
+    failed: (method, reason) => failures.push(`b:${method}: ${reason}`),
     stray: (line) => strays.push(`b:${line}`),
     write: (line) => peers.get("a")?.receive(line),
   });
   peers.set("a", a);
   peers.set("b", b);
-  return { a, b, strays };
+  return { a, b, failures, strays };
 };
 
 describe("the relay's JSON-RPC peer", () => {
@@ -35,7 +38,7 @@ describe("the relay's JSON-RPC peer", () => {
       throw new Error("not today");
     });
     await expect(a.request("missing", null, z.null())).rejects.toThrow(/no method missing/u);
-    await expect(a.request("strict", { n: "1" }, z.null())).rejects.toThrow();
+    await expect(a.request("strict", { n: "1" }, z.null())).rejects.toThrow(/expected number/u);
     await expect(a.request("strict", { n: 1 }, z.null())).rejects.toThrow("not today");
   });
 
@@ -52,9 +55,41 @@ describe("the relay's JSON-RPC peer", () => {
     expect(strays).toHaveLength(4);
   });
 
+  it("takes an answer with neither a result nor an error as no answer at all", async () => {
+    const written: string[] = [];
+    const asker = createPeer({
+      failed: () => {},
+      stray: () => {},
+      write: (line) => written.push(line),
+    });
+    const asked = asker.request("host.copyText", { text: "x" }, z.null());
+    asker.receive(JSON.stringify({ id: 1, jsonrpc: "2.0" }));
+    await expect(asked).rejects.toThrow(/neither one result nor one error/u);
+    expect(written).toHaveLength(1);
+  });
+
+  it("says a listener's throw, and keeps reading", () => {
+    const { a, b, failures } = pair();
+    const heard: string[] = [];
+    b.on("tray", z.string(), (on) => {
+      if (on === "refused") {
+        throw new Error("over budget");
+      }
+      heard.push(on);
+    });
+    a.notify("tray", "refused");
+    a.notify("tray", "fine");
+    expect(failures).toEqual(["b:tray: over budget"]);
+    expect(heard).toEqual(["fine"]);
+  });
+
   it("fails what is in flight, and what is asked after, once the other end is gone", async () => {
     const strays: string[] = [];
-    const lonely = createPeer({ stray: (line) => strays.push(line), write: () => {} });
+    const lonely = createPeer({
+      failed: () => {},
+      stray: (line) => strays.push(line),
+      write: () => {},
+    });
     const asked = lonely.request("hello", null, z.null());
     lonely.close("the shell is gone");
     await expect(asked).rejects.toThrow("the shell is gone");

@@ -12,7 +12,7 @@ test-results/
 dist/
 out/
 
-# the node the desktop app ships, fetched and pinned by apps/desktop/scripts/fetch-node.mjs (its
+# the node the desktop app ships, fetched and pinned by apps/desktop/scripts/fetch-node.ts (its
 # binary is in apps/desktop/src-tauri/binaries, which that folder's .gitignore names)
 apps/desktop/resources/node/
 apps/desktop/resources/node.partial/

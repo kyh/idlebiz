@@ -646,7 +646,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 - **CLI-free surfaces**: `apps/web` and the onboarding modal, both reachable with no company.
 - **`pnpm dev:desktop` and `pnpm dev:browser` stop this checkout's desktop dev session first**;
   `dev:web`, `verify`, `e2e` and unrelated processes on TCP 31100 survive, and startup fails while
-  that port is occupied. The whole shell env reaches main.
+  that port is occupied. The shell's env reaches main, but for every `NODE_*` variable other
+  than `NODE_ENV`, which the shell drops so none loads code into main (`scrubbed_env`).
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 
@@ -657,7 +658,11 @@ Commands: `pnpm verify` · `pnpm dev:browser` · `pnpm dev:desktop` · `pnpm dev
 dev host: every test that founds a company (office, #team, panels, key entry, sealing) needs a
 signed-in CLI under the macOS seal and skips without one, never spends, not part of `verify` or
 CI (see `AGENTS.md`).
-`pnpm -F @repo/desktop package` packs the signed, notarized app on a Mac (`scripts/package.ts`).
+`pnpm -F @repo/desktop package` packs the app on a Mac (`scripts/package.ts`), signed with the
+keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack)
+and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
+that is not both.
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
 real loopback requests and, on macOS, the seal and any installed CLI's gate; no window or
-Phaser), then `cargo test` the shell
+Phaser), then `cargo test` the shell (`--manifest-path apps/desktop/src-tauri/Cargo.toml` from
+the root)

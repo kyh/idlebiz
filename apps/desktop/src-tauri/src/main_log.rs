@@ -40,13 +40,15 @@ impl MainLog {
     }
 
     /// A log that cannot be written costs the log alone: the failure is reported once, and the
-    /// shell carries on.
+    /// shell carries on. A message bigger than the cap is cut to it, so no write takes a file
+    /// past it.
     pub fn append(&mut self, message: &str) {
         let stamp = utc_stamp(SystemTime::now());
         let mut text = String::new();
         for line in message.split('\n') {
             let _ = writeln!(text, "{stamp} {line}");
         }
+        let text = capped(text, self.max_bytes);
         match self.write(&text) {
             Ok(()) => self.failing = false,
             Err(error) => {
@@ -86,6 +88,23 @@ impl MainLog {
         self.size = Some(size + bytes);
         Ok(())
     }
+}
+
+const CUT: &str = " [cut]\n";
+
+/// The text whole, or its head and a mark, `max_bytes` in all, cut where no character is split.
+fn capped(mut text: String, max_bytes: u64) -> String {
+    let max = usize::try_from(max_bytes).unwrap_or(usize::MAX);
+    if text.len() <= max {
+        return text;
+    }
+    let mut end = max.saturating_sub(CUT.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    text.push_str(CUT);
+    text
 }
 
 /// RFC 3339 in UTC to the millisecond, so lines from main and from the shell read as one log.
@@ -160,6 +179,27 @@ mod tests {
         assert!(read(&backup).contains(" one"));
         assert!(read(&path).contains(" three"));
         assert!(!read(&path).contains(" one"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_line_bigger_than_the_cap_is_cut_to_it() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = main_log_path(&dir.path().join("logs"));
+        let mut log = MainLog::new(path.clone(), 80);
+        log.append("before");
+        log.append(&"é".repeat(200));
+        log.append("after");
+        let backup = dir.path().join("logs").join("main.log.1");
+        for file in [&path, &backup] {
+            assert!(
+                fs::metadata(file)?.len() <= 80,
+                "{} passed the cap",
+                file.display()
+            );
+        }
+        assert!(read(&backup).ends_with(" [cut]\n"));
+        assert!(read(&path).contains(" after"));
         Ok(())
     }
 

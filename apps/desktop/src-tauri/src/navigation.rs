@@ -29,19 +29,15 @@ pub fn comparable_origin(url: &Url) -> Option<String> {
     })
 }
 
-/// WebKit asks about a frame's navigations too: a note's html block previews in a srcdoc frame,
-/// which loads `about:srcdoc`, and a blank frame loads `about:blank`. Neither is a page of its own.
-fn is_frame_document(target: &Url) -> bool {
-    target.scheme() == "about" && matches!(target.path(), "blank" | "srcdoc")
-}
-
 pub fn is_web_url(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
 }
 
 /// Compared by origin, never by prefix: `http://127.0.0.1:4664` prefixes `http://127.0.0.1:46640`.
+/// The office draws no frame, so nothing else is allowed, `about:blank` included: WebKit asks the
+/// same question of a frame's navigation and the page's own, and only the frame's could be wanted.
 pub fn classify(target: &Url, pinned: &str) -> Verdict {
-    if comparable_origin(target).as_deref() == Some(pinned) || is_frame_document(target) {
+    if comparable_origin(target).as_deref() == Some(pinned) {
         return Verdict::Allow;
     }
     if is_web_url(target) {
@@ -151,10 +147,10 @@ mod tests {
     }
 
     #[test]
-    fn lets_frames_load_their_blank_documents() {
+    fn leaves_the_page_for_no_blank_document() {
         let pinned = "http://127.0.0.1:4664";
-        assert_eq!(classify(&url("about:srcdoc"), pinned), Verdict::Allow);
-        assert_eq!(classify(&url("about:blank"), pinned), Verdict::Allow);
+        assert_eq!(classify(&url("about:srcdoc"), pinned), Verdict::Deny);
+        assert_eq!(classify(&url("about:blank"), pinned), Verdict::Deny);
         assert_eq!(classify(&url("about:config"), pinned), Verdict::Deny);
     }
 
