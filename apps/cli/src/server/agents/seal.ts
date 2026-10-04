@@ -20,7 +20,7 @@ import { z } from "zod";
 import { ROOT_DIR } from "../paths";
 import { SECRETS_PATH } from "../secrets";
 import { pagePorts } from "../page-server";
-import { DEV_PORT } from "@repo/contract/page-routes";
+import { DEV_PORT } from "@repo/contract/routes";
 import type { AgentRunner, LoadReport } from "@repo/domain/domain";
 import { errorMessage } from "@repo/domain/errors";
 import { RefusalError } from "../refusal";

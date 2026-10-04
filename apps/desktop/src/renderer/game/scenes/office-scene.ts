@@ -1,6 +1,6 @@
 import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
-import { bridge } from "@/renderer/bridge";
+import { api, listen } from "@/renderer/api";
 import { getCharacterAssets } from "@/renderer/character-assets";
 import {
   characterAnims,
@@ -265,7 +265,7 @@ export class OfficeScene extends Scene {
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE.spawn);
 
-    const company = await bridge().getCompany();
+    const company = await api().company.get();
     if (generation !== this.generation) {
       return;
     }
@@ -275,8 +275,8 @@ export class OfficeScene extends Scene {
     const playerKey = `player-${seed}`;
     const [, employees, blocked] = await Promise.all([
       loadCharacter(this, playerKey, seed),
-      company ? bridge().listEmployees() : [],
-      company ? bridge().listTasks({ status: ["blocked"] }) : [],
+      company ? api().employees.list() : [],
+      company ? api().tasks.list({ status: ["blocked"] }) : [],
     ]);
     if (generation !== this.generation) {
       return;
@@ -392,7 +392,7 @@ export class OfficeScene extends Scene {
   }
 
   private subscribeActivity(): void {
-    this.activityUnsub = bridge().onActivity((e: ActivityEvent) => {
+    this.activityUnsub = listen("activity", (e: ActivityEvent) => {
       switch (e.kind) {
         // the founder's and the office's lines have nobody in the office to say them
         case "chat": {
@@ -453,7 +453,7 @@ export class OfficeScene extends Scene {
   private async recheckAsks(): Promise<void> {
     const { generation } = this;
     try {
-      const blocked = await bridge().listTasks({ status: ["blocked"] });
+      const blocked = await api().tasks.list({ status: ["blocked"] });
       if (generation !== this.generation) {
         return;
       }

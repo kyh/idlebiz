@@ -1,5 +1,5 @@
 import {
-  bridgeOf,
+  apiOf,
   expect,
   foundCompany,
   readSecrets,
@@ -57,8 +57,8 @@ test("a Vercel token is kept with no project picked, for the first deploy to mak
 
   const secrets = await readSecrets(root);
   expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
-  const bridge = await bridgeOf(page);
-  const [product] = await bridge.evaluate((b) => b.listProducts());
+  const api = await apiOf(page);
+  const [product] = await api.evaluate((a) => a.products.list());
   expect(product?.vercel).toBeNull();
 });
 
@@ -142,9 +142,9 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
 }) => {
   const founding = await launch();
   const { product } = await foundCompany(founding.page);
-  const bridge = await bridgeOf(founding.page);
-  await bridge.evaluate(
-    (b, productId) => b.vercelConnect({ productId, projectId: "prj_e2e", projectName: "e2e" }),
+  const api = await apiOf(founding.page);
+  await api.evaluate(
+    (a, productId) => a.vercel.connect({ productId, projectId: "prj_e2e", projectName: "e2e" }),
     product.id,
   );
   await founding.close();

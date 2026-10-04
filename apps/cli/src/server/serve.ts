@@ -11,63 +11,38 @@
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
 import { z } from "zod";
-import { host, hostOver, launchSchema, setHost } from "./host";
-import type { Launch } from "./host";
-import { ipcDispatcher } from "./lib/ipc-handler";
-import type { IpcHandlers } from "./lib/ipc-handler";
-import { broadcast, setEventSink } from "./lib/broadcast";
-import { suspendWrites } from "./lib/fs";
-import { osCryptSealer } from "./lib/os-crypt";
-import { stdioPeer } from "./relay/stdio";
-import * as store from "./store/store";
+import { endAllAgents } from "@repo/agent-driver/acp-session";
+import { RPC_PREFIX } from "@repo/contract/routes";
+import type { IntegrationNeed } from "@repo/domain/domain";
+import { packageFile } from "../paths";
 import { activityEvents } from "./activity";
 import { agentDriver } from "./agents/agent-driver";
-import { notingSeal } from "./agents/seal";
-import { endAllAgents } from "@repo/agent-driver/acp-session";
+import { setAutopilot, switchOffBeforeReset } from "./company-actions";
 import { controlPlane } from "./control-plane";
+import { host, hostOver, launchSchema, setHost } from "./host";
+import type { Launch } from "./host";
+import { keepAwake } from "./keep-awake";
+import { broadcast, setEventSink } from "./lib/broadcast";
+import { suspendWrites } from "./lib/fs";
+import { initLog } from "./lib/log";
+import { osCryptSealer } from "./lib/os-crypt";
+import { guarded, report } from "./lib/report";
+import { adoptShellPath } from "./lib/shell-path";
+import { openedAtLogin } from "./login-item";
+import { metricsPulse } from "./metrics-pulse";
+import { createPageRouter } from "./page-router";
 import { devPageOrigin, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
-import { openProduct, openWorkspacePath, productStatus } from "./product";
-import { chatOptions } from "./prompts/chat-options";
-import {
-  haltForBudget,
-  killBet,
-  retireProduct,
-  setAutopilot,
-  startProduct,
-  switchOffBeforeReset,
-} from "./company-actions";
-import { keepAwake } from "./keep-awake";
-import { launchAtLogin, openedAtLogin, setLaunchAtLogin } from "./login-item";
-import { createScheduler } from "./scheduler";
-import { appTray } from "./tray";
-import { startLogin, generateCandidates } from "./agents/onboarding";
-import { metricsPulse } from "./metrics-pulse";
-import {
-  connectVercel,
-  disconnectVercel,
-  initVercelConnect,
-  listVercelProjects,
-  saveVercelToken,
-} from "./vercel-connect";
-import { adoptShellPath } from "./lib/shell-path";
-import { initLog } from "./lib/log";
-import { guarded, report } from "./lib/report";
-import { checkSecrets, setSealer } from "./secrets";
-import {
-  initStripeConnect,
-  beginConnect,
-  disconnectStripe,
-  getStripeStatus,
-  revokeBeforeReset,
-} from "./stripe-connect";
-import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
-import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "./printful-token";
 import { ON_REAL_SAVE, ROOT_DIR } from "./paths";
-import { packageFile } from "../paths";
-import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
-import type { IntegrationNeed } from "@repo/domain/domain";
+import { stdioPeer } from "./relay/stdio";
+import { createScheduler } from "./scheduler";
+import { checkSecrets, setSealer } from "./secrets";
+import * as store from "./store/store";
+import { initStripeConnect, revokeBeforeReset } from "./stripe-connect";
+import { appTray } from "./tray";
+import { initVercelConnect } from "./vercel-connect";
 
 initLog();
 
@@ -132,119 +107,6 @@ const stripeReady = (...needs: IntegrationNeed[]): void => {
   metricsPulse.now();
   scheduler.resumeIntegrationAsks(...needs);
 };
-
-const ipcHandlers = {
-  answerQuestion: ({ taskId, answer }) => scheduler.answerQuestion(taskId, answer),
-  assignTask: ({ taskId, employeeId }) => scheduler.assign(taskId, employeeId),
-  composeCharacter: async ({ seed }) => {
-    const { composeCharacter } = await import("./character/compositor");
-    return await composeCharacter(seed);
-  },
-  // the window is refused every permission, the clipboard's included: the shell writes it
-  copyText: async ({ text }) => {
-    await host().copyText(text);
-  },
-  createProduct: (input) => startProduct(input, null),
-  directEmployee: ({ employeeId, instruction }) =>
-    scheduler.directEmployee(employeeId, instruction.trim()),
-  employeeOptions: ({ employeeId }) => {
-    const emp = store.getEmployee(employeeId);
-    if (!emp) {
-      throw new Error(`no employee ${employeeId}`);
-    }
-    return chatOptions(emp, store.openTasksFor(employeeId));
-  },
-  // one call, whole or not at all: the roster's CLIs are chosen first, so a
-  // machine with nothing signed in fails before a folder exists
-  foundCompany: ({ hires, ...company }) =>
-    store.foundCompany({
-      ...company,
-      hires: hires.map((hire, i) => ({ runner: agentDriver.pickRunner(i), ...hire })),
-    }),
-  generateHires: async ({ companyName, mission, businessType }) => {
-    const candidates = await generateCandidates({ businessType, companyName, mission });
-    return candidates.map((candidate, i) =>
-      Object.assign(candidate, {
-        spriteSeed: spriteSeedFor(candidate.role, candidate.name, `-${i}`),
-      }),
-    );
-  },
-  getCompany: store.getCompany,
-  getFounderChoices: async () => {
-    const { listFounderChoices } = await import("./character/compositor");
-    return await listFounderChoices(6);
-  },
-  hasAuth: async () => ({
-    ok: await agentDriver.hasAnyRunner(),
-    signedOut: await agentDriver.signedOut(),
-  }),
-  killBet: ({ betId, reason }) => killBet(betId, reason),
-  killProduct: ({ productId, reason }) => retireProduct(productId, reason, null),
-  launchAtLogin,
-  listBets: store.listBets,
-  listEmployees: store.listEmployees,
-  listProducts: store.listProducts,
-  listTasks: store.queryTasks,
-  // the first report waits on the seal's check, so a refusal is in it
-  loadReport: async () => {
-    const refusal = await agentDriver.sealRefusal();
-    return notingSeal(store.loadReport(), refusal);
-  },
-  openCompanyPath: ({ rel }) => openWorkspacePath(rel),
-  openProduct: async ({ productId }) => ({ opened: await openProduct(productId) }),
-  openSaveFolder: async () => {
-    await host().open({ kind: "path", target: ROOT_DIR });
-  },
-  postTeamChat: ({ text }) => scheduler.founderMessage(text.trim()),
-  printfulTokenRemove: removePrintfulToken,
-  printfulTokenSave: async ({ token }) => {
-    await savePrintfulToken(token);
-    scheduler.resumeIntegrationAsks("printful");
-  },
-  printfulTokenStatus,
-  productStatus: ({ productId }) => productStatus(productId),
-  resetGame,
-  resetSpend: store.resetSpend,
-  resolveAction: ({ taskId, reply }) => scheduler.resolveAction(taskId, reply),
-  resolveApproval: ({ taskId, approved }) => scheduler.resolveApproval(taskId, approved),
-  restingRunners: () => agentDriver.restingRunners(),
-  setAutopilot: ({ running }) => setAutopilot(running),
-  setBudget: ({ budget }) => {
-    const company = store.setBudget(budget);
-    if (isOutOfBudget(company)) {
-      haltForBudget(company);
-    }
-    return store.requireCompany();
-  },
-  setLaunchAtLogin: ({ on }) => setLaunchAtLogin(on),
-  setMaxAgents: ({ maxAgents }) => store.setMaxAgents(maxAgents),
-  shippingLog: store.shippingLog,
-  startLogin: () => {
-    void startLogin(agentDriver, (e) => broadcast("onAuthEvent", e));
-    return { started: true };
-  },
-  stripeConnect: () => beginConnect(store.requireCompany().id),
-  stripeDisconnect: () => disconnectStripe(store.requireCompany().id),
-  stripeKeyRemove: () => {
-    removeStripeKey();
-    metricsPulse.now();
-  },
-  stripeKeySave: async ({ key }) => {
-    await saveStripeKey(key);
-    stripeReady("stripe", "stripe-key");
-  },
-  stripeKeyStatus,
-  stripeStatus: () => {
-    const company = store.getCompany();
-    return company ? getStripeStatus(company.id) : { state: "disconnected" };
-  },
-  takeDigest: store.takeDigest,
-  teamMessages: ({ limit }) => store.recentTeamMessages(limit ?? 30),
-  vercelConnect: connectVercel,
-  vercelDisconnect: ({ productId }) => disconnectVercel(productId),
-  vercelListProjects: ({ token }) => listVercelProjects(token),
-  vercelSaveToken: saveVercelToken,
-} satisfies IpcHandlers;
 
 /** "Seen" is the last moment the founder had the office in front of them; the
  *  next digest starts there. Focus comes and goes many times a minute, so a
@@ -364,20 +226,31 @@ const boot = async (launch: Launch): Promise<void> => {
   await adoptShellPath();
   agentDriver.init();
   await controlPlane.start();
+  // the largest call a page makes: a pasted key, a long answer to a question
+  const rpc = new RPCHandler(createPageRouter({ resetGame, scheduler, stripeReady }), {
+    plugins: [new BodyLimitPlugin({ maxBodySize: 1024 * 1024 })],
+  });
   const served = await startPageServer({
-    dispatch: ipcDispatcher(ipcHandlers),
+    handleRpc: async (request, response) => {
+      const { matched } = await rpc.handle(request, response, { context: {}, prefix: RPC_PREFIX });
+      return matched;
+    },
     page: pageSourceOf(launch),
   });
   page = served;
   setEventSink(served.broadcast);
 
-  activityEvents.on("activity", (e) => broadcast("onActivity", e));
+  activityEvents.on("activity", (e) => {
+    broadcast("activity", e);
+  });
   scheduler.start();
 
   metricsPulse.start();
 
   initStripeConnect({
-    notify: (status) => broadcast("onStripeStatus", status),
+    notify: (status) => {
+      broadcast("stripe", status);
+    },
     // a Stripe connection only reads revenue: work waiting on a key to charge with waits on
     onConnected: () => stripeReady("stripe"),
     openExternal: async (url) => {

@@ -1437,7 +1437,7 @@ describe.skipIf(!onMac)("sealRuns", () => {
   it("closes the port main serves the window's page on, while it answers", async () => {
     const { startPageServer } = await import("../page-server");
     const page = await startPageServer({
-      dispatch: () => Promise.resolve(null),
+      handleRpc: () => Promise.resolve(false),
       page: { kind: "dev", origin: "http://localhost:1" },
     });
     try {

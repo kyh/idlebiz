@@ -7,8 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listenLoopback } from "./lib/http";
 import { parseJson } from "@repo/domain/json";
-import type { JsonValue } from "@repo/domain/json";
-import { EVENTS_PATH, INVOKE_PATH } from "@repo/contract/page-routes";
+import { EVENTS_PATH, RPC_PREFIX } from "@repo/contract/routes";
 import { devPageOrigin, pagePorts, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
 
@@ -65,13 +64,20 @@ const signIn = async (server: PageServer): Promise<string> => {
   return pair;
 };
 
-const calls: { method: string; payload: JsonValue | undefined }[] = [];
+// the calls the page router would have answered, by path: the page server only routes them
+const calls: string[] = [];
 
 const start = (page: PageSource): Promise<PageServer> =>
   startPageServer({
-    dispatch: (method, payload) => {
-      calls.push({ method, payload });
-      return Promise.resolve({ ok: true, value: method });
+    handleRpc: (incoming, outgoing) => {
+      const called = incoming.url ?? "";
+      if (called !== `${RPC_PREFIX}/company/get`) {
+        return Promise.resolve(false);
+      }
+      calls.push(called);
+      outgoing.writeHead(200, { "content-type": "application/json" });
+      outgoing.end(JSON.stringify({ json: null }));
+      return Promise.resolve(true);
     },
     page,
   });
@@ -161,10 +167,10 @@ describe("main's page server", () => {
     const server = await built();
     const call = (headers: Record<string, string>) =>
       ask(server.port, {
-        body: JSON.stringify({ method: "getCompany" }),
+        body: JSON.stringify({ json: null }),
         headers: { "content-type": "application/json", ...headers },
         method: "POST",
-        path: INVOKE_PATH,
+        path: `${RPC_PREFIX}/company/get`,
       });
     const anonymous = await call({ "sec-fetch-site": "same-origin" });
     expect(anonymous.status).toBe(401);
@@ -178,24 +184,16 @@ describe("main's page server", () => {
     expect(calls).toEqual([]);
     const own = await call({ cookie, "sec-fetch-site": "same-origin" });
     expect(own.status).toBe(200);
-    expect(parseJson(own.body)).toEqual({ ok: true, value: "getCompany" });
+    expect(parseJson(own.body)).toEqual({ json: null });
     const byOrigin = await call({ cookie, origin: server.origin });
     expect(byOrigin.status).toBe(200);
-    expect(calls).toEqual([
-      { method: "getCompany", payload: undefined },
-      { method: "getCompany", payload: undefined },
-    ]);
-  });
-
-  it("refuses a call it cannot read, or past a megabyte", async () => {
-    const server = await built();
-    const cookie = await signIn(server);
-    const headers = { cookie, "sec-fetch-site": "same-origin" };
-    for (const body of ["not json", JSON.stringify({ payload: 1 }), "x".repeat(1024 * 1024 + 1)]) {
-      const answer = await ask(server.port, { body, headers, method: "POST", path: INVOKE_PATH });
-      expect(answer.status).toBe(400);
-    }
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([`${RPC_PREFIX}/company/get`, `${RPC_PREFIX}/company/get`]);
+    const unknown = await ask(server.port, {
+      headers: { cookie, "sec-fetch-site": "same-origin" },
+      method: "POST",
+      path: `${RPC_PREFIX}/company/nothing`,
+    });
+    expect(unknown.status).toBe(404);
   });
 
   it("streams main's events to the signed-in page", async () => {
@@ -220,7 +218,7 @@ describe("main's page server", () => {
               resolve(text);
               req.destroy();
             } else {
-              server.broadcast("activity:event", { kind: "hello" });
+              server.broadcast("activity", { kind: "hello" });
             }
           });
         },
@@ -228,7 +226,7 @@ describe("main's page server", () => {
       req.on("error", reject);
       req.end();
     });
-    expect(await heard).toContain('event: activity:event\ndata: {"kind":"hello"}\n\n');
+    expect(await heard).toContain('event: activity\ndata: {"kind":"hello"}\n\n');
   });
 
   it("takes the page's files from a dev server for the signed-in page alone", async () => {

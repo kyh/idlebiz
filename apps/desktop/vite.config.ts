@@ -13,7 +13,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { build, defineConfig, isRunnableDevEnvironment } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
-import { DEV_PORT } from "@repo/contract/page-routes";
+import { DEV_PORT } from "@repo/contract/routes";
 import { errorMessage } from "@repo/domain/errors";
 import type * as DevHostModule from "idlebiz/dev-host";
 import type { DevHost } from "idlebiz/dev-host";

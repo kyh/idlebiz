@@ -6,7 +6,7 @@ import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useKeyedState } from "@/renderer/hooks/use-keyed-state";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { officeReady, refresh } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
@@ -228,7 +228,7 @@ const useScript = (key: string, pages: readonly string[]) => {
 
 /** The looks on offer, warmed as soon as they are known so browsing them is instant. */
 const loadFounderChoices = async (): Promise<string[]> => {
-  const seeds = await bridge().getFounderChoices();
+  const seeds = await api().characters.founders();
   for (const seed of seeds) {
     void getCharacterAssets(seed);
   }
@@ -304,7 +304,7 @@ const PromptField = ({
               label="↺ start over"
               confirmLabel="delete saves"
               title="Delete saved companies and restart"
-              onConfirm={() => bridge().resetGame()}
+              onConfirm={() => api().save.reset()}
             />
           }
         />
@@ -585,7 +585,7 @@ export const Onboarding = () => {
     setStep("team");
     const cast = async () => {
       try {
-        const h = await bridge().generateHires({
+        const h = await api().onboarding.hires({
           businessType: biz ?? "custom",
           companyName: companyName.trim(),
           mission,
@@ -606,7 +606,7 @@ export const Onboarding = () => {
     setFailure(null);
     setStep("finalize");
     try {
-      await bridge().foundCompany({
+      await api().onboarding.found({
         budget,
         businessType: biz ?? "custom",
         founderName: founderName.trim(),

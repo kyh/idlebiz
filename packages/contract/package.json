@@ -12,6 +12,7 @@
     "clean": "rm -rf .cache .turbo"
   },
   "dependencies": {
+    "@orpc/contract": "catalog:",
     "@repo/domain": "workspace:*",
     "zod": "catalog:"
   },

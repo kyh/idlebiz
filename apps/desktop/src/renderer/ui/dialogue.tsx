@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { hear } from "@/renderer/game/office-port";
 import { useStore, directEmployee, listTasksFor, setTalkingTo } from "@/renderer/state/store";
 import { useAsync } from "@/renderer/hooks/use-async";
@@ -188,7 +188,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const fetched = useAsync(
     async () => ({
       list: await listTasksFor(emp.id),
-      options: await bridge().employeeOptions({ employeeId: emp.id }),
+      options: await api().employees.options({ employeeId: emp.id }),
     }),
     [emp.id, movedBy],
   );

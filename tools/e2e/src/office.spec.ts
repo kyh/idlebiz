@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { bridgeOf, expect, foundCompany, test } from "./harness";
+import { apiOf, expect, foundCompany, test } from "./harness";
 import type { Locator, Page } from "@playwright/test";
 import { z } from "zod";
 import type { Founded } from "./harness";
@@ -108,8 +108,8 @@ test("an action card hands the founder its draft and carries their answer back",
   await inbox.getByRole("button", { name: `Done: ${action.action}` }).click();
   await expect(inbox.getByText(action.action)).toHaveCount(0);
 
-  const bridge = await bridgeOf(page);
-  const open = await bridge.evaluate((b) => b.listTasks({}));
+  const api = await apiOf(page);
+  const open = await api.evaluate((a) => a.tasks.list({}));
   expect(open.map((t) => t.description ?? "").join("\n")).toContain(`Done. They sent back: ${url}`);
 });
 
@@ -186,10 +186,10 @@ test("#team stays on its newest line after a window closes over it", async ({ la
   await founding.close();
 
   const { page } = await launch();
-  const bridge = await bridgeOf(page);
-  await bridge.evaluate(async (b) => {
+  const api = await apiOf(page);
+  await api.evaluate(async (a) => {
     for (let i = 1; i <= 30; i += 1) {
-      await b.postTeamChat({ text: `line ${i}` });
+      await a.team.post({ text: `line ${i}` });
     }
   });
   const feed = page
@@ -214,8 +214,8 @@ test("#team shows the room again once its page loads again", async ({ launch }) 
 
   const { page } = await launch();
   await expect(page.getByText("# team")).toBeVisible();
-  const bridge = await bridgeOf(page);
-  await bridge.evaluate((b) => b.postTeamChat({ text: "said before the page loaded again" }));
+  const api = await apiOf(page);
+  await api.evaluate((a) => a.team.post({ text: "said before the page loaded again" }));
   await page.reload();
   await expect(page.getByText("said before the page loaded again")).toBeVisible();
 });
@@ -297,9 +297,9 @@ test("an answer being typed survives a status event of the asker's", async ({ la
   await expect(answer).toBeFocused();
   await page.keyboard.type("Blu");
 
-  const bridge = await bridgeOf(page);
-  await bridge.evaluate(
-    (b, employeeId) => b.directEmployee({ employeeId, instruction: "Tidy the README." }),
+  const api = await apiOf(page);
+  await api.evaluate(
+    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
     lead.id,
   );
   await expect(
@@ -335,9 +335,9 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await expect(talk).toBeFocused();
   await page.keyboard.type("Ship the ");
 
-  const bridge = await bridgeOf(page);
-  await bridge.evaluate(
-    (b, employeeId) => b.directEmployee({ employeeId, instruction: "Tidy the README." }),
+  const api = await apiOf(page);
+  await api.evaluate(
+    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
     lead.id,
   );
   await page.waitForTimeout(500);
@@ -451,9 +451,9 @@ test("the dialogue's cursor stays on Talk… when a row is added ahead of it mea
   await expect(dialogue.getByPlaceholder(`Tell ${engineer.name} what to do…`)).toBeFocused();
 
   // queued work puts a Check in row ahead of Talk… while the menu is away
-  const bridge = await bridgeOf(page);
-  await bridge.evaluate(
-    (b, employeeId) => b.directEmployee({ employeeId, instruction: "Tidy the README." }),
+  const api = await apiOf(page);
+  await api.evaluate(
+    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
     engineer.id,
   );
   await expect(dialogue.getByText(/queued/u)).toBeVisible();

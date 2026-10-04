@@ -10,6 +10,7 @@
     "clean": "rm -rf .cache test-results"
   },
   "devDependencies": {
+    "@orpc/contract": "catalog:",
     "@playwright/test": "^1.63.0",
     "@repo/contract": "workspace:*",
     "@repo/domain": "workspace:*",

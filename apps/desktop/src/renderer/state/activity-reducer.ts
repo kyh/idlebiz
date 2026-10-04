@@ -3,7 +3,7 @@ import type { ActivityEvent, ActivityKind } from "@repo/domain/activity";
 import type { Employee, RestingRunners, Speaker, TeamMessage } from "@repo/domain/domain";
 
 // What an event from main means for the renderer's copy of main's state, with
-// no bridge and no Phaser in sight: a patch it can apply at once, and the
+// no API and no Phaser in sight: a patch it can apply at once, and the
 // slices it has to fetch again. Main's store is the truth; events only say
 // which part of it moved.
 

@@ -1,8 +1,9 @@
 // The window's page, and main's door for it, on loopback: what kyh/inteligir's server answers its
 // window (apps/cli/src/server/app.ts there). The shell opens its window on a one-time handoff link
 // main mints when asked over stdio (`handoff`), the link signs the page in (page-session.ts), and the
-// page then calls main (INVOKE_PATH) and hears its events (EVENTS_PATH) on its own origin: the
-// window, a browser under `pnpm dev:browser` and e2e's Chromium alike. The page's files are the ones
+// page then calls the contract's procedures (RPC_PREFIX, page-router.ts) and hears main's events
+// (EVENTS_PATH) on its own origin: the window, a browser under `pnpm dev:browser` and e2e's
+// Chromium alike. The page's files are the ones
 // main ships beside it, or under `tauri dev` and `pnpm dev:browser` Vite's, forwarded so the page
 // keeps this origin while it reloads in place.
 //
@@ -16,23 +17,23 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { text } from "node:stream/consumers";
-import { z } from "zod";
+import { EVENTS_PATH, HANDOFF_PARAM, RPC_PREFIX } from "@repo/contract/routes";
 import { listenLoopback } from "./lib/http";
 import { createPageSession, fromOwnOrigin, loopbackOrigin } from "./page-session";
 import { errorMessage } from "@repo/domain/errors";
-import { jsonValueSchema, parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 import { pagePolicy } from "./page-policy";
-import { EVENTS_PATH, HANDOFF_PARAM, INVOKE_PATH, MAIN_PATHS } from "@repo/contract/page-routes";
 
 /** Where the page's files come from: the built page main ships beside it, or Vite's dev server. */
 export type PageSource = { kind: "built"; dir: string } | { kind: "dev"; origin: string };
 
 export interface PageServerOptions {
   page: PageSource;
-  /** Answers one of the page's calls with main's reply: its value, or the sentence it refused with. */
-  dispatch: (method: string, payload: JsonValue | undefined) => Promise<JsonValue>;
+  /**
+   * Answers a call under RPC_PREFIX: the page router's RPC handler, which writes the answer. False
+   * when no procedure matched the path.
+   */
+  handleRpc: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   /** The clock a handoff's five minutes are kept on. */
   now?: () => number;
 }
@@ -54,11 +55,6 @@ export interface PageServer {
   /** Ends every event stream and stops answering. */
   stop: () => Promise<void>;
 }
-
-/** The largest call a page makes: a pasted key, a long answer to a question. */
-const MAX_INVOKE_BYTES = 1024 * 1024;
-
-const invokeSchema = z.object({ method: z.string().min(1), payload: jsonValueSchema.optional() });
 
 // the page's files by type; the document is answered on its own, with the policy. A file of any
 // other type is not the page's, and is not served
@@ -157,23 +153,6 @@ const signedOut = (request: IncomingMessage, response: ServerResponse): void => 
   response.end(request.method === "HEAD" ? undefined : SIGNED_OUT_PAGE);
 };
 
-/** A call's body, or null for one past the cap, one that declares no length, or no call at all. */
-const readInvoke = async (request: IncomingMessage) => {
-  // node holds the body to the length it declares, so no bigger body is ever read; a page's fetch
-  // of a string body always declares it
-  const declared = Number(request.headers["content-length"]);
-  if (!Number.isSafeInteger(declared) || declared > MAX_INVOKE_BYTES) {
-    return null;
-  }
-  const body = await text(request);
-  try {
-    const parsed = invokeSchema.safeParse(parseJson(body));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-};
-
 /** The page's file at `pathname`, or null for a name outside the page's folder. */
 const fileUnder = (dir: string, pathname: string): string | null => {
   let name: string;
@@ -247,15 +226,6 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
   const document = dir === null ? null : await readFile(path.join(dir, "index.html"), "utf-8");
   let port = 0;
 
-  const invoke = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const call = await readInvoke(request);
-    if (call === null) {
-      refuse(response, 400, "a call is {method, payload?}, at most a megabyte");
-      return;
-    }
-    sendJson(response, 200, await options.dispatch(call.method, call.payload));
-  };
-
   const listen = (response: ServerResponse): void => {
     response.writeHead(200, {
       ...BASE_HEADERS,
@@ -288,11 +258,11 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
       refuse(response, 403, "IdleBiz answers only its own page.");
       return;
     }
-    if (url.pathname === INVOKE_PATH && request.method === "POST") {
-      await invoke(request, response);
-    } else if (url.pathname === EVENTS_PATH && request.method === "GET") {
+    if (url.pathname === EVENTS_PATH && request.method === "GET") {
       listen(response);
-    } else {
+    } else if (
+      !(url.pathname.startsWith(`${RPC_PREFIX}/`) && (await options.handleRpc(request, response)))
+    ) {
       refuse(response, 404, `main answers no ${request.method ?? "request"} ${url.pathname}`);
     }
   };
@@ -360,7 +330,8 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
       return;
     }
     const url = new URL(request.url ?? "/", origin);
-    await (url.pathname.startsWith(MAIN_PATHS)
+    const mainPath = url.pathname === EVENTS_PATH || url.pathname.startsWith(`${RPC_PREFIX}/`);
+    await (mainPath
       ? answerMain(request, response, url, origin)
       : answerPage(request, response, url, origin));
   };

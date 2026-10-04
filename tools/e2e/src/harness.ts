@@ -9,13 +9,17 @@ import { startDevHost } from "idlebiz/dev-host";
 import type { DevHost } from "idlebiz/dev-host";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
-import type { AppBridge } from "@repo/contract/ipc-registry";
+import type { ContractRouterClient } from "@orpc/contract";
+import type { Contract } from "@repo/contract/contract";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord, JsonValue } from "@repo/domain/json";
 
+/** The page's API, as the page calls it. */
+type Api = ContractRouterClient<Contract>;
+
 declare global {
-  // What install-bridge.ts sets on the window; renderer/bridge.ts declares it for the app.
-  var appBridge: AppBridge | undefined;
+  // What the page's install-api.ts sets on the window; its api.ts declares it for the app.
+  var appApi: { api: Api } | undefined;
 }
 
 interface Launched {
@@ -166,14 +170,14 @@ export const test = base.extend<Fixtures>({
 
 export { expect } from "@playwright/test";
 
-/** The page's bridge to main, called as the renderer calls it. */
-export const bridgeOf = (page: Page): Promise<JSHandle<AppBridge>> =>
+/** The page's API to the server, called as the page calls it. */
+export const apiOf = (page: Page): Promise<JSHandle<Api>> =>
   page.evaluateHandle(() => {
-    const bridge = globalThis.appBridge;
-    if (!bridge) {
-      throw new Error("the page installed no appBridge");
+    const app = globalThis.appApi;
+    if (!app) {
+      throw new Error("the page installed no API");
     }
-    return bridge;
+    return app.api;
   });
 
 const HIRES: HireProposal[] = [
@@ -202,17 +206,17 @@ export interface Founded {
 }
 
 /**
- * Found a company over the bridge with a hand-written team, skipping the test when no CLI is
+ * Found a company over the page's API with a hand-written team, skipping the test when no CLI is
  * signed in (founding picks each hire's CLI). The $0 cap is what keeps it free: the scheduler
  * checks the budget before it spawns anything, so no run can start even on a tick that lands
  * before autopilot is off. The window that founded it never learns of it: relaunch to see it.
  */
 export const foundCompany = async (page: Page): Promise<Founded> => {
-  const bridge = await bridgeOf(page);
-  const auth = await bridge.evaluate((b) => b.hasAuth());
+  const api = await apiOf(page);
+  const auth = await api.evaluate((a) => a.agents.hasAuth());
   test.skip(!auth.ok, "no signed-in claude or codex CLI: founding and the office need one");
-  return await bridge.evaluate(async (b, hires) => {
-    const company = await b.foundCompany({
+  return await api.evaluate(async (a, hires) => {
+    const company = await a.onboarding.found({
       budget: { capUsd: 0, mode: "capped" },
       businessType: "custom",
       founderName: "E2E Founder",
@@ -221,12 +225,12 @@ export const foundCompany = async (page: Page): Promise<Founded> => {
       mission: "Prove the office boots without spending a cent.",
       name: "E2E Test Co",
     });
-    await b.setAutopilot({ running: false });
-    const [product] = await b.listProducts();
+    await a.company.setAutopilot({ running: false });
+    const [product] = await a.products.list();
     if (!product) {
       throw new Error("a founded company has no product");
     }
-    return { company, employees: await b.listEmployees(), product };
+    return { company, employees: await a.employees.list(), product };
   }, HIRES);
 };
 

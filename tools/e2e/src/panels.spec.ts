@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { bridgeOf, expect, foundCompany, test } from "./harness";
+import { apiOf, expect, foundCompany, test } from "./harness";
 
 test("an out-of-budget company tells the founder to press Start once the cap is raised", async ({
   launch,
@@ -18,9 +18,9 @@ test("an out-of-budget company tells the founder to press Start once the cap is 
 test("retiring the selected product shows the whole company again", async ({ launch }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  const bridge = await bridgeOf(founding.page);
-  await bridge.evaluate((b) =>
-    b.createProduct({ description: "A second thing to sell.", name: "Side Quest" }),
+  const api = await apiOf(founding.page);
+  await api.evaluate((a) =>
+    a.products.create({ description: "A second thing to sell.", name: "Side Quest" }),
   );
   await founding.close();
 

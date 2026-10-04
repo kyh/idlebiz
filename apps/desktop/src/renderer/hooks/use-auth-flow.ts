@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api, listen } from "@/renderer/api";
 import { useStore } from "@/renderer/state/store";
 import type { AuthFlowEvent } from "@repo/domain/domain";
 
@@ -58,7 +58,7 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
 
   useEffect(
     () =>
-      bridge().onAuthEvent((e: AuthFlowEvent) => {
+      listen("auth", (e: AuthFlowEvent) => {
         setAttempt((a) => nextAttempt(a, e));
         if (e.type === "done") {
           signedIn();
@@ -69,7 +69,7 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
 
   const login = () => {
     setAttempt({ lines: [], phase: "logging-in" });
-    void bridge().startLogin();
+    void api().agents.startLogin();
   };
   return { auth: attempt ?? probed(authed), login };
 };

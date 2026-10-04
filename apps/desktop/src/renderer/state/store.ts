@@ -19,7 +19,7 @@ import type {
 import type { Digest } from "@repo/domain/digest";
 import { errorMessage } from "@repo/domain/errors";
 import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
-import { bridge } from "@/renderer/bridge";
+import { api, listen } from "@/renderer/api";
 import { hear, tell } from "@/renderer/game/office-port";
 import type { Office } from "@/renderer/game/office-port";
 import { FEED_LINES, joinFeed, reduceActivity, roomLines } from "@/renderer/state/activity-reducer";
@@ -158,7 +158,7 @@ const loadProductStatus = async (
   const entries = await Promise.all(
     products.map(async (p) => {
       try {
-        return [p.id, await bridge().productStatus({ productId: p.id })] as const;
+        return [p.id, await api().products.status({ productId: p.id })] as const;
       } catch {
         return null;
       }
@@ -209,17 +209,17 @@ const splitTasks = (tasks: readonly Task[]): Pick<State, "pendingAsks" | "stuckT
 const refreshOnce = async (): Promise<void> => {
   const ticket = order.ticket();
   const [company, resting, load] = await Promise.all([
-    bridge().getCompany(),
-    bridge().restingRunners(),
-    bridge().loadReport(),
+    api().company.get(),
+    api().agents.resting(),
+    api().save.report(),
   ]);
   const [employees, tasks, products, bets, room] = company
     ? await Promise.all([
-        bridge().listEmployees(),
-        bridge().listTasks({ status: ["blocked", "dead"] }),
-        bridge().listProducts(),
-        bridge().listBets(),
-        bridge().teamMessages({ limit: FEED_LINES }),
+        api().employees.list(),
+        api().tasks.list({ status: ["blocked", "dead"] }),
+        api().products.list(),
+        api().bets.list(),
+        api().team.messages({ limit: FEED_LINES }),
       ])
     : [[], [], [], [], []];
   // a slice a newer request or event already answered keeps the newer answer; the feed
@@ -281,7 +281,7 @@ const refreshInBackground = async (): Promise<void> => {
 const reloadProducts = (): Promise<void> =>
   reloadSlice(
     "products",
-    () => bridge().listProducts(),
+    () => api().products.list(),
     (products) => {
       set({ products });
       void reloadProductStatus(products);
@@ -291,35 +291,35 @@ const reloadProducts = (): Promise<void> =>
 const reloadBets = (): Promise<void> =>
   reloadSlice(
     "bets",
-    () => bridge().listBets(),
+    () => api().bets.list(),
     (bets) => set({ bets }),
   );
 
 const reloadTasks = (): Promise<void> =>
   reloadSlice(
     "tasks",
-    () => bridge().listTasks({ status: ["blocked", "dead"] }),
+    () => api().tasks.list({ status: ["blocked", "dead"] }),
     (tasks) => set(splitTasks(tasks)),
   );
 
 const reloadCompany = (): Promise<void> =>
   reloadSlice(
     "company",
-    () => bridge().getCompany(),
+    () => api().company.get(),
     (company) => set({ company }),
   );
 
 const reloadEmployees = (): Promise<void> =>
   reloadSlice(
     "employees",
-    () => bridge().listEmployees(),
+    () => api().employees.list(),
     (employees) => set({ employees }),
   );
 
 const reloadResting = (): Promise<void> =>
   reloadSlice(
     "resting",
-    () => bridge().restingRunners(),
+    () => api().agents.resting(),
     (resting) => set({ resting }),
   );
 
@@ -342,60 +342,60 @@ const updateCompany = (call: () => Promise<Company>): Promise<void> =>
 
 // main answers both with `bet.changed` / `product.killed`, and those events reload what moved
 export const killBet = async (betId: string, reason: string): Promise<void> => {
-  await bridge().killBet({ betId, reason });
+  await api().bets.kill({ betId, reason });
 };
 
 export const killProduct = async (productId: string, reason: string): Promise<void> => {
-  await bridge().killProduct({ productId, reason });
+  await api().products.kill({ productId, reason });
 };
 
 export const createProduct = (name: string, description: string): Promise<void> =>
   withCompany(async () => {
-    await bridge().createProduct({ description, name });
+    await api().products.create({ description, name });
     await reloadProducts();
   });
 
 export const teamMessages = async (limit = 30): Promise<TeamMessage[]> => {
   const c = state.company;
-  return c ? await bridge().teamMessages({ limit }) : [];
+  return c ? await api().team.messages({ limit }) : [];
 };
 
 export const setAutopilot = (running: boolean): Promise<void> =>
-  updateCompany(() => bridge().setAutopilot({ running }));
+  updateCompany(() => api().company.setAutopilot({ running }));
 
 export const setBudget = (budget: Budget): Promise<void> =>
-  updateCompany(() => bridge().setBudget({ budget }));
+  updateCompany(() => api().company.setBudget({ budget }));
 
-export const resetSpend = (): Promise<void> => updateCompany(() => bridge().resetSpend());
+export const resetSpend = (): Promise<void> => updateCompany(() => api().company.resetSpend());
 
 /** What happened since the founder last looked; asking is the look. */
 export const digest = (): Promise<Digest | null> =>
-  state.company ? bridge().takeDigest() : Promise.resolve(null);
+  state.company ? api().company.takeDigest() : Promise.resolve(null);
 
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
-  updateCompany(() => bridge().setMaxAgents({ maxAgents }));
+  updateCompany(() => api().company.setMaxAgents({ maxAgents }));
 
 export const connectStripe = (): Promise<void> =>
   withCompany(async () => {
-    await bridge().stripeConnect();
+    await api().stripe.connect();
   });
 
 export const disconnectStripe = (): Promise<void> =>
   withCompany(async () => {
-    await bridge().stripeDisconnect();
+    await api().stripe.disconnect();
   });
 
 const loadStripeKey = async (): Promise<void> => {
-  set({ stripeKey: await bridge().stripeKeyStatus() });
+  set({ stripeKey: await api().stripe.keyStatus() });
 };
 
 export const saveStripeKey = async (key: string): Promise<void> => {
-  await bridge().stripeKeySave({ key });
+  await api().stripe.saveKey({ key });
   await loadStripeKey();
 };
 
 export const removeStripeKey = async (): Promise<void> => {
-  await bridge().stripeKeyRemove();
+  await api().stripe.removeKey();
   await loadStripeKey();
 };
 
@@ -407,12 +407,12 @@ export const connectVercel = async (input: {
   projectName: string;
   teamId?: string;
 }): Promise<void> => {
-  await bridge().vercelConnect(input);
+  await api().vercel.connect(input);
   await reloadProducts();
 };
 
 export const disconnectVercel = async (productId: string): Promise<void> => {
-  await bridge().vercelDisconnect({ productId });
+  await api().vercel.disconnect({ productId });
   await reloadProducts();
 };
 
@@ -421,29 +421,29 @@ export const directEmployee = async (employeeId: string, instruction: string): P
   if (!text) {
     return;
   }
-  await bridge().directEmployee({ employeeId, instruction: text });
+  await api().employees.direct({ employeeId, instruction: text });
 };
 
 /** Founder posts in the team channel; @first-name wakes that employee. */
 export const sendFounderChat = (text: string): Promise<void> =>
   withCompany(async () => {
     if (text.trim()) {
-      await bridge().postTeamChat({ text: text.trim() });
+      await api().team.post({ text: text.trim() });
     }
   });
 
 /** Founder decides on a held outward-facing command; the task resumes either way. */
 export const resolveApproval = async (taskId: string, approved: boolean): Promise<void> => {
-  await bridge().resolveApproval({ approved, taskId });
+  await api().tasks.resolveApproval({ approved, taskId });
 };
 
 /** Founder took, or could not take, a step only they could; the task resumes either way. */
 export const resolveAction = async (taskId: string, reply: ActionReply): Promise<void> => {
-  await bridge().resolveAction({ reply, taskId });
+  await api().tasks.resolveAction({ reply, taskId });
 };
 
 export const copyText = async (text: string): Promise<void> => {
-  await bridge().copyText({ text });
+  await api().app.copyText({ text });
 };
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
@@ -451,7 +451,7 @@ export const retryTask = async (task: Task): Promise<void> => {
   if (!task.assigneeId) {
     return;
   }
-  await bridge().assignTask({ employeeId: task.assigneeId, taskId: task.id });
+  await api().tasks.assign({ employeeId: task.assigneeId, taskId: task.id });
 };
 
 export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
@@ -459,14 +459,14 @@ export const listTasksFor = async (employeeId: string): Promise<Task[]> => {
   if (!company) {
     return [];
   }
-  return await bridge().listTasks({
+  return await api().tasks.list({
     assigneeId: employeeId,
     status: ["queued", "running", "blocked"],
   });
 };
 
 export const answerQuestion = async (taskId: string, answer: string): Promise<void> => {
-  await bridge().answerQuestion({ answer, taskId });
+  await api().tasks.answer({ answer, taskId });
 };
 
 // ---- activity --------------------------------------------------------------
@@ -490,7 +490,7 @@ const findHire = async (employeeId: string): Promise<Employee | undefined> => {
     return held;
   }
   try {
-    const roster = await bridge().listEmployees();
+    const roster = await api().employees.list();
     return roster.find(isHire);
   } catch {
     // they appear in the office when it next boots
@@ -517,7 +517,7 @@ const walkThroughDoor = async (roster: { employeeId: string; hired: boolean }): 
 
 const loadAuth = async (): Promise<void> => {
   try {
-    const r = await bridge().hasAuth();
+    const r = await api().agents.hasAuth();
     set({ authed: r.ok, signedOut: r.signedOut });
   } catch (error) {
     // left unknown, the office would wait forever; the gate at least offers a sign-in
@@ -561,7 +561,7 @@ const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
 // ---- lifecycle -------------------------------------------------------------
 
 const loadStripeStatus = async (): Promise<void> => {
-  set({ stripeStatus: await bridge().stripeStatus() });
+  set({ stripeStatus: await api().stripe.status() });
 };
 
 let initialized = false;
@@ -574,11 +574,11 @@ export const initStore = (): void => {
   void loadAuth();
   void loadStripeStatus();
   void loadStripeKey();
-  bridge().onActivity((e) => {
+  listen("activity", (e) => {
     void onActivityInBackground(e);
   });
-  bridge().onStripeStatus((s: StripeStatus) => set({ stripeStatus: s }));
-  bridge().onAuthEvent((e: AuthFlowEvent) => {
+  listen("stripe", (s: StripeStatus) => set({ stripeStatus: s }));
+  listen("auth", (e: AuthFlowEvent) => {
     if (e.type === "done") {
       set({ authed: true });
       // a runner whose sign-in failed beside one that is ready stays signed out

@@ -2,7 +2,9 @@ import { getSecret, setSecret } from "./secrets";
 import * as store from "./store/store";
 import { listProjects, validateToken } from "./vercel";
 import { errorMessage } from "@repo/domain/errors";
-import type { Contract } from "@repo/contract/ipc-registry";
+import type { z } from "zod";
+import type { connectInput, saveTokenInput } from "@repo/contract/vercel/vercel-schema";
+import type { VercelListing } from "@repo/domain/integrations";
 
 // One token per founder; each product binds its own project.
 
@@ -35,9 +37,7 @@ const saveToken = (productId: string, token: string | undefined): VercelConnecti
 };
 
 /** The projects `token` can see, or the saved token's when none is given. */
-export const listVercelProjects = async (
-  token?: string,
-): Promise<Contract["vercelListProjects"]["result"]> => {
+export const listVercelProjects = async (token?: string): Promise<VercelListing> => {
   const key = token ?? getSecret(VERCEL_TOKEN_KEY);
   if (!key) {
     return { kind: "rejected" };
@@ -53,7 +53,7 @@ export const listVercelProjects = async (
   }
 };
 
-export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void => {
+export const connectVercel = (input: z.infer<typeof connectInput>): void => {
   const { productId, token, projectId, projectName, teamId } = input;
   store.requireProduct(productId);
   const connection = saveToken(productId, token);
@@ -62,10 +62,7 @@ export const connectVercel = (input: Contract["vercelConnect"]["payload"]): void
 };
 
 /** Save a token with no project picked: the product's first deploy makes one named after it and binds it. */
-export const saveVercelToken = ({
-  productId,
-  token,
-}: Contract["vercelSaveToken"]["payload"]): void => {
+export const saveVercelToken = ({ productId, token }: z.infer<typeof saveTokenInput>): void => {
   store.requireProduct(productId);
   onConnected(saveToken(productId, token));
 };

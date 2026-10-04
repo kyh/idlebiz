@@ -21,6 +21,8 @@
   },
   "devDependencies": {
     "@base-ui/react": "1.8.0",
+    "@orpc/client": "catalog:",
+    "@orpc/contract": "catalog:",
     "@repo/agent-driver": "workspace:*",
     "@repo/contract": "workspace:*",
     "@repo/domain": "workspace:*",

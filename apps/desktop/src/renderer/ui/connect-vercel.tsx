@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
@@ -18,7 +18,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
   const [cursor, setCursor] = useState(0);
   // a fresh object per Continue, so asking again with the same token reads again
   const [asked, setAsked] = useState<{ token?: string }>({});
-  const listing = useAsync(() => bridge().vercelListProjects(asked), [asked]);
+  const listing = useAsync(() => api().vercel.projects(asked), [asked]);
   const lookup = lookupFor(listing, asked.token);
   const connecting = useSubmission(
     async ({ project, given }: { project: VercelProject; given: string | undefined }) => {
@@ -33,7 +33,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
     },
   );
   const saving = useSubmission(async (given: string) => {
-    await bridge().vercelSaveToken({ productId, token: given });
+    await api().vercel.saveToken({ productId, token: given });
     onClose();
   });
   const busy =

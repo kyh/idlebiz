@@ -1,5 +1,5 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { Curtain } from "@/renderer/ui/curtain";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import type { LoadSkip } from "@repo/domain/domain";
@@ -27,7 +27,7 @@ export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
           <button
             type="button"
             onClick={() => {
-              void bridge().openSaveFolder();
+              void api().save.openFolder();
             }}
             className="px-btn-accent px-btn"
           >
