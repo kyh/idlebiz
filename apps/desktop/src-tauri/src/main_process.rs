@@ -38,6 +38,8 @@ const EXIT_GRACE: Duration = Duration::from_secs(5);
 pub struct MainSpec {
     pub node: PathBuf,
     pub entry: PathBuf,
+    /// What the entry is asked: `serve`.
+    pub args: Vec<String>,
     pub env: BTreeMap<OsString, OsString>,
     pub log: Arc<Mutex<MainLog>>,
 }
@@ -95,6 +97,7 @@ impl MainProcess {
         let mut command = Command::new(&spec.node);
         command
             .arg(&spec.entry)
+            .args(&spec.args)
             .env_clear()
             .envs(&spec.env)
             .stdin(Stdio::piped())
@@ -349,6 +352,7 @@ send({ method: "hi", params: { n: 1 } });
             MainSpec {
                 node: PathBuf::from("node"),
                 entry,
+                args: Vec::new(),
                 env: std::env::vars_os().collect(),
                 log: Arc::new(Mutex::new(MainLog::new(log.clone(), 1 << 20))),
             },

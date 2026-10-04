@@ -1,15 +1,15 @@
-// How the page reaches main: main serves this page itself (src/main/page-server.ts), so the page
+// How the page reaches main: main serves this page itself (apps/cli/src/server/page-server.ts), so the page
 // calls it and hears its events on its own origin, signed in by the cookie its handoff link set,
 // whether it is the app's window, a browser under `pnpm dev:browser` or e2e's Chromium. Either way
 // it is `globalThis.appBridge`, built from the one channel registry. Every reply is main's own, a
-// value or the sentence it refused with. Main parses every payload (src/main/lib/ipc-handler.ts),
+// value or the sentence it refused with. Main parses every payload (apps/cli/src/server/lib/ipc-handler.ts),
 // so nothing is trusted here that was not before.
 
-import { CHANNELS, isReply } from "@/shared/ipc-channels";
-import type { WireValue } from "@/shared/ipc-channels";
-import { jsonValueSchema } from "@/shared/json";
-import type { JsonValue } from "@/shared/json";
-import { EVENTS_PATH, INVOKE_PATH } from "@/shared/page-routes";
+import { CHANNELS, isReply } from "@repo/contract/ipc-channels";
+import type { WireValue } from "@repo/contract/ipc-channels";
+import { jsonValueSchema } from "@repo/domain/json";
+import type { JsonValue } from "@repo/domain/json";
+import { EVENTS_PATH, INVOKE_PATH } from "@repo/contract/page-routes";
 
 const invoke = async (method: string, payload: WireValue): Promise<JsonValue> => {
   const response = await fetch(INVOKE_PATH, {

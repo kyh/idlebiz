@@ -16,10 +16,10 @@ import {
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
-import { isOutOfBudget } from "@/shared/domain";
-import type { Budget } from "@/shared/domain";
-import { formatUsd } from "@/shared/format";
-import type { PrintfulTokenStatus, StripeKeyStatus, StripeStatus } from "@/shared/integrations";
+import { isOutOfBudget } from "@repo/domain/domain";
+import type { Budget } from "@repo/domain/domain";
+import { formatUsd } from "@repo/domain/format";
+import type { PrintfulTokenStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },

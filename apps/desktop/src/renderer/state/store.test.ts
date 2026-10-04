@@ -2,7 +2,7 @@ import { setImmediate as settle } from "node:timers/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ActivityEvent } from "@/shared/activity";
+import type { ActivityEvent } from "@repo/domain/activity";
 import type {
   AgentRunner,
   AuthFlowEvent,
@@ -10,8 +10,8 @@ import type {
   Employee,
   RestingRunners,
   TeamMessage,
-} from "@/shared/domain";
-import type { AppBridge } from "@/shared/ipc-registry";
+} from "@repo/domain/domain";
+import type { AppBridge } from "@repo/contract/ipc-registry";
 import type { Office } from "@/renderer/game/office-port";
 import { feedKey } from "@/renderer/state/activity-reducer";
 

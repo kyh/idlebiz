@@ -9,9 +9,9 @@ import type { NpcAttachments } from "@/renderer/game/npc-attachments";
 import { lookOf } from "@/renderer/game/npc-look";
 import type { Activity, Phase } from "@/renderer/game/npc-look";
 import type { PixelPoint } from "@/renderer/game/office-layout";
-import { characterDepth } from "@/shared/office-depth";
-import { findPath, nearestFloor } from "@/shared/office-grid";
-import type { WalkGrid } from "@/shared/office-grid";
+import { characterDepth } from "@/renderer/game/office-depth";
+import { findPath, nearestFloor } from "@/renderer/game/office-grid";
+import type { WalkGrid } from "@/renderer/game/office-grid";
 
 /** A desk seat (px) an employee occupies. Owned by the office scene, sized to the active tier. */
 export interface Seat {

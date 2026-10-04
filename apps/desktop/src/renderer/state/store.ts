@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
-import type { ActivityEvent } from "@/shared/activity";
-import type { Bet } from "@/shared/bets";
-import { taskIn } from "@/shared/domain";
+import type { ActivityEvent } from "@repo/domain/activity";
+import type { Bet } from "@repo/domain/bets";
+import { taskIn } from "@repo/domain/domain";
 import type {
   ActionReply,
   AgentRunner,
@@ -15,10 +15,10 @@ import type {
   Task,
   TaskIn,
   TeamMessage,
-} from "@/shared/domain";
-import type { Digest } from "@/shared/digest";
-import { errorMessage } from "@/shared/errors";
-import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@/shared/integrations";
+} from "@repo/domain/domain";
+import type { Digest } from "@repo/domain/digest";
+import { errorMessage } from "@repo/domain/errors";
+import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
 import { bridge } from "@/renderer/bridge";
 import { hear, tell } from "@/renderer/game/office-port";
 import type { Office } from "@/renderer/game/office-port";

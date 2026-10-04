@@ -1,28 +1,25 @@
-// Two outputs from one config. The page (`vite build`, and the dev server): React and Phaser, which
-// main serves the shell's window on its own origin (src/main/page-server.ts). Main
-// (`vite build --mode main`): one node bundle the shell runs on the node it ships. Main bundles its
-// dependencies, but for sharp, which is native and loads from node_modules, and the ACP adapters,
-// which it never imports: it resolves them there and runs each as its own process.
+// The page: React and Phaser, which the server serves the shell's window on its own origin
+// (apps/cli/src/server/page-server.ts). `vite build` writes it to `dist/`, which the server's build
+// stages beside its bundle.
 //
-// The dev server answers the page's files to main, which hands them on, so the page keeps main's
-// origin and still reloads in place; its hot-reload socket dials this server directly. It builds
-// main too, before it serves and again on each change: `tauri dev` restarts the shell when main
-// changes, and `--mode browser` runs main itself, as the shell does (src/dev-host/host.ts), with
-// `/` here the way into main's page.
+// The dev server answers the page's files to the server, which hands them on, so the page keeps the
+// server's origin and still reloads in place; its hot-reload socket dials this server directly. It
+// builds the server too (apps/cli/vite.config.ts), before it serves and again on each change:
+// `tauri dev` restarts the shell when the server changes, and `--mode browser` runs the server
+// itself, as the shell does (`idlebiz/dev-host`), with `/` here the way into its page.
 
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { build, defineConfig, isRunnableDevEnvironment } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
-import type * as DevHostModule from "./src/dev-host/host.ts";
-import type { DevHost } from "./src/dev-host/host.ts";
-import { errorMessage } from "./src/shared/errors.ts";
-import { pagePolicy } from "./src/shared/page-policy.ts";
-import { DEV_PORT } from "./src/shared/page-routes.ts";
+import { DEV_PORT } from "@repo/contract/page-routes";
+import { errorMessage } from "@repo/domain/errors";
+import type * as DevHostModule from "idlebiz/dev-host";
+import type { DevHost } from "idlebiz/dev-host";
+import { pagePolicy } from "idlebiz/server/page-policy";
 
 const configDir = import.meta.dirname;
-const alias = { "@": path.resolve(configDir, "src") };
 
 // Main stamps no policy on the page Vite answers, whose hot reload runs inline scripts, so the dev
 // server writes the page's own into it, opened to its socket. At the end of the head: a meta policy
@@ -46,15 +43,14 @@ interface Watching {
   close: () => Promise<void>;
 }
 
-/** Builds main, resolving once the first build is out; each later one calls `rebuilt`. */
-const watchMain = async (rebuilt: () => void): Promise<Watching> => {
+/** Builds the server, resolving once the first build is out; each later one calls `rebuilt`. */
+const watchServer = async (rebuilt: () => void): Promise<Watching> => {
   const watcher = await build({
     build: { watch: {} },
-    configFile: path.resolve(configDir, "vite.config.ts"),
-    mode: "main",
+    configFile: path.resolve(configDir, "../cli/vite.config.ts"),
   });
   if (!("on" in watcher)) {
-    throw new Error("main's watch build answered with no watcher");
+    throw new Error("the server's watch build answered with no watcher");
   }
   const { promise: firstBuild, reject, resolve } = Promise.withResolvers<true>();
   let built = false;
@@ -79,11 +75,11 @@ const watchMain = async (rebuilt: () => void): Promise<Watching> => {
   return { close: async () => await watcher.close() };
 };
 
-const devMain = (mode: string): Plugin => ({
+const devServer = (mode: string): Plugin => ({
   apply: "serve",
   configureServer: async (server: ViteDevServer) => {
     let host: DevHost | null = null;
-    const watching = await watchMain(() => {
+    const watching = await watchServer(() => {
       const running = host;
       if (running === null) {
         return;
@@ -110,9 +106,7 @@ const devMain = (mode: string): Plugin => ({
     if (!isRunnableDevEnvironment(ssr)) {
       throw new Error("the dev server cannot run the dev host");
     }
-    const { startDevHost } = await ssr.runner.import<typeof DevHostModule>(
-      path.resolve(configDir, "src/dev-host/host.ts"),
-    );
+    const { startDevHost } = await ssr.runner.import<typeof DevHostModule>("idlebiz/dev-host");
     const started = await startDevHost({
       log: (line) => {
         server.config.logger.info(line);
@@ -145,42 +139,23 @@ const devMain = (mode: string): Plugin => ({
       server.config.logger.info(`\n  IdleBiz in a browser: http://localhost:${DEV_PORT}/\n`);
     });
   },
-  name: "idlebiz-dev-main",
+  name: "idlebiz-dev-server",
 });
 
-export default defineConfig(({ mode }) =>
-  mode === "main"
-    ? {
-        build: {
-          emptyOutDir: true,
-          outDir: path.resolve(configDir, ".output/main"),
-          rolldownOptions: {
-            external: ["sharp"],
-            output: { entryFileNames: "index.js" },
-          },
-          ssr: path.resolve(configDir, "src/main/index.ts"),
-          target: "node24",
-        },
-        // the page's files are the page's
-        publicDir: false,
-        resolve: { alias },
-        ssr: { noExternal: true },
-      }
-    : {
-        build: {
-          emptyOutDir: true,
-          outDir: path.resolve(configDir, ".output/renderer"),
-        },
-        clearScreen: false,
-        plugins: [tailwindcss(), react(), devContentSecurityPolicy(), devMain(mode)],
-        publicDir: path.resolve(configDir, "public"),
-        resolve: { alias },
-        root: path.resolve(configDir, "src/renderer"),
-        server: {
-          // the page's files reach the page through main, but its hot-reload socket dials here
-          hmr: { clientPort: DEV_PORT, host: "localhost" },
-          port: DEV_PORT,
-          strictPort: true,
-        },
-      },
-);
+export default defineConfig(({ mode }) => ({
+  build: {
+    emptyOutDir: true,
+    outDir: path.resolve(configDir, "dist"),
+  },
+  clearScreen: false,
+  plugins: [tailwindcss(), react(), devContentSecurityPolicy(), devServer(mode)],
+  publicDir: path.resolve(configDir, "public"),
+  resolve: { alias: { "@": path.resolve(configDir, "src") } },
+  root: path.resolve(configDir, "src/renderer"),
+  server: {
+    // the page's files reach the page through the server, but its hot-reload socket dials here
+    hmr: { clientPort: DEV_PORT, host: "localhost" },
+    port: DEV_PORT,
+    strictPort: true,
+  },
+}));

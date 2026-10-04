@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characterDepth, DEPTH } from "@/shared/office-depth";
+import { characterDepth, DEPTH } from "@/renderer/game/office-depth";
 import { bustOverlapRect, bustOverlaps, seatDepth } from "./seat-depth";
 import type { RoomImage, SeatSpot } from "./seat-depth";
 import type { OpaqueMask } from "./opaque-mask";

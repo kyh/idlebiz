@@ -1,0 +1,1327 @@
+import { z } from "zod";
+import * as store from "./store/store";
+import { publishActivity } from "./activity";
+import { report } from "./lib/report";
+import type { AskBox, agentDriver } from "./agents/agent-driver";
+import { unshippableIn } from "./deploy";
+import type { DeployTarget, Deployer } from "./deploy";
+import {
+  announceBet,
+  killBet,
+  nameProduct,
+  postToRoom,
+  retireProduct,
+  startProduct,
+  makingPaymentLink,
+  switchOffRetiredLinks,
+} from "./company-actions";
+import { measureRefusal } from "./metrics";
+import { CHECKOUT_SESSION_PARAM } from "./payment-links";
+import type { PaymentLinker, StripeAccess } from "./payment-links";
+import { STRIPE_FEE_LABEL, priceFloorCents } from "./print-listing";
+import type { PrintListing } from "./print-listing";
+import { printfulCredential } from "./printful";
+import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "./printful";
+import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "./secrets";
+import { holdsStripeSecretKey, isTestKey } from "./stripe-api";
+import type { productionHosts, validateToken } from "./vercel";
+import { keepEnvValue, serverOnlyValueIn, teamSetEnv, unshippableEnvValues } from "./vercel-env";
+import type { EnvSetter } from "./vercel-env";
+import { betLedger, betMark, roomTranscript } from "./prompts/briefs";
+import {
+  RUN_COST_ESTIMATE_USD,
+  betGoal,
+  betMoney,
+  hasRoomFor,
+  isSpentOut,
+} from "@repo/domain/bets";
+import type { Bet } from "@repo/domain/bets";
+import { hasRole, isLead, spriteSeedFor } from "@repo/domain/domain";
+import type {
+  BlockedAsk,
+  Company,
+  Employee,
+  IntegrationNeed,
+  Product,
+  TaskOrigin,
+  VercelBinding,
+} from "@repo/domain/domain";
+import { publicPrefixOf, publicValueRefusal } from "./env-name";
+import { BadRequestError, errorMessage } from "@repo/domain/errors";
+import { formatCents, plural } from "@repo/domain/format";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
+import { RefusalError } from "./refusal";
+import type { JsonValue } from "@repo/domain/json";
+import { CATALOG_PAGE } from "./listing";
+import type { ListedPlacement, ListingVariant, PrintPlacement } from "./listing";
+import type { Order } from "./order";
+import type { CompanyLink, LinkState } from "./payment-link";
+import { TOOL_NAMES, TOOL_SPECS } from "./tool-specs";
+import type { ToolName, ToolSpec } from "./tool-specs";
+
+/** What a tool call acts on behalf of: who is running, for what, and what only main can do for it. */
+export interface RunContext {
+  employee: Employee;
+  company: Company;
+  run: {
+    runId: string;
+    taskId: string;
+    productId: string | null;
+    betId: string | null;
+    origin: TaskOrigin;
+  };
+  asks: AskBox;
+  driver: Pick<typeof agentDriver, "pickRunner" | "restingRunner" | "signedIn">;
+  /** Queue a task for a teammate; a busy one picks it up on a later tick. */
+  assign: (taskId: string, employeeId: string) => void;
+  /** Deploy with the founder's Vercel key, which the run itself never holds. */
+  deploy: Deployer;
+  /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
+  createPaymentLink: PaymentLinker;
+  /** Ask Stripe whether the founder's key still reaches payment links, before a sign-off is spent on one. */
+  linkAccess: (key: string) => Promise<StripeAccess>;
+  /** Ask Stripe whether the founder's key reads checkouts, as a link owed a delivery needs. */
+  checkoutAccess: (key: string) => Promise<StripeAccess>;
+  /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
+  setEnv: EnvSetter;
+  /** Ask Vercel whether it still takes the founder's token, before a sign-off is spent on a deploy. */
+  checkVercelToken: typeof validateToken;
+  /** List a print-on-demand item with the founder's Printful and Stripe keys, which the run itself never holds. */
+  printListing: PrintListing;
+  /** Read where a product's production deploys are served with the founder's Vercel key, which the run itself never holds. */
+  productionHosts: typeof productionHosts;
+}
+
+/** A tool ready to be called with whatever the agent sent. */
+type Tool = (ctx: RunContext, raw: JsonValue) => Promise<string>;
+
+/**
+ * An implementation bound to its spec, so the body it receives is the one the
+ * spec parses: the lead's tools turn anyone else away, a body that does not
+ * parse is the caller's error, and the store's refusals — written as the
+ * sentence the agent should read — become the answer. A fault answers too, so
+ * the run can go on, but is reported.
+ */
+const define =
+  <B extends z.ZodType>(
+    spec: ToolSpec<B>,
+    run: (ctx: RunContext, body: z.infer<B>) => string | Promise<string>,
+  ): Tool =>
+  async (ctx, raw) => {
+    if (spec.leadOnly !== null && !isLead(ctx.company, ctx.employee)) {
+      return spec.leadOnly;
+    }
+    const body = spec.body.safeParse(raw);
+    if (!body.success) {
+      throw new BadRequestError(z.prettifyError(body.error));
+    }
+    try {
+      return await run(ctx, body.data);
+    } catch (error) {
+      if (!(error instanceof RefusalError)) {
+        report(`tool ${spec.path}`, error);
+      }
+      return errorMessage(error);
+    }
+  };
+
+const nameOf = (id: string): string => store.getEmployee(id)?.name ?? "someone";
+
+const post = (ctx: RunContext, text: string, to: string | null = null): void => {
+  postToRoom({ id: ctx.employee.id, kind: "employee" }, text, to);
+};
+
+/** The product a tool means: the one it names, else the run's own, else the one waited on longest. */
+const productFor = (ctx: RunContext, named: string | undefined): string | null =>
+  named ?? ctx.run.productId ?? store.attentionProduct()?.id ?? null;
+
+const UNSENT =
+  "The founder was not asked: this run already asked them something, and only a run's first ask reaches them. Note it, and try again once they answer.";
+
+/**
+ * Leave the founder `ask` and answer `sent`; or, since only a run's first ask reaches them, say
+ * that this one did not, after `why` it was needed.
+ */
+const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why = ""): string =>
+  ctx.asks.raise(ask) ? sent : `${why} ${UNSENT}`.trim();
+
+/**
+ * Spend the founder's sign-off on `action` in this task, or ask them for it and
+ * end the call. The action is the approval's key, so it reads as what is signed.
+ */
+const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId): void => {
+  if (store.consumeApproval(ctx.run.taskId, action)) {
+    return;
+  }
+  const held = `Held for the founder's sign-off on "${action}".`;
+  throw new RefusalError(
+    askFounder(
+      ctx,
+      { command: action, rule, type: "approval" },
+      `${held} End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+      held,
+    ),
+  );
+};
+
+/** What the founder signs for a deploy: the product, and the Vercel project it lands in. */
+const deployAction = (productId: string, target: DeployTarget): string =>
+  target.kind === "bound"
+    ? `deploy ${productId} to production on Vercel project ${target.binding.projectName}`
+    : `deploy ${productId} to production on a new Vercel project named ${target.name}`;
+
+/** Why money on `product` cannot be counted for `bet`, or null when it can. */
+const revenueBetRefusal = (bet: string, product: Product): string | null => {
+  const claimed = store.getBet(bet);
+  return claimed?.productId === product.id &&
+    claimed.claim.metric === "revenue" &&
+    (claimed.state.kind === "open" || claimed.state.kind === "measuring")
+    ? null
+    : `"${bet}" is not a revenue bet on ${product.id} that is open or measuring — read_bets lists every live bet, what it counts and its product.`;
+};
+
+const TEST_MODE =
+  " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.";
+
+const NO_STRIPE_KEY =
+  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
+
+const NO_PRINTFUL_TOKEN =
+  "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.";
+
+const VERCEL_WAITING =
+  "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
+
+/** Why a print file's URL is not one Printful can fetch, or null when it is. */
+const fileUrlRefusal = (url: URL): string | null => {
+  if (url.protocol !== "https:") {
+    return `${url.href} is not https: Printful fetches a print file only from a public https URL on the product's own domain.`;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return `${url.href} carries a login: a print file has to be public, since Printful fetches it with none.`;
+  }
+  if (url.port !== "") {
+    return `${url.href} names port ${url.port}: Vercel serves the product only on https's own port, so name the URL without one.`;
+  }
+  return null;
+};
+
+/**
+ * Each placement with its file's URL as Printful will fetch it, so the file named in the
+ * sign-off and the listing is that one; a URL Printful should not fetch ends the call.
+ */
+const printFileUrls = (placements: readonly PrintPlacement[]): PrintPlacement[] =>
+  placements.map((p) => {
+    const url = new URL(p.fileUrl);
+    const refusal = fileUrlRefusal(url);
+    if (refusal !== null) {
+      throw new RefusalError(refusal);
+    }
+    return { ...p, fileUrl: url.href };
+  });
+
+/** Ask the founder for an integration, ending the call with what the agent should read. */
+const needIntegration = (
+  ctx: RunContext,
+  integration: Exclude<IntegrationNeed, "vercel">,
+  reason: string,
+  sent: string,
+  why: string,
+): never => {
+  throw new RefusalError(
+    askFounder(ctx, { integration, productId: null, reason, type: "integration" }, sent, why),
+  );
+};
+
+/** Ask the founder for Vercel for `productId`, whose binding answers it, which ends the call. */
+const needVercel = (
+  ctx: RunContext,
+  productId: string,
+  reason: string,
+  sent: string,
+  why: string,
+): never => {
+  throw new RefusalError(
+    askFounder(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why),
+  );
+};
+
+/** The founder's keys a listing is made with. */
+interface SellingKeys {
+  vercel: string;
+  stripe: string;
+  printful: PrintfulCredential;
+}
+
+/** The keys a listing is made with; the first one missing is asked for, which ends the call. */
+const sellingKeys = (
+  ctx: RunContext,
+  product: Product,
+  name: string,
+  price: string,
+): SellingKeys => {
+  const vercel =
+    getSecret("VERCEL_TOKEN") ??
+    needVercel(
+      ctx,
+      product.id,
+      `to check where ${product.name} serves its print files`,
+      VERCEL_WAITING,
+      "Vercel is not connected.",
+    );
+  const stripe =
+    getSecret(STRIPE_SECRET_KEY) ??
+    needIntegration(
+      ctx,
+      "stripe-key",
+      `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
+      NO_STRIPE_KEY,
+      "IdleBiz has no Stripe key to charge with.",
+    );
+  const printful =
+    printfulCredential() ??
+    needIntegration(
+      ctx,
+      "printful",
+      `to print and ship ${JSON.stringify(name)}`,
+      NO_PRINTFUL_TOKEN,
+      "IdleBiz has no Printful token.",
+    );
+  return { printful, stripe, vercel };
+};
+
+/** Ask the founder for a Vercel token in place of one Vercel turned away `doing` something for `product`, which ends the call. */
+const vercelTurnedAway = (ctx: RunContext, product: Product, doing: string): never =>
+  needVercel(
+    ctx,
+    product.id,
+    `Vercel turned IdleBiz's token away ${doing}`,
+    "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting to connect it again. Continue with what you can — this task resumes automatically once connected.",
+    "Vercel turned IdleBiz's token away.",
+  );
+
+/** Vercel's word on `token`; one it cannot give ends the call. */
+const vercelTakes = async (
+  ctx: RunContext,
+  token: string,
+): ReturnType<RunContext["checkVercelToken"]> => {
+  try {
+    return await ctx.checkVercelToken(token);
+  } catch (error) {
+    throw new RefusalError(
+      `Vercel could not be asked whether IdleBiz's token still works (${errorMessage(error)}); try again.`,
+    );
+  }
+};
+
+/** End the call unless Vercel still takes `token`; one it turns away (expired, revoked) is asked for anew. */
+const requireLiveVercelToken = async (
+  ctx: RunContext,
+  product: Product,
+  token: string,
+  doing: string,
+): Promise<void> => {
+  const check = await vercelTakes(ctx, token);
+  if (check.kind === "rejected") {
+    vercelTurnedAway(ctx, product, doing);
+  }
+};
+
+/** The hosts `product` serves its production deploys on; a token Vercel turns away is asked for anew, which ends the call. */
+const productHosts = async (
+  ctx: RunContext,
+  product: Product,
+  binding: VercelBinding,
+  token: string,
+): Promise<string[]> => {
+  const read = await ctx.productionHosts(binding, token);
+  if (read.kind === "refused") {
+    return vercelTurnedAway(ctx, product, `while checking ${product.name}'s domains`);
+  }
+  if (read.kind === "unreachable") {
+    throw new RefusalError(
+      `Vercel could not say where ${product.name} is served (${read.reason}); try again.`,
+    );
+  }
+  return read.hosts;
+};
+
+const domainsLabel = (hosts: readonly string[]): string =>
+  hosts.length === 0 ? "none yet" : hosts.join(", ");
+
+/**
+ * Each placement with the digest of the image the product serves at its URL on its production
+ * domains right now; any other file ends the call.
+ */
+const servedFiles = async (
+  ctx: RunContext,
+  product: Product,
+  binding: VercelBinding,
+  token: string,
+  placements: readonly PrintPlacement[],
+): Promise<ListedPlacement[]> => {
+  const hosts = await productHosts(ctx, product, binding, token);
+  const served: ListedPlacement[] = [];
+  for (const placement of placements) {
+    const { fileUrl } = placement;
+    if (!hosts.includes(new URL(fileUrl).hostname)) {
+      throw new RefusalError(
+        `${fileUrl} is not on ${product.name}'s production domains (${domainsLabel(hosts)}): Printful prints only a file the product itself serves, so deploy it there and name that URL.`,
+      );
+    }
+    const file = await ctx.printListing.readFile(fileUrl);
+    if (file.kind === "unfit") {
+      throw new RefusalError(
+        `Printful could not fetch ${fileUrl}: ${file.reason}. Deploy the print file first, and check it loads as an image.`,
+      );
+    }
+    served.push({ ...placement, sha256: file.sha256 });
+  }
+  return served;
+};
+
+/** Why buyers cannot be sent to `url` once they have paid, or null when they can. */
+const afterPaymentRefusal = (url: URL): string | null => {
+  if (url.protocol !== "https:") {
+    return `${url.href} is not https: buyers who paid are sent only to an https page on the product's own domain.`;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return `${url.href} carries a login: the page buyers land on has to be public, since they arrive with none.`;
+  }
+  if (url.port !== "") {
+    return `${url.href} names port ${url.port}: Vercel serves the product only on https's own port, so name the page without one.`;
+  }
+  if (url.searchParams.has(CHECKOUT_SESSION_PARAM)) {
+    return `${url.href} already has a ${CHECKOUT_SESSION_PARAM}: IdleBiz adds it, filled with each buyer's checkout session, so name the page without it.`;
+  }
+  return null;
+};
+
+/**
+ * The page of `product`'s own that buyers land on once they have paid, as the founder signs it;
+ * one the product does not serve over https on its production domains ends the call, since that
+ * page is where the product checks who paid.
+ */
+const afterPaymentPage = async (
+  ctx: RunContext,
+  product: Product,
+  page: string,
+): Promise<string> => {
+  const url = new URL(page);
+  const refusal = afterPaymentRefusal(url);
+  if (refusal !== null) {
+    throw new RefusalError(refusal);
+  }
+  if (product.vercel === null) {
+    throw new RefusalError(
+      `${product.name} has no Vercel project yet: deploy the page buyers land on, which makes one, then make the link.`,
+    );
+  }
+  const token =
+    getSecret("VERCEL_TOKEN") ??
+    needVercel(
+      ctx,
+      product.id,
+      `to check where ${product.name} sends buyers who paid`,
+      VERCEL_WAITING,
+      "Vercel is not connected.",
+    );
+  const hosts = await productHosts(ctx, product, product.vercel, token);
+  if (!hosts.includes(url.hostname)) {
+    throw new RefusalError(
+      `${url.href} is not on ${product.name}'s production domains (${domainsLabel(hosts)}): buyers who paid are sent only to a page the product itself serves, where its server checks their checkout.`,
+    );
+  }
+  return url.href;
+};
+
+/**
+ * What the founder signs for a payment link. The name and delivery are quoted as JSON, so
+ * neither can pose as more of the action; the delivery is signed since it is what the founder
+ * owes each buyer, and so is the page paying buyers land on, whose href holds no space or quote
+ * to pose with.
+ */
+const chargeAction = (link: {
+  name: string;
+  price: string;
+  product: string;
+  bet: string | undefined;
+  delivery: string | undefined;
+  afterPayment: string | null;
+}): string =>
+  [
+    `payment link ${JSON.stringify(link.name)} at ${link.price} on ${link.product}`,
+    link.bet === undefined ? "" : ` for bet ${link.bet}`,
+    link.delivery === undefined ? "" : ` delivering ${JSON.stringify(link.delivery)}`,
+    link.afterPayment === null ? "" : ` then send buyers to ${link.afterPayment}`,
+  ].join("");
+
+/** What a buyer gets once they pay on link `id`, as the agent is told. */
+const afterSale = (
+  id: string,
+  delivery: string | undefined,
+  afterPayment: string | null,
+): string => {
+  const card =
+    delivery === undefined
+      ? ""
+      : " The founder gets a card for each paid checkout, with the buyer's email and your delivery.";
+  if (afterPayment === null) {
+    return card || " Nothing names a delivery, so a buyer gets only Stripe's receipt.";
+  }
+  return ` Each buyer who pays lands on ${afterPayment} with a ${CHECKOUT_SESSION_PARAM} naming their checkout session: unlock only what the product's server reads there as paid on this link, ${id}.${card}`;
+};
+
+/** Ask the founder for a Printful token in place of one Printful turned away, which ends the call. */
+const printfulTurnedAway = (ctx: RunContext): never =>
+  needIntegration(
+    ctx,
+    "printful",
+    "Printful turned IdleBiz's token away (tokens expire): paste a new one",
+    "Printful turned IdleBiz's token away, which happens when it expires: the founder has a Printful card waiting to paste a new one. Continue with what you can — this task resumes automatically once it is saved.",
+    "Printful turned IdleBiz's token away.",
+  );
+
+/** Printful's price for a listing; a token it turns away is asked for anew, which ends the call. */
+const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuote> => {
+  const quoted = await ctx.printListing.quote(req);
+  switch (quoted.kind) {
+    case "quoted": {
+      return quoted.quote;
+    }
+    case "refused": {
+      return printfulTurnedAway(ctx);
+    }
+    case "failed": {
+      throw new RefusalError(`Printful could not price it: ${quoted.reason}`);
+    }
+    // no default
+  }
+};
+
+/** What a Stripe key must be granted for a tool, in the words the founder and the agent read. */
+interface StripeGrant {
+  can: string;
+  why: string;
+  permissions: string;
+}
+
+const PRINT_GRANT: StripeGrant = {
+  can: "make shipping rates or read checkouts and charges",
+  permissions: "Write on Shipping Rates, and Read on Checkout Sessions and Charges",
+  why: "which selling a print needs",
+};
+
+const LINK_GRANT: StripeGrant = {
+  can: "make payment links",
+  permissions: "Write on Payment Links, Prices and Products",
+  why: "which charging through one needs",
+};
+
+const LISTING_GRANT: StripeGrant = {
+  can: "make payment links or shipping rates",
+  permissions: "Write on Payment Links, Prices, Products and Shipping Rates",
+  why: "which selling a print needs",
+};
+
+const DELIVERY_GRANT: StripeGrant = {
+  can: "read checkouts",
+  permissions: "Read on Checkout Sessions",
+  why: "which is how each buyer owed a delivery reaches the founder",
+};
+
+/** Ask the founder for a Stripe key with `grant` in place of one Stripe turned away, saying `said`, which ends the call. */
+const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, said: string): never =>
+  needIntegration(
+    ctx,
+    "stripe-key",
+    `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
+    `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
+    `Stripe won't let IdleBiz's key ${grant.can}.`,
+  );
+
+/** End the call unless Stripe says the founder's key has `grant`. */
+const requireStripeAccess = async (
+  ctx: RunContext,
+  asked: Promise<StripeAccess>,
+  grant: StripeGrant,
+): Promise<void> => {
+  const access = await asked;
+  switch (access.kind) {
+    case "granted": {
+      return;
+    }
+    case "refused": {
+      return stripeTurnedAway(ctx, grant, access.said);
+    }
+    case "unreachable": {
+      throw new RefusalError(
+        `Stripe could not be asked whether IdleBiz's key can ${grant.can} (${access.reason}); try again.`,
+      );
+    }
+    // no default
+  }
+};
+
+/** One page of Printful's catalog, a product a line, with how to read the next. */
+const catalogPage = ({
+  offset,
+  products,
+  total,
+}: {
+  offset: number;
+  products: readonly CatalogProduct[];
+  total: number;
+}): string => {
+  if (offset >= total) {
+    return `Printful's catalog lists ${total} products that ship to the US, so none from ${offset + 1}.`;
+  }
+  const next = offset + CATALOG_PAGE;
+  const more = next < total ? ` Pass "offset":${next} for the next page.` : "";
+  const lines = products.map((p) => {
+    const made = [p.brand, p.model].filter(Boolean).join(" ");
+    const how = p.techniques.map((t) => t.key).join(", ");
+    return `${p.id}: ${p.name}${made ? ` (${made})` : ""}${how ? ` — ${how}` : ""}`;
+  });
+  return `Printful's catalog, from product ${offset + 1} of ${total} that ship to the US (id: name — techniques; discontinued ones left out). Pass "product":<id> for its placements and variants.${more}\n${lines.join("\n")}`;
+};
+
+/** A catalog product as sell_print names it: its placements with their techniques, and its variants. */
+const catalogProduct = (product: CatalogProduct, variants: readonly ListingVariant[]): string => {
+  const placements = product.placements.map((p) => `${p.placement} (${p.technique})`);
+  return `${product.id}: ${product.name}${product.is_discontinued === true ? " — discontinued, so it cannot be ordered" : ""}
+Placements, as sell_print's placement (technique): ${placements.join(", ") || "none listed"}
+Variants, as sell_print's variantIds (id: colour / size):
+${variants.map((v) => `${v.id}: ${v.label}`).join("\n")}`;
+};
+
+/** How many orders read_orders shows: enough to find the buyer who wrote in, few enough to read. */
+const RECENT_ORDERS = 20;
+
+/** Where an order stands, as support should read it. */
+const orderStanding = (order: Order): string => {
+  if (order.kind === "unreadable") {
+    return `not sent to Printful: ${order.why}; the founder handles it`;
+  }
+  if (order.kind === "link") {
+    if (!order.livemode) {
+      return "paid in test mode, so nobody paid and nothing is owed";
+    }
+    return order.delivery === null
+      ? "paid through a payment link that names no delivery"
+      : `the founder delivers it: ${order.delivery}`;
+  }
+  const { stage } = order;
+  switch (stage.kind) {
+    case "received": {
+      return "paid, not at Printful yet";
+    }
+    case "pricing": {
+      return `a draft at Printful (order ${stage.printfulId}), being priced`;
+    }
+    case "confirmed": {
+      return `at Printful (order ${stage.printfulId}): ${order.printfulStatus ?? "submitted"}`;
+    }
+    case "held": {
+      return `waiting on the founder: ${stage.why}`;
+    }
+    case "test": {
+      return order.costCents === null
+        ? `paid in test mode; Printful never priced draft ${stage.printfulId}, so it was deleted, never sent`
+        : `paid in test mode, so only priced as Printful draft ${stage.printfulId}, never sent`;
+    }
+    // no default
+  }
+};
+
+const dayOf = (at: number): string => new Date(at).toISOString().slice(0, 10);
+
+/** Whether a payment link still takes money, as a teammate should read it; `retired` is its product's standing. */
+const linkStanding = (state: LinkState, retired: boolean): string => {
+  switch (state.kind) {
+    case "selling": {
+      return retired
+        ? "not switched off yet: IdleBiz switches it off at Stripe as soon as it can"
+        : "selling";
+    }
+    case "retrying": {
+      return `not switched off yet: Stripe did not answer (${state.why}), so IdleBiz asks again each pulse and hands it to the founder if Stripe keeps not answering`;
+    }
+    case "switched-off": {
+      return state.by === "founder"
+        ? `switched off by hand in Stripe's dashboard ${dayOf(state.at)}, the founder says, so it takes no new money`
+        : `switched off at Stripe ${dayOf(state.at)}, when its product retired, so it takes no new money`;
+    }
+    case "left-on": {
+      return `still on at Stripe, which would not switch it off (${state.why}): the founder switches it off by hand`;
+    }
+    // no default
+  }
+};
+
+const linkEntry = (link: CompanyLink): string =>
+  `${JSON.stringify(link.name)} ${link.url} is ${linkStanding(link.state, store.isRetiredProduct(link.productId))}`;
+
+/**
+ * What became of a link Stripe made while its product retired: switched off at once, as the
+ * retirement's own were. Null while the product is live.
+ */
+const madeWhileRetiring = async (product: Product, linkId: string): Promise<string | null> => {
+  if (!store.isRetiredProduct(product.id)) {
+    return null;
+  }
+  await switchOffRetiredLinks();
+  const link = store.paymentLinks().find((l) => l.id === linkId);
+  const standing = link === undefined ? "" : ` Its link ${linkEntry(link)}.`;
+  return `${product.name} was retired while Stripe made its payment link.${standing} Each order already paid through it still ships.`;
+};
+
+/** One order as read_orders lists it: when, what, for how much, where it stands, and who it goes to. */
+const orderEntry = (order: Order): string => {
+  const listing =
+    order.kind === "link"
+      ? order.name
+      : (store.getListing(order.listingId)?.name ?? order.listingId);
+  const day = dayOf(order.createdAt);
+  const lines = [`- ${day} · ${listing}`];
+  if (order.kind === "sale") {
+    const { recipient: to } = order;
+    lines[0] += ` (${order.variant.label}) × ${order.quantity}`;
+    const address = [
+      to.address1,
+      to.address2,
+      to.city,
+      `${to.stateCode} ${to.zip}`,
+      to.countryCode,
+    ];
+    lines.push(
+      `  ${[to.name, order.email, to.phone].filter(Boolean).join(", ")}`,
+      `  ${address.filter(Boolean).join(", ")}`,
+    );
+  } else if (order.email !== null) {
+    lines.push(`  ${order.email}`);
+  }
+  lines[0] += ` · paid ${formatCents(order.collectedCents)} · ${orderStanding(order)}`;
+  return lines.join("\n");
+};
+
+/** Why a bet takes no more work, in the words the agent should act on. */
+const noRoomIn = (bet: Bet, inFlight: number): string => {
+  switch (bet.state.kind) {
+    case "open": {
+      return isSpentOut(bet)
+        ? `"${bet.title}" is spent out: measure_bet or kill_bet it, or name another bet with "bet":"<slug>".`
+        : `"${bet.title}" has no room for another run: ${betMoney(bet)} spent and ${inFlight} in flight. Do it yourself, or name another bet with "bet":"<slug>".`;
+    }
+    case "measuring": {
+      return `"${bet.title}" is measuring: its clock is running; no more work is spent on it.`;
+    }
+    case "won":
+    case "killed": {
+      return `"${bet.title}" is closed: no more work is spent on it.`;
+    }
+    // no default
+  }
+};
+
+/**
+ * The bet delegated work spends against: the one named, else the run's own;
+ * null only from a founder ping, a routine or what they delegate. A proposal
+ * has no bet yet, but what it delegates is work for the bet it opens, so it
+ * must name that one. A bet that cannot take one more run is refused, never
+ * swapped for null, so a bet's work never runs unfunded.
+ */
+const fundingFor = (
+  ctx: RunContext,
+  named: string | undefined,
+  product: string | undefined,
+): Bet | null => {
+  const id = named ?? ctx.run.betId;
+  if (id === null) {
+    if (ctx.run.origin === "propose") {
+      throw new RefusalError(
+        'The team only spends against bets: open_bet first, then delegate with "bet":"<slug>".',
+      );
+    }
+    return null;
+  }
+  const bet = store.getBet(id);
+  if (!bet || bet.companyId !== ctx.company.id) {
+    throw new RefusalError(
+      `No fundable bet "${id}" — read_bets lists what is open with budget left.`,
+    );
+  }
+  if (named === undefined && product !== undefined && product !== bet.productId) {
+    throw new RefusalError(
+      `Name a bet on ${product} with "bet":"<slug>" — read_bets lists what has room.`,
+    );
+  }
+  const inFlight = store.runsInFlight().get(id) ?? 0;
+  if (!hasRoomFor(bet, inFlight, RUN_COST_ESTIMATE_USD)) {
+    throw new RefusalError(noRoomIn(bet, inFlight));
+  }
+  return bet;
+};
+
+const workLoad = (e: Employee): number =>
+  store.openTasksFor(e.id).filter((t) => t.state.kind === "queued" || t.state.kind === "running")
+    .length;
+
+/**
+ * Who takes a handoff for `role`: a teammate whose runner can start it now, then the one
+ * with the least work queued or running, so a fan-out spreads, then roster order.
+ */
+const delegateFor = (ctx: RunContext, role: string): Employee | undefined => {
+  const ready = (e: Employee): boolean =>
+    ctx.driver.signedIn(e.runner) && ctx.driver.restingRunner(e.runner) === null;
+  return store
+    .listEmployees()
+    .filter((e) => e.id !== ctx.employee.id && hasRole(role)(e))
+    .toSorted((a, b) => Number(ready(b)) - Number(ready(a)) || workLoad(a) - workLoad(b))[0];
+};
+
+// oxlint-disable-next-line sort-keys -- the order of TOOL_SPECS
+const TOOLS = {
+  ask_boss: define(TOOL_SPECS.ask_boss, (ctx, body) => {
+    const ask: BlockedAsk =
+      "question" in body
+        ? { question: body.question, type: "question" }
+        : {
+            action: body.action,
+            draft: body.draft,
+            instructions: body.instructions,
+            type: "action",
+          };
+    return askFounder(
+      ctx,
+      ask,
+      ask.type === "question"
+        ? "Your question was sent to the founder. Note it and continue with anything you can still do."
+        : "The founder has your action card. Note it and continue with anything that does not wait on it.",
+    );
+  }),
+  message_team: define(TOOL_SPECS.message_team, (ctx, { text }) => {
+    // Free-form chat is capped here, not in the room: every teammate's brief reads it.
+    post(ctx, text.slice(0, 400));
+    return "Posted to the team room.";
+  }),
+  read_team_chat: define(TOOL_SPECS.read_team_chat, () =>
+    roomTranscript(store.recentTeamMessages(15), nameOf),
+  ),
+  delegate: define(TOOL_SPECS.delegate, (ctx, { role, title, description, product, bet }) => {
+    const { company } = ctx;
+    const funded = fundingFor(ctx, bet, product);
+    const productId = funded?.productId ?? productFor(ctx, product);
+    if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
+      return store.noSuchProduct(productId);
+    }
+    const mate = delegateFor(ctx, role);
+    if (!mate) {
+      post(ctx, `(no "${role}" to delegate "${title}" to)`);
+      return `No teammate matches the role "${role}" — do it yourself or pick another role.`;
+    }
+    const task = store.createTask({
+      assigneeId: mate.id,
+      betId: funded?.id ?? null,
+      description,
+      origin: "delegated",
+      priority: "medium",
+      productId,
+      title,
+    });
+    post(ctx, `→ ${mate.name} (${mate.title}): ${title}`, mate.id);
+    ctx.assign(task.id, mate.id);
+    return `Delegated "${title}" to ${mate.name} (${mate.title}). They'll report back in the team room.`;
+  }),
+  read_bets: define(TOOL_SPECS.read_bets, () => betLedger(store.listBets())),
+  request_integration: define(TOOL_SPECS.request_integration, (ctx, { kind, reason }) =>
+    askFounder(
+      ctx,
+      {
+        integration: kind,
+        productId: kind === "vercel" ? ctx.run.productId : null,
+        reason,
+        type: "integration",
+      },
+      `The founder has a ${kind} connect card waiting. Continue with what you can — this task resumes automatically once connected.`,
+    ),
+  ),
+  // A signed run has only its own product's folder to itself, so no other is shipped from it.
+  deploy: define(TOOL_SPECS.deploy, async (ctx) => {
+    const { productId } = ctx.run;
+    if (productId === null) {
+      return "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    const token = getSecret("VERCEL_TOKEN");
+    if (!token) {
+      return askFounder(
+        ctx,
+        {
+          integration: "vercel",
+          productId: product.id,
+          reason: `to deploy ${product.name}`,
+          type: "integration",
+        },
+        VERCEL_WAITING,
+        "Vercel is not connected.",
+      );
+    }
+    const target: DeployTarget =
+      product.vercel === null
+        ? { kind: "new", name: product.id }
+        : { binding: product.vercel, kind: "bound" };
+    const unshippable = [...unshippableEnvValues(), ...heldKeys()];
+    const leak = await unshippableIn(product.workspaceDir, unshippable);
+    if (leak !== null) {
+      return leak;
+    }
+    await requireLiveVercelToken(ctx, product, token, `while deploying ${product.name}`);
+    requireSignOff(ctx, deployAction(product.id, target), "deploy");
+    const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token, unshippable });
+    if (deployed.kind === "name-taken") {
+      const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
+      return askFounder(
+        ctx,
+        {
+          integration: "vercel",
+          productId: product.id,
+          reason: `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
+          type: "integration",
+        },
+        `${refused} The founder has a Vercel card waiting to bind ${product.name} to its project; this task resumes once they do. Continue with what you can.`,
+        refused,
+      );
+    }
+    // a new project exists from its first deployment on, live or not
+    const made = target.kind === "new" ? deployed.project : null;
+    const binds = made !== null && store.getProduct(product.id)?.vercel === null ? made : null;
+    if (binds !== null) {
+      store.setProductVercel(product.id, binds);
+    }
+    const bindNote =
+      binds === null
+        ? ""
+        : `\n${product.name} is now bound to the new Vercel project ${binds.projectName}, which counts its visitors.`;
+    if (deployed.kind === "failed") {
+      return `The deploy of ${product.name} failed: ${deployed.reason}${bindNote}`;
+    }
+    const live =
+      deployed.alias === null
+        ? deployed.url
+        : `${deployed.alias} (this deployment: ${deployed.url})`;
+    return `Deployed ${product.name} to production: ${live}${bindNote}`;
+  }),
+  set_env: define(TOOL_SPECS.set_env, async (ctx, { name, value, product: named }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to set it on — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    if (product.vercel === null) {
+      return `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`;
+    }
+    const token = getSecret("VERCEL_TOKEN");
+    if (!token) {
+      return askFounder(
+        ctx,
+        {
+          integration: "vercel",
+          productId: product.id,
+          reason: `to set ${name} on ${product.name}`,
+          type: "integration",
+        },
+        VERCEL_WAITING,
+        "Vercel is not connected.",
+      );
+    }
+    const held = heldKeyIn(value);
+    if (held !== null) {
+      return `${name} was not set: that value is IdleBiz's own ${held}, which never leaves IdleBiz. What needs it is a tool IdleBiz runs itself (create_payment_link, sell_print, deploy); a key the product needs of its own is one the founder makes for it, which an ask_boss action can ask them for.`;
+    }
+    if (holdsStripeSecretKey(value)) {
+      return `${name} was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see "Checking who paid").`;
+    }
+    const exposed = publicValueRefusal(name, value);
+    if (exposed !== null) {
+      return exposed;
+    }
+    const prefix = publicPrefixOf(name);
+    const kept = prefix === undefined ? null : serverOnlyValueIn(value);
+    if (kept !== null) {
+      return `${name} was not set: that value is the one set_env keeps as ${kept.name} on ${kept.product}, server-only, and a ${prefix} name would build it into the page, where every visitor reads it. Server code reads it as process.env.${kept.name}; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).`;
+    }
+    await requireLiveVercelToken(ctx, product, token, `while setting ${name} on ${product.name}`);
+    const replaces = teamSetEnv(product, product.vercel.projectId, name);
+    const set = await ctx.setEnv({ binding: product.vercel, name, replaces, token, value });
+    if (!set.ok) {
+      const notOurs = replaces
+        ? ""
+        : `\nset_env only replaces a variable the team set: if ${product.vercel.projectName} already has ${name}, it is the founder's, so hand them an ask_boss action to change it.`;
+      return `${name} was not set on ${product.name}: ${set.error}${notOurs}`;
+    }
+    keepEnvValue(product, product.vercel.projectId, name, value);
+    post(ctx, `🔑 set ${name} on ${product.name}`);
+    const where = `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview.`;
+    return prefix === undefined
+      ? `${where} It takes effect on the next deploy; server code reads it as process.env.${name}. Never write its value into a file: deploy refuses a folder that holds it.`
+      : `${where} It takes effect on the next deploy, built into the page for every visitor to read only by a framework that reads the ${prefix} prefix: Next.js as process.env.NEXT_PUBLIC_…, Vite as import.meta.env.VITE_…, SvelteKit and Astro a PUBLIC_ name. Under any other framework it stays server-only, read as process.env.${name}, and no deploy refuses a file that holds it.`;
+  }),
+  create_payment_link: define(
+    TOOL_SPECS.create_payment_link,
+    async (ctx, { afterPaymentUrl, amountUsd, bet, delivery, name, product: named }) => {
+      const productId = productFor(ctx, named);
+      if (productId === null) {
+        return "There is no product to charge for — create_product first.";
+      }
+      const product = store.getProduct(productId);
+      if (!product) {
+        return store.noSuchProduct(productId);
+      }
+      const notTheBet = bet === undefined ? null : revenueBetRefusal(bet, product);
+      if (notTheBet !== null) {
+        return notTheBet;
+      }
+      const afterPayment =
+        afterPaymentUrl === undefined
+          ? null
+          : await afterPaymentPage(ctx, product, afterPaymentUrl);
+      const cents = Math.round(amountUsd * 100);
+      const price = formatCents(cents);
+      const key = getSecret(STRIPE_SECRET_KEY);
+      if (!key) {
+        return askFounder(
+          ctx,
+          {
+            integration: "stripe-key",
+            productId: null,
+            reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
+            type: "integration",
+          },
+          NO_STRIPE_KEY,
+          "IdleBiz has no Stripe key to charge with.",
+        );
+      }
+      await requireStripeAccess(ctx, ctx.linkAccess(key), LINK_GRANT);
+      if (delivery !== undefined) {
+        await requireStripeAccess(ctx, ctx.checkoutAccess(key), DELIVERY_GRANT);
+      }
+      requireSignOff(
+        ctx,
+        chargeAction({ afterPayment, bet, delivery, name, price, product: product.id }),
+        "payments",
+      );
+      const kept = makingPaymentLink();
+      try {
+        const made = await ctx.createPaymentLink({
+          afterPayment,
+          bet: bet ?? null,
+          cents,
+          delivery: delivery ?? null,
+          key,
+          name,
+          product: product.id,
+        });
+        if (made.kind === "refused") {
+          return stripeTurnedAway(ctx, LINK_GRANT, made.said);
+        }
+        if (made.kind === "failed") {
+          return `Stripe made no payment link: ${made.error}`;
+        }
+        if (store.getChargeLink(made.id) !== null) {
+          return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
+        }
+        store.recordChargeLink({
+          betId: bet ?? null,
+          cents,
+          createdAt: Date.now(),
+          delivery: delivery ?? null,
+          id: made.id,
+          livemode: !isTestKey(key),
+          name,
+          productId: product.id,
+          state: { kind: "selling" },
+          url: made.url,
+        });
+        const retired = await madeWhileRetiring(product, made.id);
+        if (retired !== null) {
+          return retired;
+        }
+        const testMode = isTestKey(key) ? TEST_MODE : "";
+        return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${afterSale(made.id, delivery, afterPayment)}${testMode}`;
+      } finally {
+        kept();
+      }
+    },
+  ),
+  printful_catalog: define(TOOL_SPECS.printful_catalog, async (ctx, { offset, product }) => {
+    const credential =
+      printfulCredential() ??
+      needIntegration(
+        ctx,
+        "printful",
+        "to read Printful's catalog for what to sell",
+        NO_PRINTFUL_TOKEN,
+        "IdleBiz has no Printful token.",
+      );
+    const read = await ctx.printListing.catalog(
+      product === undefined ? { offset: offset ?? 0 } : { product },
+      credential,
+    );
+    switch (read.kind) {
+      case "products": {
+        return catalogPage(read);
+      }
+      case "product": {
+        return catalogProduct(read.product, read.variants);
+      }
+      case "refused": {
+        return printfulTurnedAway(ctx);
+      }
+      case "failed": {
+        return `Printful's catalog could not be read: ${read.reason}`;
+      }
+      // no default
+    }
+  }),
+  sell_print: define(TOOL_SPECS.sell_print, async (ctx, body) => {
+    const { bet, name, priceUsd, variantIds, product: named } = body;
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to sell it on — create_product first.";
+    }
+    const product = store.getProduct(productId);
+    if (!product) {
+      return store.noSuchProduct(productId);
+    }
+    const notTheBet = bet === undefined ? null : revenueBetRefusal(bet, product);
+    if (notTheBet !== null) {
+      return notTheBet;
+    }
+    const urls = printFileUrls(body.placements);
+    if (product.vercel === null) {
+      return `${product.name} has no Vercel project yet: deploy it with the print file, which makes one, then list it.`;
+    }
+    const priceCents = Math.round(priceUsd * 100);
+    const price = formatCents(priceCents);
+    const keys = sellingKeys(ctx, product, name, price);
+    const placements = await servedFiles(ctx, product, product.vercel, keys.vercel, urls);
+    const quote = await quotePrint(ctx, {
+      credential: keys.printful,
+      placements,
+      retailCents: priceCents,
+      variantIds,
+    });
+    const floor = priceFloorCents(quote);
+    const shipping = formatCents(quote.shippingCents);
+    if (priceCents < floor) {
+      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`;
+    }
+    await requireStripeAccess(ctx, ctx.printListing.stripeAccess(keys.stripe), PRINT_GRANT);
+    // the digest pins the design the founder signs for: a later deploy can change what the URL serves
+    const printed = placements
+      .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl} sha256:${p.sha256}`)
+      .join(", ");
+    // quoted as JSON, so a name cannot pose as more of the action the founder signs
+    const action = `sell ${JSON.stringify(name)} (variants ${variantIds.join(", ")}) printing ${printed} at ${price} via Printful on ${product.id}${bet === undefined ? "" : ` for bet ${bet}`}`;
+    requireSignOff(ctx, action, "payments");
+    const listingId = store.newListingId(name);
+    const kept = makingPaymentLink();
+    try {
+      const made = await ctx.printListing.publish({
+        bet: bet ?? null,
+        key: keys.stripe,
+        listing: listingId,
+        name,
+        priceCents,
+        product: product.id,
+        shippingCents: quote.shippingCents,
+        variants: quote.variants,
+      });
+      if (made.kind === "refused") {
+        return stripeTurnedAway(ctx, LISTING_GRANT, made.said);
+      }
+      if (made.kind === "failed") {
+        return `Stripe made no payment link: ${made.error}`;
+      }
+      store.recordListing({
+        betId: bet ?? null,
+        costCents: quote.costCents,
+        createdAt: Date.now(),
+        id: listingId,
+        livemode: !isTestKey(keys.stripe),
+        name,
+        paymentLink: { id: made.id, state: { kind: "selling" }, url: made.url },
+        placements,
+        priceCents,
+        productId: product.id,
+        shippingCents: quote.shippingCents,
+        variants: quote.variants,
+      });
+      const retired = await madeWhileRetiring(product, made.id);
+      if (retired !== null) {
+        return retired;
+      }
+      post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
+      const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
+      return `Listed "${name}" on ${product.name} at ${price} plus ${shipping} shipping, US addresses only: ${made.url}\nPrintful charges up to ${formatCents(quote.costCents)} to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them.${testMode}`;
+    } finally {
+      kept();
+      store.releaseListingId(listingId);
+    }
+  }),
+  read_orders: define(TOOL_SPECS.read_orders, (ctx, { product: named }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product yet — create_product first.";
+    }
+    const orders = store
+      .listOrders()
+      .filter((o) => o.productId === productId)
+      .toSorted((a, b) => b.createdAt - a.createdAt);
+    // a retired product's orders still ship, so its buyers still write in
+    const made = orders.length > 0 || store.madeProduct(productId);
+    const name = store.getProduct(productId)?.name ?? (made ? productId : null);
+    if (name === null) {
+      return store.noSuchProduct(productId);
+    }
+    const retired = store.isRetiredProduct(productId);
+    const told = store
+      .paymentLinks()
+      .filter((l) => l.productId === productId && (retired || l.state.kind !== "selling"));
+    const links =
+      told.length === 0
+        ? ""
+        : `\nIts payment links:\n${told.map((l) => `- ${linkEntry(l)}`).join("\n")}`;
+    if (orders.length === 0) {
+      return `${name} has no paid orders yet.${links}`;
+    }
+    const shown = orders.slice(0, RECENT_ORDERS);
+    return `${name}'s paid orders, newest first (${shown.length} of ${orders.length}):\n${shown.map(orderEntry).join("\n")}${links}`;
+  }),
+  create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
+    const product = startProduct({ description, name }, ctx.employee.id);
+    post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
+    return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Fund work on it with open_bet and "product":"${product.id}", then delegate against that bet.`;
+  }),
+  name_product: define(TOOL_SPECS.name_product, (ctx, { product: named, ...draft }) => {
+    const productId = productFor(ctx, named);
+    if (productId === null) {
+      return "There is no product to name — create_product first.";
+    }
+    const product = nameProduct(productId, draft, ctx.employee);
+    return `${product.id} is now "${product.name}": ${product.description}`;
+  }),
+  kill_product: define(TOOL_SPECS.kill_product, async (ctx, { slug, reason }) => {
+    const retired = await retireProduct(slug, reason, ctx.employee.id);
+    const links = store.paymentLinks().filter((l) => l.productId === slug);
+    const told =
+      links.length === 0
+        ? ""
+        : ` Its payment links: ${links.map(linkEntry).join("; ")}. Each order already paid still ships, and still counts.`;
+    return `Retired ${retired.name}. Its package is archived under retired/; its deploy, if any, is still live until someone takes it down.${told}`;
+  }),
+  open_bet: define(TOOL_SPECS.open_bet, (ctx, { product, ...bet }) => {
+    const productId = productFor(ctx, product);
+    if (productId === null) {
+      return "There is no product to bet on — create_product first.";
+    }
+    const wager = bet.metric === "users" ? { ...bet, landingPath: bet.landingPath ?? null } : bet;
+    const opened = store.openBet({ ...wager, productId });
+    announceBet(opened);
+    return `Opened "${opened.title}" (${opened.id}). ${betMark(opened)} Delegate work to it with "bet":"${opened.id}"; idle teammates pick it up on their own.`;
+  }),
+  measure_bet: define(TOOL_SPECS.measure_bet, (_ctx, { slug }) => {
+    const named = store.getBet(slug);
+    const refusal =
+      named?.state.kind === "open"
+        ? measureRefusal(named, store.getProduct(named.productId))
+        : null;
+    if (refusal !== null) {
+      return refusal;
+    }
+    const bet = store.measureBet(slug, Date.now());
+    announceBet(bet);
+    return `"${bet.title}" is measuring: no more work is spent on it, and it has ${bet.windowHours}h to bring in ${betGoal(bet)}.`;
+  }),
+  kill_bet: define(TOOL_SPECS.kill_bet, (_ctx, { slug, reason }) => {
+    const killed = killBet(slug, reason);
+    return `Killed "${killed.title}". Its remaining budget is free for the next bet.`;
+  }),
+  hire: define(TOOL_SPECS.hire, (ctx, { role, title, name, persona }) => {
+    const { employee } = ctx;
+    const all = store.listEmployees();
+    const hireName = name ?? `${title} ${all.length + 1}`;
+    let hired: Employee;
+    try {
+      hired = store.createEmployee({
+        deskIndex: all.length,
+        name: hireName,
+        persona: persona ?? `A focused, pragmatic ${title} who ships.`,
+        role,
+        runner: ctx.driver.pickRunner(all.length),
+        spriteSeed: spriteSeedFor(role, hireName),
+        title,
+      });
+    } catch (error) {
+      if (!(error instanceof RefusalError)) {
+        throw error;
+      }
+      return `Couldn't hire: ${error.message}. Release someone first or work with the team you have.`;
+    }
+    post(ctx, `🤝 hired ${hired.name} (${title})`);
+    publishActivity({
+      employeeId: hired.id,
+      kind: "org.hired",
+      payload: { by: employee.id, name: hired.name, title },
+    });
+    return `Hired ${hired.name} (${title}) — slug "${hired.id}". They start picking up work autonomously; delegate to them right away if you have something specific.`;
+  }),
+  release: define(TOOL_SPECS.release, (ctx, { slug, reason }) => {
+    const { company, employee } = ctx;
+    if (slug === employee.id) {
+      return "You can't release yourself.";
+    }
+    const target = store.getEmployee(slug);
+    if (!target || target.companyId !== company.id) {
+      return `No teammate with slug "${slug}" — check the roster in your brief.`;
+    }
+    if (target.status === "working") {
+      return `${target.name} is mid-task right now — try again when they're idle.`;
+    }
+    const left = store.archiveEmployee(slug);
+    const rehomed = left?.rehomed ?? 0;
+    const dropped = left?.dropped ?? 0;
+    post(ctx, `👋 ${target.name} was released${reason ? ` — ${reason}` : ""}`);
+    publishActivity({
+      employeeId: target.id,
+      kind: "org.released",
+      payload: { by: employee.id, name: target.name, reason },
+    });
+    const inherited =
+      rehomed === 0
+        ? ""
+        : ` Their open work is yours now: ${plural(rehomed, "task")}, each waiting in the founder's Inbox for an answer or a retry.`;
+    const lost =
+      dropped === 0
+        ? ""
+        : ` Dropped ${plural(dropped, "task")} of theirs — delegate again whatever still matters.`;
+    return `Released ${target.name}.${inherited}${lost} Their workspace contributions and memory are archived under alumni/.`;
+  }),
+} satisfies Record<ToolName, Tool>;
+
+/** Call the tool served at `METHOD /path`; null when there is none. */
+export const callTool = (
+  ctx: RunContext,
+  route: string,
+  raw: JsonValue,
+): Promise<string | null> => {
+  const name = TOOL_NAMES.find((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}` === route);
+  return name === undefined ? Promise.resolve(null) : TOOLS[name](ctx, raw);
+};

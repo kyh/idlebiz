@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { bridge } from "@/renderer/bridge";
 import { useStore } from "@/renderer/state/store";
-import type { AuthFlowEvent } from "@/shared/domain";
+import type { AuthFlowEvent } from "@repo/domain/domain";
 
 export type Auth =
   | { phase: "checking" }

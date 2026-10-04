@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import rawLayout from "@/renderer/game/office-design.json";
-import { authoredGrid, bodyBlockedAt, findPath } from "@/shared/office-grid";
-import { officeLayoutSchema } from "@/shared/office-layout-schema";
+import { authoredGrid, bodyBlockedAt, findPath } from "@/renderer/game/office-grid";
+import { officeLayoutSchema } from "@/renderer/game/office-layout-schema";
 import { OFFICE } from "./office-layout";
 
 // office-design.json is parsed as the renderer loads, so a hand edit that breaks it blanks

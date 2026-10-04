@@ -2,7 +2,7 @@ import { getCharacterAssets } from "@/renderer/character-assets";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { Bust } from "@/renderer/ui/bust";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
-import type { HireProposal } from "@/shared/hire";
+import type { HireProposal } from "@repo/domain/hire";
 
 export const Backdrop = () => <div className="ob-backdrop" aria-hidden />;
 

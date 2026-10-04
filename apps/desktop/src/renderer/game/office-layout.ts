@@ -1,18 +1,18 @@
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH } from "@/renderer/game/config";
-import { objectDepth } from "@/shared/office-depth";
-import { walkGridOf } from "@/shared/office-grid";
-import type { WalkGrid } from "@/shared/office-grid";
-import { officeLayoutSchema } from "@/shared/office-layout-schema";
+import { objectDepth } from "@/renderer/game/office-depth";
+import { walkGridOf } from "@/renderer/game/office-grid";
+import type { WalkGrid } from "@/renderer/game/office-grid";
+import { officeLayoutSchema } from "@/renderer/game/office-layout-schema";
 import type {
   OfficeLayoutData,
   OfficeObjectDef,
   OfficePoi,
   OfficeSeat,
   PixelPoint,
-} from "@/shared/office-layout-schema";
+} from "@/renderer/game/office-layout-schema";
 
-export { type PixelPoint } from "@/shared/office-layout-schema";
+export { type PixelPoint } from "@/renderer/game/office-layout-schema";
 
 interface OfficeObjectPlacement {
   readonly key: string;

@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  "include": ["src/renderer/**/*"],
   "compilerOptions": {
     // ES2023, a ceiling: the window is the system WebKit, at the macOS 13.5 floor Safari 16.6's,
     // and Vite lowers syntax, never stdlib, so an ES2024 builtin (Promise.withResolvers,

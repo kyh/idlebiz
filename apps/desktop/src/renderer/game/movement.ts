@@ -1,10 +1,10 @@
 // Walking, one frame at a time, as pure math: which way a mover faces, how far it
 // gets this frame, and where an idle one might wander off to. The player and the
 // NPCs both step through here so they walk — and face — the same way.
-import type { Dir } from "@/shared/character-frame";
-import { nodeCenter, tileOf, walkableNode } from "@/shared/office-grid";
-import type { WalkGrid } from "@/shared/office-grid";
-import type { PixelPoint } from "@/shared/office-layout-schema";
+import type { Dir } from "@repo/domain/character-frame";
+import { nodeCenter, tileOf, walkableNode } from "@/renderer/game/office-grid";
+import type { WalkGrid } from "@/renderer/game/office-grid";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 
 /** The way a character faces to travel (dx, dy). Ties go sideways; no travel faces the room. */
 export const facingToward = (dx: number, dy: number): Dir => {

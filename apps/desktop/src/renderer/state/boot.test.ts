@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LoadSkip } from "@/shared/domain";
+import type { LoadSkip } from "@repo/domain/domain";
 import { bootOf } from "./boot";
 
 const known = { authed: true, bootFailure: null, booted: true, hasCompany: true, saveIssues: [] };

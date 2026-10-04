@@ -1,4 +1,4 @@
-//! What main asks of the native app and what it tells it (`apps/desktop/src/main/host.ts` is main's
+//! What main asks of the native app and what it tells it (`apps/cli/src/server/host.ts` is main's
 //! end). Every request's params are parsed here into the shape main sends; a request the shell
 //! cannot read is refused with the reason, never guessed at.
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DependencyList } from "react";
-import { errorMessage } from "@/shared/errors";
+import { errorMessage } from "@repo/domain/errors";
 
 /**
  * Where an async read stands. A ready value is `current` when it was read under

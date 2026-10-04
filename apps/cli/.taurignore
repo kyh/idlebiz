@@ -1,0 +1,6 @@
+# `pnpm dev:desktop` relaunches the shell when the server's bundle changes (`tauri dev
+# --additional-watch-folders ../cli/dist`, which the desktop's dev server rebuilds on each change),
+# and the watcher skips what .gitignore names, `dist/` among it: these bring the bundle back into
+# its view
+!dist/
+!dist/**

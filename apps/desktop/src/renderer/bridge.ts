@@ -1,4 +1,4 @@
-import type { AppBridge } from "@/shared/ipc-registry";
+import type { AppBridge } from "@repo/contract/ipc-registry";
 
 declare global {
   // install-bridge.ts sets it on the window, which is the renderer's globalThis;

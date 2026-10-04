@@ -8,8 +8,8 @@ import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
-import { MAX_AGENTS, MaxAgentsSchema } from "@/shared/domain";
-import type { LaunchAtLogin } from "@/shared/domain";
+import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
+import type { LaunchAtLogin } from "@repo/domain/domain";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
   { label: "Off", value: "off" },

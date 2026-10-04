@@ -1,6 +1,6 @@
-import { CHAT_EVENT_TEXT } from "@/shared/activity";
-import type { ActivityEvent, ActivityKind } from "@/shared/activity";
-import type { Employee, RestingRunners, Speaker, TeamMessage } from "@/shared/domain";
+import { CHAT_EVENT_TEXT } from "@repo/domain/activity";
+import type { ActivityEvent, ActivityKind } from "@repo/domain/activity";
+import type { Employee, RestingRunners, Speaker, TeamMessage } from "@repo/domain/domain";
 
 // What an event from main means for the renderer's copy of main's state, with
 // no bridge and no Phaser in sight: a patch it can apply at once, and the

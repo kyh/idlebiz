@@ -24,7 +24,7 @@ use crate::shell;
 
 pub const MAIN: &str = "main";
 
-/// What main answers `handoff` with (`apps/desktop/src/main/index.ts`).
+/// What main answers `handoff` with (`apps/cli/src/server/serve.ts`).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Handoff {

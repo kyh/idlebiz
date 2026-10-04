@@ -7,8 +7,8 @@ import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { awaitsVercelToken, lookupFor, problemOf } from "@/renderer/ui/vercel-lookup";
-import type { Product } from "@/shared/domain";
-import type { VercelProject } from "@/shared/integrations";
+import type { Product } from "@repo/domain/domain";
+import type { VercelProject } from "@repo/domain/integrations";
 
 // One token serves every product, so a product is bound with the saved one
 // unless the founder pastes another.

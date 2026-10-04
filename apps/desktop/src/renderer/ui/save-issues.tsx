@@ -1,4 +1,4 @@
-import type { LoadSkip } from "@/shared/domain";
+import type { LoadSkip } from "@repo/domain/domain";
 
 export const SaveIssues = ({ issues }: { issues: readonly LoadSkip[] }) => (
   <ul className="space-y-2">

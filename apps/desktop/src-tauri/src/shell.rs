@@ -1,6 +1,6 @@
 //! The shell's one state: main, the child that owns the save, and the moves around it. A launch
-//! starts main, says hello with what only the shell knows (where the resources and the built page
-//! are, whether the login item launched it, the Keychain's password), and opens the window on
+//! starts main (`idlebiz serve`), says hello with what only the shell knows (whether the login item
+//! launched it, the dev server under `tauri dev`, the Keychain's password), and opens the window on
 //! main's page, or keeps to the menu bar when the login item launched it. A quit asks main to stop
 //! its runs before anything ends.
 
@@ -77,10 +77,7 @@ fn logs_dir<R: Runtime>(app: &AppHandle<R>, bundled: bool) -> Result<PathBuf, St
     Ok(runtime::logs_dir(bundled, &home, &data, &root))
 }
 
-fn spawn_main<R: Runtime>(
-    app: &AppHandle<R>,
-    log_path: &Path,
-) -> Result<(Arc<MainProcess>, runtime::Runtime), String> {
+fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<MainProcess>, String> {
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     let resources = app
         .path()
@@ -93,7 +90,8 @@ fn spawn_main<R: Runtime>(
     )));
     let spec = MainSpec {
         node: resolved.node.clone(),
-        entry: resolved.main_entry.clone(),
+        entry: resolved.serve_entry(),
+        args: runtime::SERVE_ARGS.map(str::to_owned).to_vec(),
         env: runtime::scrubbed_env(std::env::vars_os()),
         log,
     };
@@ -115,8 +113,7 @@ fn spawn_main<R: Runtime>(
             );
         }),
     };
-    let process = MainProcess::start(spec, host)?;
-    Ok((process, resolved))
+    MainProcess::start(spec, host)
 }
 
 /// Starts main, boots it and shows the office. Runs off the main thread: a hello waits on main.
@@ -128,7 +125,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         Ok(dir) => main_log::main_log_path(&dir),
         Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
     };
-    let (process, resolved) = match spawn_main(app, &log_path) {
+    let process = match spawn_main(app, &log_path) {
         Ok(started) => started,
         Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
     };
@@ -148,8 +145,6 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         "openedAtLogin": opened_at_login,
         "packaged": bundled,
         "pageDevUrl": page_dev_url,
-        "pageDir": resolved.page_dir,
-        "resourcesDir": resolved.resources_dir,
         "safeStoragePassword": keychain::safe_storage_password(bundled),
     });
     let booted = tauri::async_runtime::block_on(process.request("hello", &hello));

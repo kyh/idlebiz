@@ -1,5 +1,5 @@
 //! The framing of the channel to main: JSON-RPC 2.0, one message per line, requests both ways
-//! (`apps/desktop/src/main/relay/rpc.ts` is main's end). Pure, so every shape is tested here; the
+//! (`apps/cli/src/server/relay/rpc.ts` is main's end). Pure, so every shape is tested here; the
 //! process and its threads are `main_process.rs`'s.
 
 use serde_json::{Value, json};

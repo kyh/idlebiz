@@ -24,13 +24,13 @@ import { poseForToolKind } from "@/renderer/game/office-poses";
 import { BEHIND_CHAIR_RISE, behindChair, seatDepth } from "@/renderer/game/seat-depth";
 import { textureMasks } from "@/renderer/game/texture-masks";
 import type { OpaqueMask } from "@/renderer/game/opaque-mask";
-import { characterDepth } from "@/shared/office-depth";
-import type { ActivityEvent } from "@/shared/activity";
+import { characterDepth } from "@/renderer/game/office-depth";
+import type { ActivityEvent } from "@repo/domain/activity";
 import { hear, tell } from "@/renderer/game/office-port";
 import { Coalesced } from "@/renderer/state/ordering";
-import { DEFAULT_FOUNDER_SEED } from "@/shared/domain";
-import type { Employee, Task } from "@/shared/domain";
-import { bodyBlockedAt, solidAt } from "@/shared/office-grid";
+import { DEFAULT_FOUNDER_SEED } from "@repo/domain/domain";
+import type { Employee, Task } from "@repo/domain/domain";
+import { bodyBlockedAt, solidAt } from "@/renderer/game/office-grid";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },

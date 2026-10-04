@@ -1,6 +1,0 @@
-# `tauri dev` relaunches the shell when main's bundle changes (`--additional-watch-folders
-# .output/main`, which the dev server rebuilds on each change), and its watcher skips what
-# .gitignore names, `.output/` among it: these bring main's bundle back into its view
-!.output/
-!.output/main/
-!.output/main/**

@@ -1,5 +1,5 @@
 import { StatusBadge } from "@/renderer/ui/status-badge";
-import type { EmployeeStatus } from "@/shared/domain";
+import type { EmployeeStatus } from "@repo/domain/domain";
 
 /** Name, job title and, where it matters, whether they are working right now. */
 export const EmployeeTag = ({

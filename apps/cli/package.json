@@ -1,0 +1,48 @@
+{
+  "name": "idlebiz",
+  "version": "0.0.10",
+  "private": true,
+  "description": "The `idlebiz` binary: `serve` is the whole server (the save, the scheduler, the runs, the company's tools and the page the window shows), which the desktop shell runs on the node it ships",
+  "author": "kyh",
+  "bin": {
+    "idlebiz": "./bin/idlebiz"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "resources"
+  ],
+  "type": "module",
+  "exports": {
+    "./dev-host": "./src/dev-host/host.ts",
+    "./server/page-policy": "./src/server/page-policy.ts"
+  },
+  "scripts": {
+    "build": "vite build && node scripts/stage-page.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf .cache dist"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.79.0",
+    "@agentclientprotocol/codex-acp": "^1.12.0",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@agentclientprotocol/sdk": "catalog:",
+    "@repo/agent-driver": "workspace:*",
+    "@repo/contract": "workspace:*",
+    "@repo/domain": "workspace:*",
+    "@repo/stripe-connect-protocol": "workspace:*",
+    "@types/node": "catalog:",
+    "citty": "^0.2.2",
+    "ignore": "^7.0.10",
+    "typescript": "catalog:",
+    "vite": "^8.3.1",
+    "vitest": "catalog:",
+    "zod": "catalog:"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

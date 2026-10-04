@@ -1,5 +1,5 @@
 //! The menu-bar icon: a template image the system colours, beside the title, tooltip and menu main
-//! decides (`apps/desktop/src/main/tray.ts`). It is drawn on main's first model and redrawn on each
+//! decides (`apps/cli/src/server/tray.ts`). It is drawn on main's first model and redrawn on each
 //! one after. A click the shell can answer itself (Open, Quit) is answered here. A click on the
 //! autopilot item goes to main with the state its label promised.
 

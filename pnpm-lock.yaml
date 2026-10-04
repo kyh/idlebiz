@@ -170,7 +170,7 @@ importers:
         specifier: ^7.12.0
         version: 7.12.0(oxfmt@0.70.0)(oxlint@1.85.0(oxlint-tsgolint@7.0.2003))
 
-  apps/desktop:
+  apps/cli:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: ^0.79.0
@@ -185,21 +185,57 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 'catalog:'
         version: 1.5.0(zod@4.6.5)
-      '@base-ui/react':
-        specifier: 1.8.0
-        version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@playwright/test':
-        specifier: ^1.63.0
-        version: 1.63.0
       '@repo/agent-driver':
         specifier: workspace:*
         version: link:../../packages/agent-driver
-      '@repo/px-kit':
+      '@repo/contract':
         specifier: workspace:*
-        version: link:../../packages/px-kit
+        version: link:../../packages/contract
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@repo/stripe-connect-protocol':
         specifier: workspace:*
         version: link:../../packages/stripe-connect-protocol
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.6
+      citty:
+        specifier: ^0.2.2
+        version: 0.2.2
+      ignore:
+        specifier: ^7.0.10
+        version: 7.0.10
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: ^8.3.1
+        version: 8.3.1(@types/node@24.13.6)(jiti@2.7.0)(yaml@2.9.1)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.2(@types/node@24.13.6)(vite@8.3.1(@types/node@24.13.6))
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
+
+  apps/desktop:
+    devDependencies:
+      '@base-ui/react':
+        specifier: 1.8.0
+        version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@repo/agent-driver':
+        specifier: workspace:*
+        version: link:../../packages/agent-driver
+      '@repo/contract':
+        specifier: workspace:*
+        version: link:../../packages/contract
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@repo/px-kit':
+        specifier: workspace:*
+        version: link:../../packages/px-kit
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.1(@types/node@24.13.6)(jiti@2.7.0)(yaml@2.9.1))
@@ -221,9 +257,9 @@ importers:
       cn:
         specifier: 'catalog:'
         version: 0.3.3
-      ignore:
-        specifier: ^7.0.10
-        version: 7.0.10
+      idlebiz:
+        specifier: workspace:*
+        version: link:../cli
       phaser:
         specifier: ^4.2.1
         version: 4.2.1
@@ -311,6 +347,35 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
+  packages/contract:
+    dependencies:
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../domain
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  packages/domain:
+    dependencies:
+      '@repo/agent-driver':
+        specifier: workspace:*
+        version: link:../agent-driver
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.2(@types/node@24.13.6)(vite@8.3.1(@types/node@24.13.6))
+
   packages/px-kit: {}
 
   packages/stripe-connect-protocol:
@@ -328,6 +393,30 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 5.0.2(@types/node@24.13.6)(vite@8.3.1(@types/node@24.13.6))
+
+  tools/e2e:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.63.0
+        version: 1.63.0
+      '@repo/contract':
+        specifier: workspace:*
+        version: link:../../packages/contract
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.6
+      idlebiz:
+        specifier: workspace:*
+        version: link:../../apps/cli
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
 
 packages:
 

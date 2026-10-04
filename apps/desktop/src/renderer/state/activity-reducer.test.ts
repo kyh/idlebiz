@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityEvent } from "@/shared/activity";
-import type { Employee, RunOutcome, TeamMessage } from "@/shared/domain";
+import type { ActivityEvent } from "@repo/domain/activity";
+import type { Employee, RunOutcome, TeamMessage } from "@repo/domain/domain";
 import { feedKey, joinFeed, newestRoomLine, reduceActivity, roomLines } from "./activity-reducer";
 
 const stamp = { createdAt: 0, id: 1 };

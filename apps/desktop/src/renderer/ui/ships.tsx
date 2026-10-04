@@ -13,10 +13,10 @@ import { RichText } from "@/renderer/ui/linkify";
 import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
-import type { Employee, Product, ShipLine } from "@/shared/domain";
-import type { ProductStatus } from "@/shared/integrations";
-import { errorMessage } from "@/shared/errors";
-import { formatDate, formatUsd } from "@/shared/format";
+import type { Employee, Product, ShipLine } from "@repo/domain/domain";
+import type { ProductStatus } from "@repo/domain/integrations";
+import { errorMessage } from "@repo/domain/errors";
+import { formatDate, formatUsd } from "@repo/domain/format";
 import { cn } from "cn";
 
 const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {

@@ -1,4 +1,4 @@
-import type { Employee } from "@/shared/domain";
+import type { Employee } from "@repo/domain/domain";
 
 /**
  * Everything the UI and the office scene say to each other, and what each

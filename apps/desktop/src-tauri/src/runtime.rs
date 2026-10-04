@@ -1,13 +1,13 @@
-//! Where the shell finds the node that runs main, main's own bundle, the page main serves the
-//! window, the app's read-only resources and the folder main's log goes in, and the environment main
-//! starts with.
+//! Where the shell finds the node that runs the server, the server itself (the `idlebiz` package,
+//! `idlebiz serve`) and the folder main's log goes in, and the environment main starts with.
 //!
-//! A packaged app carries all of it: node as the sidecar beside the shell's own binary
-//! (`bundle.externalBin`), main with its `node_modules`, the built page, the skills and the employee
-//! sheets as resources. A `tauri dev` shell runs the checkout's built main (`.output/main`, which the
-//! dev command builds) on the developer's own node, and main takes the page from the dev server. Nothing in the environment can point the shell
-//! elsewhere: a variable an `open --env` could set would run another program inside a process the
-//! OS counts as this app.
+//! A packaged app carries both: node as the sidecar beside the shell's own binary
+//! (`bundle.externalBin`), the server as a resource, with its page, its skills, its employee sheets
+//! and its `node_modules` inside. A `tauri dev` shell runs the checkout's built server
+//! (`apps/cli/dist`, which the dev command builds) on the developer's own node, and the server takes
+//! the page from the dev server. Nothing in the environment can point the shell elsewhere: a variable
+//! an `open --env` could set would run another program inside a process the OS counts as this app.
+//! The same layout as kyh/inteligir's shell.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -16,21 +16,32 @@ use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+/// The server's own entry: its bundle, which `serve` boots.
+pub const SERVE_ENTRY: &str = "dist/index.js";
+/// What the shell asks of that entry.
+pub const SERVE_ARGS: [&str; 1] = ["serve"];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Runtime {
     /// The node binary main runs on.
     pub node: PathBuf,
-    /// Main's bundle, `index.js`, with its `node_modules` beside it.
-    pub main_entry: PathBuf,
-    /// The window's page as built, which main serves it.
-    pub page_dir: PathBuf,
-    /// The skills and the employee sheets, which main reads and no run writes.
-    pub resources_dir: PathBuf,
+    /// The `idlebiz` package: `dist/` (the bundle and the page), `resources/` and its production
+    /// `node_modules`.
+    pub cli_dir: PathBuf,
 }
 
-/// The checkout's desktop package, named at compile time: a development shell runs this checkout.
-fn checkout_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+impl Runtime {
+    pub fn serve_entry(&self) -> PathBuf {
+        self.cli_dir.join(SERVE_ENTRY)
+    }
+}
+
+/// The checkout's server, named at compile time: a development shell runs this checkout's.
+fn checkout_cli_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("cli")
 }
 
 /// Inside `IdleBiz.app/Contents/MacOS` the bundle carries node and main, and a missing one is a
@@ -46,26 +57,27 @@ pub fn is_bundled(exe: &Path) -> bool {
 
 pub fn resolve(exe: &Path, resource_dir: &Path) -> Result<Runtime, String> {
     if !is_bundled(exe) {
-        let checkout = checkout_dir();
         return Ok(Runtime {
             node: PathBuf::from("node"),
-            main_entry: checkout.join(".output").join("main").join("index.js"),
-            page_dir: checkout.join(".output").join("renderer"),
-            resources_dir: checkout.join("resources"),
+            cli_dir: checkout_cli_dir(),
         });
     }
     let runtime = Runtime {
         node: exe.with_file_name("node"),
-        main_entry: resource_dir.join("main").join("index.js"),
-        page_dir: resource_dir.join("page"),
-        resources_dir: resource_dir.to_path_buf(),
+        cli_dir: resource_dir.join("server"),
     };
     // main serves the page, and reads the skills and the sheets as it hires and runs, long after it
     // booted
-    let page = runtime.page_dir.join("index.html");
-    let skills = runtime.resources_dir.join("skills");
-    let sheets = runtime.resources_dir.join("employee-sheets");
-    for required in [&runtime.node, &runtime.main_entry, &page, &skills, &sheets] {
+    let page = runtime.cli_dir.join("dist").join("page").join("index.html");
+    let skills = runtime.cli_dir.join("resources").join("skills");
+    let sheets = runtime.cli_dir.join("resources").join("employee-sheets");
+    for required in [
+        &runtime.node,
+        &runtime.serve_entry(),
+        &page,
+        &skills,
+        &sheets,
+    ] {
         if !required.exists() {
             return Err(format!(
                 "this install is incomplete: {} is missing. Reinstall IdleBiz.",
@@ -93,7 +105,7 @@ where
         .collect()
 }
 
-/// The save main opens, as `apps/desktop/src/main/paths.ts` resolves it: `IDLEBIZ_ROOT_DIR`, or
+/// The save main opens, as `apps/cli/src/server/paths.ts` resolves it: `IDLEBIZ_ROOT_DIR`, or
 /// `~/.idlebiz`. Main inherits the shell's working directory, so a relative override names one
 /// folder for both, read as `path.resolve` reads it.
 pub fn root_dir(home: &Path, override_dir: Option<&Path>, cwd: &Path) -> PathBuf {
@@ -183,9 +195,8 @@ mod tests {
             Path::new("/nowhere"),
         )?;
         assert_eq!(runtime.node, PathBuf::from("node"));
-        assert!(runtime.main_entry.ends_with(".output/main/index.js"));
-        assert!(runtime.page_dir.ends_with(".output/renderer"));
-        assert!(runtime.resources_dir.ends_with("resources"));
+        assert!(runtime.cli_dir.ends_with("cli"));
+        assert!(runtime.serve_entry().ends_with("cli/dist/index.js"));
         Ok(())
     }
 
@@ -203,21 +214,22 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let contents = dir.path().join("IdleBiz.app").join("Contents");
         let resources = contents.join("Resources");
+        let server = resources.join("server");
         let shell = contents.join("MacOS").join("IdleBiz");
         std::fs::create_dir_all(contents.join("MacOS"))?;
         std::fs::write(contents.join("MacOS").join("node"), "")?;
-        std::fs::create_dir_all(resources.join("main"))?;
-        std::fs::write(resources.join("main").join("index.js"), "")?;
-        std::fs::create_dir_all(resources.join("employee-sheets"))?;
-        std::fs::create_dir_all(resources.join("skills"))?;
+        std::fs::create_dir_all(server.join("dist"))?;
+        std::fs::write(server.join("dist").join("index.js"), "")?;
+        std::fs::create_dir_all(server.join("resources").join("employee-sheets"))?;
+        std::fs::create_dir_all(server.join("resources").join("skills"))?;
         let refused = resolve(&shell, &resources);
         assert!(refused.is_err_and(|reason| reason.contains("page")));
-        std::fs::create_dir_all(resources.join("page"))?;
-        std::fs::write(resources.join("page").join("index.html"), "")?;
-        std::fs::remove_dir(resources.join("skills"))?;
+        std::fs::create_dir_all(server.join("dist").join("page"))?;
+        std::fs::write(server.join("dist").join("page").join("index.html"), "")?;
+        std::fs::remove_dir(server.join("resources").join("skills"))?;
         let refused = resolve(&shell, &resources);
         assert!(refused.is_err_and(|reason| reason.contains("skills")));
-        std::fs::create_dir_all(resources.join("skills"))?;
+        std::fs::create_dir_all(server.join("resources").join("skills"))?;
         assert!(resolve(&shell, &resources).is_ok());
         Ok(())
     }

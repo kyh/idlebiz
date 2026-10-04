@@ -2,7 +2,7 @@
 //! it: service "IdleBiz Safe Storage", account "IdleBiz". The signed app reads it with no prompt,
 //! being the app that wrote it (the same bundle id and team), and hands it to main over main's
 //! stdin. Main never reaches the Keychain. A missing item is made as Chromium made it: 16 random
-//! bytes, base64. Main derives the key and seals (`apps/desktop/src/main/lib/os-crypt.ts`).
+//! bytes, base64. Main derives the key and seals (`apps/cli/src/server/lib/os-crypt.ts`).
 
 /// Chromium's mock keychain's answer, which a development build sealed with, so an isolated dev
 /// save still opens.

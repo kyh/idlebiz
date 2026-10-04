@@ -2,7 +2,7 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { bridge } from "@/renderer/bridge";
 import { Curtain } from "@/renderer/ui/curtain";
 import { SaveIssues } from "@/renderer/ui/save-issues";
-import type { LoadSkip } from "@/shared/domain";
+import type { LoadSkip } from "@repo/domain/domain";
 
 // Offering onboarding here would create a second company over an unreadable save.
 // A save only a newer build can read must be left as it is: editing or moving it

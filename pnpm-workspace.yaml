@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - tools/*
 
 # One declaration per dep that more than one workspace uses, so versions
 # cannot drift between them.

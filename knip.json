@@ -2,13 +2,20 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreBinaries": ["agent-browser"],
   "workspaces": {
-    "apps/desktop": {
-      "entry": ["src/main/index.ts", "e2e/stub-services.ts"],
-      "project": ["src/**", "scripts/**", "e2e/**"],
+    "apps/cli": {
+      "entry": ["src/index.ts", "scripts/*.ts"],
+      "project": ["src/**", "scripts/**"],
       "ignoreDependencies": [
         "@agentclientprotocol/claude-agent-acp",
         "@agentclientprotocol/codex-acp"
       ]
+    },
+    "apps/desktop": {
+      "project": ["src/**", "scripts/**"]
+    },
+    "tools/e2e": {
+      "entry": ["src/stub-services.ts"],
+      "project": ["src/**"]
     }
   }
 }

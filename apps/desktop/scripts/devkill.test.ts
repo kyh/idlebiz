@@ -14,7 +14,7 @@ const script = path.join(checkout, "apps/desktop/scripts/devkill.sh");
 mkdirSync(path.dirname(script), { recursive: true });
 copyFileSync(path.join(import.meta.dirname, "devkill.sh"), script);
 const shell = path.join(checkout, "apps/desktop/src-tauri/target/debug/idlebiz-desktop");
-const main = path.join(checkout, "apps/desktop/.output/main/index.js");
+const main = path.join(checkout, "apps/cli/dist/index.js");
 
 const started: ChildProcess[] = [];
 afterAll(() => {
@@ -41,7 +41,7 @@ const alive = (child: ChildProcess): boolean =>
 describe("devkill", () => {
   it("stops the dev session's shell and leaves e2e's main running", async () => {
     const dev = standIn(shell);
-    const e2e = standIn(`node ${main}`);
+    const e2e = standIn(`node ${main} serve`);
     await sleep(200);
 
     await devkill();
@@ -55,7 +55,7 @@ describe("devkill", () => {
     const helper = path.join(checkout, "helper-pid");
     // as pnpm's shim leaves it: it execs node on `.bin/../`, which path.join would fold away
     const tauri = standIn(
-      `node ${checkout}/apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js dev --additional-watch-folders .output/main`,
+      `node ${checkout}/apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js dev --additional-watch-folders ../cli/dist`,
       `bash -c "sleep 60 & echo \\$! > ${helper}; wait"`,
     );
     await sleep(200);

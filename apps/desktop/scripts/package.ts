@@ -1,4 +1,4 @@
-// The Mac app: the shell, the node beside it, and main and the page it serves as resources, signed, notarized when
+// The Mac app: the shell, the node beside it, and the server with the page it serves as a resource, signed, notarized when
 // apps/desktop/.env holds the notary's key, and the release's dmg in .output/bin. The release
 // material is read HERE, in the one process that packs, rather than from the shell's environment.
 // A pack with no Developer ID stops unless IDLEBIZ_PACK_UNSIGNED=1 asks for an ad-hoc one, and a
@@ -17,7 +17,7 @@ import path from "node:path";
 import { z } from "zod";
 import { writeRustNotices } from "./rust-notices.ts";
 import { signResources } from "./sign-resources.ts";
-import { stageMain } from "./stage-main.ts";
+import { stageServer } from "./stage-server.ts";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const outDir = path.join(packageRoot, ".output", "bin");
@@ -137,10 +137,12 @@ log(
     : "notarizing with apps/desktop/.env's key",
 );
 
+// the page first, then the server, which stages it beside its bundle
 run("pnpm", ["run", "build"], { cwd: packageRoot });
-const staged = await stageMain(path.join(packageRoot, ".output", "staged-main"));
+run("pnpm", ["--filter", "idlebiz", "run", "build"], { cwd: packageRoot });
+const staged = await stageServer(path.join(packageRoot, ".output", "staged-server"));
 const resourceCount = await signResources([staged], identity, signed);
-log(`signed ${resourceCount} binaries main's dependencies carry`);
+log(`signed ${resourceCount} binaries the server's dependencies carry`);
 const crateCount = await writeRustNotices(
   path.join(packageRoot, "src-tauri"),
   path.join(packageRoot, ".output", "notices", "rust-crates.txt"),
@@ -159,14 +161,11 @@ const config = {
     },
     resources: {
       "../.output/notices/": "notices/",
-      // the window's page, which main serves it (src-tauri/src/runtime.rs names it)
-      "../.output/renderer/": "page/",
-      "../.output/staged-main/": "main/",
-      "../resources/employee-sheets/": "employee-sheets/",
+      // the `idlebiz` package, the page and its resources inside (src-tauri/src/runtime.rs names it)
+      "../.output/staged-server/": "server/",
       // not `node/`: tauri-build copies the sidecar and the resources into one target folder, where
       // the sidecar is already a file named `node`, and a folder of that name fails the build
       "../resources/node/": "notices/node/",
-      "../resources/skills/": "skills/",
     },
     targets: ["app", "dmg"],
   },

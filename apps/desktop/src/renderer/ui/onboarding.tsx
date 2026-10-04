@@ -28,10 +28,10 @@ import {
   DEFAULT_FOUNDER_SEED,
   businessTypeById,
   missionFromPitch,
-} from "@/shared/domain";
-import type { Budget, BusinessTypeId } from "@/shared/domain";
-import { errorMessage } from "@/shared/errors";
-import type { HireProposal } from "@/shared/hire";
+} from "@repo/domain/domain";
+import type { Budget, BusinessTypeId } from "@repo/domain/domain";
+import { errorMessage } from "@repo/domain/errors";
+import type { HireProposal } from "@repo/domain/hire";
 
 const STEP_ORDER = [
   "title",
