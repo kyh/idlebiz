@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { bridgeOf, closeFully, expect, foundCompany, test } from "./harness";
+import { bridgeOf, expect, foundCompany, test } from "./harness";
 import type { Locator, Page } from "@playwright/test";
 import { z } from "zod";
 import type { Founded } from "./harness";
@@ -13,7 +13,7 @@ const HELD_COMMAND = "deploy tip-jar to production";
 test("a founded company boots into the office", async ({ launch }) => {
   const founding = await launch();
   const { employees } = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
   const { page } = await launch();
   for (const plate of [/revenue/iu, /users/iu, /product/iu, /team/iu]) {
@@ -63,7 +63,7 @@ test("a held command waits in #team and the inbox until the founder denies it", 
 }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   await blockLead(root, founded, "e2e-deploy", `[approve:deploy] ${HELD_COMMAND}`);
 
   const { page } = await launch();
@@ -86,7 +86,7 @@ test("an action card hands the founder its draft and carries their answer back",
 }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   const action = {
     action: "Post the launch thread on r/SideProject",
     draft: "We built a tip jar.\nTry it!",
@@ -144,7 +144,7 @@ const HOLD_MS = 150;
 test("a key held while a window opens is let go of when it closes", async ({ launch }) => {
   const founding = await launch();
   const { employees } = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   const bo = employees.find((e) => e.name === "Bo Chen");
   if (!bo) {
     throw new Error("the founded team has no Bo");
@@ -183,7 +183,7 @@ test("a key held while a window opens is let go of when it closes", async ({ lau
 test("#team stays on its newest line after a window closes over it", async ({ launch }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
   const { page } = await launch();
   const bridge = await bridgeOf(page);
@@ -207,33 +207,17 @@ test("#team stays on its newest line after a window closes over it", async ({ la
   await expect(feed.getByText("line 30")).toBeInViewport();
 });
 
-test("#team shows the room again once its window reopens from the dock", async ({ launch }) => {
+test("#team shows the room again once its page loads again", async ({ launch }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
-  const { app, page } = await launch();
+  const { page } = await launch();
   await expect(page.getByText("# team")).toBeVisible();
   const bridge = await bridgeOf(page);
-  await bridge.evaluate((b) => b.postTeamChat({ text: "said before the window closed" }));
-  await app.evaluate(({ BrowserWindow }) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.close();
-    }
-  });
-  await expect
-    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
-    .toBe(0);
-  await app.evaluate(({ app: electronApp }) => electronApp.emit("activate"));
-
-  const appPages = (): Page[] =>
-    app.windows().filter((p) => !p.isClosed() && /^(?:file|https?):/u.test(p.url()));
-  await expect.poll(() => appPages().length).toBe(1);
-  const [window] = appPages();
-  if (!window) {
-    throw new Error("no window reopened");
-  }
-  await expect(window.getByText("said before the window closed")).toBeVisible();
+  await bridge.evaluate((b) => b.postTeamChat({ text: "said before the page loaded again" }));
+  await page.reload();
+  await expect(page.getByText("said before the page loaded again")).toBeVisible();
 });
 
 const LONG_QUESTION = Array.from(
@@ -247,7 +231,7 @@ test("a long question keeps its lines and the dialogue stays on screen", async (
 }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   await blockLead(root, founded, "e2e-long-ask", LONG_QUESTION);
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
@@ -276,7 +260,7 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
 }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   await blockLead(root, founded, "e2e-color", "Which color?");
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
@@ -298,7 +282,7 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
 test("an answer being typed survives a status event of the asker's", async ({ launch, root }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   await blockLead(root, founded, "e2e-color", "Which color?");
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
@@ -332,7 +316,7 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
 }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   await blockLead(root, founded, "e2e-color", "Which color?");
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
@@ -382,7 +366,7 @@ const markWhenDisabled = (field: Locator): Promise<void> =>
 test("Talk… keeps the keys after main refuses what was sent", async ({ launch }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   const engineer = founded.employees.find((e) => e.id !== founded.company.leaderId);
   if (!engineer) {
     throw new Error("the founded company has only its lead");
@@ -411,7 +395,7 @@ test("Talk… keeps the keys after main refuses what was sent", async ({ launch 
 test("an answer main refuses in the inbox keeps the keys", async ({ launch, root }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   await blockLead(root, founded, "e2e-color", "Which color?");
 
   const { page } = await launch();
@@ -432,7 +416,7 @@ test("an answer main refuses in the inbox keeps the keys", async ({ launch, root
 test("#team keeps the keys after a message is sent", async ({ launch }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
   const { page } = await launch();
   const field = page.locator(".px-window").filter({ hasText: "# team" }).getByRole("textbox");
@@ -452,7 +436,7 @@ test("the dialogue's cursor stays on Talk… when a row is added ahead of it mea
 }) => {
   const founding = await launch();
   const founded = await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
   const engineer = founded.employees.find((e) => e.id !== founded.company.leaderId);
   if (!engineer) {
     throw new Error("the founded company has only its lead");

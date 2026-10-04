@@ -1,21 +1,19 @@
-import { createHash } from "node:crypto";
-import path from "node:path";
+// Main: the one process that owns the save, the keys and the runs. It runs as the desktop shell's
+// node child (or the dev host's), and speaks to the window only through it, over its stdio
+// (`relay/stdio.ts`): no port carries the founder's approve button. The shell says hello with the
+// facts of this launch, and main boots; it invokes main's IPC methods for the window, and main asks
+// it for what only a native app does (`host.ts`). Stdin's end is the shell going away.
+
 import { rm } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
-import {
-  app,
-  BrowserWindow,
-  clipboard,
-  dialog,
-  powerSaveBlocker,
-  safeStorage,
-  session,
-  shell,
-} from "electron";
-import { registerIpcHandlers } from "@/main/lib/ipc-handler";
-import type { IpcHandlers } from "@/main/lib/ipc-handler";
-import { broadcast } from "@/main/lib/broadcast";
+import { z } from "zod";
+import { host, hostOver, launchSchema, setHost } from "@/main/host";
+import type { Launch } from "@/main/host";
+import { ipcDispatcher } from "@/main/lib/ipc-handler";
+import type { IpcDispatch, IpcHandlers } from "@/main/lib/ipc-handler";
+import { broadcast, setEventSink } from "@/main/lib/broadcast";
 import { suspendWrites } from "@/main/lib/fs";
+import { osCryptSealer } from "@/main/lib/os-crypt";
+import { stdioPeer } from "@/main/relay/stdio";
 import * as store from "@/main/store/store";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
@@ -46,7 +44,7 @@ import {
   saveVercelToken,
 } from "@/main/vercel-connect";
 import { adoptShellPath } from "@/main/lib/shell-path";
-import { bootFailed, initLog } from "@/main/lib/log";
+import { initLog } from "@/main/lib/log";
 import { guarded, report } from "@/main/lib/report";
 import { checkSecrets, setSealer } from "@/main/secrets";
 import {
@@ -61,12 +59,23 @@ import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "@/m
 import { ON_REAL_SAVE, ROOT_DIR } from "@/main/paths";
 import { isOutOfBudget, spriteSeedFor } from "@/shared/domain";
 import type { IntegrationNeed } from "@/shared/domain";
+import { jsonValueSchema } from "@/shared/json";
 
-const moduleDir = import.meta.dirname;
-const isDev = !app.isPackaged;
-let mainWindow: BrowserWindow | null = null;
+initLog();
 
-const scheduler = createScheduler(agentDriver, keepAwake(powerSaveBlocker));
+// the shell's power assertion: one at a time, since keepAwake starts at most one
+const scheduler = createScheduler(
+  agentDriver,
+  keepAwake({
+    start: () => {
+      host().keepAwake(true);
+      return 1;
+    },
+    stop: () => {
+      host().keepAwake(false);
+    },
+  }),
+);
 
 // An ended turn's agent is left to shut down, with a timer to kill its process group if it
 // does not; that timer never fires once the app exits, so every exit waits the agents out.
@@ -89,23 +98,23 @@ const resetGame = async (): Promise<void> => {
     ]);
     await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
     if (stripeLeft) {
-      await dialog.showMessageBox({
+      await host().messageBox({
         detail: stripeLeft,
+        kind: "warning",
         message: "Stripe did not confirm it revoked IdleBiz's access",
-        type: "warning",
       });
     }
     if (linksLeft) {
-      await dialog.showMessageBox({
+      await host().messageBox({
         detail: linksLeft,
+        kind: "warning",
         message: "Some of the company's sales need you in Stripe or Printful",
-        type: "warning",
       });
     }
   } finally {
+    // after this reply has gone: the shell restarts the app, which ends this main
     setImmediate(() => {
-      app.relaunch();
-      app.exit(0);
+      host().relaunch();
     });
   }
 };
@@ -123,8 +132,10 @@ const ipcHandlers = {
     const { composeCharacter } = await import("@/main/character/compositor");
     return await composeCharacter(seed);
   },
-  // the renderer is refused every permission, the clipboard's included
-  copyText: ({ text }) => clipboard.writeText(text),
+  // the window is refused every permission, the clipboard's included: the shell writes it
+  copyText: async ({ text }) => {
+    await host().copyText(text);
+  },
   createProduct: (input) => startProduct(input, null),
   directEmployee: ({ employeeId, instruction }) =>
     scheduler.directEmployee(employeeId, instruction.trim()),
@@ -174,10 +185,7 @@ const ipcHandlers = {
   openCompanyPath: ({ rel }) => openWorkspacePath(rel),
   openProduct: async ({ productId }) => ({ opened: await openProduct(productId) }),
   openSaveFolder: async () => {
-    const err = await shell.openPath(ROOT_DIR);
-    if (err) {
-      throw new Error(err);
-    }
+    await host().open({ kind: "path", target: ROOT_DIR });
   },
   postTeamChat: ({ text }) => scheduler.founderMessage(text.trim()),
   printfulTokenRemove: removePrintfulToken,
@@ -230,20 +238,6 @@ const ipcHandlers = {
   vercelSaveToken: saveVercelToken,
 } satisfies IpcHandlers;
 
-const appUrl = (): string => {
-  const dev = isDev ? process.env.ELECTRON_RENDERER_URL : undefined;
-  return dev ?? pathToFileURL(path.join(moduleDir, "../renderer/index.html")).toString();
-};
-
-const isWebUrl = (url: string): boolean => {
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
-};
-
 /** "Seen" is the last moment the founder had the office in front of them; the
  *  next digest starts there. Focus comes and goes many times a minute, so a
  *  blur only writes once a minute; leaving the screen always does. */
@@ -261,117 +255,64 @@ const markSeen = (throttled: boolean): void => {
   }
 };
 
-const createWindow = (): BrowserWindow => {
-  const win = new BrowserWindow({
-    backgroundColor: "#12141c",
-    height: 800,
-    show: false,
-    title: "IdleBiz",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: path.join(moduleDir, "../preload/index.js"),
-      sandbox: true,
-      webSecurity: true,
-    },
-    width: 1280,
-  });
+// what the shell says of its one window: blurred, minimized, hidden (closing it hides it: the
+// office lives on in the menu bar, and the dock goes with it), or shown again
+const windowSchema = z.object({ state: z.enum(["blurred", "minimized", "hidden", "shown"]) });
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isWebUrl(url)) {
-      void shell.openExternal(url);
-    }
-    return { action: "deny" };
-  });
-  // the window shows this app and nothing else: a dropped file, a link, an
-  // agent-written page would otherwise navigate the renderer — bridge intact
-  win.webContents.on("will-navigate", (event, url) => {
-    if (url !== appUrl()) {
-      event.preventDefault();
-    }
-  });
-
-  win.once("ready-to-show", () => win.show());
-
-  void win.loadURL(appUrl());
-  if (isDev) {
-    win.webContents.openDevTools({ mode: "detach" });
+const windowChanged = ({ state }: z.infer<typeof windowSchema>): void => {
+  markSeen(state === "blurred");
+  if (state === "hidden" || state === "shown") {
+    appTray.setWindowless(state === "hidden");
   }
-
-  win.on("blur", () => markSeen(true));
-  win.on("hide", () => markSeen(false));
-  win.on("minimize", () => markSeen(false));
-  win.on("close", () => markSeen(false));
-
-  win.on("closed", () => {
-    if (mainWindow === win) {
-      mainWindow = null;
-    }
-    // Keep the background office accessible through the tray.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      app.dock?.hide();
-      appTray.setWindowless(true);
-    }
-  });
-  return win;
 };
 
-const ensureWindow = (): void => {
-  void app.dock?.show();
-  appTray.setWindowless(false);
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.show();
-    mainWindow.focus();
-    return;
-  }
-  mainWindow = createWindow();
-};
-
-// Electron names the app, and so its userData, after package.json's productName;
-// dev gets its own so a dev run never shares a lock or a cache with the app. The
-// single-instance lock lives in userData and guards a save, so each isolated save
-// root gets its own beneath it: sessions on different roots run side by side.
-// Dev's Electron is ad-hoc signed, so the Keychain asks again for its item after every
-// Electron change, and that prompt stalls automation: dev seals with Chromium's mock
-// keychain, a fixed key, and never touches the real one.
-if (isDev) {
-  const devData = path.join(app.getPath("appData"), `${app.name} (dev)`);
-  const rootId = createHash("sha256").update(ROOT_DIR).digest("hex").slice(0, 16);
-  app.setPath("userData", ON_REAL_SAVE ? devData : path.join(devData, "roots", rootId));
-  app.commandLine.appendSwitch("use-mock-keychain");
-}
-initLog();
-
-// one office per save: a second instance would run a second scheduler
-// against the same save, spending twice and racing every write
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-}
-app.on("second-instance", ensureWindow);
-
-const boot = async (): Promise<void> => {
-  await app.whenReady();
-  // the renderer asks for nothing a game needs: no camera, mic, location, notifications
-  // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Electron callback API
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
-    // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Electron callback API
-    callback(false);
-  });
-  // The app can't open what the mock key seals, so on the real save dev seals nothing:
-  // a key dev entered or found plain stays plain for the app to seal, never stranded.
-  if (isDev && ON_REAL_SAVE) {
+// The app can't open what the mock key seals, so on the real save dev seals nothing:
+// a key dev entered or found plain stays plain for the app to seal, never stranded.
+const sealSecrets = (launch: Launch): void => {
+  if (!launch.packaged && ON_REAL_SAVE) {
     report("secrets", "dev on the real save keeps secrets.json's keys as it finds them");
-  } else if (safeStorage.isEncryptionAvailable()) {
-    setSealer({
-      open: (sealed) => safeStorage.decryptString(sealed),
-      seal: (plain) => safeStorage.encryptString(plain),
-    });
-  } else {
+  } else if (launch.safeStoragePassword === null) {
     report("secrets", "the Keychain is unavailable, so secrets.json keeps its keys as plain text");
+  } else {
+    setSealer(osCryptSealer(launch.safeStoragePassword));
   }
+};
+
+// Every exit waits the agents out, and runs once however many ways it is asked for: the
+// shell's Quit, the shell going away, a relaunch.
+let quitting: Promise<void> | null = null;
+const quit = async (): Promise<void> => {
+  quitting ??= (async () => {
+    metricsPulse.stop();
+    try {
+      await stopAgents();
+    } finally {
+      controlPlane.stop();
+    }
+  })();
+  await quitting;
+};
+
+const quitAndExit = (): void => {
+  void (async () => {
+    await quit();
+    process.exit(0);
+  })();
+};
+
+const peer = stdioPeer(quitAndExit);
+
+// A TERM or an INT stops the runs first, as Quit does: devkill's, a `kill`'s, launchd's at
+// shutdown. The terminal's Ctrl-C never reaches main, which leads its own process group.
+for (const signal of ["SIGTERM", "SIGINT"] satisfies NodeJS.Signals[]) {
+  process.once(signal, quitAndExit);
+}
+
+let dispatch: IpcDispatch | null = null;
+
+const boot = async (launch: Launch): Promise<void> => {
+  setHost(hostOver(peer), launch);
+  sealSecrets(launch);
   store.initStore();
   const unreadableSecrets = checkSecrets();
   if (unreadableSecrets) {
@@ -380,7 +321,10 @@ const boot = async (): Promise<void> => {
   await adoptShellPath();
   agentDriver.init();
   await controlPlane.start();
-  registerIpcHandlers(ipcHandlers);
+  setEventSink((channel, data) => {
+    peer.notify("event", { channel, data });
+  });
+  dispatch = ipcDispatcher(ipcHandlers);
 
   activityEvents.on("activity", (e) => broadcast("onActivity", e));
   scheduler.start();
@@ -391,7 +335,9 @@ const boot = async (): Promise<void> => {
     notify: (status) => broadcast("onStripeStatus", status),
     // a Stripe connection only reads revenue: work waiting on a key to charge with waits on
     onConnected: () => stripeReady("stripe"),
-    openExternal: (url) => shell.openExternal(url),
+    openExternal: async (url) => {
+      await host().open({ kind: "url", target: url });
+    },
   });
   initVercelConnect({
     onConnected: (connection) => {
@@ -401,61 +347,51 @@ const boot = async (): Promise<void> => {
   });
 
   appTray.init({
-    openWindow: ensureWindow,
     setAutopilot: (on) => {
       if (store.getCompany()) {
         guarded("tray autopilot", () => setAutopilot(on));
       }
     },
   });
-
   if (openedAtLogin()) {
-    app.dock?.hide();
     appTray.startWindowless();
-  } else {
-    mainWindow = createWindow();
   }
-
-  app.on("activate", ensureWindow);
 
   // the queue waits on the seal's check: drain it the moment that settles, not a tick later
-  await agentDriver.sealRefusal();
-  guarded("drain queue", () => scheduler.tick());
+  void (async () => {
+    await agentDriver.sealRefusal();
+    guarded("drain queue", () => scheduler.tick());
+  })();
 };
 
-void (async () => {
+peer.handle("hello", launchSchema, async (launch) => {
   try {
-    await boot();
+    await boot(launch);
   } catch (error) {
-    bootFailed(error);
+    // the shell says it in a box, with where the log is, and quits; main goes when stdin closes
+    report("boot", error);
+    throw error;
   }
-})();
-
-app.on("window-all-closed", () => {
-  // macOS: stay resident — the tray owns the lifecycle; Quit lives in its menu
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  return null;
 });
 
-let quitStage: "running" | "stopping agents" | "agents stopped" = "running";
-app.on("before-quit", (event) => {
-  if (quitStage === "agents stopped") {
-    return;
-  }
-  event.preventDefault();
-  if (quitStage === "stopping agents") {
-    return;
-  }
-  quitStage = "stopping agents";
-  metricsPulse.stop();
-  void (async () => {
-    try {
-      await stopAgents();
-      controlPlane.stop();
-    } finally {
-      quitStage = "agents stopped";
-      app.quit();
-    }
-  })();
+peer.handle(
+  "invoke",
+  z.object({ method: z.string(), payload: jsonValueSchema.optional() }),
+  async ({ method, payload }) =>
+    dispatch === null
+      ? { message: "IdleBiz is still starting.", ok: false }
+      : await dispatch(method, payload),
+);
+
+// the shell closes main's stdin once this answers, and main exits then
+peer.handle("quit", z.null(), async () => {
+  await quit();
+  return null;
+});
+
+peer.on("window", windowSchema, windowChanged);
+
+peer.on("tray", z.object({ on: z.boolean() }), ({ on }) => {
+  appTray.setAutopilot(on);
 });

@@ -1,26 +1,13 @@
-import { Menu, Notification, Tray, app, nativeImage } from "electron";
 import { activityEvents } from "@/main/activity";
 import { agentDriver } from "@/main/agents/agent-driver";
+import { host } from "@/main/host";
+import type { TrayItem } from "@/main/host";
 import * as store from "@/main/store/store";
 import { isOutOfBudget } from "@/shared/domain";
 import { earliestReset, napLabel, usageLabel } from "@/shared/format";
 
-// macOS template images use black and alpha; the system recolors them for the menu bar.
-
-const ICON_1X =
-  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAANklEQVQ4jWNgGKzgPw5MkgHo4D+5tv4n1jX/CdlASO1/ahjwn9pe+E9KgP6nhgH/R3gsDAwAAL33R7nFdoDeAAAAAElFTkSuQmCC";
-const ICON_2X =
-  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAATElEQVRYhe2SQQoAMAzC+v9PZ0/oChviZsCrBLQqhH0Y5l2BDn8BLsdH4DQRwG4C1CdELdAxLY4AdhOgPiFqgdNEALsJUJ8QlUD4iwV6wR7wcXzNhgAAAABJRU5ErkJggg==";
-
-const trayIcon = (): Electron.NativeImage => {
-  const img = nativeImage.createFromDataURL(`data:image/png;base64,${ICON_1X}`);
-  img.addRepresentation({
-    dataURL: `data:image/png;base64,${ICON_2X}`,
-    scaleFactor: 2,
-  });
-  img.setTemplateImage(true);
-  return img;
-};
+// The menu-bar icon is the shell's to draw (a template image, so the system colours it); what it
+// says, and what its menu offers, is decided here from the office.
 
 interface OfficeStatus {
   company: ReturnType<typeof store.getCompany>;
@@ -83,24 +70,33 @@ const badge = (s: OfficeStatus, windowless: boolean): string => {
 };
 
 interface TrayHost {
-  openWindow: () => void;
   setAutopilot: (on: boolean) => void;
 }
 
+const autopilotItem = (company: NonNullable<OfficeStatus["company"]>): TrayItem => {
+  if (company.autopilot) {
+    return { enabled: true, kind: "autopilot", label: "Pause the office", on: false };
+  }
+  return isOutOfBudget(company)
+    ? {
+        enabled: false,
+        kind: "autopilot",
+        label: "Out of budget — raise the cap to start",
+        on: true,
+      }
+    : { enabled: true, kind: "autopilot", label: "Start the office", on: true };
+};
+
 class AppTray {
-  private tray: Tray | null = null;
   private host: TrayHost | null = null;
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private windowless = false;
 
-  init(host: TrayHost): void {
-    if (this.tray) {
+  init(trayHost: TrayHost): void {
+    if (this.host) {
       return;
     }
-    this.host = host;
-    this.tray = new Tray(trayIcon());
-    this.tray.setToolTip("IdleBiz");
-    this.tray.on("double-click", () => host.openWindow());
+    this.host = trayHost;
     this.rebuild();
     // status decays on its own (resting countdowns, run ends while closed)
     setInterval(() => this.rebuild(), 60_000).unref?.();
@@ -113,6 +109,11 @@ class AppTray {
     });
   }
 
+  /** The menu's autopilot item, clicked: it sets what its label said, whatever has moved since. */
+  setAutopilot(on: boolean): void {
+    this.host?.setAutopilot(on);
+  }
+
   /** Notify once when the office continues working after its last window closes. */
   setWindowless(windowless: boolean): void {
     if (this.windowless === windowless) {
@@ -120,26 +121,24 @@ class AppTray {
     }
     this.windowless = windowless;
     const s = officeStatus();
-    if (windowless && s.active && Notification.isSupported()) {
-      new Notification({
+    if (windowless && s.active) {
+      host().notify({
         body: `${statusLine(s)} — your team keeps working in the background. The 💼 in the menu bar has status and Quit.`,
-        silent: true,
         title: "IdleBiz is still running",
-      }).show();
+      });
     }
     this.rebuild();
   }
 
   /** An order card waits on the founder, who may have no window open to see it. */
   private announceCard(title: string): void {
-    if (!this.windowless || !Notification.isSupported()) {
+    if (!this.windowless) {
       return;
     }
-    new Notification({
+    host().notify({
       body: `${title} — open IdleBiz to settle it.`,
-      silent: true,
       title: "An order card is waiting",
-    }).show();
+    });
   }
 
   /** Opened at login, into the menu bar: the founder asked for that, so nothing announces it. */
@@ -160,33 +159,22 @@ class AppTray {
   }
 
   private rebuild(): void {
-    const { tray } = this;
-    const { host } = this;
-    if (!tray || !host) {
+    if (!this.host) {
       return;
     }
     const s = officeStatus();
-    const autopilot = s.company?.autopilot ?? false;
-    const menu = Menu.buildFromTemplate([
-      { click: () => host.openWindow(), label: `Open ${s.company?.name ?? "IdleBiz"}` },
-      { type: "separator" },
-      { enabled: false, label: statusLine(s) },
-      ...(s.company
-        ? [
-            autopilot || !isOutOfBudget(s.company)
-              ? {
-                  click: (): void => host.setAutopilot(!autopilot),
-                  label: autopilot ? "Pause the office" : "Start the office",
-                }
-              : { enabled: false, label: "Out of budget — raise the cap to start" },
-          ]
-        : []),
-      { type: "separator" },
-      { click: () => app.quit(), label: "Quit IdleBiz" },
-    ]);
-    tray.setContextMenu(menu);
-    tray.setToolTip(`IdleBiz — ${statusLine(s)}`);
-    tray.setTitle(badge(s, this.windowless), { fontType: "monospacedDigit" });
+    host().tray({
+      items: [
+        { kind: "open", label: `Open ${s.company?.name ?? "IdleBiz"}` },
+        { kind: "separator" },
+        { kind: "status", label: statusLine(s) },
+        ...(s.company ? [autopilotItem(s.company)] : []),
+        { kind: "separator" },
+        { kind: "quit", label: "Quit IdleBiz" },
+      ],
+      title: badge(s, this.windowless),
+      tooltip: `IdleBiz — ${statusLine(s)}`,
+    });
   }
 }
 

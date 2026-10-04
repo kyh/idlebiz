@@ -1,8 +1,10 @@
 # IdleBiz
 
-Electron game where AI employees — real `claude` / `codex` CLI sessions — operate a
-business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS — no
-`any`, no `!`, no `as`). Full map and workflow in `AGENTS.md`.
+Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a
+business. Main app: `apps/desktop`: a Rust shell (`src-tauri`, clippy pedantic) around the
+office page (Vite + React + Phaser) and main, the node process that owns the save, the keys and
+the runs, its one child, reached over main's stdio (strict TS — no `any`, no `!`, no `as`). Full
+map and workflow in `AGENTS.md`.
 
 - Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
@@ -26,10 +28,12 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
 - One active company per launch: newest `createdAt`, alphabetical slug on ties.
   Only that company's entities load or migrate; older saves remain untouched.
 - A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone
-  keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`,
-  `prevent-app-suspension`, never past a closed lid). Settings can open IdleBiz at login
-  (`main/login-item.ts`): the macOS login item is its only record, only a packaged app
-  registers one, and a launch at login starts in the menu bar. The budget is usage at API
+  keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`, a
+  user-initiated activity the shell holds, `src-tauri/src/keep_awake.rs`, never past a closed
+  lid). Settings can open IdleBiz at login
+  (`main/login-item.ts`): the macOS login item (`SMAppService`, `src-tauri/src/login_item.rs`)
+  is its only record, only a packaged app registers one, and a launch at login starts in the
+  menu bar. The budget is usage at API
   prices, what the runs would cost billed per token, not what a subscription bills: the tray
   and HUD label it `usage` (`usageLabel`), never spend, and the Budget panel, the digest,
   onboarding and the HUD's tooltip say it is at API prices.
@@ -38,8 +42,9 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   `/Users/kyh/Desktop/vg/office`.
 - Employee runs load IdleBiz's own skills and none of the founder's. They live at
   `apps/desktop/resources/skills/.agents/skills/<name>/SKILL.md` (Agent Skills format:
-  frontmatter `name` and `description`, then the body), shipped beside the asar
-  (`extraResources`) and found by `bundledSkillsDir` (`main/agents/bundled-skills.ts`). The
+  frontmatter `name` and `description`, then the body), shipped as the .app's resources
+  (`bundle.resources` in `scripts/package.ts`) and found by `bundledSkillsDir`
+  (`main/agents/bundled-skills.ts`) under the folder the shell's hello names. The
   hidden `.agents` is forced: codex-acp takes skills only from `<folder>/.agents/skills` of a
   folder a session is handed, and `.agents` is also the claude plugin `idlebiz`
   (`.agents/.claude-plugin/plugin.json`), whose skills folder is the same one; claude names
@@ -50,7 +55,9 @@ business. Main app: `apps/desktop` (electron-vite + React + Phaser, strict TS �
   direct, through the product's own page and create_payment_link, so a bet counts each sale.
   A skill is prose no test renders from `tool-specs.ts`: a change to a tool or rule one cites
   (a bet's floor, the unlock's key) changes that skill in the same commit.
-- Verify changes live: `pnpm dev:desktop` exposes CDP on :9222 (use agent-browser).
+- Verify changes live: `pnpm dev:browser` serves the office to a browser, main behind it as the
+  shell runs it, at the URL it prints (`http://localhost:31100/#bridge=…`; use agent-browser).
+  `pnpm dev:desktop` opens the app's own window, which no automation drives on the Mac (WKWebView).
   Under headless automation the Phaser boot stalls (document.hidden) — force
   `window.__game.scene.start("office")` and step `game.loop.step(t)` to render.
 
@@ -258,8 +265,8 @@ third boundary.
     agent-browser daemons or those of the other runner or of runs with other folders. Those of
     them in a folder it writes (launchd's, an ssh-agent's, main's `SSH_AUTH_SOCK`,
     `/tmp/cc-socks`, the codex app's) cannot be moved or replaced either.
-    Loopback 9222 and 9229 are closed: the dev renderer's debug port holds the founder's
-    approve button. LaunchServices opens nothing; the Apple Event CLIs (`osascript`,
+    Loopback 9222, 9229 and 31100 are closed: Chrome's DevTools port, node's inspector, and the
+    dev server, whose bridge to main (`pnpm dev:browser`) holds the founder's approve button. LaunchServices opens nothing; the Apple Event CLIs (`osascript`,
     `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
     program runs but `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a
     `mach-lookup` deny of securityd, which holds against a copied binary too).
@@ -276,8 +283,10 @@ third boundary.
     but the first out.
 - **Keys stay in main; what spends them runs there.** The keys IdleBiz holds live in
   `secrets.json`, which the seal keeps from every run, each value also sealed with the macOS
-  Keychain (`safeStorage`), which a claude run can still reach; dev seals with the mock
-  keychain, and nothing on the real save, so it strands none. Main reads each where it uses it.
+  Keychain, which a claude run can still reach: Chromium's OSCrypt, as Electron's `safeStorage`
+  sealed it, over the "IdleBiz Safe Storage" password the shell reads and hands main at hello
+  (`main/lib/os-crypt.ts`); dev seals with the mock keychain's, and nothing on the real save, so
+  it strands none. Main reads each where it uses it.
   A run starts from the founder's env less every credential-shaped name and every URL with a
   login in it, but its runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward
   step that needs a key is a signed tool main runs: `deploy` uploads the product's folder
@@ -635,17 +644,20 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.
 - **CLI-free surfaces**: `apps/web` and the onboarding modal, both reachable with no company.
-- **`pnpm dev:desktop` stops this checkout's desktop dev session first**; `dev:web`,
-  `verify`, `e2e` and unrelated processes on TCP 9222 survive, and startup fails while that port is
-  occupied. It runs Turbo in loose env mode, so shell env reaches Electron.
+- **`pnpm dev:desktop` and `pnpm dev:browser` stop this checkout's desktop dev session first**;
+  `dev:web`, `verify`, `e2e` and unrelated processes on TCP 31100 survive, and startup fails while
+  that port is occupied. The whole shell env reaches main.
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 
-Commands: `pnpm verify` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip` · `pnpm e2e`
+Commands: `pnpm verify` · `pnpm dev:browser` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
+· `pnpm e2e` · `pnpm -F @repo/desktop package`
 `pnpm knip` checks unused files, exports and dependencies; it is not part of `verify`.
-`pnpm e2e` builds the desktop app and drives it with Playwright: macOS only, every test that
-founds a company (office, #team, panels, key entry, sealing) skips without a signed-in CLI, never
-spends, not part of `verify` or CI (see `AGENTS.md`).
+`pnpm e2e` builds the page and main and drives them with Playwright in Chromium, main behind the
+dev host: every test that founds a company (office, #team, panels, key entry, sealing) needs a
+signed-in CLI under the macOS seal and skips without one, never spends, not part of `verify` or
+CI (see `AGENTS.md`).
+`pnpm -F @repo/desktop package` packs the signed, notarized app on a Mac (`scripts/package.ts`).
 Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
-real loopback requests and, on macOS, the seal and any installed CLI's gate; no Electron or
-Phaser)
+real loopback requests and, on macOS, the seal and any installed CLI's gate; no window or
+Phaser), then `cargo test` the shell

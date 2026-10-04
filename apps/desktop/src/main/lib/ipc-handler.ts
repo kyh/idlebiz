@@ -1,37 +1,42 @@
-import { ipcMain } from "electron";
-import type { WebFrameMain } from "electron";
 import type { z } from "zod";
 import { refusePayload, settle } from "@/main/lib/ipc-reply";
-import { CHANNELS } from "@/shared/ipc-channels";
-import type { InvokeMethod, WireValue } from "@/shared/ipc-channels";
+import type { InvokeMethod } from "@/shared/ipc-channels";
 import { SCHEMAS } from "@/shared/ipc-registry";
 import type { Contract, IpcHandler } from "@/shared/ipc-registry";
+import { parseJson } from "@/shared/json";
+import type { JsonValue } from "@/shared/json";
 
 const SCHEMA_MAP: { [M in InvokeMethod]: z.ZodType<Contract[M]["payload"]> } = SCHEMAS;
-
-const INVOKE_METHODS = Object.keys(SCHEMAS).filter((m): m is InvokeMethod => m in SCHEMAS);
 
 /** One handler per invoke method: a channel without one fails to compile. */
 export type IpcHandlers = { [M in InvokeMethod]: IpcHandler<M> };
 
-/** Only the app's own window may call main: its top frame, never a frame something embedded. */
-const fromOurWindow = (frame: WebFrameMain | null): boolean =>
-  frame !== null && frame.parent === null;
+const isInvokeMethod = (method: string): method is InvokeMethod => Object.hasOwn(SCHEMAS, method);
 
 // Generic so handlers[method] narrows to IpcHandler<M>; over the union it would not.
-const handle = <M extends InvokeMethod>(handlers: Pick<IpcHandlers, M>, method: M): void => {
-  const fn = handlers[method];
-  ipcMain.handle(CHANNELS[method].channel, (event, raw: WireValue) => {
-    if (!fromOurWindow(event.senderFrame)) {
-      throw new Error(`[ipc:${method}] refused: not the app's own window`);
-    }
-    const result = SCHEMA_MAP[method].safeParse(raw);
-    return result.success ? settle(fn, result.data) : refusePayload(method, result.error);
-  });
+const call = async <M extends InvokeMethod>(
+  handlers: Pick<IpcHandlers, M>,
+  method: M,
+  payload: JsonValue | undefined,
+) => {
+  const parsed = SCHEMA_MAP[method].safeParse(payload);
+  return parsed.success
+    ? await settle(handlers[method], parsed.data)
+    : refusePayload(method, parsed.error);
 };
 
-export const registerIpcHandlers = (handlers: IpcHandlers): void => {
-  for (const method of INVOKE_METHODS) {
-    handle(handlers, method);
-  }
-};
+export type IpcDispatch = (method: string, payload: JsonValue | undefined) => Promise<JsonValue>;
+
+/**
+ * Answers the window's invoke of `method` as main always has: the value, or the sentence a refusal
+ * was worded in. Only the shell's own window reaches this, through the relay, so the payload is
+ * parsed here and nowhere else; the reply crosses as JSON.
+ */
+export const ipcDispatcher =
+  (handlers: IpcHandlers): IpcDispatch =>
+  async (method, payload) => {
+    const reply = isInvokeMethod(method)
+      ? await call(handlers, method, payload)
+      : { message: `[ipc] main answers no ${method}`, ok: false };
+    return parseJson(JSON.stringify(reply));
+  };

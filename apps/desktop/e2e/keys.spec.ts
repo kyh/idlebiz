@@ -1,11 +1,9 @@
 import {
-  closeFully,
   bridgeOf,
   expect,
   foundCompany,
   readSecrets,
   secretsText,
-  stubServices,
   test,
   writeSecrets,
 } from "./harness";
@@ -18,10 +16,9 @@ test("a Vercel token Vercel takes binds the product's project and is kept sealed
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
-  const { app, page } = await launch();
-  await stubServices(app);
+  const { page } = await launch({ stubServices: true });
   const users = page.getByRole("button", { name: /users/iu });
   await users.click();
   await page.getByRole("button", { name: "▲ Vercel" }).click();
@@ -46,10 +43,9 @@ test("a Vercel token is kept with no project picked, for the first deploy to mak
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
-  const { app, page } = await launch();
-  await stubServices(app);
+  const { page } = await launch({ stubServices: true });
   await page.getByRole("button", { name: /users/iu }).click();
   await page.getByRole("button", { name: "▲ Vercel" }).click();
   const connect = page.getByRole("dialog", { name: "Connect Vercel" });
@@ -72,7 +68,7 @@ test("a Vercel token Vercel refuses is shown as refused and never saved", async 
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
   const { page } = await launch();
   await page.getByRole("button", { name: /users/iu }).click();
@@ -92,7 +88,7 @@ test("a Stripe key Stripe refuses is shown as refused and never saved", async ({
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
   const { page } = await launch();
   await page.getByRole("button", { name: /revenue/iu }).click();
@@ -116,10 +112,9 @@ test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and re
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
-  const { app, page } = await launch();
-  await stubServices(app);
+  const { page } = await launch({ stubServices: true });
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   const key = "sk_test_e2eGood1234";
@@ -152,7 +147,7 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
     (b, productId) => b.vercelConnect({ productId, projectId: "prj_e2e", projectName: "e2e" }),
     product.id,
   );
-  await closeFully(founding.app);
+  await founding.close();
   const token = "e2e-pasted-vercel-token";
   await writeSecrets(root, { ...(await readSecrets(root)), VERCEL_TOKEN: token });
 
@@ -170,10 +165,9 @@ test("a Printful token Printful takes is kept sealed, shown with its store, repl
 }) => {
   const founding = await launch();
   await foundCompany(founding.page);
-  await closeFully(founding.app);
+  await founding.close();
 
-  const { app, page } = await launch();
-  await stubServices(app);
+  const { page } = await launch({ stubServices: true });
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   const token = "pf_e2e_private_token_9876";

@@ -1,8 +1,5 @@
 import path from "node:path";
-import { app } from "electron";
+import { launch } from "@/main/host";
 
-// sharp needs real files: packaged sheets live in electron-builder's extraResources.
-export const employeeSheetDir = (): string =>
-  app.isPackaged
-    ? path.join(process.resourcesPath, "employee-sheets")
-    : path.join(app.getAppPath(), "resources", "employee-sheets");
+// sharp reads real files: the sheets sit in the bundle's resources, or the checkout's.
+export const employeeSheetDir = (): string => path.join(launch().resourcesDir, "employee-sheets");

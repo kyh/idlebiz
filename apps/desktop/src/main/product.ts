@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { shell } from "electron";
+import { host } from "@/main/host";
 import * as store from "@/main/store/store";
 import { latestDeployment } from "@/main/vercel";
 import { judgeAgentPath, judgeOpening } from "@/main/workspace-open";
@@ -24,15 +24,12 @@ const productEntry = (productId: string): string | null => {
   }
 };
 
+// Finder, or the path's default app; a path the OS cannot open comes back as the host's refusal
 const openTarget = async (opening: Opening): Promise<void> => {
-  if (opening.kind === "reveal") {
-    shell.showItemInFolder(opening.path);
-    return;
-  }
-  const err = await shell.openPath(opening.path);
-  if (err) {
-    throw new Error(err);
-  }
+  await host().open({
+    kind: opening.kind === "reveal" ? "reveal" : "path",
+    target: opening.path,
+  });
 };
 
 /**
@@ -65,7 +62,7 @@ export const openProduct = async (productId: string): Promise<string> => {
   const product = store.requireProduct(productId);
   const entry = productEntry(productId) ?? "index.html";
   if (/^https?:\/\//u.test(entry)) {
-    await shell.openExternal(entry);
+    await host().open({ kind: "url", target: entry });
     return entry;
   }
   const opening = judgeOpening([product.workspaceDir], entry);

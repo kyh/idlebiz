@@ -3,7 +3,7 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "outputs": [".output/app/**"]
+      "outputs": [".output/renderer/**", ".output/main/**"]
     }
   }
 }

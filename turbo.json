@@ -23,6 +23,12 @@
     },
     "//#clean": {
       "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "format:fix": {
+      "cache": false
     }
   },
   "globalPassThroughEnv": [

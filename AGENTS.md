@@ -1,8 +1,9 @@
 # AGENTS.md
 
 **IdleBiz** is a retro RPG-style idle business sim where the employees are the player's own
-coding CLIs. One Electron app (`apps/desktop`) spawns real `claude` / `codex` sessions and
-saves the whole company as human-readable markdown under `~/.idlebiz/`; a small Next.js
+coding CLIs. One Tauri app (`apps/desktop`: a Rust shell around a node process, main) spawns
+real `claude` / `codex` sessions and saves the whole company as human-readable markdown under
+`~/.idlebiz/`; a small Next.js
 landing page (`apps/web`) ships the download and the Stripe Connect OAuth hop. This is the
 tool-agnostic guide for coding agents — meant to be run, not just read. Claude also reads
 `CLAUDE.md`; both point back here.
@@ -17,18 +18,25 @@ tool-agnostic guide for coding agents — meant to be run, not just read. Claude
 pnpm install
 pnpm verify        # static gate: typecheck · lint · format · test · build
 pnpm dev:web       # landing page → http://localhost:3000
-pnpm dev:desktop   # Electron window + CDP on :9222
-pnpm e2e           # builds the desktop app, then drives it (macOS, local only)
+pnpm dev:browser   # the office in a browser → the URL it prints (http://localhost:31100/#bridge=…)
+pnpm dev:desktop   # the app's own window (tauri dev)
+pnpm e2e           # builds the page and main, then drives them in Chromium (local only)
 ```
 
 No database, no Docker, no server to provision — `pnpm install` really is the whole setup.
 There is no bootstrap script and nothing to seed.
 
-**`pnpm dev:desktop` is not a plain dev server.** It runs `pnpm dev:kill` first
-(`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session — its
-turbo watch, electron-vite and Electron — then kills any that remain after three seconds.
-`pnpm dev:web`, `pnpm verify`, tests and a running `pnpm e2e` survive it. It leaves unrelated processes on TCP
-**9222** alone and refuses to start while that port is occupied.
+**`pnpm dev:desktop` and `pnpm dev:browser` are not plain dev servers.** Each runs `pnpm dev:kill`
+first (`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session —
+`tauri dev`, its shell and the dev server, each with main under it — then kills any that remain
+after three seconds. Main stops its runs first on the TERM. `pnpm dev:web`, `pnpm verify`, tests
+and a running `pnpm e2e` survive it. It leaves an unrelated process on TCP **31100**, the dev
+server's port, alone, and startup fails while that port is occupied.
+
+Both build main before the page is served and again on each change: `tauri dev` restarts the shell
+when main changes (`--additional-watch-folders .output/main`), and `dev:browser` restarts main
+itself. A change to the page is hot-reloaded; a change to the shell's Rust rebuilds and relaunches
+it.
 
 ## The one hard prerequisite
 
@@ -69,9 +77,12 @@ pnpm verify
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
 
-End-to-end suite — `pnpm e2e` builds the desktop app, then drives the build with
-Playwright's Electron support (`apps/desktop/e2e/`); `pnpm -F @repo/desktop e2e` reruns it on
-the last build. It covers the title screen, a founded company's
+End-to-end suite — `pnpm e2e` builds the page and main, then drives them with Playwright in
+Chromium (`apps/desktop/e2e/`): each launch starts the built main through the dev host
+(`src/dev-host/host.ts`), which answers main's asks of a native app as the shell would, and serves
+the built page under the shell's own content security policy beside the dev host's bridge.
+`pnpm -F @repo/desktop e2e` reruns it on the last build. The shell itself (the window, the
+menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test` and driven by hand. It covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
 shown as set and, for Stripe, replaceable and removable; a key refused is never saved), Printful token entry
 (a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into
@@ -83,17 +94,18 @@ budget, a Stripe sign-in left in the browser started over, retiring the selected
 boot skipped named in full, and a save a newer build wrote asking for an update. It is local only, not part
 of `pnpm verify` or CI:
 
-- It needs a macOS desktop session: each launch shows the window and takes focus.
+- It needs Playwright's Chromium (`pnpm -F @repo/desktop exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
-  Stripe and Printful key entry, sealing) needs a signed-in `claude` or `codex` CLI and skips without one;
-  only the title screen and the newer save run without it. The refusal tests send made-up
-  keys to the real Vercel and Stripe APIs, so they need the network; where a key is taken,
-  main's `fetch` answers those APIs and Printful's from canned JSON (`stubServices`), so no
+  Stripe and Printful key entry, sealing) needs a signed-in `claude` or `codex` CLI under the
+  macOS seal and skips without one, so off a Mac only the title screen and the newer save run.
+  The refusal tests send made-up keys to the real Vercel and Stripe APIs, so they need the
+  network; where a key is taken, main is started with `e2e/stub-services.ts` preloaded, which
+  answers those APIs and Printful's from canned JSON (`launch({ stubServices: true })`), so no
   real account or key is needed.
-- It runs beside `pnpm dev:desktop`: each launch's isolated root gets its own userData, and so
-  its own single-instance lock (`main/index.ts`).
-- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds over the preload
-  bridge with a hand-written team (no casting run), a $0 cap and autopilot off; the
+- It runs beside `pnpm dev:desktop` and `pnpm dev:browser`: each launch serves its page on a port
+  of its own, and opens an isolated root.
+- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds over the page's bridge
+  with a hand-written team (no casting run), a $0 cap and autopilot off; the
   scheduler checks the budget before it spawns anything, so no run can start. It directs
   nobody, and every test ends by asserting its save logged no `run.start`.
 
@@ -106,22 +118,30 @@ agent-browser snapshot          # accessibility tree with @eN refs
 agent-browser screenshot /tmp/web.png
 ```
 
-Runtime, desktop — attach to the Electron renderer over CDP.
+Runtime, desktop — drive the office in a browser. `pnpm dev:browser` runs main as the shell does
+behind the dev host's bridge, on the dev server's own origin, and prints the page's URL with the
+bridge's token in its fragment. The app's window is WKWebView, which no automation attaches to on
+the Mac, so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at the real
+window.
 
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
-> (`main/paths.ts`). `dev:desktop` runs Turbo in loose env mode, so the whole shell env
-> reaches Electron, and the employees' CLIs less its credential-shaped names, as in a
-> terminal launch. Isolation protects the real save, but onboarding and employee runs still
-> bill the signed-in CLI.
+> (`main/paths.ts`). The whole shell env reaches main, and the employees' CLIs less its
+> credential-shaped names, as in a terminal launch. Isolation protects the real save, but
+> onboarding and employee runs still bill the signed-in CLI.
+
+```sh
+IDLEBIZ_ROOT_DIR="$(mktemp -d)" pnpm dev:browser   # prints http://localhost:31100/#bridge=…
+agent-browser open 'http://localhost:31100/#bridge=…'
+agent-browser snapshot
+```
 
 **The office scene** — only with a finished onboarding, i.e. a signed-in CLI. Under headless
-automation Phaser's boot stalls (`document.hidden` never flips), so the canvas stays blank
+automation Phaser's boot can stall (`document.hidden` never flips), so the canvas stays blank
 until you step it:
 
 ```sh
-agent-browser connect 9222
 agent-browser eval 'window.__game.scene.start("office")'
 agent-browser eval 'window.__game.loop.step(performance.now())'
 agent-browser screenshot /tmp/office.png
@@ -144,13 +164,14 @@ bundled seeded save. Employee runs still use the signed-in CLI.
 
 ## Platform matrix
 
-| Platform           | Dev command        | Agent-verifiable at runtime?                       |
-| ------------------ | ------------------ | -------------------------------------------------- |
-| Desktop (Electron) | `pnpm dev:desktop` | **Yes** — CDP on :9222 via `agent-browser connect` |
-| Web (Next.js)      | `pnpm dev:web`     | **Yes** — headless via agent-browser               |
+| Platform            | Dev command        | Agent-verifiable at runtime?                     |
+| ------------------- | ------------------ | ------------------------------------------------ |
+| Desktop, in browser | `pnpm dev:browser` | **Yes** — agent-browser at the URL it prints     |
+| Desktop, its window | `pnpm dev:desktop` | By eye: WKWebView takes no automation on the Mac |
+| Web (Next.js)       | `pnpm dev:web`     | **Yes** — headless via agent-browser             |
 
-Unusually for this stack, the Electron app is the _more_ driveable surface: electron-vite
-already starts it with `--remoteDebuggingPort 9222`.
+The browser and the window run the same page over the same main: only the host differs (the dev
+host's bridge, or the shell's `main_invoke` command).
 
 ## Configuration
 
@@ -163,17 +184,18 @@ rather than crashing boot.
   IdleBiz's own: main reads each where it uses it (`getSecret` in `main/secrets.ts`) and
   exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
   Employees run as the founder's OS user: every run's seal (below) keeps it from the file,
-  and each value is also sealed with Electron's `safeStorage` (the macOS Keychain,
-  `setSealer` at boot) as `sealed:v1:<base64>`, since a claude run can still reach the
-  Keychain. Enter
+  and each value is also sealed with the macOS Keychain as Electron's `safeStorage` sealed it
+  (Chromium's OSCrypt over the "IdleBiz Safe Storage" item, which the shell reads and hands
+  main at hello; `main/lib/os-crypt.ts`, `setSealer` at boot) as `sealed:v1:<base64>`, since a
+  claude run can still reach the Keychain. Enter
   keys in the app: `VERCEL_TOKEN` through a product's Vercel button (under users), Stripe in
   the Budget panel (under revenue). A key pasted into the file as plain text is sealed the
   next time main reads it. One the Keychain can't open (another build sealed it, or access
   was denied) reads as absent, is named in Settings and stays as it is: enter it again.
-  Dev (any unpackaged launch, e2e too) runs on Chromium's mock keychain
-  (`--use-mock-keychain`): its Electron is ad-hoc signed, so the real Keychain would ask
-  again after every Electron change and stall automation. It never touches the Keychain,
-  and it seals with a fixed key: a key dev sealed is no secret and only dev opens it. On the
+  Dev (any unpackaged launch, e2e too) seals with Chromium's mock keychain's password: a
+  development shell is ad-hoc signed, so the real Keychain would ask again after every rebuild
+  and stall automation. It never touches the Keychain, and it seals with a fixed key: a key dev
+  sealed is no secret and only dev opens it. On the
   real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so the packaged app's keys read as
   absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
@@ -285,7 +307,7 @@ rather than crashing boot.
   other folder's claude `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
   `.mcp.json` or `.codex/`, nor `.agents` in its own folders, where codex finds skills.
   It connects to no unix socket but its own folders' and its namespace's, to no loopback
-  debug port (9222, 9229), and a codex run reaches no Keychain: a codex whose login is there
+  debug port (9222, 9229) nor the dev server's (31100), and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
   `TOOL_CACHE_ENV` in `main/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
@@ -346,9 +368,10 @@ rather than crashing boot.
   so a hand edit to either can stand a character over the void or behind furniture. The
   walker makes each seat's cell solid and seals open floor no body can reach
   (`walkGridOf` in `shared/office-grid.ts`).
-- **Tests need no Electron or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
+- **Tests need no window or Phaser.** `pnpm --filter @repo/desktop test` covers geometry,
   schemas, codecs, store/integration behavior under temporary save roots, and real loopback
-  requests. On macOS it also runs the seal on canary files under a stand-in home
+  requests, then `cargo test` the shell (the relay's framing, main's supervision against a stand-in
+  main on node, the navigation pin, the runtime's paths, main's log). On macOS it also runs the seal on canary files under a stand-in home
   (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
@@ -358,18 +381,28 @@ rather than crashing boot.
   rules each need a matching example; everyday commands must remain allowed. Drive anything
   requiring a window live instead, or cover it in the e2e suite.
 - **IPC goes through the registry.** `shared/ipc-channels.ts` is the runtime source of truth
-  for channel names and must stay dependency-free (the sandboxed preload imports it);
+  for channel names, which the page builds its bridge from (`renderer/install-bridge.ts`);
   zod payload schemas live in `shared/ipc-registry.ts`, and a method's payload type IS its
-  schema's output — declare the schema, never a parallel type. Main registers every handler
+  schema's output — declare the schema, never a parallel type. Main dispatches every method
   from one `IpcHandlers` map (`main/lib/ipc-handler.ts`), so a channel without one fails to
-  compile. A handler's throw crosses as an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the
-  preload rethrows bare, so the founder reads the store's sentence, not Electron's wrapper;
-  frame and payload checks still throw. A throw that is not a `RefusalError`
-  (`shared/refusal.ts`) is a fault and is reported too.
-- **Main keeps a log file.** `main/lib/log.ts` sends main's console, uncaught errors and
-  crashed renderer or child processes to `main.log` under `app.getPath("logs")`
-  (`~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)` userData, or in `roots/<id>/` beneath it for an isolated `IDLEBIZ_ROOT_DIR`), never under the
-  save root, which a reset deletes. A catch that carries on past an unexpected error calls
+  compile. The window's call reaches main as an `invoke` over main's stdio (JSON-RPC 2.0, one
+  message a line: `main/relay/rpc.ts`, `src-tauri/src/relay.rs`), relayed unread by the shell's
+  one command, `main_invoke`; main's events come back as Tauri events under each channel's name.
+  A handler's throw crosses as an `IpcReply` refusal (`main/lib/ipc-reply.ts`) the page rethrows
+  bare, so the founder reads the store's sentence; frame and payload checks still throw. A throw
+  that is not a `RefusalError` (`shared/refusal.ts`) is a fault and is reported too.
+- **Main asks the shell for what only a native app does** (`main/host.ts`): a message box, the
+  clipboard, Finder and the browser, the menu-bar icon (main decides it, `main/tray.ts`; the
+  shell draws it, `src-tauri/src/tray.rs`), a notification, the login item (`SMAppService`), the
+  Mac kept awake while a run is in flight, a relaunch. The shell says hello first, with what only
+  it knows: the resources folder, whether the login item launched it, the Keychain's password.
+  Main's stdin is its lifeline: the shell closes it only after main answers `quit`, so a shell
+  that crashed or was killed ends main too, after its runs.
+- **Main keeps a log file.** Main's console is its stderr, which the shell appends, stamped, to
+  `main.log` (`src-tauri/src/main_log.rs`; `~/Library/Logs/IdleBiz/`; dev: `logs/` in the
+  `IdleBiz (dev)` data folder, or in `roots/<id>/` beneath it for an isolated
+  `IDLEBIZ_ROOT_DIR`), never under the save root, which a reset deletes; `main/lib/log.ts` sends
+  uncaught errors there too. A catch that carries on past an unexpected error calls
   `report` (`main/lib/report.ts`); a boot that throws says where the log is and exits.
 - **Everything main says happened goes through `main/activity.ts`.** `publishActivity`
   stamps, persists and fans out one `ActivityEvent` (`shared/activity.ts`, a discriminated
@@ -408,15 +441,28 @@ rather than crashing boot.
   `shared/format.ts`); the Budget panel, the digest, onboarding and the HUD's tooltip say it
   is at API prices. A turn cut off before its agent answers (the watchdog, Stop, a quit, a
   crash) still bills what its usage updates reported, as uncached input (`runAcpTurn`).
-- **`apps/desktop` `dependencies` is exactly what the app ships.** electron-builder unpacks
-  it into node_modules: the ACP adapters main spawns (they bring their own zod and ACP sdk)
-  and sharp (native, kept out of the bundle in `electron.vite.config.ts`). Everything Vite
-  bundles — zod, the ACP sdk, renderer libs, `@repo/*` — goes in `devDependencies`, or the
-  app ships it unpacked for nothing. `pnpm add` defaults to `dependencies`.
+- **`apps/desktop` `dependencies` is exactly what the app ships.** The pack stages them beside
+  main's bundle with `pnpm deploy` (`scripts/stage-main.ts`), into `Contents/Resources/main`: the
+  ACP adapters main spawns (they bring their own zod and ACP sdk) and sharp (native, kept out of
+  the bundle in `vite.config.ts`). Everything Vite bundles — zod, the ACP sdk, renderer libs,
+  `@repo/*` — goes in `devDependencies`, or the app ships it for nothing. `pnpm add` defaults to
+  `dependencies`.
 
 ## Map
 
-- `apps/desktop/src/main` — the control plane. `store/store.ts` (the one company in memory,
+- `apps/desktop/src-tauri` — the shell, Rust: the window over the bundled page and its
+  navigation pin (`window.rs`, `navigation.rs`), main as its one child (`main_process.rs` over
+  the relay's framing in `relay.rs`, `runtime.rs` for where node, main and the resources are),
+  what main asks of a native app (`host.rs`: message boxes, the clipboard, Finder, notifications;
+  `tray.rs`, `login_item.rs`, `keep_awake.rs`, `keychain.rs`), main's log (`main_log.rs`), and the
+  page's one command (`commands.rs`). `capabilities/main.json` grants the window that command and
+  the event listener, nothing else.
+- `apps/desktop/src/dev-host` — main behind a token bridge on the page's own origin, for a
+  browser: `pnpm dev:browser` and the e2e suite (`host.ts`), and the shell's content security
+  policy for a page Tauri does not serve (`policy.ts`).
+- `apps/desktop/src/main` — the control plane. `index.ts` (boot on the shell's hello, the relay,
+  quit), `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio
+  channel), `store/store.ts` (the one company in memory,
   every command on it, and its writes), `store/*-codec.ts` (one pure markdown package ⇄
   domain object mapping per kind; `company-codec.ts` owns the save format stamp), `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the
   idle loop; it alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is

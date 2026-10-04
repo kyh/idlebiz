@@ -3,6 +3,7 @@
   "ignoreBinaries": ["agent-browser"],
   "workspaces": {
     "apps/desktop": {
+      "entry": ["src/main/index.ts", "e2e/stub-services.ts"],
       "project": ["src/**", "scripts/**", "e2e/**"],
       "ignoreDependencies": [
         "@agentclientprotocol/claude-agent-acp",

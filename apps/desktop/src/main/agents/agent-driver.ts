@@ -67,10 +67,6 @@ import { DEPLOY_TIMEOUT_MS } from "@/shared/tool-specs";
 // The desktop app ships the ACP binaries, so resolve them against its node_modules.
 const resolveFromApp = createRequire(import.meta.url);
 
-// Child processes cannot execute files inside asar; matches electron-builder's asarUnpack.
-const unpacked = (file: string): string =>
-  file.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
-
 /** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
 const runnerEnv = (runner: AgentRunner): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
@@ -118,8 +114,6 @@ export const acpAgentFor = (
     ...runnerEnv(runner),
     ...more,
     ...browserEnv(seal, runner),
-    // The packaged executable is Electron; child agents need its Node mode.
-    ELECTRON_RUN_AS_NODE: "1",
   };
   if (adapter.binEnvVar) {
     env[adapter.binEnvVar] = runnerBin(runner);
@@ -132,7 +126,7 @@ export const acpAgentFor = (
   return {
     command: sealedCommand(seal, runner, [
       process.execPath,
-      unpacked(resolveFromApp.resolve(adapter.acpEntry)),
+      resolveFromApp.resolve(adapter.acpEntry),
     ]),
     env,
     readDirs: session.readDirs,

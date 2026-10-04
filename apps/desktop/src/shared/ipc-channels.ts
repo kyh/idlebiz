@@ -1,5 +1,6 @@
-// No runtime imports: the sandboxed preload can only require Electron.
-// Schemas and typed contracts live in ipc-registry.ts.
+// The window's channels to main, which the page builds its bridge from (renderer/install-bridge.ts)
+// and main dispatches by (main/lib/ipc-handler.ts). Schemas and typed contracts live in
+// ipc-registry.ts.
 
 export const CHANNELS = {
   answerQuestion: { channel: "task:answer", kind: "invoke" },
@@ -81,13 +82,12 @@ export interface IpcFailure {
 }
 
 /**
- * What main answers an invoke with. Electron rethrows a handler's throw as
- * "Error invoking remote method '<channel>': Error: <message>", so a refusal
- * crosses as data and the preload throws its message bare.
+ * What main answers an invoke with. A refusal crosses the relay as data, the
+ * sentence it was worded in, and the page throws that message bare.
  */
 export type IpcReply<T> = { ok: true; value: T } | IpcFailure;
 
-/** Whether what came back over the wire is a reply at all: the preload has no schemas to check it with. */
+/** Whether what came back over the wire is a reply at all: the page checks a reply's shape alone. */
 export const isReply = (value: unknown): value is IpcReply<WireValue> =>
   typeof value === "object" &&
   value !== null &&

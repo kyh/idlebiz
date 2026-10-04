@@ -12,7 +12,7 @@ export const settle = async <P, R>(
   try {
     return { ok: true, value: await fn(payload) };
   } catch (error) {
-    // Electron logs a handler's throw, not one returned as data; a refusal is just the answer.
+    // a refusal is just the answer; anything else thrown is a fault, and main's log keeps it
     if (!(error instanceof RefusalError)) {
       report("ipc", error);
     }

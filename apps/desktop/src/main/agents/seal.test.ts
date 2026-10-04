@@ -339,7 +339,7 @@ describe("checkSeal", () => {
       expect(path.dirname(written)).toBe(path.dirname(canary));
       expect(allowed("file-write*")).not.toContain("/private/tmp");
       expect(runs[0]).toBe(process.execPath);
-      expect(env).toEqual({ ELECTRON_RUN_AS_NODE: "1" });
+      expect(env).toEqual({});
       expect(existsSync(canary)).toBe(false);
     }
   });
@@ -1422,7 +1422,7 @@ describe.skipIf(!onMac)("sealRuns", () => {
       { match: "subpath", path: path.join(home, ".codex/rules") },
     ]);
     expect(seal.runners.claude.absent).toEqual([]);
-    expect(seal.debugPorts).toEqual([9222, 9229]);
+    expect(seal.debugPorts).toEqual([9222, 9229, 31_100]);
     expect(seal.sockets).toEqual(
       expect.arrayContaining(
         [

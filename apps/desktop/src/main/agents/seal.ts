@@ -19,6 +19,7 @@ import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { z } from "zod";
 import { ROOT_DIR } from "@/main/paths";
 import { SECRETS_PATH } from "@/main/secrets";
+import { DEV_PORT } from "@/shared/dev-bridge";
 import type { AgentRunner, LoadReport } from "@/shared/domain";
 import { errorMessage } from "@/shared/errors";
 import { RefusalError } from "@/shared/refusal";
@@ -213,9 +214,10 @@ const SCRATCH_SOCKETS = [
  */
 const TERMINAL_SHIMS = ["cmux-cli-shims"];
 
-// IdleBiz's own renderer in dev (`--remoteDebuggingPort 9222`) and node's inspector: either
-// answers anyone on loopback, and the renderer holds the founder's approve button.
-const DEBUG_PORTS = [9222, 9229];
+// Chrome's DevTools port (a browser the founder debugs, signed in as them), node's inspector and
+// the dev server, whose bridge reaches main (`pnpm dev:browser`): each answers anyone on loopback,
+// and the bridge carries the founder's approve button.
+const DEBUG_PORTS = [9222, 9229, DEV_PORT];
 
 /** The /dev nodes a toolchain writes: output sinks, terminals, dtrace's helper. */
 const DEV_NODES = String.raw`(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/dtracehelper") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/ttys[0-9]+$") (subpath "/dev/fd"))`;
@@ -514,7 +516,7 @@ export const checkSeal = async (
             canary,
             path.join(dir, `written-by-${runner}`),
           ]),
-          { ELECTRON_RUN_AS_NODE: "1" },
+          {},
         ),
       ),
     );

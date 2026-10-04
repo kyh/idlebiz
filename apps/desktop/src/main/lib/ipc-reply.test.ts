@@ -51,7 +51,7 @@ describe("IPC reply", () => {
     expect(log).toHaveBeenCalledExactlyOnceWith("[ipc]", fault);
   });
 
-  it("is always what the preload takes for a reply, and nothing else is", async () => {
+  it("is always what the page takes for a reply, and nothing else is", async () => {
     const refused = await settle((): number => {
       throw new RefusalError(seatCap);
     }, undefined);

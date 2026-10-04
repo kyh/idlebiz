@@ -1,40 +1,21 @@
-import { app } from "electron";
+import { host, launch } from "@/main/host";
 import type { LaunchAtLogin } from "@/shared/domain";
 import { RefusalError } from "@/shared/refusal";
 
 // The OS login item is the only record: nothing in the save says whether IdleBiz opens at login.
-// An unpackaged run would register node_modules' Electron.app, which is no IdleBiz at all.
+// The shell registers the app itself with macOS (SMAppService), so a dev build, which is no
+// installed IdleBiz, has none to register.
 
-export const launchAtLogin = (): LaunchAtLogin => {
-  if (!app.isPackaged) {
-    return "unavailable";
-  }
-  switch (app.getLoginItemSettings().status) {
-    case "enabled": {
-      return "on";
-    }
-    case "not-registered": {
-      return "off";
-    }
-    case "requires-approval": {
-      return "requires-approval";
-    }
-    case "not-found": {
-      return "not-found";
-    }
-    // no default
-  }
-};
+export const launchAtLogin = async (): Promise<LaunchAtLogin> =>
+  launch().packaged ? await host().loginItem(null) : "unavailable";
 
 /** macOS may refuse without a word, so what it answers is read back rather than assumed. */
-export const setLaunchAtLogin = (on: boolean): LaunchAtLogin => {
-  if (!app.isPackaged) {
+export const setLaunchAtLogin = async (on: boolean): Promise<LaunchAtLogin> => {
+  if (!launch().packaged) {
     throw new RefusalError("Only the installed app can open at login, not a dev build.");
   }
-  app.setLoginItemSettings({ openAtLogin: on });
-  return launchAtLogin();
+  return await host().loginItem(on);
 };
 
 /** A launch at login starts in the menu bar: the founder did not ask to see the office. */
-export const openedAtLogin = (): boolean =>
-  app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin;
+export const openedAtLogin = (): boolean => launch().packaged && launch().openedAtLogin;

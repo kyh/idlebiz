@@ -1,34 +1,52 @@
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
-import { _electron, expect, test as base } from "@playwright/test";
-import type { ElectronApplication, JSHandle, Page } from "@playwright/test";
+import { fileURLToPath } from "node:url";
+import { expect, test as base } from "@playwright/test";
+import type { Browser, JSHandle, Page } from "@playwright/test";
+import { DESKTOP_DIR, startDevHost } from "@/dev-host/host";
+import type { DevHost } from "@/dev-host/host";
+import { pagePolicy } from "@/dev-host/policy";
 import type { Company, Employee, Product } from "@/shared/domain";
 import type { HireProposal } from "@/shared/hire";
 import type { AppBridge } from "@/shared/ipc-registry";
 import { jsonRecordSchema, parseJson } from "@/shared/json";
 import type { JsonRecord, JsonValue } from "@/shared/json";
+import { z } from "zod";
 
 declare global {
-  // What the preload exposes on the window; renderer/bridge.ts declares it for the app.
+  // What install-bridge.ts sets on the window; renderer/bridge.ts declares it for the app.
   var appBridge: AppBridge | undefined;
 }
 
-const DESKTOP_DIR = path.resolve(import.meta.dirname, "..");
+/** The built page, as the shell's window loads it from the bundle. */
+const PAGE_DIR = path.join(DESKTOP_DIR, ".output/renderer");
 
 interface Launched {
-  app: ElectronApplication;
   page: Page;
+  /** What main asked the system to open, oldest first: the dev host opens nothing. */
+  opened: DevHost["opened"];
+  /** Closes the page and quits main as the app's Quit does; the next launch starts fresh. */
+  close: () => Promise<void>;
+}
+
+interface LaunchOptions {
+  /** Answer main's calls to Stripe, Vercel and Printful from `CANNED_APIS`, from its first. */
+  stubServices?: boolean;
 }
 
 interface Fixtures {
   /** A fresh save root for this test, deleted after it. */
   root: string;
-  /** Start the built app on `root`, as `electron .` does; whatever is still open closes when the test ends. */
-  launch: () => Promise<Launched>;
+  /**
+   * Start the built main on `root` and open the built page on it in Chromium, as the dev host
+   * runs them; whatever is still open closes when the test ends.
+   */
+  launch: (options?: LaunchOptions) => Promise<Launched>;
 }
 
 /** Every `run.start` any company on `root` logged: each one would have been a paid CLI session. */
@@ -49,94 +67,160 @@ const runsStarted = async (root: string): Promise<number> => {
   return started;
 };
 
-/** The app's page, once it has navigated: DevTools' is `devtools://`, and any page starts at `about:blank`. */
-const isAppPage = (page: Page): boolean => /^(?:file|https?):/u.test(page.url());
+const CONTENT_TYPES = new Map([
+  [".css", "text/css"],
+  [".html", "text/html; charset=utf-8"],
+  [".js", "text/javascript"],
+  [".json", "application/json"],
+  [".png", "image/png"],
+  [".svg", "image/svg+xml"],
+  [".webp", "image/webp"],
+  [".woff2", "font/woff2"],
+]);
 
-/**
- * The app's own window. An unpackaged launch detaches DevTools into a window that opens first
- * and never reports loaded, so windows are told apart by URL, polled until the app's appears.
- */
-const appWindow = async (app: ElectronApplication): Promise<Page> => {
-  for (;;) {
-    const page = app.windows().find(isAppPage);
-    if (page) {
-      return page;
-    }
-    await sleep(100);
+/** One file of the built page, under the shell's policy; nothing outside the page's folder. */
+const servePageFile = async (
+  url: string,
+  response: ServerResponse,
+  policy: string,
+): Promise<void> => {
+  const { pathname } = new URL(url, "http://localhost");
+  const file = path.join(PAGE_DIR, decodeURIComponent(pathname === "/" ? "/index.html" : pathname));
+  if (!file.startsWith(`${PAGE_DIR}${path.sep}`) || !existsSync(file)) {
+    response.writeHead(404).end();
+    return;
+  }
+  response.writeHead(200, {
+    "content-security-policy": policy,
+    "content-type": CONTENT_TYPES.get(path.extname(file)) ?? "application/octet-stream",
+  });
+  response.end(await readFile(file));
+};
+
+const answerPageFile = async (url: string, response: ServerResponse, policy: string) => {
+  try {
+    await servePageFile(url, response, policy);
+  } catch {
+    response.writeHead(500).end();
   }
 };
 
-/**
- * Close the app and wait for its process to exit: `close()` can resolve while main is still
- * quitting, and until it has, the next launch loses the single-instance lock and quits.
- */
-export const closeFully = async (app: ElectronApplication): Promise<void> => {
-  const child = app.process();
-  const exited =
-    child.exitCode === null && child.signalCode === null ? once(child, "exit") : Promise.resolve();
-  await app.close();
-  await exited;
+interface Served {
+  url: string;
+  close: () => Promise<void>;
+}
+
+/** The built page and the dev host's bridge on one loopback origin, as `pnpm dev:browser` has them. */
+const servePage = async (host: DevHost): Promise<Served> => {
+  const policy = pagePolicy({ desktopDir: DESKTOP_DIR });
+  const server = createServer((request, response) => {
+    host.middleware(request, response, () => {
+      void answerPageFile(request.url ?? "/", response, policy);
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = z.object({ port: z.number() }).parse(server.address());
+  return {
+    close: async () => {
+      const closed = once(server, "close");
+      // the event stream holds its connection open
+      server.closeAllConnections();
+      server.close();
+      await closed;
+    },
+    url: `http://127.0.0.1:${port}/#${host.fragment}`,
+  };
 };
 
+/** What main gets for one call in place of the API's answer (e2e/stub-services.ts). */
+interface Canned {
+  host: string;
+  route: string;
+  /** The answer's JSON text. */
+  body: string;
+}
+
+const canned = (host: string, route: string, body: JsonValue): Canned => ({
+  body: JSON.stringify(body),
+  host,
+  route,
+});
+
+const STRIPE = "api.stripe.com";
+const VERCEL = "api.vercel.com";
+const PRINTFUL = "api.printful.com";
+const NOTHING = { data: [], has_more: false, object: "list" };
+
 /**
- * Launch the built app on `root`; `track` holds it and its userData the moment they exist,
- * so a launch that fails later is still closed and cleaned up.
+ * The Stripe, Vercel and Printful of an account that takes any key: one project, no money, no
+ * visitors, one store that may place orders.
  */
+const CANNED_APIS: Canned[] = [
+  canned(STRIPE, "/v1/charges", NOTHING),
+  canned(STRIPE, "/v1/payment_links", NOTHING),
+  canned(PRINTFUL, "/v2/oauth-scopes", {
+    data: [{ name: "View and manage orders", value: "orders" }],
+  }),
+  canned(PRINTFUL, "/v2/stores", { data: [{ id: 7, name: "E2E Prints", type: "native" }] }),
+  canned(VERCEL, "/v1/query/web-analytics/visits/count", { data: { visitors: 0 } }),
+  canned(VERCEL, "/v2/teams", { teams: [] }),
+  canned(VERCEL, "/v2/user", { user: { username: "e2e" } }),
+  canned(VERCEL, "/v6/deployments", { deployments: [] }),
+  canned(VERCEL, "/v9/projects", { projects: [{ id: "prj_e2e", name: "e2e-tip-jar" }] }),
+];
+
+// loaded into main before its own code: it answers from CANNED_APIS
+const STUB_SERVICES = fileURLToPath(new URL("stub-services.ts", import.meta.url));
+
 const start = async (
   root: string,
-  track: (app: ElectronApplication, userData: string) => void,
+  browser: Browser,
+  options: LaunchOptions,
+  log: (line: string) => void,
 ): Promise<Launched> => {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(
-      // a dev shell's renderer URL would load the dev server instead of the build
-      (entry): entry is [string, string] =>
-        entry[1] !== undefined && entry[0] !== "ELECTRON_RENDERER_URL",
-    ),
-  );
-  // Playwright's Electron loader forces Chromium's mock keychain (and --password-store=basic)
-  // on every launch, so no e2e launch reaches the real Keychain and this suite cannot see
-  // whether dev appends its own switch.
-  const app = await _electron.launch({
-    args: [DESKTOP_DIR],
-    cwd: DESKTOP_DIR,
-    env: { ...env, IDLEBIZ_ROOT_DIR: root },
+  const host = await startDevHost({
+    env: options.stubServices ? { IDLEBIZ_E2E_CANNED: JSON.stringify(CANNED_APIS) } : {},
+    log,
+    nodeArgs: options.stubServices ? ["--import", STUB_SERVICES] : [],
+    root,
   });
-  track(app, await app.evaluate(({ app: electronApp }) => electronApp.getPath("userData")));
-  const page = await appWindow(app);
-  // Phaser stalls on a hidden document, and an unpackaged launch opens DevTools over the window.
-  await app.evaluate(({ BrowserWindow, app: electronApp }) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      const { webContents } = win;
-      webContents.on("devtools-opened", () => webContents.closeDevTools());
-      webContents.closeDevTools();
-      win.show();
-      win.focus();
-    }
-    electronApp.focus({ steal: true });
-  });
-  return { app, page };
+  try {
+    const served = await servePage(host);
+    const context = await browser.newContext();
+    let closing: Promise<void> | null = null;
+    const close = async (): Promise<void> => {
+      closing ??= (async () => {
+        await context.close();
+        await served.close();
+        await host.stop();
+      })();
+      await closing;
+    };
+    const page = await context.newPage();
+    await page.goto(served.url);
+    return { close, opened: host.opened, page };
+  } catch (error) {
+    await host.stop();
+    throw error;
+  }
 };
 
 export const test = base.extend<Fixtures>({
-  launch: async ({ root }, provide) => {
-    const open = new Set<ElectronApplication>();
-    const userData = new Set<string>();
-    await provide(() =>
-      start(root, (app, dir) => {
-        open.add(app);
-        app.once("close", () => open.delete(app));
-        userData.add(dir);
-      }),
-    );
-    for (const app of open) {
-      await closeFully(app);
+  launch: async ({ browser, root }, provide, testInfo) => {
+    const open: Launched[] = [];
+    const lines: string[] = [];
+    await provide(async (options = {}) => {
+      const launched = await start(root, browser, options, (line) => {
+        lines.push(line);
+      });
+      open.push(launched);
+      return launched;
+    });
+    for (const launched of open) {
+      await launched.close();
     }
-    // each isolated root gets its own userData (main/index.ts); only those are this test's to delete
-    for (const dir of userData) {
-      if (dir.includes(`${path.sep}roots${path.sep}`)) {
-        await rm(dir, { force: true, recursive: true });
-      }
-    }
+    await testInfo.attach("main", { body: lines.join("\n"), contentType: "text/plain" });
   },
   // oxlint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; the root has none
   root: async ({}, provide) => {
@@ -152,12 +236,12 @@ export const test = base.extend<Fixtures>({
 
 export { expect } from "@playwright/test";
 
-/** The preload's bridge, called as the renderer calls it. */
+/** The page's bridge to main, called as the renderer calls it. */
 export const bridgeOf = (page: Page): Promise<JSHandle<AppBridge>> =>
   page.evaluateHandle(() => {
     const bridge = globalThis.appBridge;
     if (!bridge) {
-      throw new Error("the preload exposed no appBridge");
+      throw new Error("the page installed no appBridge");
     }
     return bridge;
   });
@@ -226,66 +310,3 @@ export const readSecrets = async (root: string): Promise<JsonRecord> =>
 
 export const writeSecrets = (root: string, secrets: JsonRecord): Promise<void> =>
   writeFile(secretsFile(root), JSON.stringify(secrets, null, 2), { mode: 0o600 });
-
-/** What main gets for one call in place of the API's answer. */
-interface Canned {
-  host: string;
-  route: string;
-  /** JSON text: a JSON value is too deep for the type of evaluate's argument. */
-  body: string;
-}
-
-const canned = (host: string, route: string, body: JsonValue): Canned => ({
-  body: JSON.stringify(body),
-  host,
-  route,
-});
-
-const STRIPE = "api.stripe.com";
-const VERCEL = "api.vercel.com";
-const PRINTFUL = "api.printful.com";
-const NOTHING = { data: [], has_more: false, object: "list" };
-
-/**
- * The Stripe, Vercel and Printful of an account that takes any key: one project, no money, no
- * visitors, one store that may place orders.
- */
-const CANNED_APIS: Canned[] = [
-  canned(STRIPE, "/v1/charges", NOTHING),
-  canned(STRIPE, "/v1/payment_links", NOTHING),
-  canned(PRINTFUL, "/v2/oauth-scopes", {
-    data: [{ name: "View and manage orders", value: "orders" }],
-  }),
-  canned(PRINTFUL, "/v2/stores", { data: [{ id: 7, name: "E2E Prints", type: "native" }] }),
-  canned(VERCEL, "/v1/query/web-analytics/visits/count", { data: { visitors: 0 } }),
-  canned(VERCEL, "/v2/teams", { teams: [] }),
-  canned(VERCEL, "/v2/user", { user: { username: "e2e" } }),
-  canned(VERCEL, "/v6/deployments", { deployments: [] }),
-  canned(VERCEL, "/v9/projects", { projects: [{ id: "prj_e2e", name: "e2e-tip-jar" }] }),
-];
-
-/**
- * Answer main's calls to Stripe, Vercel and Printful from `CANNED_APIS` for the rest of this launch, so a
- * key being taken is tested with no real account; a route it lacks gets a 404, never the real
- * service. Main reads the global `fetch` on every request, so swapping it reaches them all.
- */
-export const stubServices = (app: ElectronApplication): Promise<void> =>
-  app.evaluate((_electronModule, answers) => {
-    const real = globalThis.fetch;
-    const stub = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-      const url = new URL(input instanceof Request ? input.url : input);
-      if (!answers.some((answer) => answer.host === url.host)) {
-        return real(input, init);
-      }
-      const found = answers.find(
-        (answer) => answer.host === url.host && answer.route === url.pathname,
-      );
-      const headers = { "content-type": "application/json" };
-      return Promise.resolve(
-        found === undefined
-          ? new Response("{}", { headers, status: 404 })
-          : new Response(found.body, { headers }),
-      );
-    };
-    Object.defineProperty(globalThis, "fetch", { configurable: true, value: stub, writable: true });
-  }, CANNED_APIS);

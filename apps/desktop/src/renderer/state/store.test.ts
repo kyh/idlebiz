@@ -119,7 +119,7 @@ interface MainHolds {
 }
 
 /**
- * Main as the preload hands it over: a `late` method answers only when the
+ * Main as the bridge hands it over: a `late` method answers only when the
  * test says, with what main held when it was asked; the rest answer at once.
  */
 const fakeMain = (late: readonly Late[]) => {
