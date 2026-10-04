@@ -1,13 +1,19 @@
 # IdleBiz
 
 Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a
-business. Main app: `apps/desktop`: a Rust shell (`src-tauri`, clippy pedantic) around main, the
-node process that owns the save, the keys and the runs, its one child, reached over main's stdio,
-and the office page (Vite + React + Phaser), which main serves the shell's window on loopback,
-signed in by a one-time handoff, as kyh/inteligir's server serves its window (strict TS — no
-`any`, no `!`, no `as`). Full map and workflow in `AGENTS.md`.
+business. Strict TS everywhere (no `any`, no `!`, no `as`), clippy pedantic in Rust. Full map and
+workflow in `AGENTS.md`.
 
-- Game state on disk at `~/.idlebiz/<company-slug>/` — agentcompanies/v1 markdown
+**TWO PROGRAMS**, laid out as kyh/inteligir's are. `apps/desktop` is the app the founder
+installs: a Rust shell (`src-tauri`) around the office page (Vite + React + Phaser). `apps/cli`
+is the `idlebiz` binary: `idlebiz serve` is main, the node process that owns the save, the keys
+and the runs, the shell's one child, reached over its stdio. Main serves the shell's window its
+page on loopback, signed in by a one-time handoff, and answers it over an oRPC contract
+(`packages/contract`). Every other verb is a company tool an employee types in its shell
+(`idlebiz message-team '{"text":"…"}'`), a client of the control plane its run was handed.
+
+- Game state on disk at `~/.idlebiz/<company-slug>/`, beside `cache/` (the runs' tool caches)
+  and `bin/` (the `idlebiz` command main writes the runs at boot) — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
   products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
@@ -32,20 +38,20 @@ signed in by a one-time handoff, as kyh/inteligir's server serves its window (st
   keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`, a
   user-initiated activity the shell holds, `src-tauri/src/keep_awake.rs`, never past a closed
   lid). Settings can open IdleBiz at login
-  (`main/login-item.ts`): the macOS login item (`SMAppService`, `src-tauri/src/login_item.rs`)
+  (`server/login-item.ts`): the macOS login item (`SMAppService`, `src-tauri/src/login_item.rs`)
   is its only record, only a packaged app registers one, and a launch at login starts in the
   menu bar. The budget is usage at API
   prices, what the runs would cost billed per token, not what a subscription bills: the tray
   and HUD label it `usage` (`usageLabel`), never spend, and the Budget panel, the digest,
   onboarding and the HUD's tooltip say it is at API prices.
-- Employee character sheets are bundled at `apps/desktop/resources/employee-sheets`
+- Employee character sheets are bundled at `apps/cli/resources/employee-sheets`
   as curated runtime assets. Source workspace lives outside the repo at
   `/Users/kyh/Desktop/vg/office`.
 - Employee runs load IdleBiz's own skills and none of the founder's. They live at
-  `apps/desktop/resources/skills/.agents/skills/<name>/SKILL.md` (Agent Skills format:
-  frontmatter `name` and `description`, then the body), shipped as the .app's resources
-  (`bundle.resources` in `scripts/package.ts`) and found by `bundledSkillsDir`
-  (`main/agents/bundled-skills.ts`) under the folder the shell's hello names. The
+  `apps/cli/resources/skills/.agents/skills/<name>/SKILL.md` (Agent Skills format:
+  frontmatter `name` and `description`, then the body), shipped in the .app with the server
+  (`apps/desktop/scripts/stage-server.ts` stages the `idlebiz` package, `resources/` and all) and
+  found by `bundledSkillsDir` (`server/agents/bundled-skills.ts`) beside the server that runs. The
   hidden `.agents` is forced: codex-acp takes skills only from `<folder>/.agents/skills` of a
   folder a session is handed, and `.agents` is also the claude plugin `idlebiz`
   (`.agents/.claude-plugin/plugin.json`), whose skills folder is the same one; claude names
@@ -63,9 +69,61 @@ signed in by a one-time handoff, as kyh/inteligir's server serves its window (st
   Under headless automation the Phaser boot stalls (document.hidden) — force
   `window.__game.scene.start("office")` and step `game.loop.step(t)` to render.
 
+## Workspace structure
+
+Turborepo + pnpm. Pointers in this file are short: `server/…` and `commands/…` are under
+`apps/cli/src/`, `renderer/…` under `apps/desktop/src/`, `src-tauri/…` under `apps/desktop/`, and
+`@repo/<package>/<module>` is `packages/<package>/src/<module>.ts`.
+
+```
+apps/
+  desktop/       @repo/desktop — THE APP THE FOUNDER INSTALLS: a Tauri 2 shell over the system
+                 WebKit. src-tauri/ (Rust): the window and its origin pin (window.rs,
+                 navigation.rs), main as its one child (main_process.rs, relay.rs, runtime.rs),
+                 what main asks of a native app (host.rs: the tray, the Keychain, keep-awake, the
+                 login item, opening a path or a URL) and main's log (main_log.rs). src/renderer/
+                 (React + Phaser): the office, its panels and its state, which call main through
+                 `api()` (renderer/api.ts, installed by install-api.ts) and hear it through
+                 `listen()`. scripts/: the pack (node fetched, the server staged as
+                 Resources/server, everything signed, notarized and released).
+  cli/           idlebiz — THE SERVER AND THE BINARY. `idlebiz serve` is main (src/server/): the
+                 save (store/), the scheduler, the runs and their seal (agents/), the company's
+                 tools (tools.ts over tool-specs.ts, behind control-plane.ts), the integrations,
+                 and the window's page (page-server.ts: the handoff, the guards, the event
+                 stream; page-router.ts implements the contract). Every other verb is a company
+                 tool (src/commands/tools.ts) that runs type through the launcher main writes
+                 them (server/agent-launcher.ts). src/dev-host/ runs main as the shell would, for
+                 `dev:browser` and e2e. resources/: the skills and the employee sheets main reads.
+                 The build is dist/index.js with its chunks flat beside it, and the page staged
+                 as dist/page.
+  web/           @repo/web — the landing page (Next.js on Vercel): the download and the Stripe
+                 Connect OAuth hop.
+packages/
+  domain/        @repo/domain — the vocabulary both sides share, pure: the company and its
+                 people, the bets and their judge, the activity grammar, money's formatting, the
+                 hold rules' display, and the JSON and error helpers. Zod only.
+  contract/      @repo/contract — the page's API, contract-first: an oRPC contract with one folder
+                 per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), the routes (`/rpc`,
+                 `/events`) and the event stream's names. The page compiles against it and
+                 page-router.ts implements it; both ship in one app, so it may break freely.
+  agent-driver/  @repo/agent-driver — the ACP runtime: a turn over claude-agent-acp or codex-acp,
+                 the runners' registry, tool asks, rate limits and pricing.
+  px-kit/        @repo/px-kit — the pixel UI kit both apps draw with (see the px-kit trap below).
+  stripe-connect-protocol/
+                 @repo/stripe-connect-protocol — the Stripe Connect handshake between
+                 idlebiz.com and the app, typed once.
+tools/
+  e2e/           @repo/e2e — Playwright over the built page and main, through the dev host.
+```
+
+The page reaches main over its contract and the runs reach it over the control plane: two
+doors, never one. The page's carries the founder's session cookie and answers on the page's own
+port, which the seal closes to every run; the control plane's carries a run's own token, and
+what it does is the run's.
+
 ## The company is steered by bets
 
-`shared/bets.ts` is the whole steering loop, pure: a bet is one hypothesis about one real
+`@repo/domain/bets` is the whole steering loop, pure: a bet is one hypothesis about one real
 number (`users` | `revenue`) of one product, with a spend cap and a window. Its target has
 a floor, `MIN_BET_TARGET` (10 whole users, $5), which `open_bet`'s body refuses below:
 under it the founder's own clicks or one charge would win the bet, and a win steers the
@@ -140,21 +198,21 @@ allocator and the replay.
   company id: `getCompany()` is null before one is founded, and everything else throws "no
   company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
   Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only
-  that a claim or lock race was lost. It refuses with a `RefusalError` (`shared/refusal.ts`)
-  worded as the sentence the agent should read; a tool turns that into its answer, IPC into
-  the founder's note. Anything else thrown is a fault: answered the same way, but reported to
+  that a claim or lock race was lost. It refuses with a `RefusalError` (`server/refusal.ts`)
+  worded as the sentence the agent should read; a tool turns that into its answer, the page's
+  API into the founder's note. Anything else thrown is a fault: answered the same way, but reported to
   main's log. Don't split it by entity or make it async: its synchronous check-and-set is
   what makes the task lock correct.
-- **A company tool is described once**, in `shared/tool-specs.ts`: route, body, lead-only
-  refusal, doc and example. The agents' instructions are rendered from it, `main/tools.ts`
+- **A company tool is described once**, in `server/tool-specs.ts`: route, body, lead-only
+  refusal, doc and example. The agents' instructions are rendered from it, `server/tools.ts`
   binds each implementation to its spec, `idlebiz <tool>` is the client a run types it with
   (`commands/tools.ts`), and `control-plane.ts` is only transport. A change
   everyone should hear about (a bet, a product, autopilot) goes through
-  `main/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's IPC.
+  `server/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's page.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
   or employee), so the room agents read and the #team feed hold the same lines and no
   office news reads as the founder's word.
-- **Five businesses, one way to earn.** `BUSINESS_MODELS` in `main/prompts/instructions.ts`
+- **Five businesses, one way to earn.** `BUSINESS_MODELS` in `server/prompts/instructions.ts`
   tells each run how its type makes money with the tools there are: software sells once
   through `create_payment_link`, a game studio a web game's paid unlock, ecommerce prints
   through `sell_print` to US buyers or sells digital goods through a link, custom whichever
@@ -206,7 +264,7 @@ there, once the founder signs off. The command policy in front of both is a trip
 third boundary.
 
 - **Every run starts sealed.** `acpAgentFor` starts each ACP session, a task's or the hiring
-  one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `main/agents/seal.ts` renders per
+  one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `server/agents/seal.ts` renders per
   run, every path a `-D` parameter. Each run resolves its own (`machineSeal`), so a path that
   became a symlink since boot is sealed where it leads from the next run on.
   - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
@@ -290,14 +348,14 @@ third boundary.
   `secrets.json`, which the seal keeps from every run, each value also sealed with the macOS
   Keychain, which a claude run can still reach: Chromium's OSCrypt, as Electron's `safeStorage`
   sealed it, over the "IdleBiz Safe Storage" password the shell reads and hands main at hello
-  (`main/lib/os-crypt.ts`); dev seals with the mock keychain's, and nothing on the real save, so
+  (`server/lib/os-crypt.ts`); dev seals with the mock keychain's, and nothing on the real save, so
   it strands none. Main reads each where it uses it.
   A run starts from the founder's env less every credential-shaped name and every URL with a
-  login in it, but its runner's own login (`runEnv` in `main/agents/run-env.ts`). An outward
+  login in it, but its runner's own login (`runEnv` in `server/agents/run-env.ts`). An outward
   step that needs a key is a signed tool main runs: `deploy` uploads the product's folder
   through Vercel's API with the founder's token, and Vercel builds it on its own machines
-  (`main/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
-  the founder's own key (`main/payment-links.ts`; a Connect grant is read-only), tagging each
+  (`server/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
+  the founder's own key (`server/payment-links.ts`; a Connect grant is read-only), tagging each
   payment for its product and a named revenue bet on it, open or measuring, and the link alone with the
   `delivery` its buyers are owed, which Stripe copies onto each checkout (a link with one is
   refused before the sign-off while the key cannot read checkout sessions, since that read is
@@ -313,7 +371,7 @@ third boundary.
   (`productionHosts`, as `sell_print`'s files), and main adds
   `session_id={CHECKOUT_SESSION_ID}`, which Stripe fills (`after_completion[type]=redirect`);
   `sell_print` lists a
-  Printful print-on-demand item (`main/print-listing.ts`): its print files must be images the
+  Printful print-on-demand item (`server/print-listing.ts`): its print files must be images the
   product's own verified production domains serve now, each read whole and hashed, Printful's
   estimate prices each variant with them at the listing's price (California taxes that, not
   Printful's own) to Los Angeles, Seattle, Denver (Colorado adds a retail delivery fee), Alaska
@@ -328,11 +386,11 @@ third boundary.
   its link is live. Agents find variant ids, placements and techniques with `printful_catalog`,
   which main reads with the token (v2 serves the catalog only to a signed-in caller). The
   Printful token and its one store are the founder's, pasted in the Budget panel
-  (`main/printful-token.ts`), and a token Printful turns away asks for a new one, pasted over it
+  (`server/printful-token.ts`), and a token Printful turns away asks for a new one, pasted over it
   there. Each paid order then goes to Printful unsigned, run by main on the metrics pulse
-  (`main/order-pump.ts`), since the founder signed the listing and its price floor: while a
+  (`server/order-pump.ts`), since the founder signed the listing and its price floor: while a
   Stripe key is saved, every 30 minutes one account-wide read of Stripe's checkout sessions
-  (`main/stripe-checkouts.ts`, line items expanded; a list per link, or a faster beat, would
+  (`server/stripe-checkouts.ts`, line items expanded; a list per link, or a faster beat, would
   spend the reads Stripe allows, which metrics already mostly spends on a quiet store) from a
   `created[gt]` cursor in `state/orders-cursor.json`, one per key that has read (named by its
   mode and a digest, never the key), since a key of another mode or account lists none of this
@@ -343,7 +401,7 @@ third boundary.
   it read and cards the founder. A session on a listing's link with `payment_status` `paid`
   (complete alone is not paid) is kept as an order, on disk before Printful hears of it;
   its Printful `external_id` is the session id's hash, looked up (`/v2/orders/@<id>`) before a
-  draft is made (`main/printful-orders.ts`), so a restart never makes one twice. The design is
+  draft is made (`server/printful-orders.ts`), so a restart never makes one twice. The design is
   read again and must hash as signed. A draft charges nothing; it is polled every pulse until
   priced (a bounded number of reads) and confirmed only on a read that shows it still a draft
   costing no more than Stripe collected less its dearest fee on a card (`netOfStripeCents`), with
@@ -365,12 +423,12 @@ third boundary.
   a refusal, a status of failed, canceled or onhold the first time any call reads it, a refused
   key once anything is sold) is an order card: a blocked task of origin `order`, no assignee, no
   product, so no bet stalls, no retirement drops it and no teammate can claim it. The founder's
-  Done or Can't closes it with no run (`settleOrderCard` in `main/company-actions.ts`) and goes
+  Done or Can't closes it with no run (`settleOrderCard` in `server/company-actions.ts`) and goes
   to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
   so. A menu-bar-only launch counts what waits on the founder in the tray and notifies each new
   order card. Retiring a product switches off, in main with the founder's key, every payment
   link it sells through, a listing's and each `create_payment_link` link, whose record main
-  keeps under `links/` (`switchOffRetiredLinks` in `main/company-actions.ts`, which sends
+  keeps under `links/` (`switchOffRetiredLinks` in `server/company-actions.ts`, which sends
   `POST /v1/payment_links/<id>` with `active=false`), so it takes no new money; checkouts
   already paid still count and still ship, and one opened before the switch and paid after is
   kept like any other. Only a product whose package is under `retired/` and not `products/`
@@ -399,7 +457,7 @@ third boundary.
   print Printful never confirmed (but a held one whose card the founder settled), each paid order whose card still waits on the founder (a
   delivery, one IdleBiz cannot send) and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
-  is the approval's key (`requireSignOff` in `main/tools.ts`): `deploy <product> to production
+  is the approval's key (`requireSignOff` in `server/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
   none), `payment link "<name>" at $<amount> on <product> for bet <slug> delivering "<delivery>"
 then send buyers to <url>` (the delivery is what the founder owes each buyer and the URL is
@@ -408,7 +466,7 @@ then send buyers to <url>` (the delivery is what the founder owes each buyer and
 Printful on <product> for bet <slug>`, the file's whole digest, so a design deployed over the
   URL is signed for anew. A sign-off belongs to the continuation task, is spent once and goes
   with the task. One such tool is unsigned: `set_env` sets a variable on the product's bound
-  project, sensitive, for production and preview (`main/vercel-env.ts`), since a key the founder
+  project, sensitive, for production and preview (`server/vercel-env.ts`), since a key the founder
   handed back for that product has reached runs anyway: their reply sits in the task. It only
   creates a name set_env never set there, and replaces only one it did: the founder may bind a
   live project whose variables are theirs, and a sensitive one cannot be read back. Nothing is
@@ -416,11 +474,11 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   (`ENV/<company>/<product>/<project>/<NAME>`, per project, so a product rebound to a project of
   the founder's replaces none of theirs; main's own copy never in the save, which runs read), and a
   deploy refuses a folder any of whose uploaded files holds one, from any product or company, or
-  any key IdleBiz itself holds (`heldKeys` in `main/secrets.ts`), naming the file and the
+  any key IdleBiz itself holds (`heldKeys` in `server/secrets.ts`), naming the file and the
   variable or key, never the value: a key in source ships publicly. Those keys never reach a
   run by the founder's hand either: an action's reply, a question's answer, a room message
   and an order card's note holding one are refused (`refuseHeldKey` in
-  `main/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key),
+  `server/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key),
   and so is `set_env` given one. Both also refuse any Stripe secret key (`sk_`,
   `holdsStripeSecretKey`), IdleBiz's or not: it charges, refunds and pays out on the whole
   account with no sign-off, so a Stripe key the team asks for is a restricted one. What a
@@ -428,7 +486,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   tool reads the folder for that before it asks for the sign-off, and the deploy again over what
   it uploads. Only values of 8 characters or more are scanned. It is a tripwire, not a boundary:
   an encoded or split key passes, and nothing scans what the founder pushes by hand. Vercel's
-  own names are refused as a name (`shared/env-name.ts`). A name with a prefix a framework
+  own names are refused as a name (`server/env-name.ts`). A name with a prefix a framework
   builds into the page (`NEXT_PUBLIC_`, `VITE_`…) is set, so a publishable key (`pk_`) stays out
   of the source, but never over a value shaped like a secret (`publicValueRefusal`: Stripe's
   `sk_`/`rk_`/`whsec_`, a private key block, GitHub, OpenAI, Anthropic, AWS, Resend and Slack
@@ -471,7 +529,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   main writes at boot and puts first on each run's PATH (`agent-launcher.ts`), a client of the
   control plane that sends nowhere but loopback. A sign-in kept in their
   settings rather than their shell still reaches the run (`claudeUserSettings` in
-  `main/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
+  `server/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
   gateway's URL and token), through `runEnv` as the shell's env goes, and the helpers claude runs
   for a key or a cloud login (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
   `gcpAuthRefresh`), which run sealed, so one that reads `~/.aws` or gcloud's login fails as it
@@ -482,8 +540,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   workspace's root, for both runners: codex reads it itself, and a claude session, which loads
   no project's CLAUDE.md, is handed it beside its system prompt (`systemPrompt.append` in its
   session `_meta`), read by main as the run starts (`readTeamNotes` in
-  `main/agents/team-notes.ts`), framed as the team's notes, never the founder's word
-  (`main/prompts/team-notes.ts`), and cut at 32 KiB, before a character the cut would split.
+  `server/agents/team-notes.ts`), framed as the team's notes, never the founder's word
+  (`server/prompts/team-notes.ts`), and cut at 32 KiB, before a character the cut would split.
   Main picks it as codex does, `AGENTS.override.md` in its place when there is one, and codex's
   session config pins what their config could change (`project_doc_fallback_filenames` empty,
   `project_doc_max_bytes` at the same 32 KiB), so both runners read the same notes. Main reads
@@ -495,7 +553,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   follows. A codex
   session loads the founder's codex config with every MCP server turned off by the name
   `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
-  `main/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
+  `server/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
   out. One it cannot list refuses the run with codex's reason. No codex setting leaves all the
   founder's own skills out, nor their instructions or rules, so the seal keeps a codex run from
   reading them (their memories too), and IdleBiz's folder is handed to the session to read
@@ -503,7 +561,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   their rules allow still asks. A deny rule in
   managed settings outranks the flag tier's ask rules and would refuse a company tool's
   `idlebiz` command before IdleBiz is asked, the turn still ending as done, so a claude run under one does not
-  start, and says which rule (`refuseDeniedTools` in `main/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
+  start, and says which rule (`refuseDeniedTools` in `server/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
   says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt
   (`signedIn` in the driver), until a sign-in finds it again. A turn whose login the provider
@@ -514,7 +572,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   signed-out runner someone works on and who waits on it, the lead's steering included, beside
   a Sign in button.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
-  judgement, `holdFor` in `shared/command-policy.ts`; every turn sets the runner's asking mode
+  judgement, `holdFor` in `server/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
   may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
   payments, sends, remote copies, pipe-to-shell, credential reads) is signed for once,
@@ -579,14 +637,14 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   not know is safe. codex-acp's own modes either
   sandbox or never ask, so an upgrade must carry the patch. Chrome's sandbox is off in runs
   (`AGENT_BROWSER_ARGS=--no-sandbox`). The boot check runs plain node, so it cannot see a
-  runner's own sandbox; the gate tests can. `main/agents/claude-gate.test.ts` and
+  runner's own sandbox; the gate tests can. `server/agents/claude-gate.test.ts` and
   `codex-gate.test.ts` drive the real CLI through the app's adapter, sealed, against a
   stand-in model on loopback (nothing billed, a scratch config), and fail once a command nests
   or runs unasked (a push must reach `holdFor`), a founder's MCP server starts, a command
   escapes the seal, or a run rewrites the founder's config; claude's runs under founder
   settings that turn its sandbox on, codex's checks that the seal refuses a patch moving a
   file into the save.
-  They run in `pnpm --filter @repo/desktop test` on a Mac with that CLI installed and skip
+  They run in `pnpm --filter idlebiz test` on a Mac with that CLI installed and skip
   elsewhere, CI included.
 - **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
   stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
@@ -669,7 +727,7 @@ CI (see `AGENTS.md`).
 keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack)
 and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
 that is not both.
-Tests: `pnpm --filter @repo/desktop test` (geometry, schemas, command policy, temporary saves,
-real loopback requests and, on macOS, the seal and any installed CLI's gate; no window or
-Phaser), then `cargo test` the shell (`--manifest-path apps/desktop/src-tauri/Cargo.toml` from
-the root)
+Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
+loopback requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
+`pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
+`cargo test` over the shell)

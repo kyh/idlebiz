@@ -9,14 +9,18 @@ the dashboard can read your actual Stripe revenue and analytics.
 
 ## Layout
 
-- `apps/desktop` — the game: a Tauri app (a Rust shell around a React + Phaser page, and
-  main, the node process that runs the company).
-  Character sprites generate from bundled employee sheets at
-  `apps/desktop/resources/employee-sheets`.
+- `apps/desktop` — the game: a Tauri app, a Rust shell around a React + Phaser page.
+- `apps/cli` — the `idlebiz` binary: `idlebiz serve` is main, the node process that runs the
+  company, which the app runs as its child and which serves the page; every other verb is a
+  company tool the employees call. Character sprites generate from bundled employee sheets at
+  `apps/cli/resources/employee-sheets`.
 - `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
   Download button resolves the latest `.dmg` from GitHub releases.
+- `packages/domain`, `packages/contract` — the vocabulary both sides share, and the page's
+  API, an oRPC contract the server implements.
 - `packages/agent-driver` — spawns the player's `claude` / `codex` CLIs and
   normalizes their event streams.
+- `tools/e2e` — the Playwright suite over the built page and server.
 
 Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
@@ -44,7 +48,8 @@ On a Mac with Xcode's command line tools and the Rust toolchain
 (`apps/desktop/rust-toolchain.toml`). Signs with the Developer ID in the keychain (ad-hoc
 without one); notarizes with `apps/desktop/.env` (Apple notarization creds) and the
 `AuthKey_*.p8` at the repo root — both gitignored. Bump `version` in
-`apps/desktop/package.json` before publishing; the release is tagged `v<version>`.
+`apps/desktop/package.json` and `apps/cli/package.json` together before publishing; the release
+is tagged `v<version>`.
 
 Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
 agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).
