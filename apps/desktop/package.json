@@ -19,9 +19,9 @@
     "clean": "rm -rf .cache .output"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.79.0",
+    "@agentclientprotocol/claude-agent-acp": "^0.85.1",
     "@agentclientprotocol/codex-acp": "^1.12.0",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "catalog:",
@@ -37,17 +37,17 @@
     "@vitejs/plugin-react": "^6.1.1",
     "cn": "catalog:",
     "dotenv-cli": "^11.0.0",
-    "electron": "^44.4.5",
-    "electron-builder": "^26.15.7",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.17.0",
     "electron-log": "^5.4.4",
     "electron-vite": "^5.0.0",
-    "ignore": "^7.0.10",
+    "ignore": "^7.0.12",
     "phaser": "^4.2.1",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "^8.3.1",
+    "vite": "^8.3.2",
     "vitest": "catalog:",
     "zod": "catalog:"
   },

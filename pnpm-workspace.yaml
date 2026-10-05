@@ -5,16 +5,16 @@ packages:
 # One declaration per dep that more than one workspace uses, so versions
 # cannot drift between them.
 catalog:
-  "@agentclientprotocol/sdk": ^1.5.0
-  "@types/node": ^24.13.6
+  "@agentclientprotocol/sdk": ^1.7.0
+  "@types/node": ^24.19.1
   "@types/react": ^19.3.0
   "@types/react-dom": ^19.3.0
-  cn: ^0.3.3
+  cn: ^0.4.0
   react: ^19.3.0
   react-dom: ^19.3.0
   tailwindcss: ^4.3.3
   typescript: ^7.0.2
-  vitest: ^5.0.2
+  vitest: ^5.0.3
   zod: ^4.6.5
 
 allowBuilds:
