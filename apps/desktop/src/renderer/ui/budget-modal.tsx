@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
@@ -16,10 +16,10 @@ import {
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
-import { isOutOfBudget } from "@/shared/domain";
-import type { Budget } from "@/shared/domain";
-import { formatUsd } from "@/shared/format";
-import type { PrintfulTokenStatus, StripeKeyStatus, StripeStatus } from "@/shared/integrations";
+import { isOutOfBudget } from "@repo/domain/domain";
+import type { Budget } from "@repo/domain/domain";
+import { formatUsd } from "@repo/domain/format";
+import type { PrintfulTokenStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },
@@ -179,17 +179,17 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
 };
 
 const PrintfulToken = () => {
-  const read = useAsync(() => bridge().printfulTokenStatus(), []);
+  const read = useAsync(() => api().printful.tokenStatus(), []);
   const [answered, setAnswered] = useState<PrintfulTokenStatus | null>(null);
   const [draft, setDraft] = useState("");
   const saving = useSubmission(async (token: string) => {
-    await bridge().printfulTokenSave({ token });
+    await api().printful.saveToken({ token });
     setDraft("");
-    setAnswered(await bridge().printfulTokenStatus());
+    setAnswered(await api().printful.tokenStatus());
   });
   const removing = useSubmission(async () => {
-    await bridge().printfulTokenRemove();
-    setAnswered(await bridge().printfulTokenStatus());
+    await api().printful.removeToken();
+    setAnswered(await api().printful.tokenStatus());
   });
   const status = answered ?? (read.kind === "ready" ? read.value : null);
   if (read.kind === "failed" && answered === null) {

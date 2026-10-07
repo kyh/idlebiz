@@ -3,7 +3,7 @@ import { useSubmission } from "@/renderer/hooks/use-submission";
 import { copyText, resolveAction } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
-import type { ActionAsk, ActionReply, Task } from "@/shared/domain";
+import type { ActionAsk, ActionReply, Task } from "@repo/domain/domain";
 import { cn } from "cn";
 
 const Draft = ({ text }: { text: string }) => {

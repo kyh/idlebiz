@@ -6,10 +6,10 @@ import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import { feedKey, newestOf } from "@/renderer/state/activity-reducer";
 import type { FeedLine } from "@/renderer/state/activity-reducer";
-import { INTEGRATION_LABELS } from "@/shared/domain";
-import type { BlockedAsk } from "@/shared/domain";
-import { formatTime } from "@/shared/format";
-import { describeRule, shownKey } from "@/shared/hold-rules";
+import { INTEGRATION_LABELS } from "@repo/domain/domain";
+import type { BlockedAsk } from "@repo/domain/domain";
+import { formatTime } from "@repo/domain/format";
+import { describeRule, shownKey } from "@repo/domain/hold-rules";
 import { cn } from "cn";
 
 // The teammate says in the room that a command waits on the founder, so the answer sits beside it.

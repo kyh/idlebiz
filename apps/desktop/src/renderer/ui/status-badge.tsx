@@ -1,4 +1,4 @@
-import type { EmployeeStatus } from "@/shared/domain";
+import type { EmployeeStatus } from "@repo/domain/domain";
 import { cn } from "cn";
 
 /** Working or idle, in the colours the HUD uses for the same words. */

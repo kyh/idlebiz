@@ -3,7 +3,7 @@ import { useAsync } from "@/renderer/hooks/use-async";
 import type { Loaded } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { createProduct, killProduct, useStore } from "@/renderer/state/store";
 import { BetList } from "@/renderer/ui/bets";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
@@ -13,10 +13,10 @@ import { RichText } from "@/renderer/ui/linkify";
 import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
-import type { Employee, Product, ShipLine } from "@/shared/domain";
-import type { ProductStatus } from "@/shared/integrations";
-import { errorMessage } from "@/shared/errors";
-import { formatDate, formatUsd } from "@/shared/format";
+import type { Employee, Product, ShipLine } from "@repo/domain/domain";
+import type { ProductStatus } from "@repo/domain/integrations";
+import { errorMessage } from "@repo/domain/errors";
+import { formatDate, formatUsd } from "@repo/domain/format";
 import { cn } from "cn";
 
 const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
@@ -97,7 +97,7 @@ const ProductCard = ({
   const deploy = deploymentOf(status);
   const open = async () => {
     try {
-      await bridge().openProduct({ productId: product.id });
+      await api().products.open({ productId: product.id });
     } catch (error) {
       onNote(errorMessage(error));
     }
@@ -230,7 +230,7 @@ export const Ships = ({
   const [note, showNote] = useTransientNote(2500);
   const [picked, setPicked] = useState<string | null>(null);
   const log = useAsync(
-    async () => (company ? await bridge().shippingLog() : []),
+    async () => (company ? await api().tasks.shipped() : []),
     [company?.id, company?.ships],
   );
 
@@ -243,7 +243,7 @@ export const Ships = ({
   const selectedName = selectedProduct ? ` · ${selectedProduct.name}` : "";
   const openWorkspace = async () => {
     try {
-      await bridge().openCompanyPath({ rel: selectedProduct?.workspaceDir ?? "" });
+      await api().company.openPath({ rel: selectedProduct?.workspaceDir ?? "" });
     } catch (error) {
       showNote(errorMessage(error));
     }

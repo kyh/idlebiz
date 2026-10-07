@@ -26,8 +26,8 @@ import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
-import type { Employee } from "@/shared/domain";
-import type { WalkGrid } from "@/shared/office-grid";
+import type { Employee } from "@repo/domain/domain";
+import type { WalkGrid } from "@/renderer/game/office-grid";
 
 export type NpcState = Activity["kind"];
 

@@ -1,4 +1,4 @@
-import type { Employee } from "@/shared/domain";
+import type { Employee } from "@repo/domain/domain";
 
 export const employeeName = (
   employees: readonly Employee[],

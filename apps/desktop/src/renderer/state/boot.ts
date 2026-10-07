@@ -1,4 +1,4 @@
-import type { LoadSkip } from "@/shared/domain";
+import type { LoadSkip } from "@repo/domain/domain";
 
 /**
  * What the window shows: exactly one of these. A company boot could not read

@@ -1,6 +1,6 @@
-import { INTEGRATION_LABELS } from "@/shared/domain";
-import type { IntegrationNeed } from "@/shared/domain";
-import type { StripeKeyStatus, StripeStatus } from "@/shared/integrations";
+import { INTEGRATION_LABELS } from "@repo/domain/domain";
+import type { IntegrationNeed } from "@repo/domain/domain";
+import type { StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
 
 /** What an integration ask's card promises and what its button does. */
 export interface ConnectAskCopy {

@@ -153,7 +153,7 @@ export const aboutPage: ProsePage = {
       `${siteConfig.name} started from a simple question: what if an idle game's employees did real work? Coding agents are good enough now to write, test and ship small products on their own, but driving them one prompt at a time feels like micromanagement. ${siteConfig.name} gives them a company instead — an office, a team channel, a task queue and a budget — and lets you play the founder.`,
     ),
     p(
-      "The desktop app is built with Electron, React and Phaser. It does not ship its own model or hold any model-provider keys: each employee is a session of the claude or codex CLI you already use, so work runs under your account and your plan. The game schedules them, hands each one a brief grounded in what the company knows, and records what they ship.",
+      "The desktop app is built with Tauri, React and Phaser. It does not ship its own model or hold any model-provider keys: each employee is a session of the claude or codex CLI you already use, so work runs under your account and your plan. The game schedules them, hands each one a brief grounded in what the company knows, and records what they ship.",
     ),
     p(
       "Safety is part of the design, not an afterthought. Every run starts inside a macOS Seatbelt sandbox that seals your SSH keys, cloud logins, shell startup files and the app itself. Deploys, payment links and print listings go through tools that wait for your sign-off on the exact action. No tool pushes code: you push by hand from a fresh clone. A spending cap stops the scheduler before a run starts, not after.",

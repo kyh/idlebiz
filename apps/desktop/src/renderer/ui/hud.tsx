@@ -6,12 +6,12 @@ import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
 import { Bust } from "@/renderer/ui/bust";
 import { useStore, setAutopilot } from "@/renderer/state/store";
-import { isOutOfBudget } from "@/shared/domain";
-import type { Company, Employee, Product } from "@/shared/domain";
+import { isOutOfBudget } from "@repo/domain/domain";
+import type { Company, Employee, Product } from "@repo/domain/domain";
 import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { ProductStatus } from "@/shared/integrations";
-import { earliestReset, formatCompact, napLabel, usageLabel } from "@/shared/format";
+import type { ProductStatus } from "@repo/domain/integrations";
+import { earliestReset, formatCompact, napLabel, usageLabel } from "@repo/domain/format";
 import { cn } from "cn";
 
 // VG5000 has no alert glyph; the colored emoji is intentional.

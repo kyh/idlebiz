@@ -6,7 +6,7 @@ import react from "ultracite/oxlint/react";
 
 export default defineConfig({
   extends: [core, react, antiSlop],
-  ignorePatterns: [...(core.ignorePatterns ?? []), "dist-electron", ".claude", "*.tsbuildinfo"],
+  ignorePatterns: [...(core.ignorePatterns ?? []), "target", ".claude", "*.tsbuildinfo"],
   options: { typeAware: true },
   overrides: [{ files: ["apps/web/**"], plugins: next.plugins, rules: next.rules }],
   rules: {

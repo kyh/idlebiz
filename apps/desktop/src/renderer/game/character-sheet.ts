@@ -2,10 +2,10 @@
 // origin and the soles sit, what a seated bust covers, and what its anims are
 // called. No Phaser here, so the seat oracle and the movement math can be
 // unit-tested; loading the sheet into a scene is characters.ts.
-import { CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW } from "@/shared/character-frame";
-import type { Dir, SitSide } from "@/shared/character-frame";
+import { CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW } from "@repo/domain/character-frame";
+import type { Dir, SitSide } from "@repo/domain/character-frame";
 
-export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@/shared/character-frame";
+export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@repo/domain/character-frame";
 
 // Six frames per row: walk down/left/right/up (rows 0-3), then sit-left (row 4)
 // and sit-right (row 5).

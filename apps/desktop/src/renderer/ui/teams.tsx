@@ -6,7 +6,7 @@ import { Bust } from "@/renderer/ui/bust";
 import { employeeName, jobTitle } from "@/renderer/ui/employee-name";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { Modal } from "@/renderer/ui/modal";
-import type { Employee, TeamMessage } from "@/shared/domain";
+import type { Employee, TeamMessage } from "@repo/domain/domain";
 
 const RosterCard = ({
   emp,

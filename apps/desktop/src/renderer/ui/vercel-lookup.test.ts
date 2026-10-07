@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BlockedAsk } from "@/shared/domain";
-import type { VercelListing, VercelProject } from "@/shared/integrations";
+import type { BlockedAsk } from "@repo/domain/domain";
+import type { VercelListing, VercelProject } from "@repo/domain/integrations";
 import { awaitsVercelToken, lookupFor, problemOf } from "./vercel-lookup";
 
 const project: VercelProject = { id: "prj_1", name: "acme" };

@@ -1,6 +1,6 @@
 import { Component } from "react";
 import type { ReactNode } from "react";
-import { errorMessage } from "@/shared/errors";
+import { errorMessage } from "@repo/domain/errors";
 
 // Catch overlay errors without unmounting the Phaser canvas.
 interface Crashed {

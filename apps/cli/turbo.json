@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.org/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The page this bundle stages is `@repo/desktop#build`'s output, and the desktop in turn packs
+    // this bundle, so the order is named here rather than inherited through `^build` on both, which
+    // would be a cycle: the page first, then this bundle, which stages it.
+    "build": {
+      "dependsOn": ["^topo", "@repo/desktop#build"],
+      "outputs": ["dist/**"]
+    }
+  }
+}

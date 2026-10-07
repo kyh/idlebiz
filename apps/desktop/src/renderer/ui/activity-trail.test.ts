@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityEvent } from "@/shared/activity";
+import type { ActivityEvent } from "@repo/domain/activity";
 import { tasksMovedBy, trailOf } from "./activity-trail";
 
 const inRun = { createdAt: 0, employeeId: "bo", runId: "r1", taskId: "t1" };

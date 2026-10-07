@@ -9,10 +9,10 @@ import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { approvalScope, describeRule, shownKey } from "@/shared/hold-rules";
-import { INTEGRATION_LABELS } from "@/shared/domain";
+import { approvalScope, describeRule, shownKey } from "@repo/domain/hold-rules";
+import { INTEGRATION_LABELS } from "@repo/domain/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { IntegrationAsk, IntegrationNeed, Task, TaskIn } from "@/shared/domain";
+import type { IntegrationAsk, IntegrationNeed, Task, TaskIn } from "@repo/domain/domain";
 import { cn } from "cn";
 
 // Connecting resumes integration asks automatically; no text answer is needed.

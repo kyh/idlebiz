@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { useAsync } from "@/renderer/hooks/use-async";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useStore, setMaxAgents } from "@/renderer/state/store";
@@ -8,8 +8,8 @@ import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
-import { MAX_AGENTS, MaxAgentsSchema } from "@/shared/domain";
-import type { LaunchAtLogin } from "@/shared/domain";
+import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
+import type { LaunchAtLogin } from "@repo/domain/domain";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
   { label: "Off", value: "off" },
@@ -36,10 +36,10 @@ const LOGIN_LINES: Record<LaunchAtLogin, string> = {
 };
 
 const LaunchAtLoginSetting = () => {
-  const read = useAsync(() => bridge().launchAtLogin(), []);
+  const read = useAsync(() => api().app.launchAtLogin(), []);
   const [answered, setAnswered] = useState<LaunchAtLogin | null>(null);
   const setting = useSubmission(async (on: boolean) => {
-    setAnswered(await bridge().setLaunchAtLogin({ on }));
+    setAnswered(await api().app.setLaunchAtLogin({ on }));
   });
   const state = answered ?? (read.kind === "ready" ? read.value : null);
 
@@ -80,7 +80,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
     await setMaxAgents(n);
     setCap(null);
   });
-  const resetting = useSubmission(() => bridge().resetGame());
+  const resetting = useSubmission(() => api().save.reset());
 
   if (!company) {
     return null;

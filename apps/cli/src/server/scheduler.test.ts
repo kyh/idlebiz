@@ -1,0 +1,1315 @@
+import { once } from "node:events";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { zeroUsage } from "@repo/agent-driver/events";
+import type { ActivityEvent } from "@repo/domain/activity";
+import { MAX_TASK_ATTEMPTS } from "@repo/domain/domain";
+import type { BlockedAsk, Budget, BusinessTypeId, Task, TaskOrigin } from "@repo/domain/domain";
+import { RefusalError } from "./refusal";
+import type { RunResult, RunTools } from "./agents/agent-driver";
+import { keepAwake } from "./keep-awake";
+import type { KeepAwake, PowerBlocker } from "./keep-awake";
+import type { EmployeeRunner } from "./scheduler";
+
+const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
+const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
+process.env.IDLEBIZ_ROOT_DIR = root;
+const store = await import("./store/store");
+const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
+const { writeMetricsConfig } = await import("./store/metrics-config");
+const { activityEvents } = await import("./activity");
+const { createScheduler, loggedToolName } = await import("./scheduler");
+const { setAutopilot } = await import("./company-actions");
+
+beforeEach(() => {
+  rmSync(root, { force: true, recursive: true });
+  store.initStore();
+});
+
+afterAll(() => {
+  rmSync(root, { force: true, recursive: true });
+  if (previousRoot === undefined) {
+    delete process.env.IDLEBIZ_ROOT_DIR;
+  } else {
+    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
+  }
+});
+
+const NAMES = ["Priya", "Mae", "Sam", "Ana"];
+
+const asleep: KeepAwake = { hold: () => {} };
+
+/** A power blocker that only keeps count: the ids held now, and how many were ever started. */
+const fakeBlocker = () => {
+  const held = new Set<number>();
+  let started = 0;
+  const blocker: PowerBlocker = {
+    start: () => {
+      started += 1;
+      held.add(started);
+      return started;
+    },
+    stop: (id) => held.delete(id),
+  };
+  return { blocker, held, started: () => started };
+};
+
+const UNCAPPED: Budget = { mode: "infinite" };
+
+const found = (budget: Budget = UNCAPPED, businessType: BusinessTypeId = "software") =>
+  store.foundCompany({
+    budget,
+    businessType,
+    founderName: "Kai",
+    founderSpriteSeed: "seed",
+    hires: NAMES.map((name) => ({
+      name,
+      persona: "ships",
+      role: "engineer",
+      runner: name === "Ana" ? "codex" : "claude",
+      spriteSeed: name,
+      title: "Engineer",
+    })),
+    mission: "ship",
+    name: "Acme",
+  });
+
+const done = (costUsd = 0): RunResult => ({
+  instructionsDigest: null,
+  outcome: { kind: "done" },
+  session: null,
+  summary: "shipped it",
+  usage: { ...zeroUsage(), costUsd },
+});
+
+const SESSION = { id: "session-1", workspace: "/save/workspace" };
+
+const interrupted: RunResult = { ...done(), outcome: { kind: "interrupted" } };
+
+/** A runner whose runs end when the test says so, or as interrupted the moment they are aborted. */
+const scripted = () => {
+  const running = new Map<string, (result: RunResult) => void>();
+  const tools = new Map<string, RunTools>();
+  const resting = new Set<string>();
+  const signedOut = new Set<string>();
+  const seal = { holds: true };
+  let started = 0;
+  const driver: EmployeeRunner = {
+    pickRunner: () => "claude",
+    restingRunner: (runner) => (resting.has(runner) ? Date.now() + 60_000 : null),
+    runTask: (emp, _company, _task, _onEvent, runTools, signal) =>
+      // oxlint-disable-next-line promise/avoid-new -- the test resolves it by hand
+      new Promise<RunResult>((resolve) => {
+        started += 1;
+        running.set(emp.id, resolve);
+        tools.set(emp.id, runTools);
+        signal.addEventListener("abort", () => resolve(interrupted), { once: true });
+      }),
+    runsSealed: () => seal.holds,
+    signedIn: (runner) => !signedOut.has(runner),
+  };
+  return { driver, resting, running, seal, signedOut, started: () => started, tools };
+};
+
+const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
+  const task = store.createTask({
+    assigneeId: employeeId,
+    origin: "founder",
+    priority,
+    title: `Work for ${employeeId}`,
+  });
+  store.claimTask(task.id, employeeId);
+  return task;
+};
+
+const kindOf = (task: Task): string | undefined => store.getTask(task.id)?.state.kind;
+
+/** Every run.end published from here on; `stop` unsubscribes. */
+const runEnds = () => {
+  const ended: ActivityEvent[] = [];
+  const listen = (e: ActivityEvent) => {
+    if (e.kind === "run.end") {
+      ended.push(e);
+    }
+  };
+  activityEvents.on("activity", listen);
+  return { ended, stop: () => activityEvents.off("activity", listen) };
+};
+
+it("ignores queue drains after stop and resumes admission only after start", () => {
+  found({ capUsd: 0, mode: "capped" });
+  const task = queue("priya");
+  const drain = createScheduler(scripted().driver, asleep);
+
+  drain.stop();
+  drain.tick();
+
+  expect(store.getCompany()?.autopilot).toBe(true);
+  expect(kindOf(task)).toBe("queued");
+
+  drain.start();
+
+  expect(store.getCompany()?.autopilot).toBe(false);
+  expect(kindOf(task)).toBe("queued");
+  expect(store.getEmployee("priya")?.status).toBe("idle");
+  drain.stop();
+});
+
+it("files the founder's pings at the cap, to run once the cap is raised", () => {
+  found({ capUsd: 0, mode: "capped" });
+  const { driver, started } = scripted();
+  const drain = createScheduler(driver, asleep);
+  drain.start();
+
+  drain.directEmployee("priya", "daily standup");
+  drain.founderMessage("@mae hello");
+
+  expect(store.listQueuedTasks().map((t) => t.assigneeId)).toEqual(["priya", "mae"]);
+  expect(started()).toBe(0);
+
+  store.setBudget(UNCAPPED);
+  drain.tick();
+
+  expect(started()).toBe(2);
+  drain.stop();
+});
+
+it("refuses to start autopilot while the office is out of budget", () => {
+  found({ capUsd: 0, mode: "capped" });
+  const drain = createScheduler(scripted().driver, asleep);
+  drain.start();
+
+  expect(() => setAutopilot(true)).toThrow(RefusalError);
+  expect(store.getCompany()?.autopilot).toBe(false);
+
+  store.setBudget(UNCAPPED);
+  expect(setAutopilot(true).autopilot).toBe(true);
+  drain.stop();
+});
+
+/** A listener that fails as a full disk would, on a run's start alone. */
+const refuseRunStart = (e: ActivityEvent) => {
+  if (e.kind === "run.start") {
+    throw new Error("disk full");
+  }
+};
+
+describe("keeping the Mac awake", () => {
+  it("still runs, and lets go, when a run's start cannot be announced", async () => {
+    found();
+    const { driver, running } = scripted();
+    const power = fakeBlocker();
+    const drain = createScheduler(driver, keepAwake(power.blocker));
+    activityEvents.on("activity", refuseRunStart);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    queue("priya");
+    try {
+      drain.tick();
+    } finally {
+      activityEvents.off("activity", refuseRunStart);
+      logged.mockRestore();
+    }
+    expect(running.size).toBe(1);
+    expect(power.held.size).toBe(1);
+
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(power.held.size).toBe(0));
+  });
+
+  it("holds one blocker while any run is in flight and lets go when the last ends", async () => {
+    found();
+    const { driver, running } = scripted();
+    const power = fakeBlocker();
+    const drain = createScheduler(driver, keepAwake(power.blocker));
+    queue("priya");
+    queue("mae");
+
+    drain.tick();
+    expect(running.size).toBe(2);
+    expect(power.held.size).toBe(1);
+
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    expect(power.held.size).toBe(1);
+
+    running.get("mae")?.(done());
+    await vi.waitFor(() => expect(power.held.size).toBe(0));
+    expect(power.started()).toBe(1);
+  });
+
+  it("lets go when a run throws, and when a shutdown aborts one", async () => {
+    found();
+    const power = fakeBlocker();
+    const broken: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: () => Promise.reject(new Error("spawn failed")),
+    };
+    queue("priya");
+    createScheduler(broken, keepAwake(power.blocker)).tick();
+    await vi.waitFor(() => expect(power.started()).toBe(1));
+    await vi.waitFor(() => expect(power.held.size).toBe(0));
+
+    const drain = createScheduler(scripted().driver, keepAwake(power.blocker));
+    queue("mae");
+    drain.tick();
+    expect(power.held.size).toBe(1);
+    await drain.shutdown();
+    expect(power.held.size).toBe(0);
+  });
+});
+
+describe("draining the queue", () => {
+  it("keeps a slot back for the founder", () => {
+    found();
+    const { driver, running } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const background = ["priya", "mae", "sam"].map((id) => queue(id));
+
+    drain.tick();
+    drain.tick();
+
+    expect(background.map(kindOf)).toEqual(["running", "running", "queued"]);
+    expect(running.size).toBe(2);
+  });
+
+  it("gives the reserved slot to the founder's request", () => {
+    found();
+    const { driver } = scripted();
+    const drain = createScheduler(driver, asleep);
+    queue("priya");
+    queue("mae");
+    const urgent = queue("ana", "high");
+    const waiting = queue("sam");
+
+    drain.tick();
+
+    expect(kindOf(urgent)).toBe("running");
+    expect(kindOf(waiting)).toBe("queued");
+  });
+
+  it("starts the next task when one cannot be locked, and retries it next tick", () => {
+    const company = found();
+    const drain = createScheduler(scripted().driver, asleep);
+    const stuck = queue("priya", "high");
+    const next = queue("mae");
+    const taskDir = path.join(tasksDir(company.id), stuck.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(taskDir, 0o555);
+    try {
+      expect(() => drain.tick()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(`[start task ${stuck.id}]`, expect.anything());
+    } finally {
+      chmodSync(taskDir, 0o755);
+      logged.mockRestore();
+    }
+    expect(store.getEmployee("priya")?.status).toBe("idle");
+    expect(kindOf(stuck)).toBe("queued");
+    expect(kindOf(next)).toBe("running");
+
+    drain.tick();
+
+    expect(kindOf(stuck)).toBe("running");
+  });
+
+  it("runs every step of the timer's tick past a fault in one", () => {
+    found();
+    const drain = createScheduler(
+      {
+        ...scripted().driver,
+        restingRunner: () => {
+          throw new Error("disk full");
+        },
+      },
+      asleep,
+    );
+    queue("priya");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => drain.start()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith("[drain queue]", expect.anything());
+      expect(logged).toHaveBeenCalledWith("[autopilot]", expect.anything());
+    } finally {
+      drain.stop();
+      logged.mockRestore();
+    }
+  });
+
+  it("starts nothing on a runner that is resting", () => {
+    found();
+    const { driver, resting } = scripted();
+    resting.add("codex");
+    const parked = queue("ana");
+    const free = queue("priya");
+
+    createScheduler(driver, asleep).tick();
+
+    expect(kindOf(parked)).toBe("queued");
+    expect(kindOf(free)).toBe("running");
+  });
+
+  it("starts nothing on a runner no sign-in found, so its work spends no attempt", () => {
+    found();
+    const { driver, signedOut } = scripted();
+    signedOut.add("codex");
+    const parked = queue("ana");
+    const free = queue("priya");
+
+    createScheduler(driver, asleep).tick();
+
+    expect(kindOf(parked)).toBe("queued");
+    expect(kindOf(free)).toBe("running");
+  });
+});
+
+describe("a seal the boot check refuses", () => {
+  it("starts and files nothing, so no task spends an attempt, until the seal holds", () => {
+    found();
+    const { driver, seal, started } = scripted();
+    seal.holds = false;
+    const drain = createScheduler(driver, asleep);
+    const task = queue("priya");
+
+    drain.start();
+    for (let tick = 0; tick <= MAX_TASK_ATTEMPTS; tick += 1) {
+      drain.tick();
+    }
+    drain.stop();
+
+    expect(started()).toBe(0);
+    expect(store.getTask(task.id)).toMatchObject({ attempts: 0, state: { kind: "queued" } });
+    expect(store.listOpenTasks()).toHaveLength(1);
+
+    seal.holds = true;
+    drain.start();
+    drain.stop();
+
+    expect(kindOf(task)).toBe("running");
+  });
+});
+
+describe("assigning", () => {
+  it("refuses a task that cannot be claimed", () => {
+    found();
+    const task = queue("priya");
+    const drain = createScheduler(scripted().driver, asleep);
+
+    expect(() => drain.assign(task.id, "mae")).toThrow(RefusalError);
+    expect(store.getTask(task.id)?.assigneeId).toBe("priya");
+  });
+
+  it("lets a fault while queuing reach the caller", () => {
+    found();
+    const { driver } = scripted();
+    const drain = createScheduler(
+      {
+        ...driver,
+        restingRunner: () => {
+          throw new Error("disk full");
+        },
+      },
+      asleep,
+    );
+
+    expect(() => drain.directEmployee("priya", "ship it")).toThrow("disk full");
+  });
+});
+
+const runOne = async (result: RunResult, betId: string | null = null) => {
+  const company = found();
+  const { driver, running } = scripted();
+  const task = store.createTask({
+    assigneeId: "priya",
+    betId,
+    origin: "founder",
+    title: "Work",
+  });
+  store.claimTask(task.id, "priya");
+  createScheduler(driver, asleep).tick();
+  running.get("priya")?.(result);
+  await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+  return { company, task };
+};
+
+describe("settling a run", () => {
+  it("ships finished work, frees the employee and ends the run once", async () => {
+    const runs = runEnds();
+    const { task } = await runOne(done(0.5));
+    runs.stop();
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.getCompany()).toMatchObject({ ships: 1, spentUsd: 0.5 });
+    expect(runs.ended).toMatchObject([{ payload: { costUsd: 0.5 }, taskId: task.id }]);
+  });
+
+  it("bills the run to the bet it worked for", async () => {
+    found();
+    const [product] = store.listProducts();
+    const bet = store.openBet({
+      budgetUsd: 5,
+      hypothesis: "a post brings visitors",
+      landingPath: null,
+      metric: "users",
+      productId: product?.id ?? "",
+      target: 50,
+      title: "Launch post",
+      windowHours: 24,
+    });
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver, asleep).tick();
+    running.get("priya")?.(done(1.25));
+    await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
+  });
+
+  it("books the spend, frees the employee and ends the run when the settle cannot write", async () => {
+    const company = found();
+    const { driver, running } = scripted();
+    const task = queue("priya");
+    createScheduler(driver, asleep).tick();
+    const taskDir = path.join(tasksDir(company.id), task.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const runs = runEnds();
+    chmodSync(taskDir, 0o555);
+    try {
+      running.get("priya")?.(done(0.5));
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+      expect(logged).toHaveBeenCalledOnce();
+    } finally {
+      chmodSync(taskDir, 0o755);
+      logged.mockRestore();
+      runs.stop();
+    }
+    expect(kindOf(task)).not.toBe("running");
+    expect(store.getCompany()?.spentUsd).toBe(0.5);
+    expect(runs.ended).toMatchObject([{ payload: { outcome: { kind: "done" } }, taskId: task.id }]);
+  });
+
+  it("settles the run and frees the employee when the spend cannot write", async () => {
+    const company = found();
+    const { driver, running } = scripted();
+    const task = queue("priya");
+    createScheduler(driver, asleep).tick();
+    const dir = companyDir(company.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(dir, 0o555);
+    try {
+      running.get("priya")?.(done(0.5));
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("book run"), expect.anything());
+    } finally {
+      chmodSync(dir, 0o755);
+      logged.mockRestore();
+    }
+    expect(kindOf(task)).not.toBe("running");
+    expect(store.getCompany()?.spentUsd).toBe(0.5);
+
+    store.setAutopilot(false);
+    store.initStore();
+
+    expect(store.getCompany()).toMatchObject({ ships: 1, spentUsd: 0.5 });
+  });
+
+  it("holds a task that asked the founder something", async () => {
+    const { task } = await runOne({
+      ...done(),
+      outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
+    });
+    expect(store.getTask(task.id)?.state).toMatchObject({ kind: "blocked" });
+  });
+
+  it("queues a failed run to retry, one attempt spent", async () => {
+    const { task } = await runOne({ ...done(), outcome: { error: "boom", kind: "failed" } });
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 1,
+      state: { kind: "queued", lastError: "boom" },
+    });
+  });
+
+  it("parks a rate-limited run without spending an attempt", async () => {
+    const until = Date.now() + 60_000;
+    const { task } = await runOne({
+      ...done(),
+      outcome: { error: "usage limit", kind: "resting", until },
+    });
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 0,
+      state: { kind: "queued", nextAttemptAt: until },
+    });
+  });
+
+  it("parks a run whose runner's login was refused, spending no attempt, until a sign-in finds it", async () => {
+    found();
+    const { driver, running, signedOut } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const task = queue("priya");
+    drain.tick();
+    const error = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
+    // the driver reads the runner as signed out before the run settles
+    signedOut.add("claude");
+    running.get("priya")?.({ ...done(), outcome: { error, kind: "signedOut" } });
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    drain.tick();
+    expect(store.getTask(task.id)).toMatchObject({
+      attempts: 0,
+      state: { kind: "queued", lastError: error },
+    });
+
+    signedOut.delete("claude");
+    drain.tick();
+    expect(kindOf(task)).toBe("running");
+  });
+
+  it("requeues runs cut short by a quit, no attempt spent, and starts nothing after them", async () => {
+    found();
+    const { driver, started } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const cut = [queue("priya"), queue("mae")];
+    const waiting = queue("sam");
+    drain.tick();
+    expect(started()).toBe(2);
+
+    await drain.shutdown();
+
+    expect(store.getEmployee("mae")?.status).toBe("idle");
+    for (const task of cut) {
+      expect(store.getTask(task.id)).toMatchObject({
+        attempts: 0,
+        state: { kind: "queued", lastError: "Interrupted by app quit" },
+      });
+    }
+    expect(store.getEmployee("priya")?.status).toBe("idle");
+    expect(kindOf(waiting)).toBe("queued");
+    expect(started()).toBe(2);
+  });
+
+  it("waits for an aborted run to settle before it resolves", async () => {
+    found();
+    const slow: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: async (_emp, _company, _task, _onEvent, _tools, signal) => {
+        await once(signal, "abort");
+        await delay(50);
+        return interrupted;
+      },
+    };
+    const drain = createScheduler(slow, asleep);
+    const task = queue("priya");
+    drain.tick();
+
+    await drain.shutdown();
+
+    expect(store.getEmployee("priya")?.status).toBe("idle");
+    expect(kindOf(task)).toBe("queued");
+  });
+
+  it("stops waiting on a run that never settles once the grace is up", async () => {
+    found();
+    const stuck: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: () => Promise.withResolvers<RunResult>().promise,
+    };
+    const drain = createScheduler(stuck, asleep);
+    const task = queue("priya");
+    drain.tick();
+
+    await drain.shutdown(10);
+
+    expect(kindOf(task)).toBe("running");
+  });
+
+  it("remembers the session and the instructions it now holds", async () => {
+    await runOne({ ...done(), instructionsDigest: "told", session: SESSION });
+    expect(store.getEmployee("priya")).toMatchObject({
+      instructionsDigest: "told",
+      session: SESSION,
+    });
+  });
+
+  it("keeps the session and what it was told when the runner throws", async () => {
+    found();
+    store.noteRunEnd("priya", { instructionsDigest: "told", session: SESSION });
+    const broken: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: () => Promise.reject(new Error("no CLI")),
+    };
+    queue("priya");
+    createScheduler(broken, asleep).tick();
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    expect(store.getEmployee("priya")).toMatchObject({
+      instructionsDigest: "told",
+      session: SESSION,
+    });
+  });
+
+  it("takes an unused sign-off away with the task", async () => {
+    found();
+    const { driver, running } = scripted();
+    const task = queue("priya");
+    store.grantApproval(task.id, "git push");
+    createScheduler(driver, asleep).tick();
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    expect(store.consumeApproval(task.id, "git push")).toBe(false);
+  });
+});
+
+const onProduct = (employeeId: string, productId: string) => {
+  const task = store.createTask({
+    assigneeId: employeeId,
+    origin: "founder",
+    productId,
+    title: `Work for ${employeeId}`,
+  });
+  store.claimTask(task.id, employeeId);
+  return task;
+};
+
+/** The deploy lands in the first product's workspace; the side product has its own. */
+const twoProducts = () => {
+  found();
+  const home = store.listProducts()[0]?.id ?? "";
+  const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+  const { driver, resting, running } = scripted();
+  return { drain: createScheduler(driver, asleep), home, resting, running, side };
+};
+
+/** Run the employee's work on the product until it asks the founder to deploy it. */
+const askToDeploy = async (
+  { drain, running }: ReturnType<typeof twoProducts>,
+  employeeId: string,
+  productId: string,
+) => {
+  const task = onProduct(employeeId, productId);
+  drain.tick();
+  running.get(employeeId)?.({
+    ...done(),
+    outcome: {
+      ask: { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+      kind: "blocked",
+    },
+  });
+  await vi.waitFor(() => expect(store.getEmployee(employeeId)?.status).toBe("idle"));
+  return task;
+};
+
+describe("a run the founder signed for", () => {
+  it("waits for the run already in its workspace, and nobody new starts there meanwhile", async () => {
+    const office = twoProducts();
+    const { drain, home, running, side } = office;
+    onProduct("mae", home);
+    drain.tick();
+    const ask = await askToDeploy(office, "priya", home);
+
+    const deploy = drain.resolveApproval(ask.id, true);
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    expect(kindOf(deploy)).toBe("queued");
+    expect(kindOf(beside)).toBe("queued");
+
+    const elsewhere = onProduct("ana", side);
+    drain.tick();
+
+    expect(kindOf(elsewhere)).toBe("running");
+
+    running.get("mae")?.(done());
+    await vi.waitFor(() => expect(kindOf(deploy)).toBe("running"));
+  });
+
+  it("has its workspace to itself while another product's work goes on", async () => {
+    const office = twoProducts();
+    const { drain, home, running, side } = office;
+    const ask = await askToDeploy(office, "priya", home);
+
+    const deploy = drain.resolveApproval(ask.id, true);
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    expect(kindOf(deploy)).toBe("running");
+    expect(kindOf(beside)).toBe("queued");
+
+    const elsewhere = onProduct("ana", side);
+    drain.tick();
+
+    expect(kindOf(elsewhere)).toBe("running");
+
+    running.get("priya")?.(done());
+    await vi.waitFor(() => expect(kindOf(beside)).toBe("running"));
+  });
+
+  it("holds nobody back while its own runner rests", async () => {
+    const office = twoProducts();
+    const { drain, home, resting } = office;
+    const ask = await askToDeploy(office, "ana", home);
+    resting.add("codex");
+
+    const deploy = drain.resolveApproval(ask.id, true);
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    expect(kindOf(deploy)).toBe("queued");
+    expect(kindOf(beside)).toBe("running");
+  });
+});
+
+const openBet = (budgetUsd: number) => {
+  const [product] = store.listProducts();
+  return store.openBet({
+    budgetUsd,
+    hypothesis: "a post brings visitors",
+    landingPath: null,
+    metric: "users",
+    productId: product?.id ?? "",
+    target: 50,
+    title: "Launch post",
+    windowHours: 24,
+  });
+};
+
+/** Leave the lead (Priya, the first hire) waiting on the founder over a task of this origin. */
+const blockOnLead = (origin: TaskOrigin) => {
+  const task = store.createTask({ assigneeId: "priya", origin, title: "Ask first" });
+  store.claimTask(task.id, "priya");
+  store.lockTaskForRun(task.id, "run-1");
+  store.settleTask(task.id, "run-1", {
+    ask: { question: "Which way?", type: "question" },
+    kind: "blocked",
+    summary: null,
+  });
+};
+
+const routinesFiled = () => store.listOpenTasks().filter((t) => t.origin === "routine");
+
+const proposing = () =>
+  store.openTasksFor("priya").filter((t) => t.origin === "propose" && t.state.kind === "running");
+
+describe("asking the lead for the next bet", () => {
+  it.each<TaskOrigin>(["routine", "founder", "delegated"])(
+    "goes on while the lead's %s ask waits on the founder",
+    (origin) => {
+      found();
+      blockOnLead(origin);
+      const drain = createScheduler(scripted().driver, asleep);
+
+      drain.start();
+      drain.stop();
+
+      expect(proposing()).toHaveLength(1);
+    },
+  );
+
+  it("hands the proposal tools that fund nothing but the bet it opens", async () => {
+    found();
+    const { driver, tools } = scripted();
+    const drain = createScheduler(driver, asleep);
+
+    drain.start();
+    drain.stop();
+
+    expect(proposing()).toHaveLength(1);
+    const handoff = { description: "write it", role: "engineer", title: "Draft the post" };
+    expect(await tools.get("priya")?.call("POST /v1/delegate", handoff)).toContain(
+      "open_bet first",
+    );
+  });
+
+  it("waits while the lead's last proposal does", () => {
+    found();
+    blockOnLead("propose");
+    const drain = createScheduler(scripted().driver, asleep);
+
+    drain.start();
+    drain.stop();
+
+    expect(proposing()).toEqual([]);
+  });
+});
+
+describe("a file the save refuses on every tick", () => {
+  it("judges the other bets and still starts queued work past a verdict that cannot write", () => {
+    const company = found();
+    const stuck = openBet(5);
+    const other = openBet(5);
+    for (const bet of [stuck, other]) {
+      store.setBetReading(bet.id, 60, Date.now());
+    }
+    const task = queue("priya");
+    const drain = createScheduler(scripted().driver, asleep);
+    const dir = path.dirname(betFile(company.id, stuck.id));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => drain.start()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(`[judge bet ${stuck.id}]`, expect.anything());
+    } finally {
+      drain.stop();
+      chmodSync(dir, 0o755);
+      logged.mockRestore();
+    }
+    expect(store.getBet(stuck.id)?.state.kind).toBe("open");
+    expect(store.getBet(other.id)?.state.kind).toBe("won");
+    expect(kindOf(task)).toBe("running");
+  });
+
+  it("still sends idle hands to work past a due routine that cannot be marked run", () => {
+    const company = found(UNCAPPED, "game-studio");
+    const [routine] = store.listRoutines();
+    const drain = createScheduler(scripted().driver, asleep);
+    const dir = path.dirname(routineFile(company.id, routine?.id ?? ""));
+    vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => drain.start()).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(`[mark routine ${routine?.id}]`, expect.anything());
+    } finally {
+      drain.stop();
+      chmodSync(dir, 0o755);
+      logged.mockRestore();
+      vi.useRealTimers();
+    }
+    expect(proposing()).toHaveLength(1);
+    expect(routinesFiled()).toEqual([]);
+  });
+});
+
+describe("a due routine", () => {
+  it("goes only to someone whose runner can start it, and waits till one can", () => {
+    found(UNCAPPED, "game-studio");
+    const { driver, signedOut } = scripted();
+    const drain = createScheduler(driver, asleep);
+    vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
+    try {
+      signedOut.add("claude").add("codex");
+      drain.start();
+      drain.stop();
+      expect(routinesFiled()).toEqual([]);
+      expect(store.listRoutines()[0]?.lastRunAt).toBeNull();
+
+      signedOut.delete("codex");
+      drain.start();
+      drain.stop();
+      expect(routinesFiled()).toMatchObject([{ assigneeId: "ana" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("a bet that stops taking work mid-run", () => {
+  it("drops the task of a run that parks, rather than queue it again, and counts no failure", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver, asleep).tick();
+    store.measureBet(bet.id, Date.now());
+    const heard: ActivityEvent[] = [];
+    const listen = (e: ActivityEvent) => heard.push(e);
+    activityEvents.on("activity", listen);
+    try {
+      running.get("priya")?.({
+        ...done(),
+        outcome: { error: "usage limit", kind: "resting", until: Date.now() + 60_000 },
+      });
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.listShippedTasks()).toMatchObject([
+      { id: task.id, state: { kind: "dropped", reason: "bet is measuring" } },
+    ]);
+    expect(heard.filter((e) => e.kind === "task.dead")).toEqual([]);
+    expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dropped" });
+  });
+
+  it("drops the task of a run that asks the founder once its bet has closed", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, running } = scripted();
+    const task = store.createTask({
+      assigneeId: "priya",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.claimTask(task.id, "priya");
+    createScheduler(driver, asleep).tick();
+    store.killBet(bet.id, "dud", Date.now());
+    const heard: ActivityEvent[] = [];
+    const listen = (e: ActivityEvent) => heard.push(e);
+    activityEvents.on("activity", listen);
+    try {
+      running.get("priya")?.({
+        ...done(),
+        outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
+      });
+      await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+
+    expect(store.getTask(task.id)).toBeNull();
+    expect(store.listShippedTasks()).toMatchObject([
+      { id: task.id, state: { kind: "dropped", reason: "bet closed" } },
+    ]);
+    expect(heard.find((e) => e.kind === "status")).toMatchObject({ message: "dropped" });
+    expect(heard.find((e) => e.kind === "run.end")).toMatchObject({
+      payload: { outcome: { kind: "blocked" }, settled: "dropped" },
+    });
+  });
+
+  it("names none of the work a killed bet dropped among the failures in the lead's next brief", () => {
+    found();
+    const bet = openBet(5);
+    store.createTask({ assigneeId: "mae", betId: bet.id, origin: "work", title: "Post it" });
+    store.killBet(bet.id, "dud", Date.now());
+    const drain = createScheduler(scripted().driver, asleep);
+
+    drain.start();
+    drain.stop();
+
+    expect(proposing()[0]?.description).toContain("fixing or unblocking:\n(none)");
+  });
+});
+
+describe("a release", () => {
+  it("frees a spent-out bet for the lead to settle once the leaver's queued work goes", () => {
+    found();
+    const bet = openBet(1);
+    store.recordBetSpend(bet.id, 1);
+    const task = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    store.claimTask(task.id, "mae");
+    store.archiveEmployee("mae");
+    const drain = createScheduler(scripted().driver, asleep);
+
+    drain.start();
+    drain.stop();
+
+    expect(store.openTasksFor("priya")).toMatchObject([
+      { betId: bet.id, origin: "settle", state: { kind: "running" } },
+    ]);
+    expect(store.listShippedTasks()).toMatchObject([
+      { id: task.id, state: { kind: "dropped", reason: "Mae was released" } },
+    ]);
+  });
+
+  it("carries the founder's answer to a leaver's funded ask to the lead", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, running } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const task = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    drain.assign(task.id, "mae");
+    running.get("mae")?.({
+      ...done(),
+      outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
+    });
+    await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+    store.archiveEmployee("mae");
+
+    const continuation = drain.answerQuestion(task.id, "yes");
+
+    expect(continuation.assigneeId).toBe("priya");
+    expect(kindOf(continuation)).toBe("running");
+  });
+
+  it("carries a sign-off the founder gave the leaver, not yet run, to the lead", async () => {
+    found();
+    const bet = openBet(5);
+    const { driver, resting, running } = scripted();
+    const drain = createScheduler(driver, asleep);
+    const task = store.createTask({
+      assigneeId: "mae",
+      betId: bet.id,
+      origin: "work",
+      title: "Post it",
+    });
+    drain.assign(task.id, "mae");
+    running.get("mae")?.({
+      ...done(),
+      outcome: {
+        ask: { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+        kind: "blocked",
+      },
+    });
+    await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+    resting.add("claude");
+    const continuation = drain.resolveApproval(task.id, true);
+
+    expect(store.archiveEmployee("mae")).toMatchObject({ dropped: 0, rehomed: 1 });
+    expect(store.getTask(continuation.id)).toMatchObject({
+      assigneeId: "priya",
+      state: { kind: "queued" },
+    });
+    expect(store.holdsApproval(continuation.id)).toBe(true);
+  });
+});
+
+const POST: BlockedAsk = {
+  action: "Post the launch thread",
+  draft: "We built a thing.",
+  instructions: "Post it on r/SideProject, then send me its URL.",
+  type: "action",
+};
+
+/** Mae's run on a funded bet hands the founder `ask`, and the office goes on ticking. */
+const blockedOn = async (ask: BlockedAsk, productId?: string | null) => {
+  found();
+  const bet = openBet(5);
+  const { driver, running } = scripted();
+  const drain = createScheduler(driver, asleep);
+  const task = store.createTask({
+    assigneeId: "mae",
+    betId: bet.id,
+    origin: "work",
+    productId: productId === undefined ? bet.productId : productId,
+    title: "Launch",
+  });
+  drain.assign(task.id, "mae");
+  running.get("mae")?.({ ...done(), outcome: { ask, kind: "blocked" } });
+  await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
+  drain.start();
+  drain.stop();
+  return { bet, drain, task };
+};
+
+const bindFor = (productId: string | null): BlockedAsk => ({
+  integration: "vercel",
+  productId,
+  reason: "to bind the product so its users bet can be measured",
+  type: "integration",
+});
+
+describe("an integration the founder connects", () => {
+  const KEY: BlockedAsk = {
+    integration: "stripe-key",
+    productId: null,
+    reason: "to sell a plan through a payment link",
+    type: "integration",
+  };
+  const READ: BlockedAsk = {
+    integration: "stripe",
+    productId: null,
+    reason: "to count revenue",
+    type: "integration",
+  };
+
+  it("resumes no ask for a Stripe key on a read-only Stripe connection", async () => {
+    const { drain, task } = await blockedOn(KEY);
+    drain.resumeIntegrationAsks("stripe");
+    expect(kindOf(task)).toBe("blocked");
+  });
+
+  it("leaves an ask to count revenue waiting while Stripe stays in test mode", async () => {
+    const { drain, task } = await blockedOn(READ);
+    writeFileSync(
+      path.join(root, "secrets.json"),
+      JSON.stringify({ STRIPE_CONNECT_TOKEN: "sk_live_connected", STRIPE_SECRET_KEY: "sk_test_x" }),
+    );
+    writeMetricsConfig(task.companyId, {
+      stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true },
+    });
+    drain.resumeIntegrationAsks("stripe");
+    expect(kindOf(task)).toBe("blocked");
+  });
+
+  it.each([KEY, READ])("resumes %j once a Stripe key is saved", async (ask) => {
+    const { drain, task } = await blockedOn(ask);
+    drain.resumeIntegrationAsks("stripe", "stripe-key");
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  it("resumes a product's Vercel ask only once that product is bound", async () => {
+    const { drain, task } = await blockedOn(bindFor("acme"));
+    const home = task.productId ?? "";
+    expect(home).toBe("acme");
+    const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+    drain.resumeVercelAsks({ kind: "product", productId: side });
+    expect(kindOf(task)).toBe("blocked");
+    drain.resumeVercelAsks({ kind: "product", productId: home });
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  it("resumes every product's Vercel ask once the first token is saved, whichever product it came through", async () => {
+    const { drain, task } = await blockedOn({
+      integration: "vercel",
+      productId: "acme",
+      reason: "to deploy Acme",
+      type: "integration",
+    });
+    store.createProduct({ description: "a side project", name: "Side" });
+    drain.resumeVercelAsks({ kind: "token" });
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  it("resumes a Vercel ask about another product once that product is bound, not the run's own", async () => {
+    const { drain, task } = await blockedOn(bindFor("side"));
+    const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+    expect(side).toBe("side");
+    drain.resumeVercelAsks({ kind: "product", productId: task.productId ?? "" });
+    expect(kindOf(task)).toBe("blocked");
+    drain.resumeVercelAsks({ kind: "product", productId: side });
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+
+  it("resumes a Vercel ask that named no product on any binding", async () => {
+    const { drain, task } = await blockedOn(bindFor(null), null);
+    const side = store.createProduct({ description: "a side project", name: "Side" }).id;
+    drain.resumeVercelAsks({ kind: "product", productId: side });
+    expect(kindOf(task)).not.toBe("blocked");
+  });
+});
+
+const workOn = (betId: string): Task[] =>
+  store.listOpenTasks().filter((t) => t.betId === betId && t.state.kind !== "blocked");
+
+describe("an action only the founder can take", () => {
+  it("gives its bet no hands until the founder answers, then resumes with what they sent back", async () => {
+    const { bet, drain, task } = await blockedOn(POST);
+
+    expect(workOn(bet.id)).toEqual([]);
+
+    const continuation = drain.resolveAction(task.id, {
+      kind: "done",
+      note: "https://reddit.com/r/SideProject/1",
+    });
+
+    expect(continuation).toMatchObject({ assigneeId: "mae", betId: bet.id });
+    expect(continuation.description).toContain(
+      "> a step only a human could take: Post the launch thread\n",
+    );
+    expect(continuation.description).toContain(
+      "Done. They sent back: https://reddit.com/r/SideProject/1",
+    );
+    expect(kindOf(continuation)).toBe("queued");
+  });
+
+  it("carries the founder's reason when they could not", async () => {
+    const { drain, task } = await blockedOn(POST);
+
+    const continuation = drain.resolveAction(task.id, {
+      kind: "cant",
+      reason: "no Reddit account",
+    });
+
+    expect(continuation.description).toContain("They could not: no Reddit account.");
+  });
+
+  it("answers only an action", async () => {
+    const { drain, task } = await blockedOn({ question: "Ship it?", type: "question" });
+
+    expect(() => drain.resolveAction(task.id, { kind: "done", note: "" })).toThrow(RefusalError);
+    expect(kindOf(task)).toBe("blocked");
+  });
+
+  it("sends none of IdleBiz's own keys to the team, whatever the founder types", async () => {
+    const { drain, task } = await blockedOn(POST);
+    const key = "sk_live_founders_own_key";
+    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
+    const card = store.raiseOrderCard("Order 1: deliver it", {
+      action: "Send Ada the memo",
+      draft: null,
+      instructions: "…",
+      type: "action",
+    });
+
+    for (const send of [
+      () => drain.resolveAction(task.id, { kind: "done", note: `use ${key}` }),
+      () => drain.resolveAction(card?.id ?? "", { kind: "done", note: key }),
+      () => drain.resolveAction(card?.id ?? "", { kind: "done", note: "rk_live_some0therKey" }),
+      () => drain.founderMessage(`@mae the key is ${key}`),
+      () => drain.directEmployee("mae", key),
+    ]) {
+      expect(send).toThrow(RefusalError);
+    }
+    expect(kindOf(task)).toBe("blocked");
+    expect(store.getTask(card?.id ?? "")?.state.kind).toBe("blocked");
+    expect(JSON.stringify(store.recentTeamMessages())).not.toContain(key);
+  });
+
+  it("sends the team no Stripe secret key, and a restricted one they asked for", async () => {
+    const { drain, task } = await blockedOn(POST);
+    const secret = "sk_live_foundersUnrestricted1";
+
+    for (const send of [
+      () => drain.resolveAction(task.id, { kind: "done", note: `here: ${secret}` }),
+      () => drain.resolveAction(task.id, { kind: "cant", reason: "sk_test_onlyTheTestOne1" }),
+      () => drain.founderMessage(`@mae use ${secret}`),
+      () => drain.directEmployee("mae", secret),
+    ]) {
+      expect(send).toThrow(
+        "Nothing was sent: that holds a Stripe secret key (sk_), which can charge, refund and pay out on your whole account",
+      );
+    }
+    expect(kindOf(task)).toBe("blocked");
+    expect(JSON.stringify(store.recentTeamMessages())).not.toContain(secret);
+
+    const continuation = drain.resolveAction(task.id, {
+      kind: "done",
+      note: "rk_live_checkoutReadOnly1",
+    });
+    expect(continuation.description).toContain("rk_live_checkoutReadOnly1");
+  });
+
+  it("settles an order card with no run, telling the room what the founder did", () => {
+    found();
+    const drain = createScheduler(scripted().driver, asleep);
+    const card = store.raiseOrderCard("Order 1: Printful marked it failed", {
+      action: "Check Ada's order",
+      draft: null,
+      instructions: "…",
+      type: "action",
+    });
+
+    const settled = drain.resolveAction(card?.id ?? "", { kind: "cant", reason: "on holiday" });
+
+    expect(settled).toMatchObject({ assigneeId: null, state: { by: null, kind: "superseded" } });
+    expect(store.listOpenTasks()).toEqual([]);
+    expect(store.recentTeamMessages().at(-1)).toMatchObject({
+      from: { kind: "founder" },
+      text: "📦 Order 1: Printful marked it failed: couldn't — on holiday",
+    });
+  });
+});
+
+describe("a tool call's title in the activity log", () => {
+  it.each([
+    `idlebiz set-env '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
+    `idlebiz set_env - <<'EOF'\n{"name":"OPENAI_API_KEY","value":"sk-proj-1"}\nEOF`,
+    `curl -s -X POST "$IDLEBIZ_API_URL/v1/set-env" -d '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
+  ])("keeps none of the value set_env was given: %s", (title) => {
+    expect(loggedToolName(title)).toBe("set_env");
+  });
+
+  it("keeps every other title as it is", () => {
+    const title = `idlebiz message-team '{"text":"shipped"}'`;
+    expect(loggedToolName(title)).toBe(title);
+  });
+});

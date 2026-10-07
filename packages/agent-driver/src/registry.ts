@@ -113,7 +113,7 @@ const claudeLoggedIn = (output: string): boolean => {
  * `settings`, the flag tier, whose ask rules beat allow rules from any tier. Its skills are
  * IdleBiz's, as a plugin, and none of claude's own. None of the player's MCP servers or claude.ai
  * connectors load either: those act as the player, signed in as them, and a run reaches the
- * company with curl, not MCP.
+ * company with the `idlebiz` command in its shell, not MCP.
  */
 const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
   const meta: NonNullable<SessionStart["meta"]> = {

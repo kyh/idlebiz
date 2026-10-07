@@ -1,6 +1,6 @@
 import type { Loaded } from "@/renderer/hooks/use-async";
-import type { BlockedAsk } from "@/shared/domain";
-import type { VercelListing, VercelProject } from "@/shared/integrations";
+import type { BlockedAsk } from "@repo/domain/domain";
+import type { VercelListing, VercelProject } from "@repo/domain/integrations";
 
 type Lookup =
   | { state: "idle" }

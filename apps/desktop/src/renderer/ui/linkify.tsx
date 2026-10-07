@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { ASSET_TOKEN } from "@/renderer/ui/asset-token";
 
 // Renders agent text with clickable assets: URLs open in the browser, and
@@ -12,7 +12,7 @@ const openAsset = async (token: string): Promise<void> => {
     return;
   }
   try {
-    await bridge().openCompanyPath({ rel: token });
+    await api().company.openPath({ rel: token });
   } catch {
     // a path main refuses is dropped on purpose; the text stays as it was
   }

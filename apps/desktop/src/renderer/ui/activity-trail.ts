@@ -1,4 +1,4 @@
-import type { ActivityEvent } from "@/shared/activity";
+import type { ActivityEvent } from "@repo/domain/activity";
 
 /** An event with a line to show; the rest (a run starting or ending, a retry) are bookkeeping. */
 export type Said = Extract<ActivityEvent, { message: string }>;

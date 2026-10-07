@@ -2,9 +2,9 @@ import type Phaser from "phaser";
 import type { Dir } from "@/renderer/game/character-sheet";
 import { DEPTH, WALK_SPEED } from "@/renderer/game/config";
 import { facingToward, stepToward } from "@/renderer/game/movement";
-import { findPath } from "@/shared/office-grid";
-import type { WalkGrid } from "@/shared/office-grid";
-import type { PixelPoint } from "@/shared/office-layout-schema";
+import { findPath } from "@/renderer/game/office-grid";
+import type { WalkGrid } from "@/renderer/game/office-grid";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 
 /** The player, as click-to-walk drives them. The scene keeps the sprite and the collision. */
 export interface Walker {
