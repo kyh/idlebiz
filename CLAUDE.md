@@ -603,6 +603,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
   would run a command the founder's `~/.codex/rules` allow without asking, so its runs find no
   rules there (above).
+  - An `idlebiz <tool>` line runs unasked: its request is data the game reads, and the tool
+    itself holds what needs the founder. No fetch is the company's, so a `curl` or `wget` that
+    sends a body asks wherever it goes, a loopback port (a product's dev server) or a socket
+    included, since what listens there may be anyone's.
   - An `agent-browser` verb is read where agent-browser reads it, the first word its global
     options leave, and any verb but a listed page read is held unless the session's live page,
     read from the browser before the command runs (a click can land anywhere), is loopback with

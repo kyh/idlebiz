@@ -38,8 +38,8 @@ interface Call {
 
 interface Rule {
   id: RuleId;
-  /** Whether a pipeline runs something this rule holds; `toApi` says whether a fetch reaches only the game's own API (its socket, or loopback). */
-  holds: (pipeline: readonly Call[], toApi: (call: Call) => boolean) => boolean;
+  /** Whether a pipeline runs something this rule holds. */
+  holds: (pipeline: readonly Call[]) => boolean;
 }
 
 /** How a program reads its options. */
@@ -152,13 +152,11 @@ const leadingOptions = (words: Words, from: number, grammar: Grammar): Options =
 interface Arguments {
   flags: Flag[];
   operands: string[];
-  /** Each option that took the next word as its value, and where that word stands. */
-  valueWords: { name: string; at: number }[];
 }
 
 /** A program's words as pflag and curl read them: options wherever they sit among the operands (`gh api path -f x`). */
 const argumentsOf = (args: Words, grammar: Grammar): Arguments => {
-  const read: Arguments = { flags: [], operands: [], valueWords: [] };
+  const read: Arguments = { flags: [], operands: [] };
   let at = 0;
   while (at < args.length) {
     const word = args[at] ?? "";
@@ -171,11 +169,6 @@ const argumentsOf = (args: Words, grammar: Grammar): Arguments => {
       read.operands.push(word);
     }
     read.flags.push(...(taken?.flags ?? []));
-    // a cluster ends at the option that takes a value, so that option is its last
-    const valued = taken?.next === true ? taken.flags.at(-1) : undefined;
-    if (valued !== undefined) {
-      read.valueWords.push({ at: at + 1, name: valued.name });
-    }
     at += taken?.next === true ? 2 : 1;
   }
   return read;
@@ -825,12 +818,6 @@ interface Sending {
   /** Options that send a body whatever the method. */
   bodies: ReadonlySet<string>;
   methods: ReadonlySet<string>;
-  /** Options whose value is a URL fetched like an operand. */
-  targets: ReadonlySet<string>;
-  /** Options that send it somewhere its words do not name: a proxy, or URLs read from a file. */
-  reroutes: ReadonlySet<string>;
-  /** Options whose value is the unix socket it connects to in place of the URL's host. */
-  sockets: ReadonlySet<string>;
 }
 
 /** curl never abbreviates a long option. */
@@ -844,15 +831,8 @@ const CURL: Sending = {
     --connect-timeout --cookie --cookie-jar --data --data-ascii --data-binary --data-raw
     --data-urlencode --dump-header --form --form-string --header --json --max-time --output
     --proxy --referer --request --retry --upload-file --url --user --user-agent --write-out
-    --unix-socket --abstract-unix-socket
   `),
   methods: new Set(["-X", "--request"]),
-  reroutes: wordsOf(`
-    -K -x --config --connect-to --doh-url --preproxy --proxy --proxy1.0 --resolve --socks4
-    --socks4a --socks5 --socks5-hostname --abstract-unix-socket
-  `),
-  sockets: new Set(["--unix-socket"]),
-  targets: new Set(["--url"]),
 };
 
 const WGET: Sending = {
@@ -864,9 +844,6 @@ const WGET: Sending = {
     --timeout --user --user-agent --wait
   `),
   methods: new Set(["--method"]),
-  reroutes: new Set(["-B", "-e", "-i", "--base", "--config", "--execute", "--input-file"]),
-  sockets: new Set(),
-  targets: new Set(),
 };
 
 const FETCHERS = new Map([
@@ -880,84 +857,6 @@ const sends = (args: Words, sending: Sending): boolean =>
       sending.bodies.has(flag.name) ||
       (sending.methods.has(flag.name) && WRITE_METHODS.has(flag.value?.toUpperCase() ?? "")),
   );
-
-/** What follows a host that names no other: no userinfo (`http://localhost:80@evil`) and no expansion. */
-const PATH_ONLY = String.raw`(?:[/?#][\w./?#=&%-]*)?$`;
-
-/** A loopback URL. */
-const LOOPBACK_TARGET = new RegExp(
-  String.raw`^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?${PATH_ONLY}`,
-  "u",
-);
-
-/** The game's API as a run calls it over its socket: the host is only a name, and no port. */
-const SOCKET_TARGET = new RegExp(String.raw`^http:\/\/idlebiz${PATH_ONLY}`, "u");
-
-/** The run's own socket to the game's API, as its env names it. */
-const API_SOCKET = /^(?:\$IDLEBIZ_API_SOCKET|\$\{IDLEBIZ_API_SOCKET\})$/u;
-
-/**
- * Whether a fetch's words send it only to the game's API: over the run's own socket, or to a
- * loopback URL. A body is data it carries, never where it goes. A socket other than the run's
- * sends it wherever that socket leads.
- */
-const fetchesApi = (args: Words, sending: Sending): boolean => {
-  const { flags, operands } = argumentsOf(args, sending.grammar);
-  const targets = [
-    ...operands,
-    ...flags.flatMap((flag) => (sending.targets.has(flag.name) ? [flag.value ?? ""] : [])),
-  ];
-  const sockets = flags.filter((flag) => sending.sockets.has(flag.name));
-  const overSocket = sockets.length > 0;
-  return (
-    targets.length > 0 &&
-    sockets.every((flag) => API_SOCKET.test(flag.value ?? "")) &&
-    targets.every((target) =>
-      overSocket
-        ? SOCKET_TARGET.test(target) || LOOPBACK_TARGET.test(target)
-        : LOOPBACK_TARGET.test(target),
-    ) &&
-    !flags.some((flag) => sending.reroutes.has(flag.name))
-  );
-};
-
-/**
- * Where in `args` a fetch sent only to the game's API takes a body as a word of its own: data
- * the API reads, which neither the shell nor the fetch takes a setting from.
- */
-const apiBodies = (args: Words, sending: Sending): number[] =>
-  fetchesApi(args, sending)
-    ? argumentsOf(args, sending.grammar)
-        .valueWords.filter(({ name }) => sending.bodies.has(name))
-        .map(({ at }) => at)
-    : [];
-
-/** Settings outside a fetch's words that send it elsewhere: a proxy, a config file, or the API's socket given a new value. */
-const REROUTES_FETCHES =
-  /proxy\w*\+?=|CURL_HOME|XDG_CONFIG_HOME|WGETRC|(?<!\$\{?)IDLEBIZ_API_SOCKET/iu;
-
-/**
- * Every text of `command` a shell or a fetch could take such a setting from: its words, what
- * its redirections name and what it is fed, less the bodies its `calls` send only to the game's
- * API and, when `scripted`, its first word, a quoted script whose own commands are read apart.
- */
-const settingsOf = (command: Command, calls: readonly Call[], scripted = false): string[] => {
-  const skip = new Set(scripted ? [0] : []);
-  for (const call of calls) {
-    const sending = FETCHERS.get(call.program);
-    // a call's words are the last of its command's
-    const start = command.words.length - call.args.length;
-    for (const at of sending === undefined ? [] : apiBodies(call.args, sending)) {
-      skip.add(start + at);
-    }
-  }
-  return [
-    ...command.words.filter((_, at) => !skip.has(at)),
-    ...command.redirects,
-    ...command.input,
-    ...command.printed.flat(),
-  ];
-};
 
 const COPIERS = new Set(["rsync", "scp"]);
 const REMOTE_PATH = /^[\w.-]+@[\w.-]+:/u;
@@ -1005,11 +904,12 @@ const RULES: readonly Rule[] = [
     id: "payments",
   },
   {
-    holds: (pipeline, toApi) =>
-      pipeline.some((call) => {
-        const sending = FETCHERS.get(call.program);
-        return sending !== undefined && sends(call.args, sending) && !toApi(call);
-      }),
+    // Every write asks, to a loopback port too: no fetch reaches the company, which a run calls
+    // as `idlebiz <tool>`, and what listens there may be anyone's (a dev server, a debugger).
+    holds: anyCall((call) => {
+      const sending = FETCHERS.get(call.program);
+      return sending !== undefined && sends(call.args, sending);
+    }),
     id: "http-write",
   },
   {
@@ -1021,8 +921,8 @@ const RULES: readonly Rule[] = [
     id: "remote-copy",
   },
   {
-    holds: (pipeline, toApi) => {
-      const fetched = pipeline.findIndex((call) => FETCHERS.has(call.program) && !toApi(call));
+    holds: (pipeline) => {
+      const fetched = pipeline.findIndex((call) => FETCHERS.has(call.program));
       return (
         fetched !== -1 && pipeline.slice(fetched + 1).some((call) => INTERPRETERS.has(call.program))
       );
@@ -1105,8 +1005,6 @@ interface Reading {
   pipelines: Call[][];
   /** `bash`, `source /dev/stdin`, `eval "$(cat)"`: what the line is fed may run. */
   reads: boolean;
-  /** Every text of it a setting could be read from (`settingsOf`), at every level it was read. */
-  settings: string[];
 }
 
 /**
@@ -1133,7 +1031,6 @@ const pipelinesOf = (
     return {
       pipelines: flat.map((pipeline) => pipeline.flatMap(({ stage }) => stage.calls)),
       reads: true,
-      settings: flat.flat().flatMap(({ command, stage }) => settingsOf(command, stage.calls)),
     };
   }
   const readOnce = (text: string, literal: boolean): Reading => {
@@ -1141,7 +1038,7 @@ const pipelinesOf = (
     const key = JSON.stringify([text, literal]);
     const known = readTexts.get(key);
     if (known !== undefined) {
-      return { pipelines: [], reads: known, settings: [] };
+      return { pipelines: [], reads: known };
     }
     // Until read, a text that meets itself again is taken to read its input.
     readTexts.set(key, true);
@@ -1150,7 +1047,6 @@ const pipelinesOf = (
     return reading;
   };
   let reads = false;
-  const settings: string[] = [];
   const lexed = lexLine(line);
   const pipelines = lexed.pipelines.flatMap((pipeline) => {
     const stages = pipeline.map((command) => stageOf(command, verbatim));
@@ -1168,14 +1064,6 @@ const pipelinesOf = (
     const quotedScripts = pipeline.flatMap((command) =>
       quotesScript(command) ? [readOnce(command.words[0] ?? "", false)] : [],
     );
-    for (const [index, command] of pipeline.entries()) {
-      // an assignment's value is the shell's to set, whatever a script reading of it finds
-      const scripted = quotesScript(command) && !ASSIGNMENT.test(command.words[0] ?? "");
-      settings.push(...settingsOf(command, stages[index]?.calls ?? [], scripted));
-    }
-    settings.push(
-      ...[...scripts, ...fedReadings, ...quotedScripts].flatMap((reading) => reading.settings),
-    );
     reads ||=
       fed ||
       stages.some((stage) => stage.runsPrinted) ||
@@ -1191,7 +1079,6 @@ const pipelinesOf = (
   return {
     pipelines: lexed.divergent ? [...pipelines, ...tailsOf(lexFlat(line))] : pipelines,
     reads,
-    settings,
   };
 };
 
@@ -1564,15 +1451,8 @@ const heldBrowserAct = async (
 export type CommandVerdict = { decision: "allow" } | { decision: "ask"; rule: Rule };
 
 export const classifyCommand = (command: string): CommandVerdict => {
-  const { pipelines, settings } = pipelinesOf(command);
-  const rerouted = settings.some((text) => REROUTES_FETCHES.test(text));
-  const toApi = (call: Call): boolean => {
-    const sending = FETCHERS.get(call.program);
-    return !rerouted && sending !== undefined && fetchesApi(call.args, sending);
-  };
-  const rule = RULES.find((candidate) =>
-    pipelines.some((pipeline) => candidate.holds(pipeline, toApi)),
-  );
+  const { pipelines } = pipelinesOf(command);
+  const rule = RULES.find((candidate) => pipelines.some((pipeline) => candidate.holds(pipeline)));
   return rule === undefined ? { decision: "allow" } : { decision: "ask", rule };
 };
 
