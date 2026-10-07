@@ -501,6 +501,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     ".wrangler/config/default.toml",
     ".config/.wrangler/config/default.toml",
     "Library/Preferences/.wrangler/config/default.toml",
+    ".config/cloudflare/config/default.json",
+    "Library/Preferences/cloudflare/config/default.json",
     ".config/netlify/config.json",
     "Library/Preferences/netlify/config.json",
     "Library/Application Support/com.vercel.cli/auth.json",

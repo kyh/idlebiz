@@ -622,7 +622,7 @@ const anyCall =
   (pipeline: readonly Call[]): boolean =>
     pipeline.some(test);
 
-const DEPLOY_TOOLS = wordsOf("fly netlify railway surge vercel wrangler");
+const DEPLOY_TOOLS = wordsOf("cf cloudflare fly netlify railway surge vercel wrangler");
 
 /** Subcommands of the deploy CLIs that only read — everything else ships. */
 const DEPLOY_TOOL_READS = wordsOf(`
