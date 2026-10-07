@@ -10,8 +10,8 @@
 import { BUST } from "@/renderer/game/character-sheet";
 import type { Dir } from "@/renderer/game/character-sheet";
 import { DEPTH } from "@/renderer/game/config";
-import { characterDepth } from "@/shared/office-depth";
-import type { PixelPoint } from "@/shared/office-layout-schema";
+import { characterDepth } from "@/renderer/game/office-depth";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { opaqueAt } from "@/renderer/game/opaque-mask";
 import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 

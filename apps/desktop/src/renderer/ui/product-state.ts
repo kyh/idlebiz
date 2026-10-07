@@ -1,4 +1,4 @@
-import type { ProductStatus, VercelDeployment } from "@/shared/integrations";
+import type { ProductStatus, VercelDeployment } from "@repo/domain/integrations";
 
 export const deploymentOf = (status: ProductStatus | undefined): VercelDeployment | null =>
   status?.deploy?.kind === "deployed" ? status.deploy.deployment : null;

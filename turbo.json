@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.org/schema.json",
   "ui": "tui",
+  "agentGuidance": false,
   "tasks": {
     "topo": {
       "dependsOn": ["^topo"]
@@ -22,6 +23,12 @@
       "cache": false
     },
     "//#clean": {
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "format:fix": {
       "cache": false
     }
   },

@@ -1,0 +1,2 @@
+# proper names, not code: pedantic's doc_markdown would have each in backticks ("..": keep clippy's own list)
+doc-valid-idents = ["..", "IdleBiz", "WebKit", "WebKitGTK", "WKWebView", "macOS"]

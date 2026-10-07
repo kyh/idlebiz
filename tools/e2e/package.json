@@ -1,0 +1,22 @@
+{
+  "name": "@repo/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The end-to-end suite: the built server and the page it serves, driven in Chromium through the dev host, as the shell's window would drive them",
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .cache test-results"
+  },
+  "devDependencies": {
+    "@orpc/contract": "catalog:",
+    "@playwright/test": "^1.63.0",
+    "@repo/contract": "workspace:*",
+    "@repo/domain": "workspace:*",
+    "@types/node": "catalog:",
+    "idlebiz": "workspace:*",
+    "typescript": "catalog:",
+    "zod": "catalog:"
+  }
+}

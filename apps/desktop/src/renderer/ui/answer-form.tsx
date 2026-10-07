@@ -3,7 +3,7 @@ import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
 import { answerQuestion } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
-import type { Task } from "@/shared/domain";
+import type { Task } from "@repo/domain/domain";
 
 const submitLabel = (submission: Submission): string => {
   if (submission.kind === "sent") {

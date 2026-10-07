@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { AuthFlowEvent } from "@/shared/domain";
+import type { AuthFlowEvent } from "@repo/domain/domain";
 import { nextAttempt } from "./use-auth-flow";
 import type { Attempt } from "./use-auth-flow";
 

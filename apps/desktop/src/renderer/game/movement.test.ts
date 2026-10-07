@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { walkGridOf } from "@/shared/office-grid";
+import { walkGridOf } from "@/renderer/game/office-grid";
 import { facingToward, randomFloor, stepToward } from "./movement";
 
 describe("facingToward", () => {

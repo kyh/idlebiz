@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { ProductStatus } from "@/shared/integrations";
+import type { ProductStatus } from "@repo/domain/integrations";
 import { deploymentOf, productStateOf } from "./product-state";
 
 const deployment = { createdAt: 1, state: "READY", url: "https://acme.vercel.app" };

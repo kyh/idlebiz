@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// The `idlebiz` command: the bundle this package builds (`dist/index.js`), on the node that runs
+// this script. The desktop shell runs the bundle itself, on the node it ships (`serve`); an
+// employee's shell finds the command through the launcher the server writes for its runs.
+
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+await import(join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "index.js"));

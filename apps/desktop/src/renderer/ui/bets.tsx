@@ -1,8 +1,15 @@
 import { killBet } from "@/renderer/state/store";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
-import { betGoal, betMoney, betProgress, isClosed, isSpentOut, ledgerOrder } from "@/shared/bets";
-import type { Bet } from "@/shared/bets";
-import { formatDate, formatTime, formatUsd } from "@/shared/format";
+import {
+  betGoal,
+  betMoney,
+  betProgress,
+  isClosed,
+  isSpentOut,
+  ledgerOrder,
+} from "@repo/domain/bets";
+import type { Bet } from "@repo/domain/bets";
+import { formatDate, formatTime, formatUsd } from "@repo/domain/format";
 import { cn } from "cn";
 
 /** What the badge does not already say: how long is left, how far it moved, why it died. */

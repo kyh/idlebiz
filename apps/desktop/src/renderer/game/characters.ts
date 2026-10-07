@@ -4,7 +4,7 @@ import { Loader } from "phaser";
 import type Phaser from "phaser";
 import { getCharacterAssets } from "@/renderer/character-assets";
 import { characterAnims, DIR_START, SIT_START } from "@/renderer/game/character-sheet";
-import { DIRS, FRAME_H, FRAME_W, SIT_SIDES } from "@/shared/character-frame";
+import { DIRS, FRAME_H, FRAME_W, SIT_SIDES } from "@repo/domain/character-frame";
 
 /** Load a base64 PNG as a Phaser spritesheet under `key` (resolves when ready). */
 const loadSpritesheetDataUrl = (scene: Phaser.Scene, key: string, dataUrl: string): Promise<void> =>

@@ -7,8 +7,6 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    globalSetup: ["src/main/vitest-global-setup.ts"],
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
-    setupFiles: ["src/main/vitest-setup.ts"],
   },
 });

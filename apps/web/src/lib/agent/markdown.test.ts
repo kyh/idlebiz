@@ -6,7 +6,8 @@ import {
   renderNotFoundMarkdown,
   renderProsePageMarkdown,
 } from "./markdown";
-import { privacyPage, prosePages } from "./site-content";
+import { privacyPage, servedPages, termsPage } from "./site-content";
+import type { ProsePage } from "./site-content";
 
 const h2Sections = (markdown: string): string[] =>
   markdown.split("\n").filter((line) => line.startsWith("## "));
@@ -27,10 +28,11 @@ describe("renderLlmsTxt", () => {
     expect(guidance).toBeLessThan(llms.indexOf("## "));
   });
 
-  it("links every page with an absolute URL", () => {
-    for (const page of prosePages) {
+  it("links every page with an absolute URL, the Terms of Use included", () => {
+    for (const page of servedPages) {
       expect(llms).toContain(`(https://idlebiz.com${page.path})`);
     }
+    expect(llms).toContain("- [Terms of Use](https://idlebiz.com/terms): ");
     expect(llms).not.toMatch(/\]\(\//u);
   });
 
@@ -51,7 +53,7 @@ describe("renderHomeMarkdown", () => {
 
 describe("renderProsePageMarkdown", () => {
   it("renders each trust page with enough real content", () => {
-    for (const page of prosePages) {
+    for (const page of servedPages) {
       const markdown = renderProsePageMarkdown(page);
       expect(markdown.startsWith(`# ${page.heading}\n`)).toBe(true);
       expect(markdown.length).toBeGreaterThan(500);
@@ -60,12 +62,50 @@ describe("renderProsePageMarkdown", () => {
 
   it("tells the founder what Disconnect sends to this site", () => {
     const markdown = renderProsePageMarkdown(privacyPage);
-    expect(markdown).toMatch(/\[Stripe Connect\]\([^)]*\): .*when you disconnect/iu);
+    expect(markdown).toMatch(
+      /When you disconnect, or reset everything, the app sends that token and your Stripe account ID back to our website once/u,
+    );
+  });
+
+  it("renders a table as a GFM pipe table under its header row", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toContain(
+      "\n| Purpose | Categories of personal information involved | Legal basis |\n| --- | --- | --- |\n| Service delivery and operations |",
+    );
+  });
+
+  it("escapes a pipe inside a cell, so it cannot split the cell", () => {
+    const page: ProsePage = {
+      blocks: [{ columns: ["Which"], kind: "table", rows: [["this | that"]] }],
+      description: "A table.",
+      heading: "Table",
+      path: "/table",
+      schemaType: "WebPage",
+      title: "Table",
+    };
+    expect(renderProsePageMarkdown(page)).toContain(String.raw`| this \| that |`);
+  });
+
+  it("renders bold terms, subheadings, in-page anchors and a divider", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toContain("- **Contact data**, such as your name and email address");
+    expect(markdown).toContain("\n### Data Processing outside Europe\n");
+    expect(markdown).toContain(
+      "[Personal information we collect](#personal-information-we-collect)",
+    );
+    expect(markdown).toMatch(/\n---\n\nThis template was prepared and made publicly available/u);
+  });
+
+  it("makes a link to another page of the site absolute, and leaves mail as it is", () => {
+    const markdown = renderProsePageMarkdown(termsPage);
+    expect(markdown).toContain("[idlebiz.com/privacy](https://idlebiz.com/privacy)");
+    expect(markdown).toContain("(https://idlebiz.com/privacy#tracking--other-technologies)");
+    expect(markdown).toContain("[kai@kyh.io](mailto:kai@kyh.io)");
   });
 });
 
 describe("what the site claims the app does", () => {
-  const everyPage = [renderHomeMarkdown(), ...prosePages.map(renderProsePageMarkdown)];
+  const everyPage = [renderHomeMarkdown(), ...servedPages.map(renderProsePageMarkdown)];
 
   it("never lists a push beside the deploys and payment links the app signs for, since nothing pushes code", () => {
     for (const markdown of everyPage) {

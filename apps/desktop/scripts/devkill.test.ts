@@ -13,10 +13,8 @@ const checkout = mkdtempSync(path.join(tmpdir(), "idlebiz-devkill-"));
 const script = path.join(checkout, "apps/desktop/scripts/devkill.sh");
 mkdirSync(path.dirname(script), { recursive: true });
 copyFileSync(path.join(import.meta.dirname, "devkill.sh"), script);
-const electron = path.join(
-  checkout,
-  "node_modules/.pnpm/electron@44.4.3/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
-);
+const shell = path.join(checkout, "apps/desktop/src-tauri/target/debug/idlebiz-desktop");
+const main = path.join(checkout, "apps/cli/dist/index.js");
 
 const started: ChildProcess[] = [];
 afterAll(() => {
@@ -41,11 +39,9 @@ const alive = (child: ChildProcess): boolean =>
   child.exitCode === null && child.signalCode === null;
 
 describe("devkill", () => {
-  it("stops the dev session's Electron and leaves an e2e launch of the same binary running", async () => {
-    const dev = standIn(`${electron} . --remote-debugging-port=9222`);
-    const e2e = standIn(
-      `${electron} --inspect=0 --remote-debugging-port=0 ${path.join(checkout, "apps/desktop")}`,
-    );
+  it("stops the dev session's shell and leaves e2e's main running", async () => {
+    const dev = standIn(shell);
+    const e2e = standIn(`node ${main} serve`);
     await sleep(200);
 
     await devkill();
@@ -55,10 +51,11 @@ describe("devkill", () => {
     expect(alive(e2e)).toBe(true);
   }, 20_000);
 
-  it("stops what electron-vite started, whatever its command line", async () => {
+  it("stops what tauri dev started, whatever its command line", async () => {
     const helper = path.join(checkout, "helper-pid");
-    const vite = standIn(
-      `${path.join(checkout, "apps/desktop/node_modules/electron-vite/bin/electron-vite.js")} dev`,
+    // as pnpm's shim leaves it: it execs node on `.bin/../`, which path.join would fold away
+    const tauri = standIn(
+      `node ${checkout}/apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js dev --additional-watch-folders ../cli/dist`,
       `bash -c "sleep 60 & echo \\$! > ${helper}; wait"`,
     );
     await sleep(200);
@@ -67,7 +64,7 @@ describe("devkill", () => {
     await devkill();
     await sleep(200);
 
-    expect(alive(vite)).toBe(false);
+    expect(alive(tauri)).toBe(false);
     expect(() => process.kill(pid, 0)).toThrow();
   }, 20_000);
 });

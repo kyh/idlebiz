@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { StripeKeyStatus, StripeStatus } from "@/shared/integrations";
+import type { StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
 import { connectAskCopy } from "./connect-ask";
 
 const disconnected: StripeStatus = { state: "disconnected" };

@@ -1,5 +1,5 @@
 import { startTransition, useActionState } from "react";
-import { errorMessage } from "@/shared/errors";
+import { errorMessage } from "@repo/domain/errors";
 
 /** Where a founder's action stands: every control that writes to main shows these four, and only these. */
 export type Submission =

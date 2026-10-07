@@ -9,13 +9,18 @@ the dashboard can read your actual Stripe revenue and analytics.
 
 ## Layout
 
-- `apps/desktop` — the Electron game (electron-vite + React + Phaser).
-  Character sprites generate from bundled employee sheets at
-  `apps/desktop/resources/employee-sheets`.
+- `apps/desktop` — the game: a Tauri app, a Rust shell around a React + Phaser page.
+- `apps/cli` — the `idlebiz` binary: `idlebiz serve` is main, the node process that runs the
+  company, which the app runs as its child and which serves the page; every other verb is a
+  company tool the employees call. Character sprites generate from bundled employee sheets at
+  `apps/cli/resources/employee-sheets`.
 - `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
   Download button resolves the latest `.dmg` from GitHub releases.
+- `packages/domain`, `packages/contract` — the vocabulary both sides share, and the page's
+  API, an oRPC contract the server implements.
 - `packages/agent-driver` — spawns the player's `claude` / `codex` CLIs and
   normalizes their event streams.
+- `tools/e2e` — the Playwright suite over the built page and server.
 
 Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
@@ -23,7 +28,8 @@ Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
 ```sh
 pnpm install
-pnpm dev:desktop
+pnpm dev:desktop   # the app's window (needs the Rust toolchain; Linux also WebKitGTK)
+pnpm dev:browser   # the same office in a browser, at the URL it prints
 pnpm dev:web
 pnpm verify        # typecheck · lint · format · test · build
 ```
@@ -34,13 +40,16 @@ PATH. `AGENTS.md` is the guide for coding agents working on this repo.
 ## Release (desktop)
 
 ```sh
-pnpm -F @repo/desktop release          # build + sign + notarize locally
+pnpm -F @repo/desktop package          # build + sign + notarize locally → .output/bin/*.dmg
 pnpm -F @repo/desktop release:publish  # same, then publish to GitHub releases
 ```
 
-Needs `apps/desktop/.env` (Apple notarization creds) and the `AuthKey_*.p8` at
-the repo root — both gitignored. Bump `version` in `apps/desktop/package.json`
-before publishing; electron-builder tags the release `v<version>`.
+On a Mac with Xcode's command line tools and the Rust toolchain
+(`apps/desktop/rust-toolchain.toml`). Signs with the Developer ID in the keychain (ad-hoc
+without one); notarizes with `apps/desktop/.env` (Apple notarization creds) and the
+`AuthKey_*.p8` at the repo root — both gitignored. Bump `version` in
+`apps/desktop/package.json` and `apps/cli/package.json` together before publishing; the release
+is tagged `v<version>`.
 
 Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
 agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).

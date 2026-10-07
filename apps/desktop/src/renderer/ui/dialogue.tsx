@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { bridge } from "@/renderer/bridge";
+import { api } from "@/renderer/api";
 import { hear } from "@/renderer/game/office-port";
 import { useStore, directEmployee, listTasksFor, setTalkingTo } from "@/renderer/state/store";
 import { useAsync } from "@/renderer/hooks/use-async";
@@ -19,9 +19,9 @@ import { Bust } from "@/renderer/ui/bust";
 import { jobTitle } from "@/renderer/ui/employee-name";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { TypeCursor } from "@/renderer/ui/type-cursor";
-import type { ActivityEvent, ActivityKind } from "@/shared/activity";
-import { taskIn } from "@/shared/domain";
-import type { ChatOption, Employee } from "@/shared/domain";
+import type { ActivityEvent, ActivityKind } from "@repo/domain/activity";
+import { taskIn } from "@repo/domain/domain";
+import type { ChatOption, Employee } from "@repo/domain/domain";
 import { cn } from "cn";
 
 const NOTE_MS = 1800;
@@ -188,7 +188,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const fetched = useAsync(
     async () => ({
       list: await listTasksFor(emp.id),
-      options: await bridge().employeeOptions({ employeeId: emp.id }),
+      options: await api().employees.options({ employeeId: emp.id }),
     }),
     [emp.id, movedBy],
   );

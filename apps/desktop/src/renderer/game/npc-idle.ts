@@ -9,7 +9,7 @@ import { standFacing, walkTo } from "@/renderer/game/npc";
 import type { Npc } from "@/renderer/game/npc";
 import { BUBBLE_MS } from "@/renderer/game/npc-attachments";
 import type { PixelPoint } from "@/renderer/game/office-layout";
-import type { WalkGrid } from "@/shared/office-grid";
+import type { WalkGrid } from "@/renderer/game/office-grid";
 
 /** A point of interest idle employees visit: stand at (x,y) facing `face`,
  *  or sit (break-room chair) playing the matching sit animation. */
