@@ -48,6 +48,7 @@ const {
   resumeIn,
 } = await import("./agent-driver");
 const { browserNamespace, realPathOf, sealedCommand, signInCommand } = await import("./seal");
+const { controlPlane } = await import("../control-plane");
 const { startLogin } = await import("./onboarding");
 
 beforeEach(() => {
@@ -983,9 +984,15 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
     const tools = { asks: askBox(() => {}), call: () => Promise.resolve(null) };
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal");
-    await expect(
-      driver.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
-    ).rejects.toThrow("no seal");
+    // as at boot: a task's run opens its socket first, since its seal names it
+    await controlPlane.start();
+    try {
+      await expect(
+        driver.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
+      ).rejects.toThrow("no seal");
+    } finally {
+      controlPlane.stop();
+    }
     expect(asked).toEqual([
       [],
       [],
