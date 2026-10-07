@@ -46,6 +46,8 @@ const LOGINS = [
   ".wrangler",
   ".config/.wrangler",
   "Library/Preferences/.wrangler",
+  ".config/cloudflare",
+  "Library/Preferences/cloudflare",
   ".config/netlify",
   "Library/Preferences/netlify",
   "Library/Application Support/com.vercel.cli",

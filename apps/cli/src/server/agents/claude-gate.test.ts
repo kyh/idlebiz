@@ -189,7 +189,7 @@ const streamed = (move: Move): string =>
 
 /**
  * A Messages API that makes `call`, then says "done"; a request of claude's own that offers no
- * Bash tool gets "done" too. Each call's output lands in `outputs`, the tools each request
+ * Bash tool gets "done" too, and a token count is no turn. Each call's output lands in `outputs`, the tools each request
  * offering Bash offers in `offered`, and each such request whole in `sent`.
  */
 const standInModel = (
@@ -204,6 +204,11 @@ const standInModel = (
       body += chunk.toString();
     });
     req.on("end", () => {
+      if (req.url?.startsWith("/v1/messages/count_tokens")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ input_tokens: 1 }));
+        return;
+      }
       const parsed = MessagesRequest.safeParse(body === "" ? null : parseJson(body));
       const blocks = parsed.success ? parsed.data.messages.flatMap(({ content }) => content) : [];
       const results = blocks.filter(({ type }) => type === "tool_result");
