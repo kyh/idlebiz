@@ -415,9 +415,9 @@ rather than crashing boot.
   the verb and the server cannot disagree. Main writes a launcher at each boot
   (`server/agent-launcher.ts`, `~/.idlebiz/bin/idlebiz`), which runs the CLI on main's own node
   and goes first on each run's PATH. The verb sends its request to the control plane its run was
-  handed (`IDLEBIZ_API_URL`, `IDLEBIZ_RUN_TOKEN`; `server/control-plane.ts`), on loopback only,
-  prints the answer, and exits 1 with why when a call is refused; `-` reads the request from
-  stdin. `idlebiz <tool> --help` prints the tool's doc.
+  handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`; `server/control-plane.ts`), over that run's
+  own unix socket only, prints the answer, and exits 1 with why when a call is refused; `-` reads
+  the request from stdin. `idlebiz <tool> --help` prints the tool's doc.
 - **Main asks the shell for what only a native app does** (`server/host.ts`): a message box, the
   clipboard, Finder and the browser, the menu-bar icon (main decides it, `server/tray.ts`; the
   shell draws it, `src-tauri/src/tray.rs`), a notification, the login item (`SMAppService`), the

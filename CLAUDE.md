@@ -118,8 +118,8 @@ tools/
 
 The page reaches main over its contract and the runs reach it over the control plane: two
 doors, never one. The page's carries the founder's session cookie and answers on the page's own
-port, which the seal closes to every run; the control plane's carries a run's own token, and
-what it does is the run's.
+port, which the seal closes to every run; the control plane's is a unix socket main opens for
+each run, which only that run's seal reaches, and what it does is the run's.
 
 ## The company is steered by bets
 
@@ -344,9 +344,11 @@ third boundary.
     (`Seal.apiSocket`) and names no other run's, in folders no run writes (the save, HOME), and
     each socket's server binds the run it was made for: a token presented on another run's socket
     is refused. The bearer stays as a second check. The env carries `IDLEBIZ_API_SOCKET` and
-    `IDLEBIZ_RUN_TOKEN`, and the taught call is `curl --unix-socket "$IDLEBIZ_API_SOCKET"
-http://idlebiz/...` (`curlOf`), which the command policy reads as the company's API only with
-    that socket (`fetchesApi`). A socket closes as its run settles; boot sweeps what a crash left.
+    `IDLEBIZ_RUN_TOKEN`, which the `idlebiz` command a run types reads (`commands/tools.ts`): it
+    calls on that socket alone, never on a relative path, which would reach whatever listens in
+    the run's own folders; no loopback port answers for the company. A socket closes as its run
+    settles, so a call from a process the run left behind finds nothing; boot sweeps what a crash
+    left.
   - _Checked before use._ Boot runs `checkSeal`, no model call: under each runner's profile a
     canary must be unreadable, a file where no rule allows a write must not be made, and the
     runtime must start. Until it holds the scheduler starts nothing and autopilot files nothing; a
@@ -541,7 +543,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   or claude.ai connectors (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`),
   which act signed in as the founder; the company is reached with the `idlebiz` command, which
   main writes at boot and puts first on each run's PATH (`agent-launcher.ts`), a client of the
-  control plane that sends nowhere but loopback. A sign-in kept in their
+  control plane that connects to nothing but the run's own socket. A sign-in kept in their
   settings rather than their shell still reaches the run (`claudeUserSettings` in
   `server/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
   gateway's URL and token), through `runEnv` as the shell's env goes, and the helpers claude runs

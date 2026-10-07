@@ -278,7 +278,7 @@ export interface Seal {
   /**
    * The run's own line to the company, a socket main listens on in a folder no run writes (the
    * save's or HOME's): this run connects to it, and no other run's seal names it, so no run calls
-   * as another (main/control-plane.ts). Empty for a seal of no run, a probe's or a sign-in's.
+   * as another (control-plane.ts). Empty for a seal of no run, a probe's or a sign-in's.
    */
   apiSocket: readonly Reach[];
   /**
