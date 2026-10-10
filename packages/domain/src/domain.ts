@@ -116,10 +116,16 @@ export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
 /**
  * The open ones plus history, shelved in shipped/. superseded: an ask the founder answered.
- * dropped: work the steering loop took away — its bet stopped taking work, its product was
- * retired, or its assignee was released.
+ * settled: an order card the founder closed. dropped: work the steering loop took away — its
+ * bet stopped taking work, its product was retired, or its assignee was released.
  */
-export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded", "dropped"] as const;
+export const TASK_STATUSES = [
+  ...OPEN_TASK_STATUSES,
+  "done",
+  "superseded",
+  "settled",
+  "dropped",
+] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -402,8 +408,10 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
-  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for an order card, which no run carries on. */
-  | { kind: "superseded"; by: string | null }
+  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work. */
+  | { kind: "superseded"; by: string }
+  /** The founder closed an order card: history, which no run carries on. */
+  | { kind: "settled" }
   /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
   | { kind: "dropped"; reason: string }
   | { kind: "dead"; lastError: string };
@@ -423,6 +431,7 @@ export const entering = (
 ): Pick<Task, "state"> & Partial<Pick<Task, "completedAt">> =>
   state.kind === "done" ||
   state.kind === "superseded" ||
+  state.kind === "settled" ||
   state.kind === "dropped" ||
   state.kind === "blocked" ||
   state.kind === "dead"
@@ -453,8 +462,10 @@ export interface Task {
   assigneeId: string | null;
   /** Failed runs so far — drives retry backoff and the dead letter, across states. */
   attempts: number;
+  /** The ask whose founder's answer this continuation carries; null for work no answer started. */
+  answers: string | null;
   createdAt: number;
-  /** When it last reached done, superseded, dropped, blocked or dead. */
+  /** When it last reached done, superseded, settled, dropped, blocked or dead. */
   completedAt: number | null;
 }
 

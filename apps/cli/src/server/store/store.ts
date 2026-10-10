@@ -330,8 +330,8 @@ const shelve = (t: Task): void => {
   moveDir(path.join(TASKS_DIR, t.id), path.join(SHIPPED_DIR, t.id));
 };
 
-/** Shipped work, answered asks and dropped work: shelved in shipped/, never acted on again. */
-const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "dropped"]);
+/** Shipped work, answered asks, settled order cards and dropped work: shelved in shipped/, never acted on again. */
+const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "settled", "dropped"]);
 const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
 
 /** Move a task just saved as history out of the open queue; one the move fails stays for boot to shelve. */
@@ -743,33 +743,16 @@ const shippedOf = (active: ActiveCompany): Task[] => {
 /** Everything shelved as history, newest first. */
 export const listShippedTasks = (): Task[] => shippedOf(current()).toSorted(newestFirst);
 
-/** The continuations carrying the founder's answers to the bet's asks, among `history`. */
-const answeredIn = (history: readonly Task[], betId: string): ReadonlySet<string> =>
-  new Set(
-    history.flatMap((t) =>
-      t.betId === betId && t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
-    ),
-  );
-
-/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
-const answeredOn = (betId: string): ReadonlySet<string> => answeredIn(shippedOf(current()), betId);
-
 const RELEASED = " was released";
 
 /**
- * Where a released employee's open task goes. An ask a bet funds, the founder's answer to
- * one (`answered`, with any sign-off it holds), or a dead letter, goes to the lead, so an
- * answer or a retry still reaches someone. Other unstarted work is dropped, so it holds no
+ * Where a released employee's open task goes. An ask a bet funds, the continuation carrying
+ * the founder's answer to one (with any sign-off it holds), or a dead letter, goes to the lead,
+ * so an answer or a retry still reaches someone. Other unstarted work is dropped, so it holds no
  * bet's slot and never runs on the lead unasked. A run in flight settles on its own; null
  * leaves it be.
  */
-const rehomed = (
-  t: Task,
-  leaverName: string,
-  lead: string | null,
-  answered: boolean,
-  now: number,
-): Task | null => {
+const rehomed = (t: Task, leaverName: string, lead: string | null, now: number): Task | null => {
   const dropped = (): Task => ({
     ...t,
     ...entering({ kind: "dropped", reason: `${leaverName}${RELEASED}` }, now),
@@ -777,7 +760,7 @@ const rehomed = (
   switch (t.state.kind) {
     case "todo":
     case "queued": {
-      return answered ? { ...t, assigneeId: lead } : dropped();
+      return t.betId !== null && t.answers !== null ? { ...t, assigneeId: lead } : dropped();
     }
     case "blocked": {
       // a departing lead's blocked proposal would read as the next lead's, and hold every new bet
@@ -789,6 +772,7 @@ const rehomed = (
     case "running":
     case "done":
     case "superseded":
+    case "settled":
     case "dropped": {
       return null;
     }
@@ -808,8 +792,7 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
   const now = Date.now();
   const moved: HandedOver = { dropped: 0, rehomed: 0 };
   for (const t of active.tasks.filter((task) => task.assigneeId === leaverId)) {
-    const answered = t.betId !== null && answeredOn(t.betId).has(t.id);
-    const next = rehomed(t, leaverName, lead, answered, now);
+    const next = rehomed(t, leaverName, lead, now);
     if (!next) {
       continue;
     }
@@ -1362,8 +1345,8 @@ const retune = (active: ActiveCompany): void => {
  * What a measuring bet keeps: work waiting on the founder, or carrying their answer while it
  * can still run, since that step may be the one that moves the number.
  */
-const keptWhileMeasuring = (t: Task, answered: ReadonlySet<string>): boolean =>
-  t.state.kind === "blocked" || (answered.has(t.id) && t.state.kind !== "dead");
+const keptWhileMeasuring = (t: Task): boolean =>
+  t.state.kind === "blocked" || (t.answers !== null && t.state.kind !== "dead");
 
 /** The work is shipped: stop spending and let the number answer. */
 export const measureBet = (betId: string, now: number): Bet => {
@@ -1372,8 +1355,7 @@ export const measureBet = (betId: string, now: number): Bet => {
     throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
-  const answered = answeredOn(betId);
-  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t, answered), BET_MEASURING, now);
+  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), BET_MEASURING, now);
   return measuring;
 };
 
@@ -1485,7 +1467,12 @@ interface NewTask {
   assigneeId?: string | null;
 }
 
-const addTask = (t: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Task => {
+/** `answers` is the ask a continuation carries the founder's answer to, which only an answer sets. */
+const addTask = (
+  t: NewTask,
+  state: TaskIn<"todo" | "blocked">["state"],
+  answers: string | null = null,
+): Task => {
   const { tasks: list } = current();
   const now = Date.now();
   const id = uniqueSlug(
@@ -1494,6 +1481,7 @@ const addTask = (t: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Task =
     heldIn(TASKS_DIR, SHIPPED_DIR),
   );
   const task: Task = {
+    answers,
     assigneeId: t.assigneeId ?? null,
     attempts: 0,
     betId: t.betId ?? null,
@@ -1582,7 +1570,7 @@ const recordTask = (id: string, patch: Partial<Task>): Task =>
   recordIn(current().tasks, id, patch, saveTask);
 
 /** How a run can leave its task: shipped, or waiting on the founder. Only an answer supersedes one. */
-type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
+type SettledByRun = Extract<TaskState, { kind: "done" | "blocked" }>;
 
 /** How much of a ship's summary a dialogue quotes back to its author. */
 const LAST_SHIP_CHARS = 500;
@@ -1604,7 +1592,7 @@ const noteShip = (t: Task): void => {
 // Persist before shelving so boot can recover a crash between the two writes.
 const close = (
   taskId: string,
-  state: Settled | Extract<TaskState, { kind: "superseded" }>,
+  state: SettledByRun | Extract<TaskState, { kind: "superseded" }>,
 ): void => {
   const t = recordTask(taskId, entering(state, Date.now()));
   if (isHistory(t) && shelveClosed(t)) {
@@ -1697,8 +1685,8 @@ const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
 export const settleTask = (
   taskId: string,
   runId: string,
-  state: Settled,
-): Settled | Dropped | null => {
+  state: SettledByRun,
+): SettledByRun | Dropped | null => {
   const t = heldBy(getTask(taskId), runId);
   if (!t) {
     return null;
@@ -1762,8 +1750,7 @@ export const parkTask = (
   if (!t) {
     return null;
   }
-  const carriesAnswer =
-    t.betId !== null && stoppedWorkReason(t) === BET_MEASURING && answeredOn(t.betId).has(t.id);
+  const carriesAnswer = t.answers !== null && stoppedWorkReason(t) === BET_MEASURING;
   const dropped = carriesAnswer ? null : droppedWhenStopped(t, t.attempts);
   if (dropped) {
     return dropped;
@@ -1782,14 +1769,18 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
   if (!t || t.state.kind !== "blocked" || !t.assigneeId) {
     return null;
   }
-  const next = createTask({
-    betId: t.betId,
-    origin: t.origin,
-    productId: t.productId,
-    ...continuationBrief(t, t.state.ask, answer),
-    assigneeId: t.assigneeId,
-    priority: "high",
-  });
+  const next = addTask(
+    {
+      betId: t.betId,
+      origin: t.origin,
+      productId: t.productId,
+      ...continuationBrief(t, t.state.ask, answer),
+      assigneeId: t.assigneeId,
+      priority: "high",
+    },
+    { kind: "todo" },
+    taskId,
+  );
   close(taskId, { by: next.id, kind: "superseded" });
   return next;
 };
@@ -1816,7 +1807,7 @@ export const closeOrderCard = (taskId: string): Task | null => {
   if (t?.origin !== "order" || t.state.kind !== "blocked") {
     return null;
   }
-  const closed = recordTask(taskId, entering({ by: null, kind: "superseded" }, Date.now()));
+  const closed = recordTask(taskId, entering({ kind: "settled" }, Date.now()));
   shelveClosed(closed);
   return closed;
 };
@@ -1983,8 +1974,7 @@ const readCompany = (): Company | null => {
 const recoverInterrupted = (task: Task, active: ActiveCompany, now: number): Task => {
   const bet = active.bets.find((b) => b.id === task.betId) ?? null;
   const stopped = stoppedReason(task, bet, isRetiredProduct);
-  const carriesAnswer =
-    bet !== null && stopped === BET_MEASURING && answeredIn(shippedOf(active), bet.id).has(task.id);
+  const carriesAnswer = task.answers !== null && stopped === BET_MEASURING;
   if (stopped !== null && !carriesAnswer) {
     return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
   }

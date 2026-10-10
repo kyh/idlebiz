@@ -5,6 +5,7 @@ import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
 const base: Omit<Task, "state"> = {
+  answers: null,
   assigneeId: "priya",
   attempts: 2,
   betId: "launch-post",
@@ -38,7 +39,7 @@ describe("task codec", () => {
     { kind: "done", summary: "shipped to https://x.y" },
     { kind: "done", summary: null },
     { by: "continue-ship-the-thing", kind: "superseded" },
-    { by: null, kind: "superseded" },
+    { kind: "settled" },
     { kind: "dropped", reason: "bet killed" },
     { kind: "dead", lastError: "five strikes" },
   ])("round-trips $kind", (state) => {
@@ -49,6 +50,17 @@ describe("task codec", () => {
   it.each(TASK_ORIGINS)("round-trips why a %s task exists", (origin) => {
     const task: Task = { ...base, origin, state: { kind: "todo" } };
     expect(roundTrip(task)).toEqual(task);
+  });
+
+  it("round-trips the ask whose answer a continuation carries", () => {
+    const task: Task = { ...base, answers: "ask-the-founder", state: { kind: "todo" } };
+    expect(roundTrip(task)).toEqual(task);
+  });
+
+  it("refuses an answered ask that names no continuation", () => {
+    const doc = written({ ...base, state: { by: "next", kind: "superseded" } });
+    const { supersededBy: _, ...metadata } = doc.metadata;
+    expect(() => docToTask({ ...doc, metadata })).toThrow("supersededBy");
   });
 
   it("writes the state as the status line and that state's fields only", () => {
@@ -64,7 +76,7 @@ describe("task codec", () => {
     { kind: "queued", lastError: null, nextAttemptAt: null },
     { ask: { question: "ship it?", type: "question" }, kind: "blocked", summary: null },
     { kind: "done", summary: null },
-    { by: null, kind: "superseded" },
+    { kind: "settled" },
   ])("gives a $kind task's empty fields no line", (state) => {
     expect(serializeDoc(taskToDoc({ ...base, state }))).not.toContain("null");
   });

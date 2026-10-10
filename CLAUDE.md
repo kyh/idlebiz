@@ -15,7 +15,7 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
 - Game state on disk at `~/.idlebiz/company/`, beside `cache/` (the runs' tool caches)
   and `bin/` (the `idlebiz` command main writes the runs at boot) — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
-  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
+  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered, settled or dropped,
   products/<slug>/PRODUCT.md for each product, the first included, with its code in
   products/<slug>/workspace/ (placed by the slug alone, so retiring it moves one folder), whose
   root AGENTS.md is the team's notes on it, listings/<id>.json for each print a product sells through
@@ -183,7 +183,10 @@ allocator and the replay.
   work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again, as is one that asks the founder once the bet has closed;
   measuring keeps what waits on the founder and the continuation carrying their answer, whose
-  run is dropped only when it fails, since that step may be what moves the number. Retiring a product drops its waiting work and switches
+  run is dropped only when it fails, since that step may be what moves the number. A
+  continuation names the ask it answers (`answers` in its TASK.md, set only by
+  `resolveBlockedWithAnswer`), so measuring, parking, a restart and a release read it there and
+  never load `shipped/`. Retiring a product drops its waiting work and switches
   off its payment links, and the retiring run's own task, on no bet, is dropped the same way when
   it fails, parks, asks or is cut off, since a retry would run in the company's folder. A release drops
   the leaver's unstarted work and any ask no bet funds; a funded ask, and the continuation
@@ -443,7 +446,7 @@ third boundary.
   a refusal, a status of failed, canceled or onhold the first time any call reads it, a refused
   key once anything is sold) is an order card: a blocked task of origin `order`, no assignee, no
   product, so no bet stalls, no retirement drops it and no teammate can claim it. The founder's
-  Done or Can't closes it with no run (`settleOrderCard` in `server/company-actions.ts`) and goes
+  Done or Can't closes it with no run, as `settled` history (`settleOrderCard` in `server/company-actions.ts`), and goes
   to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
   so. A menu-bar-only launch counts what waits on the founder in the tray and notifies each new
   order card. Retiring a product switches off, in main with the founder's key, every payment

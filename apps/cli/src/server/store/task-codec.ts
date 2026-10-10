@@ -65,6 +65,7 @@ const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
 
 /** The fields every task carries; a null one gets no line. */
 const TaskFieldsSchema = z.object({
+  answers: z.string().optional(),
   assigneeId: z.string().optional(),
   attempts: z.number().int().nonnegative(),
   betId: z.string().optional(),
@@ -91,7 +92,8 @@ const TaskStatusSchema = z.discriminatedUnion("status", [
     summary: z.string().optional(),
   }),
   z.object({ status: z.literal("done"), summary: z.string().optional() }),
-  z.object({ status: z.literal("superseded"), supersededBy: z.string().optional() }),
+  z.object({ status: z.literal("superseded"), supersededBy: z.string() }),
+  z.object({ status: z.literal("settled") }),
   z.object({ dropReason: z.string(), status: z.literal("dropped") }),
   z.object({ lastError: z.string(), status: z.literal("dead") }),
 ]);
@@ -129,7 +131,10 @@ const statusFields = (st: TaskState): z.input<typeof TaskStatusSchema> => {
       return { status: "done", summary: st.summary ?? undefined };
     }
     case "superseded": {
-      return { status: "superseded", supersededBy: st.by ?? undefined };
+      return { status: "superseded", supersededBy: st.by };
+    }
+    case "settled": {
+      return { status: "settled" };
     }
     case "dropped": {
       return { dropReason: st.reason, status: "dropped" };
@@ -167,7 +172,10 @@ const taskState = (m: z.output<typeof TaskStatusSchema>): TaskState => {
       return { kind: "done", summary: m.summary ?? null };
     }
     case "superseded": {
-      return { by: m.supersededBy ?? null, kind: "superseded" };
+      return { by: m.supersededBy, kind: "superseded" };
+    }
+    case "settled": {
+      return { kind: "settled" };
     }
     case "dropped": {
       return { kind: "dropped", reason: m.dropReason };
@@ -183,6 +191,7 @@ export const taskToDoc = (t: Task): z.input<typeof TaskDocSchema> => ({
   body: t.description ? `${t.description}\n` : "",
   fields: { kind: "task", name: t.title, schema: PACKAGE_SCHEMA, slug: t.id },
   metadata: {
+    answers: t.answers ?? undefined,
     assigneeId: t.assigneeId ?? undefined,
     attempts: t.attempts,
     betId: t.betId ?? undefined,
@@ -199,6 +208,7 @@ export const docToTask = (doc: FrontmatterDoc): Task => {
   const { body, fields, metadata: m } = decodeDoc(TaskDocSchema, doc);
   const description = body.trim();
   return {
+    answers: m.answers ?? null,
     assigneeId: m.assigneeId ?? null,
     attempts: m.attempts,
     betId: m.betId ?? null,

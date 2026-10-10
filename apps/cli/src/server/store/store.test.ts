@@ -1425,9 +1425,7 @@ describe("orders", () => {
       { origin: "order", state: { ask, kind: "blocked" } },
     ]);
 
-    expect(store.closeOrderCard(card?.id ?? "")).toMatchObject({
-      state: { by: null, kind: "superseded" },
-    });
+    expect(store.closeOrderCard(card?.id ?? "")).toMatchObject({ state: { kind: "settled" } });
     expect(store.listOpenTasks()).toEqual([]);
     expect(store.raiseOrderCard("Order 1: trouble", ask)).not.toBeNull();
   });
@@ -1750,6 +1748,44 @@ describe("an answered ask", () => {
 
     expect(next && store.getTask(next.id)?.origin).toBe("routine");
   });
+
+  it("is named on its continuation, so measuring, parking, a restart and a release read no history", () => {
+    foundTeam();
+    const bet = launch(firstProduct().id);
+    const answered = (runId: string): string => {
+      const ask = store.createTask({ betId: bet.id, origin: "work", title: "Ask" });
+      block(ask.id, "priya");
+      const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+      if (!next) {
+        throw new Error("the answer went nowhere");
+      }
+      expect(next.answers).toBe(ask.id);
+      store.claimTask(next.id, "priya");
+      store.lockTaskForRun(next.id, runId);
+      return next.id;
+    };
+    const parking = answered("run-2");
+    const cutOff = answered("run-3");
+    const unreadable = path.join(SHIPPED_DIR, "unreadable", "TASK.md");
+    mkdirSync(path.dirname(unreadable), { recursive: true });
+    writeFileSync(unreadable, "garbage");
+    const historyRead = () => store.loadReport().skipped.some((s) => s.path === unreadable);
+
+    store.measureBet(bet.id, 0);
+    expect(store.parkTask(parking, "run-2", 0, "usage limit")).toEqual({ kind: "parked" });
+    expect(historyRead()).toBe(false);
+    store.initStore();
+    expect(store.archiveEmployee("priya")).toMatchObject({ dropped: 0, rehomed: 2 });
+    expect(historyRead()).toBe(false);
+
+    expect(store.getTask(parking)).toMatchObject({ assigneeId: "mae", state: { kind: "queued" } });
+    expect(store.getTask(cutOff)).toMatchObject({
+      assigneeId: "mae",
+      state: { kind: "queued", lastError: "Interrupted by app restart" },
+    });
+    store.listShippedTasks();
+    expect(historyRead()).toBe(true);
+  });
 });
 
 describe("the shipping log as served", () => {
@@ -1849,7 +1885,7 @@ describe("founder approvals", () => {
 describe("the save format", () => {
   it("stamps what it writes", () => {
     found();
-    expect(parseDoc(readFileSync(COMPANY_FILE, "utf-8")).metadata.format).toBe(14);
+    expect(parseDoc(readFileSync(COMPANY_FILE, "utf-8")).metadata.format).toBe(15);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {

@@ -366,9 +366,9 @@ rather than crashing boot.
   ⚙ settings, 💼 company, and ☕ idle; ❗ attention and ⚠ warnings retain their color cues.
   These fallback glyphs are exceptions. Keep the vendored font unchanged.
 - **Only closed work is history.** `done` tasks move to `shipped/` and load on demand;
-  so does an ask the founder answered, `superseded` by its continuation, and work the
-  steering loop `dropped` (its bet stopped taking work, its product was retired, its
-  assignee released), neither ever a ship. `dead` tasks — runs that failed on their own —
+  so does an ask the founder answered, `superseded` by its continuation, an order card the
+  founder `settled`, and work the steering loop `dropped` (its bet stopped taking work, its
+  product was retired, its assignee released), none ever a ship. `dead` tasks — runs that failed on their own —
   stay in the active queue until their bet stops or their product retires, because the Inbox
   can retry them and employees use them to
   identify unresolved problems. `listTasks` answers open work only; the one

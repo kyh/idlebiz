@@ -211,6 +211,7 @@ describe("the brief that asks for the next bet", () => {
 
 describe("the brief that carries the founder's answer", () => {
   const task: Task = {
+    answers: null,
     assigneeId: "lead",
     attempts: 0,
     betId: null,
