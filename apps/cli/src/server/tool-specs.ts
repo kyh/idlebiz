@@ -54,6 +54,16 @@ const signedText = (field: string, max: number) =>
 
 const SALE_NAME = signedText("name", 80);
 
+/** The most a call's request may weigh as sent, in bytes; the control plane refuses a heavier one. */
+export const MAX_REQUEST_BYTES = 64 * 1024;
+
+/**
+ * The longest value set_env takes, in UTF-8 bytes, as Vercel counts its 64 KB for every variable
+ * of a deployment together. It stays under MAX_REQUEST_BYTES so the request carrying it, its name
+ * and its JSON quoting included, still fits.
+ */
+export const MAX_ENV_VALUE_BYTES = MAX_REQUEST_BYTES - 4 * 1024;
+
 /** Printful prices each variant to three addresses, and allows 120 calls a minute. */
 const MAX_PRINT_VARIANTS = 6;
 
@@ -167,12 +177,14 @@ export const TOOL_SPECS = {
     body: z.strictObject({
       name: EnvNameSchema,
       product: z.string().min(1).optional(),
-      // Vercel's limit for every variable of a deployment together
       value: z
         .string()
         .trim()
         .min(1)
-        .max(64 * 1024),
+        .refine(
+          (value) => Buffer.byteLength(value) <= MAX_ENV_VALUE_BYTES,
+          `value is at most ${MAX_ENV_VALUE_BYTES / 1024} KiB of UTF-8`,
+        ),
     }),
     doc: "keep a secret the product needs at runtime (an API key, a signing secret) as an environment variable of its Vercel project, for production and preview, with no sign-off. It sets it on your run's product; name another with `\"product\":\"<slug>\"`. The product needs a project first, which its first deploy makes. `name` is an uppercase variable name: Vercel's own (`VERCEL_*`, `NODE_ENV`) are refused. A name with a prefix a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`, `PUBLIC_`, `EXPO_PUBLIC_`…) is for what every visitor may read, such as a Stripe publishable key (`pk_`), kept out of the source; a value shaped like a secret (`sk_`, `rk_`, `whsec_`, a private key, another provider's API key), or one set_env keeps under a server-only name, is refused under one. Setting a name again replaces the value set_env gave it; a variable already on the project that set_env never set is the founder's, and is left as it is. It takes effect on the next deploy: server code reads it as `process.env.NAME`, and a page reads a public name the way its framework does (`process.env.NEXT_PUBLIC_X` in Next.js, `import.meta.env.VITE_X` in Vite); under a framework that does not read its prefix it stays server-only. Never write a server-only value into a file: deploy refuses a folder that holds one.",
     example: { name: "OPENAI_API_KEY", value: "..." },

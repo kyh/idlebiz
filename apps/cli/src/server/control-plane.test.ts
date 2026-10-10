@@ -158,6 +158,25 @@ describe("run-scoped control-plane requests", () => {
     }
   });
 
+  it.each([
+    ["heavier than a call may send", JSON.stringify({ name: "KEY", value: "x".repeat(70_000) })],
+    ["not JSON", "{name: KEY}"],
+  ])("refuses a request %s as the caller's to fix", async (_why, body) => {
+    const calls: string[] = [];
+    const handle = await controlPlane.registerRun((route) => {
+      calls.push(route);
+      return done("set");
+    });
+    try {
+      const res = await call(handle.socket, "/v1/set-env", handle.env.IDLEBIZ_RUN_TOKEN, body);
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toMatchObject({ ok: false });
+      expect(calls).toEqual([]);
+    } finally {
+      handle.release();
+    }
+  });
+
   it("knows a run by the socket it was reached on: another run's token there is refused", async () => {
     const heard: string[] = [];
     const lead = await controlPlane.registerRun((route) => {

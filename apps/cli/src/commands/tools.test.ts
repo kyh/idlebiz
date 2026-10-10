@@ -107,6 +107,22 @@ describe("a company tool's verb", () => {
     }
   });
 
+  it("answers a request heavier than a call may send with the server's refusal", async () => {
+    const run = await aRun(() => done("never"));
+    const value = "x".repeat(70_000);
+    try {
+      await expect(
+        callTool("set_env", JSON.stringify({ name: "KEY", value }), {
+          env: run.env,
+          stdin: noStdin,
+        }),
+      ).rejects.toThrow(/^The request is \d+ bytes, over the 65536 a call may send\.$/u);
+      expect(run.calls).toEqual([]);
+    } finally {
+      run.release();
+    }
+  });
+
   it("says the company did not answer once the run has settled, which closes its socket", async () => {
     const run = await aRun(() => done("never"));
     run.release();

@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { ROOT_DIR } from "./paths";
 import { RefusalError } from "./refusal";
+import { MAX_REQUEST_BYTES } from "./tool-specs";
 import type { ToolOutcome, ToolOutcomeKind } from "./tool-specs";
 import { BadRequestError, errorMessage } from "@repo/domain/errors";
 import { parseJson } from "@repo/domain/json";
@@ -37,8 +38,6 @@ interface RunHandle {
 
 /** The longest path macOS takes for a unix socket: `sun_path` holds 104 bytes, its NUL included. */
 export const SOCKET_PATH_MAX_BYTES = 103;
-
-const MAX_BODY_BYTES = 64 * 1024;
 
 const fits = (socket: string): boolean => Buffer.byteLength(socket) <= SOCKET_PATH_MAX_BYTES;
 
@@ -84,21 +83,31 @@ const respond = (res: ServerResponse, status: number, payload: ToolResponse): vo
   res.end(body);
 };
 
+/** A call's request, read whole: one too heavy or not JSON is the caller's to fix. */
 const readJsonBody = async (req: IncomingMessage): Promise<JsonValue> => {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     size += buf.length;
-    if (size > MAX_BODY_BYTES) {
-      throw new Error("request body too large");
+    // read on past the limit, keeping nothing: a request torn down mid-body never reads its answer
+    if (size <= MAX_REQUEST_BYTES) {
+      chunks.push(buf);
     }
-    chunks.push(buf);
+  }
+  if (size > MAX_REQUEST_BYTES) {
+    throw new BadRequestError(
+      `The request is ${size} bytes, over the ${MAX_REQUEST_BYTES} a call may send.`,
+    );
   }
   if (chunks.length === 0) {
     return {};
   }
-  return parseJson(Buffer.concat(chunks).toString("utf-8"));
+  try {
+    return parseJson(Buffer.concat(chunks).toString("utf-8"));
+  } catch (error) {
+    throw new BadRequestError(`The request is not JSON: ${errorMessage(error)}`);
+  }
 };
 
 /** A registered run: its tools while it lives, and the token only its socket takes. */
