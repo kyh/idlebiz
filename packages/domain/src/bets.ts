@@ -15,7 +15,7 @@ export const BetStateSchema = z.discriminatedUnion("kind", [
   z.object({
     closedAt: z.number(),
     kind: z.literal("killed"),
-    // null when no source ever reported the metric
+    // null when it closed unmeasured: no source ever reported the metric, or the lead never settled it
     moved: z.number().nullable(),
     reason: z.string(),
   }),
@@ -196,7 +196,7 @@ export const judge = (bet: Bet, now: number, pulsingSince: number | null): BetSt
 /** A verdict some source read the number for. */
 type MeasuredBet = ClosedBet & { state: { moved: number } };
 
-/** A bet killed before any source reported its number says nothing about its hypothesis, so neither the policy nor its replay learns from it. */
+/** A bet closed unmeasured says nothing about its hypothesis, so neither the policy nor its replay learns from it. */
 const isMeasured = (bet: Bet): bet is MeasuredBet => isClosed(bet) && bet.state.moved !== null;
 
 /** What a closed bet returned against what it promised, capped so one outlier cannot own the mean. */
@@ -223,7 +223,7 @@ export type Allocation =
   | { kind: "settle"; betId: string }
   /** Nothing fundable: the lead opens a bet. `widen` asks for new ground, `productId` names the best proven one, `newProduct` says the portfolio can take another. */
   | { kind: "propose"; productId: string | null; widen: boolean; newProduct: boolean }
-  /** Nothing to spend on until a verdict or the founder: every product has all the live bets it can carry and the portfolio is full, or the lead's last proposal is waiting on them. */
+  /** Nothing to spend on until a verdict or the founder: every product has all the live bets it can carry and the portfolio is full, or the lead's last proposal is waiting on them or came to nothing lately. */
   | { kind: "wait" };
 
 /** Past this many live products a new one has to replace a killed one. */
@@ -257,6 +257,8 @@ export interface Ledger {
   runCostUsd: number;
   /** The lead's last call on what to open next is waiting on the founder: asking again would only repeat it. */
   proposalPending: boolean;
+  /** The lead's last call on what to open next ended lately with nothing new on the ledger since: the same brief would get the same answer. */
+  proposalIdle: boolean;
 }
 
 /** Mean yield of a product's measured verdicts plus a bonus that shrinks as its history grows. */
@@ -296,7 +298,7 @@ export const allocate = (ledger: Ledger, params: PolicyParams): Allocation => {
   if (spentOut) {
     return { betId: spentOut.id, kind: "settle" };
   }
-  if (ledger.proposalPending) {
+  if (ledger.proposalPending || ledger.proposalIdle) {
     return { kind: "wait" };
   }
   const recent = closed.slice(-PLATEAU);
@@ -347,6 +349,7 @@ const replayScore = (params: PolicyParams, bets: readonly MeasuredBet[]): number
         ],
         busy: new Map(),
         products,
+        proposalIdle: false,
         proposalPending: false,
         runCostUsd: 0,
         stalled: new Set(),

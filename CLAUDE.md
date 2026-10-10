@@ -144,7 +144,9 @@ allocator and the replay.
   still be waiting on the founder and a window over nothing shipped is a false verdict. Nor
   does it start one over a number no source reads (`measureRefusal`: the company's Stripe
   key, live unless test money counts, and the product's Vercel project). A spent-out bet
-  gets the lead a "settle" run: measure or kill. No tool lets an agent declare a win.
+  gets the lead a "settle" run: measure or kill. One that ends done with neither closes the
+  bet unmeasured (`closeUnsettledBet`): no window ran, and briefing the lead again would bill
+  the bet a run every tick. No tool lets an agent declare a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
   bet reads captured live-mode USD charges tagged `metadata[bet]=<slug>`, the tag
@@ -190,7 +192,10 @@ allocator and the replay.
   too, since `claimTask` refuses anything else a run would bill. "Waiting on the
   founder" is modelled in `allocate` once: a bet with a blocked task gets no hands — settle
   runs carry their bet, so that covers them — and a lead whose last proposal is blocked is
-  not asked again.
+  not asked again. Nor is one whose last proposal ended done with no news on the ledger since
+  it was briefed (`proposalIdle`: no bet opened or closed, no product started), the same brief
+  getting the same answer, until it is `PROPOSAL_RETRY_MS` (15 minutes) old, since the room or
+  a connection may have moved meanwhile.
   Routines and founder pings are the only unfunded work, and a routine is only work that
   recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
   bet's job.
@@ -246,12 +251,12 @@ allocator and the replay.
   action, an approval or a connect ask.
 - **The policy is data, retuned by replay.** `dream` replays a fixed set of `explore`
   weights against the measured verdicts and swaps only to a strictly better scorer, so the
-  incumbent never loses to a tie. A bet killed before any source reported its number
-  (`moved === null`) says nothing about its hypothesis, so neither the replay nor `allocate`
-  (product yield, the plateau's run of losses) counts it. The replay scores only work picks
-  and floors a pick's cost at one run's, so a win nothing paid for cannot price itself at
-  zero; the plateau (three straight losses) only shapes a proposal, so it is a constant, not
-  policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
+  incumbent never loses to a tie. A bet closed unmeasured (`moved === null`: killed before any
+  source reported its number, or left unsettled) says nothing about its hypothesis, so neither
+  the replay nor `allocate` (product yield, the plateau's run of losses) counts it. The replay
+  scores only work picks and floors a pick's cost at one run's, so a win nothing paid for
+  cannot price itself at zero; the plateau (three straight losses) only shapes a proposal, so
+  it is a constant, not policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
 

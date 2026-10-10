@@ -814,6 +814,42 @@ const routinesFiled = () => store.listOpenTasks().filter((t) => t.origin === "ro
 const proposing = () =>
   store.openTasksFor("priya").filter((t) => t.origin === "propose" && t.state.kind === "running");
 
+const MINUTE = 60_000;
+
+/** Found the company, let the lead's first proposal end done with nothing opened, then step a minute on. */
+const proposeNothing = async () => {
+  found();
+  const { driver, running } = scripted();
+  const drain = createScheduler(driver, asleep);
+  drain.start();
+  drain.stop();
+  expect(proposing()).toHaveLength(1);
+  running.get("priya")?.(done(1));
+  await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+  vi.setSystemTime(Date.now() + MINUTE);
+  return () => {
+    drain.start();
+    drain.stop();
+  };
+};
+
+const settling = () =>
+  store.openTasksFor("priya").filter((t) => t.origin === "settle" && t.state.kind === "running");
+
+/** A spent-out bet with a reading, and the lead's settle run on it under way. */
+const settleRun = () => {
+  found();
+  const bet = openBet(1);
+  store.recordBetSpend(bet.id, 1);
+  store.setBetReading(bet.id, 12, Date.now());
+  const { driver, running } = scripted();
+  const drain = createScheduler(driver, asleep);
+  drain.start();
+  drain.stop();
+  expect(settling()).toMatchObject([{ betId: bet.id }]);
+  return { bet, drain, running };
+};
+
 describe("asking the lead for the next bet", () => {
   it.each<TaskOrigin>(["routine", "founder", "delegated"])(
     "goes on while the lead's %s ask waits on the founder",
@@ -853,6 +889,73 @@ describe("asking the lead for the next bet", () => {
     drain.stop();
 
     expect(proposing()).toEqual([]);
+  });
+
+  it.each<[string, () => void]>([
+    ["a product starts", () => store.createProduct({ description: "a side one", name: "Side" })],
+    ["a bet opens", () => store.measureBet(openBet(5).id, Date.now())],
+  ])("files no second proposal after one that opened nothing, until %s", async (_news, news) => {
+    vi.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
+    try {
+      const tick = await proposeNothing();
+
+      tick();
+      expect(proposing()).toEqual([]);
+
+      news();
+      tick();
+      expect(proposing()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks again once a proposal that opened nothing is a quarter hour old", async () => {
+    vi.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
+    try {
+      const tick = await proposeNothing();
+
+      vi.setSystemTime(Date.now() + 13 * MINUTE);
+      tick();
+      expect(proposing()).toEqual([]);
+
+      vi.setSystemTime(Date.now() + MINUTE);
+      tick();
+      expect(proposing()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("a settle run", () => {
+  it("that ends done with no call closes its bet unmeasured and files no second", async () => {
+    const { bet, drain, running } = settleRun();
+
+    running.get("priya")?.(done(1));
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+
+    expect(store.getBet(bet.id)).toMatchObject({
+      spentUsd: 2,
+      state: { kind: "killed", moved: null },
+    });
+    expect(store.recentTeamMessages().at(-1)?.text).toContain("neither measured nor killed it");
+
+    drain.start();
+    drain.stop();
+
+    expect(settling()).toEqual([]);
+    expect(store.listShippedTasks().filter((t) => t.origin === "settle")).toHaveLength(1);
+  });
+
+  it("leaves the bet it measured to its window", async () => {
+    const { bet, running } = settleRun();
+
+    store.measureBet(bet.id, Date.now());
+    running.get("priya")?.(done(1));
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+
+    expect(store.getBet(bet.id)?.state.kind).toBe("measuring");
   });
 });
 

@@ -221,7 +221,7 @@ const assignmentBrief = (
           `A BET IS OUT OF BUDGET AND NEEDS YOUR CALL: "${bet.title}" (${bet.id}) has spent ${betMoney(bet)} and brought in ${betProgress(bet)}. Nobody works on it until you decide.`,
           `If the work that could move the number is really out the door — deployed, posted, reachable — call measure_bet: it then has ${bet.windowHours}h to bring in ${betGoal(bet)}.`,
           `If it is not, a clock would only produce a false verdict: kill_bet with the honest reason, and if the hypothesis still deserves a test, open it again with a budget that covers the work.`,
-          `Decide this run. Do not do the work yourself here.`,
+          `Decide this run: one that ends with no measure_bet, kill_bet or ask to the founder closes the bet unmeasured. Do not do the work yourself here.`,
         ],
         title: `Settle the bet: ${bet.title}`,
       };

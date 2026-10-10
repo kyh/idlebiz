@@ -1505,6 +1505,25 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
   return killed;
 };
 
+const UNSETTLED = "spent out, and the lead's settle run neither measured nor killed it";
+
+/**
+ * A settle run ended done with its bet still open: the lead skipped the call, and briefing them
+ * again would bill the bet another run on every tick. No window ran, so it closes unmeasured and
+ * nothing learns from it. Null when the bet already left open.
+ */
+export const closeUnsettledBet = (betId: string, now: number): Bet | null => {
+  const bet = getBet(betId);
+  if (bet?.state.kind !== "open") {
+    return null;
+  }
+  const closed = patchBet(betId, {
+    state: { closedAt: now, kind: "killed", moved: null, reason: UNSETTLED },
+  });
+  dropWork((t) => t.betId === betId, BET_CLOSED, now);
+  return closed;
+};
+
 /**
  * Judge every live bet against the real numbers (see `judge` for `pulsingSince`); returns the ones
  * whose state changed. A verdict the save refuses is reported and leaves that bet as the disk has
@@ -1675,6 +1694,16 @@ export const shippingLog = (): ShipLine[] =>
 
 export const openTasksFor = (employeeId: string): Task[] =>
   maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
+
+/** The employee's latest proposal, open or history: what came of the last time they were asked for the next bet. */
+export const lastProposalOf = (employeeId: string): Task | null => {
+  const active = current();
+  return (
+    [...active.tasks, ...shippedOf(active)]
+      .filter((t) => t.assigneeId === employeeId && t.origin === "propose")
+      .toSorted(newestFirst)[0] ?? null
+  );
+};
 
 const TASK_PRIORITY_ORDER = { high: 0, low: 2, medium: 1 } satisfies Record<TaskPriority, number>;
 

@@ -25,8 +25,8 @@ import type { VercelConnection } from "./vercel-connect";
 import type { KeepAwake } from "./keep-awake";
 import { callTool } from "./tools";
 import type { RunContext } from "./tools";
-import { RUN_COST_ESTIMATE_USD, allocate } from "@repo/domain/bets";
-import type { Allocation } from "@repo/domain/bets";
+import { RUN_COST_ESTIMATE_USD, allocate, isClosed } from "@repo/domain/bets";
+import type { Allocation, Bet } from "@repo/domain/bets";
 import { errorMessage } from "@repo/domain/errors";
 import { RefusalError } from "./refusal";
 import { TOOL_SPECS, verbOf } from "./tool-specs";
@@ -65,6 +65,9 @@ const FOUNDER_RESERVED_SLOTS = 1;
 const BACKGROUND_CAPACITY = GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
 
 const AUTOPILOT_TICK_MS = 10_000;
+
+/** How long a proposal that came to nothing holds the lead back: the ledger is not all a brief reads, and the room or a connection may have moved meanwhile. */
+const PROPOSAL_RETRY_MS = 15 * 60_000;
 
 /** An aborted turn settles at once; a shutdown must not hang on a run that never does. */
 const SHUTDOWN_GRACE_MS = 2000;
@@ -129,6 +132,28 @@ const heartbeatBrief = (
     stripeTestMode: stripeInTestMode(company.id),
   });
 
+/**
+ * The lead's latest proposal ended done under `PROPOSAL_RETRY_MS` ago, and the ledger has had no
+ * news since it was briefed: no bet opened or closed, no product started. The same brief would
+ * get the same answer, billed again.
+ */
+const lastProposalIdle = (leaderId: string, now: number): boolean => {
+  const last = store.lastProposalOf(leaderId);
+  if (
+    last?.state.kind !== "done" ||
+    last.completedAt === null ||
+    now >= last.completedAt + PROPOSAL_RETRY_MS
+  ) {
+    return false;
+  }
+  const briefed = last.createdAt;
+  const betNews = (bet: Bet): boolean =>
+    bet.createdAt > briefed || (isClosed(bet) && bet.state.closedAt > briefed);
+  return (
+    !store.listBets().some(betNews) && !store.listProducts().some((p) => p.createdAt > briefed)
+  );
+};
+
 /** Where the next idle employee goes, by the company's current policy. */
 const nextAllocation = (company: Company): Allocation => {
   const stalled = new Set<string>();
@@ -137,12 +162,14 @@ const nextAllocation = (company: Company): Allocation => {
       stalled.add(t.betId);
     }
   }
-  const leadTasks = company.leaderId === null ? [] : store.openTasksFor(company.leaderId);
+  const { leaderId } = company;
+  const leadTasks = leaderId === null ? [] : store.openTasksFor(leaderId);
   return allocate(
     {
       bets: store.listBets(),
       busy: store.runsInFlight(),
       products: store.listProducts().map((p) => p.id),
+      proposalIdle: leaderId !== null && lastProposalIdle(leaderId, Date.now()),
       proposalPending: leadTasks.some((t) => t.origin === "propose" && t.state.kind === "blocked"),
       runCostUsd: RUN_COST_ESTIMATE_USD,
       stalled,
@@ -180,7 +207,8 @@ const park = (task: Task, runId: string, until: number, why: string): TaskStatus
 /**
  * Usage limits, a refused login and the app quitting park the task without consuming a retry.
  * A task whose bet stopped taking work while it ran is neither retried nor parked: it is
- * dropped, and so is its ask to the founder once that bet has closed.
+ * dropped, and so is its ask to the founder once that bet has closed. A settle run that ends
+ * done without the call it was for closes its bet unmeasured.
  */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskStatus => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
@@ -200,6 +228,13 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
       status = "done";
       store.settleTask(task.id, runId, { kind: "done", summary: r.summary || null });
       ship(task, at, r.summary);
+      const unsettled =
+        task.origin === "settle" && task.betId !== null
+          ? store.closeUnsettledBet(task.betId, Date.now())
+          : null;
+      if (unsettled) {
+        announceBet(unsettled);
+      }
       break;
     }
     case "resting": {
