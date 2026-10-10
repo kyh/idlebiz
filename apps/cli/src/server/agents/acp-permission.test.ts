@@ -129,6 +129,7 @@ describe("the session mode", () => {
     });
     const { end } = await turn(scriptedAgent({ setMode: refusal }));
     expect(end).toEqual({
+      class: "other",
       error: "Mode default is not available in this session",
       kind: "failed",
     });

@@ -17,7 +17,6 @@ import type {
   PermissionRequest,
 } from "@repo/agent-driver/acp-session";
 import { addUsage } from "@repo/agent-driver/events";
-import { overloadBackoffMs } from "@repo/agent-driver/rate-limit";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -435,37 +434,24 @@ export const gitIdentity = (emp: Employee, company: Company) => {
   };
 };
 
+/** How a turn ended, as its runner now stands (`heed`). */
+type TurnOutcome = Extract<RunOutcome, { kind: "done" | "resting" | "signedOut" | "failed" }>;
+type Resting = Extract<TurnOutcome, { kind: "resting" }>;
+
 /**
- * How a turn ended, as the scheduler settles it. An ask outranks everything: the
+ * How a run ended, as the scheduler settles it. An ask outranks everything: the
  * founder's answer is what the task waits on. A turn the app stopped failed only
  * because it was stopped, so it is not the task's failure.
  */
 export const outcomeOf = (
-  end: AcpTurnResult["end"],
+  turn: TurnOutcome,
   ask: BlockedAsk | null,
   interrupted: boolean,
 ): RunOutcome => {
   if (ask) {
     return { ask, kind: "blocked" };
   }
-  if (end.kind === "completed") {
-    return { kind: "done" };
-  }
-  if (interrupted) {
-    return { kind: "interrupted" };
-  }
-  switch (end.kind) {
-    case "limited": {
-      return { cause: end.cause, error: end.error, kind: "resting", until: end.resetsAt };
-    }
-    case "signedOut": {
-      return { error: end.error, kind: "signedOut" };
-    }
-    case "failed": {
-      return { error: end.error, kind: "failed" };
-    }
-    // no default
-  }
+  return interrupted && turn.kind !== "done" ? { kind: "interrupted" } : turn;
 };
 
 /** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
@@ -518,7 +504,7 @@ export const memoryAfter = (
   digest: string,
   workspace: string,
 ): Memory => {
-  if (turn.end.kind === "failed" && turn.end.sessionSpent) {
+  if (turn.end.kind === "failed" && turn.end.class === "context") {
     return { instructionsDigest: null, session: null };
   }
   return turn.sessionId === undefined
@@ -533,6 +519,34 @@ export const memoryAfter = (
  */
 export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
   session?.workspace === workspace ? session.id : undefined;
+
+/** The first rest an overload or a refusal of access earns; each one after it in a row doubles it. */
+const BACKOFF_MS = 60_000;
+
+/** The longest an overload or a refusal of access rests a runner: a busy provider, or a credential blip, clears in minutes. */
+const MAX_BACKOFF_MS = 15 * 60_000;
+
+/** How long the `streak`-th overload or refusal of access in a row rests its runner: 1m, 2m, 4m… up to 15m. */
+const backoffMs = (streak: number): number =>
+  Math.min(BACKOFF_MS * 2 ** Math.max(0, streak - 1), MAX_BACKOFF_MS);
+
+/**
+ * How long a usage limit rests its runner when the provider named no reset. claude names one on
+ * its rate limit only once the turn has had a model response, so a turn refused on its first
+ * request, as a retried task's usually is, has only its text, which may name none either. Half
+ * an hour: a retry refused again costs one spawn and no tokens, and finds a lifted limit at most
+ * that late.
+ */
+const UNNAMED_RESET_REST_MS = 30 * 60_000;
+
+/** The longest a usage limit rests its runner, whatever it named: a parse or a clock gone wrong would park it for days. */
+const MAX_USAGE_REST_MS = 12 * 3_600_000;
+
+/** Until when a usage limit rests its runner, by the reset the provider reported, if it did. */
+const usageRestUntil = (reportedReset: number | null): number =>
+  reportedReset === null
+    ? Date.now() + UNNAMED_RESET_REST_MS
+    : Math.min(reportedReset, Date.now() + MAX_USAGE_REST_MS);
 
 class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
@@ -747,29 +761,54 @@ class AgentDriver {
   }
 
   /**
-   * What a turn's end says of its runner, whatever else the run says, and the end as the runner
-   * now stands: a usage limit rests it until it lifts; an overload, or a refusal of access no
-   * sign-in repairs, for a backoff that doubles with each one in a row (1m, 2m, 4m… up to 15m) and
-   * starts over once a turn ends any other way, so a credential blip clears soon and a standing
-   * refusal is not hammered; and a refused login reads as signed out until the founder signs it in
-   * again. A rest never shortens one already holding, which a turn still in flight may end under.
+   * What a turn's end says of its runner, whatever else the run says, and how the turn ended as
+   * the runner now stands. Every rest is decided here: a usage limit rests it until the reset the
+   * provider reported, or half an hour when it named none, never past 12 hours; an overload, or a
+   * refusal of access no sign-in repairs, for a backoff that doubles with each one in a row (1m,
+   * 2m, 4m… up to 15m) and starts over once a turn ends any other way, so a credential blip clears
+   * soon and a standing refusal is not hammered. A refused login reads as signed out until the
+   * founder signs it in again. A rest never shortens one already holding, which a turn still in
+   * flight may end under.
    */
-  heed(runner: AgentRunner, end: AcpTurnEnd): AcpTurnEnd {
+  heed(runner: AgentRunner, end: AcpTurnEnd): TurnOutcome {
     const backsOff =
-      end.kind === "limited" && (end.cause === "overloaded" || end.cause === "access-denied");
+      end.kind === "failed" && (end.class === "overloaded" || end.class === "access-denied");
     const streak = backsOff ? (this.backoffs.get(runner) ?? 0) + 1 : 0;
     this.backoffs.set(runner, streak);
-    if (end.kind === "signedOut") {
-      this.refusedLogins.add(runner);
+    if (end.kind === "completed") {
+      return { kind: "done" };
     }
-    if (end.kind !== "limited") {
-      return end;
+    switch (end.class) {
+      case "auth": {
+        this.refusedLogins.add(runner);
+        return { error: end.error, kind: "signedOut" };
+      }
+      case "usage-limit": {
+        return this.rest(runner, end.class, end.error, usageRestUntil(end.reportedReset));
+      }
+      case "overloaded":
+      case "access-denied": {
+        return this.rest(runner, end.class, end.error, Date.now() + backoffMs(streak));
+      }
+      case "context":
+      case "other": {
+        return { error: end.error, kind: "failed" };
+      }
+      // no default
     }
-    const asked = backsOff ? Date.now() + overloadBackoffMs(streak) : end.resetsAt;
-    const resetsAt = Math.max(asked, this.restingRunner(runner) ?? 0);
-    this.restingUntil.set(runner, resetsAt);
+  }
+
+  /** Rests `runner` until `asked`, or the rest already holding should that lift later, and keeps it for the next launch. */
+  private rest(
+    runner: AgentRunner,
+    cause: Resting["cause"],
+    error: string,
+    asked: number,
+  ): Resting {
+    const until = Math.max(asked, this.restingRunner(runner) ?? 0);
+    this.restingUntil.set(runner, until);
     this.saveRest();
-    return { ...end, resetsAt };
+    return { cause, error, kind: "resting", until };
   }
 
   /** One turn with no tools, files or memory: its final message, or a throw with why it ended short. */
@@ -787,9 +826,9 @@ class AgentDriver {
       prompt,
       systemPrompt: "",
     });
-    const end = this.heed(runner, res.end);
-    if (end.kind !== "completed") {
-      throw new Error(end.error);
+    const outcome = this.heed(runner, res.end);
+    if (outcome.kind !== "done") {
+      throw new Error(outcome.error);
     }
     return res.summary;
   }
@@ -931,8 +970,11 @@ class AgentDriver {
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // an ask raised before the limit hit or the login was refused must not hide it
-      const end = this.heed(emp.runner, res.end);
-      const outcome = outcomeOf(end, tools.asks.current(), signal.aborted);
+      const outcome = outcomeOf(
+        this.heed(emp.runner, res.end),
+        tools.asks.current(),
+        signal.aborted,
+      );
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();
