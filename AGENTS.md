@@ -83,6 +83,7 @@ pnpm verify
 - `strict-boolean-expressions` off: truthiness checks on optionals are idiomatic here.
 - `promise-function-async` and `strict-void-return` off: taste; a dropped or misplaced promise is still `no-floating-promises`' and `no-misused-promises`' to catch.
 - `consistent-return` off: a bare `return` in a `T | undefined` helper is deliberate.
+- `consistent-type-assertions` takes `assertionStyle: "never"`: no `as` and no `<T>x`, only `as const`; parse at the boundary or narrow with a guard. anti-slop's `require-safety-comment-for-type-assertion` is off with it, since a `// SAFETY:` comment no longer admits one.
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a `-- reason`.
 
