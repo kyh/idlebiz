@@ -608,7 +608,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
   may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
   payments, sends, remote copies, pipe-to-shell, credential reads) is signed for once,
-  exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
+  exactly as sent, newlines and all (the card marks each with `⏎`), with the same grant a signed
+  tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
   would run a command the founder's `~/.codex/rules` allow without asking, so its runs find no
   rules there (above).
   - An `idlebiz <tool>` line runs unasked: its request is data the game reads, and the tool
@@ -639,6 +640,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     `cat` does; an ask IdleBiz cannot recognise is held once, exactly. A signature
     only ever picks the runner's one-time option. Both runners' wire formats end in
     `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
+  - Whether a sign-off leases is its rule's alone (`LEASED` in `@repo/domain/hold-rules`, which
+    every rule must fill), never the hold's. A saved ask names its rule, so retiring a hold rule
+    is a breaking store change: a TASK.md still asking under it reads as the question it says.
 - **What stays open**, on purpose or for want of a rule:
   - the network: a run can send what it reads anywhere;
   - reads across HOME outside the login stores (another project's `.env`, transcripts);

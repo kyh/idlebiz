@@ -541,7 +541,8 @@ rather than crashing boot.
 - `packages/domain` — the vocabulary both sides share, pure: `domain.ts` (the company, its
   people, products and tasks), `bets.ts` (the bets, their judge and the allocator),
   `activity.ts` (the event grammar), `digest.ts`, `hire.ts`, `integrations.ts`, `hold-rules.ts`
-  (what an approval card says each rule holds; data only, for the page), `format.ts`,
+  (every rule that holds a call, what its card says and whether signing leases it; data only,
+  for the page), `format.ts`,
   `errors.ts`, `json.ts`, and `character-frame.ts` (the sprite box every process slices by).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`) and the event stream's names (`events.ts`).
