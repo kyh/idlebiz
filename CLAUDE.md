@@ -739,6 +739,12 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 - **Verify**: `pnpm verify` (typecheck · lint · format · test · build). CI
   (`.github/workflows/ci.yml`) runs the same five steps on every push to main and every PR;
   keep the two lists in step.
+- **`tsconfig.base.json` is the compiler's strictness** (`strict`, `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, unused locals and
+  parameters). Every workspace's tsconfig extends it but `apps/web`'s, which Next writes, and
+  adds only what is its own (`lib`, `types`, `include`, `paths`, the renderer's `jsx`). The code
+  the page runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.json`,
+  the ES2023 ceiling of the window's WebKit; the renderer adds the DOM in `renderer/env.d.ts`.
 - **`pnpm lint` is a clean gate.** `oxlint.config.ts` extends the ultracite presets (core, react, anti-slop; next for `apps/web`), type-aware through `oxlint-tsgolint` so the promise, exhaustiveness and `no-unsafe-*` rules see types; every rule is an error. Fix the code, don't add config overrides (the few there are listed in `AGENTS.md` with their reasons); a `// oxlint-disable-next-line rule -- why` needs a stated reason.
 - **Hard prerequisite**: a signed-in `claude` or `codex` CLI on PATH, or the app can't
   onboard, hire or run anything. There is no seeded save.

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Not `incremental`: tsc 7.0's keeps a file's last verdict when a `declare global` it sees
+  // changes, so a break made there typechecks clean until its cache is cleared.
+  "compilerOptions": {
+    // No `lib` here: every leaf sets its own (tsconfig.page.json the page's ceiling, the node
+    // programs ESNext). `target` is the floor they share, so a leaf that forgets `lib` still lands
+    // on that stdlib.
+    "target": "ES2023",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    // Stronger than isolatedModules: a value-import of a type-only symbol fails typecheck instead
+    // of pulling runtime code into the page's bundle.
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // the scripts node runs by stripping types (apps/desktop/scripts) must name `.ts`
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    // Not implied by `strict`; its switch-statement sibling above is on.
+    "noImplicitReturns": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  }
+}

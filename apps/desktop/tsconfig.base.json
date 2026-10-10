@@ -1,20 +1,6 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
     "paths": { "@/*": ["./src/*"] }
   }
 }
