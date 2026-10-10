@@ -1641,8 +1641,8 @@ export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newe
 
 /** Open tasks by assignee and status, newest first. History is the shipping log's. */
 export const queryTasks = (query: {
-  assigneeId?: string;
-  status?: readonly OpenTaskStatus[];
+  assigneeId?: string | undefined;
+  status?: readonly OpenTaskStatus[] | undefined;
 }): Task[] => {
   const { assigneeId, status } = query;
   return listOpenTasks()

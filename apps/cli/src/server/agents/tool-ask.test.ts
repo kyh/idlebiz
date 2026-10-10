@@ -4,7 +4,12 @@ import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { holdFor } from "../command-policy";
 import type { Confinement } from "../command-policy";
 
-const ask = (request: { rawInput?: unknown; meta?: unknown; title?: string; kind?: string }) =>
+const ask = (request: {
+  rawInput?: unknown;
+  meta?: unknown;
+  title?: string | undefined;
+  kind?: string | undefined;
+}) =>
   toolAskOf({
     kind: request.kind,
     meta: request.meta,

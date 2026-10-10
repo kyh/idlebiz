@@ -2637,9 +2637,9 @@ describe("the save format", () => {
     const [lead] = store.listEmployees();
     const signOff = (title: string, command: string, rule: string) => {
       const t = store.createTask({
-        assigneeId: lead?.id,
+        assigneeId: lead?.id ?? null,
         origin: "founder",
-        productId: product?.id,
+        productId: product?.id ?? null,
         title,
       });
       const ask = { command, rule, type: "approval" } as const;
