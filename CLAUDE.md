@@ -85,7 +85,7 @@ apps/
                  (React + Phaser): the office, its panels and its state, which call main through
                  `api()` (renderer/api.ts, installed by install-api.ts) and hear it through
                  `listen()`. scripts/: the pack (node fetched, the server staged as
-                 Resources/server, everything signed, notarized and released).
+                 Resources/server, everything signed, notarized and released) and its smoke.
   cli/           idlebiz — THE SERVER AND THE BINARY. `idlebiz serve` is main (src/server/): the
                  save (store/), the scheduler, the runs and their seal (agents/), the company's
                  tools (tools.ts over tool-specs.ts, behind control-plane.ts), the integrations,
@@ -680,7 +680,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   settings that turn its sandbox on, codex's checks that the seal refuses a patch moving a
   file into the save.
   They run in `pnpm --filter idlebiz test` on a Mac with that CLI installed and skip
-  elsewhere, CI included.
+  elsewhere; CI's `test-macos` job installs both CLIs, pinned in the workflow, so they run there.
 - **The px-kit beats Tailwind.** The `.px-*` classes in `packages/px-kit/px-kit.css` (one
   stylesheet, imported by both apps) live outside `@layer`; Tailwind's utilities are
   layered, and unlayered CSS wins regardless of specificity. So a utility on the same
@@ -737,9 +737,12 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 
 `AGENTS.md` is the full workflow — read it before driving this repo. The essentials:
 
-- **Verify**: `pnpm verify` (typecheck · lint · format · test · build). CI
-  (`.github/workflows/ci.yml`) runs the same five steps on every push to main and every PR;
-  keep the two lists in step. Its actions are pinned by commit SHA, which dependabot moves
+- **Verify**: `pnpm verify` (typecheck · lint · knip · format · test · build). CI
+  (`.github/workflows/ci.yml`) runs the same six steps on every push to main and every PR, in
+  its `ci` job on Linux; keep the two lists in step. Its `test-macos` job runs what only a Mac
+  can: clippy over the shell's macOS code, `pnpm test` with the seal and the gate suites (the
+  `claude`, `codex` and `agent-browser` it installs, pinned there, signed in to nothing), and
+  `pnpm smoke:desktop`. Its actions are pinned by commit SHA, which dependabot moves
   (`.github/dependabot.yml`); a new step pins its action the same way.
 - **`tsconfig.base.json` is the compiler's strictness** (`strict`, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, unused locals and
@@ -759,8 +762,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 
 Commands: `pnpm verify` · `pnpm dev:browser` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
-· `pnpm e2e` · `pnpm -F @repo/desktop package`
-`pnpm knip` checks unused files, exports and dependencies; it is not part of `verify`.
+· `pnpm e2e` · `pnpm -F @repo/desktop package` · `pnpm smoke:desktop`
+`pnpm knip` checks unused files, exports and dependencies, in `verify` and CI.
 `pnpm e2e` builds the page and main and drives them with Playwright in Chromium, main behind the
 dev host: every test that founds a company (office, #team, panels, key entry, sealing) needs a
 signed-in CLI under the macOS seal and skips without one, never spends, not part of `verify` or
@@ -768,7 +771,12 @@ CI (see `AGENTS.md`).
 `pnpm -F @repo/desktop package` packs the app on a Mac (`scripts/package.ts`), signed with the
 keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack)
 and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
-that is not both.
+that is not both. `pnpm smoke:desktop` packs and boots the .app on a scratch save
+(`apps/desktop/scripts/smoke-packaged.ts`): every resource the server ships is in it, hello
+boots main on the pack's node, the window loads main's page, a second launch hands over, and a
+quit leaves nothing main started running. It refuses where an IdleBiz runs or the Keychain holds
+IdleBiz's key, which an ad-hoc pack would wait on a prompt to read; CI's `test-macos` job runs it
+on an ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1`).
 Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
 loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
 `pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser; its

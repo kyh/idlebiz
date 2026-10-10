@@ -53,4 +53,5 @@ for `pnpm dev:browser` and the e2e suite.
 `pnpm --filter idlebiz test` runs main's suites against temporary save roots and real loopback
 and socket servers, and the verbs against a live control plane. On macOS it also runs each run's seal and,
 where a `claude` or `codex` CLI is installed, that CLI through the app's adapter against a
-stand-in model (`src/server/agents/*-gate.test.ts`); those skip elsewhere.
+stand-in model (`src/server/agents/*-gate.test.ts`); those skip elsewhere. CI's `test-macos`
+job installs both CLIs, pinned in its workflow, so they run there.

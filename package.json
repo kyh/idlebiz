@@ -16,9 +16,10 @@
     "format": "oxfmt --check && turbo run format",
     "format:fix": "oxfmt --write && turbo run format:fix",
     "knip": "knip",
+    "smoke:desktop": "pnpm -F @repo/desktop package && pnpm -F @repo/desktop smoke",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test test:rust --concurrency=${TEST_CONCURRENCY:-4}",
-    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm test && pnpm build"
+    "verify": "pnpm typecheck && pnpm lint && pnpm knip && pnpm format && pnpm test && pnpm build"
   },
   "devDependencies": {
     "knip": "^6.39.0",

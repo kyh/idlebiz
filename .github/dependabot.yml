@@ -8,7 +8,7 @@ updates:
     cooldown:
       default-days: 1
     groups:
-      # one PR for the adapters and the sdk; CI skips the gate suites a bump must pass on a Mac
+      # one PR for the adapters and the sdk, which CI's test-macos job runs the gate suites on
       acp:
         patterns:
           - "@agentclientprotocol/*"

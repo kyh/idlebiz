@@ -125,11 +125,13 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String
         .on_permission_request(|_, _| PermissionResponse::Deny)
         // the first load alone: a later one (a reload) must not bring back a window Close hid, nor
         // take the focus from whatever has it. Main hears it shown once it is. Nothing of the URL is
-        // logged: a handoff's link carries a nonce until its redirect drops it
+        // logged: a handoff's link carries a nonce until its redirect drops it. The line is what
+        // the packaged smoke (scripts/smoke-packaged.ts) waits on
         .on_page_load(move |window, payload| {
             if payload.event() != PageLoadEvent::Finished || shown.swap(true, Ordering::Relaxed) {
                 return;
             }
+            println!("[shell] window loaded");
             match window.show().and_then(|()| window.set_focus()) {
                 Ok(()) => told(window.app_handle(), "shown"),
                 Err(error) => eprintln!("[shell] could not show the window: {error}"),

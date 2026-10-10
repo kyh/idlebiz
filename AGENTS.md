@@ -21,7 +21,7 @@ Paths below are short, as in CLAUDE.md: `server/…` and `commands/…` are unde
 
 ```sh
 pnpm install
-pnpm verify        # static gate: typecheck · lint · format · test · build
+pnpm verify        # static gate: typecheck · lint · knip · format · test · build
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:browser   # the office in a browser → http://localhost:31100/ (signs the browser in to main)
 pnpm dev:desktop   # the app's own window (tauri dev)
@@ -68,13 +68,21 @@ CLI-free surfaces below; it cannot reach a populated office.
 
 ## Verify a change end-to-end
 
-Static gate (`.github/workflows/ci.yml` runs the same steps on every push to main and every
-PR, as named steps, each action pinned by commit, which dependabot moves; Vercel's build of
-`apps/web` is a second remote check):
+Static gate (`.github/workflows/ci.yml`'s `ci` job runs the same steps on Linux on every push to
+main and every PR, as named steps, each action pinned by commit, which dependabot moves; Vercel's
+build of `apps/web` is a second remote check):
 
 ```sh
 pnpm verify
 ```
+
+Its `test-macos` job runs what only a Mac can: clippy over the shell's macOS code, `pnpm test`
+with the seal and every gate suite (it installs `claude`, `codex` and `agent-browser` at versions
+pinned there, signed in to nothing, and fails before the tests if one does not answer
+`--version`, since a gate skips on a CLI it cannot run), and `pnpm smoke:desktop`, an ad-hoc pack
+booted on a scratch save (`apps/desktop/scripts/smoke-packaged.ts`). The smoke refuses where an
+IdleBiz is running or the Keychain holds IdleBiz's key, which an ad-hoc pack would wait on a
+prompt to read, so on a Mac that runs IdleBiz it stops before it launches anything.
 
 **Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by the `oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`, `no-misused-promises`, `switch-exhaustiveness-check`, `no-deprecated` and `no-unsafe-*` are skipped without a word. The deliberate overrides, each with its reason beside it in the config:
 
@@ -93,7 +101,8 @@ Chromium (`tools/e2e/`): each launch starts the built main through the dev host
 (`apps/cli/src/dev-host/host.ts`), which answers main's asks of a native app as the shell would,
 and opens the built page main serves on the handoff link main hands it, as the shell's window
 opens. `pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the
-menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test` and driven by hand.
+menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, booted packaged by
+`pnpm smoke:desktop` and driven by hand.
 The suite covers the title screen, a founded company's
 office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
 shown as set and, for Stripe, replaceable and removable; a key refused is never saved), Printful token entry
@@ -338,7 +347,7 @@ rather than crashing boot.
   it asks before every command and patch. A codex-acp upgrade must carry that patch. Both
   adapters and the ACP sdk are pinned exactly in the `pnpm-workspace.yaml` catalog: a bump
   moves the patch's key, may change the wire `acp-session.ts` speaks, and must pass
-  `claude-gate` and `codex-gate` on a Mac with both CLIs, which CI skips.
+  `claude-gate` and `codex-gate` on a Mac with both CLIs, which CI's `test-macos` job runs.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`server/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).
@@ -400,7 +409,8 @@ rather than crashing boot.
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
   its login (`claude-gate.test.ts`, `codex-gate.test.ts`), and, where `agent-browser` is
   installed, the real agent-browser under a run's seal (`browser-gate.test.ts`); all skip
-  elsewhere. Command policy
+  elsewhere. CI's `test-macos` job runs every one, on the CLI versions its workflow pins, which
+  move by hand. Command policy
   rules each need a matching example; everyday commands must remain allowed. Drive anything
   requiring a window live instead, or cover it in the e2e suite.
 - **The page's API is a contract.** `packages/contract` declares every procedure the page
