@@ -511,7 +511,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   deploy guard skips a public name's value (`unshippableEnvValues`), which the build ships
   anyway; that trusts the name, not the framework, so a prefix the product's framework does not
   read (`VITE_` in a Next.js app) leaves a value server-only and unguarded. A set_env call's
-  title, its command line, is logged as `set_env` alone.
+  title, its command line, is logged as `set_env` alone, judged on the whole title before the
+  log cuts any title to one short line (`loggedToolName`, `scheduler.ts`): a command may put the
+  value before the verb.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits

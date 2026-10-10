@@ -12,8 +12,12 @@ export type AgentEvent =
   | { type: "message_end"; text: string }
   | {
       type: "tool_start";
-      /** The first line of the agent's title for the call ("Read src/app.ts"), capped — prose, differs per CLI. */
-      toolName: string;
+      /**
+       * The agent's title for the call, whole ("Read src/app.ts") — prose, differs per CLI. codex
+       * titles a command with the command itself, heredoc bodies and inlined secrets included, so
+       * whoever logs it redacts and cuts it.
+       */
+      title: string;
       /** ACP's own discriminant for what the call does. The stable key to react on. */
       kind?: ToolKind;
     };
