@@ -1,9 +1,9 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { HttpError, fetchOk } from "./lib/http";
-import { report } from "./lib/report";
+import { answering } from "./lib/vendor-call";
+import type { VendorAnswer } from "./lib/vendor-call";
 import { PRINTFUL_STORE, PRINTFUL_TOKEN, getSecret } from "./secrets";
-import { errorMessage } from "@repo/domain/errors";
 import { jsonValueSchema, parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 import { CATALOG_PAGE } from "./listing";
@@ -153,52 +153,11 @@ export const printfulDelete = async (
   await res.text();
 };
 
-/**
- * How a Printful call failed: `refused` is the token turned away, which only a new one fixes;
- * `missing` a 404; `rejected` a refusal that asking again cannot change, such as an address it
- * cannot ship to; `down` no answer to act on, so the call is tried again later.
- */
-type PrintfulFault =
-  | { kind: "refused" }
-  | { kind: "missing"; reason: string }
-  | { kind: "rejected"; reason: string }
-  | { kind: "down"; reason: string };
-
-const UNREADABLE_ANSWER =
-  "Printful answered in a shape IdleBiz does not read, which a change on Printful's side causes; try again later";
-
-/** How Printful answered a call: what it sent, or how the call failed. */
-export type PrintfulAnswer<T> = { kind: "ok"; value: T } | PrintfulFault;
-
-/**
- * Run a call of Printful's, answering its failure as what the caller acts on. An answer the
- * schemas refuse is a fault as well as the caller's reason: Printful's v2 is still in beta.
- */
-export const answering = async <T>(
+/** Run `what`, a call of Printful's, answering its failure in Printful's words. */
+export const answeringPrintful = <T>(
   what: string,
   call: () => Promise<T>,
-): Promise<PrintfulAnswer<T>> => {
-  try {
-    return { kind: "ok", value: await call() };
-  } catch (error) {
-    if (error instanceof HttpError) {
-      if (error.refused) {
-        return { kind: "refused" };
-      }
-      if (error.status === 404) {
-        return { kind: "missing", reason: printfulSays(error) };
-      }
-      // a 429 still there after the call's own retries is Printful being busy, not a refusal
-      const permanent = error.status >= 400 && error.status < 500 && error.status !== 429;
-      return { kind: permanent ? "rejected" : "down", reason: printfulSays(error) };
-    }
-    if (error instanceof z.ZodError) {
-      report(`printful ${what}`, error);
-      return { kind: "down", reason: UNREADABLE_ANSWER };
-    }
-    return { kind: "down", reason: errorMessage(error) };
-  }
-};
+): Promise<VendorAnswer<T>> => answering("Printful", what, call, printfulSays);
 
 /** What a failed Printful read leaves the caller: `refused` is the token turned away, which only a new one fixes; `failed` says why, to the agent. */
 type PrintfulFailure = { kind: "refused" } | { kind: "failed"; reason: string };
@@ -208,11 +167,13 @@ const readingPrintful = async <T>(
   what: string,
   read: () => Promise<T>,
 ): Promise<T | PrintfulFailure> => {
-  const answer = await answering(what, read);
+  const answer = await answeringPrintful(what, read);
   if (answer.kind === "ok") {
     return answer.value;
   }
-  return answer.kind === "refused" ? answer : { kind: "failed", reason: answer.reason };
+  return answer.kind === "refused"
+    ? { kind: "refused" }
+    : { kind: "failed", reason: answer.reason };
 };
 
 /** Printful's dollar string in whole cents, or null when it is none. */

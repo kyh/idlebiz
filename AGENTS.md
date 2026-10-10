@@ -426,6 +426,10 @@ rather than crashing boot.
   `IDLEBIZ_ROOT_DIR`), never under the save root, which a reset deletes; `server/lib/log.ts` sends
   uncaught errors there too. A catch that carries on past an unexpected error calls
   `report` (`server/lib/report.ts`); a boot that throws says where the log is and exits.
+  Stripe's and Printful's calls run through `answering` (`server/lib/vendor-call.ts`), all but
+  the revenue read (`metrics.ts`, which settles each read apart) and the Printful token's
+  check: it sorts how a call failed and reports an answer its schema refuses once, under the
+  call's name, and each caller folds that into its own result.
 - **Everything main says happened goes through `server/activity.ts`.** `publishActivity`
   stamps, persists and fans out one `ActivityEvent` (`@repo/domain/activity`, a discriminated
   union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a
@@ -513,7 +517,8 @@ rather than crashing boot.
   `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:
   its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
-  (every write, atomic and behind the reset gate), `vercel-connect.ts` (the Vercel token the
+  (every write, atomic and behind the reset gate), `lib/vendor-call.ts` (how a Stripe or
+  Printful call failed, sorted once), `vercel-connect.ts` (the Vercel token the
   founder pastes and each product's project binding), `stripe-api.ts` (what every Stripe call
   shares), `stripe-key.ts` (the Stripe key the founder enters, which charges and reads revenue),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),

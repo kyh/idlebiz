@@ -1,7 +1,7 @@
-import { HttpError, getJson } from "./lib/http";
+import { getJson } from "./lib/http";
+import type { VendorFault } from "./lib/vendor-call";
 import { STRIPE_SECRET_KEY, deleteSecret, getSecret, setSecret } from "./secrets";
-import { STRIPE_API, isTestKey, stripeHeaders } from "./stripe-api";
-import { errorMessage } from "@repo/domain/errors";
+import { STRIPE_API, answeringStripe, isTestKey, stripeHeaders } from "./stripe-api";
 import type { StripeKeyStatus } from "@repo/domain/integrations";
 import type { StripeAnswer } from "./metrics";
 import { RefusalError } from "./refusal";
@@ -44,19 +44,14 @@ export const stripeKeyStatus = (): StripeKeyStatus => {
     : { last4, livemode, state: "set" };
 };
 
-/** Why Stripe turned a key away, as the founder should read it. */
-const turnedAway = (status: number): string => {
-  switch (status) {
-    case 401: {
-      return "Stripe doesn't recognise this key — copy it again from the API keys page of your Stripe Dashboard.";
-    }
-    case 403: {
-      return "Stripe won't let this key make payment links — give the restricted key Write on Payment Links, Prices, Products and Shipping Rates and Read on Charges and Checkout Sessions, or use your secret key.";
-    }
-    default: {
-      return `Stripe answered ${status} — nothing was saved; try again.`;
-    }
+/** Why Stripe did not take a key, as the founder should read it. */
+const turnedAway = (fault: VendorFault): string => {
+  if (fault.kind !== "refused") {
+    return `Stripe couldn't check this key (${fault.reason}) — nothing was saved; try again.`;
   }
+  return fault.status === 401
+    ? "Stripe doesn't recognise this key — copy it again from the API keys page of your Stripe Dashboard."
+    : "Stripe won't let this key make payment links — give the restricted key Write on Payment Links, Prices, Products and Shipping Rates and Read on Charges and Checkout Sessions, or use your secret key.";
 };
 
 /** Keep `key` once Stripe has taken it; refused, nothing is saved. */
@@ -66,14 +61,9 @@ export const saveStripeKey = async (key: string): Promise<void> => {
       "That isn't a secret key — paste one that starts sk_ or rk_ from the API keys page of your Stripe Dashboard, not the publishable pk_ one.",
     );
   }
-  try {
-    await getJson(PROBE, stripeHeaders(key));
-  } catch (error) {
-    throw new RefusalError(
-      error instanceof HttpError
-        ? turnedAway(error.status)
-        : `Stripe couldn't be reached (${errorMessage(error)}) — nothing was saved; try again.`,
-    );
+  const probed = await answeringStripe("key check", () => getJson(PROBE, stripeHeaders(key)));
+  if (probed.kind !== "ok") {
+    throw new RefusalError(turnedAway(probed));
   }
   setSecret(STRIPE_SECRET_KEY, key);
 };

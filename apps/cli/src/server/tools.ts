@@ -183,6 +183,9 @@ const revenueBetRefusal = (bet: string, product: Product): string | null => {
 const TEST_MODE =
   " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.";
 
+const UNRECORDED_LINK =
+  "Stripe may have made the payment link: it took the create but answered in a shape IdleBiz does not read, so IdleBiz recorded no link and would never switch one off. Ask the founder to look under Payment Links in their Stripe Dashboard and switch off any it made, rather than sign off again: for a day Stripe answers the same request the same way.";
+
 const NO_STRIPE_KEY =
   "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the key is saved.";
 
@@ -1034,6 +1037,9 @@ const TOOLS = {
         if (made.kind === "failed") {
           return `Stripe made no payment link: ${made.error}`;
         }
+        if (made.kind === "unrecorded") {
+          return UNRECORDED_LINK;
+        }
         if (store.getChargeLink(made.id) !== null) {
           return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
         }
@@ -1149,6 +1155,9 @@ const TOOLS = {
       }
       if (made.kind === "failed") {
         return `Stripe made no payment link: ${made.error}`;
+      }
+      if (made.kind === "unrecorded") {
+        return UNRECORDED_LINK;
       }
       store.recordListing({
         betId: bet ?? null,

@@ -92,7 +92,11 @@ describe("saving the charging key", () => {
       status: 403,
       why: "a restricted key that can't make payment links",
     },
-    { said: "Stripe answered 500", status: 500, why: "a key Stripe couldn't check" },
+    {
+      said: "Stripe couldn't check this key (no)",
+      status: 500,
+      why: "a key Stripe couldn't check",
+    },
   ])("refuses $why, keeping the key saved before", async ({ said, status }) => {
     stripe(listed);
     await saveStripeKey("sk_live_saved0001");
@@ -109,7 +113,7 @@ describe("saving the charging key", () => {
     stripe(() => Promise.reject(new TypeError("fetch failed")));
 
     await expect(saveStripeKey("sk_live_founder1234")).rejects.toThrow(
-      "Stripe couldn't be reached (fetch failed) — nothing was saved; try again.",
+      "Stripe couldn't check this key (fetch failed) — nothing was saved; try again.",
     );
     expect(stripeKeyStatus()).toEqual({ state: "unset" });
   });

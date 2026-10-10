@@ -1431,6 +1431,23 @@ describe("create_payment_link", () => {
     expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_pro"]);
   });
 
+  it("says the link may stand on Stripe when Stripe took the create but answered in a shape IdleBiz does not read, and reports it", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = chargingRun();
+    replayingStripe((endpoint): StripeAnswer =>
+      endpoint === "/v1/prices"
+        ? { body: { id: "price_1" }, status: 200 }
+        : { body: { id: "plink_pro", link: PAID_URL }, status: 200 },
+    );
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
+    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
+      "Stripe may have made the payment link",
+    );
+    expect(logged).toHaveBeenCalledExactlyOnceWith("[Stripe payment link]", expect.any(z.ZodError));
+    expect(store.paymentLinks()).toEqual([]);
+  });
+
   it("makes a new link rather than record one Stripe replays that is switched off since", async () => {
     const replays = new Map<string, JsonValue>();
     const active = new Map<string, boolean>();
@@ -2312,6 +2329,28 @@ describe("sell_print", () => {
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
     expect(await call()).toContain(LISTED_URL);
     expect(store.listListings().map((l) => l.paymentLink.id)).toEqual(["plink_1"]);
+  });
+
+  it("lists nothing, saying the link may stand on Stripe, when Stripe answered the link's create in a shape IdleBiz does not read", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = sellingRun();
+    const sellers = globalThis.fetch;
+    replayingStripe((endpoint): StripeAnswer => {
+      if (endpoint !== "/v1/payment_links") {
+        return { body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" }, status: 200 };
+      }
+      return { body: { id: "plink_1" }, status: 200 };
+    }, sellers);
+    store.grantApproval(ctx.run.taskId, PRINT_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      "Stripe may have made the payment link",
+    );
+    expect(logged).toHaveBeenCalledExactlyOnceWith(
+      "[Stripe print payment link]",
+      expect.any(z.ZodError),
+    );
+    expect(store.listListings()).toEqual([]);
   });
 
   it.each([
