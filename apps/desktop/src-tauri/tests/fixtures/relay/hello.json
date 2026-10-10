@@ -1,0 +1,10 @@
+{
+  "from": "shell",
+  "params": {
+    "openedAtLogin": false,
+    "packaged": true,
+    "pageDevUrl": null,
+    "safeStoragePassword": "the-keychain-password"
+  },
+  "result": null
+}

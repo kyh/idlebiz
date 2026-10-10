@@ -22,8 +22,8 @@ import { writeAgentLauncher } from "./agent-launcher";
 import { agentDriver } from "./agents/agent-driver";
 import { setAutopilot, switchOffBeforeReset } from "./company-actions";
 import { controlPlane } from "./control-plane";
-import { host, hostOver, launchSchema, setHost } from "./host";
-import type { Launch } from "./host";
+import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } from "./host";
+import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
 import { broadcast, setEventSink } from "./lib/broadcast";
 import { suspendWrites } from "./lib/fs";
@@ -126,11 +126,7 @@ const markSeen = (throttled: boolean): void => {
   }
 };
 
-// what the shell says of its one window: blurred, minimized, hidden (closing it hides it: the
-// office lives on in the menu bar, and the dock goes with it), or shown again
-const windowSchema = z.object({ state: z.enum(["blurred", "minimized", "hidden", "shown"]) });
-
-const windowChanged = ({ state }: z.infer<typeof windowSchema>): void => {
+const windowChanged = ({ state }: WindowChange): void => {
   // leaving the office marks it seen, as the Electron window's blur, hide and minimize did; coming
   // back must not, or the next digest would start at the return and miss what happened while away
   if (state !== "shown") {
@@ -305,7 +301,7 @@ peer.handle("handoff", z.null(), () => {
     throw new Error("IdleBiz is still starting.");
   }
   const { handoffUrl, origin } = page.handoff();
-  return { handoffUrl, origin };
+  return { handoffUrl, origin } satisfies Handoff;
 });
 
 // the shell closes main's stdin once this answers, and main exits then
@@ -316,6 +312,6 @@ peer.handle("quit", z.null(), async () => {
 
 peer.on("window", windowSchema, windowChanged);
 
-peer.on("tray", z.object({ on: z.boolean() }), ({ on }) => {
+peer.on("tray", trayClickSchema, ({ on }) => {
   appTray.setAutopilot(on);
 });

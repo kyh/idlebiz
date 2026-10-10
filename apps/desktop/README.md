@@ -39,6 +39,12 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
 - Main asks the shell (`apps/cli/src/server/host.ts`, answered in `src-tauri/src/host.rs`): a message box, the
   clipboard, opening a URL, a file or a folder, the login item; and tells it the menu-bar icon's
   model, a notification, whether to keep the Mac awake, and to relaunch after a reset.
+- Every method either way and its shape is named once on each end, `RELAY_METHODS` and its zod
+  schemas in `host.ts`, the consts and serde types in `src-tauri/src/protocol.rs`, and both are
+  pinned to one sample a method in `src-tauri/tests/fixtures/relay/`: main's tests parse each, and
+  `cargo test` reads each into the shell's types and back. Both ends refuse a field they do not
+  know. A notification the shell cannot read goes to its stderr, and under `tauri dev` to a box
+  too, once a method: main waits on no answer, so would never hear of it.
 - A quit asks main to stop its runs (`quit`) and waits up to 45 seconds for the answer, then
   closes its stdin, then waits; a main that has not exited five seconds later is killed with its
   process group. Main's stdin is also its lifeline: a shell that crashed or was killed ends main

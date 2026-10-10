@@ -28,6 +28,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::main_log::MainLog;
+use crate::protocol;
 use crate::relay::{self, Incoming};
 
 /// How long a quit waits for main to stop its runs and answer: agents get a grace of their own
@@ -275,7 +276,7 @@ impl MainProcess {
     /// not booted by then is stuck somewhere in its boot, and a quit would wait the boot out too,
     /// so it is killed with its group.
     pub fn boot(&self, hello: &Value, within: Duration) -> Result<(), RequestError> {
-        let booted = self.request("hello", hello, within);
+        let booted = self.request(protocol::HELLO, hello, within);
         if let Err(RequestError::TimedOut(_)) = booted {
             self.note(&format!(
                 "[shell] main did not boot within {within:?}; killing it"
@@ -304,7 +305,10 @@ impl MainProcess {
             }
             state.stopping = true;
         }
-        if self.request("quit", &Value::Null, quit_timeout).is_err() {
+        if self
+            .request(protocol::QUIT, &Value::Null, quit_timeout)
+            .is_err()
+        {
             self.note("[shell] main did not answer quit in time; closing it anyway");
         }
         lock(&self.to_main).take();

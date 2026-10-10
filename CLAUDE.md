@@ -79,13 +79,14 @@ Turborepo + pnpm. Pointers in this file are short: `server/…` and `commands/�
 apps/
   desktop/       @repo/desktop — THE APP THE FOUNDER INSTALLS: a Tauri 2 shell over the system
                  WebKit. src-tauri/ (Rust): the window and its origin pin (window.rs,
-                 navigation.rs), main as its one child (main_process.rs, relay.rs, runtime.rs),
-                 what main asks of a native app (host.rs: the tray, the Keychain, keep-awake, the
-                 login item, opening a path or a URL) and main's log (main_log.rs). src/renderer/
-                 (React + Phaser): the office, its panels and its state, which call main through
-                 `api()` (renderer/api.ts, installed by install-api.ts) and hear it through
-                 `listen()`. scripts/: the pack (node fetched, the server staged as
-                 Resources/server, everything signed, notarized and released).
+                 navigation.rs), main as its one child (main_process.rs, relay.rs, protocol.rs,
+                 runtime.rs), what main asks of a native app (host.rs: the tray, the Keychain,
+                 keep-awake, the login item, opening a path or a URL) and main's log
+                 (main_log.rs). src/renderer/ (React + Phaser): the office, its panels and its
+                 state, which call main through `api()` (renderer/api.ts, installed by
+                 install-api.ts) and hear it through `listen()`. scripts/: the pack (node
+                 fetched, the server staged as Resources/server, everything signed, notarized
+                 and released).
   cli/           idlebiz — THE SERVER AND THE BINARY. `idlebiz serve` is main (src/server/): the
                  save (store/), the scheduler, the runs and their seal (agents/), the company's
                  tools (tools.ts over tool-specs.ts, behind control-plane.ts), the integrations,
@@ -747,8 +748,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 - **CLI-free surfaces**: `apps/web` and the onboarding modal, both reachable with no company.
 - **`pnpm dev:desktop` and `pnpm dev:browser` stop this checkout's desktop dev session first**;
   `dev:web`, `verify`, `e2e` and unrelated processes on TCP 31100 survive, and startup fails while
-  that port is occupied. The shell's env reaches main, but for every `NODE_*` variable other
-  than `NODE_ENV`, which the shell drops so none loads code into main (`scrubbed_env`).
+  that port is occupied. The shell's env reaches main, but for every `NODE_*` variable, which the
+  shell and the dev host both drop (`scrubbed_env`, `mainEnv`): none loads code into main, and no
+  `NODE_ENV` of a terminal's or vitest's reaches the runs, which inherit main's env.
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 

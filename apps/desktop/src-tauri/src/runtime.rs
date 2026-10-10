@@ -88,20 +88,18 @@ pub fn resolve(exe: &Path, resource_dir: &Path) -> Result<Runtime, String> {
     Ok(runtime)
 }
 
-/// What main starts from: the shell's own environment less anything that makes node load code or
-/// open a debugger. `NODE_OPTIONS` can `--require` a file or `--inspect` a port, so it and every
-/// other `NODE_*` but `NODE_ENV` go: the job of the Electron fuses that turned `NODE_OPTIONS` and
-/// the inspector arguments off.
+/// What main starts from: the shell's own environment less every `NODE_*`, as the dev host gives
+/// it too (`apps/cli/src/dev-host/host.ts`). `NODE_OPTIONS` can `--require` a file or `--inspect` a
+/// port, the job of the Electron fuses that turned it and the inspector arguments off; and main
+/// reads no `NODE_ENV`, but every run inherits main's env, so a terminal's or a test runner's would
+/// build the founder's products in its mode.
 pub fn scrubbed_env<I>(inherited: I) -> BTreeMap<OsString, OsString>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
 {
     inherited
         .into_iter()
-        .filter(|(name, _)| {
-            let name = name.to_string_lossy();
-            !name.starts_with("NODE_") || name == "NODE_ENV"
-        })
+        .filter(|(name, _)| !name.to_string_lossy().starts_with("NODE_"))
         .collect()
 }
 
@@ -163,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn drops_every_node_variable_but_its_mode() {
+    fn drops_every_node_variable() {
         let kept: Vec<String> = scrubbed_env(pairs(&[
             "PATH",
             "NODE_OPTIONS",
@@ -175,7 +173,7 @@ mod tests {
         .into_keys()
         .map(|name| name.to_string_lossy().into_owned())
         .collect();
-        assert_eq!(kept, ["HOME", "IDLEBIZ_ROOT_DIR", "NODE_ENV", "PATH"]);
+        assert_eq!(kept, ["HOME", "IDLEBIZ_ROOT_DIR", "PATH"]);
     }
 
     #[test]

@@ -10,6 +10,7 @@ mod login_item;
 mod main_log;
 mod main_process;
 mod navigation;
+mod protocol;
 mod relay;
 mod runtime;
 mod shell;

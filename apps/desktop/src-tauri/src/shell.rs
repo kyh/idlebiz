@@ -9,12 +9,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::main_log::{self, MAIN_LOG_MAX_BYTES, MainLog};
 use crate::main_process::{Host, MainProcess, MainSpec, RequestError};
+use crate::protocol::Hello;
 use crate::{host, keychain, runtime, window};
 
 /// How long main has to boot once it is said hello to: it opens the save, the control plane and
@@ -48,9 +49,13 @@ pub fn main<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<MainProcess>> {
 
 /// Tells main what happened in the window or the menu bar; before main is up there is no one to
 /// tell, and nothing to keep.
-pub fn tell_main<R: Runtime>(app: &AppHandle<R>, method: &str, params: &Value) {
-    if let Some(main) = main(app) {
-        main.notify(method, params);
+pub fn tell_main<R: Runtime>(app: &AppHandle<R>, method: &str, params: &impl Serialize) {
+    let Some(main) = main(app) else {
+        return;
+    };
+    match serde_json::to_value(params) {
+        Ok(params) => main.notify(method, &params),
+        Err(error) => eprintln!("[shell] could not tell main {method}: {error}"),
     }
 }
 
@@ -146,12 +151,16 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         .as_ref()
         .filter(|_| tauri::is_dev())
         .map(ToString::to_string);
-    let hello = json!({
-        "openedAtLogin": opened_at_login,
-        "packaged": bundled,
-        "pageDevUrl": page_dev_url,
-        "safeStoragePassword": keychain::safe_storage_password(bundled),
+    let hello = serde_json::to_value(Hello {
+        opened_at_login,
+        packaged: bundled,
+        page_dev_url,
+        safe_storage_password: keychain::safe_storage_password(bundled),
     });
+    let hello = match hello {
+        Ok(hello) => hello,
+        Err(error) => return fail(app, "IdleBiz couldn't start", &error.to_string()),
+    };
     if let Err(failure) = process.boot(&hello, HELLO_TIMEOUT) {
         if let Some(shell) = app.try_state::<Shell>() {
             let mut held = shell.lock();

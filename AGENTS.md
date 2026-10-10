@@ -138,8 +138,8 @@ so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
-> (`server/paths.ts`). The whole shell env reaches main, and the employees' CLIs less its
-> credential-shaped names, as in a terminal launch. Isolation protects the real save, but
+> (`server/paths.ts`). The whole shell env but its `NODE_*` reaches main, and the employees'
+> CLIs less its credential-shaped names, as in a terminal launch. Isolation protects the real save, but
 > onboarding and employee runs still bill the signed-in CLI.
 
 ```sh
@@ -384,8 +384,8 @@ rather than crashing boot.
 - **Tests need no window or Phaser.** `pnpm --filter idlebiz test` covers main: schemas, codecs,
   store/integration behavior under temporary save roots, real loopback and socket requests, the page's
   router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/desktop test`
-  covers the page's geometry and state, then `cargo test` the shell (the relay's framing, main's
-  supervision against a stand-in main on node, the navigation pin, the runtime's paths, main's
+  covers the page's geometry and state, then `cargo test` the shell (the relay's framing and its
+  samples, main's supervision against a stand-in main on node, the navigation pin, the runtime's paths, main's
   log). On macOS main's suite also runs the seal on canary files under a stand-in home
   (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
@@ -424,6 +424,13 @@ rather than crashing boot.
   Mac kept awake while a run is in flight, a relaunch. The shell says hello first, with what only
   it knows: whether it is the packaged app, the dev server's address in dev, whether the login
   item launched it, the Keychain's password.
+  Neither end compiles against the other, so each names every method once (`RELAY_METHODS` and
+  its zod schemas in `server/host.ts`; the consts and serde types of `src-tauri/src/protocol.rs`)
+  and both are pinned to one sample a method, `src-tauri/tests/fixtures/relay/<method>.json`:
+  `server/host.test.ts` parses each with main's schema, `cargo test` reads each into the shell's
+  types and writes it back unchanged, and each checks its own methods are the samples'. A method
+  added, renamed or reshaped changes its sample and both ends in one commit. Both ends refuse a
+  field they do not know, and a development shell shows a box for a notification it cannot read.
   Main's stdin is its lifeline: the shell closes it only after main answers `quit`, so a shell
   that crashed or was killed ends main too, after its runs.
 - **Main keeps a log file.** Main's console is its stderr, which the shell appends, stamped, to
@@ -482,8 +489,9 @@ rather than crashing boot.
 
 - `apps/desktop/src-tauri` — the shell, Rust: the window over main's page, opened on the handoff
   main hands it, and its navigation pin (`window.rs`, `navigation.rs`), main as its one child
-  (`main_process.rs` over the relay's framing in `relay.rs`, `runtime.rs` for where node and the
-  server are), what main asks of a native app (`host.rs`: message boxes, the clipboard, Finder,
+  (`main_process.rs` over the relay's framing in `relay.rs` and its messages in `protocol.rs`,
+  `runtime.rs` for where node and the server are), what main asks of a native app (`host.rs`:
+  message boxes, the clipboard, Finder,
   notifications; `tray.rs`, `login_item.rs`, `keep_awake.rs`, `keychain.rs`), and main's log
   (`main_log.rs`). No capability grants the page a command.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
@@ -501,7 +509,8 @@ rather than crashing boot.
   `dev-host/host.ts` (main as the shell runs it, for `pnpm dev:browser` and the e2e suite, which
   ask it for the handoff the shell's window opens on).
 - `apps/cli/src/server` — main. `serve.ts` (boot on the shell's hello, the relay, quit),
-  `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio channel),
+  `host.ts` (what main asks of the app that runs it, and every message of the relay's),
+  `relay/` (its end of the stdio channel),
   `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
   `page-session.ts` the sign-in, `page-policy.ts` the page's CSP), `page-router.ts` (the page's
   contract implemented; `lib/answers.ts` words what does not return), `store/store.ts` (the one
