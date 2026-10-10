@@ -214,7 +214,9 @@ rather than crashing boot.
   `STRIPE_SECRET_KEY` in main (`server/payment-links.ts`) once the founder signs off; with no
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`server/stripe-key.ts`) and resumes the work that
-  waited on it. A new key is pasted over the saved one, never after removing it: a pulse
+  waited on it: every Stripe card is one `stripe` ask, a key to charge with or to count revenue
+  with alike, and none resumes on a test-mode key, which counts no money unless
+  `IDLEBIZ_COUNT_TEST_MONEY=1`. A new key is pasted over the saved one, never after removing it: a pulse
   between the two finds no key and hands each retiring link to the founder to switch off by hand. A restricted key needs Write on Payment Links, Prices and Products to charge,
   and Read on Charges for the revenue read below and for each paid print,
   whose payment the order pump reads before Printful is paid, Read on

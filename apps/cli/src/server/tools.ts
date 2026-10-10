@@ -41,7 +41,7 @@ import type {
   BlockedAsk,
   Company,
   Employee,
-  IntegrationNeed,
+  IntegrationKind,
   Product,
   TaskOrigin,
   VercelBinding,
@@ -223,7 +223,7 @@ const printFileUrls = (placements: readonly PrintPlacement[]): PrintPlacement[] 
 /** Ask the founder for an integration, ending the call with what the agent should read. */
 const needIntegration = (
   ctx: RunContext,
-  integration: Exclude<IntegrationNeed, "vercel">,
+  integration: Exclude<IntegrationKind, "vercel">,
   reason: string,
   sent: string,
   why: string,
@@ -273,7 +273,7 @@ const sellingKeys = (
     getSecret(STRIPE_SECRET_KEY) ??
     needIntegration(
       ctx,
-      "stripe-key",
+      "stripe",
       `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
       NO_STRIPE_KEY,
       "IdleBiz has no Stripe key to charge with.",
@@ -534,7 +534,7 @@ const DELIVERY_GRANT: StripeGrant = {
 const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, said: string): never =>
   needIntegration(
     ctx,
-    "stripe-key",
+    "stripe",
     `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
     `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
     `Stripe won't let IdleBiz's key ${grant.can}.`,
@@ -999,7 +999,7 @@ const TOOLS = {
         return askFounder(
           ctx,
           {
-            integration: "stripe-key",
+            integration: "stripe",
             productId: null,
             reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
             type: "integration",

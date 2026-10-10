@@ -1,6 +1,6 @@
 import {
   ActionAskSchema,
-  INTEGRATION_NEEDS,
+  INTEGRATION_KINDS,
   TASK_ORIGINS,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -61,7 +61,7 @@ const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
     return { command, rule, type: "approval" };
   }
   const m = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);
-  const integration = INTEGRATION_NEEDS.find((k) => k === m?.groups?.kind);
+  const integration = INTEGRATION_KINDS.find((k) => k === m?.groups?.kind);
   if (!integration) {
     return { question: s, type: "question" };
   }

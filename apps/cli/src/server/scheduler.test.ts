@@ -1136,31 +1136,27 @@ const bindFor = (productId: string | null): BlockedAsk => ({
 
 describe("an integration the founder connects", () => {
   const KEY: BlockedAsk = {
-    integration: "stripe-key",
+    integration: "stripe",
     productId: null,
     reason: "to sell a plan through a payment link",
     type: "integration",
   };
-  const READ: BlockedAsk = {
-    integration: "stripe",
-    productId: null,
-    reason: "to count revenue",
-    type: "integration",
-  };
 
-  it("leaves an ask to count revenue waiting while Stripe stays in test mode", async () => {
-    const { drain, task } = await blockedOn(READ);
+  it("leaves a Stripe ask waiting while the key saved is in test mode", async () => {
+    const { drain, task } = await blockedOn(KEY);
     writeFileSync(
       path.join(root, "secrets.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_test_x" }),
     );
-    drain.resumeIntegrationAsks("stripe", "stripe-key");
+    drain.resumeIntegrationAsks("stripe");
     expect(kindOf(task)).toBe("blocked");
   });
 
-  it.each([KEY, READ])("resumes %j once a Stripe key is saved", async (ask) => {
-    const { drain, task } = await blockedOn(ask);
-    drain.resumeIntegrationAsks("stripe", "stripe-key");
+  it("resumes a Stripe ask once a live key is saved, and no other integration's", async () => {
+    const { drain, task } = await blockedOn(KEY);
+    drain.resumeIntegrationAsks("printful");
+    expect(kindOf(task)).toBe("blocked");
+    drain.resumeIntegrationAsks("stripe");
     expect(kindOf(task)).not.toBe("blocked");
   });
 

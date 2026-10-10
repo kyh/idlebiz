@@ -15,7 +15,6 @@ import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
 import { z } from "zod";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { RPC_PREFIX } from "@repo/contract/routes";
-import type { IntegrationNeed } from "@repo/domain/domain";
 import { packageFile } from "../paths";
 import { activityEvents } from "./activity";
 import { writeAgentLauncher } from "./agent-launcher";
@@ -91,10 +90,10 @@ const resetGame = async (): Promise<void> => {
   }
 };
 
-/** Stripe reads revenue now: read it at once, and resume the work that waited on it. */
-const stripeReady = (...needs: IntegrationNeed[]): void => {
+/** A Stripe key was saved: read revenue with it at once, and resume the work that waited on it. */
+const stripeReady = (): void => {
   metricsPulse.now();
-  scheduler.resumeIntegrationAsks(...needs);
+  scheduler.resumeIntegrationAsks("stripe");
 };
 
 /** "Seen" is the last moment the founder had the office in front of them; the

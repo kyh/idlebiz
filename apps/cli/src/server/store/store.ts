@@ -2616,28 +2616,6 @@ const releaseOrphanedTasks = (active: ActiveCompany): void => {
   }
 };
 
-/** The reasons create_payment_link, sell_print and the checkout grant check gave a Stripe key ask. */
-const KEY_ASK_REASON = /^(?:to sell .+ through a payment link$|Stripe won't let IdleBiz's key )/u;
-
-/**
- * Format 10 and older filed an ask for a Stripe key to charge with as one for Stripe Connect,
- * which only reads revenue: completing Connect resumed it into a run that found no key.
- */
-const adoptStripeKeyAsks = (active: ActiveCompany): void => {
-  for (const t of active.tasks) {
-    const { state } = t;
-    if (
-      state.kind === "blocked" &&
-      state.ask.type === "integration" &&
-      state.ask.integration === "stripe" &&
-      KEY_ASK_REASON.test(state.ask.reason)
-    ) {
-      const keyAsk: TaskState = { ...state, ask: { ...state.ask, integration: "stripe-key" } };
-      recordIn(active.tasks, t.id, { state: keyAsk }, saveTask);
-    }
-  }
-};
-
 /** The product each Vercel ask a tool raised names, as its reason words it. */
 const VERCEL_ASK_PRODUCT = [
   /^to deploy (?<name>.+)$/u,
@@ -2787,7 +2765,6 @@ const adoptOlderSave = (active: ActiveCompany, from: number): void => {
     adoptStrandedDeadLetters(active);
   }
   if (from < 11) {
-    adoptStripeKeyAsks(active);
     adoptSharedVercelProjects(active);
     adoptVercelAskProducts(active);
   }

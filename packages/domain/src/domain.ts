@@ -20,21 +20,15 @@ export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
+/** What an integration ask waits on; `stripe` is the founder's own key, which charges and reads revenue. */
 export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
-
-/**
- * What an integration ask waits on: a kind an agent may request, or a Stripe key to charge
- * with, which only a saved key gives — a Stripe connection only reads revenue.
- */
-export const INTEGRATION_NEEDS = [...INTEGRATION_KINDS, "stripe-key"] as const;
-export type IntegrationNeed = (typeof INTEGRATION_NEEDS)[number];
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
   printful: "Printful",
   stripe: "Stripe",
-  "stripe-key": "Stripe key",
   vercel: "Vercel",
-} satisfies Record<IntegrationNeed, string>;
+} satisfies Record<IntegrationKind, string>;
 
 /** A step only a human can take: `action` names it, `draft` is text to paste, if any. */
 export const ActionAskSchema = z.object({
@@ -50,7 +44,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   z.object({ question: z.string(), type: z.literal("question") }),
   ActionAskSchema,
   z.object({
-    integration: z.enum(INTEGRATION_NEEDS),
+    integration: z.enum(INTEGRATION_KINDS),
     /**
      * The product whose Vercel project answers a Vercel ask, which a run may name other than its
      * own; null for the company's own keys (Stripe, Printful) and a Vercel ask any product answers.

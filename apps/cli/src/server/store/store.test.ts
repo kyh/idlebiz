@@ -2122,14 +2122,6 @@ const shelveAnswer = (companyId: string, format: number) => {
   return { bet, next };
 };
 
-/** What an integration ask waits on, or null for a task waiting on none. */
-const integrationOf = (id: string) => {
-  const state = stateOf(id);
-  return state?.kind === "blocked" && state.ask.type === "integration"
-    ? state.ask.integration
-    : null;
-};
-
 describe("the save format", () => {
   it("stamps what it writes", () => {
     expect(stampOf(found().id)).toBe(11);
@@ -2191,35 +2183,6 @@ describe("the save format", () => {
       { kind: "dropped", reason: "product retired" },
     ]);
     expect(stampOf(co.id)).toBe(11);
-  });
-
-  it("reads the Stripe key asks a format 10 save filed as Stripe Connect asks as key asks, and leaves a Connect ask be", () => {
-    const co = foundTeam();
-    const askFor = (reason: string) => {
-      const t = store.createTask({ assigneeId: "priya", origin: "work", title: reason });
-      store.claimTask(t.id, "priya");
-      store.lockTaskForRun(t.id, "run-1");
-      store.settleTask(t.id, "run-1", {
-        ask: { integration: "stripe", productId: null, reason, type: "integration" },
-        kind: "blocked",
-        summary: null,
-      });
-      return t.id;
-    };
-    const sell = askFor('to sell "Tee" at $20.00 through a payment link');
-    const refused = askFor(
-      "Stripe won't let IdleBiz's key make payment links, it lacks a permission (denied): remove the key and paste one whose restricted permissions include Payment Links: Write, or your secret key",
-    );
-    const connect = askFor("to count the revenue the launch brings in");
-    restamp(co.id, 10);
-
-    store.initStore();
-
-    expect([sell, refused, connect].map(integrationOf)).toEqual([
-      "stripe-key",
-      "stripe-key",
-      "stripe",
-    ]);
   });
 
   it("reads a Vercel ask an older save kept without its product as about the product its reason names", () => {

@@ -18,7 +18,7 @@ import type {
   BlockedAsk,
   Company,
   Employee,
-  IntegrationNeed,
+  IntegrationKind,
   Product,
   Routine,
   RunMetrics,
@@ -398,7 +398,9 @@ const askInWords = (ask: BlockedAsk): string => {
       return `permission to run \`${ask.command}\``;
     }
     case "integration": {
-      return `a ${INTEGRATION_LABELS[ask.integration]} connection: ${ask.reason}`;
+      return ask.integration === "stripe"
+        ? `a Stripe key: ${ask.reason}`
+        : `a ${INTEGRATION_LABELS[ask.integration]} connection: ${ask.reason}`;
     }
     // no default
   }
@@ -421,10 +423,10 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
   title: continuationTitle(task.title),
 });
 
-export const integrationConnectedAnswer = (need: IntegrationNeed): string =>
-  need === "stripe-key"
+export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
+  kind === "stripe"
     ? "The founder saved a Stripe key — IdleBiz holds it and charges with it for you. Continue where you left off."
-    : `${INTEGRATION_LABELS[need]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
+    : `${INTEGRATION_LABELS[kind]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
 
 export const actionAnswer = (reply: ActionReply): string => {
   if (reply.kind === "cant") {

@@ -7,7 +7,6 @@
 import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
-import type { IntegrationNeed } from "@repo/domain/domain";
 import { agentDriver } from "./agents/agent-driver";
 import { generateCandidates, startLogin } from "./agents/onboarding";
 import { notingSeal } from "./agents/seal";
@@ -42,8 +41,8 @@ export interface PageRouterDeps {
   scheduler: ReturnType<typeof createScheduler>;
   /** Deletes the save, then starts the app again. */
   resetGame: () => Promise<void>;
-  /** An integration that reads revenue is ready: read it now, and resume what waited on it. */
-  stripeReady: (...needs: IntegrationNeed[]) => void;
+  /** A Stripe key was saved: read revenue with it now, and resume what waited on it. */
+  stripeReady: () => void;
 }
 
 const os = implement(contract).use(async ({ next, path }) => {
@@ -177,7 +176,7 @@ export const createPageRouter = ({ resetGame, scheduler, stripeReady }: PageRout
       }),
       saveKey: os.stripe.saveKey.handler(async ({ input }) => {
         await saveStripeKey(input.key);
-        stripeReady("stripe", "stripe-key");
+        stripeReady();
       }),
     },
     tasks: {

@@ -1555,7 +1555,7 @@ describe("create_payment_link", () => {
     });
 
     expect(answer).toContain("Stripe won't let IdleBiz's key read checkouts");
-    expect(run.asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+    expect(run.asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
     expect(run.stripe).toEqual([]);
   });
 
@@ -1581,7 +1581,7 @@ describe("create_payment_link", () => {
     expect(asked).toEqual(["/v1/payment_links"]);
     expect(run.asked).toEqual([
       {
-        integration: "stripe-key",
+        integration: "stripe",
         productId: null,
         reason:
           "Stripe won't let IdleBiz's key make payment links, which charging through one needs (Expired API Key provided: rk_live_*****y123): in the Budget panel, paste over it a key whose restricted permissions include Write on Payment Links, Prices and Products, or your secret key",
@@ -1606,7 +1606,7 @@ describe("create_payment_link", () => {
     expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
-    expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+    expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
     expect(JSON.stringify(asked)).toContain(
       "(The provided key does not have the required permissions)",
     );
@@ -1649,7 +1649,7 @@ describe("create_payment_link", () => {
     expect(answer).toContain("this task resumes automatically once the key is saved");
     expect(asked).toEqual([
       {
-        integration: "stripe-key",
+        integration: "stripe",
         productId: null,
         reason: 'to sell "Pro plan" at $9.00 through a payment link',
         type: "integration",
@@ -2238,7 +2238,7 @@ describe("sell_print", () => {
       expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
         "Stripe won't let IdleBiz's key make shipping rates or read checkouts and charges: the founder has a Stripe card waiting",
       );
-      expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+      expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
       expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
     },
   );
@@ -2360,7 +2360,7 @@ describe("sell_print", () => {
     },
     {
       ask: {
-        integration: "stripe-key",
+        integration: "stripe",
         productId: null,
         reason: 'to sell "Launch tee" at $28.00 through a payment link',
         type: "integration",

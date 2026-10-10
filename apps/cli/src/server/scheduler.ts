@@ -53,7 +53,7 @@ import type {
   Company,
   Employee,
   IntegrationAsk,
-  IntegrationNeed,
+  IntegrationKind,
   Task,
   TaskStatus,
 } from "@repo/domain/domain";
@@ -547,14 +547,14 @@ class Scheduler {
     return this.assign(continuation.id, continuation.assigneeId);
   }
 
-  /** Resume every ask waiting on one of `needs`, which the founder has just connected. */
-  resumeIntegrationAsks(...needs: IntegrationNeed[]): void {
+  /** Resume every ask waiting on `kind`, which the founder has just connected. */
+  resumeIntegrationAsks(kind: Exclude<IntegrationKind, "vercel">): void {
     // A test-mode key counts no money: a run resumed on it for revenue finds the same test mode
     // and asks again.
-    const countsNoMoney = stripeInTestMode();
-    this.resumeAsks(
-      (ask) => needs.includes(ask.integration) && !(ask.integration === "stripe" && countsNoMoney),
-    );
+    if (kind === "stripe" && stripeInTestMode()) {
+      return;
+    }
+    this.resumeAsks((ask) => ask.integration === kind);
   }
 
   /**

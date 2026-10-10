@@ -137,7 +137,7 @@ describe("a blocked task's ask in TASK.md", () => {
     { question: "[ask] nested", type: "question" },
     { integration: "vercel", productId: "widget", reason: "need hosting", type: "integration" },
     { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
-    { integration: "stripe-key", productId: null, reason: "to sell a plan", type: "integration" },
+    { integration: "stripe", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
     {
       action: "Post the launch thread on r/SideProject",
