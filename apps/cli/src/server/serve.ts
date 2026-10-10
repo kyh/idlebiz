@@ -27,7 +27,6 @@ import { keepAwake } from "./keep-awake";
 import { broadcast, setEventSink } from "./lib/broadcast";
 import { suspendWrites } from "./lib/fs";
 import { initLog } from "./lib/log";
-import { osCryptSealer } from "./lib/os-crypt";
 import { guarded, report } from "./lib/report";
 import { adoptShellPath } from "./lib/shell-path";
 import { openedAtLogin } from "./login-item";
@@ -38,7 +37,7 @@ import type { PageServer, PageSource } from "./page-server";
 import { ON_REAL_SAVE, ROOT_DIR, RUN_BIN_DIR } from "./paths";
 import { stdioPeer } from "./relay/stdio";
 import { createScheduler } from "./scheduler";
-import { checkSecrets, setSealer } from "./secrets";
+import { DEV_SECRETS_KEY, checkSecrets, sealerFor, setSealer } from "./secrets";
 import * as store from "./store/store";
 import { appTray } from "./tray";
 import { initVercelConnect } from "./vercel-connect";
@@ -128,15 +127,17 @@ const windowChanged = ({ state }: z.infer<typeof windowSchema>): void => {
   }
 };
 
-// The app can't open what the mock key seals, so on the real save dev seals nothing:
+// The app can't open what dev's key seals, so on the real save dev seals nothing:
 // a key dev entered or found plain stays plain for the app to seal, never stranded.
 const sealSecrets = (launch: Launch): void => {
   if (!launch.packaged && ON_REAL_SAVE) {
     report("secrets", "dev on the real save keeps secrets.json's keys as it finds them");
-  } else if (launch.safeStoragePassword === null) {
+  } else if (!launch.packaged) {
+    setSealer(sealerFor(DEV_SECRETS_KEY));
+  } else if (launch.sealingKey === null) {
     report("secrets", "the Keychain is unavailable, so secrets.json keeps its keys as plain text");
   } else {
-    setSealer(osCryptSealer(launch.safeStoragePassword));
+    setSealer(sealerFor(launch.sealingKey));
   }
 };
 

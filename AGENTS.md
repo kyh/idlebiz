@@ -195,18 +195,20 @@ rather than crashing boot.
   is named only by its constant there, or by a set_env value's `ENV/` name, so a misspelt
   name fails typecheck rather than reading as no key.
   Employees run as the founder's OS user: every run's seal (below) keeps it from the file,
-  and each value is also sealed with the macOS Keychain as Electron's `safeStorage` sealed it
-  (Chromium's OSCrypt over the "IdleBiz Safe Storage" item, which the shell reads and hands
-  main at hello; `server/lib/os-crypt.ts`, `setSealer` at boot) as `sealed:v1:<base64>`, since a
-  claude run can still reach the Keychain. Enter
+  and each value is also sealed with a key the macOS Keychain keeps for IdleBiz (service
+  "IdleBiz", account "sealing-key": 32 random bytes, which the shell reads and hands main at
+  hello as `sealingKey`): AES-256-GCM with a random nonce and the key's name as associated data,
+  as `sealed:v2:<base64 of nonce, ciphertext and tag>` (`sealerFor` in `server/secrets.ts`,
+  `setSealer` at boot), since a claude run can still reach the Keychain. Enter
   keys in the app: `VERCEL_TOKEN` through a product's Vercel button (under users), Stripe in
   the Budget panel (under revenue). A key pasted into the file as plain text is sealed the
-  next time main reads it. One the Keychain can't open (another build sealed it, or access
-  was denied) reads as absent, is named in Settings and stays as it is: enter it again.
-  Dev (any unpackaged launch, e2e too) seals with Chromium's mock keychain's password: a
+  next time main reads it. One main can't open (another build or another scheme sealed it, a
+  byte of it changed, it was moved under another name, or access was denied) reads as absent,
+  is named in Settings and stays as it is: enter it again.
+  Dev (any unpackaged launch, e2e too) seals with a fixed key, `DEV_SECRETS_KEY`: a
   development shell is ad-hoc signed, so the real Keychain would ask again after every rebuild
-  and stall automation. It never touches the Keychain, and it seals with a fixed key: a key dev
-  sealed is no secret and only dev opens it. On the
+  and stall automation. It never touches the Keychain: a key dev sealed is no secret and only
+  dev opens it. On the
   real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so the packaged app's keys read as
   absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
@@ -421,7 +423,7 @@ rather than crashing boot.
   shell draws it, `src-tauri/src/tray.rs`), a notification, the login item (`SMAppService`), the
   Mac kept awake while a run is in flight, a relaunch. The shell says hello first, with what only
   it knows: whether it is the packaged app, the dev server's address in dev, whether the login
-  item launched it, the Keychain's password.
+  item launched it, the Keychain's sealing key.
   Main's stdin is its lifeline: the shell closes it only after main answers `quit`, so a shell
   that crashed or was killed ends main too, after its runs.
 - **Main keeps a log file.** Main's console is its stderr, which the shell appends, stamped, to

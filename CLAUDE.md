@@ -358,11 +358,11 @@ third boundary.
     link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session
     but the first out.
 - **Keys stay in main; what spends them runs there.** The keys IdleBiz holds live in
-  `secrets.json`, which the seal keeps from every run, each value also sealed with the macOS
-  Keychain, which a claude run can still reach: Chromium's OSCrypt, as Electron's `safeStorage`
-  sealed it, over the "IdleBiz Safe Storage" password the shell reads and hands main at hello
-  (`server/lib/os-crypt.ts`); dev seals with the mock keychain's, and nothing on the real save, so
-  it strands none. Main reads each where it uses it.
+  `secrets.json`, which the seal keeps from every run, each value also sealed with a key kept in
+  the macOS Keychain, which a claude run can still reach: AES-256-GCM bound to the key's name,
+  under the 32 random bytes the shell reads and hands main at hello (`sealerFor` in
+  `server/secrets.ts`); dev seals with `DEV_SECRETS_KEY`, and nothing on the real save, so it
+  strands none. Main reads each where it uses it.
   A run starts from the founder's env less every credential-shaped name and every URL with a
   login in it, but its runner's own login (`runEnv` in `server/agents/run-env.ts`). An outward
   step that needs a key is a signed tool main runs: `deploy` uploads the product's folder

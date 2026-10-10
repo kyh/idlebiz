@@ -1,8 +1,8 @@
 //! The shell's one state: main, the child that owns the save, and the moves around it. A launch
 //! starts main (`idlebiz serve`), says hello with what only the shell knows (whether the login item
-//! launched it, the dev server under `tauri dev`, the Keychain's password), and opens the window on
-//! main's page, or keeps to the menu bar when the login item launched it. A quit asks main to stop
-//! its runs before anything ends.
+//! launched it, the dev server under `tauri dev`, the Keychain's sealing key), and opens the window
+//! on main's page, or keeps to the menu bar when the login item launched it. A quit asks main to
+//! stop its runs before anything ends.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -145,7 +145,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         "openedAtLogin": opened_at_login,
         "packaged": bundled,
         "pageDevUrl": page_dev_url,
-        "safeStoragePassword": keychain::safe_storage_password(bundled),
+        "sealingKey": keychain::sealing_key(bundled),
     });
     let booted = tauri::async_runtime::block_on(process.request("hello", &hello));
     if let Err(reason) = booted {

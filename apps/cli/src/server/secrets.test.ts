@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord } from "@repo/domain/json";
 import type { Sealer } from "./secrets";
@@ -15,23 +16,38 @@ const previous = {
   VERCEL_TOKEN: process.env.VERCEL_TOKEN,
 };
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { checkSecrets, deleteSecret, getSecret, hasSecret, secretsUnder, setSealer, setSecret } =
-  await import("./secrets");
+const {
+  checkSecrets,
+  deleteSecret,
+  getSecret,
+  hasSecret,
+  sealerFor,
+  sealingKeySchema,
+  secretsUnder,
+  setSealer,
+  setSecret,
+} = await import("./secrets");
 
 const raw = (): JsonRecord => jsonRecordSchema.parse(parseJson(readFileSync(secretsFile, "utf-8")));
 
-/** A stand-in for one app's Keychain item: it opens only what it sealed, as safeStorage does. */
-const keychainItem = (id: number): Sealer => ({
-  open: (sealed) => {
-    if (sealed[0] !== id) {
-      throw new Error(
-        "Error while decrypting the ciphertext provided to safeStorage.decryptString.",
-      );
-    }
-    return Buffer.from(sealed.subarray(1).toReversed()).toString("utf-8");
-  },
-  seal: (plain) => Buffer.concat([Buffer.of(id), Buffer.from(plain, "utf-8").toReversed()]),
-});
+/** Main's sealer over one app's Keychain key: it opens only what it sealed. */
+const keychainItem = (fill: number): Sealer =>
+  sealerFor(sealingKeySchema.parse(Buffer.alloc(32, fill).toString("base64")));
+
+const SEALED_V2 = "sealed:v2:";
+const NONCE_BYTES = 12;
+
+/** A sealed value's bytes, changed by `edit` and kept again under the same name. */
+const tamper = (name: string, edit: (sealed: Buffer) => void): void => {
+  const file = raw();
+  const value = z.string().startsWith(SEALED_V2).parse(file[name]);
+  const sealed = Buffer.from(value.slice(SEALED_V2.length), "base64");
+  edit(sealed);
+  writeFileSync(
+    secretsFile,
+    JSON.stringify({ ...file, [name]: `${SEALED_V2}${sealed.toString("base64")}` }),
+  );
+};
 
 const restore = (key: keyof typeof previous): void => {
   const value = previous[key];
@@ -147,9 +163,56 @@ describe("keys sealed with the Keychain", () => {
     setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
 
     expect(readFileSync(secretsFile, "utf-8")).not.toContain("sk_live_founder");
-    expect(raw().STRIPE_SECRET_KEY).toMatch(/^sealed:v1:/u);
+    expect(raw().STRIPE_SECRET_KEY).toMatch(/^sealed:v2:/u);
     expect(getSecret("STRIPE_SECRET_KEY")).toBe("sk_live_founder");
     expect(statSync(secretsFile).mode.toString(8)).toMatch(/600$/u);
+  });
+
+  it("seals the same key apart each time, so two values give nothing away", () => {
+    setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
+    const first = raw().STRIPE_SECRET_KEY;
+    setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
+
+    expect(raw().STRIPE_SECRET_KEY).not.toBe(first);
+    expect(getSecret("STRIPE_SECRET_KEY")).toBe("sk_live_founder");
+  });
+
+  it("opens nothing from a value changed by a single byte, names it at boot, and leaves it be", () => {
+    setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
+    tamper("STRIPE_SECRET_KEY", (sealed) => {
+      sealed.writeUInt8((sealed.readUInt8(NONCE_BYTES) + 1) % 256, NONCE_BYTES);
+    });
+    const written = readFileSync(secretsFile, "utf-8");
+
+    expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
+    expect(String(checkSecrets()?.cause)).toContain("STRIPE_SECRET_KEY");
+    expect(readFileSync(secretsFile, "utf-8")).toBe(written);
+  });
+
+  it("opens nothing from a value moved under another key's name", () => {
+    setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
+    setSecret("VERCEL_TOKEN", "vercel_sealed");
+    const file = raw();
+    writeFileSync(
+      secretsFile,
+      JSON.stringify({
+        STRIPE_SECRET_KEY: file.VERCEL_TOKEN,
+        VERCEL_TOKEN: file.STRIPE_SECRET_KEY,
+      }),
+    );
+
+    expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
+    expect(getSecret("VERCEL_TOKEN")).toBeNull();
+  });
+
+  it("reads a value an older scheme sealed as one to enter again, never as pasted text", () => {
+    const old = "sealed:v1:djEwc2VhbGVk";
+    writeFileSync(secretsFile, JSON.stringify({ STRIPE_SECRET_KEY: old }));
+
+    expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
+    expect(hasSecret("STRIPE_SECRET_KEY")).toBe(true);
+    expect(String(checkSecrets()?.cause)).toContain("Enter each again");
+    expect(raw().STRIPE_SECRET_KEY).toBe(old);
   });
 
   it("seals a key pasted by hand the next time it is read, and still returns it", () => {
@@ -222,6 +285,14 @@ describe("keys sealed with the Keychain", () => {
     setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
     expect(raw().VERCEL_TOKEN).toBe(sealedElsewhere);
     expect(getSecret("STRIPE_SECRET_KEY")).toBe("sk_live_founder");
+  });
+});
+
+describe("the key main seals with", () => {
+  it("is 32 bytes of base64, or the hello is refused", () => {
+    expect(sealingKeySchema.safeParse(Buffer.alloc(32, 1).toString("base64")).success).toBe(true);
+    expect(sealingKeySchema.safeParse(Buffer.alloc(16, 1).toString("base64")).success).toBe(false);
+    expect(sealingKeySchema.safeParse("not base64").success).toBe(false);
   });
 });
 

@@ -30,7 +30,7 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
 
 - The shell says `hello` first, with what only it knows: whether it is the packaged app, under
   `tauri dev` the dev server's address, whether the login item launched it, and the Keychain's
-  password. Main finds its own files beside itself (the skills and the employee sheets in
+  sealing key. Main finds its own files beside itself (the skills and the employee sheets in
   `resources/`, the built page in `dist/page`). Main boots on the hello; one that fails says where
   the log is, in a box, and the app quits.
 - The shell asks main for a `handoff` each time it makes the window: a one-time link into main's
@@ -75,14 +75,14 @@ menu bar, and Open brings the same page back, or makes it on a fresh handoff whe
 never did. Each boot binds a port of its own, so nothing of the page is kept between boots
 (`no-store`), and the page keeps nothing in the browser's storage.
 
-## The Keychain, sealed as Electron sealed it
+## The Keychain
 
-`secrets.json`'s values are sealed as Electron's `safeStorage` sealed them on the Mac, Chromium's
-OSCrypt v10, so a save an Electron build sealed opens as it was. The shell reads the password from
-the Keychain item Electron made ("IdleBiz Safe Storage", `src-tauri/src/keychain.rs`), being the
-same signed app, and hands it to main at hello; main derives the key and seals
-(`apps/cli/src/server/lib/os-crypt.ts`). Main never reaches the Keychain. A development shell hands the mock
-keychain's password Chromium's dev builds sealed with.
+`secrets.json`'s values are sealed with a key the Keychain keeps for IdleBiz: 32 random bytes,
+base64, under service "IdleBiz" and account "sealing-key", made on the first launch that finds
+none (`src-tauri/src/keychain.rs`). The shell reads it with no prompt, being the signed app that
+made it, and hands it to main at hello; main seals each value with AES-256-GCM, bound to the key's
+name (`apps/cli/src/server/secrets.ts`). Main never reaches the Keychain. A development shell hands
+no key and never touches the Keychain: main seals a dev save with a fixed key of its own.
 
 ## Running it
 

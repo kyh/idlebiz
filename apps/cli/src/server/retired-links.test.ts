@@ -310,7 +310,7 @@ describe("retiring a product", () => {
     const { side } = openShop();
     writeFileSync(
       path.join(root, "secrets.json"),
-      JSON.stringify({ STRIPE_SECRET_KEY: "sealed:v1:c2VhbGVk" }),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sealed:v2:c2VhbGVk" }),
     );
     const stripe = fakeStripe();
 
