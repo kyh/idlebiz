@@ -20,22 +20,22 @@ afterAll(() => {
 const stripeAccount = { accountId: "acct_1", connectedAt: 0, livemode: false };
 
 it("refuses to merge into a metrics.json it cannot read", () => {
-  const file = path.join(root, "acme", "metrics.json");
+  const file = path.join(root, "company", "metrics.json");
   mkdirSync(path.dirname(file), { recursive: true });
   const handTyped = '{"stripeAccount":"acct_1"}';
   writeFileSync(file, handTyped);
 
-  expect(() => writeMetricsConfig("acme", { stripeAccount })).toThrow("it will not be overwritten");
+  expect(() => writeMetricsConfig({ stripeAccount })).toThrow("it will not be overwritten");
   expect(readFileSync(file, "utf-8")).toBe(handTyped);
 });
 
 it("reads a file with providers this build no longer has", () => {
-  const file = path.join(root, "gamma", "metrics.json");
+  const file = path.join(root, "company", "metrics.json");
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(
     file,
     JSON.stringify({ plausible: { domain: "x.com" }, stripe: true, stripeAccount }),
   );
 
-  expect(readMetricsConfig("gamma")).toEqual({ stripeAccount });
+  expect(readMetricsConfig()).toEqual({ stripeAccount });
 });

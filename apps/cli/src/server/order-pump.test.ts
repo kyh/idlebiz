@@ -12,7 +12,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-orders-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { ordersDir } = await import("./paths");
+const { ORDERS_DIR } = await import("./paths");
 const { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } = await import("./order-pump");
 const { retireProduct, settleOrderCard } = await import("./company-actions");
 
@@ -919,13 +919,12 @@ describe("the order pump", () => {
     const productId = openShop();
     fakeWorld({ sessions: [checkout("cs_nowhere", { collected_information: null })] });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    const orders = ordersDir(store.requireCompany().id);
-    mkdirSync(orders, { recursive: true });
-    chmodSync(orders, 0o555);
+    mkdirSync(ORDERS_DIR, { recursive: true });
+    chmodSync(ORDERS_DIR, 0o555);
     try {
       await pumpOrders(NOW, "read");
     } finally {
-      chmodSync(orders, 0o755);
+      chmodSync(ORDERS_DIR, 0o755);
       logged.mockRestore();
     }
     expect(store.listOrders()).toEqual([]);

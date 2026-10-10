@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,22 +45,18 @@ interface Fixtures {
   launch: (options?: LaunchOptions) => Promise<Launched>;
 }
 
-/** Every `run.start` any company on `root` logged: each one would have been a paid CLI session. */
+/** Every `run.start` the company on `root` logged: each one would have been a paid CLI session. */
 const runsStarted = async (root: string): Promise<number> => {
-  let started = 0;
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const log = path.join(root, entry.name, "activity.jsonl");
-    if (!entry.isDirectory() || !existsSync(log)) {
-      continue;
-    }
-    const lines = await readFile(log, "utf-8");
-    for (const line of lines.split("\n")) {
-      if (line.trim() !== "" && jsonRecordSchema.parse(parseJson(line)).kind === "run.start") {
-        started += 1;
-      }
-    }
+  const log = path.join(root, "company", "activity.jsonl");
+  if (!existsSync(log)) {
+    return 0;
   }
-  return started;
+  const lines = await readFile(log, "utf-8");
+  return lines
+    .split("\n")
+    .filter(
+      (line) => line.trim() !== "" && jsonRecordSchema.parse(parseJson(line)).kind === "run.start",
+    ).length;
 };
 
 /** What main gets for one call in place of the API's answer (stub-services.ts). */

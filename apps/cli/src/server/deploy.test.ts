@@ -338,7 +338,7 @@ describe("deploying through Vercel's API", () => {
     const vercel = fakeVercel();
 
     const result = await deployBound([
-      { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
+      { kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
     ]);
     expect(result).toEqual({
       kind: "failed",
@@ -352,7 +352,6 @@ describe("deploying through Vercel's API", () => {
 
   it("finds the same leak before the founder is asked, and none in a folder it cannot read", async () => {
     const held: KeptEnvValue = {
-      company: "co",
       kind: "env",
       name: "OPENAI_API_KEY",
       product: "acme",
@@ -388,8 +387,8 @@ describe("deploying through Vercel's API", () => {
 
     await expect(
       deployBound([
-        { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
-        { company: "co", kind: "env", name: "FLAG", product: "acme", value: "on" },
+        { kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
+        { kind: "env", name: "FLAG", product: "acme", value: "on" },
       ]),
     ).resolves.toMatchObject({ kind: "deployed" });
     expect(vercel.created[0]?.files.map((f) => f.file)).toEqual(["index.html"]);
@@ -401,9 +400,7 @@ describe("deploying through Vercel's API", () => {
     const vercel = fakeVercel({ beforeAskingForFiles: () => put("index.html", key) });
 
     await expect(
-      deployBound([
-        { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
-      ]),
+      deployBound([{ kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key }]),
     ).resolves.toMatchObject({ kind: "failed" });
     expect([...vercel.stored.values()].map(String)).not.toContain(key);
   });

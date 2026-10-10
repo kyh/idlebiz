@@ -268,8 +268,8 @@ describe("retiring a product", () => {
   });
 
   it("switches off nothing for a live product whose PRODUCT.md boot could not read", async () => {
-    const { company, side } = openShop();
-    writeFileSync(path.join(root, company.id, "products", side.id, "PRODUCT.md"), "not a product");
+    const { side } = openShop();
+    writeFileSync(path.join(root, "company", "products", side.id, "PRODUCT.md"), "not a product");
     store.initStore();
     const stripe = fakeStripe();
 

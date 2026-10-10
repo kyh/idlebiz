@@ -24,10 +24,9 @@ export const routineToDoc = (r: Routine): z.input<typeof RoutineDocSchema> => ({
   },
 });
 
-export const docToRoutine = (doc: FrontmatterDoc, companyId: string): Routine => {
+export const docToRoutine = (doc: FrontmatterDoc): Routine => {
   const { body, fields, metadata: m } = decodeDoc(RoutineDocSchema, doc);
   return {
-    companyId,
     id: fields.slug,
     instruction: body.trim(),
     intervalHours: m.intervalHours,

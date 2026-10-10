@@ -12,7 +12,7 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
 (`packages/contract`). Every other verb is a company tool an employee types in its shell
 (`idlebiz message-team '{"text":"…"}'`), a client of the control plane its run was handed.
 
-- Game state on disk at `~/.idlebiz/<company-slug>/`, beside `cache/` (the runs' tool caches)
+- Game state on disk at `~/.idlebiz/company/`, beside `cache/` (the runs' tool caches)
   and `bin/` (the `idlebiz` command main writes the runs at boot) — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
@@ -36,8 +36,10 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   release with no lead leaves (`initStore`): a run that names no lock is queued again, and queued
   or running work nobody holds is to do. A frontmatter key the app does not know is still
   dropped on the next write of that file.
-- One active company per launch: newest `createdAt`, alphabetical slug on ties.
-  Only that company's entities load; older saves remain untouched.
+- A root holds one save or none: `company/`, a fixed folder founding publishes with one rename
+  and boot reads alone (`server/paths.ts`), so no record carries a company id. Founding refuses
+  while it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks the
+  office like a save of another format. A reset deletes the whole root, `secrets.json` included.
 - A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone
   keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`, a
   user-initiated activity the shell holds, `src-tauri/src/keep_awake.rs`, never past a closed
@@ -481,9 +483,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   creates a name set_env never set there, and replaces only one it did: the founder may bind a
   live project whose variables are theirs, and a sensitive one cannot be read back. Nothing is
   retried as a readable type. Main keeps each value Vercel took in `secrets.json`
-  (`ENV/<company>/<product>/<project>/<NAME>`, per project, so a product rebound to a project of
+  (`ENV/<product>/<project>/<NAME>`, per project, so a product rebound to a project of
   the founder's replaces none of theirs; main's own copy never in the save, which runs read), and a
-  deploy refuses a folder any of whose uploaded files holds one, from any product or company, or
+  deploy refuses a folder any of whose uploaded files holds one, from any product, or
   any key IdleBiz itself holds (`heldKeys` in `server/secrets.ts`), naming the file and the
   variable or key, never the value: a key in source ships publicly. Those keys never reach a
   run by the founder's hand either: an action's reply, a question's answer, a room message

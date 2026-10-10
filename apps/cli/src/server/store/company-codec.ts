@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Budget, Company } from "@repo/domain/domain";
 import { BUSINESS_TYPE_IDS } from "@repo/domain/domain";
-import { companySharedDir } from "../paths";
+import { SHARED_DIR } from "../paths";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
@@ -11,7 +11,7 @@ import type { FrontmatterDoc } from "./frontmatter";
  * drop whatever the newer build added. One stamped lower was written by a pre-release build whose
  * shapes nothing here reads. Both are refused, and a bump starts every save over.
  */
-export const SAVE_FORMAT = 12;
+export const SAVE_FORMAT = 13;
 
 /**
  * A save stamped at a format this build does not write, which nothing here touches: a newer
@@ -123,6 +123,6 @@ export const docToCompany = (doc: FrontmatterDoc): Company => {
     ships: m.ships,
     spentUsd: m.spentUsd,
     users: m.users ?? null,
-    workspaceDir: companySharedDir(fields.slug),
+    workspaceDir: SHARED_DIR,
   };
 };

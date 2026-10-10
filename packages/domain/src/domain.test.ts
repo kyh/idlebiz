@@ -58,7 +58,6 @@ describe("afterFailure", () => {
 
 describe("isRoutineDue", () => {
   const routine = {
-    companyId: "co",
     id: "playtest",
     instruction: "play it",
     intervalHours: 24,

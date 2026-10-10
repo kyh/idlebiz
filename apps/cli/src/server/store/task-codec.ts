@@ -195,14 +195,13 @@ export const taskToDoc = (t: Task): z.input<typeof TaskDocSchema> => ({
   },
 });
 
-export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
+export const docToTask = (doc: FrontmatterDoc): Task => {
   const { body, fields, metadata: m } = decodeDoc(TaskDocSchema, doc);
   const description = body.trim();
   return {
     assigneeId: m.assigneeId ?? null,
     attempts: m.attempts,
     betId: m.betId ?? null,
-    companyId,
     completedAt: m.completedAt ?? null,
     createdAt: m.createdAt,
     description: description === "" ? null : description,

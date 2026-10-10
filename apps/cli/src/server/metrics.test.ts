@@ -39,7 +39,6 @@ const charge = (id: string, amount: number, metadata: Record<string, string> = {
 const revenueBet = (id: string, createdAt: number): Bet => ({
   budgetUsd: 5,
   claim: { metric: "revenue" },
-  companyId: "co",
   createdAt,
   hypothesis: "a paid tier sells",
   id,
@@ -229,7 +228,7 @@ describe("stripeCredential", () => {
     expect(stripeCredential({ stripeAccount })).toEqual({ key: "connected", via: "connect" });
   });
 
-  it("reads the founder's own key for every company, the connected one too", () => {
+  it("reads the founder's own key whether or not Stripe is connected", () => {
     writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"connected","STRIPE_SECRET_KEY":"own"}');
 
     expect(stripeCredential(null)).toEqual({ key: "own", via: "own" });
@@ -280,23 +279,23 @@ describe("stripeInTestMode", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     rmSync(secretsFile, { force: true });
-    rmSync(path.join(root, "co"), { force: true, recursive: true });
+    rmSync(path.join(root, "company"), { force: true, recursive: true });
   });
 
   it("takes a test-mode key, secret or restricted, for one whose money counts for nothing", () => {
-    expect(stripeInTestMode("co")).toBe(false);
+    expect(stripeInTestMode()).toBe(false);
     writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_live_1"}');
-    expect(stripeInTestMode("co")).toBe(false);
+    expect(stripeInTestMode()).toBe(false);
     writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
-    expect(stripeInTestMode("co")).toBe(true);
+    expect(stripeInTestMode()).toBe(true);
     writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"rk_test_1"}');
-    expect(stripeInTestMode("co")).toBe(true);
+    expect(stripeInTestMode()).toBe(true);
   });
 
   it("takes a test-mode charging key for test mode while a live account is connected", () => {
-    mkdirSync(path.join(root, "co"), { recursive: true });
+    mkdirSync(path.join(root, "company"), { recursive: true });
     writeFileSync(
-      path.join(root, "co", "metrics.json"),
+      path.join(root, "company", "metrics.json"),
       '{"stripeAccount":{"accountId":"acct_1","connectedAt":0,"livemode":true}}',
     );
     writeFileSync(
@@ -304,14 +303,14 @@ describe("stripeInTestMode", () => {
       '{"STRIPE_SECRET_KEY":"sk_test_1","STRIPE_CONNECT_TOKEN":"sk_live_granted"}',
     );
 
-    expect(stripeInTestMode("co")).toBe(true);
+    expect(stripeInTestMode()).toBe(true);
     expect(measureRefusal(revenueBet("pricing", 0), null)).toContain("test mode");
   });
 
   it("lets a test-mode key's money count under IDLEBIZ_COUNT_TEST_MONEY=1", () => {
     writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
     vi.stubEnv("IDLEBIZ_COUNT_TEST_MONEY", "1");
-    expect(stripeInTestMode("co")).toBe(false);
+    expect(stripeInTestMode()).toBe(false);
   });
 });
 
@@ -592,7 +591,6 @@ describe("fetchRealMetrics reading Vercel", () => {
   const closes = opened + 15 * HOUR;
   const woke = closes + 6 * HOUR;
   const app: Product = {
-    companyId: "co",
     createdAt: 0,
     description: "An app.",
     id: "app",

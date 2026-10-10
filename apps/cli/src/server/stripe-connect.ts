@@ -30,7 +30,6 @@ type Revocation = { kind: "revoked" } | { kind: "unconfirmed"; reason: string };
 // outlast any timeout, and the web callback spends the grant whether or not we still
 // listen. Start over, or a disconnect, is what replaces a stale one.
 interface PendingFlow {
-  companyId: string;
   server: Server;
   nonce: string;
   /** This flow's key pair; the private half dies with the flow. */
@@ -47,7 +46,7 @@ type Notify = (status: StripeStatus) => void;
 let notify: Notify = () => {
   /* empty */
 };
-let onConnected: (companyId: string) => void = () => {
+let onConnected: () => void = () => {
   /* empty */
 };
 let openExternal: (url: string) => Promise<void> = () =>
@@ -55,38 +54,37 @@ let openExternal: (url: string) => Promise<void> = () =>
 
 export const initStripeConnect = (hooks: {
   notify: Notify;
-  onConnected: (companyId: string) => void;
+  onConnected: () => void;
   openExternal: (url: string) => Promise<void>;
 }): void => {
   ({ notify, onConnected, openExternal } = hooks);
 };
 
 /** A refused grant still reads through its token until the founder disconnects, so the error offers that too. */
-const errorStatus = (companyId: string, message: string): StripeStatus => ({
+const errorStatus = (message: string): StripeStatus => ({
   bound:
-    readMetricsConfig(companyId)?.stripeAccount !== undefined &&
-    getSecret(STRIPE_CONNECT_TOKEN) !== null,
+    readMetricsConfig()?.stripeAccount !== undefined && getSecret(STRIPE_CONNECT_TOKEN) !== null,
   message,
   state: "error",
 });
 
-export const getStripeStatus = (companyId: string): StripeStatus => {
+export const getStripeStatus = (): StripeStatus => {
   if (pending) {
     return { state: "connecting" };
   }
   if (lastError) {
-    return errorStatus(companyId, lastError.message);
+    return errorStatus(lastError.message);
   }
-  const account = readMetricsConfig(companyId)?.stripeAccount;
+  const account = readMetricsConfig()?.stripeAccount;
   if (account && getSecret(STRIPE_CONNECT_TOKEN)) {
     return { accountId: account.accountId, livemode: account.livemode, state: "connected" };
   }
   return { state: "disconnected" };
 };
 
-const fail = (companyId: string, message: string): void => {
+const fail = (message: string): void => {
   lastError = { from: "flow", message };
-  notify(errorStatus(companyId, message));
+  notify(errorStatus(message));
 };
 
 const REFUSED: Record<StripeCredential["via"], string> = {
@@ -95,16 +93,16 @@ const REFUSED: Record<StripeCredential["via"], string> = {
 };
 
 /** What the metrics pulse's read says of the company's Stripe key; a refusal shows without deleting the key. */
-export const noteStripeRead = (companyId: string, read: RealSnapshot["stripe"]): void => {
+export const noteStripeRead = (read: RealSnapshot["stripe"]): void => {
   if (read?.answer === "refused") {
     const message = REFUSED[read.via];
     if (lastError?.message !== message) {
       lastError = { from: "pulse", message };
-      notify(errorStatus(companyId, message));
+      notify(errorStatus(message));
     }
   } else if (read?.answer !== "unanswered" && lastError?.from === "pulse") {
     lastError = null;
-    notify(getStripeStatus(companyId));
+    notify(getStripeStatus());
   }
 };
 
@@ -130,17 +128,15 @@ const cancelPending = (): number => {
 const html = (body: string): string =>
   `<!doctype html><meta charset="utf-8"><title>IdleBiz</title><body style="background:#12141c;color:#f5f3ea;font-family:ui-monospace,monospace;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h1 style="font-size:18px">${body}</h1><p style="color:#66739f;font-size:13px">You can close this tab and return to IdleBiz.</p></div></body>`;
 
-const connect = (companyId: string, account: ConnectedAccount): void => {
+const connect = (account: ConnectedAccount): void => {
   requireCompany();
   const { accessToken, stripeUserId: accountId, livemode } = account;
   // The binding is the write that can refuse, and a token saved without one is never revoked.
-  writeMetricsConfig(companyId, {
-    stripeAccount: { accountId, connectedAt: Date.now(), livemode },
-  });
+  writeMetricsConfig({ stripeAccount: { accountId, connectedAt: Date.now(), livemode } });
   setSecret(STRIPE_CONNECT_TOKEN, accessToken);
   lastError = null;
   notify({ accountId, livemode, state: "connected" });
-  onConnected(companyId);
+  onConnected();
 };
 
 const handleCallback = async (flow: PendingFlow, params: URLSearchParams): Promise<boolean> => {
@@ -149,13 +145,12 @@ const handleCallback = async (flow: PendingFlow, params: URLSearchParams): Promi
     return false;
   }
   if (!callback || callback.nonce !== flow.nonce) {
-    fail(flow.companyId, "Stripe callback rejected (bad nonce).");
+    fail("Stripe callback rejected (bad nonce).");
     return false;
   }
   const { outcome } = callback;
   if (outcome.kind === "failed") {
     fail(
-      flow.companyId,
       outcome.error === "access_denied"
         ? "Stripe connection cancelled."
         : `Stripe: ${outcome.error}`,
@@ -167,11 +162,11 @@ const handleCallback = async (flow: PendingFlow, params: URLSearchParams): Promi
     return false;
   }
   if (!account) {
-    fail(flow.companyId, "Stripe callback rejected (envelope not ours).");
+    fail("Stripe callback rejected (envelope not ours).");
     return false;
   }
   closeFlow(flow);
-  connect(flow.companyId, account);
+  connect(account);
   return true;
 };
 
@@ -187,7 +182,7 @@ const finishCallback = async (
     ok = await handleCallback(flow, params);
   } catch (error) {
     if (current === generation) {
-      fail(flow.companyId, errorMessage(error));
+      fail(errorMessage(error));
     }
   }
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -195,7 +190,7 @@ const finishCallback = async (
   closeFlow(flow);
 };
 
-export const beginConnect = async (companyId: string): Promise<{ started: boolean }> => {
+export const beginConnect = async (): Promise<{ started: boolean }> => {
   requireCompany();
   const current = cancelPending();
   lastError = null;
@@ -234,7 +229,7 @@ export const beginConnect = async (companyId: string): Promise<{ started: boolea
       return { started: false };
     }
 
-    pending = { companyId, nonce, ring, server };
+    pending = { nonce, ring, server };
     notify({ state: "connecting" });
 
     await openExternal(authorizeUrl(WEB_BASE, { key: ring.publicKey, nonce, port }));
@@ -247,7 +242,7 @@ export const beginConnect = async (companyId: string): Promise<{ started: boolea
     if (pending?.server === server) {
       closeFlow(pending);
     }
-    fail(companyId, errorMessage(error));
+    fail(errorMessage(error));
     throw error;
   }
 };
@@ -274,14 +269,14 @@ const stillListed = (reason: string): string =>
   `Stripe may still list IdleBiz (${reason}) — remove it under Installed apps in your Stripe Dashboard.`;
 
 /** Clean up local state, then deauthorize on Stripe's side; the founder hears when Stripe did not confirm. */
-export const disconnectStripe = async (companyId: string): Promise<void> => {
+export const disconnectStripe = async (): Promise<void> => {
   requireCompany();
   const current = cancelPending();
   const token = getSecret(STRIPE_CONNECT_TOKEN);
-  const account = readMetricsConfig(companyId)?.stripeAccount;
+  const account = readMetricsConfig()?.stripeAccount;
   // Clear local credentials immediately; new authorization waits for remote revocation below.
   deleteSecret(STRIPE_CONNECT_TOKEN);
-  writeMetricsConfig(companyId, { stripeAccount: undefined });
+  writeMetricsConfig({ stripeAccount: undefined });
   lastError = null;
   notify({ state: "disconnected" });
   if (token && account) {
@@ -293,7 +288,7 @@ export const disconnectStripe = async (companyId: string): Promise<void> => {
       revoking = null;
     }
     if (outcome.kind === "unconfirmed" && current === generation) {
-      fail(companyId, `Disconnected here, but ${stillListed(outcome.reason)}`);
+      fail(`Disconnected here, but ${stillListed(outcome.reason)}`);
     }
   }
 };
@@ -303,9 +298,8 @@ export const disconnectStripe = async (companyId: string): Promise<void> => {
  * founder must still remove by hand when Stripe did not confirm; null when nothing is left.
  */
 export const revokeBeforeReset = async (): Promise<string | null> => {
-  const company = getCompany();
   const token = getSecret(STRIPE_CONNECT_TOKEN);
-  const account = company && readMetricsConfig(company.id)?.stripeAccount;
+  const account = getCompany() === null ? undefined : readMetricsConfig()?.stripeAccount;
   if (!token || !account) {
     return null;
   }

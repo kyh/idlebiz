@@ -8,7 +8,6 @@ const base: Omit<Task, "state"> = {
   assigneeId: "priya",
   attempts: 2,
   betId: "launch-post",
-  companyId: "acme",
   completedAt: 1_700_000_002_000,
   createdAt: 1_700_000_000_000,
   description: "Build it, then ship it.",
@@ -22,7 +21,7 @@ const base: Omit<Task, "state"> = {
 /** The task's TASK.md, as boot reads it back. */
 const written = (t: Task) => parseDoc(serializeDoc(taskToDoc(t)));
 
-const roundTrip = (t: Task): Task => docToTask(written(t), t.companyId);
+const roundTrip = (t: Task): Task => docToTask(written(t));
 
 describe("task codec", () => {
   it.each<TaskState>([
@@ -72,7 +71,7 @@ describe("task codec", () => {
 
   it.each(["failed", "weird"])("refuses a status it never writes, %j", (status) => {
     const doc = written({ ...base, state: { kind: "dead", lastError: "gave up" } });
-    expect(() => docToTask({ ...doc, metadata: { ...doc.metadata, status } }, "acme")).toThrow(
+    expect(() => docToTask({ ...doc, metadata: { ...doc.metadata, status } })).toThrow(
       "metadata.status",
     );
   });
@@ -85,7 +84,7 @@ const blocked = (ask: BlockedAsk): Task => ({
 
 const askSavedAs = (blockedQuestion: string): TaskState => {
   const doc = written(blocked({ question: "?", type: "question" }));
-  return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }, "acme").state;
+  return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }).state;
 };
 
 describe("a blocked task's ask in TASK.md", () => {

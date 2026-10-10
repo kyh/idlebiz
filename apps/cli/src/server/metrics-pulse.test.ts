@@ -8,7 +8,7 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { PULSE_MS } = await import("./metrics");
-const { companyDir } = await import("./paths");
+const { COMPANY_DIR } = await import("./paths");
 const { metricsPulse } = await import("./metrics-pulse");
 
 const BOOT = 1_000_000;
@@ -66,7 +66,7 @@ describe("a pulse", () => {
       path.join(root, "secrets.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_pulse" }),
     );
-    const company = store.foundCompany({
+    store.foundCompany({
       budget: { mode: "infinite" },
       businessType: "software",
       founderName: "Kai",
@@ -110,15 +110,14 @@ describe("a pulse", () => {
         Response.json(url.includes("/v1/charges") ? { data: [sale] } : { total_count: 1 }),
       ),
     );
-    const dir = companyDir(company.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    chmodSync(dir, 0o555);
+    chmodSync(COMPANY_DIR, 0o555);
     try {
       metricsPulse.now();
       await vi.waitFor(() => expect(store.getBet(bet.id)?.reading).toBe(7));
       expect(logged).toHaveBeenCalledWith("[company metrics]", expect.anything());
     } finally {
-      chmodSync(dir, 0o755);
+      chmodSync(COMPANY_DIR, 0o755);
       logged.mockRestore();
     }
     expect(store.getProduct(productId)?.revenueUsd).toBe(7);

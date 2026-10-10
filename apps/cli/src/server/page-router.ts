@@ -171,8 +171,8 @@ export const createPageRouter = ({ resetGame, scheduler, stripeReady }: PageRout
       reset: os.save.reset.handler(() => resetGame()),
     },
     stripe: {
-      connect: os.stripe.connect.handler(() => beginConnect(store.requireCompany().id)),
-      disconnect: os.stripe.disconnect.handler(() => disconnectStripe(store.requireCompany().id)),
+      connect: os.stripe.connect.handler(() => beginConnect()),
+      disconnect: os.stripe.disconnect.handler(() => disconnectStripe()),
       keyStatus: os.stripe.keyStatus.handler(() => stripeKeyStatus()),
       removeKey: os.stripe.removeKey.handler(() => {
         removeStripeKey();
@@ -182,10 +182,9 @@ export const createPageRouter = ({ resetGame, scheduler, stripeReady }: PageRout
         await saveStripeKey(input.key);
         stripeReady("stripe", "stripe-key");
       }),
-      status: os.stripe.status.handler(() => {
-        const company = store.getCompany();
-        return company ? getStripeStatus(company.id) : { state: "disconnected" };
-      }),
+      status: os.stripe.status.handler(() =>
+        store.getCompany() === null ? { state: "disconnected" } : getStripeStatus(),
+      ),
     },
     tasks: {
       answer: os.tasks.answer.handler(({ input }) =>

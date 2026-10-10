@@ -93,7 +93,7 @@ export const betToDoc = (b: Bet): z.input<typeof BetDocSchema> => ({
   },
 });
 
-export const docToBet = (doc: FrontmatterDoc, companyId: string): Bet => {
+export const docToBet = (doc: FrontmatterDoc): Bet => {
   const { body, fields, metadata: m } = decodeDoc(BetDocSchema, doc);
   return {
     budgetUsd: m.budgetUsd,
@@ -101,7 +101,6 @@ export const docToBet = (doc: FrontmatterDoc, companyId: string): Bet => {
       m.metric === "users"
         ? { landingPath: m.landingPath, metric: "users" }
         : { metric: "revenue" },
-    companyId,
     createdAt: m.createdAt,
     hypothesis: body.trim(),
     id: fields.slug,

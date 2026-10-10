@@ -14,7 +14,7 @@ Paths below are short, as in CLAUDE.md: `server/…` and `commands/…` are unde
 `@repo/<package>/<module>` is `packages/<package>/src/<module>.ts`.
 
 > Naming: this file is repo documentation. The `AGENTS.md` files under
-> `~/.idlebiz/<company>/agents/<slug>/` are game data — the in-game employee's own
+> `~/.idlebiz/company/agents/<slug>/` are game data — the in-game employee's own
 > instructions (`server/paths.ts`). Unrelated.
 
 ## Quickstart
@@ -285,7 +285,7 @@ rather than crashing boot.
   included, is CLAUDE.md's "What stays open". A product's own keys go on its bound project
   through `set_env`, unsigned: main sets the variable with `VERCEL_TOKEN`, sensitive for
   production and preview (`server/vercel-env.ts`), replacing only a name set_env set, and keeps
-  each value Vercel took in `secrets.json` under `ENV/<company>/<product>/<project>/<NAME>` (never the
+  each value Vercel took in `secrets.json` under `ENV/<product>/<project>/<NAME>` (never the
   save, which runs read) so `deploy` refuses a folder whose files hold any of them, before the
   sign-off is asked, naming the file and the variable, never the value. A public name
   (`NEXT_PUBLIC_`, `VITE_`…, `server/env-name.ts`) is the exception: its value is built into the
@@ -349,11 +349,10 @@ rather than crashing boot.
 
 ## Rules that matter
 
-- **One active company per launch.** Boot selects the newest company by `createdAt`
-  (alphabetical slug breaks ties), then loads only that save. Older saves stay untouched. A
-  company stamped at any format but this build's, like unreadable company metadata, blocks
-  loading and founding; entity IDs resolve only within the active company. There is no
-  company switching during a launch.
+- **A root holds one save or none.** The company is `company/` under the root, so no record
+  carries its company's id and no path names one. A company stamped at any format but this
+  build's, like a COMPANY.md missing or unreadable, blocks loading and founding. A reset deletes
+  the root, keys and all; to start over otherwise, move `company/` out.
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
 - **Headless interactions are Base UI** (`@base-ui/react/<part>`), skinned with px-kit:
@@ -448,7 +447,7 @@ rather than crashing boot.
   ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
   the renderer, whose activity ring starts empty every launch; #team reads the room back from
   main's copy of `chat.jsonl` instead. Company-level running state goes in
-  `<company>/state/` (path helpers in `server/paths.ts`); what the founder configured
+  `company/state/` (path helpers in `server/paths.ts`); what the founder configured
   (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,

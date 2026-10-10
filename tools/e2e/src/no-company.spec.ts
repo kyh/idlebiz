@@ -9,9 +9,9 @@ test("a first launch opens on the title screen", async ({ launch }) => {
 });
 
 test("a save a newer IdleBiz wrote asks for an update, not a fix", async ({ launch, root }) => {
-  await mkdir(path.join(root, "later-co"), { recursive: true });
+  await mkdir(path.join(root, "company"), { recursive: true });
   await writeFile(
-    path.join(root, "later-co", "COMPANY.md"),
+    path.join(root, "company", "COMPANY.md"),
     '---\nname: "Later Co"\nslug: "later-co"\nmetadata:\n  format: 999\n  createdAt: 1\n---\n',
   );
 

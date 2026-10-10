@@ -313,7 +313,6 @@ describe("sealedCommand", () => {
 
 describe("notingSeal", () => {
   const report: LoadReport = {
-    companies: 1,
     skipped: [
       { error: "bad yaml", kind: "task", newerBuild: false, path: "/save/tasks/x/TASK.md" },
     ],
@@ -321,7 +320,6 @@ describe("notingSeal", () => {
 
   it("tells the founder beside the save's notes why no run starts", () => {
     expect(notingSeal(report, "sandbox-exec timed out, so none will start.")).toEqual({
-      companies: 1,
       skipped: [
         ...report.skipped,
         {

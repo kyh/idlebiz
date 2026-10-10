@@ -744,7 +744,7 @@ describe("deploy", () => {
     writeFileSync(
       path.join(root, "secrets.json"),
       JSON.stringify({
-        [`ENV/${product.companyId}/acme/OPENAI_API_KEY`]: key,
+        [`ENV/${product.id}/${VERCEL.projectId}/OPENAI_API_KEY`]: key,
         VERCEL_TOKEN: TOKEN,
       }),
     );
@@ -1026,7 +1026,7 @@ describe("set_env", () => {
 
     await callTool(deploying, "POST /v1/deploy", {});
     expect(deploys[0]?.unshippable).toEqual([
-      { ...OPENAI, company: store.requireCompany().id, kind: "env", product: "acme" },
+      { ...OPENAI, kind: "env", product: "acme" },
       { kind: "held", name: "VERCEL_TOKEN", value: TOKEN },
     ]);
     const saved = readdirSync(root, { recursive: true, withFileTypes: true }).filter(

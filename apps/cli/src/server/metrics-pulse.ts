@@ -55,9 +55,9 @@ const read = async (): Promise<void> => {
     return;
   }
   const products = store.listProducts();
-  const credential = stripeCredential(readMetricsConfig(company.id));
+  const credential = stripeCredential(readMetricsConfig());
   if (credential === null && products.every((p) => p.vercel === null)) {
-    noteStripeRead(company.id, null);
+    noteStripeRead(null);
     return;
   }
   const bets = store.listBets().filter((b) => !isClosed(b));
@@ -76,7 +76,7 @@ const read = async (): Promise<void> => {
   for (const [betId, { reading, at }] of snap.betReadings) {
     guarded(`reading of ${betId}`, () => store.setBetReading(betId, reading, at));
   }
-  noteStripeRead(company.id, snap.stripe);
+  noteStripeRead(snap.stripe);
   publishActivity(
     { kind: "metrics.pulse", payload: { revenue: snap.revenue, users: snap.users } },
     { persist: false },

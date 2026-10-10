@@ -501,19 +501,11 @@ describe("decidePermission", () => {
 
   /** A company whose founder signed for one `git push` on task "deploy". */
   const signedFor = () => {
-    const company = found();
+    found();
     store.grantApproval("deploy", "git push");
     const asked: BlockedAsk[] = [];
     const decide = (signal: AbortSignal) =>
-      decidePermission(
-        { companyId: company.id, id: "deploy" },
-        push,
-        new Set(),
-        noPage,
-        room,
-        (ask) => asked.push(ask),
-        signal,
-      );
+      decidePermission("deploy", push, new Set(), noPage, room, (ask) => asked.push(ask), signal);
     return { asked, decide };
   };
 
@@ -530,10 +522,10 @@ describe("decidePermission", () => {
   ] as const)(
     "answers a $tool.kind ask with no card: the seal judges edits, and no widening is signed",
     async ({ allow, tool }) => {
-      const company = found();
+      found();
       const asked: BlockedAsk[] = [];
       const decision = await decidePermission(
-        { companyId: company.id, id: "deploy" },
+        "deploy",
         { tool },
         new Set(),
         noPage,
@@ -547,7 +539,7 @@ describe("decidePermission", () => {
   );
 
   it("holds a file the run linked in from outside, judged where the link leads", async () => {
-    const company = found();
+    found();
     mkdirSync(workspace, { recursive: true });
     writeFileSync(path.join(workspace, "index.html"), "own");
     writeFileSync(path.join(root, "outside.html"), "outside");
@@ -555,7 +547,7 @@ describe("decidePermission", () => {
     const asked: BlockedAsk[] = [];
     const open = (file: string) =>
       decidePermission(
-        { companyId: company.id, id: "qa" },
+        "qa",
         {
           tool: {
             command: `agent-browser open file://${path.join(workspace, file)}`,
@@ -1044,7 +1036,7 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
       [
         product.workspaceDir,
         company.workspaceDir,
-        path.join(root, company.id, "agents", emp.id, "memory"),
+        path.join(root, "company", "agents", emp.id, "memory"),
         path.join(root, "cache"),
       ],
     ]);

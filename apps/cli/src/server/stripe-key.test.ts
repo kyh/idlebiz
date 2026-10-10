@@ -141,11 +141,11 @@ describe("a charging key that can't read", () => {
     await saveStripeKey("rk_live_chargesonly1234");
     const credential = stripeCredential(null);
     const read = await fetchRealMetrics(credential, [], []);
-    noteStripeRead("fixture", read.stripe);
+    noteStripeRead(read.stripe);
 
     expect(credential).toEqual({ key: "rk_live_chargesonly1234", via: "own" });
     expect(read.stripe).toEqual({ answer: "refused", via: "own" });
-    expect(getStripeStatus("fixture")).toEqual({
+    expect(getStripeStatus()).toEqual({
       bound: false,
       message:
         "Stripe won't let your charging key read charges — grant it Read on Charges or replace it.",

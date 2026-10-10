@@ -26,7 +26,7 @@ export const employeeBody = (e: Employee, co: Company, products: readonly Produc
     company: co,
     employee: e,
     lead: co.leaderId === e.id,
-    memoryDir: employeeMemoryDir(co.id, e.id),
+    memoryDir: employeeMemoryDir(e.id),
     products,
   });
 
@@ -54,10 +54,9 @@ export const employeeToDoc = (
   },
 });
 
-export const docToEmployee = (doc: FrontmatterDoc, companyId: string): Employee => {
+export const docToEmployee = (doc: FrontmatterDoc): Employee => {
   const { fields, metadata: m } = decodeDoc(EmployeeDocSchema, doc);
   return {
-    companyId,
     createdAt: m.createdAt,
     deskIndex: m.deskIndex,
     id: fields.slug,

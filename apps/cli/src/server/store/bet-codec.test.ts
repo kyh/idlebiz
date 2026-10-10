@@ -8,7 +8,6 @@ const LANDING: BetClaim = { landingPath: "/b/launch-post", metric: "users" };
 const bet = (state: BetState, claim: BetClaim = LANDING): Bet => ({
   budgetUsd: 5,
   claim,
-  companyId: "co",
   createdAt: 1,
   hypothesis: "a launch post brings visitors",
   id: "launch-post",
@@ -35,23 +34,23 @@ describe("bet codec", () => {
   ];
 
   it.each(states)("round-trips a $kind bet through BET.md", (state) => {
-    expect(docToBet(written(bet(state)), "co")).toEqual(bet(state));
+    expect(docToBet(written(bet(state)))).toEqual(bet(state));
   });
 
   it("round-trips a revenue bet, which owns a tag and no path", () => {
     const revenue = bet({ kind: "open" }, { metric: "revenue" });
-    expect(docToBet(written(revenue), "co")).toEqual(revenue);
+    expect(docToBet(written(revenue))).toEqual(revenue);
   });
 
   it("reads a bet whose reading carries no time as never read", () => {
     const doc = written(bet({ kind: "measuring", until: 99 }));
     delete doc.metadata.readAt;
-    expect(docToBet(doc, "co").readAt).toBeNull();
+    expect(docToBet(doc).readAt).toBeNull();
   });
 
   it("refuses a bet on a number it does not know", () => {
     const doc = written(bet({ kind: "open" }));
     doc.metadata.metric = "vibes";
-    expect(() => docToBet(doc, "co")).toThrow("metadata.metric");
+    expect(() => docToBet(doc)).toThrow("metadata.metric");
   });
 });

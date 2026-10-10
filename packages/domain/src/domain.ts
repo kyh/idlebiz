@@ -294,7 +294,6 @@ export interface RunSession {
 
 export interface Employee {
   id: string;
-  companyId: string;
   name: string;
   role: string;
   title: string;
@@ -347,7 +346,6 @@ export interface VercelBinding {
 /** The first product's code is the company's workspace/; later products have their own. */
 export interface Product {
   id: string;
-  companyId: string;
   name: string;
   description: string;
   workspaceDir: string;
@@ -387,7 +385,6 @@ export type Speaker = z.infer<typeof SpeakerSchema>;
 export interface TeamMessage {
   /** Stands for this launch only: main numbers the room anew each time it loads it. */
   id: number;
-  companyId: string;
   from: Speaker;
   text: string;
   createdAt: number;
@@ -443,7 +440,6 @@ export const taskIn =
 
 export interface Task {
   id: string;
-  companyId: string;
   /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
@@ -475,7 +471,6 @@ export interface ShipLine {
 /** A recurring instruction that creates a task at each interval. */
 export interface Routine {
   id: string;
-  companyId: string;
   name: string;
   instruction: string;
   intervalHours: number;
@@ -522,9 +517,8 @@ export interface LoadSkip {
   newerBuild: boolean;
 }
 
-/** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
+/** What boot had to leave out of the save under ~/.idlebiz. */
 export interface LoadReport {
-  companies: number;
   skipped: LoadSkip[];
 }
 

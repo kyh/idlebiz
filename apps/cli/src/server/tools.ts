@@ -746,7 +746,7 @@ const fundingFor = (
     return null;
   }
   const bet = store.getBet(id);
-  if (!bet || bet.companyId !== ctx.company.id) {
+  if (!bet) {
     throw new RefusalError(
       `No fundable bet "${id}" — read_bets lists what is open with budget left.`,
     );
@@ -809,10 +809,9 @@ const TOOLS = {
     roomTranscript(store.recentTeamMessages(15), nameOf),
   ),
   delegate: define(TOOL_SPECS.delegate, (ctx, { role, title, description, product, bet }) => {
-    const { company } = ctx;
     const funded = fundingFor(ctx, bet, product);
     const productId = funded?.productId ?? productFor(ctx, product);
-    if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
+    if (productId !== null && store.getProduct(productId) === null) {
       return store.noSuchProduct(productId);
     }
     const mate = delegateFor(ctx, role);
@@ -1284,12 +1283,12 @@ const TOOLS = {
     return `Hired ${hired.name} (${title}) — slug "${hired.id}". They start picking up work autonomously; delegate to them right away if you have something specific.`;
   }),
   release: define(TOOL_SPECS.release, (ctx, { slug, reason }) => {
-    const { company, employee } = ctx;
+    const { employee } = ctx;
     if (slug === employee.id) {
       return "You can't release yourself.";
     }
     const target = store.getEmployee(slug);
-    if (!target || target.companyId !== company.id) {
+    if (!target) {
       return `No teammate with slug "${slug}" — check the roster in your brief.`;
     }
     if (target.status === "working") {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companySharedDir } from "../paths";
+import { SHARED_DIR } from "../paths";
 import type { Company } from "@repo/domain/domain";
 import { SAVE_FORMAT, SaveFormatError, companyToDoc, docToCompany } from "./company-codec";
 import { parseDoc, serializeDoc } from "./frontmatter";
@@ -21,7 +21,7 @@ const acme: Company = {
   ships: 0,
   spentUsd: 0,
   users: null,
-  workspaceDir: companySharedDir("acme"),
+  workspaceDir: SHARED_DIR,
 };
 
 const written = (co: Company): string => serializeDoc(companyToDoc(co));

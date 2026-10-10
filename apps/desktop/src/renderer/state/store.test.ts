@@ -36,7 +36,6 @@ const company: Company = {
 };
 
 const employee = (id: string, status: Employee["status"] = "idle"): Employee => ({
-  companyId: "co",
   createdAt: 0,
   deskIndex: 0,
   id,
@@ -162,7 +161,7 @@ const fakeMain = (late: readonly Late[]) => {
     },
     employees: { list: () => answerOf("employees.list", main.employees) },
     products: { list: () => Promise.resolve([]) },
-    save: { report: () => Promise.resolve({ companies: 1, skipped: [] }) },
+    save: { report: () => Promise.resolve({ skipped: [] }) },
     stripe: {
       keyStatus: () => Promise.resolve({ state: "unset" }),
       status: () => Promise.resolve({ state: "disconnected" }),
@@ -252,9 +251,7 @@ describe("store", () => {
 
   it("opens #team on the room main kept, and shows each line it then hears once", async () => {
     const { api, listen, emit, main } = fakeMain([]);
-    main.room = [
-      { companyId: "co", createdAt: 1, from: { kind: "founder" }, id: 1, text: "early" },
-    ];
+    main.room = [{ createdAt: 1, from: { kind: "founder" }, id: 1, text: "early" }];
     const store = await freshStore({ api, listen });
     expect(read(store, feed)).toBe("room 1");
     await emit(said(1, "early"));

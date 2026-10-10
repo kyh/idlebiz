@@ -18,7 +18,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
+const { COMPANY_DIR, TASKS_DIR, betFile, routineFile } = await import("./paths");
 const { writeMetricsConfig } = await import("./store/metrics-config");
 const { activityEvents } = await import("./activity");
 const { createScheduler, loggedToolName } = await import("./scheduler");
@@ -291,11 +291,11 @@ describe("draining the queue", () => {
   });
 
   it("starts the next task when one cannot be locked, and retries it next tick", () => {
-    const company = found();
+    found();
     const drain = createScheduler(scripted().driver, asleep);
     const stuck = queue("priya", "high");
     const next = queue("mae");
-    const taskDir = path.join(tasksDir(company.id), stuck.id);
+    const taskDir = path.join(TASKS_DIR, stuck.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(taskDir, 0o555);
     try {
@@ -470,11 +470,11 @@ describe("settling a run", () => {
   });
 
   it("books the spend, frees the employee and ends the run when the settle cannot write", async () => {
-    const company = found();
+    found();
     const { driver, running } = scripted();
     const task = queue("priya");
     createScheduler(driver, asleep).tick();
-    const taskDir = path.join(tasksDir(company.id), task.id);
+    const taskDir = path.join(TASKS_DIR, task.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const runs = runEnds();
     chmodSync(taskDir, 0o555);
@@ -493,19 +493,18 @@ describe("settling a run", () => {
   });
 
   it("settles the run and frees the employee when the spend cannot write", async () => {
-    const company = found();
+    found();
     const { driver, running } = scripted();
     const task = queue("priya");
     createScheduler(driver, asleep).tick();
-    const dir = companyDir(company.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    chmodSync(dir, 0o555);
+    chmodSync(COMPANY_DIR, 0o555);
     try {
       running.get("priya")?.(done(0.5));
       await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
       expect(logged).toHaveBeenCalledWith(expect.stringContaining("book run"), expect.anything());
     } finally {
-      chmodSync(dir, 0o755);
+      chmodSync(COMPANY_DIR, 0o755);
       logged.mockRestore();
     }
     expect(kindOf(task)).not.toBe("running");
@@ -858,7 +857,7 @@ describe("asking the lead for the next bet", () => {
 
 describe("a file the save refuses on every tick", () => {
   it("judges the other bets and still starts queued work past a verdict that cannot write", () => {
-    const company = found();
+    found();
     const stuck = openBet(5);
     const other = openBet(5);
     for (const bet of [stuck, other]) {
@@ -866,7 +865,7 @@ describe("a file the save refuses on every tick", () => {
     }
     const task = queue("priya");
     const drain = createScheduler(scripted().driver, asleep);
-    const dir = path.dirname(betFile(company.id, stuck.id));
+    const dir = path.dirname(betFile(stuck.id));
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
     try {
@@ -883,10 +882,10 @@ describe("a file the save refuses on every tick", () => {
   });
 
   it("still sends idle hands to work past a due routine that cannot be marked run", () => {
-    const company = found(UNCAPPED, "game-studio");
+    found(UNCAPPED, "game-studio");
     const [routine] = store.listRoutines();
     const drain = createScheduler(scripted().driver, asleep);
-    const dir = path.dirname(routineFile(company.id, routine?.id ?? ""));
+    const dir = path.dirname(routineFile(routine?.id ?? ""));
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
@@ -1161,7 +1160,7 @@ describe("an integration the founder connects", () => {
       path.join(root, "secrets.json"),
       JSON.stringify({ STRIPE_CONNECT_TOKEN: "sk_live_connected", STRIPE_SECRET_KEY: "sk_test_x" }),
     );
-    writeMetricsConfig(task.companyId, {
+    writeMetricsConfig({
       stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true },
     });
     drain.resumeIntegrationAsks("stripe");

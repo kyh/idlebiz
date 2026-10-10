@@ -32,7 +32,6 @@ const company: Company = {
   workspaceDir: "/tmp/acme",
 };
 const employee: Employee = {
-  companyId: "acme",
   createdAt: 0,
   deskIndex: 0,
   id: "lead",
@@ -49,7 +48,6 @@ const employee: Employee = {
   title: "Founding Engineer",
 };
 const product: Product = {
-  companyId: "acme",
   createdAt: 0,
   description: "the app",
   id: "app",
@@ -83,7 +81,6 @@ const briefFor = (
   }).description;
 
 const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
-  companyId: "acme",
   createdAt: 0,
   from,
   id: 0,
@@ -217,7 +214,6 @@ describe("the brief that carries the founder's answer", () => {
     assigneeId: "lead",
     attempts: 0,
     betId: null,
-    companyId: "acme",
     completedAt: null,
     createdAt: 0,
     description: "Wire checkout to the pricing page.",

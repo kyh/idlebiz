@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Product, VercelBinding } from "@repo/domain/domain";
-import { companyWorkspace, productWorkspace } from "../paths";
+import { COMPANY_WORKSPACE, productWorkspace } from "../paths";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
@@ -50,14 +50,13 @@ export const productToDoc = (p: Product): z.input<typeof ProductDocSchema> => ({
     vercelProjectId: p.vercel?.projectId,
     vercelProjectName: p.vercel?.projectName,
     vercelTeamId: p.vercel?.teamId ?? undefined,
-    workspace: p.workspaceDir === companyWorkspace(p.companyId) ? "company" : "own",
+    workspace: p.workspaceDir === COMPANY_WORKSPACE ? "company" : "own",
   },
 });
 
-export const docToProduct = (doc: FrontmatterDoc, companyId: string): Product => {
+export const docToProduct = (doc: FrontmatterDoc): Product => {
   const { body, fields, metadata: m } = decodeDoc(ProductDocSchema, doc);
   return {
-    companyId,
     createdAt: m.createdAt,
     description: body.trim(),
     id: fields.slug,
@@ -67,9 +66,6 @@ export const docToProduct = (doc: FrontmatterDoc, companyId: string): Product =>
     ships: m.ships,
     users: m.users ?? null,
     vercel: vercelOf(m),
-    workspaceDir:
-      m.workspace === "own"
-        ? productWorkspace(companyId, fields.slug)
-        : companyWorkspace(companyId),
+    workspaceDir: m.workspace === "own" ? productWorkspace(fields.slug) : COMPANY_WORKSPACE,
   };
 };

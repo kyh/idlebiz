@@ -59,7 +59,7 @@ import type {
   RunSession,
 } from "@repo/domain/domain";
 import * as store from "../store/store";
-import { RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir, runnerRestFile } from "../paths";
+import { RUNNER_REST_FILE, RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
 import { pathWithLauncher } from "../agent-launcher";
 import { atomicWrite, readJsonFile } from "../lib/fs";
 import { holdFor } from "../command-policy";
@@ -337,7 +337,7 @@ export const livePageOf =
 
 /** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
 export const decidePermission = async (
-  task: { companyId: string; id: string },
+  taskId: string,
   request: PermissionRequest,
   leases: Set<string>,
   livePage: LivePage,
@@ -356,7 +356,7 @@ export const decidePermission = async (
   if (held === null) {
     return { allow: true };
   }
-  if (store.consumeApproval(task.id, held.key)) {
+  if (store.consumeApproval(taskId, held.key)) {
     if (held.leasable) {
       leases.add(held.key);
     }
@@ -859,7 +859,7 @@ class AgentDriver {
     // the product's workspace is the cwd; the company workspace stays reachable
     // for what is shared across products
     const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
-    const memory = employeeMemoryDir(company.id, emp.id);
+    const memory = employeeMemoryDir(emp.id);
     const addDirs = [...shared, memory, TOOL_CACHE_DIR];
     const confinement = {
       cwd: run.workspace,
@@ -916,7 +916,7 @@ class AgentDriver {
         },
         onPermission: (request, turnEnded) =>
           decidePermission(
-            { companyId: company.id, id: run.taskId },
+            run.taskId,
             request,
             leases,
             livePage,
@@ -940,17 +940,14 @@ class AgentDriver {
   }
 }
 
-/** Where the active company keeps its runners' rests; null before one is founded. */
-const activeRestFile = (): string | null => {
-  const company = store.getCompany();
-  return company === null ? null : runnerRestFile(company.id);
-};
+/** Where the company keeps its runners' rests; null before one is founded. */
+const activeRestFile = (): string | null => (store.getCompany() === null ? null : RUNNER_REST_FILE);
 
 /**
  * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
  * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names, and
  * keeping its runners' rests in `restFile`: tests script them, the app checks and resolves this
- * machine's, the bundled skills and the active company's state.
+ * machine's, the bundled skills and the company's state.
  */
 export const createAgentDriver = (
   checkSeal: () => Promise<SealState> = sealRuns,
