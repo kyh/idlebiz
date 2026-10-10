@@ -308,6 +308,27 @@ describe("stripeInTestMode", () => {
     expect(measureRefusal(revenueBet("pricing", 0), null)).toContain("test mode");
   });
 
+  it("refuses a revenue bet only a Connect token reads, whose window would close on a zero", async () => {
+    mkdirSync(path.join(root, "co"), { recursive: true });
+    writeFileSync(
+      path.join(root, "co", "metrics.json"),
+      '{"stripeAccount":{"accountId":"acct_1","connectedAt":0,"livemode":true}}',
+    );
+    writeFileSync(secretsFile, '{"STRIPE_CONNECT_TOKEN":"sk_live_granted"}');
+    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ data: [charge("ch_1", 900)] })));
+    const bet = revenueBet("pricing", 0);
+
+    const snap = await fetchRealMetrics(
+      stripeCredential({ stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true } }),
+      [],
+      [bet],
+    );
+    vi.unstubAllGlobals();
+
+    expect(snap.betReadings.get("pricing")?.reading).toBe(0);
+    expect(measureRefusal(bet, null)).toContain("only the Stripe key IdleBiz charges with");
+  });
+
   it("lets a test-mode key's money count under IDLEBIZ_COUNT_TEST_MONEY=1", () => {
     writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
     vi.stubEnv("IDLEBIZ_COUNT_TEST_MONEY", "1");

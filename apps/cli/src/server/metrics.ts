@@ -212,13 +212,16 @@ export const stripeInTestMode = (companyId: string): boolean => {
  * Why no source would read what `bet` claims, in the words the lead should act
  * on, or null when one can: the company's Stripe key for money, its product's
  * Vercel project for visitors. A window over a number nothing reads could only
- * close on no reading at all.
+ * close on no reading at all. A Connect token reads no bet's money: only the
+ * founder's own key makes the links a bet's charges carry its tag through, so
+ * a window read through the token would close on a zero no link could have
+ * moved, a loss for dream to learn from.
  */
 export const measureRefusal = (bet: Bet, product: Product | null): string | null => {
   if (bet.claim.metric === "revenue") {
     const credential = stripeCredential(readMetricsConfig(bet.companyId));
-    if (credential === null) {
-      return 'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.';
+    if (credential?.via !== "own") {
+      return 'No source reads revenue yet — only the Stripe key IdleBiz charges with reads the account payment links charge on: request_integration "stripe" for the founder to add one in the Budget panel. Then measure_bet again.';
     }
     return countsNoMoney(credential)
       ? 'Stripe is in test mode — no charge counts. Ask the founder to swap the Stripe key IdleBiz charges with for a live one in the Budget panel (request_integration "stripe"), then measure_bet again.'

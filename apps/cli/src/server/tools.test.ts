@@ -232,7 +232,7 @@ describe("company tools", () => {
     const measure = (slug: string) => callTool(ctx, "POST /v1/measure-bet", { slug });
 
     expect(await measure(money.id)).toBe(
-      'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.',
+      'No source reads revenue yet — only the Stripe key IdleBiz charges with reads the account payment links charge on: request_integration "stripe" for the founder to add one in the Budget panel. Then measure_bet again.',
     );
     expect(await measure(visits.id)).toContain("No source reads users of");
     expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
