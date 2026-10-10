@@ -28,7 +28,7 @@ export interface Seat {
 
 interface WalkPlan {
   path: PixelPoint[];
-  onArrive?: () => void;
+  onArrive?: (() => void) | undefined;
 }
 
 export interface Npc {
@@ -47,7 +47,7 @@ export interface Npc {
   waiting: boolean;
   plan: WalkPlan | null;
   nextWanderAt: number;
-  pendingTimer?: Phaser.Time.TimerEvent;
+  pendingTimer?: Phaser.Time.TimerEvent | undefined;
 }
 
 /** px/s */

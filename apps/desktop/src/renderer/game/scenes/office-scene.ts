@@ -86,12 +86,12 @@ const assigneesOf = (tasks: readonly Task[]): Set<string> =>
   new Set(tasks.flatMap((t) => (t.assigneeId ? [t.assigneeId] : [])));
 
 export class OfficeScene extends Scene {
-  private player?: Player;
+  private player?: Player | undefined;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys?: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
-  private debugGfx?: Phaser.GameObjects.Graphics;
-  private npcs?: NpcManager;
+  private debugGfx?: Phaser.GameObjects.Graphics | undefined;
+  private npcs?: NpcManager | undefined;
   /**
    * What the office hears while it boots waits for its snapshot, then replays in
    * order: statuses and asks are last-writer-wins and a spawn of someone already
@@ -100,7 +100,7 @@ export class OfficeScene extends Scene {
   private readonly npcEvents = new BootGate<NpcManager>();
   // one at a time, so an answer read before the founder's reply never lands after the one read since
   private readonly asks = new Coalesced(() => this.recheckAsks());
-  private clickWalk?: ClickWalk;
+  private clickWalk?: ClickWalk | undefined;
   private modalOpen = false;
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;

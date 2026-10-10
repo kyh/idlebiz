@@ -32,7 +32,7 @@ const Stat = ({
   label: string;
   value: string;
   sub?: string;
-  accent?: string;
+  accent?: string | undefined;
   title?: string;
   /** A bust beside the figures, for a plate that is about a person. */
   face?: ReactNode;

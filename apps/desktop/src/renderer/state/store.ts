@@ -402,10 +402,10 @@ export const removeStripeKey = async (): Promise<void> => {
 export const connectVercel = async (input: {
   productId: string;
   /** Absent: keep the saved token. */
-  token?: string;
+  token?: string | undefined;
   projectId: string;
   projectName: string;
-  teamId?: string;
+  teamId?: string | undefined;
 }): Promise<void> => {
   await api().vercel.connect(input);
   await reloadProducts();
