@@ -54,6 +54,7 @@ import type {
   Employee,
   IntegrationAsk,
   IntegrationKind,
+  RunOrigin,
   Task,
   TaskStatus,
 } from "@repo/domain/domain";
@@ -386,7 +387,8 @@ class Scheduler {
   private brief(
     emp: Employee,
     brief: TaskBrief,
-    filed: Pick<Task, "origin" | "productId"> & Partial<Pick<Task, "betId" | "priority">>,
+    filed: { origin: RunOrigin } & Pick<Task, "productId"> &
+      Partial<Pick<Task, "betId" | "priority">>,
   ): Task {
     const task = store.createTask({ ...filed, ...brief, assigneeId: emp.id });
     this.queue(task.id, emp.id);

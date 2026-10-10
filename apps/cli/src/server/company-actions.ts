@@ -15,12 +15,12 @@ import type {
   ActionReply,
   Company,
   Employee,
+  OrderCardSubject,
   Product,
   ProductDraft,
   Speaker,
   Task,
 } from "@repo/domain/domain";
-import { orderCardTitle } from "./order";
 import type { Order } from "./order";
 import type { CompanyLink, LinkCore } from "./link-record";
 import { RefusalError } from "./refusal";
@@ -127,12 +127,42 @@ export const haltForBudget = (company: Company, spentUsd = company.spentUsd): vo
   });
 };
 
+const PUMP_CARD_TITLES = {
+  missed: "Paid orders may have been missed",
+  "no-live-key": "Paid orders wait for a live Stripe key",
+  "no-printful-token": "Paid orders wait for a Printful token",
+  "unreadable-checkouts": "Paid orders can't be read from Stripe",
+} satisfies Record<Extract<OrderCardSubject, { kind: "pump" }>["reason"], string>;
+
+/** A card's title, copy for the founder: an order is named by its id's first 8 characters in every card about it. */
+const orderCardTitle = (subject: OrderCardSubject): string => {
+  switch (subject.kind) {
+    case "order": {
+      return `Order ${subject.orderId.slice(0, 8)}: ${subject.trouble}`;
+    }
+    case "link-left-on": {
+      return `Switch off payment link ${subject.linkId}`;
+    }
+    case "unrecorded-links": {
+      return `Switch off ${subject.productId}'s older payment links`;
+    }
+    case "pump": {
+      return PUMP_CARD_TITLES[subject.reason];
+    }
+    // no default
+  }
+};
+
 /**
- * Hand the founder a card about a paid order: the Inbox shows it beside the team's asks, and
- * the digest counts it. None when one with this title still waits.
+ * Hand the founder a card about paid orders: the Inbox shows it beside the team's asks, and
+ * the digest counts it. None when one about the same subject still waits.
  */
-export const raiseOrderCard = (title: string, ask: Omit<ActionAsk, "type">): Task | null => {
-  const card = store.raiseOrderCard(title, { ...ask, type: "action" });
+export const raiseOrderCard = (
+  subject: OrderCardSubject,
+  ask: Omit<ActionAsk, "type">,
+): Task | null => {
+  const title = orderCardTitle(subject);
+  const card = store.raiseOrderCard(subject, title, { ...ask, type: "action" });
   if (card) {
     publishActivity({
       kind: "order.card",
@@ -167,13 +197,8 @@ const STRIPE_KEY_IN_TEXT = /\b[rs]k_(?:live|test)_[0-9A-Za-z]{8,}/u;
 const replyText = (reply: ActionReply): string =>
   reply.kind === "cant" ? reply.reason : reply.note;
 
-const SWITCH_OFF_CARD = "Switch off payment link ";
-
-const switchOffCard = (linkId: string): string => `${SWITCH_OFF_CARD}${linkId}`;
-
 /** The founder's Done on a link's switch-off card says they switched it off in Stripe's dashboard. */
-const switchedOffByHand = (title: string): void => {
-  const linkId = title.startsWith(SWITCH_OFF_CARD) ? title.slice(SWITCH_OFF_CARD.length) : null;
+const switchedOffByHand = (linkId: string): void => {
   const held = store.paymentLinks().find((l) => l.link.id === linkId);
   if (held?.link.state.kind === "left-on") {
     store.setLinkState(held, { at: Date.now(), by: "founder", kind: "switched-off" });
@@ -196,8 +221,8 @@ export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
   if (!card) {
     throw new RefusalError("that order card is already settled");
   }
-  if (reply.kind === "done") {
-    switchedOffByHand(card.title);
+  if (reply.kind === "done" && card.subject.kind === "link-left-on") {
+    switchedOffByHand(card.subject.linkId);
   }
   const told =
     reply.kind === "cant" ? `couldn't — ${said}` : `done${said === "" ? "" : ` — ${said}`}`;
@@ -215,7 +240,7 @@ const office: Speaker = { kind: "office" };
 /**
  * Hand the founder a link Stripe would not switch off, to switch off by hand; a test-mode link
  * takes no real money, so the room hears instead. The card is raised before the link is marked,
- * since cards dedupe by title and the mark is what stops the next sweep asking Stripe again.
+ * since cards dedupe by subject and the mark is what stops the next sweep asking Stripe again.
  */
 const leaveOn = (held: CompanyLink, why: string): void => {
   const { link } = held;
@@ -225,11 +250,14 @@ const leaveOn = (held: CompanyLink, why: string): void => {
       held.kind === "print"
         ? "it takes money, and each order paid through it still goes to Printful"
         : "it takes money";
-    raiseOrderCard(switchOffCard(link.id), {
-      action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
-      draft: null,
-      instructions: `${link.productId} is retired, but Stripe would not switch off its payment link ${link.id} for IdleBiz: ${why}. Until it is off, ${sells}. In Stripe's dashboard, open Payment links, find ${link.id} and deactivate it. Press Done once it is off.`,
-    });
+    raiseOrderCard(
+      { kind: "link-left-on", linkId: link.id },
+      {
+        action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
+        draft: null,
+        instructions: `${link.productId} is retired, but Stripe would not switch off its payment link ${link.id} for IdleBiz: ${why}. Until it is off, ${sells}. In Stripe's dashboard, open Payment links, find ${link.id} and deactivate it. Press Done once it is off.`,
+      },
+    );
   } else {
     postToRoom(
       office,
@@ -333,11 +361,14 @@ const handOverUnrecordedLinks = async (key: string | null): Promise<void> => {
     if (seen === null) {
       continue;
     }
-    raiseOrderCard(`Switch off ${productId}'s older payment links`, {
-      action: `Switch off the payment links older IdleBiz made for retired ${productId}, in Stripe's dashboard`,
-      draft: null,
-      instructions: `${productId} is retired. Older versions of IdleBiz kept no record of the payment links they made, and Stripe's links carry no date, so IdleBiz cannot tell its own from another company's with the same tag, and left them on. ${seen} In Stripe's dashboard, open Payment links and deactivate each whose metadata names product ${productId} and is this company's. Press Done once they are off.`,
-    });
+    raiseOrderCard(
+      { kind: "unrecorded-links", productId },
+      {
+        action: `Switch off the payment links older IdleBiz made for retired ${productId}, in Stripe's dashboard`,
+        draft: null,
+        instructions: `${productId} is retired. Older versions of IdleBiz kept no record of the payment links they made, and Stripe's links carry no date, so IdleBiz cannot tell its own from another company's with the same tag, and left them on. ${seen} In Stripe's dashboard, open Payment links and deactivate each whose metadata names product ${productId} and is this company's. Press Done once they are off.`,
+      },
+    );
   }
   store.setUnrecordedLinkProducts(pending.filter((id) => !retired.includes(id)));
 };
@@ -447,9 +478,9 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
   const paid = store.listOrders().filter((o) => o.livemode);
   const openCards = store
     .listOpenTasks()
-    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t.title] : []));
+    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t] : []));
   const cardOf = (o: Order): string | undefined =>
-    openCards.find((title) => title.startsWith(orderCardTitle(o, "")));
+    openCards.find(({ subject }) => subject.kind === "order" && subject.orderId === o.id)?.title;
   // A held sale whose card the founder settled is theirs already: they refunded or placed it.
   const unsent = paid.flatMap((o) =>
     o.kind === "sale" &&

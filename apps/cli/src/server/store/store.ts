@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
 import { report } from "../lib/report";
 import {
@@ -97,15 +98,18 @@ import type {
   LoadReport,
   LoadSkip,
   OpenTaskStatus,
+  OrderCard,
+  OrderCardSubject,
   Product,
   ProductDraft,
   Routine,
+  RunOrigin,
   ShipLine,
   Speaker,
   Task,
   TaskIn,
-  TaskOrigin,
   TaskPriority,
+  TaskProvenance,
   TaskState,
   TaskStatus,
   TeamMessage,
@@ -1593,14 +1597,17 @@ export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
 interface NewTask {
   productId?: string | null;
   betId?: string | null;
-  origin: TaskOrigin;
   title: string;
   description?: string | null;
   priority?: TaskPriority;
   assigneeId?: string | null;
 }
 
-const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Task => {
+const addTask = (
+  brief: NewTask,
+  provenance: TaskProvenance,
+  state: TaskIn<"todo" | "blocked">["state"],
+): Task => {
   const { company, tasks: list } = current();
   const t = { ...brief, companyId: company.id };
   const now = Date.now();
@@ -1619,11 +1626,11 @@ const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Ta
     createdAt: now,
     description: t.description ?? null,
     id,
-    origin: t.origin,
     priority: t.priority ?? "medium",
     productId: t.productId ?? null,
     startedAt: null,
     title: t.title,
+    ...provenance,
     ...entering(state, now),
   };
   saveTask(task);
@@ -1631,7 +1638,8 @@ const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Ta
   return task;
 };
 
-export const createTask = (brief: NewTask): Task => addTask(brief, { kind: "todo" });
+export const createTask = ({ origin, ...brief }: NewTask & { origin: RunOrigin }): Task =>
+  addTask(brief, { origin }, { kind: "todo" });
 
 /** An open task by id. Shipped work is history, not something to act on. */
 export const getTask = (id: string): Task | null =>
@@ -1898,7 +1906,7 @@ export const parkTask = (
  */
 export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task | null => {
   const t = getTask(taskId);
-  if (!t || t.state.kind !== "blocked" || !t.assigneeId) {
+  if (!t || t.origin === "order" || t.state.kind !== "blocked" || !t.assigneeId) {
     return null;
   }
   const next = createTask({
@@ -1915,28 +1923,35 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
 
 /**
  * Main's card to the founder about an order, in the Inbox beside the team's asks. Null when one
- * with the same title still waits, so a pump that finds the same trouble again raises no second.
+ * about the same subject still waits, however it is titled, so a pump that finds the same
+ * trouble again raises no second.
  */
-export const raiseOrderCard = (title: string, ask: ActionAsk): Task | null => {
+export const raiseOrderCard = (
+  subject: OrderCardSubject,
+  title: string,
+  ask: ActionAsk,
+): Task | null => {
   const waiting = current().tasks.some(
-    (t) => t.origin === "order" && t.title === title && t.state.kind === "blocked",
+    (t) =>
+      t.origin === "order" && t.state.kind === "blocked" && isDeepStrictEqual(t.subject, subject),
   );
   return waiting
     ? null
     : addTask(
-        { description: null, origin: "order", priority: "high", title },
+        { description: null, priority: "high", title },
+        { origin: "order", subject },
         { ask, kind: "blocked", summary: null },
       );
 };
 
 /** The founder settled an order card: history, which no run carries on. Null for any other task. */
-export const closeOrderCard = (taskId: string): Task | null => {
+export const closeOrderCard = (taskId: string): OrderCard | null => {
   const t = getTask(taskId);
   if (t?.origin !== "order" || t.state.kind !== "blocked") {
     return null;
   }
-  const closed = recordTask(taskId, entering({ by: null, kind: "superseded" }, Date.now()));
-  shelveClosed(closed);
+  const closed: OrderCard = { ...t, ...entering({ by: null, kind: "superseded" }, Date.now()) };
+  shelveClosed(recordTask(taskId, closed));
   return closed;
 };
 

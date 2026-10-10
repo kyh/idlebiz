@@ -128,6 +128,25 @@ export const TASK_ORIGINS = [
   "order",
 ] as const;
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+/** Why work a run carries exists: every origin but an order card's. */
+export type RunOrigin = Exclude<TaskOrigin, "order">;
+
+/**
+ * What an order card is about, which is what tells one card from another: a paid order and what
+ * stopped it, a retired product's link Stripe would not switch off, a retired product's links
+ * older builds never recorded, or what keeps the order pump from every order at once. Its title
+ * is copy rendered from this, which nothing reads back.
+ */
+export const OrderCardSubjectSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("order"), orderId: z.string().min(1), trouble: z.string().min(1) }),
+  z.object({ kind: z.literal("link-left-on"), linkId: z.string().min(1) }),
+  z.object({ kind: z.literal("unrecorded-links"), productId: z.string().min(1) }),
+  z.object({
+    kind: z.literal("pump"),
+    reason: z.enum(["no-printful-token", "no-live-key", "unreadable-checkouts", "missed"]),
+  }),
+]);
+export type OrderCardSubject = z.infer<typeof OrderCardSubjectSchema>;
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 export type EmployeeStatus = "idle" | "working";
 
@@ -439,15 +458,21 @@ export const taskIn =
   (t: Task): t is TaskIn<K> =>
     t.state.kind === kind;
 
-export interface Task {
+/** Why a task exists; a continuation inherits it. An order card also names what it is about. */
+export type TaskProvenance = { origin: RunOrigin } | { origin: "order"; subject: OrderCardSubject };
+
+export type Task = TaskFields & TaskProvenance;
+
+/** Main's card to the founder about paid orders, which the founder settles and no run carries on. */
+export type OrderCard = Extract<Task, { origin: "order" }>;
+
+interface TaskFields {
   id: string;
   companyId: string;
   /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
   betId: string | null;
-  /** Why this task exists; a continuation inherits it. */
-  origin: TaskOrigin;
   title: string;
   description: string | null;
   state: TaskState;

@@ -1,11 +1,19 @@
 import {
   ActionAskSchema,
   INTEGRATION_KINDS,
+  OrderCardSubjectSchema,
   TASK_ORIGINS,
   TASK_PRIORITIES,
   TASK_STATUSES,
 } from "@repo/domain/domain";
-import type { BlockedAsk, Task, TaskOrigin, TaskState, TaskStatus } from "@repo/domain/domain";
+import type {
+  BlockedAsk,
+  Task,
+  TaskOrigin,
+  TaskProvenance,
+  TaskState,
+  TaskStatus,
+} from "@repo/domain/domain";
 import { parseJson } from "@repo/domain/json";
 import { PACKAGE_SCHEMA, nullableNum, optNum, optStr, reqStr, strArray } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
@@ -125,6 +133,9 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
   if (t.betId !== null) {
     metadata.betId = t.betId;
   }
+  if (t.origin === "order") {
+    metadata.subject = JSON.stringify(t.subject);
+  }
   for (const [key, value] of Object.entries(stateFields(t.state))) {
     if (value !== null) {
       metadata[key] = value;
@@ -213,6 +224,15 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
 const parseTaskOrigin = (raw: string | null, betId: string | null): TaskOrigin =>
   TASK_ORIGINS.find((o) => o === raw) ?? (betId === null ? "founder" : "work");
 
+/** An order card that names nothing it is about is not read: dedupe and Done both go by its subject. */
+const parseProvenance = (m: FrontmatterDoc["metadata"], betId: string | null): TaskProvenance => {
+  const origin = parseTaskOrigin(optStr(m, "origin"), betId);
+  if (origin !== "order") {
+    return { origin };
+  }
+  return { origin, subject: OrderCardSubjectSchema.parse(parseJson(reqStr(m, "subject"))) };
+};
+
 /** Queued and running belong to someone; a file saying otherwise (a hand edit, a released assignee) is work nobody has. */
 const UNOWNED: TaskState = { kind: "todo" };
 
@@ -235,7 +255,6 @@ export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
     createdAt: optNum(m, "createdAt", Date.now()),
     description: body === "" ? null : body,
     id: reqStr(f, "slug"),
-    origin: parseTaskOrigin(optStr(m, "origin"), betId),
     priority,
     productId: optStr(m, "productId"),
     startedAt: nullableNum(m, "startedAt"),
@@ -244,5 +263,6 @@ export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
         ? UNOWNED
         : state,
     title: reqStr(f, "name"),
+    ...parseProvenance(m, betId),
   };
 };

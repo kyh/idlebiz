@@ -15,7 +15,6 @@ import type { CheckoutSession, PaymentStanding } from "./stripe-checkouts";
 import type { OrdersCursor } from "./store/store";
 import { formatCents } from "@repo/domain/format";
 import type { Listing } from "./listing";
-import { orderCardTitle } from "./order";
 import type { Order, Recipient, Sale } from "./order";
 import type { LinkState } from "./link-record";
 
@@ -90,20 +89,26 @@ const hold = (sale: Sale, printfulId: number | null, trouble: string, why: strin
     postToRoom({ kind: "office" }, `🧪 Test order ${sale.id.slice(0, 8)} stopped: ${why}${where}`);
     return;
   }
-  raiseOrderCard(orderCardTitle(sale, trouble), {
-    action: `Settle ${describe(sale)}`,
-    draft: null,
-    instructions: `${why}${where} ${REFUND}`,
-  });
+  raiseOrderCard(
+    { kind: "order", orderId: sale.id, trouble },
+    {
+      action: `Settle ${describe(sale)}`,
+      draft: null,
+      instructions: `${why}${where} ${REFUND}`,
+    },
+  );
 };
 
 const printfulTokenCard = (): void => {
-  raiseOrderCard("Paid orders wait for a Printful token", {
-    action: "Paste a new Printful token in the Budget panel",
-    draft: null,
-    instructions:
-      "Printful turned IdleBiz's token away, which happens once one expires, or none is saved, so paid orders cannot reach Printful. Create a private token at developers.printful.com/tokens and paste it in the Budget panel. Press Done once it is saved: the waiting orders go out on their own.",
-  });
+  raiseOrderCard(
+    { kind: "pump", reason: "no-printful-token" },
+    {
+      action: "Paste a new Printful token in the Budget panel",
+      draft: null,
+      instructions:
+        "Printful turned IdleBiz's token away, which happens once one expires, or none is saved, so paid orders cannot reach Printful. Create a private token at developers.printful.com/tokens and paste it in the Budget panel. Press Done once it is saved: the waiting orders go out on their own.",
+    },
+  );
 };
 
 /**
@@ -114,11 +119,14 @@ const printfulTokenCard = (): void => {
 const noteStatus = (sale: Sale, printfulId: number, status: string, stage: Sale["stage"]): void => {
   store.updateSale(sale.id, { printfulStatus: status, stage });
   if (sale.livemode && ALARMING.has(status) && status !== sale.printfulStatus) {
-    raiseOrderCard(orderCardTitle(sale, `Printful marked it ${status}`), {
-      action: `Check ${describe(sale)}`,
-      draft: null,
-      instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks: after a failed charge, fix your billing, then confirm the order again in Printful's dashboard. ${REFUND}`,
-    });
+    raiseOrderCard(
+      { kind: "order", orderId: sale.id, trouble: `Printful marked it ${status}` },
+      {
+        action: `Check ${describe(sale)}`,
+        draft: null,
+        instructions: `Printful marked order ${printfulId} ${status}. Printful says why only on its dashboard: check it there, and fix what it asks: after a failed charge, fix your billing, then confirm the order again in Printful's dashboard. ${REFUND}`,
+      },
+    );
   }
 };
 
@@ -633,7 +641,7 @@ const paidOn = (session: CheckoutSession, productId: string) => ({
 
 /**
  * Keep a paid checkout IdleBiz cannot send, and hand it to the founder: the card is raised
- * first, since cards dedupe by title and the kept order is what stops the next read retrying.
+ * first, since cards dedupe by subject and the kept order is what stops the next read retrying.
  */
 const keepUnreadable = (
   session: CheckoutSession,
@@ -643,11 +651,14 @@ const keepUnreadable = (
 ): void => {
   const order: Order = { ...paidOn(session, productId), kind: "unreadable", listingId, why };
   if (order.livemode) {
-    raiseOrderCard(orderCardTitle(order, "IdleBiz cannot send it"), {
-      action: `Settle ${describe(order)}`,
-      draft: null,
-      instructions: `A buyer paid, but ${why}, so IdleBiz sent nothing to Printful. Place it by hand in Printful's dashboard if you can. ${REFUND}`,
-    });
+    raiseOrderCard(
+      { kind: "order", orderId: order.id, trouble: "IdleBiz cannot send it" },
+      {
+        action: `Settle ${describe(order)}`,
+        draft: null,
+        instructions: `A buyer paid, but ${why}, so IdleBiz sent nothing to Printful. Place it by hand in Printful's dashboard if you can. ${REFUND}`,
+      },
+    );
   }
   store.recordOrder(order);
   if (!order.livemode) {
@@ -701,11 +712,14 @@ const takeLinkSale = (session: CheckoutSession, productId: string): void => {
     name: session.line_items?.data[0]?.description ?? "a payment link's item",
   };
   if (order.livemode && order.delivery !== null) {
-    raiseOrderCard(orderCardTitle(order, "deliver it"), {
-      action: `Send ${order.email ?? "the buyer"} what ${JSON.stringify(order.name)} promised`,
-      draft: null,
-      instructions: `${describe(order)}. The team says to send: ${order.delivery} Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
-    });
+    raiseOrderCard(
+      { kind: "order", orderId: order.id, trouble: "deliver it" },
+      {
+        action: `Send ${order.email ?? "the buyer"} what ${JSON.stringify(order.name)} promised`,
+        draft: null,
+        instructions: `${describe(order)}. The team says to send: ${order.delivery} Press Done once it is sent. If you can't deliver it, refund the buyer in Stripe.`,
+      },
+    );
   }
   store.recordOrder(order);
   const link = store.getChargeLink(session.payment_link ?? "");
@@ -808,11 +822,14 @@ const cardUnlessLive = (key: string | null): void => {
     return;
   }
   const why = key === null ? "no Stripe key is saved" : "the saved Stripe key is a test key";
-  raiseOrderCard("Paid orders wait for a live Stripe key", {
-    action: "Save a live Stripe key in the Budget panel",
-    draft: null,
-    instructions: `IdleBiz reads paid orders with the Stripe key in the Budget panel, and ${why}, while the company's live payment links still take real money. Nobody's paid print reaches Printful and no card tells you what a buyer is owed until a live key whose restricted permissions include Read on Checkout Sessions, or your secret key, is saved. Press Done once it is saved: the orders paid meanwhile are read then.`,
-  });
+  raiseOrderCard(
+    { kind: "pump", reason: "no-live-key" },
+    {
+      action: "Save a live Stripe key in the Budget panel",
+      draft: null,
+      instructions: `IdleBiz reads paid orders with the Stripe key in the Budget panel, and ${why}, while the company's live payment links still take real money. Nobody's paid print reaches Printful and no card tells you what a buyer is owed until a live key whose restricted permissions include Read on Checkout Sessions, or your secret key, is saved. Press Done once it is saved: the orders paid meanwhile are read then.`,
+    },
+  );
 };
 
 /**
@@ -849,11 +866,14 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
     if (!owed) {
       return;
     }
-    raiseOrderCard("Paid orders can't be read from Stripe", {
-      action: "Let IdleBiz's Stripe key read checkouts",
-      draft: null,
-      instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
-    });
+    raiseOrderCard(
+      { kind: "pump", reason: "unreadable-checkouts" },
+      {
+        action: "Let IdleBiz's Stripe key read checkouts",
+        draft: null,
+        instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
+      },
+    );
     return;
   }
   if (read.kind === "failed") {
@@ -895,11 +915,14 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
   // founder is told, and the cursor moves up to what was read, or no read would ever catch up.
   const oldestRead = Math.min(...read.sessions.map((session) => session.created));
   moveTo(Math.min(waitFrom, oldestRead - 1));
-  raiseOrderCard("Paid orders may have been missed", {
-    action: "Check Stripe for payments on IdleBiz's payment links",
-    draft: null,
-    instructions: `More checkouts reached Stripe between two of IdleBiz's reads than one read takes (${CHECKOUT_READ_LIMIT}), which other business on the same account causes, so IdleBiz read only the newest and skipped any made before ${new Date(oldestRead * 1000).toISOString()}. In Stripe's dashboard, look for payments on IdleBiz's payment links before then that no order card or read_orders shows: place a print in Printful by hand, and deliver anything else. ${REFUND}`,
-  });
+  raiseOrderCard(
+    { kind: "pump", reason: "missed" },
+    {
+      action: "Check Stripe for payments on IdleBiz's payment links",
+      draft: null,
+      instructions: `More checkouts reached Stripe between two of IdleBiz's reads than one read takes (${CHECKOUT_READ_LIMIT}), which other business on the same account causes, so IdleBiz read only the newest and skipped any made before ${new Date(oldestRead * 1000).toISOString()}. In Stripe's dashboard, look for payments on IdleBiz's payment links before then that no order card or read_orders shows: place a print in Printful by hand, and deliver anything else. ${REFUND}`,
+    },
+  );
 };
 
 /** Carry every order the step its beat allows. One order's fault is its own. */

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { BlockedAskSchema, TASK_ORIGINS } from "@repo/domain/domain";
-import type { BlockedAsk, Task, TaskState } from "@repo/domain/domain";
+import type { BlockedAsk, Task, TaskProvenance, TaskState } from "@repo/domain/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
-const base: Omit<Task, "state"> = {
+const base = {
   artifacts: ["dist/index.html"],
   assigneeId: "priya",
   attempts: 2,
@@ -19,7 +19,7 @@ const base: Omit<Task, "state"> = {
   productId: "widget",
   startedAt: 1_700_000_001_000,
   title: "Ship the thing",
-};
+} satisfies Omit<Task, "state">;
 
 const roundTrip = (t: Task): Task => docToTask(parseDoc(serializeDoc(taskToDoc(t))), t.companyId);
 
@@ -46,9 +46,26 @@ describe("task codec", () => {
     expect(roundTrip(task)).toEqual(task);
   });
 
-  it.each(TASK_ORIGINS)("round-trips why a %s task exists", (origin) => {
-    const task: Task = { ...base, origin, state: { kind: "todo" } };
+  it.each<TaskProvenance>([
+    ...TASK_ORIGINS.flatMap((origin) => (origin === "order" ? [] : [{ origin }])),
+    { origin: "order", subject: { kind: "order", orderId: "abc", trouble: "deliver it" } },
+    { origin: "order", subject: { kind: "link-left-on", linkId: "plink_1" } },
+    { origin: "order", subject: { kind: "unrecorded-links", productId: "widget" } },
+    { origin: "order", subject: { kind: "pump", reason: "missed" } },
+  ])("round-trips why a task exists: %j", (provenance) => {
+    const task: Task = { ...base, ...provenance, state: { kind: "todo" } };
     expect(roundTrip(task)).toEqual(task);
+  });
+
+  it("reads no order card that names nothing it is about", () => {
+    const subject = { kind: "pump", reason: "missed" } as const;
+    const doc = taskToDoc({ ...base, origin: "order", state: { kind: "todo" }, subject });
+    const { subject: _lost, ...unnamed } = doc.metadata;
+    expect(() => docToTask({ ...doc, metadata: unnamed }, "acme")).toThrow(
+      'expected string "subject"',
+    );
+    const garbled = { ...doc.metadata, subject: JSON.stringify({ kind: "pump", reason: "hunch" }) };
+    expect(() => docToTask({ ...doc, metadata: garbled }, "acme")).toThrow();
   });
 
   it("reads an unknown or missing origin as the bet's work or the founder's, never a proposal", () => {

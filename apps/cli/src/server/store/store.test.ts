@@ -1621,24 +1621,29 @@ describe("orders", () => {
     ]);
   });
 
-  it("raises one card per trouble, which no teammate can claim and only the founder settles", () => {
+  it("raises one card per subject, which no teammate can claim and only the founder settles", () => {
     found();
     const hired = store.createEmployee({ ...hire("Priya"), deskIndex: 0 });
     const ask = { action: "Settle it", draft: null, instructions: "why", type: "action" } as const;
-    const card = store.raiseOrderCard("Order 1: trouble", ask);
-    expect(store.raiseOrderCard("Order 1: trouble", ask)).toBeNull();
-    expect(card).toMatchObject({ assigneeId: null, origin: "order", productId: null });
+    const subject = { kind: "order", orderId: "order-1", trouble: "trouble" } as const;
+    const card = store.raiseOrderCard(subject, "Order 1: trouble", ask);
+    expect(store.raiseOrderCard(subject, "Order order-1 is in trouble", ask)).toBeNull();
+    expect(card).toMatchObject({ assigneeId: null, origin: "order", productId: null, subject });
     expect(store.claimTask(card?.id ?? "", hired.id)).toBeNull();
     store.initStore();
     expect(store.listOpenTasks()).toMatchObject([
-      { origin: "order", state: { ask, kind: "blocked" } },
+      { origin: "order", state: { ask, kind: "blocked" }, subject },
     ]);
+    expect(
+      store.raiseOrderCard({ ...subject, trouble: "more" }, "Order 1: trouble", ask),
+    ).toMatchObject({ subject: { trouble: "more" } });
 
     expect(store.closeOrderCard(card?.id ?? "")).toMatchObject({
       state: { by: null, kind: "superseded" },
+      subject,
     });
-    expect(store.listOpenTasks()).toEqual([]);
-    expect(store.raiseOrderCard("Order 1: trouble", ask)).not.toBeNull();
+    expect(store.listOpenTasks()).toHaveLength(1);
+    expect(store.raiseOrderCard(subject, "Order 1: trouble", ask)).not.toBeNull();
   });
 });
 

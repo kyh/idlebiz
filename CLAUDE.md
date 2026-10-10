@@ -430,12 +430,15 @@ third boundary.
   live one whose link names a `delivery` is carded to the founder with the buyer's email and
   that text: nothing else reaches a buyer. One tagged with a listing this save no longer holds
   is kept as an unreadable order and carded. A card is raised before its order is kept, since
-  cards dedupe by title and the kept order is what stops the next read retrying. Waiting orders
+  cards dedupe by subject and the kept order is what stops the next read retrying. Waiting orders
   are sent and sent ones' Printful status read every 10 minutes. What the pump cannot settle (a
   draft dearer than the payment less the fee, a refunded or disputed payment, a changed design,
   a refusal, a status of failed, canceled or onhold the first time any call reads it, a refused
-  key once anything is sold) is an order card: a blocked task of origin `order`, no assignee, no
-  product, so no bet stalls, no retirement drops it and no teammate can claim it. The founder's
+  key once anything is sold) is an order card: a blocked task of origin `order` naming its
+  subject (`OrderCardSubject` in `@repo/domain/domain`: an order and its trouble, a link left on,
+  a product's unrecorded links, or what stops the pump), which dedupes it and settles it, its
+  title only copy rendered from it; no assignee, no product, so no bet stalls, no retirement
+  drops it and no teammate can claim it. The founder's
   Done or Can't closes it with no run (`settleOrderCard` in `server/company-actions.ts`) and goes
   to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
   so. A menu-bar-only launch counts what waits on the founder in the tray and notifies each new

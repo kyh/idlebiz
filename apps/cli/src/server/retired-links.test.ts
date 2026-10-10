@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OrderCard } from "@repo/domain/domain";
 import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
 import type { Sale } from "./order";
@@ -10,8 +11,14 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-retired-links-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { retireProduct, settleOrderCard, switchOffBeforeReset, switchOffRetiredLinks } =
-  await import("./company-actions");
+const { taskFile } = await import("./paths");
+const {
+  raiseOrderCard,
+  retireProduct,
+  settleOrderCard,
+  switchOffBeforeReset,
+  switchOffRetiredLinks,
+} = await import("./company-actions");
 
 const TEE = "plink_tee";
 const PRO = "plink_pro";
@@ -130,11 +137,21 @@ const openShop = () => {
 };
 
 /** The founder's cards, by title: cards raised in one millisecond list in no fixed order. */
-const cards = () =>
+const cards = (): OrderCard[] =>
   store
     .listOpenTasks()
-    .filter((t) => t.origin === "order" && t.state.kind === "blocked")
+    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t] : []))
     .toSorted((a, b) => a.title.localeCompare(b.title));
+
+const cardAbout = (orderId: string): OrderCard => {
+  const card = cards().find((t) => t.subject.kind === "order" && t.subject.orderId === orderId);
+  if (!card) {
+    throw new Error(`order ${orderId} must have had a card`);
+  }
+  return card;
+};
+
+const SETTLE = { action: "Settle it", draft: null, instructions: "", type: "action" } as const;
 
 const statesOf = () =>
   Object.fromEntries(store.paymentLinks().map(({ link }) => [link.id, link.state.kind]));
@@ -537,12 +554,11 @@ describe("resetting the company", () => {
       productId: side.id,
     };
     const owed = (id: string, trouble: string) => {
-      store.raiseOrderCard(`Order ${id.slice(0, 8)}: ${trouble}`, {
-        action: "Settle it",
-        draft: null,
-        instructions: "",
-        type: "action",
-      });
+      store.raiseOrderCard(
+        { kind: "order", orderId: id, trouble },
+        `Order ${id}: ${trouble}`,
+        SETTLE,
+      );
       return `cs_${id}`;
     };
     const delivery = "Email the buyer the PDF";
@@ -574,11 +590,7 @@ describe("resetting the company", () => {
       name: "Guide",
       sessionId: settled,
     });
-    const card = cards().find((t) => t.title.startsWith("Order guide-se"));
-    if (!card) {
-      throw new Error("the settled order must have had a card");
-    }
-    settleOrderCard(card.id, { kind: "done", note: "" });
+    settleOrderCard(cardAbout("guide-sent").id, { kind: "done", note: "" });
     fakeStripe();
 
     const left = await switchOffBeforeReset();
@@ -596,20 +608,16 @@ describe("resetting the company", () => {
       store.recordOrder(
         teeOrder(side.id, id, { kind: "held", printfulId: 7, why: "Printful wants more" }),
       );
-      store.raiseOrderCard(`Order ${id.slice(0, 8)}: Printful wants more than the buyer paid`, {
-        action: "Settle it",
-        draft: null,
-        instructions: "",
-        type: "action",
-      });
+      const trouble = "Printful wants more than the buyer paid";
+      store.raiseOrderCard(
+        { kind: "order", orderId: id, trouble },
+        `Order ${id}: ${trouble}`,
+        SETTLE,
+      );
     };
     hold("held-open");
     hold("heldover");
-    const card = cards().find((t) => t.title.startsWith("Order heldover"));
-    if (!card) {
-      throw new Error("the settled sale must have had a card");
-    }
-    settleOrderCard(card.id, { kind: "done", note: "refunded" });
+    settleOrderCard(cardAbout("heldover").id, { kind: "done", note: "refunded" });
     fakeStripe();
 
     const left = await switchOffBeforeReset();
@@ -628,5 +636,59 @@ describe("resetting the company", () => {
     expect(stripe.switchOffs).toEqual([]);
     expect(left).toContain("https://buy.stripe.com/tee");
     expect(left).toContain(`https://buy.stripe.com/${PRO}`);
+  });
+});
+
+describe("an order card", () => {
+  it("is known by what it is about, so a reworded title still records its Done and still warns a reset", async () => {
+    const { company, side } = openShop();
+    fakeStripe({ answers: { [PRO]: "refused" } });
+    await retireProduct(side.id, "dud", null);
+    store.recordOrder({
+      collectedCents: 900,
+      createdAt: 3,
+      delivery: "Email the buyer the PDF",
+      email: "reader@example.com",
+      id: "guide-owed",
+      kind: "link",
+      livemode: true,
+      name: "Guide",
+      paymentIntent: null,
+      productId: side.id,
+      sessionId: "cs_guide-owed",
+    });
+    raiseOrderCard(
+      { kind: "order", orderId: "guide-owed", trouble: "deliver it" },
+      { action: "Send the buyer the guide", draft: null, instructions: "" },
+    );
+    for (const card of cards()) {
+      const file = taskFile(company.id, card.id);
+      const named = `name: ${JSON.stringify(card.title)}`;
+      writeFileSync(
+        file,
+        readFileSync(file, "utf-8").replace(
+          named,
+          `name: ${JSON.stringify(`Reworded ${card.id}`)}`,
+        ),
+      );
+    }
+    store.initStore();
+    expect(cards().map((c) => c.title.startsWith("Reworded "))).toEqual([true, true]);
+
+    const left = cards().find((c) => c.subject.kind === "link-left-on");
+    settleOrderCard(left?.id ?? "", { kind: "done", note: "" });
+
+    expect(store.paymentLinks().find((l) => l.link.id === PRO)?.link.state).toMatchObject({
+      by: "founder",
+      kind: "switched-off",
+    });
+
+    fakeStripe();
+    const warning = await switchOffBeforeReset();
+
+    expect(warning).toContain(
+      `Reworded ${cardAbout("guide-owed").id}: "Guide", reader@example.com`,
+    );
+    expect(warning).toContain("checkout cs_guide-owed");
   });
 });
