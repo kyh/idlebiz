@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -24,6 +24,9 @@ use crate::shell;
 
 pub const MAIN: &str = "main";
 
+/// How long main has to hand over a link: it only mints one.
+const HANDOFF_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// What main answers `handoff` with (`apps/cli/src/server/serve.ts`).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +40,9 @@ struct Handoff {
 /// never on the main thread.
 fn handoff<R: Runtime>(app: &AppHandle<R>) -> Result<(Url, String), String> {
     let main = shell::main(app).ok_or_else(|| "IdleBiz is still starting.".to_owned())?;
-    let answer = tauri::async_runtime::block_on(main.request("handoff", &Value::Null))?;
+    let answer = main
+        .request("handoff", &Value::Null, HANDOFF_TIMEOUT)
+        .map_err(|failure| failure.to_string())?;
     let handoff: Handoff = serde_json::from_value(answer)
         .map_err(|error| format!("main answered a handoff the shell cannot read: {error}"))?;
     let url = Url::parse(&handoff.handoff_url)

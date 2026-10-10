@@ -32,16 +32,18 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
   `tauri dev` the dev server's address, whether the login item launched it, and the Keychain's
   password. Main finds its own files beside itself (the skills and the employee sheets in
   `resources/`, the built page in `dist/page`). Main boots on the hello; one that fails says where
-  the log is, in a box, and the app quits.
-- The shell asks main for a `handoff` each time it makes the window: a one-time link into main's
-  page (below).
+  the log is, in a box, and the app quits. So does one that has not booted within a minute,
+  killed with its process group first: its quit would wait the stuck boot out.
+- The shell asks main for a `handoff` each time it makes the window, and waits ten seconds for
+  it: a one-time link into main's page (below).
 - Main asks the shell (`apps/cli/src/server/host.ts`, answered in `src-tauri/src/host.rs`): a message box, the
   clipboard, opening a URL, a file or a folder, the login item; and tells it the menu-bar icon's
   model, a notification, whether to keep the Mac awake, and to relaunch after a reset.
-- A quit asks main to stop its runs (`quit`), then closes its stdin, then waits; a main that has
-  not exited five seconds later is killed with its process group. Main's stdin is also its
-  lifeline: a shell that crashed or was killed ends main too, after its runs. Main leads a process
-  group of its own, so a Ctrl-C under `tauri dev` reaches the shell alone, which stops main once.
+- A quit asks main to stop its runs (`quit`) and waits up to 45 seconds for the answer, then
+  closes its stdin, then waits; a main that has not exited five seconds later is killed with its
+  process group. Main's stdin is also its lifeline: a shell that crashed or was killed ends main
+  too, after its runs. Main leads a process group of its own, so a Ctrl-C under `tauri dev`
+  reaches the shell alone, which stops main once.
   There is no restart: main owns the save, and a second one under a first that has not let go
   would race it.
 

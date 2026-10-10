@@ -7,14 +7,19 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::main_log::{self, MAIN_LOG_MAX_BYTES, MainLog};
-use crate::main_process::{Host, MainProcess, MainSpec};
+use crate::main_process::{Host, MainProcess, MainSpec, RequestError};
 use crate::{host, keychain, runtime, window};
+
+/// How long main has to boot once it is said hello to: it opens the save, the control plane and
+/// the page's server, and waits on nothing of the founder's.
+const HELLO_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct Shell {
     /// Whether this is the packaged app: its own node and main, the Keychain, the login item.
@@ -147,15 +152,29 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         "pageDevUrl": page_dev_url,
         "safeStoragePassword": keychain::safe_storage_password(bundled),
     });
-    let booted = tauri::async_runtime::block_on(process.request("hello", &hello));
-    if let Err(reason) = booted {
+    if let Err(failure) = process.boot(&hello, HELLO_TIMEOUT) {
+        if let Some(shell) = app.try_state::<Shell>() {
+            let mut held = shell.lock();
+            // a quit took main as it booted, and ends the app itself
+            if held.is_none() {
+                return;
+            }
+            // a boot that ran out of time killed main: no quit is left to ask of it
+            if matches!(failure, RequestError::TimedOut(_)) {
+                held.take();
+            }
+        }
+        let what = match failure {
+            RequestError::TimedOut(within) => format!(
+                "The office did not finish starting within {} seconds, so IdleBiz stopped it. Open IdleBiz again to try once more.",
+                within.as_secs()
+            ),
+            failure => format!("The office could not open your company: {failure}"),
+        };
         return fail(
             app,
             "IdleBiz couldn't start",
-            &format!(
-                "The office could not open your company: {reason}\n\nWhat happened is in {}.",
-                log_path.display()
-            ),
+            &format!("{what}\n\nWhat happened is in {}.", log_path.display()),
         );
     }
     if opened_at_login {

@@ -1778,7 +1778,6 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
- "tokio",
 ]
 
 [[package]]
