@@ -42,7 +42,7 @@ export interface RunnerAdapter {
    * Declare the adapter's typed session failures on initialize. Undeclared, codex-acp tells a
    * failed turn only in prose and still ends it `end_turn`, which reads as finished work.
    * claude-agent-acp speaks them too, but declared, it would stop rejecting a limited turn
-   * with the `errorKind` that `limitOf` parks on.
+   * with the `errorKind` that `classOfRequestError` reads.
    */
   typedFailures?: true;
 }

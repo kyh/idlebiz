@@ -137,12 +137,24 @@ export type TaskOrigin = (typeof TASK_ORIGINS)[number];
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 export type EmployeeStatus = "idle" | "working";
 
+/**
+ * Why a runner rests: a usage limit, until it lifts; an overload, or a refusal of access signing
+ * in again cannot repair (an organization yet to verify, a cloud credential the CLI could not
+ * load), each for a backoff that doubles while they come in a row.
+ */
+export const REST_CAUSES = ["usage-limit", "overloaded", "access-denied"] as const;
+
 /** How a run ended, as the scheduler settles the task and the office hears about it. */
 export const RunOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("done") }),
   z.object({ ask: BlockedAskSchema, kind: z.literal("blocked") }),
-  // the CLI hit its usage limit: park until `until` without burning an attempt
-  z.object({ error: z.string(), kind: z.literal("resting"), until: z.number() }),
+  // the runner rests: park until `until` without burning an attempt
+  z.object({
+    cause: z.enum(REST_CAUSES),
+    error: z.string(),
+    kind: z.literal("resting"),
+    until: z.number(),
+  }),
   z.object({ error: z.string(), kind: z.literal("failed") }),
   // the runner's login was refused: park without burning an attempt until a sign-in finds it again
   z.object({ error: z.string(), kind: z.literal("signedOut") }),

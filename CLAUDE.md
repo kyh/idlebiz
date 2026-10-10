@@ -118,8 +118,8 @@ tools/
 
 The page reaches main over its contract and the runs reach it over the control plane: two
 doors, never one. The page's carries the founder's session cookie and answers on the page's own
-port, which the seal closes to every run; the control plane's carries a run's own token, and
-what it does is the run's.
+port, which the seal closes to every run; the control plane's is a unix socket main opens for
+each run, which only that run's seal reaches, and what it does is the run's.
 
 ## The company is steered by bets
 
@@ -318,8 +318,8 @@ third boundary.
     macOS's git; without Apple's command line tools the run goes on in a plain folder) and
     claude's `projects/` folder. A run writes no git config, so its commits are
     named by `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
-  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders' and its
-    agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
+  - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders', its line to
+    the company (`apiSocket`, below) and its agent-browser namespace (`browserNamespace`, keyed by save, runner and the run's own
     folders, since a daemon keeps the seal and working directory of the run that started it and
     idles past it): no ssh, gpg or 1Password agent, container engine, app `SingletonSocket`
     (which hands the running app a URL), claude's or the codex app's sockets, the founder's own
@@ -333,6 +333,22 @@ third boundary.
     `osacompile`, `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid
     program runs but `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a
     `mach-lookup` deny of securityd, which holds against a copied binary too).
+  - _Who calls the company is the socket, not a secret._ Each run reaches its tools over its own
+    unix socket, an HTTP server main opens for that run alone (`controlPlane.registerRun`) at
+    `<save>/.run/<id>`, mode 0600 in a 0700 folder (`~/.idlebiz-run/<save digest>/` when that
+    path passes the 103 bytes macOS allows a socket; past both the run does not start,
+    `runSocketPath`). Runs are processes of the founder's own user, so any run can read another's
+    env (`ps -E`, or the `KERN_PROCARGS2` sysctl, which needs no setuid program, so keeping
+    `/bin/ps` would not close it), its bearer token included, and a token alone would let a
+    teammate call lead-only tools as the lead. So a run's seal lets it connect to its own socket
+    (`Seal.apiSocket`) and names no other run's, in folders no run writes (the save, HOME), and
+    each socket's server binds the run it was made for: a token presented on another run's socket
+    is refused. The bearer stays as a second check. The env carries `IDLEBIZ_API_SOCKET` and
+    `IDLEBIZ_RUN_TOKEN`, which the `idlebiz` command a run types reads (`commands/tools.ts`): it
+    calls on that socket alone, never on a relative path, which would reach whatever listens in
+    the run's own folders; no loopback port answers for the company. A socket closes as its run
+    settles, so a call from a process the run left behind finds nothing; boot sweeps what a crash
+    left.
   - _Checked before use._ Boot runs `checkSeal`, no model call: under each runner's profile a
     canary must be unreadable, a file where no rule allows a write must not be made, and the
     runtime must start. Until it holds the scheduler starts nothing and autopilot files nothing; a
@@ -527,7 +543,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   or claude.ai connectors (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny of `mcp__*`),
   which act signed in as the founder; the company is reached with the `idlebiz` command, which
   main writes at boot and puts first on each run's PATH (`agent-launcher.ts`), a client of the
-  control plane that sends nowhere but loopback. A sign-in kept in their
+  control plane that connects to nothing but the run's own socket. A sign-in kept in their
   settings rather than their shell still reaches the run (`claudeUserSettings` in
   `server/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
   gateway's URL and token), through `runEnv` as the shell's env goes, and the helpers claude runs
@@ -570,7 +586,21 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   reads only the login stored, says signed in: the sign-in runs its login for it anyway. With
   no CLI left the gate asks for that sign-in; with another still signed in the HUD names each
   signed-out runner someone works on and who waits on it, the lead's steering included, beside
-  a Sign in button.
+  a Sign in button. A failed turn is classed by what its adapter says before its prose
+  (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
+  category and actions; claude's kinds mirror claude-agent-acp's `providerFailureCategory`):
+  `auth` signs the runner out as above; `usage-limit` (a rate limit, billing, an account on hold)
+  rests it until the reset the provider reported (claude's `_claude/rateLimit` on usage updates;
+  codex-acp keeps its rate limits to itself, so its text) or else the time its text names;
+  `overloaded` rests it 1m, doubling with each one in a row up to 15m (`overloadBackoffMs`) and
+  starting over once a turn ends any other way, since a busy provider clears in minutes;
+  `access-denied` (an organization yet to verify, a Bedrock/Vertex/Foundry credential claude
+  could not load) neither signs it out nor spends the session, since signing in again cannot
+  repair it, but rests it on the same backoff, so a credential blip clears and a standing refusal
+  is not hammered, and #team tells the founder what the provider said; `context` spends the
+  session.
+  A rest never shortens one holding, and is kept in `state/runner-rest.json`, so a restart does not
+  spawn each parked task once to be refused; it is not critical: lost, that is all it costs.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
   judgement, `holdFor` in `server/command-policy.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
@@ -579,6 +609,10 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
   would run a command the founder's `~/.codex/rules` allow without asking, so its runs find no
   rules there (above).
+  - An `idlebiz <tool>` line runs unasked: its request is data the game reads, and the tool
+    itself holds what needs the founder. No fetch is the company's, so a `curl` or `wget` that
+    sends a body asks wherever it goes, a loopback port (a product's dev server) or a socket
+    included, since what listens there may be anyone's.
   - An `agent-browser` verb is read where agent-browser reads it, the first word its global
     options leave, and any verb but a listed page read is held unless the session's live page,
     read from the browser before the command runs (a click can land anywhere), is loopback with
@@ -728,6 +762,6 @@ keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks fo
 and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
 that is not both.
 Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
-loopback requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
+loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
 `pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
 `cargo test` over the shell)

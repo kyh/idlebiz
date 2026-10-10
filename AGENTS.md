@@ -317,7 +317,9 @@ rather than crashing boot.
   home it writes nothing that CLI loads or runs (claude's `~/.claude.json` included) and no
   other folder's claude `projects/`; nowhere does a run write git's config or hooks, `.claude/settings*.json`,
   `.mcp.json` or `.codex/`, nor `.agents` in its own folders, where codex finds skills.
-  It connects to no unix socket but its own folders' and its namespace's, to no loopback
+  It connects to no unix socket but its own folders', its namespace's and its own line to the
+  company (`IDLEBIZ_API_SOCKET`, a socket main opens per run: another run could read its token
+  from its env, never reach its socket), to no loopback
   debug port (9222, 9229), the dev server's (31100) or the one main serves the window's page on, and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
@@ -380,7 +382,7 @@ rather than crashing boot.
   walker makes each seat's cell solid and seals open floor no body can reach
   (`walkGridOf` in `renderer/game/office-grid.ts`).
 - **Tests need no window or Phaser.** `pnpm --filter idlebiz test` covers main: schemas, codecs,
-  store/integration behavior under temporary save roots, real loopback requests, the page's
+  store/integration behavior under temporary save roots, real loopback and socket requests, the page's
   router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/desktop test`
   covers the page's geometry and state, then `cargo test` the shell (the relay's framing, main's
   supervision against a stand-in main on node, the navigation pin, the runtime's paths, main's
@@ -413,9 +415,9 @@ rather than crashing boot.
   the verb and the server cannot disagree. Main writes a launcher at each boot
   (`server/agent-launcher.ts`, `~/.idlebiz/bin/idlebiz`), which runs the CLI on main's own node
   and goes first on each run's PATH. The verb sends its request to the control plane its run was
-  handed (`IDLEBIZ_API_URL`, `IDLEBIZ_RUN_TOKEN`; `server/control-plane.ts`), on loopback only,
-  prints the answer, and exits 1 with why when a call is refused; `-` reads the request from
-  stdin. `idlebiz <tool> --help` prints the tool's doc.
+  handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`; `server/control-plane.ts`), over that run's
+  own unix socket only, prints the answer, and exits 1 with why when a call is refused; `-` reads
+  the request from stdin. `idlebiz <tool> --help` prints the tool's doc.
 - **Main asks the shell for what only a native app does** (`server/host.ts`): a message box, the
   clipboard, Finder and the browser, the menu-bar icon (main decides it, `server/tray.ts`; the
   shell draws it, `src-tauri/src/tray.rs`), a notification, the login item (`SMAppService`), the
@@ -507,8 +509,8 @@ rather than crashing boot.
   package ⇄ domain object mapping per kind; `company-codec.ts` owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
-  never past a closed lid), `agents/` (runs), `control-plane.ts` (loopback HTTP the agents'
-  `idlebiz` command calls back into; `agent-launcher.ts` writes that command at boot),
+  never past a closed lid), `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only
+  that run's seal reaches, that the agents' `idlebiz` command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools.ts` (each bound to its
   implementation), `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a line
   as bash would, read loosely as well where another shell may split it apart), `refusal.ts`,
@@ -544,7 +546,7 @@ rather than crashing boot.
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`) and the event stream's names (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
-  prices usage, and tracks rate limits. Source-only, no build step.
+  prices usage, and classes failures (auth, access denied, usage limit, overload, context, other). Source-only, no build step.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
   and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,

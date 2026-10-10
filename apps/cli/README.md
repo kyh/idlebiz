@@ -23,9 +23,10 @@ idlebiz ask-boss --help    # the tool's doc and an example
 Each verb is a tool's name as a command-line word (`ask_boss` is accepted too), generated from
 its spec in `src/server/tool-specs.ts`, so the instructions a run is given, the verb and the
 server's parse cannot disagree (`src/commands/tools.ts`). It is a client of the control plane its
-run was handed (`IDLEBIZ_API_URL`, `IDLEBIZ_RUN_TOKEN`, both run-scoped): it sends the request
-as it is, on loopback alone and past any proxy, prints the answer, and exits 1 with why when the
-call is refused or never arrives. Outside a run there is nothing to call, and it says so.
+run was handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`, both run-scoped): it sends the request
+as it is, over the run's own unix socket, which main opens for that run alone and only that
+run's seal reaches, prints the answer, and exits 1 with why when the call is refused or never
+arrives. Outside a run there is nothing to call, and it says so.
 
 ## How a run finds it
 
@@ -50,6 +51,6 @@ for `pnpm dev:browser` and the e2e suite.
 ## Testing it
 
 `pnpm --filter idlebiz test` runs main's suites against temporary save roots and real loopback
-servers, and the verbs against a live control plane. On macOS it also runs each run's seal and,
+and socket servers, and the verbs against a live control plane. On macOS it also runs each run's seal and,
 where a `claude` or `codex` CLI is installed, that CLI through the app's adapter against a
 stand-in model (`src/server/agents/*-gate.test.ts`); those skip elsewhere.

@@ -207,7 +207,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
       publishActivity({
         ...at,
         kind: "runner.resting",
-        payload: { runner: emp.runner, until: o.until },
+        payload: { cause: o.cause, error: o.error, runner: emp.runner, until: o.until },
       });
       break;
     }
