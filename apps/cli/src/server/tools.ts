@@ -16,8 +16,8 @@ import {
   switchOffRetiredLinks,
 } from "./company-actions";
 import { measureRefusal } from "./metrics";
-import { CHECKOUT_SESSION_PARAM } from "./payment-links";
-import type { PaymentLinker, StripeAccess } from "./payment-links";
+import { CHECKOUT_SESSION_PARAM } from "./stripe-links";
+import type { PaymentLinker, StripeAccess } from "./stripe-links";
 import { STRIPE_FEE_LABEL, priceFloorCents } from "./print-listing";
 import type { PrintListing } from "./print-listing";
 import { printfulCredential } from "./printful";
@@ -55,7 +55,7 @@ import type { JsonValue } from "@repo/domain/json";
 import { CATALOG_PAGE } from "./listing";
 import type { ListedPlacement, ListingVariant, PrintPlacement } from "./listing";
 import type { Order } from "./order";
-import type { CompanyLink, LinkState } from "./payment-link";
+import type { LinkCore, LinkState } from "./link-record";
 import { TOOL_NAMES, TOOL_SPECS } from "./tool-specs";
 import type { ToolName, ToolSpec } from "./tool-specs";
 
@@ -662,7 +662,7 @@ const linkStanding = (state: LinkState, retired: boolean): string => {
   }
 };
 
-const linkEntry = (link: CompanyLink): string =>
+const linkEntry = (link: LinkCore): string =>
   `${JSON.stringify(link.name)} ${link.url} is ${linkStanding(link.state, store.isRetiredProduct(link.productId))}`;
 
 /**
@@ -674,7 +674,7 @@ const madeWhileRetiring = async (product: Product, linkId: string): Promise<stri
     return null;
   }
   await switchOffRetiredLinks();
-  const link = store.paymentLinks().find((l) => l.id === linkId);
+  const link = store.paymentLinks().find((l) => l.link.id === linkId)?.link;
   const standing = link === undefined ? "" : ` Its link ${linkEntry(link)}.`;
   return `${product.name} was retired while Stripe made its payment link.${standing} Each order already paid through it still ships.`;
 };
@@ -1203,6 +1203,7 @@ const TOOLS = {
     const retired = store.isRetiredProduct(productId);
     const told = store
       .paymentLinks()
+      .map(({ link }) => link)
       .filter((l) => l.productId === productId && (retired || l.state.kind !== "selling"));
     const links =
       told.length === 0
@@ -1229,7 +1230,10 @@ const TOOLS = {
   }),
   kill_product: define(TOOL_SPECS.kill_product, async (ctx, { slug, reason }) => {
     const retired = await retireProduct(slug, reason, ctx.employee.id);
-    const links = store.paymentLinks().filter((l) => l.productId === slug);
+    const links = store
+      .paymentLinks()
+      .map(({ link }) => link)
+      .filter((l) => l.productId === slug);
     const told =
       links.length === 0
         ? ""

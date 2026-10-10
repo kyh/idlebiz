@@ -1,8 +1,8 @@
 import * as store from "./store/store";
 import { publishActivity } from "./activity";
 import { report } from "./lib/report";
-import { readActiveLinks, switchOffPaymentLink } from "./payment-links";
-import type { ActiveLinksRead } from "./payment-links";
+import { readActiveLinks, switchOffPaymentLink } from "./stripe-links";
+import type { ActiveLinksRead } from "./stripe-links";
 import { betNews } from "./prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "./secrets";
 import { holdsStripeSecretKey, isTestKey } from "./stripe-api";
@@ -22,7 +22,7 @@ import type {
 } from "@repo/domain/domain";
 import { orderCardTitle } from "./order";
 import type { Order } from "./order";
-import type { CompanyLink } from "./payment-link";
+import type { CompanyLink, LinkCore } from "./link-record";
 import { RefusalError } from "./refusal";
 
 // A change to the company that everyone should hear about: the store mutation,
@@ -174,9 +174,9 @@ const switchOffCard = (linkId: string): string => `${SWITCH_OFF_CARD}${linkId}`;
 /** The founder's Done on a link's switch-off card says they switched it off in Stripe's dashboard. */
 const switchedOffByHand = (title: string): void => {
   const linkId = title.startsWith(SWITCH_OFF_CARD) ? title.slice(SWITCH_OFF_CARD.length) : null;
-  const link = store.paymentLinks().find((l) => l.id === linkId);
-  if (link?.state.kind === "left-on") {
-    store.setLinkState(link.id, { at: Date.now(), by: "founder", kind: "switched-off" });
+  const held = store.paymentLinks().find((l) => l.link.id === linkId);
+  if (held?.link.state.kind === "left-on") {
+    store.setLinkState(held, { at: Date.now(), by: "founder", kind: "switched-off" });
   }
 };
 
@@ -217,12 +217,14 @@ const office: Speaker = { kind: "office" };
  * takes no real money, so the room hears instead. The card is raised before the link is marked,
  * since cards dedupe by title and the mark is what stops the next sweep asking Stripe again.
  */
-const leaveOn = (link: CompanyLink, why: string): void => {
+const leaveOn = (held: CompanyLink, why: string): void => {
+  const { link } = held;
   const named = `${JSON.stringify(link.name)} (${link.url})`;
   if (link.livemode) {
-    const sells = link.print
-      ? "it takes money, and each order paid through it still goes to Printful"
-      : "it takes money";
+    const sells =
+      held.kind === "print"
+        ? "it takes money, and each order paid through it still goes to Printful"
+        : "it takes money";
     raiseOrderCard(switchOffCard(link.id), {
       action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
       draft: null,
@@ -234,23 +236,24 @@ const leaveOn = (link: CompanyLink, why: string): void => {
       `🧪 Test payment link ${named} of retired ${link.productId} stays on: ${why}.`,
     );
   }
-  store.setLinkState(link.id, { kind: "left-on", why });
+  store.setLinkState(held, { kind: "left-on", why });
 };
 
 // ten sweeps is about five minutes of pulses: long enough to ride out a burst of 429s or a blip,
 // short enough that the founder hears of a link still taking money while it matters
 const MAX_SWITCH_OFF_TRIES = 10;
 
-const switchOff = async (link: CompanyLink, key: string | null): Promise<void> => {
+const switchOff = async (held: CompanyLink, key: string | null): Promise<void> => {
+  const { link } = held;
   try {
     if (key === null) {
-      leaveOn(link, "IdleBiz has no Stripe key");
+      leaveOn(held, "IdleBiz has no Stripe key");
       return;
     }
     const done = await switchOffPaymentLink(key, link.id);
     switch (done.kind) {
       case "off": {
-        store.setLinkState(link.id, { at: Date.now(), by: "idlebiz", kind: "switched-off" });
+        store.setLinkState(held, { at: Date.now(), by: "idlebiz", kind: "switched-off" });
         postToRoom(
           office,
           `🔌 Switched off ${JSON.stringify(link.name)}, a payment link of retired ${link.productId}: it takes no new money.`,
@@ -258,15 +261,15 @@ const switchOff = async (link: CompanyLink, key: string | null): Promise<void> =
         break;
       }
       case "refused": {
-        leaveOn(link, done.error);
+        leaveOn(held, done.error);
         break;
       }
       case "unanswered": {
         const tries = (link.state.kind === "retrying" ? link.state.tries : 0) + 1;
         if (tries >= MAX_SWITCH_OFF_TRIES) {
-          leaveOn(link, `Stripe did not answer ${tries} times (${done.error})`);
+          leaveOn(held, `Stripe did not answer ${tries} times (${done.error})`);
         } else {
-          store.setLinkState(link.id, { kind: "retrying", tries, why: done.error });
+          store.setLinkState(held, { kind: "retrying", tries, why: done.error });
         }
         break;
       }
@@ -324,7 +327,7 @@ const handOverUnrecordedLinks = async (key: string | null): Promise<void> => {
     report("retired links", new Error(`Stripe's payment links could not be read: ${read.reason}`));
     return;
   }
-  const known = new Set(store.paymentLinks().map((l) => l.id));
+  const known = new Set(store.paymentLinks().map((l) => l.link.id));
   for (const productId of retired) {
     const seen = unrecordedSeen(read, productId, known);
     if (seen === null) {
@@ -352,13 +355,13 @@ const sweepRetiredLinks = async (): Promise<void> => {
   const due = store
     .paymentLinks()
     .filter(
-      (l) =>
-        (l.state.kind === "selling" || l.state.kind === "retrying") &&
-        store.isRetiredProduct(l.productId),
+      ({ link }) =>
+        (link.state.kind === "selling" || link.state.kind === "retrying") &&
+        store.isRetiredProduct(link.productId),
     );
   // one at a time: a burst of switch-offs is what Stripe's rate limit turns away
-  for (const link of due) {
-    await switchOff(link, key);
+  for (const held of due) {
+    await switchOff(held, key);
   }
   await handOverUnrecordedLinks(key);
 };
@@ -408,10 +411,7 @@ export const makingPaymentLink = (): (() => void) => {
 };
 
 /** Why a live link still takes money once the save is gone, or null once Stripe switched it off. */
-const switchedOffForReset = async (
-  link: CompanyLink,
-  key: string | null,
-): Promise<string | null> => {
+const switchedOffForReset = async (link: LinkCore, key: string | null): Promise<string | null> => {
   if (key === null) {
     return "IdleBiz has no Stripe key it can use";
   }
@@ -435,7 +435,7 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
   }
   const key = getSecret(STRIPE_SECRET_KEY);
   const leftOn: string[] = [];
-  for (const link of store.paymentLinks()) {
+  for (const { link } of store.paymentLinks()) {
     if (!link.livemode || link.state.kind === "switched-off") {
       continue;
     }

@@ -79,8 +79,8 @@ import { parseJson } from "@repo/domain/json";
 import { ListingSchema } from "../listing";
 import type { Listing } from "../listing";
 import { OrderSchema } from "../order";
-import { ChargeLinkSchema } from "../payment-link";
-import type { ChargeLink, CompanyLink, LinkState } from "../payment-link";
+import { ChargeLinkSchema } from "../link-record";
+import type { ChargeLink, CompanyLink, LinkState } from "../link-record";
 import type { Order, Sale } from "../order";
 import { RefusalError } from "../refusal";
 import { emptyDigest, foldDigest } from "./digest";
@@ -1160,46 +1160,48 @@ export const recordChargeLink = (link: ChargeLink): void => {
 export const paymentLinks = (): CompanyLink[] => {
   const { links, listings } = current();
   return [
-    ...listings.map(({ livemode, name, paymentLink, productId }) => ({
-      id: paymentLink.id,
-      livemode,
-      name,
-      print: true,
-      productId,
-      state: paymentLink.state,
-      url: paymentLink.url,
+    ...listings.map((listing): CompanyLink => ({
+      kind: "print",
+      link: {
+        ...listing.paymentLink,
+        livemode: listing.livemode,
+        name: listing.name,
+        productId: listing.productId,
+      },
+      listing,
     })),
-    ...links.map(({ id, livemode, name, productId, state, url }) => ({
-      id,
-      livemode,
-      name,
-      print: false,
-      productId,
-      state,
-      url,
-    })),
+    ...links.map((link): CompanyLink => ({ kind: "charge", link })),
   ];
 };
 
 /** What retiring a link's product did to it at Stripe. It happened, so the cache keeps it even when the save throws. */
-export const setLinkState = (id: string, state: LinkState): void => {
+export const setLinkState = (held: CompanyLink, state: LinkState): void => {
   const { links, listings } = current();
-  const listed = listings.findIndex((l) => l.paymentLink.id === id);
-  const listing = listings[listed];
-  if (listing !== undefined) {
-    const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
-    listings[listed] = next;
-    saveListing(next);
-    return;
+  switch (held.kind) {
+    case "charge": {
+      const at = links.findIndex((l) => l.id === held.link.id);
+      const link = links[at];
+      if (link === undefined) {
+        throw new Error(`no payment link ${held.link.id} is kept`);
+      }
+      const next = { ...link, state };
+      links[at] = next;
+      saveChargeLink(next);
+      break;
+    }
+    case "print": {
+      const at = listings.findIndex((l) => l.id === held.listing.id);
+      const listing = listings[at];
+      if (listing === undefined) {
+        throw new Error(`no listing ${held.listing.id} is kept`);
+      }
+      const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
+      listings[at] = next;
+      saveListing(next);
+      break;
+    }
+    // no default
   }
-  const at = links.findIndex((l) => l.id === id);
-  const link = links[at];
-  if (link === undefined) {
-    throw new Error(`no payment link ${id} is kept`);
-  }
-  const next = { ...link, state };
-  links[at] = next;
-  saveChargeLink(next);
 };
 
 const UnrecordedLinksSchema = z.array(z.string());

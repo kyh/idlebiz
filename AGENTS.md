@@ -209,7 +209,7 @@ rather than crashing boot.
   absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
   Employees charge through the `create_payment_link` tool, which makes the link with
-  `STRIPE_SECRET_KEY` in main (`server/payment-links.ts`) once the founder signs off; with no
+  `STRIPE_SECRET_KEY` in main (`server/stripe-links.ts`) once the founder signs off; with no
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`server/stripe-key.ts`) and resumes the work that
   waited on it: every Stripe card is one `stripe` ask, a key to charge with or to count revenue
@@ -237,7 +237,7 @@ rather than crashing boot.
   `server/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates
   (`server/printful.ts`, polled every 3s and backing off on a 429), refuses a price under the
   floor, and once signed off makes the shipped payment link (`stripeShippedLink` in
-  `server/payment-links.ts`, each POST with an idempotency key) and saves the listing under
+  `server/stripe-links.ts`, each POST with an idempotency key) and saves the listing under
   `listings/`. Paid orders reach Printful through the order pump (`server/order-pump.ts`),
   which the metrics pulse runs: while a Stripe key is saved it reads Stripe's checkouts
   (`server/stripe-checkouts.ts`) every 30 minutes, keeps each paid one on the company's links
@@ -524,8 +524,9 @@ rather than crashing boot.
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),
-  `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
-  switch-off of a retired product's links),
+  `stripe-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
+  switch-off of a retired product's links), `link-record.ts` (a payment link as the save keeps
+  it: a `create_payment_link` link on its own, a listing's inside the listing),
   `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
   checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful, each link sale's

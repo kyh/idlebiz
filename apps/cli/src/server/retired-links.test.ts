@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChargeLink } from "./payment-link";
+import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
 import type { Sale } from "./order";
 
@@ -136,7 +136,8 @@ const cards = () =>
     .filter((t) => t.origin === "order" && t.state.kind === "blocked")
     .toSorted((a, b) => a.title.localeCompare(b.title));
 
-const statesOf = () => Object.fromEntries(store.paymentLinks().map((l) => [l.id, l.state.kind]));
+const statesOf = () =>
+  Object.fromEntries(store.paymentLinks().map(({ link }) => [link.id, link.state.kind]));
 
 const roomSays = () => store.recentTeamMessages(50).map((m) => m.text);
 
@@ -235,7 +236,7 @@ describe("retiring a product", () => {
     await switchOffRetiredLinks();
 
     expect(statesOf()).toEqual({ [PRO]: "retrying", [TEE]: "switched-off" });
-    expect(store.paymentLinks().find((l) => l.id === PRO)?.state).toEqual({
+    expect(store.paymentLinks().find((l) => l.link.id === PRO)?.link.state).toEqual({
       kind: "retrying",
       tries: 2,
       why: "fetch failed",
@@ -266,7 +267,7 @@ describe("retiring a product", () => {
     settleOrderCard(pro?.id ?? "", { kind: "done", note: "" });
     settleOrderCard(tee?.id ?? "", { kind: "cant", reason: "no dashboard access" });
 
-    expect(store.paymentLinks().find((l) => l.id === PRO)?.state).toMatchObject({
+    expect(store.paymentLinks().find((l) => l.link.id === PRO)?.link.state).toMatchObject({
       by: "founder",
       kind: "switched-off",
     });

@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { ActivityEvent } from "@repo/domain/activity";
 import type { AgentRunner, BlockedAsk, TaskOrigin } from "@repo/domain/domain";
 import type { JsonValue } from "@repo/domain/json";
-import type { ChargeLink } from "./payment-link";
+import type { ChargeLink } from "./link-record";
 import { BadRequestError } from "@repo/domain/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
 import type { CatalogQuery, CatalogRead } from "./printful";
@@ -20,7 +20,7 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool } = await import("./tools");
-const { stripeLinkAccess, stripePaymentLink } = await import("./payment-links");
+const { stripeLinkAccess, stripePaymentLink } = await import("./stripe-links");
 const { printListing } = await import("./print-listing");
 const { productionHosts } = await import("./vercel");
 const { fetchRealMetrics } = await import("./metrics");
@@ -1405,7 +1405,7 @@ describe("create_payment_link", () => {
     expect(await call()).toContain("https://buy.stripe.com/1");
 
     expect(links).toBe(1);
-    expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_1"]);
+    expect(store.paymentLinks().map((l) => l.link.id)).toEqual(["plink_1"]);
   });
 
   it("makes the link when signed for again after Stripe answered the create with a failure", async () => {
@@ -1428,7 +1428,7 @@ describe("create_payment_link", () => {
 
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
     expect(await call()).toContain(PAID_URL);
-    expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_pro"]);
+    expect(store.paymentLinks().map((l) => l.link.id)).toEqual(["plink_pro"]);
   });
 
   it("says the link may stand on Stripe when Stripe took the create but answered in a shape IdleBiz does not read, and reports it", async () => {
@@ -1490,7 +1490,9 @@ describe("create_payment_link", () => {
     expect(await make()).toContain(
       'Created a payment link for "Pro plan" at $9.00 on Acme: https://buy.stripe.com/2',
     );
-    expect(store.paymentLinks().map((l) => [l.id, l.state.kind])).toEqual([["plink_2", "selling"]]);
+    expect(store.paymentLinks().map(({ link }) => [link.id, link.state.kind])).toEqual([
+      ["plink_2", "selling"],
+    ]);
   });
 
   it("tags the product alone when no bet is named, charging whole cents", async () => {
@@ -2653,7 +2655,8 @@ describe("read_orders", () => {
   it("says which of a retired product's links no longer sell", async () => {
     const { ctx } = runAs("priya");
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    const sideLink = { ...PRO_LINK, productId: side.id };
+    store.recordChargeLink(sideLink);
     store.recordOrder({
       ...paid,
       collectedCents: 900,
@@ -2666,11 +2669,14 @@ describe("read_orders", () => {
       sessionId: "cs_cy",
     });
     store.killProduct(side.id, "dud", null);
-    store.setLinkState(PRO_LINK.id, {
-      at: Date.UTC(2026, 8, 23),
-      by: "idlebiz",
-      kind: "switched-off",
-    });
+    store.setLinkState(
+      { kind: "charge", link: sideLink },
+      {
+        at: Date.UTC(2026, 8, 23),
+        by: "idlebiz",
+        kind: "switched-off",
+      },
+    );
 
     expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
       [
@@ -2686,7 +2692,8 @@ describe("read_orders", () => {
   it("says where a retired product's links stand though it sold nothing, the founder's own switch-off too", async () => {
     const { ctx } = runAs("priya");
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    const sideLink = { ...PRO_LINK, productId: side.id };
+    store.recordChargeLink(sideLink);
     store.recordChargeLink({
       ...PRO_LINK,
       id: "plink_next",
@@ -2695,11 +2702,14 @@ describe("read_orders", () => {
       url: "https://buy.stripe.com/next",
     });
     store.killProduct(side.id, "dud", null);
-    store.setLinkState(PRO_LINK.id, {
-      at: Date.UTC(2026, 8, 23),
-      by: "founder",
-      kind: "switched-off",
-    });
+    store.setLinkState(
+      { kind: "charge", link: sideLink },
+      {
+        at: Date.UTC(2026, 8, 23),
+        by: "founder",
+        kind: "switched-off",
+      },
+    );
 
     expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
       [

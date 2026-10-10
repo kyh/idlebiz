@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LinkStateSchema } from "./payment-link";
+import { LinkCoreSchema, LinkStateSchema } from "./link-record";
 
 // A print-on-demand item on sale: what Printful prints for each paid order, and the payment
 // link that takes the money. Printful names placements and techniques in lowercase snake case
@@ -44,11 +44,10 @@ export const ListingSchema = z.object({
   /** False for a link made with a test-mode key, whose payments are money nobody paid. */
   livemode: z.boolean(),
   name: z.string().min(1),
-  paymentLink: z.object({
-    id: z.string().min(1),
+  /** The link its buyers pay through, whose name, product and mode are the listing's own. */
+  paymentLink: LinkCoreSchema.pick({ id: true, url: true }).extend({
     // a listing written without one is still selling
     state: LinkStateSchema.default({ kind: "selling" }),
-    url: z.url(),
   }),
   placements: z.array(ListedPlacementSchema).min(1),
   /** The retail price, which the packing slip shows the buyer instead of Printful's. */

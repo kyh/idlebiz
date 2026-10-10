@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import * as store from "./store/store";
 import { postToRoom, raiseOrderCard } from "./company-actions";
 import { report } from "./lib/report";
-import { VARIANT_FIELD } from "./payment-links";
+import { VARIANT_FIELD } from "./stripe-links";
 import { STRIPE_FEE_LABEL, netOfStripeCents, readPrintFile } from "./print-listing";
 import { printfulCredential } from "./printful";
 import type { PrintfulCredential } from "./printful";
@@ -17,7 +17,7 @@ import { formatCents } from "@repo/domain/format";
 import type { Listing } from "./listing";
 import { orderCardTitle } from "./order";
 import type { Order, Recipient, Sale } from "./order";
-import type { LinkState } from "./payment-link";
+import type { LinkState } from "./link-record";
 
 // Each paid checkout on a listing's payment link becomes one Printful order, placed with the
 // founder's token here in main. The order is on disk before Printful hears of it, and its

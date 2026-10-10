@@ -17,7 +17,7 @@ import {
 import { stripeInTestMode } from "./metrics";
 import { metricsPulse } from "./metrics-pulse";
 import { deployToVercel } from "./deploy";
-import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./payment-links";
+import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./stripe-links";
 import { printListing } from "./print-listing";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";

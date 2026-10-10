@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Listing } from "./listing";
 
 // A Stripe payment link the company sells through, a listing's or create_payment_link's, and
 // whether it still takes money: retiring its product switches it off, so a retired product takes
@@ -30,13 +31,8 @@ export const LinkStateSchema = z.discriminatedUnion("kind", [
 ]);
 export type LinkState = z.infer<typeof LinkStateSchema>;
 
-/** links/<id>.json: a create_payment_link link, by Stripe's id, beside the products like a listing. */
-export const ChargeLinkSchema = z.object({
-  betId: z.string().nullable(),
-  cents: z.number().int().positive(),
-  createdAt: z.number(),
-  /** What the founder hands each buyer, as the link's metadata carries it. */
-  delivery: z.string().nullable(),
+/** What retirement reads of any payment link: which it is, what it sells and whether it still takes money. */
+export const LinkCoreSchema = z.object({
   id: StripeLinkIdSchema,
   /** False for a link made with a test-mode key, whose payments are money nobody paid. */
   livemode: z.boolean(),
@@ -45,15 +41,23 @@ export const ChargeLinkSchema = z.object({
   state: LinkStateSchema,
   url: z.url(),
 });
+export type LinkCore = z.infer<typeof LinkCoreSchema>;
+
+/** links/<id>.json: a create_payment_link link, by Stripe's id, beside the products like a listing. */
+export const ChargeLinkSchema = LinkCoreSchema.extend({
+  betId: z.string().nullable(),
+  cents: z.number().int().positive(),
+  createdAt: z.number(),
+  /** What the founder hands each buyer, as the link's metadata carries it. */
+  delivery: z.string().nullable(),
+});
 export type ChargeLink = z.infer<typeof ChargeLinkSchema>;
 
-/** Any payment link the company made, as retirement switches it off: `print` for a listing's, whose paid orders go to Printful. */
-export interface CompanyLink {
-  id: string;
-  url: string;
-  name: string;
-  productId: string;
-  livemode: boolean;
-  print: boolean;
-  state: LinkState;
-}
+/**
+ * Any payment link the company made, by the record that keeps it: a listing keeps its link inside
+ * it, beside the name, product and mode the link sells under, and each order paid through it goes
+ * to Printful.
+ */
+export type CompanyLink =
+  | { kind: "charge"; link: ChargeLink }
+  | { kind: "print"; link: LinkCore; listing: Listing };

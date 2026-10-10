@@ -6,7 +6,7 @@ import { STRIPE_API, answeringStripe, stripeHeaders, stripeSays } from "./stripe
 import { errorMessage } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import type { ListingVariant } from "./listing";
-import { StripeLinkIdSchema } from "./payment-link";
+import { StripeLinkIdSchema } from "./link-record";
 
 /** One price in USD, sold once through a link whose every payment carries the product's tag and, when named, the bet's. */
 interface PaymentLinkRequest {

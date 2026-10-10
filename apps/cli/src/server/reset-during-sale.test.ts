@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { PaymentLinker } from "./payment-links";
+import type { PaymentLinker } from "./stripe-links";
 import type { RunContext } from "./tools";
 
 // A file of its own: once a reset begins, this process makes no payment link again.

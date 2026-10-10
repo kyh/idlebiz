@@ -742,7 +742,9 @@ describe("the order pump", () => {
 
   it("raises no key card once every live link that could owe a buyer is switched off", async () => {
     openShop();
-    store.setLinkState(LINK, { at: NOW, by: "idlebiz", kind: "switched-off" });
+    for (const held of store.paymentLinks()) {
+      store.setLinkState(held, { at: NOW, by: "idlebiz", kind: "switched-off" });
+    }
     writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
     fakeWorld();
 
