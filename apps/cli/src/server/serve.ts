@@ -224,8 +224,9 @@ const boot = async (launch: Launch): Promise<void> => {
   if (unreadableSecrets) {
     store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
   }
-  await adoptShellPath();
-  agentDriver.init();
+  // the runs' seal and the look for their CLIs read PATH, so they wait for the login shell's;
+  // the window does not
+  agentDriver.init(adoptShellPath(launch.packaged));
   // the command the runs call the company's tools with: this node, on the CLI it was started from
   writeAgentLauncher(RUN_BIN_DIR, process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();

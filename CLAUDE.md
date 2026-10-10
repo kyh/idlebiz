@@ -356,7 +356,9 @@ third boundary.
     again. Main starts a runner's CLI itself only sealed as that runner: its version and login
     probes, `codex mcp list`, and the sign-in (`sealedSignIn`, the only one that may open the
     browser or write claude's account file). The installer runs in `/bin/bash -c`, never a login shell. The login-shell PATH
-    probe (`adoptShellPath`) runs unsealed: no run writes the founder's shell startup files.
+    probe (`adoptShellPath`, the packaged app's alone: a dev launch keeps its terminal's PATH)
+    runs unsealed: no run writes the founder's shell startup files. The seal's check waits on
+    it, never boot, so no run starts on a PATH short of the shell's.
     `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands through a planted
     link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session
     but the first out.

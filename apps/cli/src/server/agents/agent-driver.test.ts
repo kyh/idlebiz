@@ -950,6 +950,32 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     }
   });
 
+  it("checks the seal only once main's PATH has settled, and starts no run before", async () => {
+    const shellAnswered = Promise.withResolvers<null>();
+    let checked = 0;
+    const driver = createAgentDriver(
+      () => {
+        checked += 1;
+        return Promise.resolve({ kind: "sealed" });
+      },
+      () => Promise.resolve(sealing()),
+    );
+    driver.init(
+      (async () => {
+        await shellAnswered.promise;
+      })(),
+    );
+    await Promise.resolve();
+    expect(checked).toBe(0);
+    expect(driver.runsSealed()).toBe(false);
+
+    shellAnswered.resolve(null);
+
+    expect(await driver.sealRefusal()).toBeNull();
+    expect(checked).toBe(1);
+    expect(driver.runsSealed()).toBe(true);
+  });
+
   it("is resolved again for every run, and none starts without one", async () => {
     let resolved = 0;
     const driver = createAgentDriver(
