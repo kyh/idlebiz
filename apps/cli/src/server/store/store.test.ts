@@ -34,7 +34,6 @@ const {
   ALUMNI_DIR,
   COMPANY_DIR,
   COMPANY_FILE,
-  COMPANY_WORKSPACE,
   POLICY_FILE,
   PRODUCTS_DIR,
   RETIRED_DIR,
@@ -171,12 +170,12 @@ describe("the shipping log", () => {
 });
 
 describe("products", () => {
-  it("founds a company with its first product in workspace/ and a shared/ beside it", () => {
+  it("founds a company with its first product's code in its package and a shared/ beside it", () => {
     const co = found();
     const [first, ...rest] = store.listProducts();
     expect(rest).toEqual([]);
     expect(first?.name).toBe(co.name);
-    expect(first?.workspaceDir).toBe(COMPANY_WORKSPACE);
+    expect(first?.workspaceDir).toBe(productWorkspace(first?.id ?? ""));
     expect(co.workspaceDir).toBe(SHARED_DIR);
     expect(existsSync(first?.workspaceDir ?? "")).toBe(true);
     expect(existsSync(co.workspaceDir)).toBe(true);
@@ -385,9 +384,8 @@ describe("founding publication", () => {
     for (const body of files.values()) {
       expect(body).not.toContain(".founding-");
     }
-    const product = parseDoc(files.get("products/acme/PRODUCT.md") ?? "");
-    expect(product.metadata.workspace).toBe("company");
-    expect(files.get("agents/priya/AGENTS.md")).toContain(COMPANY_WORKSPACE);
+    expect(existsSync(productWorkspace("acme"))).toBe(true);
+    expect(files.get("agents/priya/AGENTS.md")).toContain(productWorkspace("acme"));
     expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([]);
 
     expect(store.initStore()).toEqual({ skipped: [] });
@@ -1203,7 +1201,7 @@ describe("bets", () => {
     expect(store.getProduct(side.id)).toBeNull();
   });
 
-  it("retires the first product with its code; its successor is still pointed at shared/", () => {
+  it("retires the first product with its code, as any other; its successor is still pointed at shared/", () => {
     const co = found();
     const first = firstProduct();
     writeFileSync(path.join(first.workspaceDir, "index.html"), "the old app");
@@ -1214,7 +1212,7 @@ describe("bets", () => {
     expect(readFileSync(path.join(archived, "workspace", "index.html"), "utf-8")).toBe(
       "the old app",
     );
-    expect(existsSync(COMPANY_WORKSPACE)).toBe(false);
+    expect(existsSync(path.join(PRODUCTS_DIR, first.id))).toBe(false);
     expect(existsSync(co.workspaceDir)).toBe(true);
     store.initStore();
     const company = store.requireCompany();
@@ -1222,17 +1220,21 @@ describe("bets", () => {
     expect(runPreamble(store.requireProduct(next.id), company)).toContain(SHARED_DIR);
   });
 
-  it("hands a company left with no products a first one whose workspace/ is there again", () => {
+  it("hands a company left with no products a first one with a workspace of its own and nothing shipped", () => {
     found();
     const first = firstProduct();
+    store.recordShip(first.id, "shipped");
     const next = store.createProduct({ description: "the pivot", name: "Next" });
     store.killProduct(first.id, "no traction", null);
     rmSync(path.join(PRODUCTS_DIR, next.id), { recursive: true });
     store.initStore();
     const [only, ...rest] = store.listProducts();
     expect(rest).toEqual([]);
-    expect(only?.workspaceDir).toBe(COMPANY_WORKSPACE);
-    expect(existsSync(COMPANY_WORKSPACE)).toBe(true);
+    expect(only?.id).not.toBe(first.id);
+    expect(only).toMatchObject({ revenueUsd: null, ships: 0, users: null });
+    expect(only?.workspaceDir).toBe(productWorkspace(only?.id ?? ""));
+    expect(existsSync(only?.workspaceDir ?? "")).toBe(true);
+    expect(store.getCompany()?.ships).toBe(1);
   });
 
   it("leaves a product boot could not read to the load report, and gives its code to no stand-in", () => {
@@ -1280,22 +1282,6 @@ describe("bets", () => {
     writeFileSync(file, written);
     store.initStore();
     expect(store.lockTaskForRun(task.id, "run-1")?.state.kind).toBe("running");
-  });
-
-  it("refuses to retire the first product when its code cannot follow, and nothing leaves", () => {
-    found();
-    const first = firstProduct();
-    store.createProduct({ description: "the pivot", name: "Next" });
-    const inPackage = path.join(PRODUCTS_DIR, first.id, "workspace");
-    mkdirSync(inPackage);
-    writeFileSync(path.join(inPackage, "notes.md"), "in the way");
-    const bet = launch(first.id);
-    expect(() => store.killProduct(first.id, "dud", null)).toThrow();
-    expect(store.getProduct(first.id)).not.toBeNull();
-    expect(store.getBet(bet.id)?.state.kind).toBe("open");
-    expect(existsSync(path.join(PRODUCTS_DIR, first.id, "PRODUCT.md"))).toBe(true);
-    expect(existsSync(COMPANY_WORKSPACE)).toBe(true);
-    expect(existsSync(path.join(RETIRED_DIR, first.id))).toBe(false);
   });
 });
 
@@ -1863,7 +1849,7 @@ describe("founder approvals", () => {
 describe("the save format", () => {
   it("stamps what it writes", () => {
     found();
-    expect(parseDoc(readFileSync(COMPANY_FILE, "utf-8")).metadata.format).toBe(13);
+    expect(parseDoc(readFileSync(COMPANY_FILE, "utf-8")).metadata.format).toBe(14);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {

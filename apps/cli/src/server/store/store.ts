@@ -8,7 +8,6 @@ import {
   COMPANY_DIR,
   COMPANY_FILE,
   SHARED_DIR,
-  COMPANY_WORKSPACE,
   ACTIVITY_FILE,
   RECENT_SHIPS_FILE,
   SINCE_LAST_LOOK_FILE,
@@ -852,19 +851,27 @@ export const archiveEmployee = (
 };
 
 // ---- products --------------------------------------------------------------
-/** The first product's code is the company's workspace/. */
-const firstProduct = (co: Company): Product => ({
-  createdAt: co.createdAt,
-  description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
-  id: uniqueSlug(co.name, [], heldIn(PRODUCTS_DIR, RETIRED_DIR)),
+/** A product as it starts, the first as much as any: nothing shipped, no numbers yet. */
+const newProduct = (
+  id: string,
+  named: Pick<Product, "createdAt" | "description" | "name">,
+): Product => ({
+  ...named,
+  id,
   lastShipAt: null,
-  name: co.name,
   revenueUsd: null,
-  ships: co.ships,
-  users: co.users,
+  ships: 0,
+  users: null,
   vercel: null,
-  workspaceDir: COMPANY_WORKSPACE,
+  workspaceDir: productWorkspace(id),
 });
+
+const firstProduct = (co: Company): Product =>
+  newProduct(uniqueSlug(co.name, [], heldIn(PRODUCTS_DIR, RETIRED_DIR)), {
+    createdAt: co.createdAt,
+    description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
+    name: co.name,
+  });
 
 export const getProduct = (id: string): Product | null =>
   maybeCurrent()?.products.find((product) => product.id === id) ?? null;
@@ -918,18 +925,11 @@ export const createProduct = (named: ProductDraft): Product => {
     list.map((p) => p.id),
     heldIn(PRODUCTS_DIR, RETIRED_DIR),
   );
-  const product: Product = {
+  const product = newProduct(id, {
     createdAt: Date.now(),
     description: named.description.trim(),
-    id,
-    lastShipAt: null,
     name: named.name.trim(),
-    revenueUsd: null,
-    ships: 0,
-    users: null,
-    vercel: null,
-    workspaceDir: productWorkspace(id),
-  };
+  });
   mkdirSync(product.workspaceDir, { recursive: true });
   saveProduct(product);
   list.push(product);
@@ -1834,8 +1834,7 @@ export const productOfEmployee = (employeeId: string): Product | null => {
 
 /**
  * Retire a product: its live bets die with it, its waiting work is dropped,
- * and its package moves to retired/ whole, with its code beside PRODUCT.md even
- * when that lived outside the package, as the first product's does. The last
+ * and its package moves to retired/ whole, its code with it. The last
  * product cannot go — a company with none would be handed a fresh first product
  * at the next boot. Nor can one a teammate's run is working in: the move would
  * pull the tree out from under it, and a retry would land as company-level
@@ -1860,18 +1859,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
       `${runner?.name ?? "A teammate"} is mid-run on ${product.name} — kill its bets so no new work lands there, then retire it once they're idle.`,
     );
   }
-  const pkg = path.join(PRODUCTS_DIR, productId);
-  const archive = archiveTo(RETIRED_DIR, productId);
-  moveDir(pkg, archive);
-  const outside = product.workspaceDir !== productWorkspace(productId);
-  if (outside && existsSync(product.workspaceDir)) {
-    try {
-      moveDir(product.workspaceDir, path.join(archive, "workspace"));
-    } catch (error) {
-      moveDir(archive, pkg);
-      throw error;
-    }
-  }
+  moveDir(path.join(PRODUCTS_DIR, productId), archiveTo(RETIRED_DIR, productId));
   const now = Date.now();
   const killed = active.bets
     .filter((b) => b.productId === productId && !isClosed(b))
@@ -1948,11 +1936,11 @@ export const foundCompany = (input: {
   // Only disk destinations change; persisted workspace paths refer to the final company.
   const staged = (file: string): string => path.join(staging, path.relative(COMPANY_DIR, file));
   try {
-    mkdirSync(staged(COMPANY_WORKSPACE), { recursive: true });
     mkdirSync(staged(SHARED_DIR), { recursive: true });
     mkdirSync(staged(TASKS_DIR), { recursive: true });
     mkdirSync(staged(AGENTS_DIR), { recursive: true });
     for (const product of active.products) {
+      mkdirSync(staged(product.workspaceDir), { recursive: true });
       atomicWrite(staged(productFile(product.id)), serializeDoc(productToDoc(product)));
     }
     for (const employee of active.employees) {

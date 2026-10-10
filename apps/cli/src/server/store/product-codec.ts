@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Product, VercelBinding } from "@repo/domain/domain";
-import { COMPANY_WORKSPACE, productWorkspace } from "../paths";
+import { productWorkspace } from "../paths";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
@@ -17,7 +17,6 @@ const ProductDocSchema = z.object({
     vercelProjectId: z.string().optional(),
     vercelProjectName: z.string().optional(),
     vercelTeamId: z.string().optional(),
-    workspace: z.enum(["company", "own"]),
   }),
 });
 
@@ -35,8 +34,8 @@ const vercelOf = (m: ProductMetadata): VercelBinding | null => {
 };
 
 /**
- * Which workspace, never where: the path is derived from ROOT_DIR at load, as
- * the company's is, so a save copied to another root works in its own tree.
+ * No workspace: its path is derived from the slug at load, as the company's is, so a save
+ * copied to another root works in its own tree.
  */
 export const productToDoc = (p: Product): z.input<typeof ProductDocSchema> => ({
   body: `${p.description}\n`,
@@ -50,7 +49,6 @@ export const productToDoc = (p: Product): z.input<typeof ProductDocSchema> => ({
     vercelProjectId: p.vercel?.projectId,
     vercelProjectName: p.vercel?.projectName,
     vercelTeamId: p.vercel?.teamId ?? undefined,
-    workspace: p.workspaceDir === COMPANY_WORKSPACE ? "company" : "own",
   },
 });
 
@@ -66,6 +64,6 @@ export const docToProduct = (doc: FrontmatterDoc): Product => {
     ships: m.ships,
     users: m.users ?? null,
     vercel: vercelOf(m),
-    workspaceDir: m.workspace === "own" ? productWorkspace(fields.slug) : COMPANY_WORKSPACE,
+    workspaceDir: productWorkspace(fields.slug),
   };
 };

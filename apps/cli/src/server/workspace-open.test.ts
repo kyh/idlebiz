@@ -103,7 +103,7 @@ describe("judgeOpening", () => {
 describe("judgeAgentPath", () => {
   const save = realpathSync.native(mkdtempSync(path.join(tmpdir(), "idlebiz-save-")));
   const shared = path.join(save, "acme", "shared");
-  const first = path.join(save, "acme", "workspace");
+  const first = path.join(save, "acme", "products", "gizmo", "workspace");
   const second = path.join(save, "acme", "products", "side-quest", "workspace");
   for (const dir of [shared, first, second]) {
     mkdirSync(dir, { recursive: true });
@@ -116,7 +116,7 @@ describe("judgeAgentPath", () => {
     [path.join(second, "index.html"), second],
     [path.join(first, "index.html"), first],
     ["/Users/else/.idlebiz/acme/products/side-quest/workspace/index.html", second],
-    ["/Users/else/.idlebiz/acme/workspace/index.html", first],
+    ["/Users/else/.idlebiz/acme/products/gizmo/workspace/index.html", first],
     ["/Users/else/.idlebiz/acme/shared/index.html", shared],
     ["index.html", shared],
   ])("opens %j under the root it names", (token, dir) => {

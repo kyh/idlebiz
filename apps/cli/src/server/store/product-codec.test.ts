@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMPANY_WORKSPACE, ROOT_DIR, productWorkspace } from "../paths";
+import { ROOT_DIR, productWorkspace } from "../paths";
 import type { Product } from "@repo/domain/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToProduct, productToDoc } from "./product-codec";
@@ -16,7 +16,7 @@ const widget: Product = {
   ships: 3,
   users: 42,
   vercel: { projectId: "prj_1", projectName: "widget", teamId: "team_1" },
-  workspaceDir: COMPANY_WORKSPACE,
+  workspaceDir: productWorkspace("widget"),
 };
 
 const gadget: Product = {
@@ -52,9 +52,9 @@ describe("product codec", () => {
     expect(roundTrip(product)).toEqual(product);
   });
 
-  it("writes which workspace a product works in, never the path", () => {
-    expect(productToDoc(widget).metadata.workspace).toBe("company");
-    expect(productToDoc(gadget).metadata.workspace).toBe("own");
-    expect(serializeDoc(productToDoc(gadget))).not.toContain(ROOT_DIR);
+  it("writes no workspace, which its slug alone places", () => {
+    const written = serializeDoc(productToDoc(widget));
+    expect(written).not.toContain("workspace");
+    expect(written).not.toContain(ROOT_DIR);
   });
 });

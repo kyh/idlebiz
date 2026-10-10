@@ -13,13 +13,12 @@ import { mkdirSync } from "node:fs";
 //     tasks/<slug>/TASK.md  open work
 //     shipped/<slug>/TASK.md  work the team finished (the shipping log), asks the founder answered, work the steering loop dropped
 //     products/<slug>/PRODUCT.md  a product: what it is, where it deploys
-//     products/<slug>/workspace/  its code (the first product's is workspace/)
+//     products/<slug>/workspace/  its code
 //     retired/<slug>/       a product the lead killed: its package and its code, moved here whole
 //     bets/<slug>/BET.md    a bet: a hypothesis about one real number, a spend cap, a verdict
 //     listings/<id>.json    a print-on-demand item on sale for a product: the Printful variants and design, its payment link and whether it still sells
 //     links/<id>.json       a create_payment_link link, by Stripe's id: what it sells for which product, and whether it still sells
 //     orders/<id>.json      a paid checkout on one of the company's payment links (a listing's or create_payment_link's), and what became of it
-//     workspace/            the first product's code
 //     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
@@ -44,8 +43,6 @@ export const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
 /** Where main writes the `idlebiz` command each run finds first on its PATH (agent-launcher.ts), which no run writes. */
 export const RUN_BIN_DIR = path.join(ROOT_DIR, "bin");
 export const COMPANY_FILE = path.join(COMPANY_DIR, "COMPANY.md");
-/** The first product's code; a later product keeps its own in its package (productWorkspace). */
-export const COMPANY_WORKSPACE = path.join(COMPANY_DIR, "workspace");
 /** What teammates share across products, and the working directory of work no product owns. */
 export const SHARED_DIR = path.join(COMPANY_DIR, "shared");
 /** Running state main keeps for itself: small JSON written as things happen, safe to delete.
@@ -91,7 +88,7 @@ export const shippedTaskFile = (taskSlug: string): string =>
 export const PRODUCTS_DIR = path.join(COMPANY_DIR, "products");
 export const productFile = (productSlug: string): string =>
   path.join(PRODUCTS_DIR, productSlug, "PRODUCT.md");
-/** A later product's own workspace, moved with its package when it retires. */
+/** A product's code, inside its package so the two retire in one move. */
 export const productWorkspace = (productSlug: string): string =>
   path.join(PRODUCTS_DIR, productSlug, "workspace");
 // Listings, links and orders sit outside every product's package: a retired product's payment

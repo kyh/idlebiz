@@ -52,4 +52,4 @@ without one); notarizes with `apps/desktop/.env` (Apple notarization creds) and 
 is tagged `v<version>`.
 
 Game state lives at `~/.idlebiz/company/` as human-readable
-agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).
+agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, shared/).

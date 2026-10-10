@@ -343,7 +343,7 @@ export interface VercelBinding {
   teamId: string | null;
 }
 
-/** The first product's code is the company's workspace/; later products have their own. */
+/** Each product's code is the workspace/ in its own package, which retires with it. */
 export interface Product {
   id: string;
   name: string;

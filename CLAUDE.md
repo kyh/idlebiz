@@ -16,8 +16,9 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   and `bin/` (the `idlebiz` command main writes the runs at boot) — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
   a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
-  products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
-  get products/<slug>/workspace/, whose root AGENTS.md is the team's notes on it), listings/<id>.json for each print a product sells through
+  products/<slug>/PRODUCT.md for each product, the first included, with its code in
+  products/<slug>/workspace/ (placed by the slug alone, so retiring it moves one folder), whose
+  root AGENTS.md is the team's notes on it, listings/<id>.json for each print a product sells through
   Printful, links/<id>.json for each `create_payment_link` link (by Stripe's id), and
   orders/<id>.json for each paid checkout on one of the company's links, a listing's or
   `create_payment_link`'s (outside the product's package, so all outlive its retirement: its
