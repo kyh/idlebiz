@@ -14,17 +14,20 @@ import type { JsonRecord } from "@repo/domain/json";
 export const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
 export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
+export const VERCEL_TOKEN = "VERCEL_TOKEN";
 export const PRINTFUL_TOKEN = "PRINTFUL_TOKEN";
-/** The Printful store the token sells through, as JSON: not secret, but it goes where the token goes. */
-export const PRINTFUL_STORE = "PRINTFUL_STORE";
+/** Every key IdleBiz itself uses, by name: a misspelt one would read as no key and quietly turn its feature off. */
+const SECRET_NAMES = [STRIPE_SECRET_KEY, VERCEL_TOKEN, PRINTFUL_TOKEN] as const;
+type SecretName = (typeof SECRET_NAMES)[number];
 /** Where main keeps the values set_env set, one key each. */
 export const ENV_PREFIX = "ENV/";
+export type EnvSecretName = `${typeof ENV_PREFIX}${string}`;
+type SecretKey = SecretName | EnvSecretName;
 
 /** Marks a value the sealer encrypted, as base64; a different scheme takes a new version. */
 const SEALED = "sealed:v1:";
 
-const README =
-  "Founder secrets, e.g. STRIPE_SECRET_KEY, VERCEL_TOKEN, PRINTFUL_TOKEN, sealed with a key from the macOS Keychain's password. IdleBiz uses them itself for its reads, deploys, payment links and print listings; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe and Printful: the Budget panel). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<project>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.";
+const README = `Founder secrets (${SECRET_NAMES.join(", ")}), sealed with a key from the macOS Keychain's password. IdleBiz uses them itself for its reads, deploys, payment links and print listings; they are never given to your employees. Enter them in the app (Vercel: a product's Vercel button, under users; Stripe and Printful: the Budget panel). A key pasted here as plain text is sealed the next time IdleBiz reads this file. Each ENV/<company>/<product>/<project>/<NAME> is a value your team set on that product's Vercel project, kept so a deploy can refuse a folder that holds it.`;
 
 /**
  * Encrypts a value for the file and decrypts it back. Main's derives its key from the Keychain's
@@ -146,7 +149,7 @@ export const checkSecrets = (): { file: string; cause: unknown } | null => {
   };
 };
 
-export const getSecret = (key: string): string | null => {
+export const getSecret = (key: SecretKey): string | null => {
   const secrets = readJsonFile(SECRETS_PATH, secretsSchema);
   if (secrets === null) {
     return null;
@@ -157,7 +160,7 @@ export const getSecret = (key: string): string | null => {
 };
 
 /** Whether the file holds `key` at all, opened or not. */
-export const hasSecret = (key: string): boolean =>
+export const hasSecret = (key: SecretKey): boolean =>
   readJsonFile(SECRETS_PATH, secretsSchema)?.keys.has(key) ?? false;
 
 /** Every value this app can open under a name starting with `prefix`, keyed by the rest of the name. */
@@ -185,28 +188,25 @@ const MIN_KEY_LENGTH = 8;
 
 /**
  * Every key IdleBiz itself uses (Stripe's, Vercel's, Printful's…), by name: never a value set_env
- * set, which a run may know, nor the Printful store, which is no secret. None of these may
- * reach a run, a reply to one, a variable it sets or a folder it deploys.
+ * set, which a run may know. None of these may reach a run, a reply to one, a variable it sets
+ * or a folder it deploys.
  */
 export const heldKeys = (): HeldKey[] =>
   [...secretsUnder("")]
-    .filter(
-      ([name, value]) =>
-        !name.startsWith(ENV_PREFIX) && name !== PRINTFUL_STORE && value.length >= MIN_KEY_LENGTH,
-    )
+    .filter(([name, value]) => !name.startsWith(ENV_PREFIX) && value.length >= MIN_KEY_LENGTH)
     .map(([name, value]) => ({ kind: "held", name, value }));
 
 /** The name of a key IdleBiz holds whose value `text` carries, or null. */
 export const heldKeyIn = (text: string): string | null =>
   heldKeys().find(({ value }) => text.includes(value))?.name ?? null;
 
-export const setSecret = (key: string, value: string): void => {
+export const setSecret = (key: SecretKey, value: string): void => {
   const secrets = readSecretsForUpdate() ?? { keys: new Map(), rest: {} };
   secrets.keys.set(key, { kind: "plain", text: value });
   writeSecretsFile(secrets);
 };
 
-export const deleteSecret = (key: string): void => {
+export const deleteSecret = (key: SecretKey): void => {
   const secrets = readSecretsForUpdate();
   if (secrets === null) {
     return;

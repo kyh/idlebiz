@@ -240,11 +240,11 @@ const fakeWorld = ({
 const saveSecrets = (stripeKey = "rk_live_founder") => {
   writeFileSync(
     path.join(root, "secrets.json"),
-    JSON.stringify({
-      PRINTFUL_STORE: JSON.stringify({ id: 42, name: "Acme Prints" }),
-      PRINTFUL_TOKEN: "pf_founder_token",
-      STRIPE_SECRET_KEY: stripeKey,
-    }),
+    JSON.stringify({ PRINTFUL_TOKEN: "pf_founder_token", STRIPE_SECRET_KEY: stripeKey }),
+  );
+  writeFileSync(
+    path.join(root, "printful-store.json"),
+    JSON.stringify({ id: 42, name: "Acme Prints" }),
   );
 };
 

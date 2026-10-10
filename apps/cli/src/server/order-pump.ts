@@ -4,7 +4,7 @@ import { postToRoom, raiseOrderCard } from "./company-actions";
 import { report } from "./lib/report";
 import { VARIANT_FIELD } from "./stripe-links";
 import { STRIPE_FEE_LABEL, netOfStripeCents, readPrintFile } from "./print-listing";
-import { printfulCredential } from "./printful";
+import { printfulCredential } from "./printful-token";
 import type { PrintfulCredential } from "./printful";
 import { printfulOrders } from "./printful-orders";
 import type { PrintfulOrder } from "./printful-orders";

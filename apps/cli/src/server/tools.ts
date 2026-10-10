@@ -20,9 +20,9 @@ import { CHECKOUT_SESSION_PARAM } from "./stripe-links";
 import type { PaymentLinker, StripeAccess } from "./stripe-links";
 import { STRIPE_FEE_LABEL, priceFloorCents } from "./print-listing";
 import type { PrintListing } from "./print-listing";
-import { printfulCredential } from "./printful";
+import { printfulCredential } from "./printful-token";
 import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "./printful";
-import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "./secrets";
+import { STRIPE_SECRET_KEY, VERCEL_TOKEN, getSecret, heldKeyIn, heldKeys } from "./secrets";
 import { holdsStripeSecretKey, isTestKey } from "./stripe-api";
 import type { productionHosts, validateToken } from "./vercel";
 import { keepEnvValue, serverOnlyValueIn, teamSetEnv, unshippableEnvValues } from "./vercel-env";
@@ -264,7 +264,7 @@ const sellingKeys = (
   price: string,
 ): SellingKeys => {
   const vercel =
-    getSecret("VERCEL_TOKEN") ??
+    getSecret(VERCEL_TOKEN) ??
     needVercel(
       ctx,
       product.id,
@@ -421,7 +421,7 @@ const afterPaymentPage = async (
     );
   }
   const token =
-    getSecret("VERCEL_TOKEN") ??
+    getSecret(VERCEL_TOKEN) ??
     needVercel(
       ctx,
       product.id,
@@ -859,7 +859,7 @@ const TOOLS = {
     if (!product) {
       return store.noSuchProduct(productId);
     }
-    const token = getSecret("VERCEL_TOKEN");
+    const token = getSecret(VERCEL_TOKEN);
     if (!token) {
       return askFounder(
         ctx,
@@ -930,7 +930,7 @@ const TOOLS = {
     if (product.vercel === null) {
       return `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`;
     }
-    const token = getSecret("VERCEL_TOKEN");
+    const token = getSecret(VERCEL_TOKEN);
     if (!token) {
       return askFounder(
         ctx,

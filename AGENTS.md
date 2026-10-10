@@ -191,7 +191,9 @@ rather than crashing boot.
 
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`. They are
   IdleBiz's own: main reads each where it uses it (`getSecret` in `server/secrets.ts`) and
-  exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
+  exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`. A key
+  is named only by its constant there, or by a set_env value's `ENV/` name, so a misspelt
+  name fails typecheck rather than reading as no key.
   Employees run as the founder's OS user: every run's seal (below) keeps it from the file,
   and each value is also sealed with the macOS Keychain as Electron's `safeStorage` sealed it
   (Chromium's OSCrypt over the "IdleBiz Safe Storage" item, which the shell reads and hands
@@ -255,7 +257,9 @@ rather than crashing boot.
   still making and refuses a new one (`makingPaymentLink`), then switches off every live link
   (`switchOffBeforeReset`) and warns of what it could not, with each paid print Printful never
   confirmed (but a held one whose card the founder settled) and each paid order whose card still waits on the founder. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
-  place orders in exactly one store (`server/printful-token.ts`); with none, or one Printful
+  place orders in exactly one store (`server/printful-token.ts`). That store is no secret, so
+  it sits beside `secrets.json` in `printful-store.json`, written before the token and put back
+  as it was if the token can't be kept: neither is kept without the other. With no token, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
   saved one. Metrics reads revenue with the same Stripe key (`stripeCredential` in
   `server/metrics.ts`), since every payment link and so every tagged charge is on its account;
@@ -527,11 +531,12 @@ rather than crashing boot.
   `stripe-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
   switch-off of a retired product's links), `link-record.ts` (a payment link as the save keeps
   it: a `create_payment_link` link on its own, a listing's inside the listing),
-  `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
+  `printful.ts` (Printful's API: its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
   checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful, each link sale's
   delivery, and the founder's order cards),
-  `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
+  `printful-token.ts` (the Printful token the founder enters and the one store it sells
+  through, kept as one credential), `print-listing.ts` (what
   `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only
   record, only a packaged app registers one, and a launch at login starts in the menu bar).

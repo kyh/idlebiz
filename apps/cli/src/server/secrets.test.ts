@@ -9,9 +9,8 @@ import type { Sealer } from "./secrets";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-secrets-"));
 const secretsFile = path.join(root, "secrets.json");
 const previous = {
-  A: process.env.A,
-  B: process.env.B,
   IDLEBIZ_ROOT_DIR: process.env.IDLEBIZ_ROOT_DIR,
+  PRINTFUL_TOKEN: process.env.PRINTFUL_TOKEN,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   VERCEL_TOKEN: process.env.VERCEL_TOKEN,
 };
@@ -45,7 +44,7 @@ const restore = (key: keyof typeof previous): void => {
 };
 
 const restoreSecrets = (): void => {
-  for (const key of ["A", "B", "STRIPE_SECRET_KEY", "VERCEL_TOKEN"] as const) {
+  for (const key of ["PRINTFUL_TOKEN", "STRIPE_SECRET_KEY", "VERCEL_TOKEN"] as const) {
     restore(key);
   }
 };
@@ -63,18 +62,18 @@ afterAll(() => {
 });
 
 describe("a secrets.json the founder broke by hand", () => {
-  const broken = '{"A":"1",}';
+  const broken = '{"STRIPE_SECRET_KEY":"1",}';
 
   beforeEach(() => writeFileSync(secretsFile, broken));
 
   it("refuses to set a key over it", () => {
-    expect(() => setSecret("B", "2")).toThrow("it will not be overwritten");
+    expect(() => setSecret("VERCEL_TOKEN", "2")).toThrow("it will not be overwritten");
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
-    expect(process.env.B).toBe(previous.B);
+    expect(process.env.VERCEL_TOKEN).toBe(previous.VERCEL_TOKEN);
   });
 
   it("refuses to delete a key from it", () => {
-    expect(() => deleteSecret("A")).toThrow("it will not be overwritten");
+    expect(() => deleteSecret("STRIPE_SECRET_KEY")).toThrow("it will not be overwritten");
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
   });
 
@@ -83,13 +82,13 @@ describe("a secrets.json the founder broke by hand", () => {
     expect(failure?.file).toBe(secretsFile);
     expect(failure?.cause).toBeInstanceOf(Error);
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
-    expect(getSecret("A")).toBeNull();
+    expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
   });
 
   it("is not rewritten to seal the key in it", () => {
     setSealer(keychainItem(7));
     expect(checkSecrets()?.file).toBe(secretsFile);
-    expect(getSecret("A")).toBeNull();
+    expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
     expect(readFileSync(secretsFile, "utf-8")).toBe(broken);
   });
 });
@@ -102,15 +101,22 @@ describe("a readable secrets.json", () => {
   });
 
   it("keeps the other keys when one is set or deleted", () => {
-    writeFileSync(secretsFile, '{"A":"1"}');
+    writeFileSync(secretsFile, '{"STRIPE_SECRET_KEY":"1"}');
 
-    setSecret("B", "2");
-    expect(getSecret("A")).toBe("1");
-    expect(getSecret("B")).toBe("2");
+    setSecret("VERCEL_TOKEN", "2");
+    expect(getSecret("STRIPE_SECRET_KEY")).toBe("1");
+    expect(getSecret("VERCEL_TOKEN")).toBe("2");
 
-    deleteSecret("B");
-    expect(getSecret("A")).toBe("1");
-    expect(getSecret("B")).toBeNull();
+    deleteSecret("VERCEL_TOKEN");
+    expect(getSecret("STRIPE_SECRET_KEY")).toBe("1");
+    expect(getSecret("VERCEL_TOKEN")).toBeNull();
+  });
+
+  it("reads only a name IdleBiz holds or set_env kept", () => {
+    writeFileSync(secretsFile, '{"VERCEL_TOKEN":"1"}');
+    // @ts-expect-error -- a misspelt name reads as no key, so it must not compile
+    expect(getSecret("VERCEL_TOKN")).toBeNull();
+    expect(getSecret("ENV/acme/site/prj_1/DATABASE_URL")).toBeNull();
   });
 
   it("keeps every key in the file, out of this process's env and so every run's", () => {
@@ -125,12 +131,12 @@ describe("a readable secrets.json", () => {
   });
 
   it("leaves the founder's own variable of the same name alone when a key is deleted", () => {
-    process.env.A = "from the shell";
-    writeFileSync(secretsFile, '{"A":"1"}');
+    process.env.PRINTFUL_TOKEN = "from the shell";
+    writeFileSync(secretsFile, '{"PRINTFUL_TOKEN":"1"}');
 
-    deleteSecret("A");
-    expect(getSecret("A")).toBeNull();
-    expect(process.env.A).toBe("from the shell");
+    deleteSecret("PRINTFUL_TOKEN");
+    expect(getSecret("PRINTFUL_TOKEN")).toBeNull();
+    expect(process.env.PRINTFUL_TOKEN).toBe("from the shell");
   });
 });
 

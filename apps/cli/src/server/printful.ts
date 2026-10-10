@@ -3,8 +3,7 @@ import { z } from "zod";
 import { HttpError, fetchOk } from "./lib/http";
 import { answering } from "./lib/vendor-call";
 import type { VendorAnswer } from "./lib/vendor-call";
-import { PRINTFUL_STORE, PRINTFUL_TOKEN, getSecret } from "./secrets";
-import { jsonValueSchema, parseJson } from "@repo/domain/json";
+import { jsonValueSchema } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 import { CATALOG_PAGE } from "./listing";
 import type { ListingVariant, PrintPlacement } from "./listing";
@@ -19,33 +18,11 @@ const PRINTFUL_API = "https://api.printful.com";
 
 const TIMEOUT_MS = 10_000;
 
-const StoreSchema = z.object({ id: z.number().int(), name: z.string() });
-export type PrintfulStore = z.infer<typeof StoreSchema>;
-
-/** The founder's token and the one store it sells through. */
+/** The founder's token and the one store it sells through (printful-token.ts keeps both). */
 export interface PrintfulCredential {
   token: string;
   storeId: number;
 }
-
-export const printfulStore = (): PrintfulStore | null => {
-  const saved = getSecret(PRINTFUL_STORE);
-  if (!saved) {
-    return null;
-  }
-  try {
-    const parsed = StoreSchema.safeParse(parseJson(saved));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-};
-
-export const printfulCredential = (): PrintfulCredential | null => {
-  const token = getSecret(PRINTFUL_TOKEN);
-  const store = printfulStore();
-  return token && store ? { storeId: store.id, token } : null;
-};
 
 /** An account-wide token needs the store named; a store's own token ignores it. */
 const printfulHeaders = (token: string, storeId?: number): Record<string, string> =>

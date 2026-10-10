@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpError, getJson } from "./lib/http";
-import { STRIPE_SECRET_KEY, getSecret } from "./secrets";
+import { STRIPE_SECRET_KEY, VERCEL_TOKEN, getSecret } from "./secrets";
 import { STRIPE_API, isTestKey, stripeHeaders } from "./stripe-api";
 import type { Bet } from "@repo/domain/bets";
 import type { Product } from "@repo/domain/domain";
@@ -205,7 +205,7 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
       ? 'Stripe is in test mode — no charge counts. Ask the founder to swap the Stripe key IdleBiz charges with for a live one in the Budget panel (request_integration "stripe"), then measure_bet again.'
       : null;
   }
-  return product?.vercel && getSecret("VERCEL_TOKEN")
+  return product?.vercel && getSecret(VERCEL_TOKEN)
     ? null
     : `No source reads users of ${product?.name ?? bet.productId} yet — ask the founder to bind Vercel to it (request_integration "vercel"), then measure_bet again.`;
 };

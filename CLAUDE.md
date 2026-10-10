@@ -399,7 +399,9 @@ third boundary.
   its link is live. Agents find variant ids, placements and techniques with `printful_catalog`,
   which main reads with the token (v2 serves the catalog only to a signed-in caller). The
   Printful token and its one store are the founder's, pasted in the Budget panel
-  (`server/printful-token.ts`), and a token Printful turns away asks for a new one, pasted over it
+  (`server/printful-token.ts`; the store, no secret, in `printful-store.json` beside
+  `secrets.json`, written first and put back if the token can't be kept, so neither is kept
+  alone), and a token Printful turns away asks for a new one, pasted over it
   there. Each paid order then goes to Printful unsigned, run by main on the metrics pulse
   (`server/order-pump.ts`), since the founder signed the listing and its price floor: while a
   Stripe key is saved, every 30 minutes one account-wide read of Stripe's checkout sessions
