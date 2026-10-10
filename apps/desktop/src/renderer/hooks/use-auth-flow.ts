@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { api } from "@/renderer/api";
 import { listen } from "@/renderer/page-events";
-import { useStore } from "@/renderer/state/store";
+import { useAuth } from "@/renderer/state/queries";
 import type { AuthFlowEvent } from "@repo/domain/domain";
 
 export type Auth =
@@ -51,9 +51,9 @@ export const nextAttempt = (attempt: Attempt | null, e: AuthFlowEvent): Attempt 
   }
 };
 
-/** The store's CLI probe until a login starts here, then that login's progress. */
+/** Main's CLI probe until a login starts here, then that login's progress. */
 export const useAuthFlow = (onSignedIn?: () => void) => {
-  const authed = useStore((s) => s.authed);
+  const { authed } = useAuth();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const signedIn = useEffectEvent(() => onSignedIn?.());
 

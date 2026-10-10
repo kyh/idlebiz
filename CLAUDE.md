@@ -711,22 +711,26 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 
 ## UI conventions
 
-- **The renderer mirrors main's state by asking again.** An activity event says which slice
-  moved; `renderer/state/activity-reducer.ts` (pure, exhaustive over the event kinds — a new
-  kind is a compile error, not a silent default) turns it into a patch and the slices to
-  refetch. Answers can land out of order, so every fetch takes a ticket and a slice keeps
-  only an answer at least as new as its last (`ordering.ts`). A patch outranks every answer
-  still in flight, so a slice an event patches is also one it refetches, or what the refused
-  answer carried (a hire) is lost. Don't put entities in events.
+- **The renderer mirrors main's state by asking again.** Main's answers live in one
+  tanstack-query cache (`renderer/state/queries.ts`, keyed by `@orpc/tanstack-query`'s `orpc`),
+  where nothing goes stale on its own. An activity event says what moved;
+  `renderer/state/activity-reducer.ts` (pure, exhaustive over the event kinds — a new kind is a
+  compile error, not a silent default) turns it into a patch and the query keys to refetch, and
+  the store applies each as cancelQueries, setQueryData, then invalidateQueries. A patch
+  outranks every read still in flight, which is cancelled rather than let land over it, so a key
+  an event patches is also one it refetches, or what the cancelled read carried (a hire) is
+  lost. Don't put entities in events.
 - **Every mutation goes through `useSubmission`** (`renderer/hooks/use-submission.ts`, on
   React's `useActionState`): the control is busy while main works and a refusal lands beside
   it as a `<Failure>`. No `void action()` in a handler, no hand-rolled `mounted` refs — a
   throw inside an action goes to the error boundary, so the hook returns failure as state.
-  A read goes through `useAsync` (`renderer/hooks/use-async.ts`) the same way: its failure
-  is state, and an answer that lands after its deps changed is dropped.
+  A read is a `useQuery` (or one of the hooks over one in `queries.ts`): its failure is state,
+  and main's answer to a change is held with `setAnswer`, which outranks reads in flight as a
+  patch does.
 - **React and the office scene talk through `renderer/game/office-port.ts`**, a typed
-  vocabulary over Phaser's emitter. The scene still fetches its own roster when it boots: it
-  restarts the moment a company is founded, before the store has refreshed.
+  vocabulary over Phaser's emitter. The scene reads main's state from the window's cache
+  (`read` and `watch` in `queries.ts`), so a boot asks main once for each answer; a founding
+  reads the company, its team and their work again before the scene restarts (`companyFounded`).
 
 - **Headless interactions come from Base UI** (`@base-ui/react`, per-part imports like
   `@base-ui/react/dialog`), skinned with px-kit classes. Dialogs, choice windows (Toolbar),

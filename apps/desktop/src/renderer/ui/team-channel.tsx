@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, sendFounderChat } from "@/renderer/state/store";
+import { useCompany, useEmployees, usePendingAsks } from "@/renderer/state/queries";
+import { useFeed, useStore, sendFounderChat } from "@/renderer/state/store";
 import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
@@ -127,10 +128,10 @@ const NewsRow = ({
 };
 
 export const TeamChannel = () => {
-  const employees = useStore((s) => s.employees);
-  const feed = useStore((s) => s.feed);
-  const pendingAsks = useStore((s) => s.pendingAsks);
-  const company = useStore((s) => s.company);
+  const employees = useEmployees();
+  const feed = useFeed();
+  const pendingAsks = usePendingAsks();
+  const company = useCompany();
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
   const { submission, submit } = useSubmission(async (text: string) => {

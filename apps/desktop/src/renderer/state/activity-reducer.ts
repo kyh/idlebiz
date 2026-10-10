@@ -1,14 +1,45 @@
+import type { QueryKey } from "@tanstack/react-query";
 import { CHAT_EVENT_TEXT } from "@repo/domain/activity";
 import type { ActivityEvent, ActivityKind } from "@repo/domain/activity";
 import type { Employee, RestingRunners, Speaker, TeamMessage } from "@repo/domain/domain";
+import { orpc } from "@/renderer/api";
 
-// What an event from main means for the renderer's copy of main's state, with
-// no API and no Phaser in sight: a patch it can apply at once, and the
-// slices it has to fetch again. Main's store is the truth; events only say
-// which part of it moved.
+// What an event from main means for the page's copy of main's state, with no fetch and no
+// Phaser in sight: what the window heard, a patch to main's answers it can apply at once, and the
+// keys of the answers to ask main for again. Main's store is the truth; events only say which part
+// of it moved.
 
-/** A part of main's state the renderer holds a copy of. */
-export type Slice = "company" | "employees" | "resting" | "products" | "bets" | "tasks" | "all";
+/** A part of main's state the page holds a copy of. */
+type Slice = "company" | "employees" | "resting" | "products" | "bets" | "tasks" | "room" | "all";
+
+const SLICE_KEYS = {
+  all: [
+    orpc.agents.resting.key(),
+    orpc.bets.key(),
+    orpc.company.key(),
+    orpc.employees.key(),
+    orpc.products.key(),
+    orpc.save.key(),
+    orpc.tasks.key(),
+    orpc.team.key(),
+  ],
+  bets: [orpc.bets.key()],
+  company: [orpc.company.key()],
+  employees: [orpc.employees.list.key()],
+  // each product's status with the list
+  products: [orpc.products.key()],
+  resting: [orpc.agents.resting.key()],
+  room: [orpc.team.key()],
+  // what an employee can be asked comes from their open work
+  tasks: [orpc.tasks.key(), orpc.employees.options.key()],
+} satisfies Record<Slice, readonly QueryKey[]>;
+
+/** Everything main's events can move: what the page asks for again once it may have missed some. */
+export const EVERYTHING: readonly QueryKey[] = [
+  ...SLICE_KEYS.all,
+  orpc.agents.hasAuth.key(),
+  orpc.stripe.status.key(),
+];
 
 const ACTIVITY_RING = 300;
 
@@ -61,10 +92,6 @@ export const newestOf = (feed: readonly FeedLine[]): number | null => {
   return last ? whenOf(last) : null;
 };
 
-/** The id of the room's newest line in the feed, or null while it holds none. */
-export const newestRoomLine = (feed: readonly FeedLine[]): number | null =>
-  feed.findLast((line) => line.kind === "room")?.id ?? null;
-
 /** The room as main keeps it, as feed lines, each cut as its event is. */
 export const roomLines = (messages: readonly TeamMessage[]): FeedLine[] =>
   messages.map(({ createdAt, from, id, text }) => ({
@@ -82,21 +109,21 @@ export const joinFeed = (feed: readonly FeedLine[], lines: readonly FeedLine[]):
   return [...feed, ...fresh].toSorted((a, b) => whenOf(a) - whenOf(b)).slice(-FEED_LINES);
 };
 
-interface Held {
+interface Heard {
   activity: readonly ActivityEvent[];
   feed: readonly FeedLine[];
-  employees: readonly Employee[];
-  resting: RestingRunners;
 }
 
 export interface ActivityStep {
+  /** The ring and #team with the event in them. */
+  heard: { activity: ActivityEvent[]; feed?: FeedLine[] };
+  /** Main's answers the event moved in place: each newer than any answer still in flight. */
   patch: {
-    activity: ActivityEvent[];
-    feed?: FeedLine[];
-    employees?: Employee[];
-    resting?: RestingRunners;
+    employees?: (held: Employee[]) => Employee[];
+    resting?: (held: RestingRunners) => RestingRunners;
   };
-  reload: readonly Slice[];
+  /** What to ask main for again, a patched answer among it: its cancelled read carried more. */
+  refetch: readonly QueryKey[];
   /** Someone joined or left: the office walks them through the door once the roster is fresh. */
   roster: { employeeId: string; hired: boolean } | null;
   /** A run found its runner signed out, so main may have no signed-in CLI left. */
@@ -104,11 +131,12 @@ export interface ActivityStep {
 }
 
 /** The slices each kind of event moves; a kind missing here is a compile error, not a silent default. */
-const RELOAD_FOR = {
+const REFETCH_FOR = {
   "autopilot.changed": ["company"],
   "bet.changed": ["bets", "tasks"],
   "budget.exhausted": ["company"],
-  chat: [],
+  // the team panel shows the room's lines in full, where the event cuts them
+  chat: ["room"],
   message: [],
   // the pulse writes each product's numbers and each live bet's reading too
   "metrics.pulse": ["company", "products", "bets"],
@@ -127,7 +155,7 @@ const RELOAD_FOR = {
   "run.ask": ["tasks"],
   "run.end": ["all"],
   // A patch outranks any answer for its slice still in flight, so the store
-  // refuses that answer, and whatever else it carried (a hire) with it.
+  // cancels that read, and whatever else it would have carried (a hire) with it.
   "run.start": ["employees"],
   "runner.resting": ["resting"],
   ship: [],
@@ -137,28 +165,28 @@ const RELOAD_FOR = {
   tool_call: [],
 } satisfies Record<ActivityKind, readonly Slice[]>;
 
-export const reduceActivity = (held: Held, e: ActivityEvent): ActivityStep => {
-  const ring = held.activity;
+export const reduceActivity = (heard: Heard, e: ActivityEvent): ActivityStep => {
+  const ring = heard.activity;
   const activity = ring.length >= ACTIVITY_RING ? [...ring.slice(1), e] : [...ring, e];
   const step: ActivityStep = {
-    patch: { activity },
+    heard: { activity },
+    patch: {},
     recheckAuth: e.kind === "run.end" && e.payload.outcome.kind === "signedOut",
-    reload: RELOAD_FOR[e.kind],
+    refetch: REFETCH_FOR[e.kind].flatMap((slice: Slice) => SLICE_KEYS[slice]),
     roster: null,
   };
   const line = feedLineOf(e);
   if (line) {
-    step.patch.feed = joinFeed(held.feed, [line]);
+    step.heard.feed = joinFeed(heard.feed, [line]);
   }
   // A status names a task, not its assignee: queueing work for someone mid-run must not idle them.
   if (e.kind === "run.start" || e.kind === "run.end") {
     const status = e.kind === "run.start" ? "working" : "idle";
-    step.patch.employees = held.employees.map((emp) =>
-      emp.id === e.employeeId ? { ...emp, status } : emp,
-    );
+    step.patch.employees = (held) =>
+      held.map((emp) => (emp.id === e.employeeId ? { ...emp, status } : emp));
   }
   if (e.kind === "runner.resting") {
-    step.patch.resting = { ...held.resting, [e.payload.runner]: e.payload.until };
+    step.patch.resting = (held) => ({ ...held, [e.payload.runner]: e.payload.until });
   }
   if (e.kind === "org.hired" || e.kind === "org.released") {
     step.roster = { employeeId: e.employeeId, hired: e.kind === "org.hired" };

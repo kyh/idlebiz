@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, retryTask } from "@/renderer/state/store";
+import {
+  useCompany,
+  useEmployees,
+  usePendingAsks,
+  useStripeKey,
+  useStripeStatus,
+  useStuckTasks,
+} from "@/renderer/state/queries";
+import { retryTask } from "@/renderer/state/store";
 import { ActionCard } from "@/renderer/ui/action-card";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { connectAskCopy } from "@/renderer/ui/connect-ask";
@@ -29,8 +37,8 @@ const ConnectRow = ({
   reason: string;
   onConnect: (need: IntegrationNeed) => void;
 }) => {
-  const stripeKey = useStore((s) => s.stripeKey);
-  const stripeStatus = useStore((s) => s.stripeStatus);
+  const stripeKey = useStripeKey();
+  const stripeStatus = useStripeStatus();
   const copy = connectAskCopy(integration, stripeKey, stripeStatus);
   return (
     <div className="px-inset p-3">
@@ -130,10 +138,10 @@ export const Inbox = ({
   /** The connect flow for a typed integration ask lives in another window. */
   onOpen: (overlay: Overlay) => void;
 }) => {
-  const company = useStore((s) => s.company);
-  const employees = useStore((s) => s.employees);
-  const pendingAsks = useStore((s) => s.pendingAsks);
-  const stuckTasks = useStore((s) => s.stuckTasks);
+  const company = useCompany();
+  const employees = useEmployees();
+  const pendingAsks = usePendingAsks();
+  const stuckTasks = useStuckTasks();
 
   if (!company) {
     return null;

@@ -502,7 +502,8 @@ rather than crashing boot.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
   (`game/`, with the office's geometry: `office-depth.ts` the draw bands,
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
-  math), a hand-rolled external store in `state/store.ts`, and main reached through `api.ts`,
+  math), main's answers in one tanstack-query cache (`state/queries.ts`), the window's own state
+  and main's events applied to that cache in `state/store.ts`, and main reached through `api.ts`,
   its events through `page-events.ts`.
 - `apps/desktop/scripts` — the pack: node fetched (`fetch-node.ts`), the server staged
   (`stage-server.ts`), everything signed (`sign-resources.ts`), the crates' notices

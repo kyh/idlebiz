@@ -1,13 +1,13 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { getCharacterAssets } from "@/renderer/character-assets";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useKeyedState } from "@/renderer/hooks/use-keyed-state";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
-import { api } from "@/renderer/api";
-import { officeReady, refresh } from "@/renderer/state/store";
+import { api, orpc } from "@/renderer/api";
+import { characterQuery, warm } from "@/renderer/state/queries";
+import { companyFounded } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { useModal } from "@/renderer/ui/modal";
@@ -226,14 +226,7 @@ const useScript = (key: string, pages: readonly string[]) => {
   return { advance, done: writer.done, last, promptOpen, shown: writer.shown, skip };
 };
 
-/** The looks on offer, warmed as soon as they are known so browsing them is instant. */
-const loadFounderChoices = async (): Promise<string[]> => {
-  const seeds = await api.characters.founders();
-  for (const seed of seeds) {
-    void getCharacterAssets(seed);
-  }
-  return seeds;
-};
+const NO_CHOICES: string[] = [];
 
 const TitleScreen = ({ onStart }: { onStart: () => void }) => (
   <div className="ob-title-screen">
@@ -545,8 +538,7 @@ const Encounter = ({
 export const Onboarding = () => {
   const [step, setStep] = useState<Step>("title");
   const [founderName, setFounderName] = useState("");
-  const founderChoices = useAsync(loadFounderChoices, []);
-  const choices = founderChoices.kind === "ready" ? founderChoices.value : [];
+  const choices = useQuery(orpc.characters.founders.queryOptions()).data ?? NO_CHOICES;
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
@@ -558,13 +550,20 @@ export const Onboarding = () => {
   // screen's setStep until main answered.
   const [failure, setFailure] = useState<string | null>(null);
   // Once founded the company is on disk and main refuses a second founding, so
-  // only this refresh is retried; the office opens once the copy here has it.
-  const opening = useSubmission(refresh);
+  // only reading it back is retried; the office opens once the page holds it.
+  const opening = useSubmission(companyFounded);
   const [cursor, setCursor] = useKeyedState(step, 0);
 
   const capUsd = CAPS[capIndex] ?? null;
 
   useModal();
+
+  // each look warmed as soon as it is on offer, so browsing them is instant
+  useEffect(() => {
+    for (const seed of choices) {
+      void warm(characterQuery(seed));
+    }
+  }, [choices]);
 
   // a beat on "Connected ✓" before the founder's own step
   const { auth, login } = useAuthFlow(() => window.setTimeout(() => setStep("founder"), 700));
@@ -620,7 +619,6 @@ export const Onboarding = () => {
       setStep("budget");
       return;
     }
-    officeReady();
     opening.submit();
   };
 
