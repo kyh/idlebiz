@@ -1,11 +1,10 @@
 import * as store from "./store/store";
 import { publishActivity } from "./activity";
 import { report } from "./lib/report";
-import { readActiveLinks, switchOffPaymentLink } from "./payment-links";
-import type { ActiveLinksRead } from "./payment-links";
+import { switchOffPaymentLink } from "./payment-links";
 import { betNews } from "./prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "./secrets";
-import { holdsStripeSecretKey, isTestKey } from "./stripe-api";
+import { holdsStripeSecretKey } from "./stripe-api";
 import { CHAT_EVENT_TEXT } from "@repo/domain/activity";
 import type { Bet } from "@repo/domain/bets";
 import { isOutOfBudget } from "@repo/domain/domain";
@@ -277,68 +276,6 @@ const switchOff = async (link: CompanyLink, key: string | null): Promise<void> =
   }
 };
 
-/** Stripe's active links, read only with a live key: a test-mode key lists none of the live ones. */
-const activeLinks = (key: string | null): Promise<ActiveLinksRead> | null =>
-  key === null || isTestKey(key) ? null : readActiveLinks(key);
-
-/** What Stripe showed of a retired product's unrecorded links, as its card says it; null when it has none. */
-const unrecordedSeen = (
-  read: Exclude<ActiveLinksRead, { kind: "failed" }>,
-  productId: string,
-  known: ReadonlySet<string>,
-): string | null => {
-  if (read.kind === "refused") {
-    return `Stripe turned IdleBiz's key away when it looked for them (${read.said}).`;
-  }
-  const found = read.links.filter((l) => l.tags.product === productId && !known.has(l.id));
-  if (read.whole && found.length === 0) {
-    return null;
-  }
-  const listed =
-    found.length === 0
-      ? []
-      : [
-          `Stripe lists these active ones tagged for it: ${found.map((l) => `${l.url} (${l.id})`).join(", ")}.`,
-        ];
-  const partial = read.whole
-    ? []
-    : ["IdleBiz read only part of the account's links, so there may be more."];
-  return [...listed, ...partial].join(" ");
-};
-
-/**
- * Hand the founder the links older builds made for a retired product and never recorded. Stripe's
- * links carry no date and older builds tagged them by product alone, so another company's tagged
- * the same would read as this one's: the founder switches them off, never IdleBiz. Each product is
- * looked for once, on a live key; a read that failed is tried again on the next sweep.
- */
-const handOverUnrecordedLinks = async (key: string | null): Promise<void> => {
-  const pending = store.unrecordedLinkProducts();
-  const retired = pending.filter((id) => store.isRetiredProduct(id));
-  const reading = retired.length === 0 ? null : activeLinks(key);
-  if (reading === null) {
-    return;
-  }
-  const read = await reading;
-  if (read.kind === "failed") {
-    report("retired links", new Error(`Stripe's payment links could not be read: ${read.reason}`));
-    return;
-  }
-  const known = new Set(store.paymentLinks().map((l) => l.id));
-  for (const productId of retired) {
-    const seen = unrecordedSeen(read, productId, known);
-    if (seen === null) {
-      continue;
-    }
-    raiseOrderCard(`Switch off ${productId}'s older payment links`, {
-      action: `Switch off the payment links older IdleBiz made for retired ${productId}, in Stripe's dashboard`,
-      draft: null,
-      instructions: `${productId} is retired. Older versions of IdleBiz kept no record of the payment links they made, and Stripe's links carry no date, so IdleBiz cannot tell its own from another company's with the same tag, and left them on. ${seen} In Stripe's dashboard, open Payment links and deactivate each whose metadata names product ${productId} and is this company's. Press Done once they are off.`,
-    });
-  }
-  store.setUnrecordedLinkProducts(pending.filter((id) => !retired.includes(id)));
-};
-
 const sweepRetiredLinks = async (): Promise<void> => {
   if (store.getCompany() === null) {
     return;
@@ -360,7 +297,6 @@ const sweepRetiredLinks = async (): Promise<void> => {
   for (const link of due) {
     await switchOff(link, key);
   }
-  await handOverUnrecordedLinks(key);
 };
 
 const sweepReported = async (after: Promise<void>): Promise<void> => {
@@ -423,9 +359,9 @@ const switchedOffForReset = async (
  * Before a reset deletes the save, switch off with the founder's key every live payment link the
  * company still sells through, one at a time as the sweep does: once the save is gone nothing
  * records a link, ships its prints or hands its buyers what they paid for, so it first waits for
- * each link still in the making (`makingPaymentLink`). Answers what the
- * founder must still do by hand (links left on, paid prints Printful never confirmed and the
- * founder has not settled, paid orders whose card is still open, links older builds never recorded), or null when nothing is left.
+ * each link still in the making (`makingPaymentLink`). Answers what the founder must still do by
+ * hand (links left on, paid prints Printful never confirmed and the founder has not settled, paid
+ * orders whose card is still open), or null when nothing is left.
  */
 export const switchOffBeforeReset = async (): Promise<string | null> => {
   resetting = true;
@@ -471,7 +407,6 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
       `${card}: ${what}${o.email ?? "no email"}, checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}${owed}`,
     ];
   });
-  const unrecorded = store.unrecordedLinkProducts();
   const left = [
     ...(leftOn.length === 0
       ? []
@@ -487,11 +422,6 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
       ? []
       : [
           `These paid orders still wait on you, as their cards said: deliver or settle each one, or refund it in Stripe. ${waiting.join("; ")}.`,
-        ]),
-    ...(unrecorded.length === 0
-      ? []
-      : [
-          `Older versions of IdleBiz kept no record of the payment links they made for ${unrecorded.join(", ")}: deactivate those whose metadata names them.`,
         ]),
   ];
   return left.length === 0 ? null : left.join("\n\n");

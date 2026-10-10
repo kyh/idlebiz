@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { companySharedDir } from "../paths";
 import type { Company } from "@repo/domain/domain";
-import { companyToDoc, docToCompany } from "./company-codec";
+import { SAVE_FORMAT, SaveFormatError, companyToDoc, docToCompany } from "./company-codec";
 import { parseDoc, serializeDoc } from "./frontmatter";
+import type { FrontmatterDoc } from "./frontmatter";
 
 const acme: Company = {
   autopilot: true,
@@ -25,6 +26,19 @@ const acme: Company = {
 
 const written = (co: Company): string => serializeDoc(companyToDoc(co));
 
+/** The refusal reading `doc` throws, or null when it reads. */
+const refusalOf = (doc: FrontmatterDoc): SaveFormatError | null => {
+  try {
+    docToCompany(parseDoc(serializeDoc(doc)));
+    return null;
+  } catch (error) {
+    if (error instanceof SaveFormatError) {
+      return error;
+    }
+    throw error;
+  }
+};
+
 describe("company codec", () => {
   it.each<Company>([acme, { ...acme, mission: null }])(
     "round-trips a mission or its absence",
@@ -37,6 +51,20 @@ describe("company codec", () => {
     const text = written({ ...acme, mission });
     expect(text).not.toContain("description:");
     expect(text.trimEnd().endsWith("# Acme")).toBe(true);
+  });
+
+  it.each([
+    { format: SAVE_FORMAT - 1, writtenBy: "pre-release" },
+    { format: SAVE_FORMAT + 1, writtenBy: "newer" },
+  ])("refuses a save stamped format $format as a $writtenBy build's", ({ format, writtenBy }) => {
+    const doc = companyToDoc(acme);
+    doc.metadata.format = format;
+    expect(refusalOf(doc)?.writtenBy).toBe(writtenBy);
+  });
+
+  it("refuses a save with no stamp as a pre-release build's", () => {
+    const { format: _, ...metadata } = companyToDoc(acme).metadata;
+    expect(refusalOf({ ...companyToDoc(acme), metadata })?.writtenBy).toBe("pre-release");
   });
 
   it("reads an empty description as no mission", () => {

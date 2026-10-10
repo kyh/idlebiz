@@ -79,14 +79,6 @@ describe("task codec", () => {
     expect(serializeDoc(taskToDoc({ ...base, state }))).not.toContain("null");
   });
 
-  it("reads statuses older saves wrote as dead, keeping the error", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "dead", lastError: "gave up" } });
-    for (const legacy of ["failed", "cancelled"]) {
-      const out = docToTask({ ...doc, metadata: { ...doc.metadata, status: legacy } }, "acme");
-      expect(out.state).toEqual({ kind: "dead", lastError: "gave up" });
-    }
-  });
-
   it("keeps a dropped task dropped when its reason is missing", () => {
     const doc = taskToDoc({ ...base, state: { kind: "dropped", reason: "bet closed" } });
     const { dropReason: _lost, ...withoutReason } = doc.metadata;
@@ -111,10 +103,11 @@ describe("task codec", () => {
     expect(out.state.kind).toBe("blocked");
   });
 
-  it("defaults an unknown status to todo", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "todo" } });
-    const out = docToTask({ ...doc, metadata: { ...doc.metadata, status: "weird" } }, "acme");
-    expect(out.state).toEqual({ kind: "todo" });
+  it.each(["failed", "weird"])("refuses a status it never writes, %j", (status) => {
+    const doc = taskToDoc({ ...base, state: { kind: "dead", lastError: "gave up" } });
+    expect(() => docToTask({ ...doc, metadata: { ...doc.metadata, status } }, "acme")).toThrow(
+      "a task status this build does not write",
+    );
   });
 });
 
@@ -136,6 +129,7 @@ describe("a blocked task's ask in TASK.md", () => {
     { question: "[approve] is this fine?", type: "question" },
     { question: "[ask] nested", type: "question" },
     { integration: "vercel", productId: "widget", reason: "need hosting", type: "integration" },
+    { integration: "vercel", productId: null, reason: "any product will do", type: "integration" },
     { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
     { integration: "stripe-key", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
@@ -152,17 +146,6 @@ describe("a blocked task's ask in TASK.md", () => {
     },
   ])("round-trips %j", (ask) => {
     expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
-  });
-
-  it("reads an older save's Vercel ask as about its task's product", () => {
-    expect(askSavedAs("[connect:vercel] need hosting")).toEqual(
-      blocked({
-        integration: "vercel",
-        productId: "widget",
-        reason: "need hosting",
-        type: "integration",
-      }).state,
-    );
   });
 
   it("reads an approval without a rule id as an ask nothing recognised", () => {

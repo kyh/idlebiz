@@ -68,6 +68,6 @@ export const saveVercelToken = ({ productId, token }: z.infer<typeof saveTokenIn
 };
 
 export const disconnectVercel = (productId: string): void => {
-  // Older saves may still use the founder's shared token.
+  // the token is the founder's, which every product deploys with, so unbinding one keeps it
   store.setProductVercel(productId, null);
 };

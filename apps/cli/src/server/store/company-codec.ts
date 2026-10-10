@@ -13,22 +13,32 @@ import {
 import type { FrontmatterDoc } from "./frontmatter";
 
 /**
- * What this build writes. A save stamped higher was written by a newer build:
- * writers rebuild every file from what they understand, so opening it would
- * quietly drop whatever the newer build added. It is refused instead. A save
- * stamped lower is adopted once at boot, then carries this stamp.
+ * What this build writes, and the only stamp it reads. A save stamped higher was written by a
+ * newer build: writers rebuild every file from what they understand, so opening it would quietly
+ * drop whatever the newer build added. One stamped lower was written by a pre-release build whose
+ * shapes nothing here reads. Both are refused, and a bump starts every save over.
  */
 export const SAVE_FORMAT = 11;
 
-export const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
+const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
 
-/** A save stamped higher than SAVE_FORMAT: updating the app opens it, and nothing here should touch it. */
-export class NewerSaveError extends Error {
+/**
+ * A save stamped at a format this build does not write, which nothing here touches: a newer
+ * build's, which updating the app opens, or a pre-release build's (lower, or unstamped), which
+ * no code reads.
+ */
+export class SaveFormatError extends Error {
+  readonly writtenBy: "newer" | "pre-release";
+
   constructor(format: number) {
+    const writtenBy = format > SAVE_FORMAT ? "newer" : "pre-release";
     super(
-      `this save was written by a newer IdleBiz (format ${format}, this build reads ${SAVE_FORMAT}) — update the app to open it`,
+      writtenBy === "newer"
+        ? `this save was written by a newer IdleBiz (format ${format}, this build reads ${SAVE_FORMAT}) — update the app to open it`
+        : `this save was made by a pre-release IdleBiz (format ${format}, this build reads ${SAVE_FORMAT}) — move it out of the save folder to start a new company`,
     );
-    this.name = "NewerSaveError";
+    this.name = "SaveFormatError";
+    this.writtenBy = writtenBy;
   }
 }
 
@@ -87,8 +97,9 @@ const parseBudget = (m: FrontmatterDoc["metadata"]): Budget => {
 };
 
 export const docToCompany = (doc: FrontmatterDoc): Company => {
-  if (formatOf(doc) > SAVE_FORMAT) {
-    throw new NewerSaveError(formatOf(doc));
+  const format = formatOf(doc);
+  if (format !== SAVE_FORMAT) {
+    throw new SaveFormatError(format);
   }
   const f = doc.fields;
   const m = doc.metadata;

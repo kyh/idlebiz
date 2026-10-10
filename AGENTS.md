@@ -350,9 +350,10 @@ rather than crashing boot.
 ## Rules that matter
 
 - **One active company per launch.** Boot selects the newest company by `createdAt`
-  (alphabetical slug breaks ties), then loads and migrates only that save. Older saves
-  stay untouched. Unreadable company metadata blocks loading and founding; entity IDs
-  resolve only within the active company. There is no company switching during a launch.
+  (alphabetical slug breaks ties), then loads only that save. Older saves stay untouched. A
+  company stamped at any format but this build's, like unreadable company metadata, blocks
+  loading and founding; entity IDs resolve only within the active company. There is no
+  company switching during a launch.
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
 - **Headless interactions are Base UI** (`@base-ui/react/<part>`), skinned with px-kit:

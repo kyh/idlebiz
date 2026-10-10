@@ -405,7 +405,7 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
-  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for an order card, which no run carries on, or an older save's answer whose continuation is gone. */
+  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for an order card, which no run carries on. */
   | { kind: "superseded"; by: string | null }
   /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
   | { kind: "dropped"; reason: string }
@@ -522,7 +522,6 @@ export interface LoadSkip {
     | "link"
     | "order"
     | "bet"
-    | "team"
     | "secrets"
     | "seal";
   path: string;

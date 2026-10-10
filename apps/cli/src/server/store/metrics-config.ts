@@ -3,22 +3,11 @@ import { z } from "zod";
 import { atomicWrite, readJsonFile, readJsonFileForUpdate } from "../lib/fs";
 import { companyDir } from "../paths";
 
-// The Stripe account a company connected. A leaf: the store adopts a legacy
-// binding out of it at boot, and must not pull in the network layer that reads
-// the numbers to do so.
+// The Stripe account a company connected.
 
 const MetricsConfigSchema = z.object({
   stripeAccount: z
     .object({ accountId: z.string(), connectedAt: z.number(), livemode: z.boolean() })
-    .optional(),
-  // a Vercel binding belongs to a product; saves from before products kept it
-  // here, and boot moves it to the first product
-  vercel: z
-    .object({
-      projectId: z.string(),
-      projectName: z.string().optional(),
-      teamId: z.string().optional(),
-    })
     .optional(),
 });
 export type MetricsConfig = z.infer<typeof MetricsConfigSchema>;

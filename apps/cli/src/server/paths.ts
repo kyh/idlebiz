@@ -23,12 +23,11 @@ import { mkdirSync } from "node:fs";
 //     shared/               what teammates share across products; the cwd of work no product owns
 //     chat.jsonl            the company room (non-canonical, append-only)
 //     activity.jsonl        append-only event log (non-canonical): an audit trail, written and never read back
-//     state/                running state main keeps for itself; deleting it loses nothing canonical but unrecorded-links.json and an adopted save's orders-cursor.json
+//     state/                running state main keeps for itself; deleting it loses nothing canonical
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
 //       orders-cursor.json    where each Stripe key's next read of checkouts starts
-//       unrecorded-links.json products an older save made that may have create_payment_link links no links/ file holds; written once, at adoption
 //       runner-rest.json      until when each runner rests on a usage limit, an overload or a refusal of access, so a restart does not spawn each parked task to be refused
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
@@ -51,7 +50,7 @@ export const companyWorkspace = (companySlug: string): string =>
 /** What teammates share across products, and the working directory of work no product owns. */
 export const companySharedDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "shared");
-/** Running state main keeps for itself: small JSON written as things happen, safe to delete but for unrecordedLinksFile and an adopted save's ordersCursorFile.
+/** Running state main keeps for itself: small JSON written as things happen, safe to delete.
  *  What the founder configured (metrics.json, approvals.json) is not state and stays beside COMPANY.md. */
 const stateDir = (companySlug: string): string => path.join(companyDir(companySlug), "state");
 /** The latest ship summaries, for the brief's "recently shipped" lines. */
@@ -60,19 +59,9 @@ export const recentShipsFile = (companySlug: string): string =>
 /** The founder's digest-in-progress: what has happened since they last looked. */
 export const sinceLastLookFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "since-last-look.json");
-/**
- * Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order
- * already kept. A save adopted from format 6 or older kept none, so its floor is the adoption: deleted, it takes each sale
- * made on its links before then as new.
- */
+/** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
 export const ordersCursorFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "orders-cursor.json");
-/**
- * Products an older save made, whose create_payment_link links IdleBiz never recorded: each is looked for at Stripe once it
- * retires. Written only when the save is adopted, so deleted, those links are never looked for and keep selling after it.
- */
-export const unrecordedLinksFile = (companySlug: string): string =>
-  path.join(stateDir(companySlug), "unrecorded-links.json");
 /** Until when each runner rests on a usage limit, an overload or a refusal of access; deleted, each task waiting on one spawns once more to be refused. */
 export const runnerRestFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "runner-rest.json");
@@ -158,9 +147,6 @@ export const routineFile = (companySlug: string, routineSlug: string): string =>
 /** Append-only company chat room (the room agents read + post to during runs). */
 export const chatFile = (companySlug: string): string =>
   path.join(companyDir(companySlug), "chat.jsonl");
-/** Where saves from before the room was the company's kept it: one folder per team. */
-export const legacyTeamsDir = (companySlug: string): string =>
-  path.join(companyDir(companySlug), "teams");
 
 export const ensureAppDirs = (): void => {
   mkdirSync(ROOT_DIR, { recursive: true });

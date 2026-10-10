@@ -154,14 +154,13 @@ export const taskToDoc = (t: Task): FrontmatterDoc => {
   };
 };
 
-/** Statuses older saves wrote that the queue no longer produces: both are terminal. */
-const LEGACY_TERMINAL_STATUSES = new Set(["failed", "cancelled"]);
-
+/** A status this build never writes is refused: read as anything, a task that ended could run again. */
 const parseTaskStatus = (raw: string | null): TaskStatus => {
-  if (raw !== null && LEGACY_TERMINAL_STATUSES.has(raw)) {
-    return "dead";
+  const status = TASK_STATUSES.find((s) => s === raw);
+  if (status === undefined) {
+    throw new Error(`a task status this build does not write: ${JSON.stringify(raw)}`);
   }
-  return TASK_STATUSES.find((s) => s === raw) ?? "todo";
+  return status;
 };
 
 const LOST_ASK: BlockedAsk = { question: "(question lost)", type: "question" };
@@ -185,10 +184,8 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
     }
     case "blocked": {
       const asked = optStr(m, "blockedQuestion");
-      // absent: the task's own product; adoptVercelAskProducts names the one an older save's ask was about
-      const about = optStr(m, "askProduct") ?? optStr(m, "productId");
       return {
-        ask: asked === null ? LOST_ASK : parseBlockedAsk(asked, about),
+        ask: asked === null ? LOST_ASK : parseBlockedAsk(asked, optStr(m, "askProduct")),
         kind: "blocked",
         summary,
       };
@@ -209,7 +206,7 @@ const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
   }
 };
 
-/** An origin the file lacks, or one this build does not know, reads as the bet's work or the founder's, never a proposal; an older save's proposals are named at adoption (`adoptProposalOrigins`). */
+/** An origin the file lacks, or one this build does not know, reads as the bet's work or the founder's, never a proposal. */
 const parseTaskOrigin = (raw: string | null, betId: string | null): TaskOrigin =>
   TASK_ORIGINS.find((o) => o === raw) ?? (betId === null ? "founder" : "work");
 

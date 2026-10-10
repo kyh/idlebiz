@@ -25,15 +25,15 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   them, never write them), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
   activity.jsonl).
-- COMPANY.md carries `format`. A save stamped higher than this build writes is refused
-  (writers rebuild files from what they understand, so opening it would drop what a newer
-  build added); one stamped lower is adopted once in `adoptOlderSave` (its answers first, in
-  `adoptOlderAnswers`, before boot recovers the runs a quit cut off), the only home for
-  code that reads an old shape of a save, then stamped. Tolerant field reads in the codecs
-  are not migrations. A frontmatter key the app does not know is still dropped on the next
-  write of that file.
+- COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a save stamped at
+  any other is refused (`SaveFormatError`): one stamped higher because writers rebuild files
+  from what they understand, so opening it would drop what a newer build added, and one stamped
+  lower or not at all because a pre-release build made it. Until there are users there is no
+  adoption code: a format bump resets every save, and the first migration is written once a
+  bump would strand someone's. Tolerant field reads in the codecs are not migrations. A
+  frontmatter key the app does not know is still dropped on the next write of that file.
 - One active company per launch: newest `createdAt`, alphabetical slug on ties.
-  Only that company's entities load or migrate; older saves remain untouched.
+  Only that company's entities load; older saves remain untouched.
 - A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone
   keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`, a
   user-initiated activity the shell holds, `src-tauri/src/keep_awake.rs`, never past a closed
@@ -163,8 +163,6 @@ allocator and the replay.
   `stripe trigger`) is money nobody paid, so it counts nowhere unless
   `IDLEBIZ_COUNT_TEST_MONEY=1` (AGENTS.md). Without it a test-mode key gives a bet no
   reading, not a zero, so a bet only it could read closes unmeasured, never as a loss.
-  An unstamped save's live revenue bet closes unmeasured too when adopted: its links tagged
-  only the product, so it could read none of its own money.
 - **Idle hands only spend against a fundable bet.** `allocate` decides everything about
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget
@@ -411,9 +409,8 @@ third boundary.
   `created[gt]` cursor in `state/orders-cursor.json`, one per key that has read (named by its
   mode and a digest, never the key), since a key of another mode or account lists none of this
   one's sessions: a key new to a mode already read starts from the oldest of that mode's
-  cursors, one of a mode never read from the floor (the founding; a save adopted from format 6
-  or older reads from the adoption). Each is held behind any checkout that may still be paid and re-reads the last 10
-  minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what
+  cursors, one of a mode never read from the founding. Each is held behind any checkout that
+  may still be paid and re-reads the last 10 minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what
   it read and cards the founder. A session on a listing's link with `payment_status` `paid`
   (complete alone is not paid) is kept as an order, on disk before Printful hears of it;
   its Printful `external_id` is the session id's hash, looked up (`/v2/orders/@<id>`) before a
@@ -458,20 +455,13 @@ third boundary.
   launch leaves the links waiting for it. Every pulse sweeps again, one sweep at a time and one
   link at a time, so a quit before Stripe answered is finished at the next launch; switching off
   a link already off answers the same. A link Stripe makes while its product retires is still
-  kept, and switched off at once. Format 6 and older kept no record of `create_payment_link`
-  links, and Stripe's links carry no date, so an older save adopted lists its products in
-  `state/unrecorded-links.json`, one of the two files in `state/` whose loss costs something:
-  nothing writes it again, so deleted, those links are never looked for. The other is such a
-  save's `state/orders-cursor.json`, whose floor is the adoption: deleted, reads start from the
-  founding and take every sale made on its links before then as new. Once one retires and a live
-  key is saved, one read of the account's active links cards the founder with those tagged for it (none switched off by
-  IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
-  say where each of a retired product's links stands. A reset switches off every live link not
+  kept, and switched off at once. `read_orders` and `kill_product` say where each of a retired
+  product's links stands. A reset switches off every live link not
   yet off before it deletes the save (`switchOffBeforeReset`), once each signed link Stripe is
   still making is recorded, and refuses a new one (`makingPaymentLink`), since nothing is left after to
   ship its prints or record a buyer, and its warning names each link Stripe left on, each paid
   print Printful never confirmed (but a held one whose card the founder settled), each paid order whose card still waits on the founder (a
-  delivery, one IdleBiz cannot send) and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned
+  delivery, one IdleBiz cannot send). Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `server/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
