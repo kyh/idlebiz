@@ -13,6 +13,7 @@ import type { RunResult, RunTools } from "./agents/agent-driver";
 import { keepAwake } from "./keep-awake";
 import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
+import type { Integrations } from "./tools";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
@@ -22,6 +23,7 @@ const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { writeMetricsConfig } = await import("./store/metrics-config");
 const { activityEvents } = await import("./activity");
 const { createScheduler, loggedToolName } = await import("./scheduler");
+const { founderActions } = await import("./founder-actions");
 const { setAutopilot } = await import("./company-actions");
 
 beforeEach(() => {
@@ -41,6 +43,27 @@ afterAll(() => {
 const NAMES = ["Priya", "Mae", "Sam", "Ana"];
 
 const asleep: KeepAwake = { hold: () => {} };
+
+const unasked = (what: string) => () =>
+  Promise.reject(new Error(`${what} without a test asking for it`));
+
+/** No test here calls out with a founder's key: a tool that would answers with the fault. */
+const integrations: Integrations = {
+  checkVercelToken: unasked("checked the Vercel token"),
+  checkoutAccess: unasked("read checkouts"),
+  createPaymentLink: unasked("made a payment link"),
+  deploy: unasked("deployed"),
+  linkAccess: unasked("read payment links"),
+  printListing: {
+    catalog: unasked("read the catalog"),
+    publish: unasked("listed a print"),
+    quote: unasked("priced a print"),
+    readFile: unasked("fetched a print file"),
+    stripeAccess: unasked("read Stripe's grants"),
+  },
+  productionHosts: unasked("read domains"),
+  setEnv: unasked("set a variable"),
+};
 
 /** A power blocker that only keeps count: the ids held now, and how many were ever started. */
 const fakeBlocker = () => {
@@ -142,7 +165,7 @@ const runEnds = () => {
 it("ignores queue drains after stop and resumes admission only after start", () => {
   found({ capUsd: 0, mode: "capped" });
   const task = queue("priya");
-  const drain = createScheduler(scripted().driver, asleep);
+  const drain = createScheduler(scripted().driver, asleep, integrations);
 
   drain.stop();
   drain.tick();
@@ -161,11 +184,12 @@ it("ignores queue drains after stop and resumes admission only after start", () 
 it("files the founder's pings at the cap, to run once the cap is raised", () => {
   found({ capUsd: 0, mode: "capped" });
   const { driver, started } = scripted();
-  const drain = createScheduler(driver, asleep);
+  const drain = createScheduler(driver, asleep, integrations);
+  const founder = founderActions(drain);
   drain.start();
 
-  drain.directEmployee("priya", "daily standup");
-  drain.founderMessage("@mae hello");
+  founder.directEmployee("priya", "daily standup");
+  founder.founderMessage("@mae hello");
 
   expect(store.listQueuedTasks().map((t) => t.assigneeId)).toEqual(["priya", "mae"]);
   expect(started()).toBe(0);
@@ -179,7 +203,7 @@ it("files the founder's pings at the cap, to run once the cap is raised", () => 
 
 it("refuses to start autopilot while the office is out of budget", () => {
   found({ capUsd: 0, mode: "capped" });
-  const drain = createScheduler(scripted().driver, asleep);
+  const drain = createScheduler(scripted().driver, asleep, integrations);
   drain.start();
 
   expect(() => setAutopilot(true)).toThrow(RefusalError);
@@ -202,7 +226,7 @@ describe("keeping the Mac awake", () => {
     found();
     const { driver, running } = scripted();
     const power = fakeBlocker();
-    const drain = createScheduler(driver, keepAwake(power.blocker));
+    const drain = createScheduler(driver, keepAwake(power.blocker), integrations);
     activityEvents.on("activity", refuseRunStart);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     queue("priya");
@@ -223,7 +247,7 @@ describe("keeping the Mac awake", () => {
     found();
     const { driver, running } = scripted();
     const power = fakeBlocker();
-    const drain = createScheduler(driver, keepAwake(power.blocker));
+    const drain = createScheduler(driver, keepAwake(power.blocker), integrations);
     queue("priya");
     queue("mae");
 
@@ -248,11 +272,11 @@ describe("keeping the Mac awake", () => {
       runTask: () => Promise.reject(new Error("spawn failed")),
     };
     queue("priya");
-    createScheduler(broken, keepAwake(power.blocker)).tick();
+    createScheduler(broken, keepAwake(power.blocker), integrations).tick();
     await vi.waitFor(() => expect(power.started()).toBe(1));
     await vi.waitFor(() => expect(power.held.size).toBe(0));
 
-    const drain = createScheduler(scripted().driver, keepAwake(power.blocker));
+    const drain = createScheduler(scripted().driver, keepAwake(power.blocker), integrations);
     queue("mae");
     drain.tick();
     expect(power.held.size).toBe(1);
@@ -265,7 +289,7 @@ describe("draining the queue", () => {
   it("keeps a slot back for the founder", () => {
     found();
     const { driver, running } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     const background = ["priya", "mae", "sam"].map((id) => queue(id));
 
     drain.tick();
@@ -278,7 +302,7 @@ describe("draining the queue", () => {
   it("gives the reserved slot to the founder's request", () => {
     found();
     const { driver } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     queue("priya");
     queue("mae");
     const urgent = queue("ana", "high");
@@ -292,7 +316,7 @@ describe("draining the queue", () => {
 
   it("starts the next task when one cannot be locked, and retries it next tick", () => {
     const company = found();
-    const drain = createScheduler(scripted().driver, asleep);
+    const drain = createScheduler(scripted().driver, asleep, integrations);
     const stuck = queue("priya", "high");
     const next = queue("mae");
     const taskDir = path.join(tasksDir(company.id), stuck.id);
@@ -324,6 +348,7 @@ describe("draining the queue", () => {
         },
       },
       asleep,
+      integrations,
     );
     queue("priya");
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -344,7 +369,7 @@ describe("draining the queue", () => {
     const parked = queue("ana");
     const free = queue("priya");
 
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
@@ -357,7 +382,7 @@ describe("draining the queue", () => {
     const parked = queue("ana");
     const free = queue("priya");
 
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
@@ -369,7 +394,7 @@ describe("a seal the boot check refuses", () => {
     found();
     const { driver, seal, started } = scripted();
     seal.holds = false;
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     const task = queue("priya");
 
     drain.start();
@@ -394,26 +419,29 @@ describe("assigning", () => {
   it("refuses a task that cannot be claimed", () => {
     found();
     const task = queue("priya");
-    const drain = createScheduler(scripted().driver, asleep);
+    const founder = founderActions(createScheduler(scripted().driver, asleep, integrations));
 
-    expect(() => drain.assign(task.id, "mae")).toThrow(RefusalError);
+    expect(() => founder.assign(task.id, "mae")).toThrow(RefusalError);
     expect(store.getTask(task.id)?.assigneeId).toBe("priya");
   });
 
   it("lets a fault while queuing reach the caller", () => {
     found();
     const { driver } = scripted();
-    const drain = createScheduler(
-      {
-        ...driver,
-        restingRunner: () => {
-          throw new Error("disk full");
+    const founder = founderActions(
+      createScheduler(
+        {
+          ...driver,
+          restingRunner: () => {
+            throw new Error("disk full");
+          },
         },
-      },
-      asleep,
+        asleep,
+        integrations,
+      ),
     );
 
-    expect(() => drain.directEmployee("priya", "ship it")).toThrow("disk full");
+    expect(() => founder.directEmployee("priya", "ship it")).toThrow("disk full");
   });
 });
 
@@ -427,7 +455,7 @@ const runOne = async (result: RunResult, betId: string | null = null) => {
     title: "Work",
   });
   store.claimTask(task.id, "priya");
-  createScheduler(driver, asleep).tick();
+  createScheduler(driver, asleep, integrations).tick();
   running.get("priya")?.(result);
   await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
   return { company, task };
@@ -464,7 +492,7 @@ describe("settling a run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
     running.get("priya")?.(done(1.25));
     await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
   });
@@ -473,7 +501,7 @@ describe("settling a run", () => {
     const company = found();
     const { driver, running } = scripted();
     const task = queue("priya");
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
     const taskDir = path.join(tasksDir(company.id), task.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const runs = runEnds();
@@ -496,7 +524,7 @@ describe("settling a run", () => {
     const company = found();
     const { driver, running } = scripted();
     const task = queue("priya");
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
     const dir = companyDir(company.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
@@ -571,7 +599,7 @@ describe("settling a run", () => {
   it("parks a run whose runner's login was refused, spending no attempt, until a sign-in finds it", async () => {
     found();
     const { driver, running, signedOut } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     const task = queue("priya");
     drain.tick();
     const error = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
@@ -593,7 +621,7 @@ describe("settling a run", () => {
   it("requeues runs cut short by a quit, no attempt spent, and starts nothing after them", async () => {
     found();
     const { driver, started } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     const cut = [queue("priya"), queue("mae")];
     const waiting = queue("sam");
     drain.tick();
@@ -623,7 +651,7 @@ describe("settling a run", () => {
         return interrupted;
       },
     };
-    const drain = createScheduler(slow, asleep);
+    const drain = createScheduler(slow, asleep, integrations);
     const task = queue("priya");
     drain.tick();
 
@@ -639,7 +667,7 @@ describe("settling a run", () => {
       ...scripted().driver,
       runTask: () => Promise.withResolvers<RunResult>().promise,
     };
-    const drain = createScheduler(stuck, asleep);
+    const drain = createScheduler(stuck, asleep, integrations);
     const task = queue("priya");
     drain.tick();
 
@@ -664,7 +692,7 @@ describe("settling a run", () => {
       runTask: () => Promise.reject(new Error("no CLI")),
     };
     queue("priya");
-    createScheduler(broken, asleep).tick();
+    createScheduler(broken, asleep, integrations).tick();
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.getEmployee("priya")).toMatchObject({
       instructionsDigest: "told",
@@ -677,7 +705,7 @@ describe("settling a run", () => {
     const { driver, running } = scripted();
     const task = queue("priya");
     store.grantApproval(task.id, "git push");
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
     running.get("priya")?.(done());
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.consumeApproval(task.id, "git push")).toBe(false);
@@ -701,7 +729,8 @@ const twoProducts = () => {
   const home = store.listProducts()[0]?.id ?? "";
   const side = store.createProduct({ description: "a side project", name: "Side" }).id;
   const { driver, resting, running } = scripted();
-  return { drain: createScheduler(driver, asleep), home, resting, running, side };
+  const drain = createScheduler(driver, asleep, integrations);
+  return { drain, founder: founderActions(drain), home, resting, running, side };
 };
 
 /** Run the employee's work on the product until it asks the founder to deploy it. */
@@ -726,12 +755,12 @@ const askToDeploy = async (
 describe("a run the founder signed for", () => {
   it("waits for the run already in its workspace, and nobody new starts there meanwhile", async () => {
     const office = twoProducts();
-    const { drain, home, running, side } = office;
+    const { drain, founder, home, running, side } = office;
     onProduct("mae", home);
     drain.tick();
     const ask = await askToDeploy(office, "priya", home);
 
-    const deploy = drain.resolveApproval(ask.id, true);
+    const deploy = founder.resolveApproval(ask.id, true);
     const beside = onProduct("sam", home);
     drain.tick();
 
@@ -749,10 +778,10 @@ describe("a run the founder signed for", () => {
 
   it("has its workspace to itself while another product's work goes on", async () => {
     const office = twoProducts();
-    const { drain, home, running, side } = office;
+    const { drain, founder, home, running, side } = office;
     const ask = await askToDeploy(office, "priya", home);
 
-    const deploy = drain.resolveApproval(ask.id, true);
+    const deploy = founder.resolveApproval(ask.id, true);
     const beside = onProduct("sam", home);
     drain.tick();
 
@@ -770,11 +799,11 @@ describe("a run the founder signed for", () => {
 
   it("holds nobody back while its own runner rests", async () => {
     const office = twoProducts();
-    const { drain, home, resting } = office;
+    const { drain, founder, home, resting } = office;
     const ask = await askToDeploy(office, "ana", home);
     resting.add("codex");
 
-    const deploy = drain.resolveApproval(ask.id, true);
+    const deploy = founder.resolveApproval(ask.id, true);
     const beside = onProduct("sam", home);
     drain.tick();
 
@@ -820,7 +849,7 @@ const MINUTE = 60_000;
 const proposeNothing = async () => {
   found();
   const { driver, running } = scripted();
-  const drain = createScheduler(driver, asleep);
+  const drain = createScheduler(driver, asleep, integrations);
   drain.start();
   drain.stop();
   expect(proposing()).toHaveLength(1);
@@ -843,7 +872,7 @@ const settleRun = () => {
   store.recordBetSpend(bet.id, 1);
   store.setBetReading(bet.id, 12, Date.now());
   const { driver, running } = scripted();
-  const drain = createScheduler(driver, asleep);
+  const drain = createScheduler(driver, asleep, integrations);
   drain.start();
   drain.stop();
   expect(settling()).toMatchObject([{ betId: bet.id }]);
@@ -856,7 +885,7 @@ describe("asking the lead for the next bet", () => {
     (origin) => {
       found();
       blockOnLead(origin);
-      const drain = createScheduler(scripted().driver, asleep);
+      const drain = createScheduler(scripted().driver, asleep, integrations);
 
       drain.start();
       drain.stop();
@@ -868,7 +897,7 @@ describe("asking the lead for the next bet", () => {
   it("hands the proposal tools that fund nothing but the bet it opens", async () => {
     found();
     const { driver, tools } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
 
     drain.start();
     drain.stop();
@@ -883,7 +912,7 @@ describe("asking the lead for the next bet", () => {
   it("waits while the lead's last proposal does", () => {
     found();
     blockOnLead("propose");
-    const drain = createScheduler(scripted().driver, asleep);
+    const drain = createScheduler(scripted().driver, asleep, integrations);
 
     drain.start();
     drain.stop();
@@ -968,7 +997,7 @@ describe("a file the save refuses on every tick", () => {
       store.setBetReading(bet.id, 60, Date.now());
     }
     const task = queue("priya");
-    const drain = createScheduler(scripted().driver, asleep);
+    const drain = createScheduler(scripted().driver, asleep, integrations);
     const dir = path.dirname(betFile(company.id, stuck.id));
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
@@ -988,7 +1017,7 @@ describe("a file the save refuses on every tick", () => {
   it("still sends idle hands to work past a due routine that cannot be marked run", () => {
     const company = found(UNCAPPED, "game-studio");
     const [routine] = store.listRoutines();
-    const drain = createScheduler(scripted().driver, asleep);
+    const drain = createScheduler(scripted().driver, asleep, integrations);
     const dir = path.dirname(routineFile(company.id, routine?.id ?? ""));
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1011,7 +1040,7 @@ describe("a due routine", () => {
   it("goes only to someone whose runner can start it, and waits till one can", () => {
     found(UNCAPPED, "game-studio");
     const { driver, signedOut } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     try {
       signedOut.add("claude").add("codex");
@@ -1042,7 +1071,7 @@ describe("a bet that stops taking work mid-run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
     store.measureBet(bet.id, Date.now());
     const heard: ActivityEvent[] = [];
     const listen = (e: ActivityEvent) => heard.push(e);
@@ -1081,7 +1110,7 @@ describe("a bet that stops taking work mid-run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver, asleep).tick();
+    createScheduler(driver, asleep, integrations).tick();
     store.killBet(bet.id, "dud", Date.now());
     const heard: ActivityEvent[] = [];
     const listen = (e: ActivityEvent) => heard.push(e);
@@ -1111,7 +1140,7 @@ describe("a bet that stops taking work mid-run", () => {
     const bet = openBet(5);
     store.createTask({ assigneeId: "mae", betId: bet.id, origin: "work", title: "Post it" });
     store.killBet(bet.id, "dud", Date.now());
-    const drain = createScheduler(scripted().driver, asleep);
+    const drain = createScheduler(scripted().driver, asleep, integrations);
 
     drain.start();
     drain.stop();
@@ -1133,7 +1162,7 @@ describe("a release", () => {
     });
     store.claimTask(task.id, "mae");
     store.archiveEmployee("mae");
-    const drain = createScheduler(scripted().driver, asleep);
+    const drain = createScheduler(scripted().driver, asleep, integrations);
 
     drain.start();
     drain.stop();
@@ -1150,14 +1179,14 @@ describe("a release", () => {
     found();
     const bet = openBet(5);
     const { driver, running } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     const task = store.createTask({
       assigneeId: "mae",
       betId: bet.id,
       origin: "work",
       title: "Post it",
     });
-    drain.assign(task.id, "mae");
+    drain.enqueue(task.id, "mae");
     running.get("mae")?.({
       ...done(),
       outcome: { ask: { question: "Ship it?", type: "question" }, kind: "blocked" },
@@ -1165,7 +1194,7 @@ describe("a release", () => {
     await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
     store.archiveEmployee("mae");
 
-    const continuation = drain.answerQuestion(task.id, "yes");
+    const continuation = founderActions(drain).answerQuestion(task.id, "yes");
 
     expect(continuation.assigneeId).toBe("priya");
     expect(kindOf(continuation)).toBe("running");
@@ -1175,14 +1204,14 @@ describe("a release", () => {
     found();
     const bet = openBet(5);
     const { driver, resting, running } = scripted();
-    const drain = createScheduler(driver, asleep);
+    const drain = createScheduler(driver, asleep, integrations);
     const task = store.createTask({
       assigneeId: "mae",
       betId: bet.id,
       origin: "work",
       title: "Post it",
     });
-    drain.assign(task.id, "mae");
+    drain.enqueue(task.id, "mae");
     running.get("mae")?.({
       ...done(),
       outcome: {
@@ -1192,7 +1221,7 @@ describe("a release", () => {
     });
     await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
     resting.add("claude");
-    const continuation = drain.resolveApproval(task.id, true);
+    const continuation = founderActions(drain).resolveApproval(task.id, true);
 
     expect(store.archiveEmployee("mae")).toMatchObject({ dropped: 0, rehomed: 1 });
     expect(store.getTask(continuation.id)).toMatchObject({
@@ -1215,7 +1244,7 @@ const blockedOn = async (ask: BlockedAsk, productId?: string | null) => {
   found();
   const bet = openBet(5);
   const { driver, running } = scripted();
-  const drain = createScheduler(driver, asleep);
+  const drain = createScheduler(driver, asleep, integrations);
   const task = store.createTask({
     assigneeId: "mae",
     betId: bet.id,
@@ -1223,12 +1252,12 @@ const blockedOn = async (ask: BlockedAsk, productId?: string | null) => {
     productId: productId === undefined ? bet.productId : productId,
     title: "Launch",
   });
-  drain.assign(task.id, "mae");
+  drain.enqueue(task.id, "mae");
   running.get("mae")?.({ ...done(), outcome: { ask, kind: "blocked" } });
   await vi.waitFor(() => expect(store.getEmployee("mae")?.status).toBe("idle"));
   drain.start();
   drain.stop();
-  return { bet, drain, task };
+  return { bet, founder: founderActions(drain), task };
 };
 
 const bindFor = (productId: string | null): BlockedAsk => ({
@@ -1253,13 +1282,13 @@ describe("an integration the founder connects", () => {
   };
 
   it("resumes no ask for a Stripe key on a read-only Stripe connection", async () => {
-    const { drain, task } = await blockedOn(KEY);
-    drain.resumeIntegrationAsks("stripe");
+    const { founder, task } = await blockedOn(KEY);
+    founder.resumeIntegrationAsks("stripe");
     expect(kindOf(task)).toBe("blocked");
   });
 
   it("leaves an ask to count revenue waiting while Stripe stays in test mode", async () => {
-    const { drain, task } = await blockedOn(READ);
+    const { founder, task } = await blockedOn(READ);
     writeFileSync(
       path.join(root, "secrets.json"),
       JSON.stringify({ STRIPE_CONNECT_TOKEN: "sk_live_connected", STRIPE_SECRET_KEY: "sk_test_x" }),
@@ -1267,53 +1296,53 @@ describe("an integration the founder connects", () => {
     writeMetricsConfig(task.companyId, {
       stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true },
     });
-    drain.resumeIntegrationAsks("stripe");
+    founder.resumeIntegrationAsks("stripe");
     expect(kindOf(task)).toBe("blocked");
   });
 
   it.each([KEY, READ])("resumes %j once a Stripe key is saved", async (ask) => {
-    const { drain, task } = await blockedOn(ask);
-    drain.resumeIntegrationAsks("stripe", "stripe-key");
+    const { founder, task } = await blockedOn(ask);
+    founder.resumeIntegrationAsks("stripe", "stripe-key");
     expect(kindOf(task)).not.toBe("blocked");
   });
 
   it("resumes a product's Vercel ask only once that product is bound", async () => {
-    const { drain, task } = await blockedOn(bindFor("acme"));
+    const { founder, task } = await blockedOn(bindFor("acme"));
     const home = task.productId ?? "";
     expect(home).toBe("acme");
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
-    drain.resumeVercelAsks({ kind: "product", productId: side });
+    founder.resumeVercelAsks({ kind: "product", productId: side });
     expect(kindOf(task)).toBe("blocked");
-    drain.resumeVercelAsks({ kind: "product", productId: home });
+    founder.resumeVercelAsks({ kind: "product", productId: home });
     expect(kindOf(task)).not.toBe("blocked");
   });
 
   it("resumes every product's Vercel ask once the first token is saved, whichever product it came through", async () => {
-    const { drain, task } = await blockedOn({
+    const { founder, task } = await blockedOn({
       integration: "vercel",
       productId: "acme",
       reason: "to deploy Acme",
       type: "integration",
     });
     store.createProduct({ description: "a side project", name: "Side" });
-    drain.resumeVercelAsks({ kind: "token" });
+    founder.resumeVercelAsks({ kind: "token" });
     expect(kindOf(task)).not.toBe("blocked");
   });
 
   it("resumes a Vercel ask about another product once that product is bound, not the run's own", async () => {
-    const { drain, task } = await blockedOn(bindFor("side"));
+    const { founder, task } = await blockedOn(bindFor("side"));
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
     expect(side).toBe("side");
-    drain.resumeVercelAsks({ kind: "product", productId: task.productId ?? "" });
+    founder.resumeVercelAsks({ kind: "product", productId: task.productId ?? "" });
     expect(kindOf(task)).toBe("blocked");
-    drain.resumeVercelAsks({ kind: "product", productId: side });
+    founder.resumeVercelAsks({ kind: "product", productId: side });
     expect(kindOf(task)).not.toBe("blocked");
   });
 
   it("resumes a Vercel ask that named no product on any binding", async () => {
-    const { drain, task } = await blockedOn(bindFor(null), null);
+    const { founder, task } = await blockedOn(bindFor(null), null);
     const side = store.createProduct({ description: "a side project", name: "Side" }).id;
-    drain.resumeVercelAsks({ kind: "product", productId: side });
+    founder.resumeVercelAsks({ kind: "product", productId: side });
     expect(kindOf(task)).not.toBe("blocked");
   });
 });
@@ -1323,11 +1352,11 @@ const workOn = (betId: string): Task[] =>
 
 describe("an action only the founder can take", () => {
   it("gives its bet no hands until the founder answers, then resumes with what they sent back", async () => {
-    const { bet, drain, task } = await blockedOn(POST);
+    const { bet, founder, task } = await blockedOn(POST);
 
     expect(workOn(bet.id)).toEqual([]);
 
-    const continuation = drain.resolveAction(task.id, {
+    const continuation = founder.resolveAction(task.id, {
       kind: "done",
       note: "https://reddit.com/r/SideProject/1",
     });
@@ -1343,9 +1372,9 @@ describe("an action only the founder can take", () => {
   });
 
   it("carries the founder's reason when they could not", async () => {
-    const { drain, task } = await blockedOn(POST);
+    const { founder, task } = await blockedOn(POST);
 
-    const continuation = drain.resolveAction(task.id, {
+    const continuation = founder.resolveAction(task.id, {
       kind: "cant",
       reason: "no Reddit account",
     });
@@ -1354,14 +1383,14 @@ describe("an action only the founder can take", () => {
   });
 
   it("answers only an action", async () => {
-    const { drain, task } = await blockedOn({ question: "Ship it?", type: "question" });
+    const { founder, task } = await blockedOn({ question: "Ship it?", type: "question" });
 
-    expect(() => drain.resolveAction(task.id, { kind: "done", note: "" })).toThrow(RefusalError);
+    expect(() => founder.resolveAction(task.id, { kind: "done", note: "" })).toThrow(RefusalError);
     expect(kindOf(task)).toBe("blocked");
   });
 
   it("sends none of IdleBiz's own keys to the team, whatever the founder types", async () => {
-    const { drain, task } = await blockedOn(POST);
+    const { founder, task } = await blockedOn(POST);
     const key = "sk_live_founders_own_key";
     writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
     const card = store.raiseOrderCard("Order 1: deliver it", {
@@ -1372,11 +1401,11 @@ describe("an action only the founder can take", () => {
     });
 
     for (const send of [
-      () => drain.resolveAction(task.id, { kind: "done", note: `use ${key}` }),
-      () => drain.resolveAction(card?.id ?? "", { kind: "done", note: key }),
-      () => drain.resolveAction(card?.id ?? "", { kind: "done", note: "rk_live_some0therKey" }),
-      () => drain.founderMessage(`@mae the key is ${key}`),
-      () => drain.directEmployee("mae", key),
+      () => founder.resolveAction(task.id, { kind: "done", note: `use ${key}` }),
+      () => founder.resolveAction(card?.id ?? "", { kind: "done", note: key }),
+      () => founder.resolveAction(card?.id ?? "", { kind: "done", note: "rk_live_some0therKey" }),
+      () => founder.founderMessage(`@mae the key is ${key}`),
+      () => founder.directEmployee("mae", key),
     ]) {
       expect(send).toThrow(RefusalError);
     }
@@ -1386,14 +1415,14 @@ describe("an action only the founder can take", () => {
   });
 
   it("sends the team no Stripe secret key, and a restricted one they asked for", async () => {
-    const { drain, task } = await blockedOn(POST);
+    const { founder, task } = await blockedOn(POST);
     const secret = "sk_live_foundersUnrestricted1";
 
     for (const send of [
-      () => drain.resolveAction(task.id, { kind: "done", note: `here: ${secret}` }),
-      () => drain.resolveAction(task.id, { kind: "cant", reason: "sk_test_onlyTheTestOne1" }),
-      () => drain.founderMessage(`@mae use ${secret}`),
-      () => drain.directEmployee("mae", secret),
+      () => founder.resolveAction(task.id, { kind: "done", note: `here: ${secret}` }),
+      () => founder.resolveAction(task.id, { kind: "cant", reason: "sk_test_onlyTheTestOne1" }),
+      () => founder.founderMessage(`@mae use ${secret}`),
+      () => founder.directEmployee("mae", secret),
     ]) {
       expect(send).toThrow(
         "Nothing was sent: that holds a Stripe secret key (sk_), which can charge, refund and pay out on your whole account",
@@ -1402,7 +1431,7 @@ describe("an action only the founder can take", () => {
     expect(kindOf(task)).toBe("blocked");
     expect(JSON.stringify(store.recentTeamMessages())).not.toContain(secret);
 
-    const continuation = drain.resolveAction(task.id, {
+    const continuation = founder.resolveAction(task.id, {
       kind: "done",
       note: "rk_live_checkoutReadOnly1",
     });
@@ -1411,7 +1440,7 @@ describe("an action only the founder can take", () => {
 
   it("settles an order card with no run, telling the room what the founder did", () => {
     found();
-    const drain = createScheduler(scripted().driver, asleep);
+    const founder = founderActions(createScheduler(scripted().driver, asleep, integrations));
     const card = store.raiseOrderCard("Order 1: Printful marked it failed", {
       action: "Check Ada's order",
       draft: null,
@@ -1419,7 +1448,7 @@ describe("an action only the founder can take", () => {
       type: "action",
     });
 
-    const settled = drain.resolveAction(card?.id ?? "", { kind: "cant", reason: "on holiday" });
+    const settled = founder.resolveAction(card?.id ?? "", { kind: "cant", reason: "on holiday" });
 
     expect(settled).toMatchObject({ assigneeId: null, state: { by: null, kind: "superseded" } });
     expect(store.listOpenTasks()).toEqual([]);

@@ -22,6 +22,8 @@ import { writeAgentLauncher } from "./agent-launcher";
 import { agentDriver } from "./agents/agent-driver";
 import { setAutopilot, switchOffBeforeReset } from "./company-actions";
 import { controlPlane } from "./control-plane";
+import { deployToVercel } from "./deploy";
+import { founderActions } from "./founder-actions";
 import { host, hostOver, launchSchema, setHost } from "./host";
 import type { Launch } from "./host";
 import { keepAwake } from "./keep-awake";
@@ -34,18 +36,34 @@ import { adoptShellPath } from "./lib/shell-path";
 import { openedAtLogin } from "./login-item";
 import { metricsPulse } from "./metrics-pulse";
 import { createPageRouter } from "./page-router";
+import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./payment-links";
 import { devPageOrigin, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
 import { ON_REAL_SAVE, ROOT_DIR, RUN_BIN_DIR } from "./paths";
+import { printListing } from "./print-listing";
 import { stdioPeer } from "./relay/stdio";
 import { createScheduler } from "./scheduler";
 import { checkSecrets, setSealer } from "./secrets";
 import * as store from "./store/store";
 import { initStripeConnect, revokeBeforeReset } from "./stripe-connect";
+import type { Integrations } from "./tools";
 import { appTray } from "./tray";
+import { productionHosts, validateToken } from "./vercel";
 import { initVercelConnect } from "./vercel-connect";
+import { setVercelEnv } from "./vercel-env";
 
 initLog();
+
+const integrations: Integrations = {
+  checkVercelToken: validateToken,
+  checkoutAccess: stripeCheckoutAccess,
+  createPaymentLink: stripePaymentLink,
+  deploy: deployToVercel,
+  linkAccess: stripeLinkAccess,
+  printListing,
+  productionHosts,
+  setEnv: setVercelEnv,
+};
 
 // the shell's power assertion: one at a time, since keepAwake starts at most one
 const scheduler = createScheduler(
@@ -59,7 +77,10 @@ const scheduler = createScheduler(
       host().keepAwake(false);
     },
   }),
+  integrations,
 );
+
+const founder = founderActions(scheduler);
 
 // An ended turn's agent is left to shut down, with a timer to kill its process group if it
 // does not; that timer never fires once the app exits, so every exit waits the agents out.
@@ -106,7 +127,7 @@ const resetGame = async (): Promise<void> => {
 /** Stripe reads revenue now: read it at once, and resume the work that waited on it. */
 const stripeReady = (...needs: IntegrationNeed[]): void => {
   metricsPulse.now();
-  scheduler.resumeIntegrationAsks(...needs);
+  founder.resumeIntegrationAsks(...needs);
 };
 
 /** "Seen" is the last moment the founder had the office in front of them; the
@@ -230,7 +251,7 @@ const boot = async (launch: Launch): Promise<void> => {
   writeAgentLauncher(RUN_BIN_DIR, process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
   // the largest call a page makes: a pasted key, a long answer to a question
-  const rpc = new RPCHandler(createPageRouter({ resetGame, scheduler, stripeReady }), {
+  const rpc = new RPCHandler(createPageRouter({ founder, resetGame, stripeReady }), {
     plugins: [new BodyLimitPlugin({ maxBodySize: 1024 * 1024 })],
   });
   const served = await startPageServer({
@@ -263,7 +284,7 @@ const boot = async (launch: Launch): Promise<void> => {
   initVercelConnect({
     onConnected: (connection) => {
       metricsPulse.now();
-      scheduler.resumeVercelAsks(connection);
+      founder.resumeVercelAsks(connection);
     },
   });
 

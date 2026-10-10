@@ -216,7 +216,12 @@ allocator and the replay.
   `server/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's page.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
   or employee), so the room agents read and the #team feed hold the same lines and no
-  office news reads as the founder's word.
+  office news reads as the founder's word. What the founder hands the team (a room message,
+  a direct request, an answer, a sign-off, an assignment, a connection resuming the asks it
+  answers) is `server/founder-actions.ts`, which files and queues through the scheduler's
+  `file` and `enqueue`. The scheduler keeps the tick, admission, autopilot and the runs, and
+  is handed at boot the integrations a run's tools call out with (`Integrations` in
+  `server/tools.ts`), so tests fake them.
 - **Five businesses, one way to earn.** `BUSINESS_MODELS` in `server/prompts/instructions.ts`
   tells each run how its type makes money with the tools there are: software sells once
   through `create_payment_link`, a game studio a web game's paid unlock, ecommerce prints

@@ -509,7 +509,9 @@ rather than crashing boot.
   package ⇄ domain object mapping per kind; `company-codec.ts` owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
-  never past a closed lid), `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only
+  never past a closed lid), `founder-actions.ts` (what the founder hands the team, filed and
+  queued through the scheduler), `company-actions.ts` (a change everyone hears about),
+  `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only
   that run's seal reaches, that the agents' `idlebiz` command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools.ts` (each bound to its
   implementation), `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a line
