@@ -268,8 +268,9 @@ third boundary.
   run, every path a `-D` parameter. Each run resolves its own (`machineSeal`), so a path that
   became a symlink since boot is sealed where it leads from the next run on.
   - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
-    credentials, cloud and deploy CLIs, browser and chat-app profiles, agent-browser's saved
-    logins), `secrets.json` with every name that starts with it, the other runner's home, and,
+    credentials, cloud and deploy CLIs, App Store Connect's notary keys, browser and chat-app
+    profiles, agent-browser's saved logins), `secrets.json` with every name that starts with it,
+    the other runner's home, and,
     for a codex run, what of the founder's own it would load (`personal` in `RUNNER_HOMES`):
     their skills (`$CODEX_HOME/skills`, codex's own `.system` ones in it, and
     `~/.agents/skills`), since codex loads every skill it can read and no setting leaves them
@@ -645,7 +646,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     is a breaking store change: a TASK.md still asking under it reads as the question it says.
 - **What stays open**, on purpose or for want of a rule:
   - the network: a run can send what it reads anywhere;
-  - reads across HOME outside the login stores (another project's `.env`, transcripts);
+  - reads across HOME outside the login stores (another project's `.env`, transcripts), this
+    checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which
+    sign nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`;
   - to claude runs, which share the founder's login, the Keychain: claude reads its login
     there, so a token the founder's `gh` or git keeps there is guarded only by the tripwire's
     `read-credentials` and `git-push` holds;
@@ -765,8 +768,8 @@ signed-in CLI under the macOS seal and skips without one, never spends, not part
 CI (see `AGENTS.md`).
 `pnpm -F @repo/desktop package` packs the app on a Mac (`scripts/package.ts`), signed with the
 keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack)
-and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
-that is not both.
+and notarized when `apps/desktop/.env` names the notary key, whose `.p8` sits in
+`~/.appstoreconnect/private_keys`; `release:publish` refuses a pack that is not both.
 Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
 loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
 `pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then

@@ -344,8 +344,10 @@ rather than crashing boot.
   grant, since the key IdleBiz charges with makes every link.
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
-- `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
-  `pnpm --filter @repo/desktop package`.
+- `apps/desktop/.env` (see `.env.example`) is release-only: the id and issuer of the App Store
+  Connect key `pnpm --filter @repo/desktop package` notarizes with. The key's `.p8` sits in
+  `~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the seal keeps
+  from every run; never keep it in the checkout, which runs can read.
 
 ## Rules that matter
 

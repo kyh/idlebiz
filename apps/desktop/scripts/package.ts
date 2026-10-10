@@ -1,5 +1,5 @@
 // The Mac app: the shell, the node beside it, and the server with the page it serves as a resource, signed, notarized when
-// apps/desktop/.env holds the notary's key, and the release's dmg in .output/bin. The release
+// apps/desktop/.env names the notary's key, and the release's dmg in .output/bin. The release
 // material is read HERE, in the one process that packs, rather than from the shell's environment.
 // A pack with no Developer ID stops unless IDLEBIZ_PACK_UNSIGNED=1 asks for an ad-hoc one, and a
 // release (IDLEBIZ_RELEASE=1, which release:publish sets) stops unless it is signed and notarized.
@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { writeRustNotices } from "./rust-notices.ts";
@@ -48,8 +49,14 @@ interface Notary {
   APPLE_API_KEY_PATH: string;
 }
 
-// apps/desktop/.env, in electron-builder's names, which Tauri reads under its own:
-// APPLE_API_KEY is the .p8's path there, its id here
+// one of the folders Apple's altool searches for an App Store Connect key, which the seal keeps
+// from every run (`LOGINS` in apps/cli/src/server/agents/seal.ts): no path is configurable,
+// since a key anywhere else, the checkout included, is one any run can read
+const NOTARY_KEYS = path.join(homedir(), ".appstoreconnect", "private_keys");
+const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY_ID"]);
+
+// apps/desktop/.env names the key, its .p8 under NOTARY_KEYS by the name Apple downloads it as;
+// Tauri reads the id as APPLE_API_KEY
 const notaryEnv = (): Notary | null => {
   const file = path.join(packageRoot, ".env");
   if (!existsSync(file)) {
@@ -62,16 +69,27 @@ const notaryEnv = (): Notary | null => {
       values.set(match.groups.name, match.groups.value);
     }
   }
+  const unknown = [...values.keys()].filter((name) => !ENV_NAMES.has(name));
+  if (unknown.length > 0) {
+    throw new Error(
+      `apps/desktop/.env names ${unknown.join(", ")}: it holds only ${[...ENV_NAMES].join(" and ")}, and the key's .p8 sits in ${NOTARY_KEYS}`,
+    );
+  }
   const issuer = values.get("APPLE_API_ISSUER");
-  const keyPath = values.get("APPLE_API_KEY");
   const keyId = values.get("APPLE_API_KEY_ID");
-  if (issuer === undefined || keyPath === undefined || keyId === undefined) {
+  if (issuer === undefined || keyId === undefined) {
     return null;
+  }
+  const keyPath = path.join(NOTARY_KEYS, `AuthKey_${keyId}.p8`);
+  if (!existsSync(keyPath)) {
+    throw new Error(
+      `apps/desktop/.env names a notary key, but ${keyPath} is missing: move the key's .p8 there`,
+    );
   }
   return {
     APPLE_API_ISSUER: issuer,
     APPLE_API_KEY: keyId,
-    APPLE_API_KEY_PATH: path.resolve(packageRoot, keyPath),
+    APPLE_API_KEY_PATH: keyPath,
   };
 };
 
@@ -133,8 +151,8 @@ if (process.env.IDLEBIZ_RELEASE === "1" && notary === null) {
 log(signed ? `signing as ${identity}` : "signing ad-hoc: this pack opens only on this Mac");
 log(
   notary === null
-    ? "apps/desktop/.env holds no notary key — not notarized"
-    : "notarizing with apps/desktop/.env's key",
+    ? "apps/desktop/.env names no notary key — not notarized"
+    : `notarizing with ${notary.APPLE_API_KEY_PATH}`,
 );
 
 // the page first, then the server, which stages it beside its bundle
