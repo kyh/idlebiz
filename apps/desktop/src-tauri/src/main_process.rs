@@ -10,7 +10,7 @@
 //! shell that crashed or was killed ends main too, and main stops its runs on the way out. A thread
 //! of its own writes it, so a main that stops reading holds that thread alone: never a quit's
 //! wait, which then ends main the hard way. There is no restart: main owns the save, and a second
-//! one under a first that has not let go would race it.
+//! one under a first that has not let go would be refused it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;

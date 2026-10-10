@@ -759,6 +759,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   than `NODE_ENV`, which the shell drops so none loads code into main (`scrubbed_env`).
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
+- **One main per save.** Boot claims the save before it reads it (`server/save-claim.ts`): a
+  main on a save another holds (`pnpm dev:desktop` while the installed app has `~/.idlebiz`
+  open) refuses to boot and says so; one a crash left holds nothing.
 
 Commands: `pnpm verify` · `pnpm dev:browser` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 · `pnpm e2e` · `pnpm -F @repo/desktop package`

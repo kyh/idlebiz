@@ -140,7 +140,9 @@ so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
 > (`server/paths.ts`). The whole shell env reaches main, and the employees' CLIs less its
 > credential-shaped names, as in a terminal launch. Isolation protects the real save, but
-> onboarding and employee runs still bill the signed-in CLI.
+> onboarding and employee runs still bill the signed-in CLI. One main holds a save at a time:
+> boot claims it first (`server/save-claim.ts`), so a dev launch on `~/.idlebiz` while the
+> installed IdleBiz has it open refuses to boot, saying so, rather than run each task twice.
 
 ```sh
 IDLEBIZ_ROOT_DIR="$(mktemp -d)" pnpm dev:browser   # serves http://localhost:31100/
@@ -501,6 +503,8 @@ rather than crashing boot.
   `dev-host/host.ts` (main as the shell runs it, for `pnpm dev:browser` and the e2e suite, which
   ask it for the handoff the shell's window opens on).
 - `apps/cli/src/server` — main. `serve.ts` (boot on the shell's hello, the relay, quit),
+  `save-claim.ts` (boot's claim on the save: a socket main listens on while it runs, which a
+  second main on that save finds answering and refuses to boot on),
   `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio channel),
   `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
   `page-session.ts` the sign-in, `page-policy.ts` the page's CSP), `page-router.ts` (the page's

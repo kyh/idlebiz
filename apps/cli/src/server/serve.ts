@@ -1,4 +1,5 @@
-// Main, the server `idlebiz serve` runs: the one process that owns the save, the keys and the runs.
+// Main, the server `idlebiz serve` runs: the one process that owns the save, the keys and the runs,
+// and boot's first step claims the save, so a second main on it refuses (`save-claim.ts`).
 // It runs as the desktop shell's node child (or the dev host's), which speaks to it over its stdio
 // (`relay/stdio.ts`), and its first import is its boot (commands/serve.ts loads it for `serve`
 // alone). The shell says hello with the facts of this launch, and main boots; main asks it for
@@ -10,6 +11,7 @@
 
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
 import { z } from "zod";
@@ -42,6 +44,8 @@ import type { PageServer, PageSource } from "./page-server";
 import { ON_REAL_SAVE, ROOT_DIR, RUN_BIN_DIR } from "./paths";
 import { printListing } from "./print-listing";
 import { stdioPeer } from "./relay/stdio";
+import { claimSave } from "./save-claim";
+import type { SaveClaim } from "./save-claim";
 import { createScheduler } from "./scheduler";
 import { checkSecrets, setSealer } from "./secrets";
 import * as store from "./store/store";
@@ -186,6 +190,9 @@ const bootSettled = async (): Promise<void> => {
   }
 };
 
+// this main's hold on the save, from the boot's first step: a boot refused it holds none to let go
+let claim: SaveClaim | null = null;
+
 // the window's page and main's door for it, once the boot has started it
 let page: PageServer | null = null;
 
@@ -201,6 +208,7 @@ const quit = async (): Promise<void> => {
     } finally {
       controlPlane.stop();
       await page?.stop();
+      claim?.release();
     }
   })();
   await quitting;
@@ -239,6 +247,7 @@ const pageSourceOf = (launch: Launch): PageSource => {
 
 const boot = async (launch: Launch): Promise<void> => {
   setHost(hostOver(peer), launch);
+  claim = await claimSave(ROOT_DIR, homedir());
   sealSecrets(launch);
   store.initStore();
   const unreadableSecrets = checkSecrets();
