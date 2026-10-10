@@ -96,8 +96,8 @@ apps/
                  `dev:browser` and e2e. resources/: the skills and the employee sheets main reads.
                  The build is dist/index.js with its chunks flat beside it, and the page staged
                  as dist/page.
-  web/           @repo/web — the landing page (Next.js on Vercel): the download and the Stripe
-                 Connect OAuth hop.
+  web/           @repo/web — the landing page (Next.js on Vercel): the download and the trust
+                 pages. The app sends it nothing.
 packages/
   domain/        @repo/domain — the vocabulary both sides share, pure: the company and its
                  people, the bets and their judge, the activity grammar, money's formatting, the
@@ -109,9 +109,6 @@ packages/
   agent-driver/  @repo/agent-driver — the ACP runtime: a turn over claude-agent-acp or codex-acp,
                  the runners' registry, tool asks, rate limits and pricing.
   px-kit/        @repo/px-kit — the pixel UI kit both apps draw with (see the px-kit trap below).
-  stripe-connect-protocol/
-                 @repo/stripe-connect-protocol — the Stripe Connect handshake between
-                 idlebiz.com and the app, typed once.
 tools/
   e2e/           @repo/e2e — Playwright over the built page and main, through the dev host.
 ```

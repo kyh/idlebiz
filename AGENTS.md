@@ -5,8 +5,8 @@ coding CLIs. The app is two programs, laid out as kyh/inteligir's are: `apps/des
 shell around the office page, and `apps/cli`, the `idlebiz` binary, whose `idlebiz serve` is
 main, the node process that spawns real `claude` / `codex` sessions and saves the whole company
 as human-readable markdown under `~/.idlebiz/`. Every other verb of `idlebiz` is a company tool
-the employees call. A small Next.js landing page (`apps/web`) ships the download and the Stripe
-Connect OAuth hop. This is the tool-agnostic guide for coding agents — meant to be run, not just
+the employees call. A small Next.js landing page (`apps/web`) ships the download; the app sends
+it nothing. This is the tool-agnostic guide for coding agents — meant to be run, not just
 read. Claude also reads `CLAUDE.md`; both point back here.
 
 Paths below are short, as in CLAUDE.md: `server/…` and `commands/…` are under `apps/cli/src/`,
@@ -164,7 +164,7 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 
 | Surface                                | How to reach it                       | CLI needed? |
 | -------------------------------------- | ------------------------------------- | ----------- |
-| `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                        | no          |
+| `apps/web` landing                     | `pnpm dev:web`                        | no          |
 | Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
@@ -189,8 +189,6 @@ that runs main differs (the dev host, or the shell).
 Nothing is required to run. Every key is optional and its absence disables one feature
 rather than crashing boot.
 
-- `apps/web` — `STRIPE_CLIENT_ID`, `STRIPE_SECRET_KEY` (see `.env.example`, read through
-  `src/lib/env.ts`). Missing ⇒ `/api/stripe/*` refuses the flow with a clear message.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`. They are
   IdleBiz's own: main reads each where it uses it (`getSecret` in `server/secrets.ts`) and
   exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
@@ -533,7 +531,8 @@ rather than crashing boot.
   record, only a packaged app registers one, and a launch at login starts in the menu bar).
 - `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`) and the
   employee sheets (`employee-sheets/`).
-- `apps/web` — landing page plus the three Stripe Connect route handlers.
+- `apps/web` — the landing page, its trust pages and their Markdown for agents; it holds no
+  secret and the app calls none of it.
 - `packages/domain` — the vocabulary both sides share, pure: `domain.ts` (the company, its
   people, products and tasks), `bets.ts` (the bets, their judge and the allocator),
   `activity.ts` (the event grammar), `digest.ts`, `hire.ts`, `integrations.ts`, `hold-rules.ts`
@@ -543,8 +542,6 @@ rather than crashing boot.
   its routes (`routes.ts`) and the event stream's names (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
   prices usage, and classes failures (auth, access denied, usage limit, overload, context, other). Source-only, no build step.
-- `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
-  and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,
   VG5000, every `.px-*` class), imported by both apps after Tailwind.
 - `tools/e2e` — the Playwright suite over the built page and main (`src/harness.ts` launches them
