@@ -11,8 +11,8 @@ kyh/inteligir's are: this one is the app, `apps/cli` the server and the binary.
 ```
 src-tauri/        the shell, in Rust: the window and its pin, main as its one child, and what
                   main asks of a native app
-src/renderer/     the page: React over a Phaser scene, calling main through `api()`, the client
-                  of the oRPC contract in packages/contract (`api.ts`, `install-api.ts`)
+src/renderer/     the page: React over a Phaser scene, calling main through `api`, the client
+                  of the oRPC contract in packages/contract (`api.ts`, `page-events.ts`)
 scripts/          the pack: node, the server staged, signing, notices, the dmg, the release
 ```
 
@@ -60,8 +60,8 @@ window is its server's page. The shell asks main for a handoff and opens the win
 one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
 page's session cookie (HttpOnly, SameSite=Strict, a secret minted per boot) and drops the nonce from
 the address (`apps/cli/src/server/page-session.ts`). The page then calls main over its oRPC
-contract (under `/rpc`) and hears its events (a server-sent stream, `/events`) on its own origin
-(`src/renderer/install-api.ts`), and reaches no Tauri command: no capability grants it one, and
+contract (under `/rpc`), its event stream among them, on its own origin (`src/renderer/api.ts`,
+`src/renderer/page-events.ts`), and reaches no Tauri command: no capability grants it one, and
 `removeUnusedCommands` leaves none in the binary.
 
 The founder's approve button is on that port, so:

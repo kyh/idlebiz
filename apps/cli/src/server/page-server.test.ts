@@ -7,7 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listenLoopback } from "./lib/http";
 import { parseJson } from "@repo/domain/json";
-import { EVENTS_PATH, RPC_PREFIX } from "@repo/contract/routes";
+import { RPC_PREFIX } from "@repo/contract/routes";
 import { devPageOrigin, pagePorts, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
 
@@ -67,10 +67,18 @@ const signIn = async (server: PageServer): Promise<string> => {
 // the calls the page router would have answered, by path: the page server only routes them
 const calls: string[] = [];
 
+const EVENTS = `${RPC_PREFIX}/events`;
+
 const start = (page: PageSource): Promise<PageServer> =>
   startPageServer({
     handleRpc: (incoming, outgoing) => {
       const called = incoming.url ?? "";
+      if (called === EVENTS) {
+        // as the router's event stream does: open until the page or main lets go
+        outgoing.writeHead(200, { "content-type": "text/event-stream" });
+        outgoing.write(": open\n\n");
+        return Promise.resolve(true);
+      }
       if (called !== `${RPC_PREFIX}/company/get`) {
         return Promise.resolve(false);
       }
@@ -196,37 +204,32 @@ describe("main's page server", () => {
     expect(unknown.status).toBe(404);
   });
 
-  it("streams main's events to the signed-in page", async () => {
+  it("ends a page's open event stream as it stops", async () => {
     const server = await built();
     const cookie = await signIn(server);
     // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-    const heard = new Promise<string>((resolve, reject) => {
+    const ended = new Promise<string>((resolve, reject) => {
       const req = request(
         {
           headers: { cookie, host: `127.0.0.1:${server.port}`, "sec-fetch-site": "same-origin" },
           host: "127.0.0.1",
-          path: EVENTS_PATH,
+          method: "POST",
+          path: EVENTS,
           port: server.port,
         },
         (res) => {
-          expect(res.headers["content-type"]).toBe("text/event-stream");
           let text = "";
           res.on("data", (chunk: Buffer) => {
             text += chunk.toString("utf-8");
-            if (text.includes("data: ")) {
-              // the stream stays open until main stops; the frame is all this needs
-              resolve(text);
-              req.destroy();
-            } else {
-              server.broadcast("activity", { kind: "hello" });
-            }
+            void server.stop();
           });
+          res.on("close", () => resolve(text));
         },
       );
       req.on("error", reject);
       req.end();
     });
-    expect(await heard).toContain('event: activity\ndata: {"kind":"hello"}\n\n');
+    expect(await ended).toBe(": open\n\n");
   });
 
   it("takes the page's files from a dev server for the signed-in page alone", async () => {

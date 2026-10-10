@@ -188,7 +188,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   const fetched = useAsync(
     async () => ({
       list: await listTasksFor(emp.id),
-      options: await api().employees.options({ employeeId: emp.id }),
+      options: await api.employees.options({ employeeId: emp.id }),
     }),
     [emp.id, movedBy],
   );

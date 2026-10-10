@@ -8,7 +8,7 @@ const cache = new Map<string, Promise<CharacterAssets>>();
 export const getCharacterAssets = (seed: string): Promise<CharacterAssets> => {
   let pending = cache.get(seed);
   if (!pending) {
-    pending = api().characters.compose({ seed });
+    pending = api.characters.compose({ seed });
     cache.set(seed, pending);
   }
   return pending;

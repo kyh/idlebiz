@@ -114,10 +114,11 @@ of `pnpm verify` or CI:
   real account or key is needed.
 - It runs beside `pnpm dev:desktop` and `pnpm dev:browser`: each launch serves its page on a port
   of its own, and opens an isolated root.
-- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API
-  with a hand-written team (no casting run), a $0 cap and autopilot off; the
-  scheduler checks the budget before it spawns anything, so no run can start. It directs
-  nobody, and every test ends by asserting its save logged no `run.start`.
+- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API,
+  called from the test with the page's cookie and origin (`apiOf`), with a hand-written team (no
+  casting run), a $0 cap and autopilot off; the scheduler checks the budget before it spawns
+  anything, so no run can start. It directs nobody, and every test ends by asserting its save
+  logged no `run.start`.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
@@ -399,10 +400,14 @@ rather than crashing boot.
   calls of main (oRPC, one folder per domain, `<domain>-contract.ts` beside `<domain>-schema.ts`,
   whose zod schemas ARE the inputs' types — declare the schema, never a parallel type), and
   `server/page-router.ts` implements it, so a procedure missing or mistyped fails to compile.
-  The page calls `api().<domain>.<procedure>()` (`renderer/api.ts`, installed once by
-  `renderer/install-api.ts`) on its own origin, since main serves it (`server/page-server.ts`):
-  under `/rpc`, behind the session cookie and same-origin guards, with main's events on one
-  server-sent stream, `/events`, named by `@repo/contract/events` (`listen()`). One middleware
+  The page calls `api.<domain>.<procedure>()` (`renderer/api.ts`, one client for the page) on
+  its own origin, since main serves it (`server/page-server.ts`): under `/rpc`, behind the
+  session cookie and same-origin guards. Main's events are the contract's `events` stream, each a
+  `PageEvent` whose zod schema `@repo/contract/events` declares: `server/lib/broadcast.ts` parses
+  each as it publishes it, and logs and drops one that fails, which would otherwise end every
+  page's stream at the contract's own check. The page hears them through `listen()`
+  (`renderer/page-events.ts`), which reopens a stream that drops a second later, and asks main
+  for everything again as each one opens, since what main sent meanwhile is lost. One middleware
   words every answer that does not return (`server/lib/answers.ts`): a `RefusalError`
   (`server/refusal.ts`) is the store's bare sentence, which the page shows; text over a field's
   limit says the limit; anything else is a fault, answered with its message and reported to
@@ -497,8 +502,8 @@ rather than crashing boot.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
   (`game/`, with the office's geometry: `office-depth.ts` the draw bands,
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
-  math), a hand-rolled external store in `state/store.ts`, and main reached through `api.ts`
-  (installed by `install-api.ts`).
+  math), a hand-rolled external store in `state/store.ts`, and main reached through `api.ts`,
+  its events through `page-events.ts`.
 - `apps/desktop/scripts` — the pack: node fetched (`fetch-node.ts`), the server staged
   (`stage-server.ts`), everything signed (`sign-resources.ts`), the crates' notices
   (`rust-notices.ts`), the bundle and notarization (`package.ts`), the release
@@ -511,10 +516,11 @@ rather than crashing boot.
 - `apps/cli/src/server` — main. `serve.ts` (boot on the shell's hello, the relay, quit),
   `host.ts` (what main asks of the app that runs it, and every message of the relay's),
   `relay/` (its end of the stdio channel),
-  `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
+  `page-server.ts` (the window's page on loopback: the handoff and the guards;
   `page-session.ts` the sign-in, `page-policy.ts` the page's CSP), `page-router.ts` (the page's
-  contract implemented; `lib/answers.ts` words what does not return), `store/store.ts` (the one
-  company in memory, every command on it, and its writes), `store/*-codec.ts` (one pure markdown
+  contract implemented, its event stream fed by `lib/broadcast.ts`; `lib/answers.ts` words what
+  does not return), `store/store.ts` (the one company in memory, every command on it, and its
+  writes), `store/*-codec.ts` (one pure markdown
   package ⇄ domain object mapping per kind; `company-codec.ts` owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
@@ -553,7 +559,7 @@ rather than crashing boot.
   (what an approval card says each rule holds; data only, for the page), `format.ts`,
   `errors.ts`, `json.ts`, and `character-frame.ts` (the sprite box every process slices by).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
-  its routes (`routes.ts`) and the event stream's names (`events.ts`).
+  its routes (`routes.ts`) and the schemas of its event stream (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
   prices usage, and classes failures (auth, access denied, usage limit, overload, context, other). Source-only, no build step.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server

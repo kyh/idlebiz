@@ -53,7 +53,7 @@ const endedOn = (outcome: RunOutcome): ActivityEvent => ({
   ...stamp,
   ...inRun,
   kind: "run.end",
-  payload: { outcome, settled: "queued", summary: "" },
+  payload: { costUsd: 0, outcome, settled: "queued", summary: "" },
 });
 
 describe("reduceActivity", () => {
@@ -158,7 +158,7 @@ describe("reduceActivity", () => {
       ...stamp,
       ...inRun,
       kind: "run.end",
-      payload: { outcome: { kind: "done" }, settled: "done", summary: "" },
+      payload: { costUsd: 0, outcome: { kind: "done" }, settled: "done", summary: "" },
     };
     expect(reduceActivity(busy, ended).patch.employees?.map((e) => e.status)).toEqual(["idle"]);
   });

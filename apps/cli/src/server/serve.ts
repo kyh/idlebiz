@@ -25,7 +25,7 @@ import { controlPlane } from "./control-plane";
 import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } from "./host";
 import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
-import { broadcast, setEventSink } from "./lib/broadcast";
+import { broadcast } from "./lib/broadcast";
 import { suspendWrites } from "./lib/fs";
 import { initLog } from "./lib/log";
 import { osCryptSealer } from "./lib/os-crypt";
@@ -238,7 +238,6 @@ const boot = async (launch: Launch): Promise<void> => {
     page: pageSourceOf(launch),
   });
   page = served;
-  setEventSink(served.broadcast);
 
   activityEvents.on("activity", (e) => {
     broadcast("activity", e);

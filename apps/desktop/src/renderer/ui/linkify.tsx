@@ -12,7 +12,7 @@ const openAsset = async (token: string): Promise<void> => {
     return;
   }
   try {
-    await api().company.openPath({ rel: token });
+    await api.company.openPath({ rel: token });
   } catch {
     // a path main refuses is dropped on purpose; the text stays as it was
   }

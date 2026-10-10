@@ -179,17 +179,17 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
 };
 
 const PrintfulToken = () => {
-  const read = useAsync(() => api().printful.tokenStatus(), []);
+  const read = useAsync(() => api.printful.tokenStatus(), []);
   const [answered, setAnswered] = useState<PrintfulTokenStatus | null>(null);
   const [draft, setDraft] = useState("");
   const saving = useSubmission(async (token: string) => {
-    await api().printful.saveToken({ token });
+    await api.printful.saveToken({ token });
     setDraft("");
-    setAnswered(await api().printful.tokenStatus());
+    setAnswered(await api.printful.tokenStatus());
   });
   const removing = useSubmission(async () => {
-    await api().printful.removeToken();
-    setAnswered(await api().printful.tokenStatus());
+    await api.printful.removeToken();
+    setAnswered(await api.printful.tokenStatus());
   });
   const status = answered ?? (read.kind === "ready" ? read.value : null);
   if (read.kind === "failed" && answered === null) {

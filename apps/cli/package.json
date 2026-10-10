@@ -30,7 +30,9 @@
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "catalog:",
+    "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
+    "@orpc/publisher": "catalog:",
     "@orpc/server": "catalog:",
     "@repo/agent-driver": "workspace:*",
     "@repo/contract": "workspace:*",

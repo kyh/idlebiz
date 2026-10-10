@@ -1,10 +1,18 @@
+import { z } from "zod";
+
 /** Stripe Connect link state, streamed to the renderer. */
-export type StripeStatus =
-  | { state: "disconnected" }
-  | { state: "connecting" }
-  | { state: "connected"; accountId: string; livemode: boolean }
-  /** `bound` while main still holds a Connect grant, which a disconnect drops. */
-  | { state: "error"; message: string; bound: boolean };
+export const StripeStatusSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("disconnected") }),
+  z.object({ state: z.literal("connecting") }),
+  z.object({ accountId: z.string(), livemode: z.boolean(), state: z.literal("connected") }),
+  z.object({
+    /** While main still holds a Connect grant, which a disconnect drops. */
+    bound: z.boolean(),
+    message: z.string(),
+    state: z.literal("error"),
+  }),
+]);
+export type StripeStatus = z.infer<typeof StripeStatusSchema>;
 
 /** The founder's own Stripe key as the renderer sees it: enough to tell which key it is, never the key. */
 export type StripeKeyStatus =

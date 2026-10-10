@@ -83,17 +83,18 @@ apps/
                  runtime.rs), what main asks of a native app (host.rs: the tray, the Keychain,
                  keep-awake, the login item, opening a path or a URL) and main's log
                  (main_log.rs). src/renderer/ (React + Phaser): the office, its panels and its
-                 state, which call main through `api()` (renderer/api.ts, installed by
-                 install-api.ts) and hear it through `listen()`. scripts/: the pack (node
+                 state, which call main through `api` (renderer/api.ts) and hear its events
+                 through `listen()` (renderer/page-events.ts). scripts/: the pack (node
                  fetched, the server staged as Resources/server, everything signed, notarized
                  and released).
   cli/           idlebiz — THE SERVER AND THE BINARY. `idlebiz serve` is main (src/server/): the
                  save (store/), the scheduler, the runs and their seal (agents/), the company's
                  tools (tools.ts over tool-specs.ts, behind control-plane.ts), the integrations,
-                 and the window's page (page-server.ts: the handoff, the guards, the event
-                 stream; page-router.ts implements the contract). Every other verb is a company
-                 tool (src/commands/tools.ts) that runs type through the launcher main writes
-                 them (server/agent-launcher.ts). src/dev-host/ runs main as the shell would, for
+                 and the window's page (page-server.ts: the handoff and the guards;
+                 page-router.ts implements the contract, its event stream included, which
+                 lib/broadcast.ts feeds). Every other verb is a company tool
+                 (src/commands/tools.ts) that runs type through the launcher main writes them
+                 (server/agent-launcher.ts). src/dev-host/ runs main as the shell would, for
                  `dev:browser` and e2e. resources/: the skills and the employee sheets main reads.
                  The build is dist/index.js with its chunks flat beside it, and the page staged
                  as dist/page.
@@ -104,9 +105,10 @@ packages/
                  people, the bets and their judge, the activity grammar, money's formatting, the
                  hold rules' display, and the JSON and error helpers. Zod only.
   contract/      @repo/contract — the page's API, contract-first: an oRPC contract with one folder
-                 per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), the routes (`/rpc`,
-                 `/events`) and the event stream's names. The page compiles against it and
-                 page-router.ts implements it; both ship in one app, so it may break freely.
+                 per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), its one stream of
+                 events (`events`, whose schemas are events.ts) and the routes (`/rpc`). The
+                 page compiles against it and page-router.ts implements it; both ship in one
+                 app, so it may break freely.
   agent-driver/  @repo/agent-driver — the ACP runtime: a turn over claude-agent-acp or codex-acp,
                  the runners' registry, tool asks, rate limits and pricing.
   px-kit/        @repo/px-kit — the pixel UI kit both apps draw with (see the px-kit trap below).

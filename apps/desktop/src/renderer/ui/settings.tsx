@@ -36,10 +36,10 @@ const LOGIN_LINES: Record<LaunchAtLogin, string> = {
 };
 
 const LaunchAtLoginSetting = () => {
-  const read = useAsync(() => api().app.launchAtLogin(), []);
+  const read = useAsync(() => api.app.launchAtLogin(), []);
   const [answered, setAnswered] = useState<LaunchAtLogin | null>(null);
   const setting = useSubmission(async (on: boolean) => {
-    setAnswered(await api().app.setLaunchAtLogin({ on }));
+    setAnswered(await api.app.setLaunchAtLogin({ on }));
   });
   const state = answered ?? (read.kind === "ready" ? read.value : null);
 
@@ -80,7 +80,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
     await setMaxAgents(n);
     setCap(null);
   });
-  const resetting = useSubmission(() => api().save.reset());
+  const resetting = useSubmission(() => api.save.reset());
 
   if (!company) {
     return null;

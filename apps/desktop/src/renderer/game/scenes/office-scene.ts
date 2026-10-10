@@ -1,6 +1,7 @@
 import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
-import { api, listen } from "@/renderer/api";
+import { api } from "@/renderer/api";
+import { listen } from "@/renderer/page-events";
 import { getCharacterAssets } from "@/renderer/character-assets";
 import {
   characterAnims,
@@ -265,7 +266,7 @@ export class OfficeScene extends Scene {
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE.spawn);
 
-    const company = await api().company.get();
+    const company = await api.company.get();
     if (generation !== this.generation) {
       return;
     }
@@ -275,8 +276,8 @@ export class OfficeScene extends Scene {
     const playerKey = `player-${seed}`;
     const [, employees, blocked] = await Promise.all([
       loadCharacter(this, playerKey, seed),
-      company ? api().employees.list() : [],
-      company ? api().tasks.list({ status: ["blocked"] }) : [],
+      company ? api.employees.list() : [],
+      company ? api.tasks.list({ status: ["blocked"] }) : [],
     ]);
     if (generation !== this.generation) {
       return;
@@ -453,7 +454,7 @@ export class OfficeScene extends Scene {
   private async recheckAsks(): Promise<void> {
     const { generation } = this;
     try {
-      const blocked = await api().tasks.list({ status: ["blocked"] });
+      const blocked = await api.tasks.list({ status: ["blocked"] });
       if (generation !== this.generation) {
         return;
       }

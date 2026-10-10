@@ -2,11 +2,8 @@
 // (apps/cli/src/server/page-server.ts), so the app's window, a browser under `pnpm dev:browser` and
 // e2e's Chromium all call it the same way.
 
-/** The contract's procedures (contract.ts), as oRPC's RPC protocol mounts them. */
+/** The contract's procedures (contract.ts), its event stream among them, as oRPC's RPC protocol mounts them. */
 export const RPC_PREFIX = "/rpc";
-
-/** The server's events (events.ts), one server-sent stream, each under its name. */
-export const EVENTS_PATH = "/events";
 
 /** The query parameter a handoff link carries its one-time nonce in. */
 export const HANDOFF_PARAM = "handoff";

@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { api, listen } from "@/renderer/api";
+import { api } from "@/renderer/api";
+import { listen } from "@/renderer/page-events";
 import { useStore } from "@/renderer/state/store";
 import type { AuthFlowEvent } from "@repo/domain/domain";
 
@@ -69,7 +70,7 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
 
   const login = () => {
     setAttempt({ lines: [], phase: "logging-in" });
-    void api().agents.startLogin();
+    void api.agents.startLogin();
   };
   return { auth: attempt ?? probed(authed), login };
 };

@@ -116,6 +116,9 @@ catalogs:
     '@orpc/contract':
       specifier: 2.0.0-beta.42
       version: 2.0.0-beta.42
+    '@orpc/publisher':
+      specifier: 2.0.0-beta.42
+      version: 2.0.0-beta.42
     '@orpc/server':
       specifier: 2.0.0-beta.42
       version: 2.0.0-beta.42
@@ -194,7 +197,13 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 'catalog:'
         version: 1.7.0(zod@4.6.5)
+      '@orpc/client':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
       '@orpc/contract':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
+      '@orpc/publisher':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
       '@orpc/server':
@@ -243,6 +252,9 @@ importers:
         specifier: 'catalog:'
         version: 2.0.0-beta.42
       '@orpc/contract':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
+      '@orpc/server':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
       '@repo/agent-driver':
@@ -420,6 +432,9 @@ importers:
 
   tools/e2e:
     devDependencies:
+      '@orpc/client':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
       '@orpc/contract':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
@@ -1136,6 +1151,17 @@ packages:
 
   '@orpc/contract@2.0.0-beta.42':
     resolution: {integrity: sha512-cLtAdjHGwGy2kNASBsdGKwlhFmRwqmlCOb9Avi6asFoV2fJH3Phht7QHa2/g61Yz1qF8IM6NgJ2+OA7iXRmU/g==}
+
+  '@orpc/publisher@2.0.0-beta.42':
+    resolution: {integrity: sha512-jQxWjtZL7Jsjqk4MgKwYIqts5YtJsIXC72cvrevA6GN3DU85TqERCmECz+mYxIg+DPnSYbaTpPS4EzPGNgRGRQ==}
+    peerDependencies:
+      '@upstash/redis': '>=1.35.6'
+      redis: '>=6.0.0'
+    peerDependenciesMeta:
+      '@upstash/redis':
+        optional: true
+      redis:
+        optional: true
 
   '@orpc/server@2.0.0-beta.42':
     resolution: {integrity: sha512-gZXjfrKnYBNTgv70C3OB1ct04rbbMXOzX+sVx393YvcoEOjUr1cO8BwMBpIAQwaS42NKcoIjjo4zXF0dXOyb3Q==}
@@ -4125,6 +4151,12 @@ snapshots:
       '@orpc/client': 2.0.0-beta.42
       '@orpc/shared': 2.0.0-beta.42
       '@standard-schema/spec': 1.1.0
+
+  '@orpc/publisher@2.0.0-beta.42':
+    dependencies:
+      '@orpc/client': 2.0.0-beta.42
+      '@orpc/shared': 2.0.0-beta.42
+      '@standard-server/core': 0.10.1
 
   '@orpc/server@2.0.0-beta.42':
     dependencies:

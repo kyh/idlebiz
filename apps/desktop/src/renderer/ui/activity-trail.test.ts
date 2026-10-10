@@ -16,7 +16,7 @@ describe("trailOf", () => {
         ...inRun,
         id: 5,
         kind: "run.end",
-        payload: { outcome: { kind: "done" }, settled: "done", summary: "" },
+        payload: { costUsd: 0, outcome: { kind: "done" }, settled: "done", summary: "" },
       },
       {
         ...inRun,

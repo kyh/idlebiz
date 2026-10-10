@@ -4,23 +4,21 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
-import type { Browser, BrowserContext, JSHandle, Page } from "@playwright/test";
+import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { startDevHost } from "idlebiz/dev-host";
 import type { DevHost } from "idlebiz/dev-host";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
 import type { Contract } from "@repo/contract/contract";
+import { RPC_PREFIX } from "@repo/contract/routes";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord, JsonValue } from "@repo/domain/json";
 
 /** The page's API, as the page calls it. */
 type Api = ContractRouterClient<Contract>;
-
-declare global {
-  // What the page's install-api.ts sets on the window; its api.ts declares it for the app.
-  var appApi: { api: Api } | undefined;
-}
 
 interface Launched {
   page: Page;
@@ -170,15 +168,16 @@ export const test = base.extend<Fixtures>({
 
 export { expect } from "@playwright/test";
 
-/** The page's API to the server, called as the page calls it. */
-export const apiOf = (page: Page): Promise<JSHandle<Api>> =>
-  page.evaluateHandle(() => {
-    const app = globalThis.appApi;
-    if (!app) {
-      throw new Error("the page installed no API");
-    }
-    return app.api;
-  });
+/**
+ * The page's API to the server, called from the test with what main asks of every call: the
+ * cookie the page's handoff set, from the page's own origin.
+ */
+export const apiOf = async (page: Page): Promise<Api> => {
+  const { origin } = new URL(page.url());
+  const cookies = await page.context().cookies(origin);
+  const cookie = cookies.map(({ name, value }) => `${name}=${value}`).join("; ");
+  return createORPCClient(new RPCLink({ headers: { cookie, origin }, origin, url: RPC_PREFIX }));
+};
 
 const HIRES: HireProposal[] = [
   {
@@ -213,25 +212,23 @@ export interface Founded {
  */
 export const foundCompany = async (page: Page): Promise<Founded> => {
   const api = await apiOf(page);
-  const auth = await api.evaluate((a) => a.agents.hasAuth());
+  const auth = await api.agents.hasAuth();
   test.skip(!auth.ok, "no signed-in claude or codex CLI: founding and the office need one");
-  return await api.evaluate(async (a, hires) => {
-    const company = await a.onboarding.found({
-      budget: { capUsd: 0, mode: "capped" },
-      businessType: "custom",
-      founderName: "E2E Founder",
-      founderSpriteSeed: "e2e-founder",
-      hires,
-      mission: "Prove the office boots without spending a cent.",
-      name: "E2E Test Co",
-    });
-    await a.company.setAutopilot({ running: false });
-    const [product] = await a.products.list();
-    if (!product) {
-      throw new Error("a founded company has no product");
-    }
-    return { company, employees: await a.employees.list(), product };
-  }, HIRES);
+  const company = await api.onboarding.found({
+    budget: { capUsd: 0, mode: "capped" },
+    businessType: "custom",
+    founderName: "E2E Founder",
+    founderSpriteSeed: "e2e-founder",
+    hires: HIRES,
+    mission: "Prove the office boots without spending a cent.",
+    name: "E2E Test Co",
+  });
+  await api.company.setAutopilot({ running: false });
+  const [product] = await api.products.list();
+  if (!product) {
+    throw new Error("a founded company has no product");
+  }
+  return { company, employees: await api.employees.list(), product };
 };
 
 const secretsFile = (root: string): string => path.join(root, "secrets.json");

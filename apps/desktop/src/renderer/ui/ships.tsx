@@ -97,7 +97,7 @@ const ProductCard = ({
   const deploy = deploymentOf(status);
   const open = async () => {
     try {
-      await api().products.open({ productId: product.id });
+      await api.products.open({ productId: product.id });
     } catch (error) {
       onNote(errorMessage(error));
     }
@@ -230,7 +230,7 @@ export const Ships = ({
   const [note, showNote] = useTransientNote(2500);
   const [picked, setPicked] = useState<string | null>(null);
   const log = useAsync(
-    async () => (company ? await api().tasks.shipped() : []),
+    async () => (company ? await api.tasks.shipped() : []),
     [company?.id, company?.ships],
   );
 
@@ -243,7 +243,7 @@ export const Ships = ({
   const selectedName = selectedProduct ? ` · ${selectedProduct.name}` : "";
   const openWorkspace = async () => {
     try {
-      await api().company.openPath({ rel: selectedProduct?.workspaceDir ?? "" });
+      await api.company.openPath({ rel: selectedProduct?.workspaceDir ?? "" });
     } catch (error) {
       showNote(errorMessage(error));
     }
