@@ -107,8 +107,14 @@ settings:
 
 catalogs:
   default:
+    '@agentclientprotocol/claude-agent-acp':
+      specifier: 0.85.1
+      version: 0.85.1
+    '@agentclientprotocol/codex-acp':
+      specifier: 1.12.0
+      version: 1.12.0
     '@agentclientprotocol/sdk':
-      specifier: ^1.7.0
+      specifier: 1.7.0
       version: 1.7.0
     '@orpc/client':
       specifier: 2.0.0-beta.42
@@ -182,10 +188,10 @@ importers:
   apps/cli:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: ^0.85.1
+        specifier: 'catalog:'
         version: 0.85.1(@anthropic-ai/sdk@0.127.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@7.2.0)(zod@4.6.5))
       '@agentclientprotocol/codex-acp':
-        specifier: ^1.12.0
+        specifier: 'catalog:'
         version: 1.12.0(patch_hash=c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a)
       sharp:
         specifier: ^0.35.5

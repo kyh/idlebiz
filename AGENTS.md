@@ -69,7 +69,8 @@ CLI-free surfaces below; it cannot reach a populated office.
 ## Verify a change end-to-end
 
 Static gate (`.github/workflows/ci.yml` runs the same steps on every push to main and every
-PR, as named steps; Vercel's build of `apps/web` is a second remote check):
+PR, as named steps, each action pinned by commit, which dependabot moves; Vercel's build of
+`apps/web` is a second remote check):
 
 ```sh
 pnpm verify
@@ -334,7 +335,10 @@ rather than crashing boot.
   sandbox is forced off, runs start Chrome without its own (`AGENT_BROWSER_ARGS=--no-sandbox`),
   and codex runs in `external-sandbox`, a mode
   `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own, and
-  it asks before every command and patch. A codex-acp upgrade must carry that patch.
+  it asks before every command and patch. A codex-acp upgrade must carry that patch. Both
+  adapters and the ACP sdk are pinned exactly in the `pnpm-workspace.yaml` catalog: a bump
+  moves the patch's key, may change the wire `acp-session.ts` speaks, and must pass
+  `claude-gate` and `codex-gate` on a Mac with both CLIs, which CI skips.
 - `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
   (`server/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
   (`packages/agent-driver/src/detect.ts`).

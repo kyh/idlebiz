@@ -18,9 +18,9 @@ jobs:
       # every cache of the repo's shares 10GB
       TURBO_CACHE_MAX_SIZE: 1GB
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: pnpm/setup@v2
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
           runtime: node@24
           cache: true
@@ -36,14 +36,14 @@ jobs:
         run: rustup toolchain install
 
       - name: Desktop Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
 
       # the newest run's turbo cache on this OS: a task whose inputs the commit left alone replays
       # its last pass, but apps/cli's tests, which skip on the CLIs a machine has, always run
       - name: Turbo cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}

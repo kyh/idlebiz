@@ -669,8 +669,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   `external-sandbox`, a mode the app's patch of codex-acp adds (`patches/`): no sandbox of
   codex's own and approval `untrusted`, so codex asks before every command and patch it does
   not know is safe. codex-acp's own modes either
-  sandbox or never ask, so an upgrade must carry the patch. Chrome's sandbox is off in runs
-  (`AGENT_BROWSER_ARGS=--no-sandbox`). The boot check runs plain node, so it cannot see a
+  sandbox or never ask, so an upgrade must carry the patch, keyed by the exact version the
+  catalog pins (`pnpm-workspace.yaml`, beside claude-agent-acp and the ACP sdk). Chrome's
+  sandbox is off in runs (`AGENT_BROWSER_ARGS=--no-sandbox`). The boot check runs plain node, so it cannot see a
   runner's own sandbox; the gate tests can. `server/agents/claude-gate.test.ts` and
   `codex-gate.test.ts` drive the real CLI through the app's adapter, sealed, against a
   stand-in model on loopback (nothing billed, a scratch config), and fail once a command nests
@@ -738,7 +739,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 
 - **Verify**: `pnpm verify` (typecheck · lint · format · test · build). CI
   (`.github/workflows/ci.yml`) runs the same five steps on every push to main and every PR;
-  keep the two lists in step.
+  keep the two lists in step. Its actions are pinned by commit SHA, which dependabot moves
+  (`.github/dependabot.yml`); a new step pins its action the same way.
 - **`tsconfig.base.json` is the compiler's strictness** (`strict`, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, unused locals and
   parameters). Every workspace's tsconfig extends it but `apps/web`'s, which Next writes, and
