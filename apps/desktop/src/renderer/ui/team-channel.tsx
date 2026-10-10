@@ -98,7 +98,12 @@ const NewsRow = ({
       );
     }
     case "runner.resting": {
-      return (
+      return e.payload.cause === "access-denied" ? (
+        <div className="line-clamp-2 text-fg-dim">
+          🔒 {e.payload.runner}&apos;s provider refused access, and signing in again won&apos;t fix
+          it: {e.payload.error} — trying again at {formatTime(e.payload.until)}
+        </div>
+      ) : (
         <div className="text-fg-dim">
           ☕ {e.payload.runner} crew hit their limit — back at {formatTime(e.payload.until)}
         </div>

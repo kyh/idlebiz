@@ -166,15 +166,18 @@ export interface AcpTurnOptions {
 }
 
 /**
- * How a turn ended: the agent finished it, hit a usage limit or an overload, found its runner's
- * login refused, or something stopped it.
+ * How a turn ended: the agent finished it, hit a usage limit, an overload or a refusal of access
+ * no sign-in repairs, found its runner's login refused, or something stopped it.
  */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
   | {
       readonly kind: "limited";
-      /** A usage limit lifts at `resetsAt`; an overload's is its first backoff, which the caller may lengthen. */
-      readonly cause: "usage-limit" | "overloaded";
+      /**
+       * A usage limit lifts at `resetsAt`; an overload's or a refusal of access's is its first
+       * backoff, which the caller may lengthen.
+       */
+      readonly cause: "usage-limit" | "overloaded" | "access-denied";
       readonly resetsAt: number;
       readonly error: string;
     }
@@ -222,9 +225,9 @@ const titleLine = (title: string): string => {
 
 /**
  * How a turn ends on a failure of class `failure`: a refused login signs its runner out, a usage
- * limit rests it until the reset the provider `reported` or the `error` names, an overload rests it
- * for a first short backoff, a session out of room is spent, and anything else fails the task,
- * which is bounded by attempts.
+ * limit rests it until the reset the provider `reported` or the `error` names, an overload or a
+ * refusal of access no sign-in repairs rests it for a first short backoff, a session out of room
+ * is spent, and anything else fails the task, which is bounded by attempts.
  */
 const endOf = (failure: FailureClass, error: string, reported: number | null): AcpTurnEnd => {
   switch (failure) {
@@ -239,9 +242,10 @@ const endOf = (failure: FailureClass, error: string, reported: number | null): A
         resetsAt: liftsAt(error, new Date(), reported),
       };
     }
-    case "overloaded": {
+    case "overloaded":
+    case "access-denied": {
       return {
-        cause: "overloaded",
+        cause: failure,
         error,
         kind: "limited",
         resetsAt: Date.now() + OVERLOAD_BACKOFF_MS,

@@ -537,11 +537,34 @@ describe("settling a run", () => {
     const until = Date.now() + 60_000;
     const { task } = await runOne({
       ...done(),
-      outcome: { error: "usage limit", kind: "resting", until },
+      outcome: { cause: "usage-limit", error: "usage limit", kind: "resting", until },
     });
     expect(store.getTask(task.id)).toMatchObject({
       attempts: 0,
       state: { kind: "queued", nextAttemptAt: until },
+    });
+  });
+
+  it("parks a run its provider refused access to, spending no attempt, and tells the founder why", async () => {
+    const until = Date.now() + 60_000;
+    const error = "Your organization must verify before using the API.";
+    const heard: ActivityEvent[] = [];
+    const listen = (e: ActivityEvent) => heard.push(e);
+    activityEvents.on("activity", listen);
+    try {
+      const { task } = await runOne({
+        ...done(),
+        outcome: { cause: "access-denied", error, kind: "resting", until },
+      });
+      expect(store.getTask(task.id)).toMatchObject({
+        attempts: 0,
+        state: { kind: "queued", nextAttemptAt: until },
+      });
+    } finally {
+      activityEvents.off("activity", listen);
+    }
+    expect(heard.find((e) => e.kind === "runner.resting")).toMatchObject({
+      payload: { cause: "access-denied", error, runner: "claude", until },
     });
   });
 
@@ -924,7 +947,12 @@ describe("a bet that stops taking work mid-run", () => {
     try {
       running.get("priya")?.({
         ...done(),
-        outcome: { error: "usage limit", kind: "resting", until: Date.now() + 60_000 },
+        outcome: {
+          cause: "usage-limit",
+          error: "usage limit",
+          kind: "resting",
+          until: Date.now() + 60_000,
+        },
       });
       await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     } finally {

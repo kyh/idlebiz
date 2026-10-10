@@ -456,7 +456,7 @@ export const outcomeOf = (
   }
   switch (end.kind) {
     case "limited": {
-      return { error: end.error, kind: "resting", until: end.resetsAt };
+      return { cause: end.cause, error: end.error, kind: "resting", until: end.resetsAt };
     }
     case "signedOut": {
       return { error: end.error, kind: "signedOut" };
@@ -546,8 +546,8 @@ class AgentDriver {
   private sealed: SealState | null = null;
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<AgentRunner, number>();
-  // runner -> overloads in a row, each resting it twice as long as the one before
-  private readonly overloads = new Map<AgentRunner, number>();
+  // runner -> overloads and refusals of access in a row, each resting it twice as long as the one before
+  private readonly backoffs = new Map<AgentRunner, number>();
   // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
   // the stored login, which a revoked token still is
   private readonly refusedLogins = new Set<AgentRunner>();
@@ -748,22 +748,24 @@ class AgentDriver {
 
   /**
    * What a turn's end says of its runner, whatever else the run says, and the end as the runner
-   * now stands: a usage limit rests it until it lifts, an overload for a backoff that doubles with
-   * each one in a row (1m, 2m, 4m… up to 15m) and starts over once a turn ends any other way, and a
-   * refused login reads as signed out until the founder signs it in again. A rest never shortens
-   * one already holding, which a turn still in flight may end under.
+   * now stands: a usage limit rests it until it lifts; an overload, or a refusal of access no
+   * sign-in repairs, for a backoff that doubles with each one in a row (1m, 2m, 4m… up to 15m) and
+   * starts over once a turn ends any other way, so a credential blip clears soon and a standing
+   * refusal is not hammered; and a refused login reads as signed out until the founder signs it in
+   * again. A rest never shortens one already holding, which a turn still in flight may end under.
    */
   heed(runner: AgentRunner, end: AcpTurnEnd): AcpTurnEnd {
-    const overloaded = end.kind === "limited" && end.cause === "overloaded";
-    const streak = overloaded ? (this.overloads.get(runner) ?? 0) + 1 : 0;
-    this.overloads.set(runner, streak);
+    const backsOff =
+      end.kind === "limited" && (end.cause === "overloaded" || end.cause === "access-denied");
+    const streak = backsOff ? (this.backoffs.get(runner) ?? 0) + 1 : 0;
+    this.backoffs.set(runner, streak);
     if (end.kind === "signedOut") {
       this.refusedLogins.add(runner);
     }
     if (end.kind !== "limited") {
       return end;
     }
-    const asked = overloaded ? Date.now() + overloadBackoffMs(streak) : end.resetsAt;
+    const asked = backsOff ? Date.now() + overloadBackoffMs(streak) : end.resetsAt;
     const resetsAt = Math.max(asked, this.restingRunner(runner) ?? 0);
     this.restingUntil.set(runner, resetsAt);
     this.saveRest();

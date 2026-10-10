@@ -16,25 +16,24 @@ const minutes = (n: number): number => now.getTime() + n * 60_000;
 describe("classOfRequestError", () => {
   it("reads ACP's sign-in code and claude's refused logins as auth", () => {
     expect(classOfRequestError(RequestError.authRequired())).toBe("auth");
-    for (const errorKind of [
-      "authentication_failed",
-      "oauth_org_not_allowed",
-      "account_on_hold",
-      "verification_required",
-      "cloud_credential_error",
-    ]) {
+    for (const errorKind of ["authentication_failed", "oauth_org_not_allowed"]) {
       expect(classOfRequestError(RequestError.internalError({ errorKind }))).toBe("auth");
     }
   });
 
-  it("reads claude's rate limit and billing error as a usage limit", () => {
-    expect(classOfRequestError(RequestError.internalError({ errorKind: "rate_limit" }))).toBe(
-      "usage-limit",
-    );
-    expect(classOfRequestError(RequestError.internalError({ errorKind: "billing_error" }))).toBe(
-      "usage-limit",
-    );
-  });
+  it.each(["verification_required", "cloud_credential_error"])(
+    "reads claude's %s as a refusal of access no sign-in repairs, as its adapter does",
+    (errorKind) => {
+      expect(classOfRequestError(RequestError.internalError({ errorKind }))).toBe("access-denied");
+    },
+  );
+
+  it.each(["rate_limit", "billing_error", "account_on_hold"])(
+    "reads claude's %s as a usage limit, never a sign-in",
+    (errorKind) => {
+      expect(classOfRequestError(RequestError.internalError({ errorKind }))).toBe("usage-limit");
+    },
+  );
 
   it("reads claude's overload as an overload, apart from a usage limit", () => {
     expect(

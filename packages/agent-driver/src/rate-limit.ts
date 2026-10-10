@@ -9,11 +9,19 @@ import { z } from "zod";
 // apart from errorKind, and codex-acp types an overload exactly as its catch-all service failure.
 
 /**
- * How a failed turn bears on its runner: a login no retry clears, a usage limit that lifts at a
- * known or guessed time, a provider too busy for now, a session out of room, or anything else,
- * which is only the task's.
+ * How a failed turn bears on its runner: a login no retry clears, a refusal of access no sign-in
+ * repairs (an organization yet to verify, a cloud credential claude could not load), a usage
+ * limit that lifts at a known or guessed time, a provider too busy for now, a session out of
+ * room, or anything else, which is only the task's.
  */
-export const FAILURE_CLASSES = ["auth", "usage-limit", "overloaded", "context", "other"] as const;
+export const FAILURE_CLASSES = [
+  "auth",
+  "access-denied",
+  "usage-limit",
+  "overloaded",
+  "context",
+  "other",
+] as const;
 export type FailureClass = (typeof FAILURE_CLASSES)[number];
 
 /** claude-agent-acp's `errorKind` values (the SDK's assistant message errors). */
@@ -33,12 +41,16 @@ const CLAUDE_ERROR_KINDS = [
   "max_output_tokens",
 ] as const;
 
-/** What each of claude's kinds says of the runner; one this build does not know is `other`. */
+/**
+ * What each of claude's kinds says of the runner; one this build does not know is `other`.
+ * Mirrors claude-agent-acp's `providerFailureCategory` (dist/session-failure-extension.js):
+ * recheck it whenever the adapter is bumped.
+ */
 const CLAUDE_KIND_CLASS = {
-  account_on_hold: "auth",
+  account_on_hold: "usage-limit",
   authentication_failed: "auth",
   billing_error: "usage-limit",
-  cloud_credential_error: "auth",
+  cloud_credential_error: "access-denied",
   invalid_request: "other",
   max_output_tokens: "context",
   model_not_found: "other",
@@ -47,7 +59,7 @@ const CLAUDE_KIND_CLASS = {
   rate_limit: "usage-limit",
   server_error: "other",
   unknown: "other",
-  verification_required: "auth",
+  verification_required: "access-denied",
 } as const satisfies Record<(typeof CLAUDE_ERROR_KINDS)[number], FailureClass>;
 
 /** What claude-agent-acp puts in a rejected prompt's data. */
@@ -114,13 +126,13 @@ export const classOfTypedFailure = ({ actions, category, text }: TypedFailure): 
   return category === "service" ? classOfText(text) : "other";
 };
 
-/** The first rest an overload earns; each one after it in a row doubles it. */
+/** The first rest an overload or a refusal of access earns; each one after it in a row doubles it. */
 export const OVERLOAD_BACKOFF_MS = 60_000;
 
-/** The longest an overload rests a runner: a busy provider clears in minutes, not hours. */
+/** The longest an overload or a refusal of access rests a runner: a busy provider, or a credential blip, clears in minutes. */
 const MAX_OVERLOAD_BACKOFF_MS = 15 * 60_000;
 
-/** How long the `streak`-th overload in a row rests its runner: 1m, 2m, 4m… up to 15m. */
+/** How long the `streak`-th overload or refusal of access in a row rests its runner: 1m, 2m, 4m… up to 15m. */
 export const overloadBackoffMs = (streak: number): number =>
   Math.min(OVERLOAD_BACKOFF_MS * 2 ** Math.max(0, streak - 1), MAX_OVERLOAD_BACKOFF_MS);
 

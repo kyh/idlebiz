@@ -14,6 +14,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { runInNewContext } from "node:vm";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
+import type { AcpTurnEnd } from "@repo/agent-driver/acp-session";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -118,6 +119,12 @@ const overloaded = {
   kind: "limited",
   resetsAt: 0,
 } as const;
+const accessRefused = {
+  cause: "access-denied",
+  error: "Your organization must verify before using the API.",
+  kind: "limited",
+  resetsAt: 0,
+} as const;
 
 describe("addUsage", () => {
   it("counts both attempts of a retried turn, dollars as already priced", () => {
@@ -146,6 +153,7 @@ describe("outcomeOf", () => {
 
   it("rests only when the agent refused the turn for a limit, whatever a failure says", () => {
     expect(outcomeOf(limited, null, false)).toEqual({
+      cause: "usage-limit",
       error: limited.error,
       kind: "resting",
       until: 99,
@@ -346,6 +354,43 @@ const driverOn = (rest: string | null) =>
     () => SKILLS,
     () => rest,
   );
+
+describe("a provider refusing access no sign-in repairs", () => {
+  const minute = 60_000;
+  const restOf = (end: AcpTurnEnd, before: number): number =>
+    Math.round(((end.kind === "limited" ? end.resetsAt : 0) - before) / minute);
+
+  it("rests the runner on an overload's backoff, never signing it out or spending the session", () => {
+    const driver = driverOn(null);
+    const signedInClaude = {
+      authed: true,
+      bin: "claude",
+      id: "claude",
+      installed: true,
+      version: "1.0.0",
+    } as const;
+    const rests = [1, 2, 3, 4, 5].map(() =>
+      restOf(driver.heed("claude", accessRefused), Date.now()),
+    );
+    expect(rests).toEqual([1, 2, 4, 8, 15]);
+    expect(driver.needsSignIn(signedInClaude)).toBe(false);
+    expect(outcomeOf(driver.heed("claude", accessRefused), null, false)).toMatchObject({
+      cause: "access-denied",
+      error: accessRefused.error,
+      kind: "resting",
+    });
+  });
+
+  it("shares one streak with an overload, which a turn ending another way starts over", () => {
+    const driver = driverOn(null);
+    expect(restOf(driver.heed("codex", overloaded), Date.now())).toBe(1);
+    expect(restOf(driver.heed("codex", accessRefused), Date.now())).toBe(2);
+    driver.heed("codex", failed);
+    const held = driver.restingRunner("codex");
+    // a minute asked: the 2m rest still holding stands
+    expect(driver.heed("codex", accessRefused)).toMatchObject({ resetsAt: held });
+  });
+});
 
 describe("a rest the last launch left", () => {
   const box = mkdtempSync(path.join(tmpdir(), "idlebiz-rest-"));

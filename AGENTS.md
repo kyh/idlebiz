@@ -546,7 +546,7 @@ rather than crashing boot.
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`) and the event stream's names (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
-  prices usage, and classes failures (auth, usage limit, overload, context, other). Source-only, no build step.
+  prices usage, and classes failures (auth, access denied, usage limit, overload, context, other). Source-only, no build step.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
   and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,

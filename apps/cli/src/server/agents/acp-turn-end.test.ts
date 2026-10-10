@@ -155,6 +155,22 @@ send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: "Y
     expect(resetsAt).toBeLessThan(before + 5 * 60_000);
   });
 
+  it("rests only a short first backoff, never signing out, when claude's provider refuses access", async () => {
+    const refusal = JSON.stringify({
+      error: {
+        code: -32_603,
+        data: { errorKind: "verification_required" },
+        message: "Your organization must verify before using the API.",
+      },
+    });
+    const before = Date.now();
+    const { end } = await turn(scriptedAgent(refusal));
+    expect(end).toMatchObject({ cause: "access-denied", kind: "limited" });
+    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
+    expect(resetsAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(resetsAt).toBeLessThan(before + 5 * 60_000);
+  });
+
   it("fails, never rests, when the watchdog ends it, though its text names a session limit", async () => {
     const { end } = await turn(scriptedAgent(null), 200);
     expect(end.kind).toBe("failed");

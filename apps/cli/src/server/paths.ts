@@ -29,7 +29,7 @@ import { mkdirSync } from "node:fs";
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
 //       orders-cursor.json    where each Stripe key's next read of checkouts starts
 //       unrecorded-links.json products an older save made that may have create_payment_link links no links/ file holds; written once, at adoption
-//       runner-rest.json      until when each runner rests on a usage limit or an overload, so a restart does not spawn each parked task to be refused
+//       runner-rest.json      until when each runner rests on a usage limit, an overload or a refusal of access, so a restart does not spawn each parked task to be refused
 //
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
@@ -73,7 +73,7 @@ export const ordersCursorFile = (companySlug: string): string =>
  */
 export const unrecordedLinksFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "unrecorded-links.json");
-/** Until when each runner rests on a usage limit or an overload; deleted, each task waiting on one spawns once more to be refused. */
+/** Until when each runner rests on a usage limit, an overload or a refusal of access; deleted, each task waiting on one spawns once more to be refused. */
 export const runnerRestFile = (companySlug: string): string =>
   path.join(stateDir(companySlug), "runner-rest.json");
 export const activityFile = (companySlug: string): string =>
