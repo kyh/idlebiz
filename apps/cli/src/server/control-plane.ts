@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { ROOT_DIR } from "./paths";
 import { RefusalError } from "./refusal";
+import type { ToolOutcome, ToolOutcomeKind } from "./tool-specs";
 import { BadRequestError, errorMessage } from "@repo/domain/errors";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
@@ -22,8 +23,8 @@ import type { JsonValue } from "@repo/domain/json";
 // own socket alone, so a token read from another run's env is no use without that run's socket.
 // The token stays as a second check, and a server takes only the token of its own run.
 
-/** Answers one call by `METHOD /path` in prose the agent reads; null when there is no such tool. */
-export type ToolCaller = (route: string, raw: JsonValue) => Promise<string | null>;
+/** Answers one call by `METHOD /path`: how it ended, in prose the agent reads; null when there is no such tool. */
+export type ToolCaller = (route: string, raw: JsonValue) => Promise<ToolOutcome | null>;
 
 interface RunHandle {
   /** Run-scoped env for the agent process: the socket its API answers on and its bearer token. */
@@ -73,11 +74,9 @@ export const runSocketPath = (root: string, home: string, id: string): string =>
   return socket;
 };
 
-interface ToolResponse {
-  ok: boolean;
-  error?: string;
-  message?: string;
-}
+type ToolResponse =
+  | { ok: true; kind: ToolOutcomeKind; message: string }
+  | { ok: false; error: string };
 
 const respond = (res: ServerResponse, status: number, payload: ToolResponse): void => {
   const body = JSON.stringify(payload);
@@ -144,11 +143,11 @@ const handle = async (run: Run, req: IncomingMessage, res: ServerResponse): Prom
       respond(res, 401, { error: "unknown or expired run token", ok: false });
       return;
     }
-    const message = await caller(route, raw);
-    if (message === null) {
+    const outcome = await caller(route, raw);
+    if (outcome === null) {
       respond(res, 404, { error: `no such tool: ${route}`, ok: false });
     } else {
-      respond(res, 200, { message, ok: true });
+      respond(res, 200, { kind: outcome.kind, message: outcome.text, ok: true });
     }
   } catch (error) {
     if (error instanceof BadRequestError) {

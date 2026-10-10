@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BadRequestError } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import { ControlPlane } from "../server/control-plane";
+import type { ToolOutcome } from "../server/tool-specs";
 import { runCli } from "../program";
 import { callTool } from "./tools";
 
@@ -20,8 +21,10 @@ afterAll(() => {
 
 const noStdin = (): Promise<string> => Promise.reject(new Error("nothing on stdin"));
 
+const done = (text: string): Promise<ToolOutcome> => Promise.resolve({ kind: "done", text });
+
 /** A run the control plane answers with `answer`, and what it was called with. */
-const aRun = async (answer: (route: string, raw: JsonValue) => Promise<string | null>) => {
+const aRun = async (answer: (route: string, raw: JsonValue) => Promise<ToolOutcome | null>) => {
   const calls: { route: string; raw: JsonValue }[] = [];
   const handle = await controlPlane.registerRun(async (route, raw) => {
     calls.push({ raw, route });
@@ -31,14 +34,14 @@ const aRun = async (answer: (route: string, raw: JsonValue) => Promise<string | 
 };
 
 describe("a company tool's verb", () => {
-  it("sends its request to the tool's route and answers the server's prose", async () => {
-    const run = await aRun(() => Promise.resolve("Posted to the room."));
+  it("sends its request to the tool's route and answers how it ended, in the server's prose", async () => {
+    const run = await aRun(() => Promise.resolve({ kind: "held", text: "Held for the founder." }));
     try {
       const said = await callTool("message_team", '{"text":"shipped it"}', {
         env: run.env,
         stdin: noStdin,
       });
-      expect(said).toBe("Posted to the room.");
+      expect(said).toEqual({ kind: "held", text: "Held for the founder." });
       expect(run.calls).toEqual([{ raw: { text: "shipped it" }, route: "POST /v1/message-team" }]);
     } finally {
       run.release();
@@ -46,7 +49,7 @@ describe("a company tool's verb", () => {
   });
 
   it("reads `-` from stdin, where an apostrophe needs no quoting", async () => {
-    const run = await aRun(() => Promise.resolve("Asked."));
+    const run = await aRun(() => done("Asked."));
     try {
       await callTool("ask_boss", "-", {
         env: run.env,
@@ -61,13 +64,12 @@ describe("a company tool's verb", () => {
   });
 
   it("calls a tool that reads with no request, and refuses one", async () => {
-    const run = await aRun(() => Promise.resolve("Nobody has posted yet."));
+    const nobody = { kind: "done", text: "Nobody has posted yet." } as const;
+    const run = await aRun(() => Promise.resolve(nobody));
     const io = { env: run.env, stdin: noStdin };
     try {
-      await expect(callTool("read_team_chat", undefined, io)).resolves.toBe(
-        "Nobody has posted yet.",
-      );
-      await expect(callTool("read_team_chat", "{}", io)).resolves.toBe("Nobody has posted yet.");
+      await expect(callTool("read_team_chat", undefined, io)).resolves.toEqual(nobody);
+      await expect(callTool("read_team_chat", "{}", io)).resolves.toEqual(nobody);
       await expect(callTool("read_team_chat", '{"limit":5}', io)).rejects.toThrow(
         "read-team-chat takes no request",
       );
@@ -81,7 +83,7 @@ describe("a company tool's verb", () => {
   });
 
   it("refuses a request that is not JSON, saying how to send one", async () => {
-    const run = await aRun(() => Promise.resolve("never"));
+    const run = await aRun(() => done("never"));
     try {
       const refused = callTool("message_team", "{text: hi}", { env: run.env, stdin: noStdin });
       await expect(refused).rejects.toThrow("message-team's request is not JSON");
@@ -106,7 +108,7 @@ describe("a company tool's verb", () => {
   });
 
   it("says the company did not answer once the run has settled, which closes its socket", async () => {
-    const run = await aRun(() => Promise.resolve("never"));
+    const run = await aRun(() => done("never"));
     run.release();
     await expect(
       callTool("read_bets", undefined, { env: run.env, stdin: noStdin }),
@@ -130,8 +132,8 @@ describe("a company tool's verb", () => {
   );
 
   it("calls as no other run: a teammate's token on this run's socket is refused", async () => {
-    const lead = await aRun(() => Promise.resolve("never"));
-    const teammate = await aRun(() => Promise.resolve("never"));
+    const lead = await aRun(() => done("never"));
+    const teammate = await aRun(() => done("never"));
     try {
       const env = {
         IDLEBIZ_API_SOCKET: teammate.env.IDLEBIZ_API_SOCKET,
@@ -148,7 +150,7 @@ describe("a company tool's verb", () => {
   });
 
   it("says the company did not answer once the server is gone", async () => {
-    const run = await aRun(() => Promise.resolve("never"));
+    const run = await aRun(() => done("never"));
     controlPlane.stop();
     try {
       await expect(
@@ -194,6 +196,7 @@ describe("the idlebiz command", () => {
     expect(await runCli([verb, "--help"])).toBe(0);
     expect(io.out()).toContain("idlebiz ask-boss: hand the founder something only they can do");
     expect(io.out()).toContain(`idlebiz ask-boss '{"action":`);
+    expect(io.out()).toContain("exits 0 when it did what you asked; 1 when it was refused");
     vi.restoreAllMocks();
   });
 

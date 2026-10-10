@@ -57,7 +57,7 @@ import type { ListedPlacement, ListingVariant, PrintPlacement } from "./listing"
 import type { Order } from "./order";
 import type { CompanyLink, LinkState } from "./payment-link";
 import { TOOL_NAMES, TOOL_SPECS } from "./tool-specs";
-import type { ToolName, ToolSpec } from "./tool-specs";
+import type { ToolName, ToolOutcome, ToolSpec } from "./tool-specs";
 
 /** What a tool call acts on behalf of: who is running, for what, and what only main can do for it. */
 export interface RunContext {
@@ -93,14 +93,25 @@ export interface RunContext {
 }
 
 /** A tool ready to be called with whatever the agent sent. */
-type Tool = (ctx: RunContext, raw: JsonValue) => Promise<string>;
+type Tool = (ctx: RunContext, raw: JsonValue) => Promise<ToolOutcome>;
 
 /**
- * An implementation bound to its spec, so the body it receives is the one the
- * spec parses: the lead's tools turn anyone else away, a body that does not
- * parse is the caller's error, and the store's refusals — written as the
- * sentence the agent should read — become the answer. A fault answers too, so
- * the run can go on, but is reported.
+ * A call held for the founder, worded like a refusal as the sentence the agent reads: what it
+ * asked is not turned down, but waits on their answer.
+ */
+class HeldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HeldError";
+  }
+}
+
+/**
+ * An implementation bound to its spec, so the body it receives is the one the spec parses, and
+ * every way the call ends is an outcome its verb exits by. What the implementation returns is
+ * done. The lead's tools turn anyone else away, and the store's refusals, written as the sentence
+ * the agent should read, are refused; a hold for the founder is held. A body that does not parse
+ * is the caller's error. A fault answers too, so the run can go on, but is reported.
  */
 const define =
   <B extends z.ZodType>(
@@ -109,19 +120,23 @@ const define =
   ): Tool =>
   async (ctx, raw) => {
     if (spec.leadOnly !== null && !isLead(ctx.company, ctx.employee)) {
-      return spec.leadOnly;
+      return { kind: "refused", text: spec.leadOnly };
     }
     const body = spec.body.safeParse(raw);
     if (!body.success) {
       throw new BadRequestError(z.prettifyError(body.error));
     }
     try {
-      return await run(ctx, body.data);
+      return { kind: "done", text: await run(ctx, body.data) };
     } catch (error) {
-      if (!(error instanceof RefusalError)) {
-        report(`tool ${spec.path}`, error);
+      if (error instanceof HeldError) {
+        return { kind: "held", text: error.message };
       }
-      return errorMessage(error);
+      if (error instanceof RefusalError) {
+        return { kind: "refused", text: error.message };
+      }
+      report(`tool ${spec.path}`, error);
+      return { kind: "fault", text: errorMessage(error) };
     }
   };
 
@@ -139,28 +154,35 @@ const UNSENT =
   "The founder was not asked: this run already asked them something, and only a run's first ask reaches them. Note it, and try again once they answer.";
 
 /**
- * Leave the founder `ask` and answer `sent`; or, since only a run's first ask reaches them, say
- * that this one did not, after `why` it was needed.
+ * Leave the founder `ask` and answer `sent`. Only a run's first ask reaches them, so one that
+ * does not is refused, after `why` it was needed.
  */
-const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why = ""): string =>
-  ctx.asks.raise(ask) ? sent : `${why} ${UNSENT}`.trim();
+const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why = ""): string => {
+  if (!ctx.asks.raise(ask)) {
+    throw new RefusalError(`${why} ${UNSENT}`.trim());
+  }
+  return sent;
+};
+
+/** Leave the founder `ask` and hold the call on their answer, saying `sent`; see askFounder. */
+const holdFor = (ctx: RunContext, ask: BlockedAsk, sent: string, why: string): never => {
+  throw new HeldError(askFounder(ctx, ask, sent, why));
+};
 
 /**
  * Spend the founder's sign-off on `action` in this task, or ask them for it and
- * end the call. The action is the approval's key, so it reads as what is signed.
+ * hold the call. The action is the approval's key, so it reads as what is signed.
  */
 const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId): void => {
   if (store.consumeApproval(ctx.run.taskId, action)) {
     return;
   }
   const held = `Held for the founder's sign-off on "${action}".`;
-  throw new RefusalError(
-    askFounder(
-      ctx,
-      { command: action, rule, type: "approval" },
-      `${held} End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
-      held,
-    ),
+  holdFor(
+    ctx,
+    { command: action, rule, type: "approval" },
+    `${held} End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    held,
   );
 };
 
@@ -220,31 +242,24 @@ const printFileUrls = (placements: readonly PrintPlacement[]): PrintPlacement[] 
     return { ...p, fileUrl: url.href };
   });
 
-/** Ask the founder for an integration, ending the call with what the agent should read. */
+/** Ask the founder for an integration, holding the call with what the agent should read. */
 const needIntegration = (
   ctx: RunContext,
   integration: Exclude<IntegrationNeed, "vercel">,
   reason: string,
   sent: string,
   why: string,
-): never => {
-  throw new RefusalError(
-    askFounder(ctx, { integration, productId: null, reason, type: "integration" }, sent, why),
-  );
-};
+): never => holdFor(ctx, { integration, productId: null, reason, type: "integration" }, sent, why);
 
-/** Ask the founder for Vercel for `productId`, whose binding answers it, which ends the call. */
+/** Ask the founder for Vercel for `productId`, whose binding answers it, which holds the call. */
 const needVercel = (
   ctx: RunContext,
   productId: string,
   reason: string,
   sent: string,
   why: string,
-): never => {
-  throw new RefusalError(
-    askFounder(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why),
-  );
-};
+): never =>
+  holdFor(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why);
 
 /** The founder's keys a listing is made with. */
 interface SellingKeys {
@@ -813,12 +828,14 @@ const TOOLS = {
     const funded = fundingFor(ctx, bet, product);
     const productId = funded?.productId ?? productFor(ctx, product);
     if (productId !== null && store.getProduct(productId)?.companyId !== company.id) {
-      return store.noSuchProduct(productId);
+      throw new RefusalError(store.noSuchProduct(productId));
     }
     const mate = delegateFor(ctx, role);
     if (!mate) {
       post(ctx, `(no "${role}" to delegate "${title}" to)`);
-      return `No teammate matches the role "${role}" — do it yourself or pick another role.`;
+      throw new RefusalError(
+        `No teammate matches the role "${role}" — do it yourself or pick another role.`,
+      );
     }
     const task = store.createTask({
       assigneeId: mate.id,
@@ -850,15 +867,17 @@ const TOOLS = {
   deploy: define(TOOL_SPECS.deploy, async (ctx) => {
     const { productId } = ctx.run;
     if (productId === null) {
-      return "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.";
+      throw new RefusalError(
+        "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.",
+      );
     }
     const product = store.getProduct(productId);
     if (!product) {
-      return store.noSuchProduct(productId);
+      throw new RefusalError(store.noSuchProduct(productId));
     }
     const token = getSecret("VERCEL_TOKEN");
     if (!token) {
-      return askFounder(
+      return holdFor(
         ctx,
         {
           integration: "vercel",
@@ -877,14 +896,14 @@ const TOOLS = {
     const unshippable = [...unshippableEnvValues(), ...heldKeys()];
     const leak = await unshippableIn(product.workspaceDir, unshippable);
     if (leak !== null) {
-      return leak;
+      throw new RefusalError(leak);
     }
     await requireLiveVercelToken(ctx, product, token, `while deploying ${product.name}`);
     requireSignOff(ctx, deployAction(product.id, target), "deploy");
     const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token, unshippable });
     if (deployed.kind === "name-taken") {
       const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
-      return askFounder(
+      return holdFor(
         ctx,
         {
           integration: "vercel",
@@ -907,7 +926,7 @@ const TOOLS = {
         ? ""
         : `\n${product.name} is now bound to the new Vercel project ${binds.projectName}, which counts its visitors.`;
     if (deployed.kind === "failed") {
-      return `The deploy of ${product.name} failed: ${deployed.reason}${bindNote}`;
+      throw new RefusalError(`The deploy of ${product.name} failed: ${deployed.reason}${bindNote}`);
     }
     const live =
       deployed.alias === null
@@ -918,18 +937,20 @@ const TOOLS = {
   set_env: define(TOOL_SPECS.set_env, async (ctx, { name, value, product: named }) => {
     const productId = productFor(ctx, named);
     if (productId === null) {
-      return "There is no product to set it on — create_product first.";
+      throw new RefusalError("There is no product to set it on — create_product first.");
     }
     const product = store.getProduct(productId);
     if (!product) {
-      return store.noSuchProduct(productId);
+      throw new RefusalError(store.noSuchProduct(productId));
     }
     if (product.vercel === null) {
-      return `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`;
+      throw new RefusalError(
+        `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`,
+      );
     }
     const token = getSecret("VERCEL_TOKEN");
     if (!token) {
-      return askFounder(
+      return holdFor(
         ctx,
         {
           integration: "vercel",
@@ -943,19 +964,25 @@ const TOOLS = {
     }
     const held = heldKeyIn(value);
     if (held !== null) {
-      return `${name} was not set: that value is IdleBiz's own ${held}, which never leaves IdleBiz. What needs it is a tool IdleBiz runs itself (create_payment_link, sell_print, deploy); a key the product needs of its own is one the founder makes for it, which an ask_boss action can ask them for.`;
+      throw new RefusalError(
+        `${name} was not set: that value is IdleBiz's own ${held}, which never leaves IdleBiz. What needs it is a tool IdleBiz runs itself (create_payment_link, sell_print, deploy); a key the product needs of its own is one the founder makes for it, which an ask_boss action can ask them for.`,
+      );
     }
     if (holdsStripeSecretKey(value)) {
-      return `${name} was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see "Checking who paid").`;
+      throw new RefusalError(
+        `${name} was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see "Checking who paid").`,
+      );
     }
     const exposed = publicValueRefusal(name, value);
     if (exposed !== null) {
-      return exposed;
+      throw new RefusalError(exposed);
     }
     const prefix = publicPrefixOf(name);
     const kept = prefix === undefined ? null : serverOnlyValueIn(value);
     if (kept !== null) {
-      return `${name} was not set: that value is the one set_env keeps as ${kept.name} on ${kept.product}, server-only, and a ${prefix} name would build it into the page, where every visitor reads it. Server code reads it as process.env.${kept.name}; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).`;
+      throw new RefusalError(
+        `${name} was not set: that value is the one set_env keeps as ${kept.name} on ${kept.product}, server-only, and a ${prefix} name would build it into the page, where every visitor reads it. Server code reads it as process.env.${kept.name}; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).`,
+      );
     }
     await requireLiveVercelToken(ctx, product, token, `while setting ${name} on ${product.name}`);
     const replaces = teamSetEnv(product, product.vercel.projectId, name);
@@ -964,7 +991,7 @@ const TOOLS = {
       const notOurs = replaces
         ? ""
         : `\nset_env only replaces a variable the team set: if ${product.vercel.projectName} already has ${name}, it is the founder's, so hand them an ask_boss action to change it.`;
-      return `${name} was not set on ${product.name}: ${set.error}${notOurs}`;
+      throw new RefusalError(`${name} was not set on ${product.name}: ${set.error}${notOurs}`);
     }
     keepEnvValue(product, product.vercel.projectId, name, value);
     post(ctx, `🔑 set ${name} on ${product.name}`);
@@ -978,15 +1005,15 @@ const TOOLS = {
     async (ctx, { afterPaymentUrl, amountUsd, bet, delivery, name, product: named }) => {
       const productId = productFor(ctx, named);
       if (productId === null) {
-        return "There is no product to charge for — create_product first.";
+        throw new RefusalError("There is no product to charge for — create_product first.");
       }
       const product = store.getProduct(productId);
       if (!product) {
-        return store.noSuchProduct(productId);
+        throw new RefusalError(store.noSuchProduct(productId));
       }
       const notTheBet = bet === undefined ? null : revenueBetRefusal(bet, product);
       if (notTheBet !== null) {
-        return notTheBet;
+        throw new RefusalError(notTheBet);
       }
       const afterPayment =
         afterPaymentUrl === undefined
@@ -996,7 +1023,7 @@ const TOOLS = {
       const price = formatCents(cents);
       const key = getSecret(STRIPE_SECRET_KEY);
       if (!key) {
-        return askFounder(
+        return holdFor(
           ctx,
           {
             integration: "stripe-key",
@@ -1032,7 +1059,7 @@ const TOOLS = {
           return stripeTurnedAway(ctx, LINK_GRANT, made.said);
         }
         if (made.kind === "failed") {
-          return `Stripe made no payment link: ${made.error}`;
+          throw new RefusalError(`Stripe made no payment link: ${made.error}`);
         }
         if (store.getChargeLink(made.id) !== null) {
           return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
@@ -1051,7 +1078,7 @@ const TOOLS = {
         });
         const retired = await madeWhileRetiring(product, made.id);
         if (retired !== null) {
-          return retired;
+          throw new RefusalError(retired);
         }
         const testMode = isTestKey(key) ? TEST_MODE : "";
         return `Created a payment link for "${name}" at ${price} on ${product.name}: ${made.url}${afterSale(made.id, delivery, afterPayment)}${testMode}`;
@@ -1085,7 +1112,7 @@ const TOOLS = {
         return printfulTurnedAway(ctx);
       }
       case "failed": {
-        return `Printful's catalog could not be read: ${read.reason}`;
+        throw new RefusalError(`Printful's catalog could not be read: ${read.reason}`);
       }
       // no default
     }
@@ -1094,19 +1121,21 @@ const TOOLS = {
     const { bet, name, priceUsd, variantIds, product: named } = body;
     const productId = productFor(ctx, named);
     if (productId === null) {
-      return "There is no product to sell it on — create_product first.";
+      throw new RefusalError("There is no product to sell it on — create_product first.");
     }
     const product = store.getProduct(productId);
     if (!product) {
-      return store.noSuchProduct(productId);
+      throw new RefusalError(store.noSuchProduct(productId));
     }
     const notTheBet = bet === undefined ? null : revenueBetRefusal(bet, product);
     if (notTheBet !== null) {
-      return notTheBet;
+      throw new RefusalError(notTheBet);
     }
     const urls = printFileUrls(body.placements);
     if (product.vercel === null) {
-      return `${product.name} has no Vercel project yet: deploy it with the print file, which makes one, then list it.`;
+      throw new RefusalError(
+        `${product.name} has no Vercel project yet: deploy it with the print file, which makes one, then list it.`,
+      );
     }
     const priceCents = Math.round(priceUsd * 100);
     const price = formatCents(priceCents);
@@ -1121,7 +1150,9 @@ const TOOLS = {
     const floor = priceFloorCents(quote);
     const shipping = formatCents(quote.shippingCents);
     if (priceCents < floor) {
-      return `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`;
+      throw new RefusalError(
+        `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`,
+      );
     }
     await requireStripeAccess(ctx, ctx.printListing.stripeAccess(keys.stripe), PRINT_GRANT);
     // the digest pins the design the founder signs for: a later deploy can change what the URL serves
@@ -1148,7 +1179,7 @@ const TOOLS = {
         return stripeTurnedAway(ctx, LISTING_GRANT, made.said);
       }
       if (made.kind === "failed") {
-        return `Stripe made no payment link: ${made.error}`;
+        throw new RefusalError(`Stripe made no payment link: ${made.error}`);
       }
       store.recordListing({
         betId: bet ?? null,
@@ -1166,7 +1197,7 @@ const TOOLS = {
       });
       const retired = await madeWhileRetiring(product, made.id);
       if (retired !== null) {
-        return retired;
+        throw new RefusalError(retired);
       }
       post(ctx, `🛍️ listed "${name}" at ${price} on ${product.name}`);
       const testMode = isTestKey(keys.stripe) ? TEST_MODE : "";
@@ -1179,7 +1210,7 @@ const TOOLS = {
   read_orders: define(TOOL_SPECS.read_orders, (ctx, { product: named }) => {
     const productId = productFor(ctx, named);
     if (productId === null) {
-      return "There is no product yet — create_product first.";
+      throw new RefusalError("There is no product yet — create_product first.");
     }
     const orders = store
       .listOrders()
@@ -1189,7 +1220,7 @@ const TOOLS = {
     const made = orders.length > 0 || store.madeProduct(productId);
     const name = store.getProduct(productId)?.name ?? (made ? productId : null);
     if (name === null) {
-      return store.noSuchProduct(productId);
+      throw new RefusalError(store.noSuchProduct(productId));
     }
     const retired = store.isRetiredProduct(productId);
     const told = store
@@ -1213,7 +1244,7 @@ const TOOLS = {
   name_product: define(TOOL_SPECS.name_product, (ctx, { product: named, ...draft }) => {
     const productId = productFor(ctx, named);
     if (productId === null) {
-      return "There is no product to name — create_product first.";
+      throw new RefusalError("There is no product to name — create_product first.");
     }
     const product = nameProduct(productId, draft, ctx.employee);
     return `${product.id} is now "${product.name}": ${product.description}`;
@@ -1230,7 +1261,7 @@ const TOOLS = {
   open_bet: define(TOOL_SPECS.open_bet, (ctx, { product, ...bet }) => {
     const productId = productFor(ctx, product);
     if (productId === null) {
-      return "There is no product to bet on — create_product first.";
+      throw new RefusalError("There is no product to bet on — create_product first.");
     }
     const wager = bet.metric === "users" ? { ...bet, landingPath: bet.landingPath ?? null } : bet;
     const opened = store.openBet({ ...wager, productId });
@@ -1244,7 +1275,7 @@ const TOOLS = {
         ? measureRefusal(named, store.getProduct(named.productId))
         : null;
     if (refusal !== null) {
-      return refusal;
+      throw new RefusalError(refusal);
     }
     const bet = store.measureBet(slug, Date.now());
     announceBet(bet);
@@ -1273,7 +1304,10 @@ const TOOLS = {
       if (!(error instanceof RefusalError)) {
         throw error;
       }
-      return `Couldn't hire: ${error.message}. Release someone first or work with the team you have.`;
+      throw new RefusalError(
+        `Couldn't hire: ${error.message}. Release someone first or work with the team you have.`,
+        { cause: error },
+      );
     }
     post(ctx, `🤝 hired ${hired.name} (${title})`);
     publishActivity({
@@ -1286,14 +1320,14 @@ const TOOLS = {
   release: define(TOOL_SPECS.release, (ctx, { slug, reason }) => {
     const { company, employee } = ctx;
     if (slug === employee.id) {
-      return "You can't release yourself.";
+      throw new RefusalError("You can't release yourself.");
     }
     const target = store.getEmployee(slug);
     if (!target || target.companyId !== company.id) {
-      return `No teammate with slug "${slug}" — check the roster in your brief.`;
+      throw new RefusalError(`No teammate with slug "${slug}" — check the roster in your brief.`);
     }
     if (target.status === "working") {
-      return `${target.name} is mid-task right now — try again when they're idle.`;
+      throw new RefusalError(`${target.name} is mid-task right now — try again when they're idle.`);
     }
     const left = store.archiveEmployee(slug);
     const rehomed = left?.rehomed ?? 0;
@@ -1321,7 +1355,7 @@ export const callTool = (
   ctx: RunContext,
   route: string,
   raw: JsonValue,
-): Promise<string | null> => {
+): Promise<ToolOutcome | null> => {
   const name = TOOL_NAMES.find((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}` === route);
   return name === undefined ? Promise.resolve(null) : TOOLS[name](ctx, raw);
 };

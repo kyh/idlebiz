@@ -1,5 +1,5 @@
 import type { BusinessTypeId, Company, Employee, Product } from "@repo/domain/domain";
-import { toolDocs } from "../tool-specs";
+import { EXIT_CODES_DOC, toolDocs } from "../tool-specs";
 
 /** How each kind of business turns its work into a real dollar, with the tools the team has. */
 const BUSINESS_MODELS = {
@@ -53,7 +53,7 @@ Every task says which product it is for; that product's workspace is your workin
 - You have a private memory folder at ${memoryDir} — keep what only you need there so future-you remembers.
 
 ## Company tools (the IdleBiz API)
-Call each with the \`idlebiz\` command in your shell: \`idlebiz <tool>\`, then its request as one single-quoted JSON argument, or \`-\` with the JSON on stdin, which keeps an apostrophe or many lines intact (\`idlebiz ask-boss - <<'EOF'\` … \`EOF\`). It prints the answer, or why the call was refused; \`idlebiz <tool> --help\` repeats a tool's doc.
+Call each with the \`idlebiz\` command in your shell: \`idlebiz <tool>\`, then its request as one single-quoted JSON argument, or \`-\` with the JSON on stdin, which keeps an apostrophe or many lines intact (\`idlebiz ask-boss - <<'EOF'\` … \`EOF\`). It prints the answer however the call went, and exits ${EXIT_CODES_DOC}. So \`idlebiz deploy && idlebiz message-team …\` posts only once the deploy is done. \`idlebiz <tool> --help\` repeats a tool's doc.
 ${toolDocs(lead)}
 
 ## Working with your team

@@ -416,7 +416,11 @@ rather than crashing boot.
   (`server/agent-launcher.ts`, `~/.idlebiz/bin/idlebiz`), which runs the CLI on main's own node
   and goes first on each run's PATH. The verb sends its request to the control plane its run was
   handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`; `server/control-plane.ts`), over that run's
-  own unix socket only, prints the answer, and exits 1 with why when a call is refused; `-` reads
+  own unix socket only, prints the server's answer on stdout however the call ended, and exits by
+  how it did (`TOOL_OUTCOMES` in `server/tool-specs.ts`, which the instructions render): 0 done,
+  1 refused, 2 a fault of main's (reported to its log), 4 held for the founder, so
+  `idlebiz deploy && …` stops at a deploy awaiting sign-off. A call that never reached main, or
+  that main could not take (a body that does not parse), exits 1 with why on stderr. `-` reads
   the request from stdin. `idlebiz <tool> --help` prints the tool's doc.
 - **Main asks the shell for what only a native app does** (`server/host.ts`): a message box, the
   clipboard, Finder and the browser, the menu-bar icon (main decides it, `server/tray.ts`; the

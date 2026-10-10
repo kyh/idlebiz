@@ -356,6 +356,45 @@ export const TOOL_NAMES = Object.keys(TOOL_SPECS).filter(
   (name): name is ToolName => name in TOOL_SPECS,
 );
 
+/**
+ * How a call can end: the exit code its verb leaves, and what that tells the employee, so a chain
+ * (`idlebiz deploy && …`) or a `set -e` script goes on only past a call that did what it asked.
+ * Whichever way it ends, the verb prints the server's prose on stdout. A wait on a person exits 4,
+ * as inteligir's CLI has it.
+ */
+export const TOOL_OUTCOMES = {
+  done: { exit: 0, means: "it did what you asked" },
+  fault: { exit: 2, means: "IdleBiz itself broke on it (it logs why, so try again later)" },
+  held: {
+    exit: 4,
+    means:
+      "it is held for the founder until they answer (the answer says whether to end your turn)",
+  },
+  refused: {
+    exit: 1,
+    means: "it was refused, failed or never reached IdleBiz (the answer says why)",
+  },
+} as const;
+
+export type ToolOutcomeKind = keyof typeof TOOL_OUTCOMES;
+
+export const TOOL_OUTCOME_KINDS = Object.keys(TOOL_OUTCOMES).filter(
+  (kind): kind is ToolOutcomeKind => kind in TOOL_OUTCOMES,
+);
+
+/** What a call answers: how it ended, and the prose the employee reads whichever way it did. */
+export interface ToolOutcome {
+  kind: ToolOutcomeKind;
+  text: string;
+}
+
+/** How an employee reads a call's exit code, lowest first. */
+export const EXIT_CODES_DOC = TOOL_OUTCOME_KINDS.toSorted(
+  (a, b) => TOOL_OUTCOMES[a].exit - TOOL_OUTCOMES[b].exit,
+)
+  .map((kind) => `${TOOL_OUTCOMES[kind].exit} when ${TOOL_OUTCOMES[kind].means}`)
+  .join("; ");
+
 /** The verb an agent types for a tool: its name as a command-line word. */
 export const verbOf = (name: ToolName): string => name.replaceAll("_", "-");
 

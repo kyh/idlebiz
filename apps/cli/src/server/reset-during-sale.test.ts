@@ -105,7 +105,9 @@ describe("a reset while Stripe makes a signed payment link", () => {
     expect(switchedOff).toEqual(["plink_late"]);
 
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "POST /v1/payment-link", link)).toContain("resetting");
+    const refused = await callTool(ctx, "POST /v1/payment-link", link);
+    expect(refused?.kind).toBe("refused");
+    expect(refused?.text).toContain("resetting");
     expect(links).toBe(1);
     expect(asked).toEqual([]);
   });

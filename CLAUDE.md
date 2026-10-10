@@ -199,14 +199,20 @@ allocator and the replay.
   company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
   Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only
   that a claim or lock race was lost. It refuses with a `RefusalError` (`server/refusal.ts`)
-  worded as the sentence the agent should read; a tool turns that into its answer, the page's
-  API into the founder's note. Anything else thrown is a fault: answered the same way, but reported to
-  main's log. Don't split it by entity or make it async: its synchronous check-and-set is
-  what makes the task lock correct.
+  worded as the sentence the agent should read; a tool turns that into its answer, refused, the
+  page's API into the founder's note. Anything else thrown is a fault: answered the same way, as
+  a fault, but reported to main's log. Don't split it by entity or make it async: its
+  synchronous check-and-set is what makes the task lock correct.
 - **A company tool is described once**, in `server/tool-specs.ts`: route, body, lead-only
   refusal, doc and example. The agents' instructions are rendered from it, `server/tools.ts`
   binds each implementation to its spec, `idlebiz <tool>` is the client a run types it with
-  (`commands/tools.ts`), and `control-plane.ts` is only transport. A change
+  (`commands/tools.ts`), and `control-plane.ts` is only transport. Every call ends in one of
+  `TOOL_OUTCOMES`, the verb's exit code: done (0) is what the implementation returns, refused (1)
+  a `RefusalError` or the lead-only refusal, a fault (2) anything else thrown, and held (4) a
+  call waiting on the founder (a sign-off, an integration: `holdFor` in `server/tools.ts`). An
+  ask that did not reach the founder is refused; `ask_boss` and `request_integration`, whose
+  call is the ask, are done once it does. The verb prints the answer on stdout whichever it is,
+  so `idlebiz deploy && …` stops at a deploy awaiting sign-off. A change
   everyone should hear about (a bet, a product, autopilot) goes through
   `server/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's page.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office

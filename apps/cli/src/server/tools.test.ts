@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ActivityEvent } from "@repo/domain/activity";
 import type { AgentRunner, BlockedAsk, TaskOrigin } from "@repo/domain/domain";
@@ -19,12 +19,14 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
-const { callTool } = await import("./tools");
+const { callTool: outcomeOf } = await import("./tools");
 const { stripeLinkAccess, stripePaymentLink } = await import("./payment-links");
 const { printListing } = await import("./print-listing");
 const { productionHosts } = await import("./vercel");
 const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
+const { ControlPlane } = await import("./control-plane");
+const { runCli } = await import("../program");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -44,6 +46,12 @@ afterAll(() => {
     process.env.IDLEBIZ_ROOT_DIR = previousRoot;
   }
 });
+
+/** What a call answers the agent, however it ended; null for a route no tool serves. */
+const callTool = async (ctx: RunContext, route: string, raw: JsonValue): Promise<string | null> => {
+  const outcome = await outcomeOf(ctx, route, raw);
+  return outcome?.text ?? null;
+};
 
 const hire = (name: string, title: string, runner: AgentRunner = "claude") =>
   ({
@@ -136,8 +144,19 @@ describe("company tools", () => {
 
   it("turns the lead's tools away from anyone else, before looking at the body", async () => {
     const { ctx } = runAs("priya");
-    expect(await callTool(ctx, "POST /v1/open-bet", {})).toContain("Only the team lead");
+    expect(await outcomeOf(ctx, "POST /v1/open-bet", {})).toEqual({
+      kind: "refused",
+      text: "Only the team lead opens bets — pitch it in the team room.",
+    });
     expect(store.listBets()).toEqual([]);
+  });
+
+  it("answers what a tool did as done", async () => {
+    const { ctx } = runAs("priya");
+    expect(await outcomeOf(ctx, "POST /v1/message-team", { text: "on it" })).toEqual({
+      kind: "done",
+      text: "Posted to the team room.",
+    });
   });
 
   it("opens a bet for the lead and says how it is counted", async () => {
@@ -156,13 +175,21 @@ describe("company tools", () => {
     expect(answer).toContain(`metadata[bet]=${bet?.id}`);
   });
 
-  it("answers with the store's refusal rather than failing the call", async () => {
+  it("answers with the store's refusal, as refused, rather than failing the call", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     expect(
-      await callTool(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" }),
-    ).toContain("no live bet");
+      await outcomeOf(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" }),
+    ).toEqual({ kind: "refused", text: 'no live bet "no-such-bet"' });
     expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("answers what a tool turns down by its own check as refused", async () => {
+    const { ctx } = runAs("mae");
+    expect(await outcomeOf(ctx, "POST /v1/release", { slug: "mae" })).toEqual({
+      kind: "refused",
+      text: "You can't release yourself.",
+    });
   });
 
   it("answers a fault too, so the run goes on, and reports it", async () => {
@@ -175,7 +202,10 @@ describe("company tools", () => {
         throw fault;
       },
     };
-    expect(await callTool(broken, "POST /v1/delegate", HANDOFF)).toBe(fault.message);
+    expect(await outcomeOf(broken, "POST /v1/delegate", HANDOFF)).toEqual({
+      kind: "fault",
+      text: fault.message,
+    });
     expect(logged).toHaveBeenCalledExactlyOnceWith("[tool /v1/delegate]", fault);
   });
 
@@ -338,12 +368,17 @@ describe("company tools", () => {
     expect(await delegate("x".repeat(80))).toContain("Delegated");
   });
 
-  it("keeps the first thing a run asks the founder", async () => {
+  it("keeps the first thing a run asks the founder, refusing the next", async () => {
     const { ctx, asked } = runAs("priya");
-    await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
-    expect(
-      await callTool(ctx, "POST /v1/request-integration", { kind: "vercel", reason: "to deploy" }),
-    ).toContain("The founder was not asked");
+    expect(await outcomeOf(ctx, "POST /v1/ask-boss", { question: "Ship it?" })).toMatchObject({
+      kind: "done",
+    });
+    const unsent = await outcomeOf(ctx, "POST /v1/request-integration", {
+      kind: "vercel",
+      reason: "to deploy",
+    });
+    expect(unsent?.kind).toBe("refused");
+    expect(unsent?.text).toContain("The founder was not asked");
     expect(asked).toEqual([{ question: "Ship it?", type: "question" }]);
     expect(ctx.asks.current()).toEqual({ question: "Ship it?", type: "question" });
   });
@@ -604,9 +639,10 @@ describe("deploy", () => {
     connectVercel();
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
-      `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
-    );
+    expect(await outcomeOf(ctx, "POST /v1/deploy", {})).toEqual({
+      kind: "held",
+      text: `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    });
     expect(asked).toEqual([{ command: BOUND_ACTION, rule: "deploy", type: "approval" }]);
     expect(deploys).toEqual([]);
   });
@@ -831,6 +867,101 @@ describe("deploy", () => {
     expect(run.asked).toEqual([]);
     expect(logged).not.toHaveBeenCalled();
     expect(await callTool(run.ctx, "POST /v1/deploy", {})).toContain("Deployed Acme");
+  });
+});
+
+describe("an idlebiz verb, through the control plane to the tools", () => {
+  // short, so a socket's path under it fits macOS's limit wherever TMPDIR is
+  const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-verb-"));
+  const plane = new ControlPlane(path.join(box, "save"), path.join(box, "home"));
+
+  beforeAll(() => plane.start());
+  afterAll(() => {
+    plane.stop();
+    rmSync(box, { force: true, recursive: true });
+  });
+
+  /** `argv` typed in `ctx`'s run: the exit code it left, and what it wrote to stdout and stderr. */
+  const typed = async (ctx: RunContext, argv: readonly string[]) => {
+    const handle = await plane.registerRun((route, raw) => outcomeOf(ctx, route, raw));
+    vi.stubEnv("IDLEBIZ_API_SOCKET", handle.env.IDLEBIZ_API_SOCKET);
+    vi.stubEnv("IDLEBIZ_RUN_TOKEN", handle.env.IDLEBIZ_RUN_TOKEN);
+    const out: string[] = [];
+    const err: string[] = [];
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      out.push(String(chunk));
+      return true;
+    });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      err.push(String(chunk));
+      return true;
+    });
+    try {
+      const code = await runCli(argv);
+      return { code, err: err.join(""), out: out.join("") };
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+      vi.unstubAllEnvs();
+      handle.release();
+    }
+  };
+
+  it("exits 0 on a call done, printing what it did", async () => {
+    const { ctx } = runAs("priya");
+    expect(await typed(ctx, ["message-team", '{"text":"on it"}'])).toEqual({
+      code: 0,
+      err: "",
+      out: "Posted to the team room.\n",
+    });
+  });
+
+  it.each([
+    [
+      "the lead's tool, typed by anyone else",
+      "priya",
+      ["open-bet", JSON.stringify(BET)],
+      "Only the team lead opens bets — pitch it in the team room.",
+    ],
+    [
+      "the store's refusal",
+      "mae",
+      ["kill-bet", '{"reason":"dud","slug":"no-such-bet"}'],
+      'no live bet "no-such-bet"',
+    ],
+  ])("exits 1 on %s, printing why", async (_, who, argv, why) => {
+    const { ctx } = runAs(who);
+    expect(await typed(ctx, argv)).toEqual({ code: 1, err: "", out: `${why}\n` });
+  });
+
+  it("exits 4 on a deploy held for the founder's sign-off, so a chain after it stops", async () => {
+    connectVercel();
+    const { ctx, deploys } = deployingRun(DEPLOYED);
+    store.setProductVercel("acme", VERCEL);
+    expect(await typed(ctx, ["deploy"])).toEqual({
+      code: 4,
+      err: "",
+      out: `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.\n`,
+    });
+    expect(deploys).toEqual([]);
+  });
+
+  it("exits 2 on a fault, printing it, and reports it", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = runAs("mae");
+    const fault = new TypeError("cannot read the queue");
+    const broken: RunContext = {
+      ...ctx,
+      assign: () => {
+        throw fault;
+      },
+    };
+    expect(await typed(broken, ["delegate", JSON.stringify(HANDOFF)])).toEqual({
+      code: 2,
+      err: "",
+      out: `${fault.message}\n`,
+    });
+    expect(logged).toHaveBeenCalledExactlyOnceWith("[tool /v1/delegate]", fault);
   });
 });
 
@@ -1287,14 +1418,16 @@ describe("create_payment_link", () => {
     expect(stripe).toEqual([]);
   });
 
-  it("says a sign-off was never asked for when the run already asked the founder something", async () => {
+  it("refuses a sign-off never asked for when the run already asked the founder something", async () => {
     const { ctx, asked, stripe } = chargingRun();
     await callTool(ctx, "POST /v1/ask-boss", { action: "Verify the email", instructions: "..." });
 
-    const held = await callTool(ctx, "POST /v1/payment-link", LINK);
-    expect(held).toContain(`Held for the founder's sign-off on "payment link`);
-    expect(held).toContain("The founder was not asked");
-    expect(held).not.toContain("the task resumes on their answer");
+    const unsent = await outcomeOf(ctx, "POST /v1/payment-link", LINK);
+    expect(unsent?.kind).toBe("refused");
+    const said = unsent?.text;
+    expect(said).toContain(`Held for the founder's sign-off on "payment link`);
+    expect(said).toContain("The founder was not asked");
+    expect(said).not.toContain("the task resumes on their answer");
     expect(asked).toMatchObject([{ type: "action" }]);
     expect(stripe).toEqual([]);
   });

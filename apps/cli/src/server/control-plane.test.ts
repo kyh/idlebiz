@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ControlPlane, SOCKET_PATH_MAX_BYTES, runSocketPath, socketDirs } from "./control-plane";
+import type { ToolOutcome } from "./tool-specs";
 
 // short, so a socket's path under it fits macOS's limit wherever TMPDIR is
 const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-cp-"));
@@ -17,6 +18,8 @@ afterAll(() => {
   controlPlane.stop();
   rmSync(box, { force: true, recursive: true });
 });
+
+const done = (text: string): Promise<ToolOutcome> => Promise.resolve({ kind: "done", text });
 
 /** A file's permission bits, as `ls` would spell them in octal. */
 const permissions = (file: string): string => statSync(file).mode.toString(8).slice(-3);
@@ -82,7 +85,7 @@ describe("run-scoped control-plane requests", () => {
       const calls: string[] = [];
       const handle = await controlPlane.registerRun((route, raw) => {
         calls.push(`${route} ${JSON.stringify(raw)}`);
-        return Promise.resolve("created");
+        return done("created");
       });
       try {
         const { status } = await call(
@@ -112,7 +115,7 @@ describe("run-scoped control-plane requests", () => {
     const calls: string[] = [];
     const handle = await controlPlane.registerRun((route) => {
       calls.push(route);
-      return Promise.resolve("created");
+      return done("created");
     });
     try {
       const { status } = await call(
@@ -134,7 +137,7 @@ describe("run-scoped control-plane requests", () => {
 
   it("serves an answer a tool gives only once its work is done", async () => {
     const { promise: called, resolve: arrive } = Promise.withResolvers<string>();
-    const { promise: deployed, resolve: finish } = Promise.withResolvers<string>();
+    const { promise: deployed, resolve: finish } = Promise.withResolvers<ToolOutcome>();
     const handle = await controlPlane.registerRun((route) => {
       arrive(route);
       return deployed;
@@ -142,10 +145,11 @@ describe("run-scoped control-plane requests", () => {
     try {
       const answer = call(handle.socket, "/v1/deploy", handle.env.IDLEBIZ_RUN_TOKEN, "{}");
       expect(await called).toBe("POST /v1/deploy");
-      finish("Deployed Acme to production: https://acme.vercel.app");
+      finish({ kind: "done", text: "Deployed Acme to production: https://acme.vercel.app" });
       const res = await answer;
       expect(res.status).toBe(200);
       expect(JSON.parse(res.body)).toEqual({
+        kind: "done",
         message: "Deployed Acme to production: https://acme.vercel.app",
         ok: true,
       });
@@ -158,11 +162,11 @@ describe("run-scoped control-plane requests", () => {
     const heard: string[] = [];
     const lead = await controlPlane.registerRun((route) => {
       heard.push(`lead ${route}`);
-      return Promise.resolve("ok");
+      return done("ok");
     });
     const teammate = await controlPlane.registerRun((route) => {
       heard.push(`teammate ${route}`);
-      return Promise.resolve("ok");
+      return done("ok");
     });
     try {
       expect(lead.socket).not.toBe(teammate.socket);

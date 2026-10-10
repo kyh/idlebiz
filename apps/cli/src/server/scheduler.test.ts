@@ -839,9 +839,9 @@ describe("asking the lead for the next bet", () => {
 
     expect(proposing()).toHaveLength(1);
     const handoff = { description: "write it", role: "engineer", title: "Draft the post" };
-    expect(await tools.get("priya")?.call("POST /v1/delegate", handoff)).toContain(
-      "open_bet first",
-    );
+    const refused = await tools.get("priya")?.call("POST /v1/delegate", handoff);
+    expect(refused?.kind).toBe("refused");
+    expect(refused?.text).toContain("open_bet first");
   });
 
   it("waits while the lead's last proposal does", () => {
