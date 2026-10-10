@@ -41,7 +41,6 @@ import { stdioPeer } from "./relay/stdio";
 import { createScheduler } from "./scheduler";
 import { checkSecrets, setSealer } from "./secrets";
 import * as store from "./store/store";
-import { initStripeConnect, revokeBeforeReset } from "./stripe-connect";
 import { appTray } from "./tray";
 import { initVercelConnect } from "./vercel-connect";
 
@@ -75,19 +74,8 @@ const resetGame = async (): Promise<void> => {
   metricsPulse.stop();
   suspendWrites();
   try {
-    const [, stripeLeft, linksLeft] = await Promise.all([
-      stopAgents(),
-      revokeBeforeReset(),
-      switchOffBeforeReset(),
-    ]);
+    const [, linksLeft] = await Promise.all([stopAgents(), switchOffBeforeReset()]);
     await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
-    if (stripeLeft) {
-      await host().messageBox({
-        detail: stripeLeft,
-        kind: "warning",
-        message: "Stripe did not confirm it revoked IdleBiz's access",
-      });
-    }
     if (linksLeft) {
       await host().messageBox({
         detail: linksLeft,
@@ -250,16 +238,6 @@ const boot = async (launch: Launch): Promise<void> => {
 
   metricsPulse.start();
 
-  initStripeConnect({
-    notify: (status) => {
-      broadcast("stripe", status);
-    },
-    // a Stripe connection only reads revenue: work waiting on a key to charge with waits on
-    onConnected: () => stripeReady("stripe"),
-    openExternal: async (url) => {
-      await host().open({ kind: "url", target: url });
-    },
-  });
   initVercelConnect({
     onConnected: (connection) => {
       metricsPulse.now();

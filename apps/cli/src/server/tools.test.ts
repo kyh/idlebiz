@@ -232,7 +232,7 @@ describe("company tools", () => {
     const measure = (slug: string) => callTool(ctx, "POST /v1/measure-bet", { slug });
 
     expect(await measure(money.id)).toBe(
-      'No source reads revenue yet — only the Stripe key IdleBiz charges with reads the account payment links charge on: request_integration "stripe" for the founder to add one in the Budget panel. Then measure_bet again.',
+      'No source reads revenue yet — request_integration "stripe" for the founder to add the Stripe key IdleBiz charges with in the Budget panel. Then measure_bet again.',
     );
     expect(await measure(visits.id)).toContain("No source reads users of");
     expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
@@ -291,11 +291,7 @@ describe("company tools", () => {
       Promise.resolve(Response.json({ data: [testCharge], total_count: 1 })),
     );
 
-    const snap = await fetchRealMetrics(
-      { key: "sk_test_1", via: "own" },
-      store.listProducts(),
-      store.listBets(),
-    );
+    const snap = await fetchRealMetrics("sk_test_1", store.listProducts(), store.listBets());
     for (const [betId, { reading, at }] of snap.betReadings) {
       store.setBetReading(betId, reading, at);
     }

@@ -57,7 +57,6 @@ import { docToTask, taskToDoc } from "./task-codec";
 import { NewerSaveError, SAVE_FORMAT, companyToDoc, docToCompany, formatOf } from "./company-codec";
 import { docToEmployee, employeeBody, employeeToDoc } from "./employee-codec";
 import { docToRoutine, routineToDoc } from "./routine-codec";
-import { readMetricsConfig, writeMetricsConfig } from "./metrics-config";
 import {
   DEFAULT_POLICY,
   MAX_LIVE_BETS_PER_PRODUCT,
@@ -935,7 +934,7 @@ export const archiveEmployee = (
 
 // ---- products --------------------------------------------------------------
 /** The first product's code is the company's workspace/; it inherits the legacy metrics. */
-const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
+const firstProduct = (co: Company): Product => ({
   companyId: co.id,
   createdAt: co.createdAt,
   description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
@@ -945,7 +944,7 @@ const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
   revenueUsd: null,
   ships: co.ships,
   users: co.users,
-  vercel,
+  vercel: null,
   workspaceDir: companyWorkspace(co.id),
 });
 
@@ -2059,7 +2058,7 @@ export const foundCompany = (input: {
   if (input.hires.length > co.maxAgents) {
     throw new RefusalError(`the office is at its ${co.maxAgents}-seat cap`);
   }
-  active.products.push(firstProduct(co, null));
+  active.products.push(firstProduct(co));
   for (const [deskIndex, hire] of input.hires.entries()) {
     const employeeId = uniqueSlug(
       hire.name,
@@ -2246,9 +2245,9 @@ const electMissingLead = (active: ActiveCompany): boolean => {
 };
 
 /** A company always has a product to work on; one that lost its last is given its mission back as one. */
-const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null): void => {
+const ensureFirstProduct = (active: ActiveCompany): void => {
   if (lacksProduct(active)) {
-    const first = firstProduct(active.company, vercel);
+    const first = firstProduct(active.company);
     mkdirSync(first.workspaceDir, { recursive: true });
     active.products.push(first);
     saveProduct(first);
@@ -2272,19 +2271,6 @@ const adoptProductlessWork = (active: ActiveCompany): void => {
     saveTask(adopted);
     return adopted;
   });
-};
-
-/** The Vercel binding a save from before products kept on the company, for the first product to hold. */
-const legacyVercel = (companyId: string): VercelBinding | null => {
-  const legacy = readMetricsConfig(companyId)?.vercel;
-  if (!legacy) {
-    return null;
-  }
-  return {
-    projectId: legacy.projectId,
-    projectName: legacy.projectName ?? legacy.projectId,
-    teamId: legacy.teamId ?? null,
-  };
 };
 
 const UNMARKED_REVENUE =
@@ -2762,16 +2748,11 @@ const adoptOlderAnswers = (active: ActiveCompany, from: number): void => {
  * codecs are not migrations. Runs once interrupted runs are recovered.
  */
 const adoptOlderSave = (active: ActiveCompany, from: number): void => {
-  const { id } = active.company;
   if (from < 1) {
     adoptLegacyTeam(active.company);
     if (lacksProduct(active)) {
-      const vercel = legacyVercel(id);
-      ensureFirstProduct(active, vercel);
+      ensureFirstProduct(active);
       adoptProductlessWork(active);
-      if (vercel !== null) {
-        writeMetricsConfig(id, { vercel: undefined });
-      }
     }
     dropRetiredRoutines(active);
     adoptUnmarkedBets(active);
@@ -2842,7 +2823,7 @@ export const initStore = (): LoadReport => {
     if (format < SAVE_FORMAT) {
       adoptOlderSave(active, format);
     }
-    ensureFirstProduct(active, null);
+    ensureFirstProduct(active);
     dropEndedGrants(active);
     mkdirSync(company.workspaceDir, { recursive: true });
     if (electMissingLead(active)) {

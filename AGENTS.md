@@ -100,7 +100,7 @@ secrets.json being sealed, a held command denied from #team, an action card answ
 held into a window let go of when it closes, #team kept on its newest line and shown again when
 its window reopens, a long ask kept on screen, a typed answer kept while the dialogue's menu is
 hovered, the dialogue's cursor kept on Talk… as rows come ahead of it, Start refused while out of
-budget, a Stripe sign-in left in the browser started over, retiring the selected product, a file
+budget, retiring the selected product, a file
 boot skipped named in full, and a save a newer build wrote asking for an update. It is local only, not part
 of `pnpm verify` or CI:
 
@@ -216,8 +216,8 @@ rather than crashing boot.
   saves a key only once Stripe has taken it (`server/stripe-key.ts`) and resumes the work that
   waited on it. A new key is pasted over the saved one, never after removing it: a pulse
   between the two finds no key and hands each retiring link to the founder to switch off by hand. A restricted key needs Write on Payment Links, Prices and Products to charge,
-  and Read on Charges for the revenue read below (without Connect) and for each paid print,
-  whose payment the order pump reads before Printful is paid (with Connect too), Read on
+  and Read on Charges for the revenue read below and for each paid print,
+  whose payment the order pump reads before Printful is paid, Read on
   Checkout Sessions for the order pump, and Write on Shipping Rates to sell a print, which
   `sell_print` checks with a read of all three (`stripeListingAccess`) before it asks for the
   sign-off. A link's optional
@@ -257,15 +257,12 @@ rather than crashing boot.
   confirmed (but a held one whose card the founder settled) and each paid order whose card still waits on the founder. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
   place orders in exactly one store (`server/printful-token.ts`); with none, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
-  saved one. Metrics reads revenue with the Stripe key
-  whenever one is saved, since every payment link and so every tagged charge is on its
-  account; only with no key does the company whose `metrics.json` holds the connected
-  account read through `STRIPE_CONNECT_TOKEN` (`stripeCredential` in `server/metrics.ts`), so
-  a grant on another account, or one revoked, never stands between a bet and its money. The
-  Connect token is read-only. A key Stripe
-  refuses shows in the Budget panel — a Connect token as revoked, with Disconnect beside Reconnect
-  while main still holds its grant, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
-  `server/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
+  saved one. Metrics reads revenue with the same Stripe key (`stripeCredential` in
+  `server/metrics.ts`), since every payment link and so every tagged charge is on its account;
+  with no key saved nothing reads revenue. A key Stripe turns away on that read stays saved and
+  shows in the Budget panel as refused (`noteStripeRead` and `stripeKeyStatus` in
+  `server/stripe-key.ts`, asked again on each pulse) until a read Stripe takes, or a key pasted
+  over it. One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one. Each product binds a project
   of its own (a project another product holds is refused). The first token saved, through
   any product, resumes every Vercel ask, since it is what each product's deploy lacked; after
@@ -273,7 +270,7 @@ rather than crashing boot.
   (`productId`, saved as the task's `askProduct`), which a run may name other than its own,
   and its Inbox card opens that product's binding. A refused token shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
-  (`readJsonFileForUpdate` in `server/lib/fs.ts`; `metrics.json` too). Employees deploy
+  (`readJsonFileForUpdate` in `server/lib/fs.ts`). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
   `VERCEL_TOKEN` in main (`server/deploy.ts`) once the founder signs off. Before the sign-off is
   asked, and before `set_env` sets anything, Vercel is asked whether it still takes the token
@@ -334,14 +331,11 @@ rather than crashing boot.
   and codex runs in `external-sandbox`, a mode
   `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own, and
   it asks before every command and patch. A codex-acp upgrade must carry that patch.
-- `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
-  (`server/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
-  (`packages/agent-driver/src/detect.ts`).
+- `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths (`packages/agent-driver/src/detect.ts`).
 - `IDLEBIZ_COUNT_TEST_MONEY=1` counts test-mode Stripe charges toward revenue and bets, for
   an end-to-end run of a revenue bet on a test key. Without it only live-mode money counts:
   a test-mode key reads as "Stripe is in test mode — no charge counts" in the brief and
-  `measure_bet` refuses a revenue bet on it (`server/metrics.ts`), even beside a live Connect
-  grant, since the key IdleBiz charges with makes every link.
+  `measure_bet` refuses a revenue bet on it (`server/metrics.ts`).
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
@@ -448,7 +442,7 @@ rather than crashing boot.
   the renderer, whose activity ring starts empty every launch; #team reads the room back from
   main's copy of `chat.jsonl` instead. Company-level running state goes in
   `<company>/state/` (path helpers in `server/paths.ts`); what the founder configured
-  (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
+  (`approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
   so there is nothing to keep in sync.
@@ -519,9 +513,9 @@ rather than crashing boot.
   `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:
   its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
-  (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
-  (the two OAuth connections, same shape), `stripe-api.ts` (what every Stripe call shares),
-  `stripe-key.ts` (the charging key the founder enters),
+  (every write, atomic and behind the reset gate), `vercel-connect.ts` (the Vercel token the
+  founder pastes and each product's project binding), `stripe-api.ts` (what every Stripe call
+  shares), `stripe-key.ts` (the Stripe key the founder enters, which charges and reads revenue),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),

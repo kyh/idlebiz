@@ -43,12 +43,6 @@ export interface DevHostOptions {
   pageDevUrl?: string;
 }
 
-/** What main asked the system to open: a URL in the browser, a file or folder in Finder. */
-export interface Opening {
-  kind: "path" | "reveal" | "url";
-  target: string;
-}
-
 export interface DevHost {
   /** A link that signs a browser in to main's page, once, within five minutes, as the window is. */
   handoff: () => Promise<string>;
@@ -58,8 +52,6 @@ export interface DevHost {
   stop: () => Promise<void>;
   /** What main asked to be copied to the clipboard, oldest first. */
   copied: readonly string[];
-  /** What main asked the system to open, oldest first: the dev host opens nothing. */
-  opened: readonly Opening[];
 }
 
 type MainChild = ChildProcessByStdio<Writable, Readable, Readable>;
@@ -103,7 +95,6 @@ const linesOf = (stream: Readable) =>
 export const startDevHost = async (options: DevHostOptions): Promise<DevHost> => {
   const { log } = options;
   const copied: string[] = [];
-  const opened: Opening[] = [];
   // main's own ask to restart it, heard once the restart below exists
   const asks = new EventTarget();
   let main: Main | null = null;
@@ -121,7 +112,6 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       return null;
     });
     peer.handle("host.open", openingSchema, (opening) => {
-      opened.push(opening);
       log(`[host] main asked to open (${opening.kind}) ${opening.target}`);
       return null;
     });
@@ -274,5 +264,5 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
   };
 
   main = await startMain();
-  return { copied, handoff, opened, restartMain, stop };
+  return { copied, handoff, restartMain, stop };
 };

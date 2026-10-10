@@ -19,7 +19,6 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
-const { writeMetricsConfig } = await import("./store/metrics-config");
 const { activityEvents } = await import("./activity");
 const { createScheduler, loggedToolName } = await import("./scheduler");
 const { setAutopilot } = await import("./company-actions");
@@ -1149,22 +1148,13 @@ describe("an integration the founder connects", () => {
     type: "integration",
   };
 
-  it("resumes no ask for a Stripe key on a read-only Stripe connection", async () => {
-    const { drain, task } = await blockedOn(KEY);
-    drain.resumeIntegrationAsks("stripe");
-    expect(kindOf(task)).toBe("blocked");
-  });
-
   it("leaves an ask to count revenue waiting while Stripe stays in test mode", async () => {
     const { drain, task } = await blockedOn(READ);
     writeFileSync(
       path.join(root, "secrets.json"),
-      JSON.stringify({ STRIPE_CONNECT_TOKEN: "sk_live_connected", STRIPE_SECRET_KEY: "sk_test_x" }),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sk_test_x" }),
     );
-    writeMetricsConfig(task.companyId, {
-      stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true },
-    });
-    drain.resumeIntegrationAsks("stripe");
+    drain.resumeIntegrationAsks("stripe", "stripe-key");
     expect(kindOf(task)).toBe("blocked");
   });
 

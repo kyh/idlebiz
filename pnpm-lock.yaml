@@ -209,9 +209,6 @@ importers:
       '@repo/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.1

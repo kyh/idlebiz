@@ -77,7 +77,7 @@ const revenueLine = (
     return '- Revenue: Stripe is in test mode — no charge counts; request_integration "stripe" for the founder to swap the Stripe key IdleBiz charges with for a live one so revenue can be counted.';
   }
   return company.revenueUsd === null
-    ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
+    ? '- Revenue: no source connected (no Stripe key) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
     : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
 };
 

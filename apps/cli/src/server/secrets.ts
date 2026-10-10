@@ -13,7 +13,6 @@ import type { JsonRecord } from "@repo/domain/json";
 
 export const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
 
-export const STRIPE_CONNECT_TOKEN = "STRIPE_CONNECT_TOKEN";
 export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
 export const PRINTFUL_TOKEN = "PRINTFUL_TOKEN";
 /** The Printful store the token sells through, as JSON: not secret, but it goes where the token goes. */

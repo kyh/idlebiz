@@ -184,7 +184,7 @@ const TEST_MODE =
   " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.";
 
 const NO_STRIPE_KEY =
-  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
+  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the key is saved.";
 
 const NO_PRINTFUL_TOKEN =
   "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.";

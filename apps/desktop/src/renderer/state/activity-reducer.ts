@@ -8,7 +8,15 @@ import type { Employee, RestingRunners, Speaker, TeamMessage } from "@repo/domai
 // which part of it moved.
 
 /** A part of main's state the renderer holds a copy of. */
-export type Slice = "company" | "employees" | "resting" | "products" | "bets" | "tasks" | "all";
+export type Slice =
+  | "company"
+  | "employees"
+  | "resting"
+  | "products"
+  | "bets"
+  | "tasks"
+  | "stripeKey"
+  | "all";
 
 const ACTIVITY_RING = 300;
 
@@ -110,8 +118,9 @@ const RELOAD_FOR = {
   "budget.exhausted": ["company"],
   chat: [],
   message: [],
-  // the pulse writes each product's numbers and each live bet's reading too
-  "metrics.pulse": ["company", "products", "bets"],
+  // the pulse writes each product's numbers and each live bet's reading too, and finds whether
+  // Stripe still takes the key
+  "metrics.pulse": ["company", "products", "bets", "stripeKey"],
   // an order card is a task no run touches, so its own event says it came or went
   "order.card": ["tasks"],
   "org.hired": ["all"],

@@ -314,21 +314,14 @@ describe("products", () => {
     expect(store.setProductVercel(first?.id ?? "", binding).vercel).toEqual(binding);
   });
 
-  it("gives a company from before products its one product, with the binding metrics.json held", () => {
+  it("gives a company from before products its one product", () => {
     const co = found();
-    // the save as an older build left it: no products/, a Vercel binding in metrics.json
     rmSync(productsDir(co.id), { force: true, recursive: true });
-    mkdirSync(path.join(root, co.id), { recursive: true });
-    writeFileSync(
-      path.join(root, co.id, "metrics.json"),
-      JSON.stringify({ vercel: { projectId: "prj_old", projectName: "old", teamId: "team_9" } }),
-    );
     unstamp(co.id);
     store.initStore();
     const [first] = store.listProducts();
     expect(first?.workspaceDir).toBe(companyWorkspace(co.id));
-    expect(first?.vercel).toEqual({ projectId: "prj_old", projectName: "old", teamId: "team_9" });
-    expect(readFileSync(path.join(root, co.id, "metrics.json"), "utf-8")).not.toContain("prj_old");
+    expect(first?.vercel).toBeNull();
   });
 
   it("gives work left open in a save from before products the first product, whose code it ran in", () => {
@@ -605,10 +598,6 @@ describe("active company ownership", () => {
     const older = found();
     copyCompany(older.id, "newer", older.createdAt + 1);
     rmSync(path.join(root, older.id, "products"), { recursive: true });
-    writeFileSync(
-      path.join(root, older.id, "metrics.json"),
-      JSON.stringify({ vercel: { projectId: "old" } }),
-    );
     const before = saveSnapshot(older.id);
 
     store.initStore();

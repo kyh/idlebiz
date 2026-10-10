@@ -3,10 +3,11 @@ import { STRIPE_SECRET_KEY, deleteSecret, getSecret, setSecret } from "./secrets
 import { STRIPE_API, isTestKey, stripeHeaders } from "./stripe-api";
 import { errorMessage } from "@repo/domain/errors";
 import type { StripeKeyStatus } from "@repo/domain/integrations";
+import type { StripeAnswer } from "./metrics";
 import { RefusalError } from "./refusal";
 
-// A Connect token only reads, so charging takes the founder's own key; the renderer
-// is told which key is saved, never the key.
+// The founder's own key charges and reads revenue; the renderer is told which key is saved,
+// never the key.
 
 /**
  * A key that works server-side: a secret key does anything, a restricted one what it was granted.
@@ -19,11 +20,28 @@ const SERVER_KEY = /^[rs]k_(?:live|test)_[0-9A-Za-z]+$/u;
 // them; /v1/account would turn away a restricted key granted only what charging needs.
 const PROBE = `${STRIPE_API}/v1/payment_links?limit=1`;
 
+/** The saved key the metrics pulse last found Stripe turning away, until a read Stripe takes it. */
+let refusedKey: string | null = null;
+
+/** What the metrics pulse's read of `key` says of it; a refusal shows without deleting the key. */
+export const noteStripeRead = (key: string, answer: StripeAnswer): void => {
+  if (answer === "refused") {
+    refusedKey = key;
+  } else if (answer === "accepted") {
+    refusedKey = null;
+  }
+};
+
 export const stripeKeyStatus = (): StripeKeyStatus => {
   const key = getSecret(STRIPE_SECRET_KEY);
-  return key
-    ? { last4: key.slice(-4), livemode: !isTestKey(key), state: "set" }
-    : { state: "unset" };
+  if (!key) {
+    return { state: "unset" };
+  }
+  const last4 = key.slice(-4);
+  const livemode = !isTestKey(key);
+  return key === refusedKey
+    ? { last4, livemode, state: "refused" }
+    : { last4, livemode, state: "set" };
 };
 
 /** Why Stripe turned a key away, as the founder should read it. */

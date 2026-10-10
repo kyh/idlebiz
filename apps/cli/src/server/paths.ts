@@ -52,7 +52,7 @@ export const companyWorkspace = (companySlug: string): string =>
 export const companySharedDir = (companySlug: string): string =>
   path.join(companyDir(companySlug), "shared");
 /** Running state main keeps for itself: small JSON written as things happen, safe to delete but for unrecordedLinksFile and an adopted save's ordersCursorFile.
- *  What the founder configured (metrics.json, approvals.json) is not state and stays beside COMPANY.md. */
+ *  What the founder configured (approvals.json) is not state and stays beside COMPANY.md. */
 const stateDir = (companySlug: string): string => path.join(companyDir(companySlug), "state");
 /** The latest ship summaries, for the brief's "recently shipped" lines. */
 export const recentShipsFile = (companySlug: string): string =>

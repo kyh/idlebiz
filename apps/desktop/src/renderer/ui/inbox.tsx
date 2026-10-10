@@ -30,8 +30,7 @@ const ConnectRow = ({
   onConnect: (need: IntegrationNeed) => void;
 }) => {
   const stripeKey = useStore((s) => s.stripeKey);
-  const stripeStatus = useStore((s) => s.stripeStatus);
-  const copy = connectAskCopy(integration, stripeKey, stripeStatus);
+  const copy = connectAskCopy(integration, stripeKey);
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">

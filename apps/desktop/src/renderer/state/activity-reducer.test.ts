@@ -108,7 +108,12 @@ describe("reduceActivity", () => {
       message: "Side",
       payload: { productId: "side", reason: "dud" },
     };
-    expect(reduceActivity(held, pulse).reload).toEqual(["company", "products", "bets"]);
+    expect(reduceActivity(held, pulse).reload).toEqual([
+      "company",
+      "products",
+      "bets",
+      "stripeKey",
+    ]);
     expect(reduceActivity(held, killed).reload).toEqual(["products", "bets", "tasks"]);
     const named: ActivityEvent = {
       ...stamp,
