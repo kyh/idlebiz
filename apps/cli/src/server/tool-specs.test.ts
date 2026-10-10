@@ -6,7 +6,9 @@ import {
   TOOL_NAMES,
   TOOL_SPECS,
   commandOf,
+  toolAt,
   toolDocs,
+  toolPath,
   verbOf,
 } from "./tool-specs";
 
@@ -111,9 +113,11 @@ describe("tool specs", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");
   });
 
-  it("serves every tool on a route of its own", () => {
-    const routes = TOOL_NAMES.map((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}`);
-    expect(new Set(routes).size).toBe(routes.length);
+  it("serves each tool at its own name and nothing at any other path", () => {
+    expect(TOOL_NAMES.map((name) => toolAt(toolPath(name)))).toEqual(TOOL_NAMES);
+    expect(toolAt("/v1/read-team-chat")).toBeNull();
+    expect(toolAt("/v1/nothing")).toBeNull();
+    expect(toolAt("/read_team_chat")).toBeNull();
   });
 
   it("shows the lead's tools to the lead alone", () => {

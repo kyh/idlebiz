@@ -7,8 +7,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { ROOT_DIR } from "./paths";
 import { RefusalError } from "./refusal";
-import { MAX_REQUEST_BYTES } from "./tool-specs";
-import type { ToolOutcome, ToolOutcomeKind } from "./tool-specs";
+import { MAX_REQUEST_BYTES, toolAt } from "./tool-specs";
+import type { ToolAnswer, ToolName, ToolOutcome } from "./tool-specs";
 import { BadRequestError, errorMessage } from "@repo/domain/errors";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
@@ -24,8 +24,8 @@ import type { JsonValue } from "@repo/domain/json";
 // own socket alone, so a token read from another run's env is no use without that run's socket.
 // The token stays as a second check, and a server takes only the token of its own run.
 
-/** Answers one call by `METHOD /path`: how it ended, in prose the agent reads; null when there is no such tool. */
-export type ToolCaller = (route: string, raw: JsonValue) => Promise<ToolOutcome | null>;
+/** Answers one call of the tool `name`: how it ended, in prose the agent reads. */
+export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;
 
 interface RunHandle {
   /** Run-scoped env for the agent process: the socket its API answers on and its bearer token. */
@@ -73,11 +73,7 @@ export const runSocketPath = (root: string, home: string, id: string): string =>
   return socket;
 };
 
-type ToolResponse =
-  | { ok: true; kind: ToolOutcomeKind; message: string }
-  | { ok: false; error: string };
-
-const respond = (res: ServerResponse, status: number, payload: ToolResponse): void => {
+const respond = (res: ServerResponse, status: number, payload: ToolAnswer): void => {
   const body = JSON.stringify(payload);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(body);
@@ -144,20 +140,20 @@ const handle = async (run: Run, req: IncomingMessage, res: ServerResponse): Prom
       respond(res, 401, { error: "unknown or expired run token", ok: false });
       return;
     }
-    const [routePath] = (req.url ?? "").split("?");
-    const route = `${req.method ?? "GET"} ${routePath}`;
-    const raw = req.method === "POST" ? await readJsonBody(req) : {};
+    const [pathname = ""] = (req.url ?? "").split("?");
+    const name = req.method === "POST" ? toolAt(pathname) : null;
+    if (name === null) {
+      const route = `${req.method ?? "GET"} ${pathname}`;
+      respond(res, 404, { error: `no tool is served at ${route}`, ok: false });
+      return;
+    }
+    const raw = await readJsonBody(req);
     // A run may finish while its request body is still arriving.
     if (authenticate(run, req) !== caller) {
       respond(res, 401, { error: "unknown or expired run token", ok: false });
       return;
     }
-    const outcome = await caller(route, raw);
-    if (outcome === null) {
-      respond(res, 404, { error: `no such tool: ${route}`, ok: false });
-    } else {
-      respond(res, 200, { kind: outcome.kind, message: outcome.text, ok: true });
-    }
+    respond(res, 200, { ...(await caller(name, raw)), ok: true });
   } catch (error) {
     if (error instanceof BadRequestError) {
       respond(res, 400, { error: error.message, ok: false });

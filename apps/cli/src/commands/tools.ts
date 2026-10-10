@@ -11,20 +11,19 @@ import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { text } from "node:stream/consumers";
 import { parseJson } from "@repo/domain/json";
-import type { JsonValue } from "@repo/domain/json";
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
-import { z } from "zod";
 import {
   EXIT_CODES_DOC,
   TOOL_NAMES,
   TOOL_OUTCOMES,
-  TOOL_OUTCOME_KINDS,
   TOOL_SPECS,
+  ToolAnswerSchema,
   commandOf,
+  toolPath,
   verbOf,
 } from "../server/tool-specs";
-import type { ToolName, ToolOutcome } from "../server/tool-specs";
+import type { ToolAnswer, ToolName, ToolOutcome } from "../server/tool-specs";
 
 /** The verbs, each naming its tool. */
 export const TOOL_VERBS: ReadonlyMap<string, ToolName> = new Map(
@@ -44,12 +43,6 @@ export const toolHelp = (name: ToolName): string => {
   const lead = leadOnly === null ? "" : "\n\nOnly the team lead's runs may call it.";
   return `idlebiz ${verbOf(name)}: ${doc}${lead}\n\n  ${commandOf(name)}\n\n${HOW_TO_SEND}\n\nIt prints the answer and exits ${EXIT_CODES_DOC}.\n`;
 };
-
-// what the control plane serves (control-plane.ts)
-const Answer = z.discriminatedUnion("ok", [
-  z.object({ kind: z.enum(TOOL_OUTCOME_KINDS), message: z.string(), ok: z.literal(true) }),
-  z.object({ error: z.string(), ok: z.literal(false) }),
-]);
 
 interface ControlPlane {
   socket: string;
@@ -82,32 +75,23 @@ interface CallIo {
 
 const PROCESS_IO: CallIo = { env: process.env, stdin: () => text(process.stdin) };
 
-const NO_REQUEST = z.strictObject({});
-
-interface Request {
-  body: string;
-  /** Whether it asks nothing: `{}`, as a tool that reads takes. */
-  empty: boolean;
-}
-
 /** The request a call sends: its argument, stdin for `-`, or none; refused unless it is JSON. */
 const requestOf = async (
   verb: string,
   argument: string | undefined,
   io: CallIo,
-): Promise<Request> => {
+): Promise<string> => {
   if (argument === undefined) {
-    return { body: "{}", empty: true };
+    return "{}";
   }
   const body = argument === STDIN ? await io.stdin() : argument;
-  let value: JsonValue;
   try {
-    value = parseJson(body);
+    parseJson(body);
   } catch (error) {
     const why = error instanceof SyntaxError ? ` (${error.message})` : "";
     throw new Error(`${verb}'s request is not JSON${why}. ${HOW_TO_SEND}`, { cause: error });
   }
-  return { body, empty: NO_REQUEST.safeParse(value).success };
+  return body;
 };
 
 interface Reply {
@@ -122,8 +106,7 @@ interface Reply {
  */
 const send = async (
   socket: string,
-  route: string,
-  method: "GET" | "POST",
+  name: ToolName,
   token: string,
   body: string,
 ): Promise<Reply> => {
@@ -133,23 +116,23 @@ const send = async (
       {
         agent: false,
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        method,
-        path: route,
+        method: "POST",
+        path: toolPath(name),
         socketPath: socket,
       },
       resolve,
     );
     req.on("error", reject);
-    req.end(method === "POST" ? body : undefined);
+    req.end(body);
   });
   return { body: await text(res), status: res.statusCode ?? 0 };
 };
 
 /** What a call answered: how it ended and the server's prose, or the call's refusal as an error. */
 const answerOf = ({ body, status }: Reply): ToolOutcome => {
-  let parsed: z.infer<typeof Answer>;
+  let parsed: ToolAnswer;
   try {
-    parsed = Answer.parse(parseJson(body));
+    parsed = ToolAnswerSchema.parse(parseJson(body));
   } catch (error) {
     throw new Error(`the company answered ${status} in a shape this idlebiz does not read`, {
       cause: error,
@@ -158,7 +141,7 @@ const answerOf = ({ body, status }: Reply): ToolOutcome => {
   if (!parsed.ok) {
     throw new Error(parsed.error);
   }
-  return { kind: parsed.kind, text: parsed.message };
+  return { kind: parsed.kind, text: parsed.text };
 };
 
 /** Calls `name` with `argument`, answering how the call ended and the server's prose. */
@@ -167,16 +150,11 @@ export const callTool = async (
   argument: string | undefined,
   io: CallIo = PROCESS_IO,
 ): Promise<ToolOutcome> => {
-  const { method, path: route } = TOOL_SPECS[name];
-  const verb = verbOf(name);
   const { socket, token } = controlPlaneOf(io.env);
-  const { body, empty } = await requestOf(verb, argument, io);
-  if (method === "GET" && !empty) {
-    throw new Error(`${verb} takes no request`);
-  }
+  const body = await requestOf(verbOf(name), argument, io);
   let reply: Reply;
   try {
-    reply = await send(socket, route, method, token, body);
+    reply = await send(socket, name, token, body);
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(

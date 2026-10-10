@@ -411,7 +411,7 @@ rather than crashing boot.
   command of the shell's.
 - **A run reaches main as `idlebiz <tool>`, never through the page.** Each company tool is a
   verb of the `idlebiz` binary (`commands/tools.ts`), generated from its spec in
-  `server/tool-specs.ts` (route, body, lead-only refusal, doc, example), so the instructions,
+  `server/tool-specs.ts` (body, lead-only refusal, doc, example), so the instructions,
   the verb and the server cannot disagree. Main writes a launcher at each boot
   (`server/agent-launcher.ts`, `~/.idlebiz/bin/idlebiz`), which runs the CLI on main's own node
   and goes first on each run's PATH. The verb sends its request to the control plane its run was

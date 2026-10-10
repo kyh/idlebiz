@@ -56,7 +56,7 @@ import { CATALOG_PAGE } from "./listing";
 import type { ListedPlacement, ListingVariant, PrintPlacement } from "./listing";
 import type { Order } from "./order";
 import type { CompanyLink, LinkState } from "./payment-link";
-import { TOOL_NAMES, TOOL_SPECS } from "./tool-specs";
+import { TOOL_SPECS } from "./tool-specs";
 import type { ToolName, ToolOutcome, ToolSpec } from "./tool-specs";
 
 /** What a tool call acts on behalf of: who is running, for what, and what only main can do for it. */
@@ -92,8 +92,8 @@ export interface RunContext {
   productionHosts: typeof productionHosts;
 }
 
-/** A tool ready to be called with whatever the agent sent. */
-type Tool = (ctx: RunContext, raw: JsonValue) => Promise<ToolOutcome>;
+/** A tool ready to be called, by its name, with whatever the agent sent. */
+type Tool = (ctx: RunContext, name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;
 
 /**
  * A call held for the founder, worded like a refusal as the sentence the agent reads: what it
@@ -118,7 +118,7 @@ const define =
     spec: ToolSpec<B>,
     run: (ctx: RunContext, body: z.infer<B>) => string | Promise<string>,
   ): Tool =>
-  async (ctx, raw) => {
+  async (ctx, name, raw) => {
     if (spec.leadOnly !== null && !isLead(ctx.company, ctx.employee)) {
       return { kind: "refused", text: spec.leadOnly };
     }
@@ -135,7 +135,7 @@ const define =
       if (error instanceof RefusalError) {
         return { kind: "refused", text: error.message };
       }
-      report(`tool ${spec.path}`, error);
+      report(`tool ${name}`, error);
       return { kind: "fault", text: errorMessage(error) };
     }
   };
@@ -1350,12 +1350,6 @@ const TOOLS = {
   }),
 } satisfies Record<ToolName, Tool>;
 
-/** Call the tool served at `METHOD /path`; null when there is none. */
-export const callTool = (
-  ctx: RunContext,
-  route: string,
-  raw: JsonValue,
-): Promise<ToolOutcome | null> => {
-  const name = TOOL_NAMES.find((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}` === route);
-  return name === undefined ? Promise.resolve(null) : TOOLS[name](ctx, raw);
-};
+/** Call the tool `name` with whatever the agent sent. */
+export const callTool = (ctx: RunContext, name: ToolName, raw: JsonValue): Promise<ToolOutcome> =>
+  TOOLS[name](ctx, name, raw);

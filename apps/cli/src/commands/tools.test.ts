@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BadRequestError } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import { ControlPlane } from "../server/control-plane";
-import type { ToolOutcome } from "../server/tool-specs";
+import type { ToolName, ToolOutcome } from "../server/tool-specs";
 import { runCli } from "../program";
 import { callTool } from "./tools";
 
@@ -24,17 +24,17 @@ const noStdin = (): Promise<string> => Promise.reject(new Error("nothing on stdi
 const done = (text: string): Promise<ToolOutcome> => Promise.resolve({ kind: "done", text });
 
 /** A run the control plane answers with `answer`, and what it was called with. */
-const aRun = async (answer: (route: string, raw: JsonValue) => Promise<ToolOutcome | null>) => {
-  const calls: { route: string; raw: JsonValue }[] = [];
-  const handle = await controlPlane.registerRun(async (route, raw) => {
-    calls.push({ raw, route });
-    return await answer(route, raw);
+const aRun = async (answer: (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>) => {
+  const calls: { name: ToolName; raw: JsonValue }[] = [];
+  const handle = await controlPlane.registerRun(async (name, raw) => {
+    calls.push({ name, raw });
+    return await answer(name, raw);
   });
   return { calls, env: handle.env, release: handle.release };
 };
 
 describe("a company tool's verb", () => {
-  it("sends its request to the tool's route and answers how it ended, in the server's prose", async () => {
+  it("sends its request to its tool and answers how it ended, in the server's prose", async () => {
     const run = await aRun(() => Promise.resolve({ kind: "held", text: "Held for the founder." }));
     try {
       const said = await callTool("message_team", '{"text":"shipped it"}', {
@@ -42,7 +42,7 @@ describe("a company tool's verb", () => {
         stdin: noStdin,
       });
       expect(said).toEqual({ kind: "held", text: "Held for the founder." });
-      expect(run.calls).toEqual([{ raw: { text: "shipped it" }, route: "POST /v1/message-team" }]);
+      expect(run.calls).toEqual([{ name: "message_team", raw: { text: "shipped it" } }]);
     } finally {
       run.release();
     }
@@ -55,27 +55,22 @@ describe("a company tool's verb", () => {
         env: run.env,
         stdin: () => Promise.resolve(`{"question":"Can't we ship Friday?"}\n`),
       });
-      expect(run.calls).toEqual([
-        { raw: { question: "Can't we ship Friday?" }, route: "POST /v1/ask-boss" },
-      ]);
+      expect(run.calls).toEqual([{ name: "ask_boss", raw: { question: "Can't we ship Friday?" } }]);
     } finally {
       run.release();
     }
   });
 
-  it("calls a tool that reads with no request, and refuses one", async () => {
+  it("sends a call given no request as `{}`, and any request as it is, for the server to judge", async () => {
     const nobody = { kind: "done", text: "Nobody has posted yet." } as const;
     const run = await aRun(() => Promise.resolve(nobody));
     const io = { env: run.env, stdin: noStdin };
     try {
       await expect(callTool("read_team_chat", undefined, io)).resolves.toEqual(nobody);
-      await expect(callTool("read_team_chat", "{}", io)).resolves.toEqual(nobody);
-      await expect(callTool("read_team_chat", '{"limit":5}', io)).rejects.toThrow(
-        "read-team-chat takes no request",
-      );
-      expect(run.calls.map(({ route }) => route)).toEqual([
-        "GET /v1/team-chat",
-        "GET /v1/team-chat",
+      await callTool("read_team_chat", '{"limit":5}', io);
+      expect(run.calls).toEqual([
+        { name: "read_team_chat", raw: {} },
+        { name: "read_team_chat", raw: { limit: 5 } },
       ]);
     } finally {
       run.release();

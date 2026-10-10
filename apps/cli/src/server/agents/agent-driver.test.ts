@@ -1054,7 +1054,10 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
       throw new Error("founded without a hire or a product");
     }
     const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
-    const tools = { asks: askBox(() => {}), call: () => Promise.resolve(null) };
+    const tools = {
+      asks: askBox(() => {}),
+      call: () => Promise.reject(new Error("called a tool without a test asking for it")),
+    };
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal");
     // as at boot: a task's run opens its socket first, since its seal names it
     await controlPlane.start();
