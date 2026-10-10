@@ -65,7 +65,7 @@ The founder's approve button is on that port, so:
   page that rebound its own onto loopback;
 - main's calls and events need the session and the page's own origin (`Sec-Fetch-Site`, else
   `Origin`): another loopback port is the same site, and carries the cookie;
-- the page's content security policy is main's (`apps/cli/src/server/page-policy.ts`), on the
+- the page's content security policy is main's (`packages/contract/src/page-policy.ts`), on the
   document.
 
 The window is pinned to main's origin, compared by its parts: a link to any other web page opens

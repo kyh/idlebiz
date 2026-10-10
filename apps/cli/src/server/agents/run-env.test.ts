@@ -1,4 +1,5 @@
 import { RUNNERS } from "@repo/agent-driver/registry";
+import { RUNNER_IDS } from "@repo/domain/runners";
 import { describe, expect, it } from "vitest";
 import { runEnv } from "./run-env";
 
@@ -68,7 +69,7 @@ describe("runEnv", () => {
     expect(runEnv(base, ["OPENAI_"])).toEqual({ OPENAI_API_KEY: "sk-openai" });
   });
 
-  it.each(Object.values(RUNNERS))("gives $displayName no AWS key but Bedrock's own", (runner) => {
+  it.each(RUNNER_IDS)("gives %s no AWS key but Bedrock's own", (runner) => {
     const base = {
       AWS_ACCESS_KEY_ID: "AKIA",
       AWS_BEARER_TOKEN_BEDROCK: "bedrock",
@@ -77,7 +78,7 @@ describe("runEnv", () => {
       AWS_SECRET_ACCESS_KEY: "secret",
       AWS_SESSION_TOKEN: "session",
     };
-    expect(runEnv(base, runner.providerEnv)).toEqual({
+    expect(runEnv(base, RUNNERS[runner].providerEnv)).toEqual({
       AWS_BEARER_TOKEN_BEDROCK: "bedrock",
       AWS_PROFILE: "founder",
       AWS_REGION: "us-east-1",

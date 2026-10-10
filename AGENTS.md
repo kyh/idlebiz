@@ -383,7 +383,9 @@ rather than crashing boot.
   (`walkGridOf` in `renderer/game/office-grid.ts`).
 - **Tests need no window or Phaser.** `pnpm --filter idlebiz test` covers main: schemas, codecs,
   store/integration behavior under temporary save roots, real loopback and socket requests, the page's
-  router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/desktop test`
+  router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/agent-driver test`
+  covers an ACP turn against stand-in agents (permissions, resume, teardown, how a turn ends,
+  usage) and the failure classes. `pnpm --filter @repo/desktop test`
   covers the page's geometry and state, then `cargo test` the shell (the relay's framing, main's
   supervision against a stand-in main on node, the navigation pin, the runtime's paths, main's
   log). On macOS main's suite also runs the seal on canary files under a stand-in home
@@ -507,7 +509,7 @@ rather than crashing boot.
 - `apps/cli/src/server` — main. `serve.ts` (boot on the shell's hello, the relay, quit),
   `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio channel),
   `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
-  `page-session.ts` the sign-in, `page-policy.ts` the page's CSP), `page-router.ts` (the page's
+  `page-session.ts` the sign-in), `page-router.ts` (the page's
   contract implemented; `lib/answers.ts` words what does not return), `store/store.ts` (the one
   company in memory, every command on it, and its writes), `store/*-codec.ts` (one pure markdown
   package ⇄ domain object mapping per kind; `company-codec.ts` owns the save format stamp),
@@ -542,17 +544,21 @@ rather than crashing boot.
 - `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`) and the
   employee sheets (`employee-sheets/`).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
-- `packages/domain` — the vocabulary both sides share, pure: `domain.ts` (the company, its
-  people, products and tasks), `bets.ts` (the bets, their judge and the allocator),
+- `packages/domain` — the vocabulary both sides share, pure, importing no other package of the
+  repo's: `domain.ts` (the company, its people, products and tasks), `runners.ts` (the runners'
+  ids and the names the founder knows them by), `bets.ts` (the bets, their judge and the allocator),
   `activity.ts` (the event grammar), `digest.ts`, `hire.ts`, `integrations.ts`, `hold-rules.ts`
   (what an approval card says each rule holds; data only, for the page), `format.ts`,
   `errors.ts`, `json.ts`, and `character-frame.ts` (the sprite box every process slices by).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
-  its routes (`routes.ts`) and the event stream's names (`events.ts`).
+  its routes (`routes.ts`), the page's content security policy (`page-policy.ts`), which main
+  stamps on the page and the dev server writes into it, and the event stream's names
+  (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
   prices usage, and classes failures (auth, access denied, usage limit, overload, context, other)
   with when a usage limit said it lifts; what each costs the runner (a sign-out, a rest) is the
-  server's `heed`. Source-only, no build step.
+  server's `heed`. Over domain, never imported by the page. Source-only, no build step; its
+  suites (`pnpm --filter @repo/agent-driver test`) drive a turn against stand-in agents.
 - `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
   and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,

@@ -10,6 +10,7 @@ import type {
   PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import { errorMessage } from "@repo/domain/errors";
 import { zeroUsage } from "./events";
 import { classOfRequestError, classOfTypedFailure, liftsAt, rateLimitResetIn } from "./rate-limit";
 import type { FailureClass } from "./rate-limit";
@@ -236,9 +237,6 @@ const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): Tur
   const error = details === undefined ? title : `${title}\n${details}`;
   return endOf(classOfTypedFailure({ actions, category, text: error }), error, reported);
 };
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
-const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /** Every agent spawned whose process group has not been killed yet, its leader alive or not. */
 const unkilled = new Set<ChildProcess>();

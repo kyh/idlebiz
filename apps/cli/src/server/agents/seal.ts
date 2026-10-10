@@ -15,13 +15,14 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { runnerBin } from "@repo/agent-driver/detect";
-import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { z } from "zod";
 import { ROOT_DIR } from "../paths";
 import { SECRETS_PATH } from "../secrets";
 import { pagePorts } from "../page-server";
 import { DEV_PORT } from "@repo/contract/routes";
-import type { AgentRunner, LoadReport } from "@repo/domain/domain";
+import type { LoadReport } from "@repo/domain/domain";
+import { RUNNER_IDS } from "@repo/domain/runners";
+import type { RunnerId } from "@repo/domain/runners";
 import { errorMessage } from "@repo/domain/errors";
 import { RefusalError } from "../refusal";
 
@@ -158,7 +159,7 @@ const RUNNER_HOMES = {
     ],
   },
 } as const satisfies Record<
-  AgentRunner,
+  RunnerId,
   {
     absent: readonly string[];
     account: readonly string[];
@@ -261,7 +262,7 @@ export interface Seal {
   /** Where every run writes besides its own folders: TMPDIR, the per-user cache, /private/tmp. */
   scratch: readonly Reach[];
   /** Per runner, its own home, which the other runner's runs cannot read. */
-  runners: Record<AgentRunner, RunnerHome>;
+  runners: Record<RunnerId, RunnerHome>;
   /**
    * The run's own folders, where the save resolves: its workspace, the shared one, its memory and
    * the tool cache. A run writes inside each but cannot remove, move or replace one.
@@ -296,7 +297,7 @@ export interface Seal {
    */
   closedPorts: readonly number[];
   /** Per runner, the agent-browser namespace its runs with these folders start their daemons in. */
-  namespaces: Record<AgentRunner, Reach>;
+  namespaces: Record<RunnerId, Reach>;
   /**
    * Where claude keeps each folder's transcripts and memory, which the founder's own sessions
    * there resume and load: a claude run writes only its working directory's, when it has one.
@@ -369,7 +370,7 @@ const foldersUpTo = (root: string, at: string): string[] => {
 
 const commandUnder = (
   seal: Seal,
-  runner: AgentRunner,
+  runner: RunnerId,
   sealed: Sealed,
   argv: readonly string[],
 ): string[] => {
@@ -451,11 +452,11 @@ const commandUnder = (
 };
 
 /** `argv` as a `runner` run starts it: under the profile, with this machine's paths. */
-export const sealedCommand = (seal: Seal, runner: AgentRunner, argv: readonly string[]): string[] =>
+export const sealedCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): string[] =>
   commandUnder(seal, runner, "run", argv);
 
 /** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through and record the login. */
-export const signInCommand = (seal: Seal, runner: AgentRunner, argv: readonly string[]): string[] =>
+export const signInCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): string[] =>
   commandUnder(seal, runner, "sign-in", argv);
 
 /** How a program run under the profile ended: its exit code, or null when it never ran or was killed. */
@@ -675,7 +676,7 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
  */
 const runnerHomeOf = async (
   home: string,
-  runner: AgentRunner,
+  runner: RunnerId,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<RunnerHome> => {
   const { absent, account, dir, override, personal, state } = RUNNER_HOMES[runner];
@@ -725,7 +726,7 @@ const darwinUserCacheDir = async (): Promise<string> => {
  */
 export const browserNamespace = (
   save: string,
-  runner: AgentRunner,
+  runner: RunnerId,
   folders: readonly string[],
 ): string =>
   `idlebiz-${createHash("sha256")
@@ -734,7 +735,7 @@ export const browserNamespace = (
     .slice(0, 8)}`;
 
 /** The agent-browser namespace `runner`'s runs under `seal` start their daemons in. */
-export const namespaceUnder = (seal: Seal, runner: AgentRunner): string =>
+export const namespaceUnder = (seal: Seal, runner: RunnerId): string =>
   path.basename(seal.namespaces[runner].path);
 
 /** Where agent-browser keeps its daemons' sockets for a run, whatever the founder's env says. */
@@ -791,7 +792,7 @@ export const sealFor = async ({
   const own = await ownFolders(save, writable);
   const [cwd] = own;
   const folders = own.map(({ path: at }) => at);
-  const namespaceOf = (runner: AgentRunner): Reach => ({
+  const namespaceOf = (runner: RunnerId): Reach => ({
     match: "subpath",
     path: path.join(
       realHome,

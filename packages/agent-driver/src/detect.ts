@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
+import { RUNNER_IDS } from "@repo/domain/runners";
+import type { RunnerId } from "@repo/domain/runners";
 import { RUNNERS } from "./registry";
-import { RUNNER_IDS } from "./runner";
-import type { RunnerId } from "./runner";
 
 export const runnerBin = (id: RunnerId): string => {
   const { command, override } = RUNNERS[id].cli;

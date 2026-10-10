@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
+import { endAllAgents, runAcpTurn } from "./acp-session";
 import { afterEach, describe, expect, it } from "vitest";
 
 // Never answers ACP and runs a child of its own, in its process group.

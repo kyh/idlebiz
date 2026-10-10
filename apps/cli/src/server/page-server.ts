@@ -22,7 +22,7 @@ import { listenLoopback } from "./lib/http";
 import { createPageSession, fromOwnOrigin, loopbackOrigin } from "./page-session";
 import { errorMessage } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
-import { pagePolicy } from "./page-policy";
+import { pagePolicy } from "@repo/contract/page-policy";
 
 /** Where the page's files come from: the built page main ships beside it, or Vite's dev server. */
 export type PageSource = { kind: "built"; dir: string } | { kind: "dev"; origin: string };

@@ -1,11 +1,12 @@
-import type { AgentRunner, Company, Employee, Product } from "@repo/domain/domain";
-import { isRunnerId } from "@repo/agent-driver/runner";
+import type { Company, Employee, Product } from "@repo/domain/domain";
+import { isRunnerId } from "@repo/domain/runners";
+import type { RunnerId } from "@repo/domain/runners";
 import { employeeMemoryDir } from "../paths";
 import { standingInstructions } from "../prompts/instructions";
 import { PACKAGE_SCHEMA, optNum, optStr, reqStr } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-const parseRunner = (v: string | null): AgentRunner => (v && isRunnerId(v) ? v : "codex");
+const parseRunner = (v: string | null): RunnerId => (v && isRunnerId(v) ? v : "codex");
 
 export const employeeBody = (e: Employee, co: Company, products: readonly Product[]): string =>
   standingInstructions({

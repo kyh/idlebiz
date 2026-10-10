@@ -1,8 +1,7 @@
 import { z } from "zod";
-import type { RunnerId } from "@repo/agent-driver/runner";
+import type { RunnerId } from "./runners";
 
 // Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
-export type AgentRunner = RunnerId;
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
@@ -300,7 +299,7 @@ export interface Employee {
   title: string;
   /** system-prompt flavor for the agent */
   persona: string;
-  runner: AgentRunner;
+  runner: RunnerId;
   session: RunSession | null;
   /** Digest of the instructions that session was last given; a run whose instructions differ sends them again. */
   instructionsDigest: string | null;
@@ -508,7 +507,7 @@ export type AuthFlowEvent =
   | { type: "error"; message: string };
 
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
-export type RestingRunners = Partial<Record<AgentRunner, number>>;
+export type RestingRunners = Partial<Record<RunnerId, number>>;
 
 /** What boot could not use, and why: a file on disk it could not read, or the sandbox every run starts in. */
 export interface LoadSkip {

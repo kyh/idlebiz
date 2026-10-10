@@ -5,7 +5,7 @@ import {
   classOfTypedFailure,
   liftsAt,
   rateLimitResetIn,
-} from "@repo/agent-driver/rate-limit";
+} from "./rate-limit";
 import { describe, expect, it } from "vitest";
 import {
   CLAUDE_RATE_LIMIT_LIFTS_AT,

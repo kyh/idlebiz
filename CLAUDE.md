@@ -100,14 +100,17 @@ apps/
                  Connect OAuth hop.
 packages/
   domain/        @repo/domain — the vocabulary both sides share, pure: the company and its
-                 people, the bets and their judge, the activity grammar, money's formatting, the
-                 hold rules' display, and the JSON and error helpers. Zod only.
+                 people, the runners' ids and names, the bets and their judge, the activity
+                 grammar, money's formatting, the hold rules' display, and the JSON and error
+                 helpers. Zod only, and no other package of the repo's.
   contract/      @repo/contract — the page's API, contract-first: an oRPC contract with one folder
                  per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), the routes (`/rpc`,
-                 `/events`) and the event stream's names. The page compiles against it and
-                 page-router.ts implements it; both ship in one app, so it may break freely.
-  agent-driver/  @repo/agent-driver — the ACP runtime: a turn over claude-agent-acp or codex-acp,
-                 the runners' registry, tool asks, rate limits and pricing.
+                 `/events`), the page's content security policy and the event stream's names.
+                 The page compiles against it and page-router.ts implements it; both ship in one
+                 app, so it may break freely.
+  agent-driver/  @repo/agent-driver — the ACP runtime, over domain: a turn over claude-agent-acp
+                 or codex-acp, the runners' registry, tool asks, rate limits and pricing, tested
+                 on its own against stand-in agents. The page never imports it.
   px-kit/        @repo/px-kit — the pixel UI kit both apps draw with (see the px-kit trap below).
   stripe-connect-protocol/
                  @repo/stripe-connect-protocol — the Stripe Connect handshake between
@@ -778,6 +781,7 @@ keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks fo
 and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
 that is not both.
 Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
-loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
-`pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
+loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate),
+`pnpm --filter @repo/agent-driver test` (an ACP turn against stand-in agents, and the failure
+classes) and `pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
 `cargo test` over the shell)

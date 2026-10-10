@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { priceUsage } from "@repo/agent-driver/pricing";
-import { RUNNERS } from "@repo/agent-driver/registry";
-import { runAcpTurn } from "@repo/agent-driver/acp-session";
+import { priceUsage } from "./pricing";
+import { RUNNERS } from "./registry";
+import { runAcpTurn } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**

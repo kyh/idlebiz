@@ -5,7 +5,8 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ActivityEvent } from "@repo/domain/activity";
-import type { AgentRunner, BlockedAsk, TaskOrigin } from "@repo/domain/domain";
+import type { BlockedAsk, TaskOrigin } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import type { JsonValue } from "@repo/domain/json";
 import type { ChargeLink } from "./payment-link";
 import { BadRequestError } from "@repo/domain/errors";
@@ -54,7 +55,7 @@ const callTool = async (ctx: RunContext, name: ToolName, raw: JsonValue): Promis
   return text;
 };
 
-const hire = (name: string, title: string, runner: AgentRunner = "claude") =>
+const hire = (name: string, title: string, runner: RunnerId = "claude") =>
   ({
     name,
     persona: "ships",

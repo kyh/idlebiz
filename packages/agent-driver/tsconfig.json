@@ -1,5 +1,5 @@
 {
-  "include": ["src"],
+  "include": ["src", "vitest.config.ts"],
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
