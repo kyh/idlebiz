@@ -103,8 +103,8 @@ reads any file of the checkout to whoever asks (`/@fs`), and under `dev:browser`
 in.
 
 The shell compiles on the toolchain `rust-toolchain.toml` pins: `pnpm typecheck` runs clippy
-(pedantic, `-D warnings`), `pnpm test` runs `cargo test` after vitest, `pnpm format` runs
-`cargo fmt --check`. On Linux the shell needs WebKitGTK (`libwebkit2gtk-4.1-dev`) and the
+(pedantic, `-D warnings`), `pnpm test:rust` runs `cargo test` (`pnpm test` is vitest; the root's
+runs both), `pnpm format` runs `cargo fmt --check`. On Linux the shell needs WebKitGTK (`libwebkit2gtk-4.1-dev`) and the
 appindicator for its menu-bar icon (`libayatana-appindicator3-dev`).
 
 ## Packaging

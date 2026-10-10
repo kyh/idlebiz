@@ -17,7 +17,7 @@
     "format:fix": "oxfmt --write && turbo run format:fix",
     "knip": "knip",
     "typecheck": "turbo run typecheck",
-    "test": "pnpm -r test",
+    "test": "turbo run test test:rust --concurrency=${TEST_CONCURRENCY:-4}",
     "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm test && pnpm build"
   },
   "devDependencies": {

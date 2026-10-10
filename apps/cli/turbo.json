@@ -8,6 +8,10 @@
     "build": {
       "dependsOn": ["^topo", "@repo/desktop#build"],
       "outputs": ["dist/**"]
+    },
+    // The gate suites run or skip on which CLIs this machine has installed, which no input names.
+    "test": {
+      "cache": false
     }
   }
 }

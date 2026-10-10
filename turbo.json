@@ -20,6 +20,10 @@
       "dependsOn": ["^topo"],
       "outputs": []
     },
+    "test": {
+      "dependsOn": ["^topo"],
+      "outputs": []
+    },
     "clean": {
       "cache": false
     },

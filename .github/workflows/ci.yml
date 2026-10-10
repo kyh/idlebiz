@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TURBO_TELEMETRY_DISABLED: 1
+      # what the Turbo cache step saves, oldest entries out first: turbo never evicts unasked, and
+      # every cache of the repo's shares 10GB
+      TURBO_CACHE_MAX_SIZE: 1GB
     steps:
       - uses: actions/checkout@v6
 
@@ -36,6 +39,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+
+      # the newest run's turbo cache on this OS: a task whose inputs the commit left alone replays
+      # its last pass, but apps/cli's tests, which skip on the CLIs a machine has, always run
+      - name: Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Typecheck
         run: pnpm typecheck

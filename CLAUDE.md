@@ -769,5 +769,6 @@ and notarized when `apps/desktop/.env` holds the notary key; `release:publish` r
 that is not both.
 Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
 loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
-`pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
-`cargo test` over the shell)
+`pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser; its
+`test:rust` is `cargo test` over the shell). The root `pnpm test` runs them all through turbo and
+replays any but main's whose inputs have not changed.

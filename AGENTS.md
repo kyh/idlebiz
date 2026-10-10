@@ -385,9 +385,12 @@ rather than crashing boot.
 - **Tests need no window or Phaser.** `pnpm --filter idlebiz test` covers main: schemas, codecs,
   store/integration behavior under temporary save roots, real loopback and socket requests, the page's
   router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/desktop test`
-  covers the page's geometry and state, then `cargo test` the shell (the relay's framing, main's
-  supervision against a stand-in main on node, the navigation pin, the runtime's paths, main's
-  log). On macOS main's suite also runs the seal on canary files under a stand-in home
+  covers the page's geometry and state, and its `test:rust` runs `cargo test` over the shell (the
+  relay's framing, main's supervision against a stand-in main on node, the navigation pin, the
+  runtime's paths, main's log). The root `pnpm test` runs every suite and `test:rust` through
+  turbo, `TEST_CONCURRENCY` at a time (4 unless set), and replays any suite but main's whose
+  inputs have not changed: main's gates run or skip on the CLIs this machine has.
+  On macOS main's suite also runs the seal on canary files under a stand-in home
   (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
