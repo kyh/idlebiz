@@ -419,22 +419,18 @@ const statusesAreStates: _AssertStatusesAreStates = true;
 void statesAreStatuses;
 void statusesAreStates;
 
-/** Entering a state, stamped: a run's start, or the moment it settled. Every change of state goes through here, so the timestamps cannot disagree with it. */
+/** Entering a state, stamped with the moment it settled, if it did. Every change of state goes through here, so the stamp cannot disagree with it. */
 export const entering = (
   state: TaskState,
   now: number,
-): Pick<Task, "state"> & Partial<Pick<Task, "startedAt" | "completedAt">> => {
-  if (state.kind === "running") {
-    return { startedAt: now, state };
-  }
-  return state.kind === "done" ||
-    state.kind === "superseded" ||
-    state.kind === "dropped" ||
-    state.kind === "blocked" ||
-    state.kind === "dead"
+): Pick<Task, "state"> & Partial<Pick<Task, "completedAt">> =>
+  state.kind === "done" ||
+  state.kind === "superseded" ||
+  state.kind === "dropped" ||
+  state.kind === "blocked" ||
+  state.kind === "dead"
     ? { completedAt: now, state }
     : { state };
-};
 
 /** A task known to be in one state, so its fields need no second check. */
 export type TaskIn<K extends TaskStatus> = Task & { state: Extract<TaskState, { kind: K }> };
@@ -459,13 +455,9 @@ export interface Task {
   state: TaskState;
   priority: TaskPriority;
   assigneeId: string | null;
-  /** file paths the agent reported */
-  artifacts: string[];
   /** Failed runs so far — drives retry backoff and the dead letter, across states. */
   attempts: number;
   createdAt: number;
-  /** When its latest run began. */
-  startedAt: number | null;
   /** When it last reached done, superseded, dropped, blocked or dead. */
   completedAt: number | null;
 }

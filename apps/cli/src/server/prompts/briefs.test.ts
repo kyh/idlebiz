@@ -214,7 +214,6 @@ describe("the brief that asks for the next bet", () => {
 
 describe("the brief that carries the founder's answer", () => {
   const task: Task = {
-    artifacts: [],
     assigneeId: "lead",
     attempts: 0,
     betId: null,
@@ -226,7 +225,6 @@ describe("the brief that carries the founder's answer", () => {
     origin: "work",
     priority: "medium",
     productId: "app",
-    startedAt: null,
     state: { kind: "todo" },
     title: "Add checkout",
   };

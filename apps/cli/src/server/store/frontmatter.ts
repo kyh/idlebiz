@@ -7,10 +7,17 @@ import { parseJson } from "@repo/domain/json";
 /** The package format every file here is written in. A file naming another is someone else's, and is left alone. */
 export const PACKAGE_SCHEMA = "agentcompanies/v1";
 
-export type Scalar = string | number | boolean | null;
+type Scalar = string | number | boolean | null;
 export interface FrontmatterDoc {
   fields: Record<string, Scalar>;
   metadata: Record<string, Scalar>;
+  body: string;
+}
+
+/** A doc as an encoder writes it: a key left undefined gets no line, so it reads back absent. */
+interface WrittenDoc {
+  fields: Record<string, Scalar | undefined>;
+  metadata: Record<string, Scalar | undefined>;
   body: string;
 }
 
@@ -42,19 +49,21 @@ const parseValue = (raw: string): Scalar => {
   return t;
 };
 
-export const serializeDoc = (doc: FrontmatterDoc): string => {
-  const lines: string[] = ["---"];
-  for (const [k, v] of Object.entries(doc.fields)) {
-    lines.push(`${k}: ${JSON.stringify(v)}`);
-  }
-  const meta = Object.entries(doc.metadata);
-  if (meta.length > 0) {
-    lines.push("metadata:");
-    for (const [k, v] of meta) {
-      lines.push(`  ${k}: ${JSON.stringify(v)}`);
-    }
-  }
-  lines.push("---", "");
+/** A block's lines, each indented by `indent`: a key left undefined gets none. */
+const blockLines = (block: WrittenDoc["fields"], indent: string): string[] =>
+  Object.entries(block).flatMap(([k, v]) =>
+    v === undefined ? [] : [`${indent}${k}: ${JSON.stringify(v)}`],
+  );
+
+export const serializeDoc = (doc: WrittenDoc): string => {
+  const meta = blockLines(doc.metadata, "  ");
+  const lines = [
+    "---",
+    ...blockLines(doc.fields, ""),
+    ...(meta.length > 0 ? ["metadata:", ...meta] : []),
+    "---",
+    "",
+  ];
   return lines.join("\n") + doc.body;
 };
 
@@ -105,48 +114,22 @@ export const parseDoc = (text: string): FrontmatterDoc => {
   return { body, fields, metadata };
 };
 
-export const reqStr = (rec: Record<string, Scalar>, key: string): string => {
-  const v = z.string().safeParse(rec[key]);
-  if (!v.success) {
-    throw new Error(`expected string "${key}"`);
+/** The top-level fields of every package kind but a routine, whose files name no kind. */
+export const packageFields = <K extends string>(kind: K) =>
+  z.object({
+    kind: z.literal(kind),
+    name: z.string(),
+    schema: z.literal(PACKAGE_SCHEMA),
+    slug: z.string(),
+  });
+
+/** `doc` as `schema` reads it. One it refuses throws what is wrong, which the load report names. */
+export const decodeDoc = <T>(schema: z.ZodType<T>, doc: FrontmatterDoc): T => {
+  const parsed = schema.safeParse(doc);
+  if (!parsed.success) {
+    throw new Error(z.prettifyError(parsed.error));
   }
-  return v.data;
-};
-export const optStr = (rec: Record<string, Scalar>, key: string): string | null => {
-  const v = z.string().safeParse(rec[key]);
-  return v.success ? v.data : null;
-};
-export const reqNum = (rec: Record<string, Scalar>, key: string): number => {
-  const v = z.number().safeParse(rec[key]);
-  if (!v.success) {
-    throw new Error(`expected number "${key}"`);
-  }
-  return v.data;
-};
-export const optNum = (rec: Record<string, Scalar>, key: string, fallback: number): number => {
-  const v = z.number().safeParse(rec[key]);
-  return v.success ? v.data : fallback;
-};
-export const nullableNum = (rec: Record<string, Scalar>, key: string): number | null => {
-  const v = z.number().safeParse(rec[key]);
-  return v.success ? v.data : null;
-};
-export const optBool = (rec: Record<string, Scalar>, key: string, fallback: boolean): boolean => {
-  const v = z.boolean().safeParse(rec[key]);
-  return v.success ? v.data : fallback;
-};
-/** A JSON array of strings stored as one scalar; anything else reads as empty. */
-export const strArray = (rec: Record<string, Scalar>, key: string): string[] => {
-  const v = z.string().safeParse(rec[key]);
-  if (!v.success) {
-    return [];
-  }
-  try {
-    const parsed = z.array(z.string()).safeParse(parseJson(v.data));
-    return parsed.success ? parsed.data : [];
-  } catch {
-    return [];
-  }
+  return parsed.data;
 };
 
 /** URL-safe slug from a human name; suffix for uniqueness is the caller's job. */

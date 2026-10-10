@@ -43,6 +43,7 @@ const blockLead = async (
       'schema: "agentcompanies/v1"',
       `slug: ${JSON.stringify(slug)}`,
       "metadata:",
+      "  attempts: 0",
       `  createdAt: ${Date.now()}`,
       '  origin: "founder"',
       '  priority: "high"',

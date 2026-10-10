@@ -19,7 +19,7 @@ import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
 import type { Listing } from "../listing";
 import { RefusalError } from "../refusal";
 import { runPreamble } from "../prompts/briefs";
-import { parseDoc, reqNum, serializeDoc } from "./frontmatter";
+import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-store-"));
@@ -38,7 +38,6 @@ const {
   companySharedDir,
   companyWorkspace,
   employeeAgentDir,
-  employeeRunStateFile,
   policyFile,
   productWorkspace,
   productsDir,
@@ -724,21 +723,6 @@ describe("what a run leaves behind", () => {
     });
   });
 
-  it("keeps an older run-state but not its session, which names no folder it began in", () => {
-    const company = found();
-    const emp = store.createEmployee(hire("Priya"));
-    writeFileSync(
-      employeeRunStateFile(company.id, emp.id),
-      JSON.stringify({ lastRunMetrics: null, sessionId: "session-1" }),
-    );
-    store.initStore();
-    expect(store.getEmployee(emp.id)).toMatchObject({
-      instructionsDigest: null,
-      lastShip: null,
-      session: null,
-    });
-  });
-
   it("ships the work of someone released mid-run", () => {
     found();
     const emp = store.createEmployee(hire("Priya"));
@@ -902,6 +886,19 @@ describe("bets", () => {
       spentUsd: 2,
       state: { kind: "won", moved: 60 },
     });
+  });
+
+  it("skips and reports a BET.md whose state it cannot read, rather than reopen it", () => {
+    const co = found();
+    const bet = launch(firstProduct().id);
+    store.killBet(bet.id, "dud", 0);
+    const file = betFile(co.id, bet.id);
+    writeFileSync(file, readFileSync(file, "utf-8").replace(/\n {2}closedAt: .*/u, ""));
+
+    const report = store.initStore();
+
+    expect(report.skipped).toMatchObject([{ kind: "bet", path: file }]);
+    expect(store.getBet(bet.id)).toBeNull();
   });
 
   it("keeps spend its save refused, and the bet's next write carries it", () => {
@@ -1818,6 +1815,46 @@ describe("a release cut short", () => {
   });
 });
 
+/** Rewrite the task's TASK.md without the `line` it matches, as a hand edit would. */
+const dropLine = (companyId: string, taskId: string, line: RegExp): void => {
+  const file = path.join(tasksDir(companyId), taskId, "TASK.md");
+  writeFileSync(file, readFileSync(file, "utf-8").replace(line, ""));
+};
+
+describe("work a hand edit leaves no run or nobody holding", () => {
+  it("queues a run whose TASK.md names no lock again, spending no attempt", () => {
+    const co = foundTeam();
+    const t = store.createTask({ assigneeId: "priya", origin: "founder", title: "Ship it" });
+    store.claimTask(t.id, "priya");
+    store.lockTaskForRun(t.id, "run-1");
+    dropLine(co.id, t.id, /\n {2}runId: .*/u);
+
+    store.initStore();
+
+    expect(store.getTask(t.id)).toMatchObject({
+      attempts: 0,
+      state: { kind: "queued", lastError: "run lock lost", nextAttemptAt: null },
+    });
+  });
+
+  it.each(["queued", "running"])(
+    "gives a %s task nobody holds back as work to pick up",
+    (status) => {
+      const co = foundTeam();
+      const t = store.createTask({ assigneeId: "priya", origin: "founder", title: "Ship it" });
+      store.claimTask(t.id, "priya");
+      if (status === "running") {
+        store.lockTaskForRun(t.id, "run-1");
+      }
+      dropLine(co.id, t.id, /\n {2}assigneeId: .*/u);
+
+      store.initStore();
+
+      expect(store.getTask(t.id)).toMatchObject({ assigneeId: null, state: { kind: "todo" } });
+    },
+  );
+});
+
 describe("an answered ask", () => {
   it("is history superseded by its continuation, never a ship", () => {
     const co = foundTeam();
@@ -1967,15 +2004,10 @@ describe("founder approvals", () => {
   });
 });
 
-const stampOf = (companyId: string): number =>
-  reqNum(
-    parseDoc(readFileSync(path.join(root, companyId, "COMPANY.md"), "utf-8")).metadata,
-    "format",
-  );
-
 describe("the save format", () => {
   it("stamps what it writes", () => {
-    expect(stampOf(found().id)).toBe(11);
+    const file = path.join(root, found().id, "COMPANY.md");
+    expect(parseDoc(readFileSync(file, "utf-8")).metadata.format).toBe(12);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {

@@ -30,8 +30,12 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   from what they understand, so opening it would drop what a newer build added, and one stamped
   lower or not at all because a pre-release build made it. Until there are users there is no
   adoption code: a format bump resets every save, and the first migration is written once a
-  bump would strand someone's. Tolerant field reads in the codecs are not migrations. A
-  frontmatter key the app does not know is still dropped on the next write of that file.
+  bump would strand someone's. Each codec reads its kind through one strict zod schema, the one
+  its encoder writes to: a package it refuses (a hand edit, a field missing) is skipped and
+  named in the load report, never read with a default. Boot alone repairs what a hand edit or a
+  release with no lead leaves (`initStore`): a run that names no lock is queued again, and queued
+  or running work nobody holds is to do. A frontmatter key the app does not know is still
+  dropped on the next write of that file.
 - One active company per launch: newest `createdAt`, alphabetical slug on ties.
   Only that company's entities load; older saves remain untouched.
 - A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone

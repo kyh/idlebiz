@@ -1,15 +1,8 @@
-import type { Budget, BusinessTypeId, Company } from "@repo/domain/domain";
-import { BUSINESS_TYPES, DEFAULT_FOUNDER_SEED, DEFAULT_MAX_AGENTS } from "@repo/domain/domain";
+import { z } from "zod";
+import type { Budget, Company } from "@repo/domain/domain";
+import { BUSINESS_TYPE_IDS } from "@repo/domain/domain";
 import { companySharedDir } from "../paths";
-import {
-  PACKAGE_SCHEMA,
-  nullableNum,
-  optBool,
-  optNum,
-  optStr,
-  reqNum,
-  reqStr,
-} from "./frontmatter";
+import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
 /**
@@ -18,9 +11,7 @@ import type { FrontmatterDoc } from "./frontmatter";
  * drop whatever the newer build added. One stamped lower was written by a pre-release build whose
  * shapes nothing here reads. Both are refused, and a bump starts every save over.
  */
-export const SAVE_FORMAT = 11;
-
-const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format", 0);
+export const SAVE_FORMAT = 12;
 
 /**
  * A save stamped at a format this build does not write, which nothing here touches: a newer
@@ -30,97 +21,108 @@ const formatOf = (doc: FrontmatterDoc): number => optNum(doc.metadata, "format",
 export class SaveFormatError extends Error {
   readonly writtenBy: "newer" | "pre-release";
 
-  constructor(format: number) {
-    const writtenBy = format > SAVE_FORMAT ? "newer" : "pre-release";
+  constructor(format: number | null) {
+    const writtenBy = format !== null && format > SAVE_FORMAT ? "newer" : "pre-release";
+    const stamp = format === null ? "no format stamp" : `format ${format}`;
     super(
       writtenBy === "newer"
-        ? `this save was written by a newer IdleBiz (format ${format}, this build reads ${SAVE_FORMAT}) — update the app to open it`
-        : `this save was made by a pre-release IdleBiz (format ${format}, this build reads ${SAVE_FORMAT}) — move it out of the save folder to start a new company`,
+        ? `this save was written by a newer IdleBiz (${stamp}, this build reads ${SAVE_FORMAT}) — update the app to open it`
+        : `this save was made by a pre-release IdleBiz (${stamp}, this build reads ${SAVE_FORMAT}) — move it out of the save folder to start a new company`,
     );
     this.name = "SaveFormatError";
     this.writtenBy = writtenBy;
   }
 }
 
-export const companyToDoc = (co: Company): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = {
-    autopilot: co.autopilot,
-    businessType: co.businessType,
-    founderName: co.founderName,
-    founderSpriteSeed: co.founderSpriteSeed,
-    maxAgents: co.maxAgents,
-    ships: co.ships,
-  };
-  if (co.leaderId !== null) {
-    metadata.leaderId = co.leaderId;
-  }
-  // real metrics: absent keys mean "no source has ever reported"
-  if (co.revenueUsd !== null) {
-    metadata.revenueUsd = co.revenueUsd;
-  }
-  if (co.users !== null) {
-    metadata.users = co.users;
-  }
-  metadata.budgetMode = co.budget.mode;
-  if (co.budget.mode === "capped") {
-    metadata.budgetCapUsd = co.budget.capUsd;
-  }
-  metadata.spentUsd = co.spentUsd;
-  metadata.createdAt = co.createdAt;
-  metadata.format = SAVE_FORMAT;
+/** Only a capped budget names its cap. */
+const BudgetFieldsSchema = z.discriminatedUnion("budgetMode", [
+  z.object({ budgetMode: z.literal("infinite") }),
+  z.object({ budgetCapUsd: z.number().nonnegative(), budgetMode: z.literal("capped") }),
+]);
+
+/** A null field gets no line. */
+const CompanyDocSchema = z.object({
+  body: z.string(),
+  fields: packageFields("company").extend({ description: z.string().min(1).optional() }),
+  metadata: z.intersection(
+    z.object({
+      autopilot: z.boolean(),
+      businessType: z.enum(BUSINESS_TYPE_IDS),
+      createdAt: z.number(),
+      format: z.literal(SAVE_FORMAT),
+      founderName: z.string(),
+      founderSpriteSeed: z.string(),
+      leaderId: z.string().optional(),
+      maxAgents: z.number().int().min(1),
+      revenueUsd: z.number().optional(),
+      ships: z.number().int().nonnegative(),
+      spentUsd: z.number().nonnegative(),
+      users: z.number().optional(),
+    }),
+    BudgetFieldsSchema,
+  ),
+});
+
+const budgetFields = (budget: Budget): z.input<typeof BudgetFieldsSchema> =>
+  budget.mode === "capped"
+    ? { budgetCapUsd: budget.capUsd, budgetMode: "capped" }
+    : { budgetMode: "infinite" };
+
+const budgetOf = (m: z.output<typeof BudgetFieldsSchema>): Budget =>
+  m.budgetMode === "capped" ? { capUsd: m.budgetCapUsd, mode: "capped" } : { mode: "infinite" };
+
+export const companyToDoc = (co: Company): z.input<typeof CompanyDocSchema> => {
   const mission = co.mission === "" ? null : co.mission;
-  const fields: FrontmatterDoc["fields"] = {};
-  if (mission !== null) {
-    fields.description = mission;
-  }
-  fields.kind = "company";
-  fields.name = co.name;
-  fields.schema = PACKAGE_SCHEMA;
-  fields.slug = co.id;
   return {
     body: mission === null ? `# ${co.name}\n` : `# ${co.name}\n\n${mission}\n`,
-    fields,
-    metadata,
+    fields: {
+      description: mission ?? undefined,
+      kind: "company",
+      name: co.name,
+      schema: PACKAGE_SCHEMA,
+      slug: co.id,
+    },
+    metadata: {
+      autopilot: co.autopilot,
+      businessType: co.businessType,
+      createdAt: co.createdAt,
+      format: SAVE_FORMAT,
+      founderName: co.founderName,
+      founderSpriteSeed: co.founderSpriteSeed,
+      leaderId: co.leaderId ?? undefined,
+      maxAgents: co.maxAgents,
+      // real metrics: absent keys mean "no source has ever reported"
+      revenueUsd: co.revenueUsd ?? undefined,
+      ships: co.ships,
+      spentUsd: co.spentUsd,
+      users: co.users ?? undefined,
+      ...budgetFields(co.budget),
+    },
   };
-};
-
-const parseBusinessType = (raw: string | null): BusinessTypeId => {
-  const found = BUSINESS_TYPES.find((b) => b.id === raw);
-  return found ? found.id : "custom";
-};
-
-const parseBudget = (m: FrontmatterDoc["metadata"]): Budget => {
-  if (optStr(m, "budgetMode") === "capped") {
-    return { capUsd: Math.max(0, optNum(m, "budgetCapUsd", 0)), mode: "capped" };
-  }
-  return { mode: "infinite" };
 };
 
 export const docToCompany = (doc: FrontmatterDoc): Company => {
-  const format = formatOf(doc);
-  if (format !== SAVE_FORMAT) {
-    throw new SaveFormatError(format);
+  const stamp = z.number().safeParse(doc.metadata.format);
+  if (!stamp.success || stamp.data !== SAVE_FORMAT) {
+    throw new SaveFormatError(stamp.success ? stamp.data : null);
   }
-  const f = doc.fields;
-  const m = doc.metadata;
-  const id = reqStr(f, "slug");
-  const description = optStr(f, "description");
+  const { fields, metadata: m } = decodeDoc(CompanyDocSchema, doc);
   return {
-    autopilot: optBool(m, "autopilot", true),
-    budget: parseBudget(m),
-    businessType: parseBusinessType(optStr(m, "businessType")),
-    createdAt: reqNum(m, "createdAt"),
-    founderName: optStr(m, "founderName") ?? "Founder",
-    founderSpriteSeed: optStr(m, "founderSpriteSeed") ?? DEFAULT_FOUNDER_SEED,
-    id,
-    leaderId: optStr(m, "leaderId"),
-    maxAgents: Math.max(1, optNum(m, "maxAgents", DEFAULT_MAX_AGENTS)),
-    mission: description === null || description === "" ? null : description,
-    name: reqStr(f, "name"),
-    revenueUsd: nullableNum(m, "revenueUsd"),
-    ships: optNum(m, "ships", 0),
-    spentUsd: Math.max(0, optNum(m, "spentUsd", 0)),
-    users: nullableNum(m, "users"),
-    workspaceDir: companySharedDir(id),
+    autopilot: m.autopilot,
+    budget: budgetOf(m),
+    businessType: m.businessType,
+    createdAt: m.createdAt,
+    founderName: m.founderName,
+    founderSpriteSeed: m.founderSpriteSeed,
+    id: fields.slug,
+    leaderId: m.leaderId ?? null,
+    maxAgents: m.maxAgents,
+    mission: fields.description ?? null,
+    name: fields.name,
+    revenueUsd: m.revenueUsd ?? null,
+    ships: m.ships,
+    spentUsd: m.spentUsd,
+    users: m.users ?? null,
+    workspaceDir: companySharedDir(fields.slug),
   };
 };

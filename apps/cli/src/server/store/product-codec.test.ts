@@ -61,10 +61,4 @@ describe("product codec", () => {
     expect(productToDoc(gadget).metadata.workspace).toBe("own");
     expect(serializeDoc(productToDoc(gadget))).not.toContain(ROOT_DIR);
   });
-
-  it("reads a product that names no workspace as sharing the company's", () => {
-    const doc = productToDoc(gadget);
-    const { workspace: _, ...metadata } = doc.metadata;
-    expect(docToProduct({ ...doc, metadata }, "acme").workspaceDir).toBe(companyWorkspace("acme"));
-  });
 });

@@ -260,14 +260,11 @@ const recordIn = <T extends Owned>(
 // ---- run state --------------------------------------------------------------
 /** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
 const RunStateSchema = z.object({
-  // defaulted like lastShip; a file without it reads as never told, so the next run sends them once
-  instructionsDigest: z.string().nullable().default(null),
+  instructionsDigest: z.string().nullable(),
   lastRunMetrics: RunMetricsSchema.nullable(),
-  // defaulted: a file without it must still parse, or its session would be dropped with it
-  lastShip: LastShipSchema.nullable().default(null),
+  lastShip: LastShipSchema.nullable(),
   sessionId: z.string().nullable(),
-  // a file without it names no folder its session began in, so that session is never resumed
-  sessionWorkspace: z.string().nullable().default(null),
+  sessionWorkspace: z.string().nullable(),
 });
 
 const saveRunState = (e: Employee): void => {
@@ -1533,7 +1530,6 @@ const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Ta
     heldIn(tasksDir(t.companyId), shippedDir(t.companyId)),
   );
   const task: Task = {
-    artifacts: [],
     assigneeId: t.assigneeId ?? null,
     attempts: 0,
     betId: t.betId ?? null,
@@ -1545,7 +1541,6 @@ const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Ta
     origin: t.origin,
     priority: t.priority ?? "medium",
     productId: t.productId ?? null,
-    startedAt: null,
     title: t.title,
     ...entering(state, now),
   };
@@ -2064,9 +2059,7 @@ const recoverInterrupted = (task: Task, active: ActiveCompany, now: number): Tas
   if (stopped !== null && !carriesAnswer) {
     return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
   }
-  return task.assigneeId
-    ? failed(task, "Interrupted by app restart").task
-    : { ...task, state: { kind: "todo" } };
+  return failed(task, "Interrupted by app restart").task;
 };
 
 /** Shelve the history among `tasks`, returning the open work. */
@@ -2082,12 +2075,30 @@ const shelveLoadedHistory = (active: ActiveCompany, tasks: Task[]): Task[] => {
   return tasks.filter((task) => !isHistory(task));
 };
 
-/** Recover the runs the last launch never saw settle. */
+/** A running TASK.md that names no run, which only a hand edit leaves, put back on the queue: no run holds it. */
+const relockLost = (doc: FrontmatterDoc): FrontmatterDoc =>
+  doc.metadata.status === "running" && doc.metadata.runId === undefined
+    ? { ...doc, metadata: { ...doc.metadata, lastError: "run lock lost", status: "queued" } }
+    : doc;
+
+/** Queued and running belong to someone; a file giving them nobody (a hand edit, a release with no lead to take it) is work to pick up. */
+const isUnowned = (task: Task): boolean =>
+  task.assigneeId === null && (task.state.kind === "queued" || task.state.kind === "running");
+
+/** What boot makes of a task the last launch left, or null when it stands as it is. */
+const recoveredAtBoot = (task: Task, active: ActiveCompany, now: number): Task | null => {
+  if (isUnowned(task)) {
+    return { ...task, state: { kind: "todo" } };
+  }
+  return task.state.kind === "running" ? recoverInterrupted(task, active, now) : null;
+};
+
+/** Recover the runs the last launch never saw settle, and the work it left nobody holding. */
 const recoverInterruptedRuns = (active: ActiveCompany): void => {
   const now = Date.now();
   for (const [i, task] of active.tasks.entries()) {
-    if (task.state.kind === "running") {
-      const recovered = recoverInterrupted(task, active, now);
+    const recovered = recoveredAtBoot(task, active, now);
+    if (recovered) {
       active.tasks[i] = recovered;
       saveTask(recovered);
     }
@@ -2115,7 +2126,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
     "task",
     tasksDir(company.id),
     (slug) => taskFile(company.id, slug),
-    (doc) => docToTask(doc, company.id),
+    (doc) => docToTask(relockLost(doc), company.id),
   ).toSorted(byAge);
   active.tasks = shelveLoadedHistory(active, tasks);
   active.products = loadPackages(

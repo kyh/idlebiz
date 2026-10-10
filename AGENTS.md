@@ -506,8 +506,9 @@ rather than crashing boot.
   `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
   `page-session.ts` the sign-in, `page-policy.ts` the page's CSP), `page-router.ts` (the page's
   contract implemented; `lib/answers.ts` words what does not return), `store/store.ts` (the one
-  company in memory, every command on it, and its writes), `store/*-codec.ts` (one pure markdown
-  package ⇄ domain object mapping per kind; `company-codec.ts` owns the save format stamp),
+  company in memory, every command on it, and its writes), `store/*-codec.ts` (one strict zod schema
+  per package kind, which its encoder is typed against and its decoder parses; `company-codec.ts`
+  owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
   never past a closed lid), `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only

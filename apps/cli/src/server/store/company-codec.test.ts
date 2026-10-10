@@ -29,7 +29,7 @@ const written = (co: Company): string => serializeDoc(companyToDoc(co));
 /** The refusal reading `doc` throws, or null when it reads. */
 const refusalOf = (doc: FrontmatterDoc): SaveFormatError | null => {
   try {
-    docToCompany(parseDoc(serializeDoc(doc)));
+    docToCompany(doc);
     return null;
   } catch (error) {
     if (error instanceof SaveFormatError) {
@@ -57,19 +57,14 @@ describe("company codec", () => {
     { format: SAVE_FORMAT - 1, writtenBy: "pre-release" },
     { format: SAVE_FORMAT + 1, writtenBy: "newer" },
   ])("refuses a save stamped format $format as a $writtenBy build's", ({ format, writtenBy }) => {
-    const doc = companyToDoc(acme);
+    const doc = parseDoc(written(acme));
     doc.metadata.format = format;
     expect(refusalOf(doc)?.writtenBy).toBe(writtenBy);
   });
 
   it("refuses a save with no stamp as a pre-release build's", () => {
-    const { format: _, ...metadata } = companyToDoc(acme).metadata;
-    expect(refusalOf({ ...companyToDoc(acme), metadata })?.writtenBy).toBe("pre-release");
-  });
-
-  it("reads an empty description as no mission", () => {
-    const doc = companyToDoc(acme);
-    doc.fields.description = "";
-    expect(docToCompany(parseDoc(serializeDoc(doc))).mission).toBeNull();
+    const doc = parseDoc(written(acme));
+    delete doc.metadata.format;
+    expect(refusalOf(doc)?.writtenBy).toBe("pre-release");
   });
 });

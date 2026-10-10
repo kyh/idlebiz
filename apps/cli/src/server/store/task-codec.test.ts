@@ -5,7 +5,6 @@ import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
 const base: Omit<Task, "state"> = {
-  artifacts: ["dist/index.html"],
   assigneeId: "priya",
   attempts: 2,
   betId: "launch-post",
@@ -17,11 +16,13 @@ const base: Omit<Task, "state"> = {
   origin: "work",
   priority: "high",
   productId: "widget",
-  startedAt: 1_700_000_001_000,
   title: "Ship the thing",
 };
 
-const roundTrip = (t: Task): Task => docToTask(parseDoc(serializeDoc(taskToDoc(t))), t.companyId);
+/** The task's TASK.md, as boot reads it back. */
+const written = (t: Task) => parseDoc(serializeDoc(taskToDoc(t)));
+
+const roundTrip = (t: Task): Task => docToTask(written(t), t.companyId);
 
 describe("task codec", () => {
   it.each<TaskState>([
@@ -51,18 +52,8 @@ describe("task codec", () => {
     expect(roundTrip(task)).toEqual(task);
   });
 
-  it("reads an unknown or missing origin as the bet's work or the founder's, never a proposal", () => {
-    const doc = taskToDoc({ ...base, origin: "propose", state: { kind: "todo" } });
-    const { origin: _unstamped, ...funded } = doc.metadata;
-    const { betId: _unfunded, ...unfunded } = funded;
-    const read = (metadata: typeof doc.metadata) => docToTask({ ...doc, metadata }, "acme").origin;
-    expect(read(funded)).toBe("work");
-    expect(read(unfunded)).toBe("founder");
-    expect(read({ ...unfunded, origin: "hunch" })).toBe("founder");
-  });
-
   it("writes the state as the status line and that state's fields only", () => {
-    const { metadata } = taskToDoc({ ...base, state: { kind: "done", summary: "done!" } });
+    const { metadata } = written({ ...base, state: { kind: "done", summary: "done!" } });
     expect(metadata.status).toBe("done");
     expect(metadata.summary).toBe("done!");
     expect("runId" in metadata).toBe(false);
@@ -79,34 +70,10 @@ describe("task codec", () => {
     expect(serializeDoc(taskToDoc({ ...base, state }))).not.toContain("null");
   });
 
-  it("keeps a dropped task dropped when its reason is missing", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "dropped", reason: "bet closed" } });
-    const { dropReason: _lost, ...withoutReason } = doc.metadata;
-    const out = docToTask({ ...doc, metadata: withoutReason }, "acme");
-    expect(out.state).toEqual({ kind: "dropped", reason: "no reason kept" });
-  });
-
-  it("treats a running task whose lock is missing as a retry, not a run", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "running", runId: "run-1" } });
-    const { runId: _lost, ...withoutLock } = doc.metadata;
-    const out = docToTask({ ...doc, metadata: withoutLock }, "acme");
-    expect(out.state).toEqual({ kind: "queued", lastError: "run lock lost", nextAttemptAt: null });
-  });
-
-  it("keeps a blocked task waiting when its ask is missing, so the founder can still unstick it", () => {
-    const doc = taskToDoc({
-      ...base,
-      state: { ask: { question: "?", type: "question" }, kind: "blocked", summary: null },
-    });
-    const { blockedQuestion: _lost, ...withoutAsk } = doc.metadata;
-    const out = docToTask({ ...doc, metadata: withoutAsk }, "acme");
-    expect(out.state.kind).toBe("blocked");
-  });
-
   it.each(["failed", "weird"])("refuses a status it never writes, %j", (status) => {
-    const doc = taskToDoc({ ...base, state: { kind: "dead", lastError: "gave up" } });
+    const doc = written({ ...base, state: { kind: "dead", lastError: "gave up" } });
     expect(() => docToTask({ ...doc, metadata: { ...doc.metadata, status } }, "acme")).toThrow(
-      "a task status this build does not write",
+      "metadata.status",
     );
   });
 });
@@ -117,7 +84,7 @@ const blocked = (ask: BlockedAsk): Task => ({
 });
 
 const askSavedAs = (blockedQuestion: string): TaskState => {
-  const doc = taskToDoc(blocked({ question: "?", type: "question" }));
+  const doc = written(blocked({ question: "?", type: "question" }));
   return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }, "acme").state;
 };
 
@@ -148,19 +115,6 @@ describe("a blocked task's ask in TASK.md", () => {
     expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
   });
 
-  it("reads an approval without a rule id as an ask nothing recognised", () => {
-    expect(askSavedAs("[approve] git push origin main")).toEqual(
-      blocked({ command: "git push origin main", rule: "unknown-ask", type: "approval" }).state,
-    );
-  });
-
-  it.each(["[action] not json", '[action] {"action":"no instructions"}'])(
-    "reads an action it cannot parse, %j, as the question it says",
-    (saved) => {
-      expect(askSavedAs(saved)).toEqual(blocked({ question: saved, type: "question" }).state);
-    },
-  );
-
   it("preserves a retired rule through validation and TASK.md", () => {
     const saved = "[approve:retired-rule] git push origin main";
     const ask: BlockedAsk = {
@@ -170,23 +124,6 @@ describe("a blocked task's ask in TASK.md", () => {
     };
     expect(askSavedAs(saved)).toEqual(blocked(ask).state);
     expect(BlockedAskSchema.parse(ask)).toEqual(ask);
-    expect(taskToDoc(blocked(ask)).metadata.blockedQuestion).toBe(saved);
+    expect(written(blocked(ask)).metadata.blockedQuestion).toBe(saved);
   });
-});
-
-describe("a task nobody owns", () => {
-  it.each(["queued", "running"])(
-    "reads a %s task with no assignee as work to pick up",
-    (status) => {
-      const task = docToTask(
-        {
-          body: "",
-          fields: { kind: "task", name: "Orphan", slug: "orphan" },
-          metadata: { createdAt: 1, runId: "run", status },
-        },
-        "co",
-      );
-      expect(task.state).toEqual({ kind: "todo" });
-    },
-  );
 });
