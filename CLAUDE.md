@@ -86,20 +86,22 @@ Turborepo + pnpm. Pointers in this file are short: `server/…` and `commands/�
 apps/
   desktop/       @repo/desktop — THE APP THE FOUNDER INSTALLS: a Tauri 2 shell over the system
                  WebKit. src-tauri/ (Rust): the window and its origin pin (window.rs,
-                 navigation.rs), main as its one child (main_process.rs, relay.rs, runtime.rs),
-                 what main asks of a native app (host.rs: the tray, the Keychain, keep-awake, the
-                 login item, opening a path or a URL) and main's log (main_log.rs). src/renderer/
-                 (React + Phaser): the office, its panels and its state, which call main through
-                 `api()` (renderer/api.ts, installed by install-api.ts) and hear it through
-                 `listen()`. scripts/: the pack (node fetched, the server staged as
-                 Resources/server, everything signed, notarized and released).
+                 navigation.rs), main as its one child (main_process.rs, relay.rs, protocol.rs,
+                 runtime.rs), what main asks of a native app (host.rs: the tray, the Keychain,
+                 keep-awake, the login item, opening a path or a URL) and main's log
+                 (main_log.rs). src/renderer/ (React + Phaser): the office, its panels and its
+                 state, which call main through `api` (renderer/api.ts) and hear its events
+                 through `listen()` (renderer/page-events.ts). scripts/: the pack (node
+                 fetched, the server staged as Resources/server, everything signed, notarized
+                 and released).
   cli/           idlebiz — THE SERVER AND THE BINARY. `idlebiz serve` is main (src/server/): the
                  save (store/), the scheduler, the runs and their seal (agents/), the company's
                  tools (tools.ts over tool-specs.ts, behind control-plane.ts), the integrations,
-                 and the window's page (page-server.ts: the handoff, the guards, the event
-                 stream; page-router.ts implements the contract). Every other verb is a company
-                 tool (src/commands/tools.ts) that runs type through the launcher main writes
-                 them (server/agent-launcher.ts). src/dev-host/ runs main as the shell would, for
+                 and the window's page (page-server.ts: the handoff and the guards;
+                 page-router.ts implements the contract, its event stream included, which
+                 lib/broadcast.ts feeds). Every other verb is a company tool
+                 (src/commands/tools.ts) that runs type through the launcher main writes them
+                 (server/agent-launcher.ts). src/dev-host/ runs main as the shell would, for
                  `dev:browser` and e2e. resources/: the skills and the employee sheets main reads.
                  The build is dist/index.js with its chunks flat beside it, and the page staged
                  as dist/page.
@@ -111,10 +113,10 @@ packages/
                  grammar, money's formatting, the hold rules' display, and the JSON and error
                  helpers. Zod only, and no other package of the repo's.
   contract/      @repo/contract — the page's API, contract-first: an oRPC contract with one folder
-                 per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), the routes (`/rpc`,
-                 `/events`), the page's content security policy and the event stream's names.
-                 The page compiles against it and page-router.ts implements it; both ship in one
-                 app, so it may break freely.
+                 per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), its one stream of
+                 events (`events`, whose schemas are events.ts), the routes (`/rpc`) and the
+                 page's content security policy. The page compiles against it and page-router.ts
+                 implements it; both ship in one app, so it may break freely.
   agent-driver/  @repo/agent-driver — the ACP runtime, over domain: a turn over claude-agent-acp
                  or codex-acp, the runners' registry, tool asks, rate limits and pricing, tested
                  on its own against stand-in agents. The page never imports it.
@@ -385,7 +387,9 @@ third boundary.
     again. Main starts a runner's CLI itself only sealed as that runner: its version and login
     probes, `codex mcp list`, and the sign-in (`sealedSignIn`, the only one that may open the
     browser or write claude's account file). The installer runs in `/bin/bash -c`, never a login shell. The login-shell PATH
-    probe (`adoptShellPath`) runs unsealed: no run writes the founder's shell startup files.
+    probe (`adoptShellPath`, the packaged app's alone: a dev launch keeps its terminal's PATH)
+    runs unsealed: no run writes the founder's shell startup files. The seal's check waits on
+    it, never boot, so no run starts on a PATH short of the shell's.
     `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands through a planted
     link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session
     but the first out.
@@ -736,22 +740,26 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 
 ## UI conventions
 
-- **The renderer mirrors main's state by asking again.** An activity event says which slice
-  moved; `renderer/state/activity-reducer.ts` (pure, exhaustive over the event kinds — a new
-  kind is a compile error, not a silent default) turns it into a patch and the slices to
-  refetch. Answers can land out of order, so every fetch takes a ticket and a slice keeps
-  only an answer at least as new as its last (`ordering.ts`). A patch outranks every answer
-  still in flight, so a slice an event patches is also one it refetches, or what the refused
-  answer carried (a hire) is lost. Don't put entities in events.
+- **The renderer mirrors main's state by asking again.** Main's answers live in one
+  tanstack-query cache (`renderer/state/queries.ts`, keyed by `@orpc/tanstack-query`'s `orpc`),
+  where nothing goes stale on its own. An activity event says what moved;
+  `renderer/state/activity-reducer.ts` (pure, exhaustive over the event kinds — a new kind is a
+  compile error, not a silent default) turns it into a patch and the query keys to refetch, and
+  the store applies each as cancelQueries, setQueryData, then invalidateQueries. A patch
+  outranks every read still in flight, which is cancelled rather than let land over it, so a key
+  an event patches is also one it refetches, or what the cancelled read carried (a hire) is
+  lost. Don't put entities in events.
 - **Every mutation goes through `useSubmission`** (`renderer/hooks/use-submission.ts`, on
   React's `useActionState`): the control is busy while main works and a refusal lands beside
   it as a `<Failure>`. No `void action()` in a handler, no hand-rolled `mounted` refs — a
   throw inside an action goes to the error boundary, so the hook returns failure as state.
-  A read goes through `useAsync` (`renderer/hooks/use-async.ts`) the same way: its failure
-  is state, and an answer that lands after its deps changed is dropped.
+  A read is a `useQuery` (or one of the hooks over one in `queries.ts`): its failure is state,
+  and main's answer to a change is held with `setAnswer`, which outranks reads in flight as a
+  patch does.
 - **React and the office scene talk through `renderer/game/office-port.ts`**, a typed
-  vocabulary over Phaser's emitter. The scene still fetches its own roster when it boots: it
-  restarts the moment a company is founded, before the store has refreshed.
+  vocabulary over Phaser's emitter. The scene reads main's state from the window's cache
+  (`read` and `watch` in `queries.ts`), so a boot asks main once for each answer; a founding
+  reads the company, its team and their work again before the scene restarts (`companyFounded`).
 
 - **Headless interactions come from Base UI** (`@base-ui/react`, per-part imports like
   `@base-ui/react/dialog`), skinned with px-kit classes. Dialogs, choice windows (Toolbar),
@@ -775,8 +783,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
 - **CLI-free surfaces**: `apps/web` and the onboarding modal, both reachable with no company.
 - **`pnpm dev:desktop` and `pnpm dev:browser` stop this checkout's desktop dev session first**;
   `dev:web`, `verify`, `e2e` and unrelated processes on TCP 31100 survive, and startup fails while
-  that port is occupied. The shell's env reaches main, but for every `NODE_*` variable other
-  than `NODE_ENV`, which the shell drops so none loads code into main (`scrubbed_env`).
+  that port is occupied. The shell's env reaches main, but for every `NODE_*` variable, which the
+  shell and the dev host both drop (`scrubbed_env`, `mainEnv`): none loads code into main, and no
+  `NODE_ENV` of a terminal's or vitest's reaches the runs, which inherit main's env.
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 - **One main per save.** Boot claims the save before it reads it (`server/save-claim.ts`): a

@@ -19,9 +19,7 @@ test("retiring the selected product shows the whole company again", async ({ lau
   const founding = await launch();
   await foundCompany(founding.page);
   const api = await apiOf(founding.page);
-  await api.evaluate((a) =>
-    a.products.create({ description: "A second thing to sell.", name: "Side Quest" }),
-  );
+  await api.products.create({ description: "A second thing to sell.", name: "Side Quest" });
   await founding.close();
 
   const { page } = await launch();

@@ -114,10 +114,11 @@ of `pnpm verify` or CI:
   real account or key is needed.
 - It runs beside `pnpm dev:desktop` and `pnpm dev:browser`: each launch serves its page on a port
   of its own, and opens an isolated root.
-- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API
-  with a hand-written team (no casting run), a $0 cap and autopilot off; the
-  scheduler checks the budget before it spawns anything, so no run can start. It directs
-  nobody, and every test ends by asserting its save logged no `run.start`.
+- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API,
+  called from the test with the page's cookie and origin (`apiOf`), with a hand-written team (no
+  casting run), a $0 cap and autopilot off; the scheduler checks the budget before it spawns
+  anything, so no run can start. It directs nobody, and every test ends by asserting its save
+  logged no `run.start`.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
@@ -138,9 +139,9 @@ so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
-> (`server/paths.ts`). The whole shell env reaches main, and the employees' CLIs less its
-> credential-shaped names, as in a terminal launch. Isolation protects the real save, but
-> onboarding and employee runs still bill the signed-in CLI. One main holds a save at a time:
+> (`server/paths.ts`). The whole shell env but its `NODE_*` reaches main, and the employees'
+> CLIs less its credential-shaped names, as in a terminal launch. Isolation protects the real save,
+> but onboarding and employee runs still bill the signed-in CLI. One main holds a save at a time:
 > boot claims it first (`server/save-claim.ts`), so a dev launch on `~/.idlebiz` while the
 > installed IdleBiz has it open refuses to boot, saying so, rather than run each task twice.
 
@@ -388,10 +389,10 @@ rather than crashing boot.
   router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/agent-driver test`
   covers an ACP turn against stand-in agents (permissions, resume, teardown, how a turn ends,
   usage) and the failure classes. `pnpm --filter @repo/desktop test`
-  covers the page's geometry and state, then `cargo test` the shell (the relay's framing, main's
-  supervision against a stand-in main on node, the navigation pin, the runtime's paths, main's
-  log). On macOS main's suite also runs the seal on canary files under a stand-in home
-  (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
+  covers the page's geometry and state, then `cargo test` the shell (the relay's framing and its
+  samples, main's supervision against a stand-in main on node, the navigation pin, the runtime's
+  paths, main's log). On macOS main's suite also runs the seal on canary files under a stand-in
+  home (`seal.test.ts`) and main's login-shell probe on a stand-in home's startup files
   (`shell-path.test.ts`), and, where a `claude` or `codex` CLI is installed, the real CLI through the
   app's ACP adapter against a stand-in model on loopback, billing nothing and never touching
   its login (`claude-gate.test.ts`, `codex-gate.test.ts`), and, where `agent-browser` is
@@ -403,10 +404,14 @@ rather than crashing boot.
   calls of main (oRPC, one folder per domain, `<domain>-contract.ts` beside `<domain>-schema.ts`,
   whose zod schemas ARE the inputs' types — declare the schema, never a parallel type), and
   `server/page-router.ts` implements it, so a procedure missing or mistyped fails to compile.
-  The page calls `api().<domain>.<procedure>()` (`renderer/api.ts`, installed once by
-  `renderer/install-api.ts`) on its own origin, since main serves it (`server/page-server.ts`):
-  under `/rpc`, behind the session cookie and same-origin guards, with main's events on one
-  server-sent stream, `/events`, named by `@repo/contract/events` (`listen()`). One middleware
+  The page calls `api.<domain>.<procedure>()` (`renderer/api.ts`, one client for the page) on
+  its own origin, since main serves it (`server/page-server.ts`): under `/rpc`, behind the
+  session cookie and same-origin guards. Main's events are the contract's `events` stream, each a
+  `PageEvent` whose zod schema `@repo/contract/events` declares: `server/lib/broadcast.ts` parses
+  each as it publishes it, and logs and drops one that fails, which would otherwise end every
+  page's stream at the contract's own check. The page hears them through `listen()`
+  (`renderer/page-events.ts`), which reopens a stream that drops a second later, and asks main
+  for everything again as each one opens, since what main sent meanwhile is lost. One middleware
   words every answer that does not return (`server/lib/answers.ts`): a `RefusalError`
   (`server/refusal.ts`) is the store's bare sentence, which the page shows; text over a field's
   limit says the limit; anything else is a fault, answered with its message and reported to
@@ -432,6 +437,13 @@ rather than crashing boot.
   Mac kept awake while a run is in flight, a relaunch. The shell says hello first, with what only
   it knows: whether it is the packaged app, the dev server's address in dev, whether the login
   item launched it, the Keychain's sealing key.
+  Neither end compiles against the other, so each names every method once (`RELAY_METHODS` and
+  its zod schemas in `server/host.ts`; the consts and serde types of `src-tauri/src/protocol.rs`)
+  and both are pinned to one sample a method, `src-tauri/tests/fixtures/relay/<method>.json`:
+  `server/host.test.ts` parses each with main's schema, `cargo test` reads each into the shell's
+  types and writes it back unchanged, and each checks its own methods are the samples'. A method
+  added, renamed or reshaped changes its sample and both ends in one commit. Both ends refuse a
+  field they do not know, and a development shell shows a box for a notification it cannot read.
   Main's stdin is its lifeline: the shell closes it only after main answers `quit`, so a shell
   that crashed or was killed ends main too, after its runs.
 - **Main keeps a log file.** Main's console is its stderr, which the shell appends, stamped, to
@@ -494,15 +506,17 @@ rather than crashing boot.
 
 - `apps/desktop/src-tauri` — the shell, Rust: the window over main's page, opened on the handoff
   main hands it, and its navigation pin (`window.rs`, `navigation.rs`), main as its one child
-  (`main_process.rs` over the relay's framing in `relay.rs`, `runtime.rs` for where node and the
-  server are), what main asks of a native app (`host.rs`: message boxes, the clipboard, Finder,
+  (`main_process.rs` over the relay's framing in `relay.rs` and its messages in `protocol.rs`,
+  `runtime.rs` for where node and the server are), what main asks of a native app (`host.rs`:
+  message boxes, the clipboard, Finder,
   notifications; `tray.rs`, `login_item.rs`, `keep_awake.rs`, `keychain.rs`), and main's log
   (`main_log.rs`). No capability grants the page a command.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
   (`game/`, with the office's geometry: `office-depth.ts` the draw bands,
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
-  math), a hand-rolled external store in `state/store.ts`, and main reached through `api.ts`
-  (installed by `install-api.ts`).
+  math), main's answers in one tanstack-query cache (`state/queries.ts`), the window's own state
+  and main's events applied to that cache in `state/store.ts`, and main reached through `api.ts`,
+  its events through `page-events.ts`.
 - `apps/desktop/scripts` — the pack: node fetched (`fetch-node.ts`), the server staged
   (`stage-server.ts`), everything signed (`sign-resources.ts`), the crates' notices
   (`rust-notices.ts`), the bundle and notarization (`package.ts`), the release
@@ -515,13 +529,14 @@ rather than crashing boot.
 - `apps/cli/src/server` — main. `serve.ts` (boot on the shell's hello, the relay, quit),
   `save-claim.ts` (boot's claim on the save: a socket main listens on while it runs, which a
   second main on that save finds answering and refuses to boot on),
-  `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio channel),
-  `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
-  `page-session.ts` the sign-in), `page-router.ts` (the page's
-  contract implemented; `lib/answers.ts` words what does not return), `store/store.ts` (the one
-  company in memory, every command on it, and its writes), `store/*-codec.ts` (one strict zod schema
-  per package kind, which its encoder is typed against and its decoder parses; `company-codec.ts`
-  owns the save format stamp),
+  `host.ts` (what main asks of the app that runs it, and every message of the relay's),
+  `relay/` (its end of the stdio channel),
+  `page-server.ts` (the window's page on loopback: the handoff and the guards;
+  `page-session.ts` the sign-in), `page-router.ts` (the page's contract implemented, its event
+  stream fed by `lib/broadcast.ts`; `lib/answers.ts` words what does not return),
+  `store/store.ts` (the one company in memory, every command on it, and its writes),
+  `store/*-codec.ts` (one strict zod schema per package kind, which its encoder is typed against
+  and its decoder parses; `company-codec.ts` owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
   never past a closed lid), `founder-actions.ts` (what the founder hands the team, filed and
@@ -567,7 +582,7 @@ rather than crashing boot.
   `errors.ts`, `json.ts`, and `character-frame.ts` (the sprite box every process slices by).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`), the page's content security policy (`page-policy.ts`), which main
-  stamps on the page and the dev server writes into it, and the event stream's names
+  stamps on the page and the dev server writes into it, and the schemas of its event stream
   (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,
   prices usage, and classes failures (auth, access denied, usage limit, overload, context, other)

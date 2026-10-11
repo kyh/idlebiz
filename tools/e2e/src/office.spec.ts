@@ -110,7 +110,7 @@ test("an action card hands the founder its draft and carries their answer back",
   await expect(inbox.getByText(action.action)).toHaveCount(0);
 
   const api = await apiOf(page);
-  const open = await api.evaluate((a) => a.tasks.list({}));
+  const open = await api.tasks.list({});
   expect(open.map((t) => t.description ?? "").join("\n")).toContain(`Done. They sent back: ${url}`);
 });
 
@@ -188,11 +188,9 @@ test("#team stays on its newest line after a window closes over it", async ({ la
 
   const { page } = await launch();
   const api = await apiOf(page);
-  await api.evaluate(async (a) => {
-    for (let i = 1; i <= 30; i += 1) {
-      await a.team.post({ text: `line ${i}` });
-    }
-  });
+  for (let i = 1; i <= 30; i += 1) {
+    await api.team.post({ text: `line ${i}` });
+  }
   const feed = page
     .locator(".px-window")
     .filter({ hasText: "# team" })
@@ -216,7 +214,7 @@ test("#team shows the room again once its page loads again", async ({ launch }) 
   const { page } = await launch();
   await expect(page.getByText("# team")).toBeVisible();
   const api = await apiOf(page);
-  await api.evaluate((a) => a.team.post({ text: "said before the page loaded again" }));
+  await api.team.post({ text: "said before the page loaded again" });
   await page.reload();
   await expect(page.getByText("said before the page loaded again")).toBeVisible();
 });
@@ -299,10 +297,7 @@ test("an answer being typed survives a status event of the asker's", async ({ la
   await page.keyboard.type("Blu");
 
   const api = await apiOf(page);
-  await api.evaluate(
-    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
-    lead.id,
-  );
+  await api.employees.direct({ employeeId: lead.id, instruction: "Tidy the README." });
   await expect(
     dialogue.locator(".dlg-menu").getByRole("button", { name: /Check in:/u }),
   ).toBeVisible();
@@ -337,10 +332,7 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await page.keyboard.type("Ship the ");
 
   const api = await apiOf(page);
-  await api.evaluate(
-    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
-    lead.id,
-  );
+  await api.employees.direct({ employeeId: lead.id, instruction: "Tidy the README." });
   await page.waitForTimeout(500);
   await page.keyboard.type("pricing page");
   await expect(talk).toBeFocused();
@@ -453,10 +445,7 @@ test("the dialogue's cursor stays on Talk… when a row is added ahead of it mea
 
   // queued work puts a Check in row ahead of Talk… while the menu is away
   const api = await apiOf(page);
-  await api.evaluate(
-    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
-    engineer.id,
-  );
+  await api.employees.direct({ employeeId: engineer.id, instruction: "Tidy the README." });
   await expect(dialogue.getByText(/queued/u)).toBeVisible();
   await page.waitForTimeout(500);
   await page.keyboard.press("Escape");

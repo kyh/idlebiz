@@ -2,7 +2,7 @@
 // walk sheet, its anims registered. The sheet's geometry is character-sheet.ts.
 import { Loader } from "phaser";
 import type Phaser from "phaser";
-import { getCharacterAssets } from "@/renderer/character-assets";
+import { characterQuery, read } from "@/renderer/state/queries";
 import { characterAnims, DIR_START, SIT_START } from "@/renderer/game/character-sheet";
 import { DIRS, FRAME_H, FRAME_W, SIT_SIDES } from "@repo/domain/character-frame";
 
@@ -55,7 +55,7 @@ export const loadCharacter = async (
   seed: string,
 ): Promise<void> => {
   if (!scene.textures.exists(key)) {
-    const assets = await getCharacterAssets(seed);
+    const assets = await read(characterQuery(seed));
     await loadSpritesheetDataUrl(scene, key, assets.walkSheetDataUrl);
   }
   ensureWalkAnims(scene, key);

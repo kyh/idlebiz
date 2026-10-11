@@ -15,18 +15,25 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
-import { handoffSchema } from "../server/host";
-import type { LaunchHello } from "../server/host";
+import {
+  QUIT_TIMEOUT_MS,
+  copyTextSchema,
+  handoffSchema,
+  keepAwakeSchema,
+  loginItemSchema,
+  messageBoxSchema,
+  noteSchema,
+  openingSchema,
+  trayModelSchema,
+} from "../server/host";
+import type { LaunchHello, RelayMethod } from "../server/host";
 import { createPeer } from "../server/relay/rpc";
 import type { Peer } from "../server/relay/rpc";
 import { errorMessage } from "@repo/domain/errors";
-import { jsonValueSchema } from "@repo/domain/json";
 
 /** The bundle `pnpm build` leaves, the page it serves beside it (`dist/page`). */
 const SERVE_ENTRY = path.resolve(import.meta.dirname, "../../dist/index.js");
 
-/** How long a quit waits for main to stop its runs, as the shell waits (main_process.rs). */
-const QUIT_TIMEOUT_MS = 45_000;
 /** How long main has to exit once its stdin closes, before SIGKILL. */
 const EXIT_GRACE_MS = 5000;
 
@@ -58,16 +65,8 @@ type MainChild = ChildProcessByStdio<Writable, Readable, Readable>;
 
 interface Main {
   child: MainChild;
-  peer: Peer;
+  peer: Peer<RelayMethod>;
 }
-
-const messageBoxSchema = z.object({
-  detail: z.string().nullable(),
-  kind: z.enum(["info", "warning", "error"]),
-  message: z.string(),
-});
-const openingSchema = z.object({ kind: z.enum(["path", "reveal", "url"]), target: z.string() });
-const noteSchema = z.object({ body: z.string(), title: z.string() });
 
 /** Main's environment as the shell gives it: no `NODE_*` (a loader, an inspector, a mode). */
 const mainEnv = (options: DevHostOptions): NodeJS.ProcessEnv => {
@@ -102,12 +101,12 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
   let turn: Promise<void> = Promise.resolve();
   let stopped = false;
 
-  const listen = (peer: Peer): void => {
+  const listen = (peer: Peer<RelayMethod>): void => {
     peer.handle("host.messageBox", messageBoxSchema, (box) => {
       log(`[host] ${box.kind}: ${box.message}${box.detail === null ? "" : `\n${box.detail}`}`);
       return null;
     });
-    peer.handle("host.copyText", z.object({ text: z.string() }), (copy) => {
+    peer.handle("host.copyText", copyTextSchema, (copy) => {
       copied.push(copy.text);
       return null;
     });
@@ -115,14 +114,14 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       log(`[host] main asked to open (${opening.kind}) ${opening.target}`);
       return null;
     });
-    peer.handle("host.loginItem", z.object({ on: z.boolean().nullable() }), () => "unavailable");
+    peer.handle("host.loginItem", loginItemSchema, () => "unavailable");
     peer.on("host.notify", noteSchema, ({ body, title }) => {
       log(`[host] notification: ${title} — ${body}`);
     });
-    peer.on("host.tray", jsonValueSchema, () => {
+    peer.on("host.tray", trayModelSchema, () => {
       // the menu-bar icon is the shell's to draw
     });
-    peer.on("host.keepAwake", jsonValueSchema, () => {
+    peer.on("host.keepAwake", keepAwakeSchema, () => {
       // keeping the Mac awake is the shell's to hold
     });
     peer.on("host.relaunch", z.null(), () => {
@@ -162,7 +161,7 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       env: mainEnv(options),
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const peer = createPeer({
+    const peer = createPeer<RelayMethod>({
       failed: (method, reason) => {
         log(`[dev-host] what the host does on ${method} failed: ${reason}`);
       },
@@ -194,17 +193,14 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       log(`[host] main exited (${exitOf(child)})`);
     });
     const started = { child, peer };
+    const hello: LaunchHello = {
+      openedAtLogin: false,
+      packaged: false,
+      pageDevUrl: options.pageDevUrl ?? null,
+      sealingKey: null,
+    };
     try {
-      await peer.request(
-        "hello",
-        {
-          openedAtLogin: false,
-          packaged: false,
-          pageDevUrl: options.pageDevUrl ?? null,
-          sealingKey: null,
-        } satisfies LaunchHello,
-        z.null(),
-      );
+      await peer.request("hello", hello, z.null());
     } catch (error) {
       await stopMain(started);
       throw new Error(`main did not boot: ${errorMessage(error)}`, { cause: error });

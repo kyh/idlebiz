@@ -1,7 +1,15 @@
 import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
-import { api, listen } from "@/renderer/api";
-import { getCharacterAssets } from "@/renderer/character-assets";
+import { listen } from "@/renderer/page-events";
+import {
+  characterQuery,
+  companyQuery,
+  employeesQuery,
+  openTasksQuery,
+  read,
+  warm,
+  watch,
+} from "@/renderer/state/queries";
 import {
   characterAnims,
   CHAR_ORIGIN_X,
@@ -27,8 +35,7 @@ import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 import { characterDepth } from "@/renderer/game/office-depth";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { hear, tell } from "@/renderer/game/office-port";
-import { Coalesced } from "@/renderer/state/ordering";
-import { DEFAULT_FOUNDER_SEED } from "@repo/domain/domain";
+import { DEFAULT_FOUNDER_SEED, taskIn } from "@repo/domain/domain";
 import type { Employee, Task } from "@repo/domain/domain";
 import { bodyBlockedAt, solidAt } from "@/renderer/game/office-grid";
 
@@ -82,8 +89,9 @@ const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };
 
-const assigneesOf = (tasks: readonly Task[]): Set<string> =>
-  new Set(tasks.flatMap((t) => (t.assigneeId ? [t.assigneeId] : [])));
+/** Who waits on the founder: they keep the "!" whatever they do, and nobody else does. */
+const waitingOf = (tasks: readonly Task[]): Set<string> =>
+  new Set(tasks.flatMap((t) => (taskIn("blocked")(t) && t.assigneeId ? [t.assigneeId] : [])));
 
 export class OfficeScene extends Scene {
   private player?: Player;
@@ -98,13 +106,12 @@ export class OfficeScene extends Scene {
    * there is a no-op, so replaying what the snapshot already saw is harmless.
    */
   private readonly npcEvents = new BootGate<NpcManager>();
-  // one at a time, so an answer read before the founder's reply never lands after the one read since
-  private readonly asks = new Coalesced(() => this.recheckAsks());
   private clickWalk?: ClickWalk;
   private modalOpen = false;
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;
   private activityUnsub?: () => void;
+  private stopWatchingAsks?: () => void;
 
   constructor() {
     super("office");
@@ -197,6 +204,8 @@ export class OfficeScene extends Scene {
       this.npcEvents.shut();
       this.events.off(Scenes.Events.ADDED_TO_SCENE, roundQuad);
       this.activityUnsub?.();
+      this.stopWatchingAsks?.();
+      this.stopWatchingAsks = undefined;
       document.removeEventListener("focusin", onFocusChange);
       document.removeEventListener("focusout", onFocusChange);
       for (const stop of stopHearing) {
@@ -265,7 +274,8 @@ export class OfficeScene extends Scene {
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE.spawn);
 
-    const company = await api().company.get();
+    // the window's answers, or its reads in flight: main is asked once for both
+    const company = await read(companyQuery);
     if (generation !== this.generation) {
       return;
     }
@@ -273,13 +283,19 @@ export class OfficeScene extends Scene {
     // because Phaser's loader is single-batch and the founder's sheet must land first
     const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
     const playerKey = `player-${seed}`;
-    const [, employees, blocked] = await Promise.all([
+    const [, employees, tasks] = await Promise.all([
       loadCharacter(this, playerKey, seed),
-      company ? api().employees.list() : [],
-      company ? api().tasks.list({ status: ["blocked"] }) : [],
+      company ? read(employeesQuery) : [],
+      company ? read(openTasksQuery) : [],
     ]);
     if (generation !== this.generation) {
       return;
+    }
+    if (company) {
+      // the asks as main says them each time they are read again, held until the office opens
+      this.stopWatchingAsks = watch(openTasksQuery, waitingOf, (asking) =>
+        this.npcEvents.run((team) => team.setWaiting(asking)),
+      );
     }
     const player = this.placePlayer(playerKey);
     const npcs = new NpcManager(this, seats, OFFICE.grid, IDLE_POIS, OFFICE.door);
@@ -293,7 +309,7 @@ export class OfficeScene extends Scene {
     // main caches by seed, so warming them all at once makes the chain read hits.
     // Only a warm-up: a sheet that fails here fails again in its own spawn, which
     // lets everyone else in.
-    await Promise.allSettled(employees.map((emp) => getCharacterAssets(emp.spriteSeed)));
+    await Promise.all(employees.map((emp) => warm(characterQuery(emp.spriteSeed))));
     if (generation !== this.generation) {
       return;
     }
@@ -303,12 +319,11 @@ export class OfficeScene extends Scene {
     if (generation !== this.generation) {
       return;
     }
-    for (const task of blocked) {
-      if (task.assigneeId) {
-        npcs.setState(task.assigneeId, "blocked");
-      }
+    const waiting = waitingOf(tasks);
+    for (const id of waiting) {
+      npcs.setState(id, "blocked");
     }
-    npcs.setWaiting(assigneesOf(blocked));
+    npcs.setWaiting(waiting);
     this.npcEvents.open(npcs);
   }
 
@@ -423,7 +438,6 @@ export class OfficeScene extends Scene {
           const asks = settled === null ? outcome.kind === "blocked" : settled === "blocked";
           const state = asks ? "blocked" : "idle";
           this.npcEvents.run((npcs) => npcs.setState(e.employeeId, state));
-          void this.asks.call();
           return;
         }
         // an answer requeues the task, but its run may not start at once: drop the "!" now,
@@ -431,15 +445,7 @@ export class OfficeScene extends Scene {
         case "status": {
           if (e.message === "queued") {
             this.npcEvents.run((npcs) => npcs.unblock(e.employeeId));
-            void this.asks.call();
           }
-          break;
-        }
-        // a bet that stops taking work, or a retired product, drops the asks it had waiting
-        // with no event per task
-        case "bet.changed":
-        case "product.killed": {
-          void this.asks.call();
           break;
         }
         default: {
@@ -447,20 +453,6 @@ export class OfficeScene extends Scene {
         }
       }
     });
-  }
-
-  /** Asks main who still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
-  private async recheckAsks(): Promise<void> {
-    const { generation } = this;
-    try {
-      const blocked = await api().tasks.list({ status: ["blocked"] });
-      if (generation !== this.generation) {
-        return;
-      }
-      this.npcEvents.run((npcs) => npcs.setWaiting(assigneesOf(blocked)));
-    } catch (error) {
-      console.error("Could not recheck the office's asks", error);
-    }
   }
 
   private talkTo(employeeId: string): void {

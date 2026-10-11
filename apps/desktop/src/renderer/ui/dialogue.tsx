@@ -1,14 +1,15 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { api } from "@/renderer/api";
+import { useQuery } from "@tanstack/react-query";
+import { orpc } from "@/renderer/api";
 import { hear } from "@/renderer/game/office-port";
-import { useStore, directEmployee, listTasksFor, setTalkingTo } from "@/renderer/state/store";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useCompany, useEmployees } from "@/renderer/state/queries";
+import { useStore, directEmployee, setTalkingTo } from "@/renderer/state/store";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { ActionCard } from "@/renderer/ui/action-card";
-import { tasksMovedBy, trailOf } from "@/renderer/ui/activity-trail";
+import { trailOf } from "@/renderer/ui/activity-trail";
 import type { Said } from "@/renderer/ui/activity-trail";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { RichText } from "@/renderer/ui/linkify";
@@ -21,7 +22,7 @@ import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { TypeCursor } from "@/renderer/ui/type-cursor";
 import type { ActivityEvent, ActivityKind } from "@repo/domain/activity";
 import { taskIn } from "@repo/domain/domain";
-import type { ChatOption, Employee } from "@repo/domain/domain";
+import type { ChatOption, Employee, Task } from "@repo/domain/domain";
 import { cn } from "cn";
 
 const NOTE_MS = 1800;
@@ -165,11 +166,12 @@ const FeedLine = ({ e }: { e: Said }) => {
   );
 };
 
-const NOTHING_FETCHED = { list: [], options: [] };
+const NO_TASKS: Task[] = [];
+const NO_OPTIONS: ChatOption[] = [];
 
 const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void }) => {
   useModal();
-  const company = useStore((s) => s.company);
+  const company = useCompany();
   const activity = useStore((s) => s.activity);
   const [mode, setMode] = useState<"menu" | "talk">("menu");
   // The cursor names a row, not a place: rows come and go around it, and a menu
@@ -182,17 +184,16 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
     () => activity.filter((a) => "employeeId" in a && a.employeeId === emp.id),
     [activity, emp.id],
   );
-  // Keyed on the event that moved their tasks, not the feed length: the feed is a
-  // 300-event ring, and a length-keyed refetch stops once it fills.
-  const movedBy = tasksMovedBy(activity, emp.id);
-  const fetched = useAsync(
-    async () => ({
-      list: await listTasksFor(emp.id),
-      options: await api().employees.options({ employeeId: emp.id }),
+  // read again whenever an event moves the company's tasks, the open form staying up meanwhile
+  const listed = useQuery({
+    ...orpc.tasks.list.queryOptions({
+      input: { assigneeId: emp.id, status: ["queued", "running", "blocked"] },
     }),
-    [emp.id, movedBy],
-  );
-  const { list: tasks, options } = fetched.kind === "ready" ? fetched.value : NOTHING_FETCHED;
+    enabled: company !== null,
+  });
+  const offered = useQuery(orpc.employees.options.queryOptions({ input: { employeeId: emp.id } }));
+  const tasks = listed.data ?? NO_TASKS;
+  const options = offered.data ?? NO_OPTIONS;
 
   // only questions and actions are answered here; integration asks live in the
   // inbox where the [Connect] button is. A stale list still shows its ask: any
@@ -308,7 +309,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6">
       <div className="dlg">
-        {mode === "menu" && fetched.kind !== "loading" ? (
+        {mode === "menu" && !listed.isPending && !offered.isPending ? (
           <ChoiceMenu menu={menu} className="dlg-menu" refocusKey={asked?.id ?? null} />
         ) : null}
         <div className="px-battle px-pop dlg-box">
@@ -379,7 +380,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
 
 export const Dialogue = () => {
   const game = useStore((s) => s.game);
-  const employees = useStore((s) => s.employees);
+  const employees = useEmployees();
   const talkingTo = useStore((s) => s.talkingTo);
 
   // walking up to someone in the office opens the same conversation the roster does

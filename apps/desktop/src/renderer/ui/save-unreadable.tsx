@@ -27,7 +27,7 @@ export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
           <button
             type="button"
             onClick={() => {
-              void api().save.openFolder();
+              void api.save.openFolder();
             }}
             className="px-btn-accent px-btn"
           >

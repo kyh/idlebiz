@@ -58,7 +58,7 @@ test("a Vercel token is kept with no project picked, for the first deploy to mak
   const secrets = await readSecrets(root);
   expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
   const api = await apiOf(page);
-  const [product] = await api.evaluate((a) => a.products.list());
+  const [product] = await api.products.list();
   expect(product?.vercel).toBeNull();
 });
 
@@ -143,10 +143,7 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
   const founding = await launch();
   const { product } = await foundCompany(founding.page);
   const api = await apiOf(founding.page);
-  await api.evaluate(
-    (a, productId) => a.vercel.connect({ productId, projectId: "prj_e2e", projectName: "e2e" }),
-    product.id,
-  );
+  await api.vercel.connect({ productId: product.id, projectId: "prj_e2e", projectName: "e2e" });
   await founding.close();
   const token = "e2e-pasted-vercel-token";
   await writeSecrets(root, { ...(await readSecrets(root)), VERCEL_TOKEN: token });

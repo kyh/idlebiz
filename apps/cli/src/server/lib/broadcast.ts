@@ -1,17 +1,25 @@
-import type { PageEvent, PageEvents } from "@repo/contract/events";
-import { parseJson } from "@repo/domain/json";
-import type { JsonValue } from "@repo/domain/json";
+// Main's events for the page, which hears them on the contract's `events` stream (page-router.ts).
+// Each is parsed as it is published: the stream checks every event it sends too, and one that
+// fails there ends the stream for every page, so a malformed event is logged and dropped here.
 
-/** Where an event goes: the page server, which streams it to every page listening. */
-type EventSink = (event: PageEvent, data: JsonValue) => void;
+import { MemoryPublisher } from "@orpc/publisher/memory";
+import { PageEventSchema } from "@repo/contract/events";
+import type { PageEvent, PageEventName, PageEvents } from "@repo/contract/events";
+import { report } from "./report";
 
-let sink: EventSink | null = null;
+// unbounded, as a socket's write buffer is: an event a slow page drops is a slice it never asks for again
+const publisher = new MemoryPublisher<{ page: PageEvent }>({ maxBufferedEvents: Infinity });
 
-export const setEventSink = (next: EventSink): void => {
-  sink = next;
+/** Tells every page listening; before one subscribes there is none. */
+export const broadcast = <E extends PageEventName>(name: E, data: PageEvents[E]): void => {
+  const parsed = PageEventSchema.safeParse({ data, name });
+  if (!parsed.success) {
+    report(`page event ${name}`, parsed.error);
+    return;
+  }
+  void publisher.publish("page", parsed.data);
 };
 
-/** Tells the page, if one is listening; before the page server is up there is none. */
-export const broadcast = <E extends PageEvent>(event: E, data: PageEvents[E]): void => {
-  sink?.(event, parseJson(JSON.stringify(data)));
-};
+/** Every event published from now until `signal` aborts: one page's stream. */
+export const pageEvents = (signal: AbortSignal | undefined) =>
+  publisher.subscribe("page", { signal });

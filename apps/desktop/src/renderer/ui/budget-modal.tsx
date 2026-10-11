@@ -1,23 +1,19 @@
 import { useRef, useState } from "react";
-import { api } from "@/renderer/api";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
+import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { Failure } from "@/renderer/ui/failure";
-import {
-  useStore,
-  setBudget,
-  resetSpend,
-  saveStripeKey,
-  removeStripeKey,
-} from "@/renderer/state/store";
+import { queryClient, useCompany, useStripeKey } from "@/renderer/state/queries";
+import { setBudget, resetSpend, saveStripeKey, removeStripeKey } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 import { isOutOfBudget } from "@repo/domain/domain";
 import type { Budget } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
-import type { PrintfulTokenStatus, StripeKeyStatus } from "@repo/domain/integrations";
+import { errorMessage } from "@repo/domain/errors";
+import type { StripeKeyStatus } from "@repo/domain/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },
@@ -100,29 +96,30 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
   );
 };
 
+const printfulToken = orpc.printful.tokenStatus.queryOptions();
+
+const printfulTokenMoved = async (): Promise<void> => {
+  await queryClient.invalidateQueries({ queryKey: printfulToken.queryKey });
+};
+
 const PrintfulToken = () => {
-  const read = useAsync(() => api().printful.tokenStatus(), []);
-  const [answered, setAnswered] = useState<PrintfulTokenStatus | null>(null);
+  const { data: status, error } = useQuery(printfulToken);
   const [draft, setDraft] = useState("");
   const saving = useSubmission(async (token: string) => {
-    await api().printful.saveToken({ token });
+    await api.printful.saveToken({ token });
     setDraft("");
-    setAnswered(await api().printful.tokenStatus());
+    await printfulTokenMoved();
   });
   const removing = useSubmission(async () => {
-    await api().printful.removeToken();
-    setAnswered(await api().printful.tokenStatus());
+    await api.printful.removeToken();
+    await printfulTokenMoved();
   });
-  const status = answered ?? (read.kind === "ready" ? read.value : null);
-  if (read.kind === "failed" && answered === null) {
-    return (
+  if (status === undefined) {
+    return error === null ? null : (
       <div role="alert" className="text-xs text-danger">
-        Could not read the Printful token: {read.message}
+        Could not read the Printful token: {errorMessage(error)}
       </div>
     );
-  }
-  if (status === null) {
-    return null;
   }
   const token = draft.trim();
   const sending = saving.submission.kind === "sending";
@@ -178,8 +175,8 @@ const PrintfulToken = () => {
 };
 
 export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
-  const company = useStore((s) => s.company);
-  const stripeKey = useStore((s) => s.stripeKey);
+  const company = useCompany();
+  const stripeKey = useStripeKey();
   const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
   // the draft carries the saved cap it was typed against, so a cap saved
   // elsewhere replaces a stale draft without an effect resetting it

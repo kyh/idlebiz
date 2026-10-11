@@ -8,10 +8,9 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tauri::webview::{NewWindowResponse, PageLoadEvent, PermissionResponse};
 use tauri::window::Color;
 use tauri::{
@@ -20,24 +19,22 @@ use tauri::{
 use tauri_plugin_opener::OpenerExt;
 
 use crate::navigation::{self, ExternalOpens, Verdict};
+use crate::protocol::{self, Handoff, WindowChange, WindowState};
 use crate::shell;
 
 pub const MAIN: &str = "main";
 
-/// What main answers `handoff` with (`apps/cli/src/server/serve.ts`).
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Handoff {
-    origin: String,
-    handoff_url: String,
-}
+/// How long main has to hand over a link: it only mints one.
+const HANDOFF_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The link the window opens on, and the origin it is pinned to: asked of main for each window
 /// made, since a link left unused for five minutes signs nothing in. Blocks on main's answer, so
 /// never on the main thread.
 fn handoff<R: Runtime>(app: &AppHandle<R>) -> Result<(Url, String), String> {
     let main = shell::main(app).ok_or_else(|| "IdleBiz is still starting.".to_owned())?;
-    let answer = tauri::async_runtime::block_on(main.request("handoff", &Value::Null))?;
+    let answer = main
+        .request(protocol::HANDOFF, &Value::Null, HANDOFF_TIMEOUT)
+        .map_err(|failure| failure.to_string())?;
     let handoff: Handoff = serde_json::from_value(answer)
         .map_err(|error| format!("main answered a handoff the shell cannot read: {error}"))?;
     let url = Url::parse(&handoff.handoff_url)
@@ -61,8 +58,8 @@ fn open_externally<R: Runtime>(app: &AppHandle<R>, opens: &ExternalOpens, url: &
     }
 }
 
-fn told<R: Runtime>(app: &AppHandle<R>, state: &str) {
-    shell::tell_main(app, "window", &json!({ "state": state }));
+fn told<R: Runtime>(app: &AppHandle<R>, state: WindowState) {
+    shell::tell_main(app, protocol::WINDOW, &WindowChange { state });
 }
 
 fn watch<R: Runtime>(window: &WebviewWindow<R>) {
@@ -78,11 +75,11 @@ fn watch<R: Runtime>(window: &WebviewWindow<R>) {
             if let Err(error) = app.set_dock_visibility(false) {
                 eprintln!("[shell] could not hide the dock icon: {error}");
             }
-            told(&app, "hidden");
+            told(&app, WindowState::Hidden);
         }
-        WindowEvent::Focused(false) => told(&app, "blurred"),
+        WindowEvent::Focused(false) => told(&app, WindowState::Blurred),
         WindowEvent::Resized(_) if watched.is_minimized().unwrap_or(false) => {
-            told(&app, "minimized");
+            told(&app, WindowState::Minimized);
         }
         _ => {}
     });
@@ -131,7 +128,7 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String
                 return;
             }
             match window.show().and_then(|()| window.set_focus()) {
-                Ok(()) => told(window.app_handle(), "shown"),
+                Ok(()) => told(window.app_handle(), WindowState::Shown),
                 Err(error) => eprintln!("[shell] could not show the window: {error}"),
             }
         })
@@ -173,7 +170,7 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
         .and_then(|()| window.show())
         .and_then(|()| window.set_focus())
     {
-        Ok(()) => told(app, "shown"),
+        Ok(()) => told(app, WindowState::Shown),
         Err(error) => eprintln!("[shell] could not show the window: {error}"),
     }
 }

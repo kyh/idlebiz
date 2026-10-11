@@ -1,0 +1,7 @@
+{
+  "from": "main",
+  "params": {
+    "text": "git clone --no-local ~/.idlebiz/acme/workspace"
+  },
+  "result": null
+}

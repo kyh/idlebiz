@@ -16,6 +16,7 @@ export const emptyDigest = (since: number): Digest => ({
 });
 
 /** The digest with one more event in it, or null when the event is not one it counts. */
+// oxlint-disable-next-line complexity -- a case a kind, so a new kind fails to compile here rather than go uncounted
 export const foldDigest = (d: Digest, e: PersistedActivity): Digest | null => {
   switch (e.kind) {
     case "ship": {
@@ -26,7 +27,7 @@ export const foldDigest = (d: Digest, e: PersistedActivity): Digest | null => {
       };
     }
     case "run.end": {
-      return { ...d, runs: d.runs + 1, spentUsd: d.spentUsd + (e.payload.costUsd ?? 0) };
+      return { ...d, runs: d.runs + 1, spentUsd: d.spentUsd + e.payload.costUsd };
     }
     case "run.ask": {
       return e.payload.ask.type === "action" ? { ...d, actions: d.actions + 1 } : null;
@@ -43,8 +44,22 @@ export const foldDigest = (d: Digest, e: PersistedActivity): Digest | null => {
     case "org.released": {
       return { ...d, released: [...d.released, e.payload.name] };
     }
-    default: {
+    case "tool_call":
+    case "message":
+    case "chat":
+    case "status":
+    case "run.start":
+    case "task.retry":
+    case "runner.resting":
+    case "product.created":
+    case "product.named":
+    case "product.killed":
+    case "bet.changed":
+    case "budget.exhausted":
+    case "metrics.pulse":
+    case "autopilot.changed": {
       return null;
     }
+    // no default
   }
 };

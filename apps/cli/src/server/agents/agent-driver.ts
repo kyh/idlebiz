@@ -582,10 +582,16 @@ class AgentDriver {
     this.restFile = restFile;
   }
 
-  /** Runs wait on the seal's check, and never start unsealed; a rest the last launch saw still holds. */
-  init(): void {
+  /**
+   * Runs wait on the seal's check, and never start unsealed; a rest the last launch saw still
+   * holds. The check, and the look for the CLIs after it, wait for `pathSettled`: both read PATH.
+   */
+  init(pathSettled: Promise<void> = Promise.resolve()): void {
     this.loadRest();
-    this.sealing = this.settleSeal();
+    this.sealing = (async () => {
+      await pathSettled;
+      return await this.settleSeal();
+    })();
     this.probing = this.probe();
   }
 

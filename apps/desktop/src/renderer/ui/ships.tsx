@@ -1,10 +1,17 @@
 import { memo, useState } from "react";
-import { useAsync } from "@/renderer/hooks/use-async";
-import type { Loaded } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
-import { api } from "@/renderer/api";
-import { createProduct, killProduct, useStore } from "@/renderer/state/store";
+import { api, orpc } from "@/renderer/api";
+import {
+  useBets,
+  useCompany,
+  useEmployees,
+  useProductStatus,
+  useProducts,
+} from "@/renderer/state/queries";
+import { createProduct, killProduct } from "@/renderer/state/store";
 import { BetList } from "@/renderer/ui/bets";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { Failure } from "@/renderer/ui/failure";
@@ -14,7 +21,6 @@ import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { Modal } from "@/renderer/ui/modal";
 import type { Employee, Product, ShipLine } from "@repo/domain/domain";
-import type { ProductStatus } from "@repo/domain/integrations";
 import { errorMessage } from "@repo/domain/errors";
 import { formatDate, formatUsd } from "@repo/domain/format";
 import { cn } from "cn";
@@ -52,17 +58,17 @@ const ShippingLog = ({
   selected,
   employees,
 }: {
-  log: Loaded<ShipLine[]>;
+  log: UseQueryResult<ShipLine[]>;
   selected: string | null;
   employees: Employee[];
 }) => {
-  if (log.kind === "loading") {
+  if (log.isPending) {
     return <div className="text-sm text-fg-dim">Loading…</div>;
   }
-  if (log.kind === "failed") {
-    return <div className="text-sm text-fg-dim">{log.message}</div>;
+  if (log.isError) {
+    return <div className="text-sm text-fg-dim">{errorMessage(log.error)}</div>;
   }
-  const shown = log.value.filter((t) => selected === null || t.productId === selected);
+  const shown = log.data.filter((t) => selected === null || t.productId === selected);
   if (shown.length === 0) {
     return (
       <div className="text-sm text-fg-dim">
@@ -77,7 +83,6 @@ const ShippingLog = ({
 
 const ProductCard = ({
   product,
-  status,
   selected,
   retirable,
   onSelect,
@@ -85,7 +90,6 @@ const ProductCard = ({
   onNote,
 }: {
   product: Product;
-  status: ProductStatus | undefined;
   selected: boolean;
   /** The last product stays: a company with none is handed a fresh one at boot. */
   retirable: boolean;
@@ -93,11 +97,12 @@ const ProductCard = ({
   onOpen: (overlay: Overlay) => void;
   onNote: (note: string) => void;
 }) => {
+  const status = useProductStatus(product.id);
   const state = productStateOf(status);
   const deploy = deploymentOf(status);
   const open = async () => {
     try {
-      await api().products.open({ productId: product.id });
+      await api.products.open({ productId: product.id });
     } catch (error) {
       onNote(errorMessage(error));
     }
@@ -222,17 +227,13 @@ export const Ships = ({
   onOpen: (overlay: Overlay) => void;
   onClose: () => void;
 }) => {
-  const company = useStore((s) => s.company);
-  const employees = useStore((s) => s.employees);
-  const products = useStore((s) => s.products);
-  const productStatus = useStore((s) => s.productStatus);
-  const bets = useStore((s) => s.bets);
+  const company = useCompany();
+  const employees = useEmployees();
+  const products = useProducts();
+  const bets = useBets();
   const [note, showNote] = useTransientNote(2500);
   const [picked, setPicked] = useState<string | null>(null);
-  const log = useAsync(
-    async () => (company ? await api().tasks.shipped() : []),
-    [company?.id, company?.ships],
-  );
+  const log = useQuery({ ...orpc.tasks.shipped.queryOptions(), enabled: company !== null });
 
   if (!company) {
     return null;
@@ -243,7 +244,7 @@ export const Ships = ({
   const selectedName = selectedProduct ? ` · ${selectedProduct.name}` : "";
   const openWorkspace = async () => {
     try {
-      await api().company.openPath({ rel: selectedProduct?.workspaceDir ?? "" });
+      await api.company.openPath({ rel: selectedProduct?.workspaceDir ?? "" });
     } catch (error) {
       showNote(errorMessage(error));
     }
@@ -279,7 +280,6 @@ export const Ships = ({
             <ProductCard
               key={p.id}
               product={p}
-              status={productStatus.get(p.id)}
               selected={selected === p.id}
               retirable={products.length > 1}
               onSelect={() => setPicked(selected === p.id ? null : p.id)}

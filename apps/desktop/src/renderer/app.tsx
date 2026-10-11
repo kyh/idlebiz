@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { PhaserGame } from "@/renderer/game/phaser-game";
-import { initStore, setGame, useBoot } from "@/renderer/state/store";
+import { queryClient, useBoot } from "@/renderer/state/queries";
+import { initStore, setGame } from "@/renderer/state/store";
 import type { Boot } from "@/renderer/state/boot";
 import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
@@ -96,7 +98,7 @@ const Screen = ({
   }
 };
 
-export const App = () => {
+const Page = () => {
   const boot = useBoot();
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
@@ -116,3 +118,9 @@ export const App = () => {
     </div>
   );
 };
+
+export const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <Page />
+  </QueryClientProvider>
+);

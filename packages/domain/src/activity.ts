@@ -64,8 +64,8 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   event("run.start", inRun, {}),
   event("run.end", inRun, {
     payload: z.object({
-      /** What the run cost, as its CLI billed it: the number the budget moved by. Rows from before it was recorded have none. */
-      costUsd: z.number().optional(),
+      /** What the run cost, as its CLI billed it: the number the budget moved by. */
+      costUsd: z.number(),
       outcome: RunOutcomeSchema,
       /**
        * Where the settle left the task, which the outcome alone does not say: an ask on a
@@ -138,7 +138,12 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
 export type ActivityInput = z.infer<typeof ActivityInputSchema>;
 export type ActivityKind = ActivityInput["kind"];
 
-export type ActivityEvent = ActivityInput & { id: number; createdAt: number };
+/** An event as published, stamped: what the page hears. */
+export const ActivityEventSchema = ActivityInputSchema.and(
+  z.object({ createdAt: z.number(), id: z.number() }),
+);
+
+export type ActivityEvent = z.infer<typeof ActivityEventSchema>;
 
 /** A row of activity.jsonl: what was published, stamped. Written, never read back. */
 export type PersistedActivity = ActivityInput & { createdAt: number };

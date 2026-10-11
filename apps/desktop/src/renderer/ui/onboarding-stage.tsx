@@ -1,5 +1,5 @@
-import { getCharacterAssets } from "@/renderer/character-assets";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
+import { characterQuery } from "@/renderer/state/queries";
 import { Bust } from "@/renderer/ui/bust";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import type { HireProposal } from "@repo/domain/hire";
@@ -18,17 +18,13 @@ export const OfficeBackdrop = () => (
 
 /** The same 32 × 64 character frame used in the office: down in row 0, up in row 3. */
 export const FounderSprite = ({ seed, facing }: { seed: string; facing: "front" | "back" }) => {
-  const assets = useAsync(() => getCharacterAssets(seed), [seed]);
+  const { data: assets } = useQuery(characterQuery(seed));
   return (
     <div
       key={seed}
       className="ob-founder"
       data-facing={facing}
-      style={
-        assets.kind === "ready"
-          ? { backgroundImage: `url(${assets.value.walkSheetDataUrl})` }
-          : undefined
-      }
+      style={assets ? { backgroundImage: `url(${assets.walkSheetDataUrl})` } : undefined}
       aria-hidden
     />
   );

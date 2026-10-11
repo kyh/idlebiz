@@ -20,7 +20,7 @@ import {
 import type { FounderActions } from "./founder-actions";
 import { host } from "./host";
 import { answerOf } from "./lib/answers";
-import { broadcast } from "./lib/broadcast";
+import { broadcast, pageEvents } from "./lib/broadcast";
 import { launchAtLogin, setLaunchAtLogin } from "./login-item";
 import { metricsPulse } from "./metrics-pulse";
 import { ROOT_DIR } from "./paths";
@@ -120,6 +120,7 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
         return chatOptions(emp, store.openTasksFor(input.employeeId));
       }),
     },
+    events: os.events.handler(({ signal }) => pageEvents(signal)),
     onboarding: {
       // one call, whole or not at all: the roster's CLIs are chosen first, so a machine with
       // nothing signed in fails before a folder exists

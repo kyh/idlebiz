@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { api } from "@/renderer/api";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
+import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, setMaxAgents } from "@/renderer/state/store";
+import { setAnswer, useCompany, useSaveIssues } from "@/renderer/state/queries";
+import { setMaxAgents } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
@@ -10,6 +11,7 @@ import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
 import type { LaunchAtLogin } from "@repo/domain/domain";
+import { errorMessage } from "@repo/domain/errors";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
   { label: "Off", value: "off" },
@@ -35,23 +37,24 @@ const LOGIN_LINES: Record<LaunchAtLogin, string> = {
   unavailable: "Only the installed app can open at login.",
 };
 
+// read again each time Settings opens: System Settings can switch the login item meanwhile
+const launchAtLogin = orpc.app.launchAtLogin.queryOptions({ staleTime: 0 });
+
 const LaunchAtLoginSetting = () => {
-  const read = useAsync(() => api().app.launchAtLogin(), []);
-  const [answered, setAnswered] = useState<LaunchAtLogin | null>(null);
+  const { data: state, error } = useQuery(launchAtLogin);
   const setting = useSubmission(async (on: boolean) => {
-    setAnswered(await api().app.setLaunchAtLogin({ on }));
+    await setAnswer(launchAtLogin.queryKey, await api.app.setLaunchAtLogin({ on }));
   });
-  const state = answered ?? (read.kind === "ready" ? read.value : null);
 
   return (
     <div className="px-inset p-3 text-sm text-fg">
       <div className="text-xs uppercase tracking-wide text-fg-dim">Open at login</div>
-      {read.kind === "failed" ? (
+      {state === undefined && error !== null ? (
         <div role="alert" className="mt-1 text-xs text-danger">
-          Could not read the login item: {read.message}
+          Could not read the login item: {errorMessage(error)}
         </div>
       ) : null}
-      {state === null ? null : (
+      {state === undefined ? null : (
         <>
           <div className="mt-1 text-xs text-fg-dim">{LOGIN_LINES[state]}</div>
           {state === "unavailable" ? null : (
@@ -72,15 +75,15 @@ const LaunchAtLoginSetting = () => {
 };
 
 export const Settings = ({ onClose }: { onClose: () => void }) => {
-  const company = useStore((s) => s.company);
-  const saveIssues = useStore((s) => s.saveIssues);
+  const company = useCompany();
+  const saveIssues = useSaveIssues();
   const [confirm, setConfirm] = useState("");
   const [cap, setCap] = useState<string | null>(null);
   const savingCap = useSubmission(async (n: number) => {
     await setMaxAgents(n);
     setCap(null);
   });
-  const resetting = useSubmission(() => api().save.reset());
+  const resetting = useSubmission(() => api.save.reset());
 
   if (!company) {
     return null;

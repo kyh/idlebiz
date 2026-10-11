@@ -11,8 +11,8 @@ kyh/inteligir's are: this one is the app, `apps/cli` the server and the binary.
 ```
 src-tauri/        the shell, in Rust: the window and its pin, main as its one child, and what
                   main asks of a native app
-src/renderer/     the page: React over a Phaser scene, calling main through `api()`, the client
-                  of the oRPC contract in packages/contract (`api.ts`, `install-api.ts`)
+src/renderer/     the page: React over a Phaser scene, calling main through `api`, the client
+                  of the oRPC contract in packages/contract (`api.ts`, `page-events.ts`)
 scripts/          the pack: node, the server staged, signing, notices, the dmg, the release
 ```
 
@@ -32,16 +32,24 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
   `tauri dev` the dev server's address, whether the login item launched it, and the Keychain's
   sealing key. Main finds its own files beside itself (the skills and the employee sheets in
   `resources/`, the built page in `dist/page`). Main boots on the hello; one that fails says where
-  the log is, in a box, and the app quits.
-- The shell asks main for a `handoff` each time it makes the window: a one-time link into main's
-  page (below).
+  the log is, in a box, and the app quits. So does one that has not booted within a minute,
+  killed with its process group first: its quit would wait the stuck boot out.
+- The shell asks main for a `handoff` each time it makes the window, and waits ten seconds for
+  it: a one-time link into main's page (below).
 - Main asks the shell (`apps/cli/src/server/host.ts`, answered in `src-tauri/src/host.rs`): a message box, the
   clipboard, opening a URL, a file or a folder, the login item; and tells it the menu-bar icon's
   model, a notification, whether to keep the Mac awake, and to relaunch after a reset.
-- A quit asks main to stop its runs (`quit`), then closes its stdin, then waits; a main that has
-  not exited five seconds later is killed with its process group. Main's stdin is also its
-  lifeline: a shell that crashed or was killed ends main too, after its runs. Main leads a process
-  group of its own, so a Ctrl-C under `tauri dev` reaches the shell alone, which stops main once.
+- Every method either way and its shape is named once on each end, `RELAY_METHODS` and its zod
+  schemas in `host.ts`, the consts and serde types in `src-tauri/src/protocol.rs`, and both are
+  pinned to one sample a method in `src-tauri/tests/fixtures/relay/`: main's tests parse each, and
+  `cargo test` reads each into the shell's types and back. Both ends refuse a field they do not
+  know. A notification the shell cannot read goes to its stderr, and under `tauri dev` to a box
+  too, once a method: main waits on no answer, so would never hear of it.
+- A quit asks main to stop its runs (`quit`) and waits up to 45 seconds for the answer, then
+  closes its stdin, then waits; a main that has not exited five seconds later is killed with its
+  process group. Main's stdin is also its lifeline: a shell that crashed or was killed ends main
+  too, after its runs. Main leads a process group of its own, so a Ctrl-C under `tauri dev`
+  reaches the shell alone, which stops main once.
   There is no restart: main owns the save, and a second one under a first that has not let go
   would be refused it (`apps/cli/src/server/save-claim.ts`).
 
@@ -52,8 +60,8 @@ window is its server's page. The shell asks main for a handoff and opens the win
 one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
 page's session cookie (HttpOnly, SameSite=Strict, a secret minted per boot) and drops the nonce from
 the address (`apps/cli/src/server/page-session.ts`). The page then calls main over its oRPC
-contract (under `/rpc`) and hears its events (a server-sent stream, `/events`) on its own origin
-(`src/renderer/install-api.ts`), and reaches no Tauri command: no capability grants it one, and
+contract (under `/rpc`), its event stream among them, on its own origin (`src/renderer/api.ts`,
+`src/renderer/page-events.ts`), and reaches no Tauri command: no capability grants it one, and
 `removeUnusedCommands` leaves none in the binary.
 
 The founder's approve button is on that port, so:

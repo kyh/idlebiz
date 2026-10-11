@@ -515,11 +515,13 @@ export const isRoutineDue = (routine: Routine, foundedAt: number, now: number): 
   now - (routine.lastRunAt ?? foundedAt) >= routine.intervalHours * 3_600_000;
 
 /** Streamed steps of the workforce setup flow (CLI detect/install/login). */
-export type AuthFlowEvent =
-  | { type: "url"; url: string }
-  | { type: "progress"; message: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
+export const AuthFlowEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("url"), url: z.string() }),
+  z.object({ message: z.string(), type: z.literal("progress") }),
+  z.object({ type: z.literal("done") }),
+  z.object({ message: z.string(), type: z.literal("error") }),
+]);
+export type AuthFlowEvent = z.infer<typeof AuthFlowEventSchema>;
 
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
 export type RestingRunners = Partial<Record<RunnerId, number>>;

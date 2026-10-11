@@ -25,10 +25,10 @@ import { setAutopilot, switchOffBeforeReset } from "./company-actions";
 import { controlPlane } from "./control-plane";
 import { deployToVercel } from "./deploy";
 import { founderActions } from "./founder-actions";
-import { host, hostOver, launchSchema, setHost } from "./host";
-import type { Launch } from "./host";
+import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } from "./host";
+import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
-import { broadcast, setEventSink } from "./lib/broadcast";
+import { broadcast } from "./lib/broadcast";
 import { suspendWrites } from "./lib/fs";
 import { initLog } from "./lib/log";
 import { guarded, report } from "./lib/report";
@@ -137,11 +137,7 @@ const markSeen = (throttled: boolean): void => {
   }
 };
 
-// what the shell says of its one window: blurred, minimized, hidden (closing it hides it: the
-// office lives on in the menu bar, and the dock goes with it), or shown again
-const windowSchema = z.object({ state: z.enum(["blurred", "minimized", "hidden", "shown"]) });
-
-const windowChanged = ({ state }: z.infer<typeof windowSchema>): void => {
+const windowChanged = ({ state }: WindowChange): void => {
   // leaving the office marks it seen, as the Electron window's blur, hide and minimize did; coming
   // back must not, or the next digest would start at the return and miss what happened while away
   if (state !== "shown") {
@@ -242,8 +238,9 @@ const boot = async (launch: Launch): Promise<void> => {
   if (unreadableSecrets) {
     store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
   }
-  await adoptShellPath();
-  agentDriver.init();
+  // the runs' seal and the look for their CLIs read PATH, so they wait for the login shell's;
+  // the window does not
+  agentDriver.init(adoptShellPath(launch.packaged));
   // the command the runs call the company's tools with: this node, on the CLI it was started from
   writeAgentLauncher(RUN_BIN_DIR, process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
@@ -259,7 +256,6 @@ const boot = async (launch: Launch): Promise<void> => {
     page: pageSourceOf(launch),
   });
   page = served;
-  setEventSink(served.broadcast);
 
   activityEvents.on("activity", (e) => {
     broadcast("activity", e);
@@ -312,7 +308,7 @@ peer.handle("handoff", z.null(), () => {
     throw new Error("IdleBiz is still starting.");
   }
   const { handoffUrl, origin } = page.handoff();
-  return { handoffUrl, origin };
+  return { handoffUrl, origin } satisfies Handoff;
 });
 
 // the shell closes main's stdin once this answers, and main exits then
@@ -323,6 +319,6 @@ peer.handle("quit", z.null(), async () => {
 
 peer.on("window", windowSchema, windowChanged);
 
-peer.on("tray", z.object({ on: z.boolean() }), ({ on }) => {
+peer.on("tray", trayClickSchema, ({ on }) => {
   appTray.setAutopilot(on);
 });

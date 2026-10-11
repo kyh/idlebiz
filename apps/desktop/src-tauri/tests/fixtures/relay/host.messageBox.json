@@ -1,0 +1,9 @@
+{
+  "from": "main",
+  "params": {
+    "detail": "Switch it off in Stripe's dashboard.",
+    "kind": "warning",
+    "message": "Stripe did not confirm it revoked IdleBiz's access"
+  },
+  "result": null
+}

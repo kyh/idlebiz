@@ -35,17 +35,19 @@ export interface PeerOptions {
   failed: (method: string, reason: string) => void;
 }
 
-export interface Peer {
+// `M` is the methods either end may name (`RELAY_METHODS` between the shell and main), so a
+// misspelt one does not compile
+export interface Peer<M extends string = string> {
   // answers the other end's requests for `method`, whose params `schema` parses
   handle: <P>(
-    method: string,
+    method: M,
     schema: z.ZodType<P>,
     handler: (params: P) => JsonValue | Promise<JsonValue>,
   ) => void;
   // hears the other end's notifications for `method`; params `schema` refuses are stray
-  on: <P>(method: string, schema: z.ZodType<P>, listener: (params: P) => void) => void;
-  request: <R>(method: string, params: JsonValue, schema: z.ZodType<R>) => Promise<R>;
-  notify: (method: string, params: JsonValue) => void;
+  on: <P>(method: M, schema: z.ZodType<P>, listener: (params: P) => void) => void;
+  request: <R>(method: M, params: JsonValue, schema: z.ZodType<R>) => Promise<R>;
+  notify: (method: M, params: JsonValue) => void;
   // one line the other end wrote
   receive: (line: string) => void;
   // the other end is gone: every request in flight fails with `reason`, and so does the next
@@ -66,7 +68,7 @@ const parsedLine = (line: string) => {
   }
 };
 
-export const createPeer = (options: PeerOptions): Peer => {
+export const createPeer = <M extends string = string>(options: PeerOptions): Peer<M> => {
   const handlers = new Map<string, (params: JsonValue | undefined) => Promise<JsonValue>>();
   const listeners = new Map<string, (params: JsonValue | undefined) => boolean>();
   const pending = new Map<number, Waiting>();

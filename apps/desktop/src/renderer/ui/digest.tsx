@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNow } from "@/renderer/hooks/use-now";
-import { useStore, digest } from "@/renderer/state/store";
+import { useCompany } from "@/renderer/state/queries";
+import { digest } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { formatAway, formatNames, formatUsd, plural } from "@repo/domain/format";
 import type { Digest as DigestSummary } from "@repo/domain/digest";
@@ -52,7 +53,7 @@ const Lines = ({ d }: { d: DigestSummary }) => (
  * exactly the absence, and asking is itself the next look.
  */
 export const Digest = () => {
-  const hasCompany = useStore((s) => s.company !== null);
+  const hasCompany = useCompany() !== null;
   const now = useNow();
   const [summary, setSummary] = useState<DigestSummary | null>(null);
 

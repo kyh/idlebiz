@@ -28,7 +28,9 @@
     "sharp": "^0.35.5"
   },
   "devDependencies": {
+    "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
+    "@orpc/publisher": "catalog:",
     "@orpc/server": "catalog:",
     "@repo/agent-driver": "workspace:*",
     "@repo/contract": "workspace:*",
