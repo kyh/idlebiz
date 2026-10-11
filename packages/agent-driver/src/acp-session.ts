@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import type { Readable, Writable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { client, ndJsonStream, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import type {
@@ -62,39 +62,6 @@ const SessionFailureMeta = z.object({
     }),
   }),
 });
-
-// Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
-const webReadable = (stream: Readable): ReadableStream<Uint8Array> =>
-  new ReadableStream<Uint8Array>({
-    start(controller) {
-      // Both events can fire; closing twice would mask the original failure.
-      let closed = false;
-      const close = (): void => {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        controller.close();
-      };
-      stream.on("data", (chunk: Buffer) => {
-        if (!closed) {
-          controller.enqueue(new Uint8Array(chunk));
-        }
-      });
-      stream.on("end", close);
-      stream.on("error", close);
-    },
-  });
-
-const webWritable = (stream: Writable): WritableStream<Uint8Array> =>
-  new WritableStream<Uint8Array>({
-    close() {
-      stream.end();
-    },
-    write(chunk) {
-      stream.write(chunk);
-    },
-  });
 
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
@@ -403,14 +370,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       settle(failed(`${bin}: stdio pipes unavailable`));
       return;
     }
-    // The agent keeps writing for a moment after we kill it; that EPIPE is
-    // expected teardown noise, not a run failure.
-    stdin.on("error", () => {
-      /* empty */
-    });
-    stdout.on("error", () => {
-      /* empty */
-    });
+    // Node's adapters hear each pipe's errors: one mid-turn fails the turn in its own words, and one
+    // once the turn has ended reaches nothing that still awaits
+    const output: WritableStream<Uint8Array> = Writable.toWeb(stdin);
+    const input: ReadableStream<Uint8Array> = Readable.toWeb(stdout);
     stderr.on("data", (d: Buffer) => {
       pokeIdle();
       keepStderr(d);
@@ -506,7 +469,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         }
       });
 
-    const stream = ndJsonStream(webWritable(stdin), webReadable(stdout));
+    const stream = ndJsonStream(output, input);
     const turn = async (): Promise<void> => {
       const { failure, stopReason } = await app.connectWith(stream, async (agent) => {
         // Required before anything else. claude's adapter tolerates its

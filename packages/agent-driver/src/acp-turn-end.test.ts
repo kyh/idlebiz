@@ -1,8 +1,12 @@
+import { ChildProcess } from "node:child_process";
+import { subscribe, unsubscribe } from "node:diagnostics_channel";
+import type { ChannelListener } from "node:diagnostics_channel";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runAcpTurn } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { CLAUDE_RATE_LIMITED_UPDATE } from "./claude-rate-limit.fixture";
 
 /** An ACP agent that opens a session, then answers the prompt with `answer` (JSON), or never. */
@@ -238,6 +242,35 @@ process.stderr.write("shutting down");
 setTimeout(() => process.exit(1), 200);`;
     const { end } = await turn(agentThat(answers));
     expect(end).toEqual({ class: "other", error: "Internal error", kind: "failed" });
+  });
+});
+
+/** What node's `child_process` channel says of each child it spawns. */
+const Announced = z.object({ process: z.instanceof(ChildProcess) });
+
+describe("a turn whose agent's output breaks", () => {
+  it("fails with what broke it, not as a connection that only closed", async () => {
+    // node announces each child it spawns here, which puts the agent's own pipe in hand
+    const spawned: ChildProcess[] = [];
+    const onSpawn: ChannelListener = (message) => {
+      const announced = Announced.safeParse(message);
+      if (announced.success) {
+        spawned.push(announced.data.process);
+      }
+    };
+    subscribe("child_process", onSpawn);
+    try {
+      const ending = turn("setInterval(() => {}, 1000);");
+      const stdout = spawned.at(-1)?.stdout;
+      if (!stdout) {
+        throw new Error("the agent never spawned");
+      }
+      stdout.destroy(new Error("stdout broke"));
+      const { end } = await ending;
+      expect(end).toEqual({ class: "other", error: "stdout broke", kind: "failed" });
+    } finally {
+      unsubscribe("child_process", onSpawn);
+    }
   });
 });
 
