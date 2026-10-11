@@ -47,8 +47,8 @@ interface SocketDirs {
 }
 
 /**
- * Where runs' sockets go for the save at `root`: in the save, hidden so it is never read as a
- * company, and, for a save whose path is too long for that, a folder in HOME named for the save.
+ * Where runs' sockets go for the save at `root`: in the save beside its company folder, and, for
+ * a save whose path is too long for that, a folder in HOME named for the save.
  * A run writes neither: the save but for its own folders, and HOME but for its runner's state.
  */
 export const socketDirs = (root: string, home: string): SocketDirs => ({

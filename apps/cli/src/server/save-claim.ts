@@ -23,8 +23,8 @@ const Errno = z.object({ code: z.string() });
 const codeOf = (error: Error): string | null => Errno.safeParse(error).data?.code ?? null;
 
 /**
- * Where main claims the save at `root`: in the save, hidden so it is never read as a company, or,
- * for a save whose path is too long for that, beside the folder its runs' sockets take in HOME.
+ * Where main claims the save at `root`: in the save beside its company folder, or, for a save
+ * whose path is too long for that, beside the folder its runs' sockets take in HOME.
  */
 export const claimSocketPath = (root: string, home: string): string => {
   const candidates = [path.join(root, ".main.sock"), `${socketDirs(root, home).aside}.sock`];
