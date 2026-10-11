@@ -1,6 +1,6 @@
 # idlebiz — the binary
 
-One program, two kinds of verb, laid out as kyh/inteligir's `inteligir` is.
+One program, two kinds of verb.
 
 **`idlebiz serve` IS the game's server**, main: it owns the save under `~/.idlebiz`, the keys
 and the runs, starts the employees' `claude` / `codex` sessions sealed, answers the company's

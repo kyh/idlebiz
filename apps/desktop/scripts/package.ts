@@ -6,8 +6,7 @@
 //
 // `bundle.resources` and `externalBin` live in the config this writes, never in tauri.conf.json:
 // tauri-build copies both on every cargo build, so a clippy run would copy main's 600 MB, and a
-// checkout that never packaged would fail its typecheck for want of them. The same steps as
-// kyh/inteligir's.
+// checkout that never packaged would fail its typecheck for want of them.
 
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";

@@ -329,8 +329,7 @@ export const TOOL_NAMES = Object.keys(TOOL_SPECS).filter(
 /**
  * How a call can end: the exit code its verb leaves, and what that tells the employee, so a chain
  * (`idlebiz deploy && …`) or a `set -e` script goes on only past a call that did what it asked.
- * Whichever way it ends, the verb prints the server's prose on stdout. A wait on a person exits 4,
- * as inteligir's CLI has it.
+ * Whichever way it ends, the verb prints the server's prose on stdout.
  */
 export const TOOL_OUTCOMES = {
   done: { exit: 0, means: "it did what you asked" },

@@ -3,8 +3,7 @@
 // ship, each text once beside the crates it covers. Read from cargo's own resolve for the Mac
 // target, through normal edges alone and never into a proc macro, which the compiler runs rather
 // than links, so a crate only another platform links, only the build runs or only a macro uses is
-// not listed. A crate that ships no text of its own is still listed with its licence. The same
-// notices as kyh/inteligir's.
+// not listed. A crate that ships no text of its own is still listed with its licence.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";

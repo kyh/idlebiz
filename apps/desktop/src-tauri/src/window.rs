@@ -1,10 +1,9 @@
 //! The one window: main's own page, served on loopback and signed in by a one-time handoff link
-//! main hands the shell, as kyh/inteligir's window is its server's page. It is pinned to that
-//! origin, opens no second window, holds no device permission, and reaches no command of the
-//! shell's: the page calls main on its own origin. Closing it hides it: the office keeps working in
-//! the menu bar, the dock icon goes with the window, and Open brings the same page back. What the
-//! founder does with it (looks away, hides it, brings it back) goes to main, which keeps when the
-//! office was last seen.
+//! main hands the shell. It is pinned to that origin, opens no second window, holds no device
+//! permission, and reaches no command of the shell's: the page calls main on its own origin.
+//! Closing it hides it: the office keeps working in the menu bar, the dock icon goes with the
+//! window, and Open brings the same page back. What the founder does with it (looks away, hides it,
+//! brings it back) goes to main, which keeps when the office was last seen.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

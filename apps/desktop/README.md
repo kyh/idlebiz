@@ -2,11 +2,11 @@
 
 A Tauri 2 app: a Rust shell over the system's own WebKit (WKWebView on the Mac), which runs
 **main** — `idlebiz serve`, the server `apps/cli` builds, the node process that owns the save, the
-keys and the runs — on the node it ships beside itself (issue #60), and shows the office page main
-serves. The shell holds no game state; everything here that is not the page is what a page cannot
-do for itself: a window, a menu-bar icon, message boxes and notifications, the clipboard, Finder,
-the login item, the Keychain, and keeping the Mac awake. The two programs are laid out as
-kyh/inteligir's are: this one is the app, `apps/cli` the server and the binary.
+keys and the runs — on the node it ships beside itself, and shows the office page main serves. The
+shell holds no game state; everything here that is not the page is what a page cannot do for
+itself: a window, a menu-bar icon, message boxes and notifications, the clipboard, Finder, the login
+item, the Keychain, and keeping the Mac awake. Of the two programs, this one is the app, `apps/cli`
+the server and the binary.
 
 ```
 src-tauri/        the shell, in Rust: the window and its pin, main as its one child, and what
@@ -55,12 +55,12 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
 
 ## The window is main's own page
 
-One window, over the page main serves on loopback (`apps/cli/src/server/page-server.ts`), as kyh/inteligir's
-window is its server's page. The shell asks main for a handoff and opens the window on it: a
-one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
-page's session cookie (HttpOnly, SameSite=Strict, a secret minted per boot) and drops the nonce from
-the address (`apps/cli/src/server/page-session.ts`). The page then calls main over its oRPC
-contract (under `/rpc`), its event stream among them, on its own origin (`src/renderer/api.ts`,
+One window, over the page main serves on loopback (`apps/cli/src/server/page-server.ts`). The
+shell asks main for a handoff and opens the window on it: a one-time link, spent at its first use
+and dead unspent after five minutes, whose answer sets the page's session cookie (HttpOnly,
+SameSite=Strict, a secret minted per boot) and drops the nonce from the address
+(`apps/cli/src/server/page-session.ts`). The page then calls main over its oRPC contract (under
+`/rpc`), its event stream among them, on its own origin (`src/renderer/api.ts`,
 `src/renderer/page-events.ts`), and reaches no Tauri command: no capability grants it one, and
 `removeUnusedCommands` leaves none in the binary.
 
@@ -155,8 +155,7 @@ ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1`).
 
 ## What is deliberately not here
 
-- **No updater.** A feed is Tauri's updater plugin and a signing key of its own, as
-  kyh/inteligir's.
+- **No updater.** A feed is Tauri's updater plugin and a signing key of its own.
 - **No WebDriver of the window.** The page and main are driven in Chromium (`tools/e2e`, the dev host);
   the shell is held by `cargo test`, booted packaged by `pnpm smoke:desktop`, and looked at by hand.
 - **No restart of main.** A main that dies says so in a box and the app quits: main owns the save.

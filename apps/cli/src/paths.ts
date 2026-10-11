@@ -1,6 +1,6 @@
 // Every module lands flat in dist/ (index.js, or a chunk beside it), so `import.meta.url` names a
 // file in dist/ there and this file here; the same `../` reaches the package root from both only
-// because this file sits one level under it. As kyh/inteligir's CLI finds its own.
+// because this file sits one level under it.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

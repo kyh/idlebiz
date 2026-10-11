@@ -1,13 +1,13 @@
 # AGENTS.md
 
 **IdleBiz** is a retro RPG-style idle business sim where the employees are the player's own
-coding CLIs. The app is two programs, laid out as kyh/inteligir's are: `apps/desktop`, a Tauri
-shell around the office page, and `apps/cli`, the `idlebiz` binary, whose `idlebiz serve` is
-main, the node process that spawns real `claude` / `codex` sessions and saves the whole company
-as human-readable markdown under `~/.idlebiz/`. Every other verb of `idlebiz` is a company tool
-the employees call. A small Next.js landing page (`apps/web`) ships the download; the app sends
-it nothing. This is the tool-agnostic guide for coding agents — meant to be run, not just
-read. Claude also reads `CLAUDE.md`; both point back here.
+coding CLIs. The app is two programs: `apps/desktop`, a Tauri shell around the office page, and
+`apps/cli`, the `idlebiz` binary, whose `idlebiz serve` is main, the node process that spawns real
+`claude` / `codex` sessions and saves the whole company as human-readable markdown under
+`~/.idlebiz/`. Every other verb of `idlebiz` is a company tool the employees call. A small Next.js
+landing page (`apps/web`) ships the download; the app sends it nothing. This is the tool-agnostic
+guide for coding agents — meant to be run, not just read. Claude also reads `CLAUDE.md`; both point
+back here.
 
 Paths below are short, as in CLAUDE.md: `server/…` and `commands/…` are under `apps/cli/src/`,
 `renderer/…` under `apps/desktop/src/`, `src-tauri/…` under `apps/desktop/`, and
@@ -38,7 +38,7 @@ There is no bootstrap script and nothing to seed.
 **`pnpm dev:desktop` and `pnpm dev:browser` are not plain dev servers.** Each runs `pnpm dev:kill`
 first (`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session —
 `tauri dev`, its shell and the dev server, each with main under it — then kills any that remain
-after three seconds. Main stops its runs first on the TERM. `pnpm dev:web`, `pnpm verify`, tests
+after ten seconds. Main stops its runs first on the TERM. `pnpm dev:web`, `pnpm verify`, tests
 and a running `pnpm e2e` survive it. It leaves an unrelated process on TCP **31100**, the dev
 server's port, alone, and startup fails while that port is occupied.
 
@@ -392,7 +392,7 @@ rather than crashing boot.
   product was retired, its assignee released), none ever a ship. `dead` tasks — runs that failed on their own —
   stay in the active queue until their bet stops or their product retires, because the Inbox
   can retry them and employees use them to
-  identify unresolved problems. `listTasks` answers open work only; the one
+  identify unresolved problems. `listOpenTasks` answers open work only; the one
   reader of history is `shippingLog`, which sends each ship as a line without its brief.
 - **The office is frozen data.** `renderer/game/office-design.json` is the one office:
   placed sprites, each naming its PNG under `public/`, over a 16px collision grid, with the

@@ -7,7 +7,6 @@
 //! (`apps/cli/dist`, which the dev command builds) on the developer's own node, and the server takes
 //! the page from the dev server. Nothing in the environment can point the shell elsewhere: a variable
 //! an `open --env` could set would run another program inside a process the OS counts as this app.
-//! The same layout as kyh/inteligir's shell.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;

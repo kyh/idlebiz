@@ -4,13 +4,13 @@ Tauri game where AI employees — real `claude` / `codex` CLI sessions — opera
 business. Strict TS everywhere (no `any`, no `!`, no `as`), clippy pedantic in Rust. Full map and
 workflow in `AGENTS.md`.
 
-**TWO PROGRAMS**, laid out as kyh/inteligir's are. `apps/desktop` is the app the founder
-installs: a Rust shell (`src-tauri`) around the office page (Vite + React + Phaser). `apps/cli`
-is the `idlebiz` binary: `idlebiz serve` is main, the node process that owns the save, the keys
-and the runs, the shell's one child, reached over its stdio. Main serves the shell's window its
-page on loopback, signed in by a one-time handoff, and answers it over an oRPC contract
-(`packages/contract`). Every other verb is a company tool an employee types in its shell
-(`idlebiz message-team '{"text":"…"}'`), a client of the control plane its run was handed.
+**TWO PROGRAMS**. `apps/desktop` is the app the founder installs: a Rust shell (`src-tauri`)
+around the office page (Vite + React + Phaser). `apps/cli` is the `idlebiz` binary:
+`idlebiz serve` is main, the node process that owns the save, the keys and the runs, the shell's
+one child, reached over its stdio. Main serves the shell's window its page on loopback, signed in
+by a one-time handoff, and answers it over an oRPC contract (`packages/contract`). Every other verb
+is a company tool an employee types in its shell (`idlebiz message-team '{"text":"…"}'`), a client
+of the control plane its run was handed.
 
 - Game state on disk at `~/.idlebiz/company/`, beside `cache/` (the runs' tool caches)
   and `bin/` (the `idlebiz` command main writes the runs at boot) — agentcompanies/v1 markdown
@@ -812,7 +812,21 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
 - **One main per save.** Boot claims the save before it reads it (`server/save-claim.ts`): a
   main on a save another holds (`pnpm dev:desktop` while the installed app has `~/.idlebiz`
-  open) refuses to boot and says so; one a crash left holds nothing.
+  open) refuses to boot and says so; one a crash left holds nothing. A second launch of the
+  packaged app hands over to the first, which shows its window (`tauri-plugin-single-instance`,
+  `src-tauri/src/lib.rs`); a development shell skips it, since it keys on the bundle id
+  machine-wide and would hand over to an installed IdleBiz.
+- **The shell is copied between sibling repos, never shared.** Its log, origin-pin and runtime
+  modules (`main_log.rs`, `navigation.rs`, `window.rs`, `runtime.rs` in `src-tauri/src/`) and the
+  pack's scripts (`apps/desktop/scripts`) are copied between kyh/init, this repo and
+  kyh/inteligir, and the two-program layout and main's page server and its sign-in
+  (`server/page-server.ts`, `server/page-session.ts`) between this repo and kyh/inteligir. They
+  diverge on purpose. No package holds them: each shell supervises its own server and each server
+  drives its own ACP runtime, and two public repos would need a third to publish one from. A fix
+  in one is ported to the others by hand.
+  The node pin (`VERSION` and its sha-256 in `apps/desktop/scripts/fetch-node.ts`) and
+  `apps/desktop/rust-toolchain.toml` move together across all three. inteligir's pin allows
+  `about:srcdoc` and this one refuses it, on purpose: the office draws no frame.
 
 Commands: `pnpm verify` · `pnpm dev:browser` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 · `pnpm e2e` · `pnpm -F @repo/desktop package` · `pnpm smoke:desktop`

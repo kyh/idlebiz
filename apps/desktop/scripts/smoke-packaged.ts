@@ -4,9 +4,8 @@
 // which main reads only once a company hires and runs, and the licences), then that hello boots main
 // and the window loads the page main hands it a handoff into, that main answers that page on
 // loopback, that a second launch hands over to the first, and that a quit stops main and leaves
-// nothing it started running, as kyh/inteligir's smoke does its app. It needs a macOS arm64 host
-// with a display: CI's test-macos job runs it on an ad-hoc pack
-// (`IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop`).
+// nothing it started running. It needs a macOS arm64 host with a display: CI's test-macos job runs
+// it on an ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop`).
 //
 // `pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>` smokes another .app, a release's from its dmg.
 

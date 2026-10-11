@@ -3,8 +3,7 @@
 // codex runtimes the ACP adapters run, their ripgrep). Tauri signs the shell, the node beside it and
 // the bundle, and its seal covers each resource's bytes, but notarization refuses any Mach-O inside
 // that is not itself signed with the hardened runtime and a timestamp. Each takes the app's
-// entitlements: node runs JIT, and the vendors' own runtimes do too. The same pass as
-// kyh/inteligir's.
+// entitlements: node runs JIT, and the vendors' own runtimes do too.
 
 import { spawnSync } from "node:child_process";
 import { open, readdir } from "node:fs/promises";

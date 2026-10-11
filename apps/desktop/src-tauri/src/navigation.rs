@@ -1,7 +1,6 @@
 //! What the window may show: main's own page, on the loopback origin main serves it from. Any other
 //! web page opens in the browser instead, and nothing else loads, so a link in an agent-written page,
-//! a dropped file or an injected script cannot navigate the founder's window away from main. The
-//! same pin as kyh/inteligir's shell.
+//! a dropped file or an injected script cannot navigate the founder's window away from main.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -15,9 +14,10 @@ pub enum Verdict {
     Deny,
 }
 
-/// The origin a window is pinned to, compared by its parts. Not `Url::origin`: the url crate
-/// answers an opaque origin for any non-special scheme, so `tauri://localhost` would equal nothing,
-/// and `tauri://app@evil` would carry a host of `evil` past a prefix compare.
+/// The origin a window is pinned to, compared by its parts. Not a prefix of the address, which
+/// `http://127.0.0.1:4664@evil.example/` shares with a pin on 127.0.0.1:4664 while its host is
+/// `evil.example`, and not `Url::origin`, which drops a login: main's page carries none, so a url
+/// with one is no origin here and matches no pin.
 pub fn comparable_origin(url: &Url) -> Option<String> {
     if !url.username().is_empty() || url.password().is_some() {
         return None;
@@ -107,8 +107,8 @@ mod tests {
         );
         assert_eq!(
             classify(
-                &url("tauri://localhost/first-run.html"),
-                "tauri://localhost"
+                &url("http://127.0.0.1:52100/?handoff=n"),
+                "http://127.0.0.1:52100"
             ),
             Verdict::Allow
         );
@@ -133,14 +133,26 @@ mod tests {
 
     #[test]
     fn a_login_in_the_url_is_no_origin() {
-        assert_eq!(comparable_origin(&url("tauri://localhost@evil/")), None);
+        let pinned = "http://127.0.0.1:4664";
         assert_eq!(
-            classify(&url("tauri://localhost@evil/"), "tauri://localhost"),
-            Verdict::Deny
+            comparable_origin(&url("http://127.0.0.1:4664@evil.example/")),
+            None
         );
         assert_eq!(
-            classify(&url("http://user@127.0.0.1:4664/"), "http://127.0.0.1:4664"),
+            classify(&url("http://127.0.0.1:4664@evil.example/"), pinned),
             Verdict::OpenExternally
+        );
+        assert_eq!(
+            classify(&url("http://user@127.0.0.1:4664/"), pinned),
+            Verdict::OpenExternally
+        );
+        assert_eq!(
+            classify(&url("http://:secret@127.0.0.1:4664/"), pinned),
+            Verdict::OpenExternally
+        );
+        assert_eq!(
+            classify(&url("tauri://localhost@evil/"), pinned),
+            Verdict::Deny
         );
     }
 
