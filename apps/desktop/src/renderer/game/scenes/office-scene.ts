@@ -2,12 +2,10 @@ import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
 import { listen } from "@/renderer/page-events";
 import {
-  characterQuery,
   companyQuery,
   employeesQuery,
   openTasksQuery,
   read,
-  warm,
   watch,
 } from "@/renderer/state/queries";
 import {
@@ -21,7 +19,7 @@ import { BootGate } from "@/renderer/game/boot-gate";
 import { loadCharacter } from "@/renderer/game/characters";
 import { ClickWalk } from "@/renderer/game/click-walk";
 import type { Walker } from "@/renderer/game/click-walk";
-import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
+import { WALK_SPEED, ZOOM, COLORS } from "@/renderer/game/config";
 import { facingToward } from "@/renderer/game/movement";
 import type { Seat } from "@/renderer/game/npc";
 import type { Poi } from "@/renderer/game/npc-idle";
@@ -37,7 +35,7 @@ import type { ActivityEvent } from "@repo/domain/activity";
 import { hear, tell } from "@/renderer/game/office-port";
 import { DEFAULT_FOUNDER_SEED, taskIn } from "@repo/domain/domain";
 import type { Employee, Task } from "@repo/domain/domain";
-import { bodyBlockedAt, solidAt } from "@/renderer/game/office-grid";
+import { bodyBlockedAt } from "@/renderer/game/office-grid";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },
@@ -52,28 +50,6 @@ const WORKSPACE_KIT_PATH = "workspace-kit";
 interface Player {
   readonly sprite: Phaser.GameObjects.Sprite;
   readonly anims: CharacterAnims;
-}
-
-/** Probes into the live office for CDP-driven checks (`window.__officeDebug`). */
-export interface OfficeDebugApi {
-  bodyBlockedAt: (x: number, y: number) => boolean;
-  solidAtPx: (x: number, y: number) => boolean;
-  snapshot: () => {
-    camera: { x: number; y: number; zoom: number };
-    objects: number;
-    player: { x: number | null; y: number | null };
-    door: PixelPoint;
-    seats: number;
-    world: { h: number; w: number };
-  };
-  /** Where a body starting at `start` ends up after trying to move by `delta`. */
-  probeMove: (start: PixelPoint, delta: PixelPoint) => PixelPoint | null;
-}
-
-declare global {
-  interface Window {
-    __officeDebug?: OfficeDebugApi;
-  }
 }
 
 /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
@@ -98,7 +74,6 @@ export class OfficeScene extends Scene {
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys?: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
-  private debugGfx?: Phaser.GameObjects.Graphics | undefined;
   private npcs?: NpcManager | undefined;
   /**
    * What the office hears while it boots waits for its snapshot, then replays in
@@ -152,7 +127,6 @@ export class OfficeScene extends Scene {
     };
     kb.addKey(Input.Keyboard.KeyCodes.SPACE).on("down", () => this.tryAction());
     kb.addKey(Input.Keyboard.KeyCodes.E).on("down", () => this.tryAction());
-    kb.addKey(Input.Keyboard.KeyCodes.G).on("down", () => this.toggleCollisionOverlay());
 
     // Click to go there. The HUD sits over this canvas but is pointer-events-none except
     // on its own controls, so a click on a button never reaches us.
@@ -163,8 +137,6 @@ export class OfficeScene extends Scene {
     });
 
     void this.boot();
-    // the handle names are the CDP contract in AGENTS.md, dangling underscores and all
-    window.__officeDebug = this.debugApi();
 
     // live hires and releases come and go through the door
     const onSpawn = (emp: Employee) =>
@@ -212,13 +184,10 @@ export class OfficeScene extends Scene {
         stop();
       }
       this.npcs?.destroy();
-      this.debugGfx?.destroy();
-      this.debugGfx = undefined;
       this.clickWalk?.cancel();
       this.clickWalk = undefined;
       this.npcs = undefined;
       this.player = undefined;
-      delete window.__officeDebug;
     };
     this.events.once(Scenes.Events.SHUTDOWN, teardown);
     // game.destroy() emits only DESTROY, never SHUTDOWN
@@ -282,9 +251,8 @@ export class OfficeScene extends Scene {
     // the founder and the roster are independent fetches; the colleagues wait on both,
     // because Phaser's loader is single-batch and the founder's sheet must land first
     const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
-    const playerKey = `player-${seed}`;
-    const [, employees, tasks] = await Promise.all([
-      loadCharacter(this, playerKey, seed),
+    const [playerKey, employees, tasks] = await Promise.all([
+      loadCharacter(this, seed),
       company ? read(employeesQuery) : [],
       company ? read(openTasksQuery) : [],
     ]);
@@ -304,15 +272,7 @@ export class OfficeScene extends Scene {
       this.talkTo(id),
     );
 
-    // the office is already staffed when it opens: nobody parades in on boot.
-    // Spawns serialise on Phaser's loader, but composing the sheets need not:
-    // main caches by seed, so warming them all at once makes the chain read hits.
-    // Only a warm-up: a sheet that fails here fails again in its own spawn, which
-    // lets everyone else in.
-    await Promise.all(employees.map((emp) => warm(characterQuery(emp.spriteSeed))));
-    if (generation !== this.generation) {
-      return;
-    }
+    // the office is already staffed when it opens: nobody parades in on boot
     for (const emp of employees) {
       await npcs.spawn(emp, "settled");
     }
@@ -344,66 +304,6 @@ export class OfficeScene extends Scene {
         x: seat.x,
         y: seat.y,
       }));
-  }
-
-  /** Toggle (G) a red overlay of the authored collision grid for debugging. */
-  private toggleCollisionOverlay(): void {
-    if (this.debugGfx) {
-      this.debugGfx.destroy();
-      this.debugGfx = undefined;
-      return;
-    }
-    const { grid } = OFFICE;
-    const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
-    gfx.fillStyle(0xff_33_66, 0.35);
-    for (let r = 0; r < grid.rows; r += 1) {
-      for (let c = 0; c < grid.cols; c += 1) {
-        if (grid.solid[r]?.[c]) {
-          gfx.fillRect(c * grid.cell, r * grid.cell, grid.cell, grid.cell);
-        }
-      }
-    }
-    this.debugGfx = gfx;
-  }
-
-  private debugApi(): OfficeDebugApi {
-    return {
-      bodyBlockedAt: (x, y) => bodyBlockedAt(OFFICE.grid, x, y),
-      probeMove: (start, delta) => this.probeMove(start, delta),
-      snapshot: () => ({
-        camera: {
-          x: this.cameras.main.scrollX,
-          y: this.cameras.main.scrollY,
-          zoom: this.cameras.main.zoom,
-        },
-        door: OFFICE.door,
-        objects: OFFICE.placements.length,
-        player: {
-          x: this.player?.sprite.x ?? null,
-          y: this.player?.sprite.y ?? null,
-        },
-        seats: OFFICE.seats.filter((seat) => seat.role === "work").length,
-        world: {
-          h: OFFICE.grid.height,
-          w: OFFICE.grid.width,
-        },
-      }),
-      solidAtPx: (x, y) => solidAt(OFFICE.grid, x, y),
-    };
-  }
-
-  private probeMove(start: PixelPoint, delta: PixelPoint): PixelPoint | null {
-    const { player } = this;
-    if (!player) {
-      return null;
-    }
-    const { sprite } = player;
-    const original = { x: sprite.x, y: sprite.y };
-    sprite.setPosition(start.x, start.y);
-    this.moveResolved(delta.x, delta.y);
-    const result = { x: sprite.x, y: sprite.y };
-    sprite.setPosition(original.x, original.y);
-    return result;
   }
 
   private subscribeActivity(): void {

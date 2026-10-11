@@ -8,7 +8,6 @@ import { asyncIteratorObject, oc } from "@orpc/contract";
 import { agentsContract } from "./agents/agents-contract";
 import { appContract } from "./app/app-contract";
 import { betsContract } from "./bets/bets-contract";
-import { charactersContract } from "./characters/characters-contract";
 import { companyContract } from "./company/company-contract";
 import { employeesContract } from "./employees/employees-contract";
 import { PageEventSchema } from "./events";
@@ -25,7 +24,6 @@ export const contract = {
   agents: agentsContract,
   app: appContract,
   bets: betsContract,
-  characters: charactersContract,
   company: companyContract,
   employees: employeesContract,
   /** The server's events as they happen, until the page lets go: each checked as it is sent. */

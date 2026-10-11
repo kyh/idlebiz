@@ -42,10 +42,10 @@ company is founded or loaded under its folder's name.
 
 `pnpm --filter idlebiz build` bundles `src/index.ts` into `dist/index.js` (Vite, its chunks flat
 beside it, which `src/paths.ts` counts on), then stages the desktop page's build as `dist/page`
-(`scripts/stage-page.ts`), which `serve` hands the window. Every dependency is bundled but
-`sharp`, which is native, and the ACP adapters, which main runs as processes of their own: those
-are this package's `dependencies`, and the .app ships them beside the bundle
-(`apps/desktop/scripts/stage-server.ts`). Everything else is a `devDependency`.
+(`scripts/stage-page.ts`), which `serve` hands the window. Every dependency is bundled but the
+ACP adapters, which main runs as processes of their own: those are this package's
+`dependencies`, and the .app ships them beside the bundle (`apps/desktop/scripts/stage-server.ts`).
+Everything else is a `devDependency`.
 
 `src/dev-host/` runs the built server as the shell runs it, answering its asks of a native app,
 for `pnpm dev:browser` and the e2e suite.

@@ -8,6 +8,8 @@ const DIRECTIVES: readonly (readonly [string, string])[] = [
   ["script-src", "'self'"],
   // React's style attributes, and Phaser's runtime styles, are not noncible
   ["style-src", "'self' 'unsafe-inline'"],
+  // Phaser draws its own default textures from data: URLs and hands each image it loads to the
+  // page as a blob: one
   ["img-src", "'self' data: blob:"],
   ["connect-src", "'self'"],
   ["object-src", "'none'"],

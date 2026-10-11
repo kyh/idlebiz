@@ -2,8 +2,8 @@
 //! `idlebiz serve`) and the folder main's log goes in, and the environment main starts with.
 //!
 //! A packaged app carries both: node as the sidecar beside the shell's own binary
-//! (`bundle.externalBin`), the server as a resource, with its page, its skills, its employee sheets
-//! and its `node_modules` inside. A `tauri dev` shell runs the checkout's built server
+//! (`bundle.externalBin`), the server as a resource, with its page, its skills and its
+//! `node_modules` inside. A `tauri dev` shell runs the checkout's built server
 //! (`apps/cli/dist`, which the dev command builds) on the developer's own node, and the server takes
 //! the page from the dev server. Nothing in the environment can point the shell elsewhere: a variable
 //! an `open --env` could set would run another program inside a process the OS counts as this app.
@@ -65,18 +65,10 @@ pub fn resolve(exe: &Path, resource_dir: &Path) -> Result<Runtime, String> {
         node: exe.with_file_name("node"),
         cli_dir: resource_dir.join("server"),
     };
-    // main serves the page, and reads the skills and the sheets as it hires and runs, long after it
-    // booted
+    // main serves the page, and reads the skills as it runs, long after it booted
     let page = runtime.cli_dir.join("dist").join("page").join("index.html");
     let skills = runtime.cli_dir.join("resources").join("skills");
-    let sheets = runtime.cli_dir.join("resources").join("employee-sheets");
-    for required in [
-        &runtime.node,
-        &runtime.serve_entry(),
-        &page,
-        &skills,
-        &sheets,
-    ] {
+    for required in [&runtime.node, &runtime.serve_entry(), &page, &skills] {
         if !required.exists() {
             return Err(format!(
                 "this install is incomplete: {} is missing. Reinstall IdleBiz.",
@@ -216,7 +208,6 @@ mod tests {
         std::fs::write(contents.join("MacOS").join("node"), "")?;
         std::fs::create_dir_all(server.join("dist"))?;
         std::fs::write(server.join("dist").join("index.js"), "")?;
-        std::fs::create_dir_all(server.join("resources").join("employee-sheets"))?;
         std::fs::create_dir_all(server.join("resources").join("skills"))?;
         let refused = resolve(&shell, &resources);
         assert!(refused.is_err_and(|reason| reason.contains("page")));

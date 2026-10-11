@@ -24,8 +24,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "catalog:",
-    "@agentclientprotocol/codex-acp": "catalog:",
-    "sharp": "^0.35.5"
+    "@agentclientprotocol/codex-acp": "catalog:"
   },
   "devDependencies": {
     "@orpc/client": "catalog:",

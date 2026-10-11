@@ -1,22 +1,44 @@
-// Shared by the compositor and the scene.
+// A bundled employee sheet as frames: the box each one is, where the walk and sit strips lie on
+// the sheet, and where a character's origin and soles fall within a frame. The office cuts its
+// anims by these, and onboarding draws the standing pose by them.
 
-/** Frame size in px. Six frames per row on the composited walk sheet. */
+/** Frame size in px. */
 export const FRAME_W = 32;
 export const FRAME_H = 64;
 
-// The standing pose, walk-down's first frame. A source employee sheet holds it in its
-// walk band (y 128, down in columns 18-23); the compositor moves it to the walk sheet's
-// top-left.
-export const SOURCE_STANDING_FRAME = { x: 18 * FRAME_W, y: 128 } as const;
+/** Frames across a sheet, 1792 px wide. */
+export const SHEET_COLUMNS = 56;
 
-/** One origin for every character, so the player and NPCs sort on the same footing. */
-export const CHAR_ORIGIN_X = 0.5;
-export const CHAR_ORIGIN_Y = 0.86;
+/** Frames in each walk or sit strip. */
+export const STRIP_FRAMES = 6;
 
 export const DIRS = ["down", "left", "right", "up"] as const;
 export type Dir = (typeof DIRS)[number];
 export const SIT_SIDES = ["left", "right"] as const;
 export type SitSide = (typeof SIT_SIDES)[number];
+
+/** A frame's index on a sheet, counted along its rows as Phaser numbers a spritesheet's. */
+const frameAt = (row: number, column: number): number => row * SHEET_COLUMNS + column;
+
+const WALK_ROW = 2;
+const SIT_ROW = 4;
+
+/** Each direction's walk strip by its first frame, the pose a character stands in. */
+export const WALK_START = {
+  down: frameAt(WALK_ROW, 18),
+  left: frameAt(WALK_ROW, 12),
+  right: frameAt(WALK_ROW, 0),
+  up: frameAt(WALK_ROW, 6),
+} satisfies Record<Dir, number>;
+
+export const SIT_START = {
+  left: frameAt(SIT_ROW, 0),
+  right: frameAt(SIT_ROW, 6),
+} satisfies Record<SitSide, number>;
+
+/** One origin for every character, so the player and NPCs sort on the same footing. */
+export const CHAR_ORIGIN_X = 0.5;
+export const CHAR_ORIGIN_Y = 0.86;
 
 /** Content rows within a frame: the art starts at the hair and ends at the soles. */
 export const HEAD_ROW = 18;

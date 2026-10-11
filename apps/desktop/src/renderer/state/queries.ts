@@ -69,9 +69,6 @@ const productsQuery = orpc.products.list.queryOptions();
 const betsQuery = orpc.bets.list.queryOptions();
 const roomQuery = orpc.team.messages.queryOptions({ input: { limit: FEED_LINES } });
 export const stripeKeyQuery = orpc.stripe.keyStatus.queryOptions();
-/** A character's sheets: composed once per seed for the whole window. */
-export const characterQuery = (seed: string) =>
-  orpc.characters.compose.queryOptions({ input: { seed } });
 
 // ---- outside React ---------------------------------------------------------
 

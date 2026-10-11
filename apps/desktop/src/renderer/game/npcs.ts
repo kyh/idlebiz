@@ -5,7 +5,7 @@ import {
   CHAR_ORIGIN_Y,
   idleFrame,
 } from "@/renderer/game/character-sheet";
-import { loadCharacter, unloadCharacter } from "@/renderer/game/characters";
+import { loadCharacter } from "@/renderer/game/characters";
 import { randomFloor } from "@/renderer/game/movement";
 import {
   applyDepth,
@@ -109,14 +109,8 @@ export class NpcManager {
     if (this.disposed || this.npcs.has(emp.id)) {
       return;
     }
-    const key = `emp-${emp.id}`;
-    await loadCharacter(this.scene, key, emp.spriteSeed);
-    // textures are game-wide: the next scene's manager may already be drawing this key
-    if (this.disposed) {
-      return;
-    }
-    if (this.released.delete(emp.id)) {
-      unloadCharacter(this.scene, key);
+    const key = await loadCharacter(this.scene, emp.spriteSeed);
+    if (this.disposed || this.released.delete(emp.id)) {
       return;
     }
 
@@ -140,7 +134,6 @@ export class NpcManager {
       // the office says which CLI a colleague is.
       attachments: new NpcAttachments(this.scene, sprite, `${emp.name} · ${emp.runner}`),
       id: emp.id,
-      key,
       nextWanderAt: this.scene.time.now + 4000 + Math.random() * 8000,
       phase: passage === "settled" ? "settled" : "queued",
       plan: null,
@@ -420,7 +413,6 @@ export class NpcManager {
     this.scene.tweens.killTweensOf(npc.sprite);
     npc.attachments.destroy();
     npc.sprite.destroy();
-    unloadCharacter(this.scene, npc.key);
   }
 
   destroy(): void {

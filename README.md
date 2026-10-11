@@ -12,8 +12,7 @@ the dashboard can read your actual Stripe revenue and analytics.
 - `apps/desktop` — the game: a Tauri app, a Rust shell around a React + Phaser page.
 - `apps/cli` — the `idlebiz` binary: `idlebiz serve` is main, the node process that runs the
   company, which the app runs as its child and which serves the page; every other verb is a
-  company tool the employees call. Character sprites generate from bundled employee sheets at
-  `apps/cli/resources/employee-sheets`.
+  company tool the employees call.
 - `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
   Download button resolves the latest `.dmg` from GitHub releases.
 - `packages/domain`, `packages/contract` — the vocabulary both sides share, and the page's

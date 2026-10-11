@@ -80,16 +80,6 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
       kill: os.bets.kill.handler(({ input }) => killBet(input.betId, input.reason)),
       list: os.bets.list.handler(() => store.listBets()),
     },
-    characters: {
-      compose: os.characters.compose.handler(async ({ input }) => {
-        const { composeCharacter } = await import("./character/compositor");
-        return await composeCharacter(input.seed);
-      }),
-      founders: os.characters.founders.handler(async () => {
-        const { listFounderChoices } = await import("./character/compositor");
-        return await listFounderChoices(6);
-      }),
-    },
     company: {
       get: os.company.get.handler(() => store.getCompany()),
       openPath: os.company.openPath.handler(({ input }) => openWorkspacePath(input.rel)),

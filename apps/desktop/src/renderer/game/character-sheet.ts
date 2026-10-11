@@ -1,24 +1,25 @@
-// The composited character sheet as geometry: which strip is which, where the
-// origin and the soles sit, what a seated bust covers, and what its anims are
-// called. No Phaser here, so the seat oracle and the movement math can be
-// unit-tested; loading the sheet into a scene is characters.ts.
-import { CHAR_ORIGIN_Y, FRAME_H, FRAME_W, HEAD_ROW } from "@repo/domain/character-frame";
+// A character's sheet as the office draws it: the frame it stands in, where the origin and
+// the soles sit, what a seated bust covers, and what its anims are called. Which frame is
+// which is @repo/domain/character-frame. No Phaser here, so the seat oracle and the movement
+// math can be unit-tested; loading the sheet into a scene is characters.ts.
+import {
+  CHAR_ORIGIN_Y,
+  FRAME_H,
+  FRAME_W,
+  HEAD_ROW,
+  WALK_START,
+} from "@repo/domain/character-frame";
 import type { Dir, SitSide } from "@repo/domain/character-frame";
 
 export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@repo/domain/character-frame";
 
-// Six frames per row: walk down/left/right/up (rows 0-3), then sit-left (row 4)
-// and sit-right (row 5).
-export const DIR_START = { down: 0, left: 6, right: 12, up: 18 } satisfies Record<Dir, number>;
-export const SIT_START = { left: 24, right: 30 } satisfies Record<SitSide, number>;
-
 /** Standing frame index for a direction (first frame of that direction's strip). */
-export const idleFrame = (dir: Dir): number => DIR_START[dir];
+export const idleFrame = (dir: Dir): number => WALK_START[dir];
 
 /**
  * The frame region drawn while seated. The pack's own seated workers are head-and-
- * shoulders busts painted over the chair with the desk in front; cropping the walk sheet
- * at the origin row reproduces that silhouette, so a sitter lifted above their desk
+ * shoulders busts painted over the chair with the desk in front; cropping the frame at
+ * the origin row reproduces that silhouette, so a sitter lifted above their desk
  * (seat-depth.ts) doesn't dangle legs across it.
  */
 export const SEAT_CROP = {

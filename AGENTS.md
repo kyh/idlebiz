@@ -277,11 +277,10 @@ runs can read. `release:publish` refuses a pack that is not both signed and nota
 The pack stages the `idlebiz` package with `pnpm deploy` (`apps/desktop/scripts/stage-server.ts`)
 into `Contents/Resources/server`: its bundle (the page staged inside it), its `resources/`, and the
 dependencies it does not bundle — the ACP adapters main spawns (they bring their own zod and ACP
-sdk) and sharp (native, kept out of the bundle in `apps/cli/vite.config.ts`). So `apps/cli`
-`dependencies` is exactly what the server ships: everything Vite bundles — zod, oRPC, citty, the
-ACP sdk, `@repo/*` — goes in `devDependencies`, or the app ships it for nothing, and
-`apps/desktop` has no `dependencies` at all, since the page is bundled whole. `pnpm add` defaults
-to `dependencies`.
+sdk). So `apps/cli` `dependencies` is exactly what the server ships: everything Vite bundles —
+zod, oRPC, citty, the ACP sdk, `@repo/*` — goes in `devDependencies`, or the app ships it for
+nothing, and `apps/desktop` has no `dependencies` at all, since the page is bundled whole.
+`pnpm add` defaults to `dependencies`.
 
 `pnpm smoke:desktop` packs and boots the .app on a scratch save
 (`apps/desktop/scripts/smoke-packaged.ts`): every resource the server ships is in it, hello boots
@@ -380,8 +379,7 @@ tools/
   `printful-token.ts` (the Printful token the founder enters and the one store it sells
   through, kept as one credential), `print-listing.ts` (what `sell_print` checks before it
   lists), `secrets.ts`, `metrics.ts`, `tray.ts`, `login-item.ts` (open at login).
-- `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`) and the
-  employee sheets (`employee-sheets/`).
+- `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`).
 - `apps/web` — the landing page, its trust pages and their Markdown for agents; it holds no
   secret and the app calls none of it.
 - `packages/domain` — zod only, importing no other package of the repo's: `domain.ts` (the
@@ -389,8 +387,10 @@ tools/
   founder knows them by), `bets.ts` (the bets, their judge and the allocator),
   `activity.ts` (the event grammar), `digest.ts`, `hire.ts`, `integrations.ts`, `hold-rules.ts`
   (every rule that holds a call, what its card says and whether signing leases it; data only,
-  for the page), `format.ts` (money's formatting), `errors.ts`, `json.ts`, and
-  `character-frame.ts` (the sprite box every process slices by).
+  for the page), `format.ts` (money's formatting), `errors.ts`, `json.ts`, `character-frame.ts`
+  (a sheet's frames: the box, the walk and sit strips, the origin and soles) and
+  `character-seed.ts` (which sheet a sprite seed wears, which the save keeps, and the founder's
+  looks).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`), the page's content security policy (`page-policy.ts`), which main
   stamps on the page and the dev server writes into it, and the schemas of its event stream

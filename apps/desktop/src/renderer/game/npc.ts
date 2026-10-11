@@ -33,7 +33,6 @@ interface WalkPlan {
 
 export interface Npc {
   id: string;
-  key: string;
   anims: CharacterAnims;
   sprite: Phaser.GameObjects.Sprite;
   attachments: NpcAttachments;

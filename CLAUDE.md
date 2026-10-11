@@ -27,9 +27,11 @@ once: change a mechanic there, and a decision here.
 - **Employee runs load IdleBiz's own skills and none of the founder's.** A skill is prose no test
   renders from `server/tool-specs.ts`, so a change to a tool or rule one cites (a bet's floor, the
   unlock's key) changes that skill in the same commit.
-- **Employee character sheets** are curated runtime assets, bundled at
-  `apps/cli/resources/employee-sheets`; their source workspace lives outside the repo at
-  `/Users/kyh/Desktop/vg/office`.
+- **Employee character sheets** and their busts are the page's own files, curated and served as
+  they are, at `apps/desktop/public/characters`: the office cuts its anims from each sheet by
+  `@repo/domain/character-frame`, and `@repo/domain/character-seed` maps a saved sprite seed to
+  its sheet, so changing either changes every saved face. Their source workspace lives outside the
+  repo at `/Users/kyh/Desktop/vg/office`.
 - **The game reads as a handheld RPG but never names one**: no "Pokémon"/"poke" in code,
   comments, copy or docs.
 
