@@ -29,7 +29,7 @@ export class NpcAttachments {
     bob: { dy: number };
     tween: Phaser.Tweens.Tween;
   };
-  private bubble?: Bubble;
+  private bubble?: Bubble | undefined;
 
   constructor(scene: Phaser.Scene, sprite: Phaser.GameObjects.Sprite, caption: string) {
     this.scene = scene;

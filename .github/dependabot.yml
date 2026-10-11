@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # as long as pnpm's own minimumReleaseAge (a day), so no PR proposes a version pnpm holds back
+    cooldown:
+      default-days: 1
+    groups:
+      # one PR for the adapters and the sdk, which CI's test-macos job runs the gate suites on
+      acp:
+        patterns:
+          - "@agentclientprotocol/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

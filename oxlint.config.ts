@@ -10,10 +10,16 @@ export default defineConfig({
   options: { typeAware: true },
   overrides: [{ files: ["apps/web/**"], plugins: next.plugins, rules: next.rules }],
   rules: {
+    // Its message asks for a `// SAFETY:` comment, which admits nothing now that
+    // `typescript/consistent-type-assertions` refuses every assertion.
+    "anti-slop/require-safety-comment-for-type-assertion": "off",
     // Sequential awaits in loops are deliberate here (ordered agent turns, paced writes).
     "no-await-in-loop": "off",
     // A bare `return` in a `T | undefined` helper is deliberate.
     "typescript/consistent-return": "off",
+    // No type assertion and no escape comment: parse at the boundary or narrow with a type guard.
+    // `as const` asserts no other type and stays legal.
+    "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
     // `() => set(x)` is the house style for handlers.
     "typescript/no-confusing-void-expression": "off",
     // A promise-returning function need not be `async`; a dropped promise is no-floating-promises' job.

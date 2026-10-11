@@ -53,15 +53,15 @@ export interface RunnerAdapter {
  * player's can loosen what the session sets beside them.
  */
 export interface ClaudeUserSettings {
-  alwaysThinkingEnabled?: boolean;
-  apiKeyHelper?: string;
-  awsAuthRefresh?: string;
-  awsCredentialExport?: string;
-  effortLevel?: string;
-  gcpAuthRefresh?: string;
-  model?: string;
-  modelOverrides?: Readonly<Record<string, string>>;
-  modelSettings?: Readonly<Record<string, { effortLevel?: string }>>;
+  alwaysThinkingEnabled?: boolean | undefined;
+  apiKeyHelper?: string | undefined;
+  awsAuthRefresh?: string | undefined;
+  awsCredentialExport?: string | undefined;
+  effortLevel?: string | undefined;
+  gcpAuthRefresh?: string | undefined;
+  model?: string | undefined;
+  modelOverrides?: Readonly<Record<string, string>> | undefined;
+  modelSettings?: Readonly<Record<string, { effortLevel?: string | undefined }>> | undefined;
 }
 
 /**

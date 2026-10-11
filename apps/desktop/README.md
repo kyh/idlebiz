@@ -111,8 +111,8 @@ reads any file of the checkout to whoever asks (`/@fs`), and under `dev:browser`
 in.
 
 The shell compiles on the toolchain `rust-toolchain.toml` pins: `pnpm typecheck` runs clippy
-(pedantic, `-D warnings`), `pnpm test` runs `cargo test` after vitest, `pnpm format` runs
-`cargo fmt --check`. On Linux the shell needs WebKitGTK (`libwebkit2gtk-4.1-dev`) and the
+(pedantic, `-D warnings`), `pnpm test:rust` runs `cargo test` (`pnpm test` is vitest; the root's
+runs both), `pnpm format` runs `cargo fmt --check`. On Linux the shell needs WebKitGTK (`libwebkit2gtk-4.1-dev`) and the
 appindicator for its menu-bar icon (`libayatana-appindicator3-dev`).
 
 ## Packaging
@@ -140,10 +140,22 @@ none. `pnpm -F @repo/desktop release:publish` packs as a release (`IDLEBIZ_RELEA
 stops unless the pack is both signed and notarized, then publishes the dmg as the release tagged
 `v<version>`, where the site's download link finds it.
 
+`pnpm smoke:desktop` packs, then boots the .app (`scripts/smoke-packaged.ts`; `pnpm -F
+@repo/desktop smoke <path/to/IdleBiz.app>` boots another, a release's from its dmg). It checks that
+the pack carries every file the server ships under `resources/` (the skills and the employee
+sheets, which main reads only once a company hires and runs) and the licences, then launches it on
+a scratch `IDLEBIZ_ROOT_DIR`: hello boots main on the pack's node, the window loads main's page
+(the shell prints `[shell] window loaded`), main answers that page on loopback signed out to
+anything without a handoff, a second launch hands over to the first, and a SIGTERM quits as Quit
+does, leaving nothing main started running. It refuses where an IdleBiz is running, or where the
+Keychain holds IdleBiz's key, which an ad-hoc pack is not the app to read without a prompt; a
+launch where it holds none makes one, as a first launch does. CI's `test-macos` job runs it on an
+ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1`).
+
 ## What is deliberately not here
 
 - **No updater.** The Electron builds shipped none either; a feed is Tauri's updater plugin and a
   signing key of its own, as kyh/inteligir's.
 - **No WebDriver of the window.** The page and main are driven in Chromium (`tools/e2e`, the dev host);
-  the shell is held by `cargo test` and looked at by hand.
+  the shell is held by `cargo test`, booted packaged by `pnpm smoke:desktop`, and looked at by hand.
 - **No restart of main.** A main that dies says so in a box and the app quits: main owns the save.

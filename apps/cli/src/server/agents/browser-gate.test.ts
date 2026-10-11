@@ -54,7 +54,8 @@ const runIn = async (name: string) => {
 };
 
 describe.skipIf(!browserRuns)("agent-browser inside the seal", () => {
-  // every daemon closed before any namespace goes: a close with no daemon there starts one
+  // every daemon closed before any namespace goes: a close with no daemon there starts one. On a
+  // busy machine (`pnpm test` compiling the shell beside it) the closes outlast a hook's 10s.
   afterAll(() => {
     for (const { cwd, seal } of opened) {
       browse(seal, cwd, "close");
@@ -68,7 +69,7 @@ describe.skipIf(!browserRuns)("agent-browser inside the seal", () => {
     } else {
       process.env.IDLEBIZ_ROOT_DIR = previousRoot;
     }
-  });
+  }, 90_000);
 
   it(
     "saves a screenshot named no path where the run can read it",

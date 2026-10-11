@@ -12,9 +12,11 @@
     "dev:page": "vite",
     "package": "node scripts/fetch-node.ts && node scripts/package.ts",
     "release:publish": "bash scripts/publish-release.sh",
+    "smoke": "node scripts/smoke-packaged.ts",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings",
-    "test": "vitest run && cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "test": "vitest run",
+    "test:rust": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "format": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "format:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "clean": "rm -rf .cache .output dist"

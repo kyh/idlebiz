@@ -203,7 +203,7 @@ const forward = async (
   target.search = url.search;
   const upstream = await fetch(target, {
     headers: { accept: onlyHeader(request, "accept") ?? "*/*" },
-    method: request.method,
+    method: request.method ?? "GET",
   });
   const headers: Record<string, string> = {};
   for (const [name, value] of upstream.headers) {

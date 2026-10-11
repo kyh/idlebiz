@@ -104,11 +104,11 @@ export interface AcpAgent {
   /** Sent as `_meta` when the session is created or resumed — see `RunnerAdapter`. */
   sessionMeta?: NewSessionRequest["_meta"];
   /** Folders every session is handed besides the turn's `addDirs`, to read — see `RunnerAdapter`. */
-  readDirs?: readonly string[];
+  readDirs?: readonly string[] | undefined;
   /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
-  usagePerRequest?: true;
+  usagePerRequest?: true | undefined;
   /** Declare typed session failures on initialize — see `RunnerAdapter`. */
-  typedFailures?: true;
+  typedFailures?: true | undefined;
   /** The agent's whole environment: nothing of this process's own reaches it unless named here. */
   env: Record<string, string>;
 }
@@ -117,9 +117,9 @@ export interface AcpAgent {
 export interface PermissionRequest {
   tool: ToolAsk;
   /** The agent's own one-line account of what it is doing, when it gives one. */
-  description?: string;
+  description?: string | undefined;
   /** ACP tool kind — "execute", "edit", "read", … */
-  kind?: string;
+  kind?: string | undefined;
 }
 
 export interface PermissionDecision {
@@ -138,7 +138,7 @@ export interface AcpTurnOptions {
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
-  resumeSessionId?: string;
+  resumeSessionId?: string | undefined;
   /** Extra dirs the agent may read/write (e.g. its own memory folder). */
   addDirs?: string[];
   /** Run-scoped additions to the agent's env (the control-plane URL and token, tool caches). */
@@ -147,7 +147,9 @@ export interface AcpTurnOptions {
    * Decides tool permissions. Omission allows everything; the caller must provide confinement.
    * `signal` aborts when the turn ends, so an answer that comes too late acts on nothing.
    */
-  onPermission?: (request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>;
+  onPermission?:
+    | ((request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>)
+    | undefined;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
   idleTimeoutMs: number;
   /** Absolute ceiling on one turn regardless of activity. 0 disables. */
@@ -187,7 +189,7 @@ export interface AcpTurnResult {
   /** The agent's final message (the run summary). */
   summary: string;
   /** Session id — persist it to continue this employee's context later. */
-  sessionId?: string;
+  sessionId?: string | undefined;
   /** The stored session was resumed rather than started fresh. */
   resumed: boolean;
   usage: AgentUsage;
@@ -528,7 +530,13 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           protocolVersion: PROTOCOL_VERSION,
         });
 
-        const additionalDirectories = [...(opts.addDirs ?? []), ...(opts.agent.readDirs ?? [])];
+        const scope: Pick<NewSessionRequest, "_meta" | "additionalDirectories" | "cwd"> = {
+          additionalDirectories: [...(opts.addDirs ?? []), ...(opts.agent.readDirs ?? [])],
+          cwd: opts.cwd,
+        };
+        if (opts.agent.sessionMeta !== undefined) {
+          scope._meta = opts.agent.sessionMeta;
+        }
 
         // Resume without replaying history; a rejected session id falls back to fresh.
         const resume = async (): Promise<string | undefined> => {
@@ -539,12 +547,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             return undefined;
           }
           try {
-            await agent.request("session/resume", {
-              _meta: opts.agent.sessionMeta,
-              additionalDirectories,
-              cwd: opts.cwd,
-              sessionId: opts.resumeSessionId,
-            });
+            await agent.request("session/resume", { ...scope, sessionId: opts.resumeSessionId });
             return opts.resumeSessionId;
           } catch {
             return undefined;
@@ -554,12 +557,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         resumed = resumedId !== undefined;
 
         const startFresh = async (): Promise<string> => {
-          const created = await agent.request("session/new", {
-            _meta: opts.agent.sessionMeta,
-            additionalDirectories,
-            cwd: opts.cwd,
-            mcpServers: [],
-          });
+          const created = await agent.request("session/new", { ...scope, mcpServers: [] });
           return created.sessionId;
         };
         sessionId = resumedId ?? (await startFresh());

@@ -14,10 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TURBO_TELEMETRY_DISABLED: 1
+      # what the Turbo cache step saves, oldest entries out first: turbo never evicts unasked, and
+      # every cache of the repo's shares 10GB
+      TURBO_CACHE_MAX_SIZE: 1GB
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: pnpm/setup@v2
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
           runtime: node@24
           cache: true
@@ -33,15 +36,28 @@ jobs:
         run: rustup toolchain install
 
       - name: Desktop Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
+
+      # the newest run's turbo cache on this OS: a task whose inputs the commit left alone replays
+      # its last pass, but apps/cli's tests, which skip on the CLIs a machine has, always run
+      - name: Turbo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Typecheck
         run: pnpm typecheck
 
       - name: Lint
         run: pnpm lint
+
+      - name: Knip
+        run: pnpm knip
 
       - name: Format
         run: pnpm format
@@ -51,3 +67,67 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # The app ships only as a macOS arm64 .app, and only a Mac compiles the shell's own code (the
+  # Keychain, the login item, keeping awake), runs the seal and the gate suites, and boots the pack.
+  # Typecheck, lint, knip, format and build read no platform, so the ci job alone runs them.
+  test-macos:
+    runs-on: macos-latest
+    # a backstop: the shell's release build for the pack is minutes of it cold
+    timeout-minutes: 60
+    env:
+      TURBO_TELEMETRY_DISABLED: 1
+      TURBO_CACHE_MAX_SIZE: 1GB
+      # three cores and 7 GB: main's suites beside the shell's compile, four at once, push the
+      # timing-bound gate tests past their limits
+      TEST_CONCURRENCY: 2
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          runtime: node@24
+          cache: true
+
+      - name: Desktop Rust toolchain
+        working-directory: apps/desktop
+        run: rustup toolchain install
+
+      - name: Desktop Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Turbo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      # the gate suites drive the real CLIs through the app's adapters against a stand-in model on
+      # loopback, so none signs in or bills. Pinned by hand: a global install rides no lockfile, and
+      # a bump must pass the gates here. claude's and agent-browser's install scripts set their
+      # native binaries in place, and pnpm runs none it is not allowed
+      - name: Gate CLIs
+        run: |
+          pnpm add -g --allow-build=@anthropic-ai/claude-code --allow-build=agent-browser \
+            @anthropic-ai/claude-code@2.1.292 @openai/codex@0.153.4 agent-browser@0.37.0
+          agent-browser install
+
+      # each gate suite skips on a CLI that does not answer this, which would pass it unseen
+      - name: Gate CLIs answer
+        run: claude --version && codex --version && agent-browser --version
+
+      - name: Shell clippy
+        run: pnpm -F @repo/desktop typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Smoke the packaged app
+        env:
+          # ad-hoc: the runner's keychain holds no Developer ID
+          IDLEBIZ_PACK_UNSIGNED: 1
+        run: pnpm smoke:desktop

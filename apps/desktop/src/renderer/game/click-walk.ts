@@ -50,7 +50,7 @@ interface Route {
  */
 export class ClickWalk {
   private route: Route | null = null;
-  private marker?: Phaser.GameObjects.Graphics;
+  private marker?: Phaser.GameObjects.Graphics | undefined;
   private readonly scene: Phaser.Scene;
   private readonly grid: WalkGrid;
   private readonly walker: Walker;
