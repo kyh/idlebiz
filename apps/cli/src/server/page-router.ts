@@ -7,7 +7,6 @@
 import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
-import type { IntegrationNeed } from "@repo/domain/domain";
 import { agentDriver } from "./agents/agent-driver";
 import { generateCandidates, startLogin } from "./agents/onboarding";
 import { notingSeal } from "./agents/seal";
@@ -29,7 +28,6 @@ import { openProduct, openWorkspacePath, productStatus } from "./product";
 import { chatOptions } from "./prompts/chat-options";
 import type { createScheduler } from "./scheduler";
 import * as store from "./store/store";
-import { beginConnect, disconnectStripe, getStripeStatus } from "./stripe-connect";
 import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
 import {
   connectVercel,
@@ -43,8 +41,8 @@ export interface PageRouterDeps {
   scheduler: ReturnType<typeof createScheduler>;
   /** Deletes the save, then starts the app again. */
   resetGame: () => Promise<void>;
-  /** An integration that reads revenue is ready: read it now, and resume what waited on it. */
-  stripeReady: (...needs: IntegrationNeed[]) => void;
+  /** A Stripe key was saved: read revenue with it now, and resume what waited on it. */
+  stripeReady: () => void;
 }
 
 const os = implement(contract).use(async ({ next, path }) => {
@@ -171,8 +169,6 @@ export const createPageRouter = ({ resetGame, scheduler, stripeReady }: PageRout
       reset: os.save.reset.handler(() => resetGame()),
     },
     stripe: {
-      connect: os.stripe.connect.handler(() => beginConnect()),
-      disconnect: os.stripe.disconnect.handler(() => disconnectStripe()),
       keyStatus: os.stripe.keyStatus.handler(() => stripeKeyStatus()),
       removeKey: os.stripe.removeKey.handler(() => {
         removeStripeKey();
@@ -180,11 +176,8 @@ export const createPageRouter = ({ resetGame, scheduler, stripeReady }: PageRout
       }),
       saveKey: os.stripe.saveKey.handler(async ({ input }) => {
         await saveStripeKey(input.key);
-        stripeReady("stripe", "stripe-key");
+        stripeReady();
       }),
-      status: os.stripe.status.handler(() =>
-        store.getCompany() === null ? { state: "disconnected" } : getStripeStatus(),
-      ),
     },
     tasks: {
       answer: os.tasks.answer.handler(({ input }) =>

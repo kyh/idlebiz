@@ -1,13 +1,14 @@
 import { z } from "zod";
 import {
-  answering,
+  answeringPrintful,
   dollars,
   printfulDelete,
   printfulGet,
   printfulPost,
   usdCents,
 } from "./printful";
-import type { PrintfulAnswer, PrintfulCredential } from "./printful";
+import type { PrintfulCredential } from "./printful";
+import type { VendorAnswer } from "./lib/vendor-call";
 import type { JsonValue } from "@repo/domain/json";
 import type { PrintPlacement } from "./listing";
 import type { Recipient } from "./order";
@@ -111,37 +112,39 @@ export interface PrintfulOrders {
   lookup: (
     externalId: string,
     credential: PrintfulCredential,
-  ) => Promise<PrintfulAnswer<PrintfulOrder>>;
-  read: (id: number, credential: PrintfulCredential) => Promise<PrintfulAnswer<PrintfulOrder>>;
+  ) => Promise<VendorAnswer<PrintfulOrder>>;
+  read: (id: number, credential: PrintfulCredential) => Promise<VendorAnswer<PrintfulOrder>>;
   /** A draft, which charges nothing until confirmed. */
   create: (
     draft: DraftOrder,
     credential: PrintfulCredential,
-  ) => Promise<PrintfulAnswer<PrintfulOrder>>;
+  ) => Promise<VendorAnswer<PrintfulOrder>>;
   /** Submit a draft for fulfilment, which charges the founder's Printful billing method. */
-  confirm: (id: number, credential: PrintfulCredential) => Promise<PrintfulAnswer<PrintfulOrder>>;
+  confirm: (id: number, credential: PrintfulCredential) => Promise<VendorAnswer<PrintfulOrder>>;
   /** Delete a draft, which was never charged. */
-  discard: (id: number, credential: PrintfulCredential) => Promise<PrintfulAnswer<null>>;
+  discard: (id: number, credential: PrintfulCredential) => Promise<VendorAnswer<null>>;
 }
 
 export const printfulOrders: PrintfulOrders = {
   confirm: (id, credential) =>
-    answering("confirm", async () =>
+    answeringPrintful("confirm", async () =>
       orderOf(await printfulPost(`/v2/orders/${id}/confirmation`, credential, null)),
     ),
   create: (draft, credential) =>
-    answering("create", async () =>
+    answeringPrintful("create", async () =>
       orderOf(await printfulPost("/v2/orders", credential, draftBody(draft))),
     ),
   discard: (id, credential) =>
-    answering("discard", async () => {
+    answeringPrintful("discard", async () => {
       await printfulDelete(`/v2/orders/${id}`, credential);
       return null;
     }),
   lookup: (externalId, credential) =>
-    answering("lookup", async () =>
+    answeringPrintful("lookup", async () =>
       orderOf(await printfulGet(`/v2/orders/@${externalId}`, credential)),
     ),
   read: (id, credential) =>
-    answering("read", async () => orderOf(await printfulGet(`/v2/orders/${id}`, credential))),
+    answeringPrintful("read", async () =>
+      orderOf(await printfulGet(`/v2/orders/${id}`, credential)),
+    ),
 };

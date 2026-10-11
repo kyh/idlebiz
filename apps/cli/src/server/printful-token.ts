@@ -1,7 +1,12 @@
+import { rmSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
+import { atomicWrite, readJsonFile } from "./lib/fs";
 import { HttpError } from "./lib/http";
-import { printfulGet, printfulSays, printfulStore } from "./printful";
-import { PRINTFUL_STORE, PRINTFUL_TOKEN, deleteSecret, getSecret, setSecret } from "./secrets";
+import { ROOT_DIR } from "./paths";
+import { printfulGet, printfulSays } from "./printful";
+import type { PrintfulCredential } from "./printful";
+import { PRINTFUL_TOKEN, deleteSecret, getSecret, setSecret } from "./secrets";
 import { errorMessage } from "@repo/domain/errors";
 import type { PrintfulTokenStatus } from "@repo/domain/integrations";
 import { RefusalError } from "./refusal";
@@ -9,18 +14,41 @@ import { RefusalError } from "./refusal";
 // The founder's private token, from developers.printful.com/tokens: main prices listings and
 // places orders with it, and the renderer is told only which token and store are saved.
 
+/** The one store the token sells through: no secret, so it is kept beside secrets.json, never in it. */
+const STORE_PATH = path.join(ROOT_DIR, "printful-store.json");
+
 /** Printable ASCII with no space: anything else would fail in the Authorization header, and fetch's refusal quotes the token. */
 const PRIVATE_TOKEN = /^[!-~]{16,512}$/u;
 
+const StoreSchema = z.object({ id: z.number().int(), name: z.string() });
+type PrintfulStore = z.infer<typeof StoreSchema>;
+
 const ScopesSchema = z.object({ data: z.array(z.object({ value: z.string() })) });
 const StoresSchema = z.object({
-  data: z.array(z.object({ id: z.number().int(), name: z.string() })),
+  data: z.array(StoreSchema),
   paging: z.object({ total: z.number() }).optional(),
 });
 
+const savedStore = (): PrintfulStore | null => readJsonFile(STORE_PATH, StoreSchema);
+
+const keepStore = (store: PrintfulStore | null): void => {
+  if (store === null) {
+    rmSync(STORE_PATH, { force: true });
+  } else {
+    atomicWrite(STORE_PATH, `${JSON.stringify(store, null, 2)}\n`);
+  }
+};
+
+/** The token and its store, or null while either is missing: neither sells alone. */
+export const printfulCredential = (): PrintfulCredential | null => {
+  const token = getSecret(PRINTFUL_TOKEN);
+  const store = savedStore();
+  return token && store ? { storeId: store.id, token } : null;
+};
+
 export const printfulTokenStatus = (): PrintfulTokenStatus => {
   const token = getSecret(PRINTFUL_TOKEN);
-  const store = printfulStore();
+  const store = savedStore();
   return token && store
     ? { last4: token.slice(-4), state: "set", store: store.name }
     : { state: "unset" };
@@ -71,11 +99,20 @@ export const savePrintfulToken = async (token: string): Promise<void> => {
       `This token reaches ${count} Printful stores — make one for the single store IdleBiz sells through, such as a "Manual order platform / API" store.`,
     );
   }
-  setSecret(PRINTFUL_TOKEN, token);
-  setSecret(PRINTFUL_STORE, JSON.stringify(store));
+  // The store goes first and is put back as it was if the token can't be kept, so a failed
+  // write never leaves a token selling through the last token's store, or a store with none.
+  const before = savedStore();
+  keepStore(store);
+  try {
+    setSecret(PRINTFUL_TOKEN, token);
+  } catch (error) {
+    keepStore(before);
+    throw error;
+  }
 };
 
+/** The token goes first: a store left by a failure is one no token sells through, which reads as none. */
 export const removePrintfulToken = (): void => {
   deleteSecret(PRINTFUL_TOKEN);
-  deleteSecret(PRINTFUL_STORE);
+  keepStore(null);
 };

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
 import { report } from "../lib/report";
 import {
@@ -74,8 +75,8 @@ import { parseJson } from "@repo/domain/json";
 import { ListingSchema } from "../listing";
 import type { Listing } from "../listing";
 import { OrderSchema } from "../order";
-import { ChargeLinkSchema } from "../payment-link";
-import type { ChargeLink, CompanyLink, LinkState } from "../payment-link";
+import { ChargeLinkSchema } from "../link-record";
+import type { ChargeLink, CompanyLink, LinkState } from "../link-record";
 import type { Order, Sale } from "../order";
 import { RefusalError } from "../refusal";
 import { emptyDigest, foldDigest } from "./digest";
@@ -91,15 +92,18 @@ import type {
   LoadReport,
   LoadSkip,
   OpenTaskStatus,
+  OrderCard,
+  OrderCardSubject,
   Product,
   ProductDraft,
   Routine,
+  RunOrigin,
   ShipLine,
   Speaker,
   Task,
   TaskIn,
-  TaskOrigin,
   TaskPriority,
+  TaskProvenance,
   TaskState,
   TaskStatus,
   TeamMessage,
@@ -1048,46 +1052,48 @@ export const recordChargeLink = (link: ChargeLink): void => {
 export const paymentLinks = (): CompanyLink[] => {
   const { links, listings } = current();
   return [
-    ...listings.map(({ livemode, name, paymentLink, productId }) => ({
-      id: paymentLink.id,
-      livemode,
-      name,
-      print: true,
-      productId,
-      state: paymentLink.state,
-      url: paymentLink.url,
+    ...listings.map((listing): CompanyLink => ({
+      kind: "print",
+      link: {
+        ...listing.paymentLink,
+        livemode: listing.livemode,
+        name: listing.name,
+        productId: listing.productId,
+      },
+      listing,
     })),
-    ...links.map(({ id, livemode, name, productId, state, url }) => ({
-      id,
-      livemode,
-      name,
-      print: false,
-      productId,
-      state,
-      url,
-    })),
+    ...links.map((link): CompanyLink => ({ kind: "charge", link })),
   ];
 };
 
 /** What retiring a link's product did to it at Stripe. It happened, so the cache keeps it even when the save throws. */
-export const setLinkState = (id: string, state: LinkState): void => {
+export const setLinkState = (held: CompanyLink, state: LinkState): void => {
   const { links, listings } = current();
-  const listed = listings.findIndex((l) => l.paymentLink.id === id);
-  const listing = listings[listed];
-  if (listing !== undefined) {
-    const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
-    listings[listed] = next;
-    saveListing(next);
-    return;
+  switch (held.kind) {
+    case "charge": {
+      const at = links.findIndex((l) => l.id === held.link.id);
+      const link = links[at];
+      if (link === undefined) {
+        throw new Error(`no payment link ${held.link.id} is kept`);
+      }
+      const next = { ...link, state };
+      links[at] = next;
+      saveChargeLink(next);
+      break;
+    }
+    case "print": {
+      const at = listings.findIndex((l) => l.id === held.listing.id);
+      const listing = listings[at];
+      if (listing === undefined) {
+        throw new Error(`no listing ${held.listing.id} is kept`);
+      }
+      const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
+      listings[at] = next;
+      saveListing(next);
+      break;
+    }
+    // no default
   }
-  const at = links.findIndex((l) => l.id === id);
-  const link = links[at];
-  if (link === undefined) {
-    throw new Error(`no payment link ${id} is kept`);
-  }
-  const next = { ...link, state };
-  links[at] = next;
-  saveChargeLink(next);
 };
 
 // ---- orders -----------------------------------------------------------------
@@ -1460,7 +1466,6 @@ export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
 interface NewTask {
   productId?: string | null;
   betId?: string | null;
-  origin: TaskOrigin;
   title: string;
   description?: string | null;
   priority?: TaskPriority;
@@ -1470,6 +1475,7 @@ interface NewTask {
 /** `answers` is the ask a continuation carries the founder's answer to, which only an answer sets. */
 const addTask = (
   t: NewTask,
+  provenance: TaskProvenance,
   state: TaskIn<"todo" | "blocked">["state"],
   answers: string | null = null,
 ): Task => {
@@ -1489,10 +1495,10 @@ const addTask = (
     createdAt: now,
     description: t.description ?? null,
     id,
-    origin: t.origin,
     priority: t.priority ?? "medium",
     productId: t.productId ?? null,
     title: t.title,
+    ...provenance,
     ...entering(state, now),
   };
   saveTask(task);
@@ -1500,7 +1506,8 @@ const addTask = (
   return task;
 };
 
-export const createTask = (brief: NewTask): Task => addTask(brief, { kind: "todo" });
+export const createTask = ({ origin, ...brief }: NewTask & { origin: RunOrigin }): Task =>
+  addTask(brief, { origin }, { kind: "todo" });
 
 /** An open task by id. Shipped work is history, not something to act on. */
 export const getTask = (id: string): Task | null =>
@@ -1766,18 +1773,18 @@ export const parkTask = (
  */
 export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task | null => {
   const t = getTask(taskId);
-  if (!t || t.state.kind !== "blocked" || !t.assigneeId) {
+  if (!t || t.origin === "order" || t.state.kind !== "blocked" || !t.assigneeId) {
     return null;
   }
   const next = addTask(
     {
       betId: t.betId,
-      origin: t.origin,
       productId: t.productId,
       ...continuationBrief(t, t.state.ask, answer),
       assigneeId: t.assigneeId,
       priority: "high",
     },
+    { origin: t.origin },
     { kind: "todo" },
     taskId,
   );
@@ -1787,28 +1794,35 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
 
 /**
  * Main's card to the founder about an order, in the Inbox beside the team's asks. Null when one
- * with the same title still waits, so a pump that finds the same trouble again raises no second.
+ * about the same subject still waits, however it is titled, so a pump that finds the same
+ * trouble again raises no second.
  */
-export const raiseOrderCard = (title: string, ask: ActionAsk): Task | null => {
+export const raiseOrderCard = (
+  subject: OrderCardSubject,
+  title: string,
+  ask: ActionAsk,
+): Task | null => {
   const waiting = current().tasks.some(
-    (t) => t.origin === "order" && t.title === title && t.state.kind === "blocked",
+    (t) =>
+      t.origin === "order" && t.state.kind === "blocked" && isDeepStrictEqual(t.subject, subject),
   );
   return waiting
     ? null
     : addTask(
-        { description: null, origin: "order", priority: "high", title },
+        { description: null, priority: "high", title },
+        { origin: "order", subject },
         { ask, kind: "blocked", summary: null },
       );
 };
 
 /** The founder settled an order card: history, which no run carries on. Null for any other task. */
-export const closeOrderCard = (taskId: string): Task | null => {
+export const closeOrderCard = (taskId: string): OrderCard | null => {
   const t = getTask(taskId);
   if (t?.origin !== "order" || t.state.kind !== "blocked") {
     return null;
   }
-  const closed = recordTask(taskId, entering({ kind: "settled" }, Date.now()));
-  shelveClosed(closed);
+  const closed: OrderCard = { ...t, ...entering({ kind: "settled" }, Date.now()) };
+  shelveClosed(recordTask(taskId, closed));
   return closed;
 };
 

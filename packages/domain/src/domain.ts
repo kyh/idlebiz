@@ -19,21 +19,15 @@ export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
+/** What an integration ask waits on; `stripe` is the founder's own key, which charges and reads revenue. */
 export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
-
-/**
- * What an integration ask waits on: a kind an agent may request, or a Stripe key to charge
- * with, which only a saved key gives — a Stripe connection only reads revenue.
- */
-export const INTEGRATION_NEEDS = [...INTEGRATION_KINDS, "stripe-key"] as const;
-export type IntegrationNeed = (typeof INTEGRATION_NEEDS)[number];
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
   printful: "Printful",
   stripe: "Stripe",
-  "stripe-key": "Stripe key",
   vercel: "Vercel",
-} satisfies Record<IntegrationNeed, string>;
+} satisfies Record<IntegrationKind, string>;
 
 /** A step only a human can take: `action` names it, `draft` is text to paste, if any. */
 export const ActionAskSchema = z.object({
@@ -49,7 +43,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   z.object({ question: z.string(), type: z.literal("question") }),
   ActionAskSchema,
   z.object({
-    integration: z.enum(INTEGRATION_NEEDS),
+    integration: z.enum(INTEGRATION_KINDS),
     /**
      * The product whose Vercel project answers a Vercel ask, which a run may name other than its
      * own; null for the company's own keys (Stripe, Printful) and a Vercel ask any product answers.
@@ -139,6 +133,25 @@ export const TASK_ORIGINS = [
   "order",
 ] as const;
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+/** Why work a run carries exists: every origin but an order card's. */
+export type RunOrigin = Exclude<TaskOrigin, "order">;
+
+/**
+ * What an order card is about, which is what tells one card from another: a paid order and what
+ * stopped it, a retired product's link Stripe would not switch off, a retired product's links
+ * older builds never recorded, or what keeps the order pump from every order at once. Its title
+ * is copy rendered from this, which nothing reads back.
+ */
+export const OrderCardSubjectSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("order"), orderId: z.string().min(1), trouble: z.string().min(1) }),
+  z.object({ kind: z.literal("link-left-on"), linkId: z.string().min(1) }),
+  z.object({ kind: z.literal("unrecorded-links"), productId: z.string().min(1) }),
+  z.object({
+    kind: z.literal("pump"),
+    reason: z.enum(["no-printful-token", "no-live-key", "unreadable-checkouts", "missed"]),
+  }),
+]);
+export type OrderCardSubject = z.infer<typeof OrderCardSubjectSchema>;
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 export type EmployeeStatus = "idle" | "working";
 
@@ -446,14 +459,20 @@ export const taskIn =
   (t: Task): t is TaskIn<K> =>
     t.state.kind === kind;
 
-export interface Task {
+/** Why a task exists; a continuation inherits it. An order card also names what it is about. */
+export type TaskProvenance = { origin: RunOrigin } | { origin: "order"; subject: OrderCardSubject };
+
+export type Task = TaskFields & TaskProvenance;
+
+/** Main's card to the founder about paid orders, which the founder settles and no run carries on. */
+export type OrderCard = Extract<Task, { origin: "order" }>;
+
+interface TaskFields {
   id: string;
   /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
   betId: string | null;
-  /** Why this task exists; a continuation inherits it. */
-  origin: TaskOrigin;
   title: string;
   description: string | null;
   state: TaskState;

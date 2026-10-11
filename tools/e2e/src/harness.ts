@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
 import type { Browser, BrowserContext, JSHandle, Page } from "@playwright/test";
 import { startDevHost } from "idlebiz/dev-host";
-import type { DevHost } from "idlebiz/dev-host";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
 import type { ContractRouterClient } from "@orpc/contract";
@@ -24,8 +23,6 @@ declare global {
 
 interface Launched {
   page: Page;
-  /** What main asked the system to open, oldest first: the dev host opens nothing. */
-  opened: DevHost["opened"];
   /** Closes the page and quits main as the app's Quit does; the next launch starts fresh. */
   close: () => Promise<void>;
 }
@@ -128,7 +125,7 @@ const start = async (
     context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(await host.handoff());
-    return { close, opened: host.opened, page };
+    return { close, page };
   } catch (error) {
     // a launch that failed part way leaks nothing it made: the context, main
     await close();

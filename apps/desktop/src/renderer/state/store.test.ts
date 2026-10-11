@@ -106,7 +106,7 @@ interface FakeApi {
   employees: Pick<Api["employees"], "list">;
   products: Pick<Api["products"], "list">;
   save: Pick<Api["save"], "report">;
-  stripe: Pick<Api["stripe"], "keyStatus" | "status">;
+  stripe: Pick<Api["stripe"], "keyStatus">;
   tasks: Pick<Api["tasks"], "list">;
   team: Pick<Api["team"], "messages">;
 }
@@ -135,7 +135,6 @@ const fakeMain = (late: readonly Late[]) => {
   const listeners: Listeners = {
     activity: new Set(),
     auth: new Set(),
-    stripe: new Set(),
   };
   const listen: Listen = (event, listener) => {
     listeners[event].add(listener);
@@ -162,10 +161,7 @@ const fakeMain = (late: readonly Late[]) => {
     employees: { list: () => answerOf("employees.list", main.employees) },
     products: { list: () => Promise.resolve([]) },
     save: { report: () => Promise.resolve({ skipped: [] }) },
-    stripe: {
-      keyStatus: () => Promise.resolve({ state: "unset" }),
-      status: () => Promise.resolve({ state: "disconnected" }),
-    },
+    stripe: { keyStatus: () => Promise.resolve({ state: "unset" }) },
     tasks: { list: () => Promise.resolve([]) },
     team: { messages: ({ limit = 30 }) => Promise.resolve(main.room.slice(-limit)) },
   };

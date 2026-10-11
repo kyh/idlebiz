@@ -1,38 +1,39 @@
 import { expect, it } from "vitest";
-import type { StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
+import type { StripeKeyStatus } from "@repo/domain/integrations";
 import { connectAskCopy } from "./connect-ask";
 
-const disconnected: StripeStatus = { state: "disconnected" };
 const noKey: StripeKeyStatus = { state: "unset" };
 const testKey: StripeKeyStatus = { last4: "4242", livemode: false, state: "set" };
 const liveKey: StripeKeyStatus = { last4: "4242", livemode: true, state: "set" };
 
-it("says a connection resumes the task while nothing in test mode would refuse it", () => {
-  expect(connectAskCopy("stripe", liveKey, disconnected)).toEqual({
-    button: "Connect Stripe",
+it("says a connection resumes the task, and a Stripe ask once a key is saved", () => {
+  expect(connectAskCopy("vercel", testKey)).toEqual({
+    button: "Connect Vercel",
     resumes: "Their task resumes automatically once connected.",
   });
-  expect(connectAskCopy("vercel", testKey, disconnected).button).toBe("Connect Vercel");
-  expect(connectAskCopy("stripe-key", noKey, disconnected)).toEqual({
+  expect(connectAskCopy("stripe", noKey)).toEqual({
     button: "Add Stripe key",
     resumes: "Their task resumes automatically once the key is saved.",
   });
-});
-
-it("asks for a live key, not a connection, while the charging key is a test one", () => {
-  const live: StripeStatus = { accountId: "acct_1", livemode: true, state: "connected" };
-  expect(connectAskCopy("stripe", testKey, live)).toEqual({
+  expect(connectAskCopy("stripe", liveKey)).toEqual({
     button: "Replace Stripe key",
-    resumes:
-      "Stripe is in test mode, where no charge counts: their task resumes once a live key replaces the test one.",
+    resumes: "Their task resumes automatically once a key with what it needs is saved.",
   });
 });
 
-it("asks for a live connection while Stripe is connected in test mode", () => {
-  const test: StripeStatus = { accountId: "acct_1", livemode: false, state: "connected" };
-  expect(connectAskCopy("stripe", liveKey, test)).toEqual({
-    button: "Reconnect Stripe",
+it("asks for a live key while the saved one is a test one, refused or not", () => {
+  const copy = {
+    button: "Replace Stripe key",
     resumes:
-      "Stripe is connected in test mode, where no charge counts: their task resumes once it is connected live.",
+      "Stripe is in test mode, where no charge counts: their task resumes once a live key replaces the test one.",
+  };
+  expect(connectAskCopy("stripe", testKey)).toEqual(copy);
+  expect(connectAskCopy("stripe", { ...testKey, state: "refused" })).toEqual(copy);
+});
+
+it("says Stripe turned away a live key it refused", () => {
+  expect(connectAskCopy("stripe", { ...liveKey, state: "refused" })).toEqual({
+    button: "Replace Stripe key",
+    resumes: "Stripe turned the saved key away: their task resumes once a key it takes is saved.",
   });
 });

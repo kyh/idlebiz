@@ -7,7 +7,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { MAX_TASK_ATTEMPTS } from "@repo/domain/domain";
-import type { BlockedAsk, Budget, BusinessTypeId, Task, TaskOrigin } from "@repo/domain/domain";
+import type { BlockedAsk, Budget, BusinessTypeId, RunOrigin, Task } from "@repo/domain/domain";
 import { RefusalError } from "./refusal";
 import type { RunResult, RunTools } from "./agents/agent-driver";
 import { keepAwake } from "./keep-awake";
@@ -19,7 +19,6 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { COMPANY_DIR, TASKS_DIR, betFile, routineFile } = await import("./paths");
-const { writeMetricsConfig } = await import("./store/metrics-config");
 const { activityEvents } = await import("./activity");
 const { createScheduler, loggedToolName } = await import("./scheduler");
 const { setAutopilot } = await import("./company-actions");
@@ -797,7 +796,7 @@ const openBet = (budgetUsd: number) => {
 };
 
 /** Leave the lead (Priya, the first hire) waiting on the founder over a task of this origin. */
-const blockOnLead = (origin: TaskOrigin) => {
+const blockOnLead = (origin: RunOrigin) => {
   const task = store.createTask({ assigneeId: "priya", origin, title: "Ask first" });
   store.claimTask(task.id, "priya");
   store.lockTaskForRun(task.id, "run-1");
@@ -814,7 +813,7 @@ const proposing = () =>
   store.openTasksFor("priya").filter((t) => t.origin === "propose" && t.state.kind === "running");
 
 describe("asking the lead for the next bet", () => {
-  it.each<TaskOrigin>(["routine", "founder", "delegated"])(
+  it.each<RunOrigin>(["routine", "founder", "delegated"])(
     "goes on while the lead's %s ask waits on the founder",
     (origin) => {
       found();
@@ -1136,40 +1135,27 @@ const bindFor = (productId: string | null): BlockedAsk => ({
 
 describe("an integration the founder connects", () => {
   const KEY: BlockedAsk = {
-    integration: "stripe-key",
+    integration: "stripe",
     productId: null,
     reason: "to sell a plan through a payment link",
     type: "integration",
   };
-  const READ: BlockedAsk = {
-    integration: "stripe",
-    productId: null,
-    reason: "to count revenue",
-    type: "integration",
-  };
 
-  it("resumes no ask for a Stripe key on a read-only Stripe connection", async () => {
+  it("leaves a Stripe ask waiting while the key saved is in test mode", async () => {
     const { drain, task } = await blockedOn(KEY);
-    drain.resumeIntegrationAsks("stripe");
-    expect(kindOf(task)).toBe("blocked");
-  });
-
-  it("leaves an ask to count revenue waiting while Stripe stays in test mode", async () => {
-    const { drain, task } = await blockedOn(READ);
     writeFileSync(
       path.join(root, "secrets.json"),
-      JSON.stringify({ STRIPE_CONNECT_TOKEN: "sk_live_connected", STRIPE_SECRET_KEY: "sk_test_x" }),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sk_test_x" }),
     );
-    writeMetricsConfig({
-      stripeAccount: { accountId: "acct_1", connectedAt: 0, livemode: true },
-    });
     drain.resumeIntegrationAsks("stripe");
     expect(kindOf(task)).toBe("blocked");
   });
 
-  it.each([KEY, READ])("resumes %j once a Stripe key is saved", async (ask) => {
-    const { drain, task } = await blockedOn(ask);
-    drain.resumeIntegrationAsks("stripe", "stripe-key");
+  it("resumes a Stripe ask once a live key is saved, and no other integration's", async () => {
+    const { drain, task } = await blockedOn(KEY);
+    drain.resumeIntegrationAsks("printful");
+    expect(kindOf(task)).toBe("blocked");
+    drain.resumeIntegrationAsks("stripe");
     expect(kindOf(task)).not.toBe("blocked");
   });
 
@@ -1260,12 +1246,16 @@ describe("an action only the founder can take", () => {
     const { drain, task } = await blockedOn(POST);
     const key = "sk_live_founders_own_key";
     writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
-    const card = store.raiseOrderCard("Order 1: deliver it", {
-      action: "Send Ada the memo",
-      draft: null,
-      instructions: "…",
-      type: "action",
-    });
+    const card = store.raiseOrderCard(
+      { kind: "order", orderId: "1", trouble: "deliver it" },
+      "Order 1: deliver it",
+      {
+        action: "Send Ada the memo",
+        draft: null,
+        instructions: "…",
+        type: "action",
+      },
+    );
 
     for (const send of [
       () => drain.resolveAction(task.id, { kind: "done", note: `use ${key}` }),
@@ -1308,12 +1298,11 @@ describe("an action only the founder can take", () => {
   it("settles an order card with no run, telling the room what the founder did", () => {
     found();
     const drain = createScheduler(scripted().driver, asleep);
-    const card = store.raiseOrderCard("Order 1: Printful marked it failed", {
-      action: "Check Ada's order",
-      draft: null,
-      instructions: "…",
-      type: "action",
-    });
+    const card = store.raiseOrderCard(
+      { kind: "order", orderId: "1", trouble: "Printful marked it failed" },
+      "Order 1: Printful marked it failed",
+      { action: "Check Ada's order", draft: null, instructions: "…", type: "action" },
+    );
 
     const settled = drain.resolveAction(card?.id ?? "", { kind: "cant", reason: "on holiday" });
 

@@ -46,7 +46,7 @@ export const COMPANY_FILE = path.join(COMPANY_DIR, "COMPANY.md");
 /** What teammates share across products, and the working directory of work no product owns. */
 export const SHARED_DIR = path.join(COMPANY_DIR, "shared");
 /** Running state main keeps for itself: small JSON written as things happen, safe to delete.
- *  What the founder configured (metrics.json, approvals.json) is not state and stays beside COMPANY.md. */
+ *  What the founder configured (approvals.json) is not state and stays beside COMPANY.md. */
 const STATE_DIR = path.join(COMPANY_DIR, "state");
 /** The latest ship summaries, for the brief's "recently shipped" lines. */
 export const RECENT_SHIPS_FILE = path.join(STATE_DIR, "recent-ships.json");

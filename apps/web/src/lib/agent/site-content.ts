@@ -184,7 +184,7 @@ export const contactPage: ProsePage = {
       `${siteConfig.name} is made by one person, ${siteConfig.author.name}. There is no support desk or contact form — email and GitHub are the two channels, and both reach the same inbox.`,
     ),
     p(
-      "Use email for anything private: questions about the Stripe Connect integration, a request to disconnect or delete data, press, or partnership. Expect a reply within a few days.",
+      "Use email for anything private: questions about how the app handles your data, a request to delete data, press, or partnership. Expect a reply within a few days.",
     ),
     p(
       "For bugs — an employee stuck in a loop, an office that will not load, a save that fails to migrate, a release that will not open — open a GitHub issue. Include your macOS version, which CLI you use (claude or codex) and the relevant lines from ~/Library/Logs/IdleBiz/main.log. Public issues help the next person who hits the same thing.",
@@ -219,7 +219,7 @@ export const contactPage: ProsePage = {
 };
 
 /** The date both legal documents took effect, as each states it. */
-export const legalRevisedOn = "October 3, 2026";
+export const legalRevisedOn = "October 10, 2026";
 
 /** The file that holds the legal text, whose history is each document's previous versions. */
 export const legalSourcePath = "apps/web/src/lib/agent/site-content.ts";
@@ -257,16 +257,6 @@ const privacySections: Section[] = [
       ),
     ),
     p(
-      strong("Third-party sources."),
-      " We may combine personal information we receive from you with personal information falling within one of the categories identified above that we obtain from other sources, such as:",
-    ),
-    ul(
-      li(
-        strong("Third-party services"),
-        ", such as Stripe, that you link to the Service. If you connect your Stripe account to the desktop app, this data includes a read-only access token for that account, its Stripe account ID and whether it is in live mode, made available to us based on what you authorize on Stripe. Our website encrypts them to a key that only your running app holds, hands them back to the app, and keeps no copy. When you disconnect, or reset everything, the app sends that token and your Stripe account ID back to our website once; the website uses the token to ask Stripe which account it belongs to, reads only the account ID from Stripe's answer, and, if it matches, asks Stripe to revoke the grant.",
-      ),
-    ),
-    p(
       strong("Automatic data collection."),
       " We and our service providers may automatically log information about you, your computer or mobile device, and your interaction over time with the Service, our communications and other online services, such as:",
     ),
@@ -283,7 +273,7 @@ const privacySections: Section[] = [
     ),
     p(
       strong("Information the desktop app keeps on your Mac."),
-      " The desktop app runs on your Mac and sends nothing about you or your company to us beyond the Stripe Connect exchange described above. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter, and the Stripe Connect token, are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. We do not receive any of this information; the services the app sends it to at your direction are described in ",
+      " The desktop app runs on your Mac and sends us nothing about you or your company. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. We do not receive any of this information; the services the app sends it to at your direction are described in ",
       link(SHARE, anchor(SHARE)),
       ".",
     ),
@@ -311,7 +301,7 @@ const privacySections: Section[] = [
       ),
     ),
     p(
-      "We do not use advertising or social media cookies, pixels or web beacons. The automatic data collection described above comes from the request logs our hosting provider keeps, not from anything stored in your browser. Sites our website sends you to, such as GitHub for the download and Stripe when you connect your account, set their own cookies under their own privacy policies.",
+      "We do not use advertising or social media cookies, pixels or web beacons. The automatic data collection described above comes from the request logs our hosting provider keeps, not from anything stored in your browser. Sites our website sends you to, such as GitHub for the download, set their own cookies under their own privacy policies.",
     ),
     p(
       strong('Chat and other artificial intelligence ("AI") technologies'),
@@ -330,12 +320,8 @@ const privacySections: Section[] = [
     ),
     p(strong("Service delivery and operations."), " We may use your personal information to:"),
     ul(
-      li(
-        "provide the Service, including completing the connection between the desktop app and your Stripe account and, when you disconnect, revoking it;",
-      ),
-      li(
-        "enable security features of the Service, such as checking that a request to revoke a Stripe connection comes from the holder of that connection's token;",
-      ),
+      li("provide and operate the Service, including the website and the desktop app's download;"),
+      li("enable security features of the Service;"),
       li(
         "communicate with you about the Service, including by sending Service-related announcements, updates, security alerts, and support and administrative messages; and",
       ),
@@ -382,9 +368,6 @@ const privacySections: Section[] = [
     ),
     p("Specifically:"),
     ul(
-      li(
-        "our website never stores the Stripe access token or Stripe account ID it handles: it holds them only while it handles the request that exchanges or revokes them;",
-      ),
       li("our hosting provider's request logs are short-lived, kept on its own schedule; and"),
       li(
         "what the desktop app keeps stays on your Mac until you delete it, and we never receive it (see ",
@@ -430,12 +413,6 @@ const privacySections: Section[] = [
       "Each of these services handles that information under its own privacy policy and your settings with it.",
     ),
     p(
-      strong("Linked third-party services."),
-      " If you link the desktop app to your Stripe account, we share your Stripe account ID and access token with Stripe to complete that link and, when you disconnect, to confirm that it is yours and revoke it. Stripe's use of the shared information will be governed by its privacy policy, ",
-      link("https://stripe.com/privacy", "https://stripe.com/privacy"),
-      ", and the settings associated with your Stripe account.",
-    ),
-    p(
       strong("Professional advisors."),
       " Professional advisors, such as lawyers, auditors, bankers and insurers, in the course of the professional services that they render to us.",
     ),
@@ -461,7 +438,7 @@ const privacySections: Section[] = [
     ),
     p(
       strong("Cookies and other technologies."),
-      " Our website sets no cookies and stores nothing in your browser, so there is nothing to turn off on our side. Most browsers let you remove or reject cookies: to do this, follow the instructions in your browser settings. Doing so does not affect our website, but it can stop other sites from working, such as Stripe's sign-in when you connect your account.",
+      " Our website sets no cookies and stores nothing in your browser, so there is nothing to turn off on our side. Most browsers let you remove or reject cookies: to do this, follow the instructions in your browser settings. Doing so does not affect our website, but it can stop other sites from working.",
     ),
     p(
       strong("Do Not Track."),
@@ -472,12 +449,8 @@ const privacySections: Section[] = [
       " We need to collect personal information to provide certain services. If you do not provide the information we identify as required or mandatory, we may not be able to provide those services.",
     ),
     p(
-      strong("Linked third-party platforms."),
-      " If you connect the desktop app to your Stripe account, you can end that connection at any time: Disconnect it in the app's Budget panel, which revokes it at Stripe, or remove IdleBiz under Installed apps in your Stripe Dashboard. If you revoke our ability to access information from Stripe, that choice will not apply to information that we have already received from it, of which our website keeps none.",
-    ),
-    p(
       strong("Delete your content."),
-      " Everything the desktop app keeps is on your Mac, and you can delete it yourself at any time. Reset everything, in the app's Settings, revokes the Stripe connection and switches off your company's live payment links at Stripe, then deletes ~/.idlebiz, with every company and stored key. Deleting the ~/.idlebiz folder yourself removes the same data but leaves the Stripe connection and any live payment links in place, so disconnect and switch those off first. To remove what the CLIs kept of the runs, delete the runs' transcripts under ~/.claude/projects and ~/.codex/sessions; the app's logs are in ~/Library/Logs/IdleBiz. What the app made in your Vercel, Stripe and Printful accounts, such as deployments, payment links and print orders, stays there until you remove it in each service. To ask us to delete the messages you have sent us, email ",
+      " Everything the desktop app keeps is on your Mac, and you can delete it yourself at any time. Reset everything, in the app's Settings, switches off your company's live payment links at Stripe, then deletes ~/.idlebiz, with every company and stored key. Deleting the ~/.idlebiz folder yourself removes the same data but leaves any live payment links in place, so switch those off first. To remove what the CLIs kept of the runs, delete the runs' transcripts under ~/.claude/projects and ~/.codex/sessions; the app's logs are in ~/Library/Logs/IdleBiz. What the app made in your Vercel, Stripe and Printful accounts, such as deployments, payment links and print orders, stays there until you remove it in each service. To ask us to delete the messages you have sent us, email ",
       emailUs,
       ".",
     ),
@@ -491,7 +464,7 @@ const privacySections: Section[] = [
   section(
     "Security",
     p(
-      "We employ technical and organizational safeguards designed to protect the personal information we collect, and rely on our service providers for the physical security of the systems they run for us. For example, our website never stores the Stripe access token it handles, and passes it to the desktop app only encrypted to a key the app holds. However, security risk is inherent in all internet and information technologies and we cannot guarantee the security of your personal information.",
+      "We employ technical and organizational safeguards designed to protect the personal information we collect, and rely on our service providers for the physical security of the systems they run for us. For example, the desktop app sends us nothing, and our website stores nothing in your browser. However, security risk is inherent in all internet and information technologies and we cannot guarantee the security of your personal information.",
     ),
   ),
   section(
@@ -606,7 +579,7 @@ const privacySections: Section[] = [
     ),
     p(
       strong("Sensitive Personal Information."),
-      " While we process certain categories of Sensitive Personal Information as described in this Privacy Policy, such as the read-only access token for a Stripe account you connect to the desktop app, we do not process Sensitive Personal Information for the purpose of inferring characteristics about consumers under the CCPA.",
+      " We do not collect Sensitive Personal Information. The desktop app sends us nothing, and keeps the keys you enter in it on your Mac, sending each only to the service it belongs to.",
     ),
     p(
       strong("Nondiscrimination."),
@@ -676,13 +649,6 @@ const privacySections: Section[] = [
           "Identifiers; California Customer Records",
           "Service delivery and operations; Compliance and protection",
           "Service providers; Professional advisors; Authorities and others; Business transferees",
-          "None",
-        ],
-        [
-          "Data from third-party services (the access token and account ID of a Stripe account you connect)",
-          "Identifiers; Sensitive personal information (account credentials)",
-          "Service delivery and operations",
-          "Service providers; Linked third-party services (Stripe)",
           "None",
         ],
         [
@@ -772,12 +738,12 @@ const privacySections: Section[] = [
       [
         [
           "Service delivery and operations",
-          "Contact data; Communications data; Data from third-party services; Device data",
+          "Contact data; Communications data; Device data",
           "Contractual Necessity",
         ],
         [
           "Security",
-          "Data from third-party services; Device data",
+          "Device data",
           "Compliance with Law. Legitimate Interests. We have a legitimate interest in ensuring the ongoing security and proper operation of our Service and associated IT services, systems, and networks.",
         ],
         [

@@ -17,7 +17,7 @@ import {
 import { stripeInTestMode } from "./metrics";
 import { metricsPulse } from "./metrics-pulse";
 import { deployToVercel } from "./deploy";
-import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./payment-links";
+import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./stripe-links";
 import { printListing } from "./print-listing";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";
@@ -53,7 +53,8 @@ import type {
   Company,
   Employee,
   IntegrationAsk,
-  IntegrationNeed,
+  IntegrationKind,
+  RunOrigin,
   Task,
   TaskStatus,
 } from "@repo/domain/domain";
@@ -386,7 +387,8 @@ class Scheduler {
   private brief(
     emp: Employee,
     brief: TaskBrief,
-    filed: Pick<Task, "origin" | "productId"> & Partial<Pick<Task, "betId" | "priority">>,
+    filed: { origin: RunOrigin } & Pick<Task, "productId"> &
+      Partial<Pick<Task, "betId" | "priority">>,
   ): Task {
     const task = store.createTask({ ...filed, ...brief, assigneeId: emp.id });
     this.queue(task.id, emp.id);
@@ -547,14 +549,14 @@ class Scheduler {
     return this.assign(continuation.id, continuation.assigneeId);
   }
 
-  /** Resume every ask waiting on one of `needs`, which the founder has just connected. */
-  resumeIntegrationAsks(...needs: IntegrationNeed[]): void {
-    // A test-mode key counts no money whatever else is connected: a run resumed on it for
-    // revenue finds the same test mode and asks again.
-    const countsNoMoney = store.getCompany() !== null && stripeInTestMode();
-    this.resumeAsks(
-      (ask) => needs.includes(ask.integration) && !(ask.integration === "stripe" && countsNoMoney),
-    );
+  /** Resume every ask waiting on `kind`, which the founder has just connected. */
+  resumeIntegrationAsks(kind: Exclude<IntegrationKind, "vercel">): void {
+    // A test-mode key counts no money: a run resumed on it for revenue finds the same test mode
+    // and asks again.
+    if (kind === "stripe" && stripeInTestMode()) {
+      return;
+    }
+    this.resumeAsks((ask) => ask.integration === kind);
   }
 
   /**

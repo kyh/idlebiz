@@ -16,13 +16,13 @@ import {
   switchOffRetiredLinks,
 } from "./company-actions";
 import { measureRefusal } from "./metrics";
-import { CHECKOUT_SESSION_PARAM } from "./payment-links";
-import type { PaymentLinker, StripeAccess } from "./payment-links";
+import { CHECKOUT_SESSION_PARAM } from "./stripe-links";
+import type { PaymentLinker, StripeAccess } from "./stripe-links";
 import { STRIPE_FEE_LABEL, priceFloorCents } from "./print-listing";
 import type { PrintListing } from "./print-listing";
-import { printfulCredential } from "./printful";
+import { printfulCredential } from "./printful-token";
 import type { CatalogProduct, PrintQuote, PrintfulCredential, QuoteRequest } from "./printful";
-import { STRIPE_SECRET_KEY, getSecret, heldKeyIn, heldKeys } from "./secrets";
+import { STRIPE_SECRET_KEY, VERCEL_TOKEN, getSecret, heldKeyIn, heldKeys } from "./secrets";
 import { holdsStripeSecretKey, isTestKey } from "./stripe-api";
 import type { productionHosts, validateToken } from "./vercel";
 import { keepEnvValue, serverOnlyValueIn, teamSetEnv, unshippableEnvValues } from "./vercel-env";
@@ -41,7 +41,7 @@ import type {
   BlockedAsk,
   Company,
   Employee,
-  IntegrationNeed,
+  IntegrationKind,
   Product,
   TaskOrigin,
   VercelBinding,
@@ -55,7 +55,7 @@ import type { JsonValue } from "@repo/domain/json";
 import { CATALOG_PAGE } from "./listing";
 import type { ListedPlacement, ListingVariant, PrintPlacement } from "./listing";
 import type { Order } from "./order";
-import type { CompanyLink, LinkState } from "./payment-link";
+import type { LinkCore, LinkState } from "./link-record";
 import { TOOL_SPECS } from "./tool-specs";
 import type { ToolName, ToolOutcome, ToolSpec } from "./tool-specs";
 
@@ -205,8 +205,11 @@ const revenueBetRefusal = (bet: string, product: Product): string | null => {
 const TEST_MODE =
   " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.";
 
+const UNRECORDED_LINK =
+  "Stripe may have made the payment link: it took the create but answered in a shape IdleBiz does not read, so IdleBiz recorded no link and would never switch one off. Ask the founder to look under Payment Links in their Stripe Dashboard and switch off any it made, rather than sign off again: for a day Stripe answers the same request the same way.";
+
 const NO_STRIPE_KEY =
-  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. A Stripe connection only reads revenue; it cannot create payments. Continue with what you can — this task resumes automatically once the key is saved.";
+  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the key is saved.";
 
 const NO_PRINTFUL_TOKEN =
   "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.";
@@ -245,7 +248,7 @@ const printFileUrls = (placements: readonly PrintPlacement[]): PrintPlacement[] 
 /** Ask the founder for an integration, holding the call with what the agent should read. */
 const needIntegration = (
   ctx: RunContext,
-  integration: Exclude<IntegrationNeed, "vercel">,
+  integration: Exclude<IntegrationKind, "vercel">,
   reason: string,
   sent: string,
   why: string,
@@ -276,7 +279,7 @@ const sellingKeys = (
   price: string,
 ): SellingKeys => {
   const vercel =
-    getSecret("VERCEL_TOKEN") ??
+    getSecret(VERCEL_TOKEN) ??
     needVercel(
       ctx,
       product.id,
@@ -288,7 +291,7 @@ const sellingKeys = (
     getSecret(STRIPE_SECRET_KEY) ??
     needIntegration(
       ctx,
-      "stripe-key",
+      "stripe",
       `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
       NO_STRIPE_KEY,
       "IdleBiz has no Stripe key to charge with.",
@@ -433,7 +436,7 @@ const afterPaymentPage = async (
     );
   }
   const token =
-    getSecret("VERCEL_TOKEN") ??
+    getSecret(VERCEL_TOKEN) ??
     needVercel(
       ctx,
       product.id,
@@ -549,7 +552,7 @@ const DELIVERY_GRANT: StripeGrant = {
 const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, said: string): never =>
   needIntegration(
     ctx,
-    "stripe-key",
+    "stripe",
     `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
     `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
     `Stripe won't let IdleBiz's key ${grant.can}.`,
@@ -674,7 +677,7 @@ const linkStanding = (state: LinkState, retired: boolean): string => {
   }
 };
 
-const linkEntry = (link: CompanyLink): string =>
+const linkEntry = (link: LinkCore): string =>
   `${JSON.stringify(link.name)} ${link.url} is ${linkStanding(link.state, store.isRetiredProduct(link.productId))}`;
 
 /**
@@ -686,7 +689,7 @@ const madeWhileRetiring = async (product: Product, linkId: string): Promise<stri
     return null;
   }
   await switchOffRetiredLinks();
-  const link = store.paymentLinks().find((l) => l.id === linkId);
+  const link = store.paymentLinks().find((l) => l.link.id === linkId)?.link;
   const standing = link === undefined ? "" : ` Its link ${linkEntry(link)}.`;
   return `${product.name} was retired while Stripe made its payment link.${standing} Each order already paid through it still ships.`;
 };
@@ -874,7 +877,7 @@ const TOOLS = {
     if (!product) {
       throw new RefusalError(store.noSuchProduct(productId));
     }
-    const token = getSecret("VERCEL_TOKEN");
+    const token = getSecret(VERCEL_TOKEN);
     if (!token) {
       return holdFor(
         ctx,
@@ -947,7 +950,7 @@ const TOOLS = {
         `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`,
       );
     }
-    const token = getSecret("VERCEL_TOKEN");
+    const token = getSecret(VERCEL_TOKEN);
     if (!token) {
       return holdFor(
         ctx,
@@ -1025,7 +1028,7 @@ const TOOLS = {
         return holdFor(
           ctx,
           {
-            integration: "stripe-key",
+            integration: "stripe",
             productId: null,
             reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
             type: "integration",
@@ -1059,6 +1062,9 @@ const TOOLS = {
         }
         if (made.kind === "failed") {
           throw new RefusalError(`Stripe made no payment link: ${made.error}`);
+        }
+        if (made.kind === "unrecorded") {
+          return UNRECORDED_LINK;
         }
         if (store.getChargeLink(made.id) !== null) {
           return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
@@ -1180,6 +1186,9 @@ const TOOLS = {
       if (made.kind === "failed") {
         throw new RefusalError(`Stripe made no payment link: ${made.error}`);
       }
+      if (made.kind === "unrecorded") {
+        return UNRECORDED_LINK;
+      }
       store.recordListing({
         betId: bet ?? null,
         costCents: quote.costCents,
@@ -1224,6 +1233,7 @@ const TOOLS = {
     const retired = store.isRetiredProduct(productId);
     const told = store
       .paymentLinks()
+      .map(({ link }) => link)
       .filter((l) => l.productId === productId && (retired || l.state.kind !== "selling"));
     const links =
       told.length === 0
@@ -1250,7 +1260,10 @@ const TOOLS = {
   }),
   kill_product: define(TOOL_SPECS.kill_product, async (ctx, { slug, reason }) => {
     const retired = await retireProduct(slug, reason, ctx.employee.id);
-    const links = store.paymentLinks().filter((l) => l.productId === slug);
+    const links = store
+      .paymentLinks()
+      .map(({ link }) => link)
+      .filter((l) => l.productId === slug);
     const told =
       links.length === 0
         ? ""

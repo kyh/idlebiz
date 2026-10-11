@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { HttpError, getJson, postForm, postFormAnswer } from "./lib/http";
-import { STRIPE_API, stripeHeaders, stripeSays } from "./stripe-api";
+import type { VendorAnswer } from "./lib/vendor-call";
+import { STRIPE_API, answeringStripe, stripeHeaders, stripeSays } from "./stripe-api";
 import { errorMessage } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import type { ListingVariant } from "./listing";
-import { StripeLinkIdSchema } from "./payment-link";
+import { StripeLinkIdSchema } from "./link-record";
 
 /** One price in USD, sold once through a link whose every payment carries the product's tag and, when named, the bet's. */
 interface PaymentLinkRequest {
@@ -21,24 +22,37 @@ interface PaymentLinkRequest {
 }
 
 /**
- * The link Stripe made, or why none was: `refused` is the key turned away (401/403), which only
- * another key gets past; `failed` is anything else. Either reason is in Stripe's words when it
- * gave any.
+ * The link Stripe made, or why none is known: `refused` is the key turned away (401/403), which
+ * only another key gets past; `failed` is anything else, either reason in Stripe's words when it
+ * gave any; `unrecorded` is a create Stripe took but answered in a shape IdleBiz does not read,
+ * so a live link may stand on Stripe that nothing records.
  */
 type LinkResult =
   | { kind: "made"; id: string; url: string }
   | { kind: "refused"; said: string }
-  | { kind: "failed"; error: string };
+  | { kind: "failed"; error: string }
+  | { kind: "unrecorded" };
 
 export type PaymentLinker = (req: PaymentLinkRequest) => Promise<LinkResult>;
 
-const turnedDown = (error: HttpError): LinkResult =>
-  error.refused
-    ? { kind: "refused", said: stripeSays(error) }
-    : { error: stripeSays(error), kind: "failed" };
-
 const Created = z.object({ id: z.string() });
 const LinkWithId = z.object({ id: StripeLinkIdSchema, url: z.url() });
+
+/**
+ * The link a create answered with. Its answer is read apart from the create, since one IdleBiz
+ * cannot read comes after Stripe made the link, which then stands live with nothing recording it.
+ */
+const linkOf = async (created: VendorAnswer<JsonValue>, what: string): Promise<LinkResult> => {
+  if (created.kind !== "ok") {
+    return created.kind === "refused"
+      ? { kind: "refused", said: created.reason }
+      : { error: created.reason, kind: "failed" };
+  }
+  const link = await answeringStripe(what, () => LinkWithId.parse(created.value));
+  return link.kind === "ok"
+    ? { id: link.value.id, kind: "made", url: link.value.url }
+    : { kind: "unrecorded" };
+};
 
 /** The query parameter a buyer lands back on the product with, naming their checkout session. */
 export const CHECKOUT_SESSION_PARAM = "session_id";
@@ -150,7 +164,7 @@ export const stripePaymentLink: PaymentLinker = async ({
   const tags: Record<string, string> = bet === null ? { product } : { bet, product };
   // the link's metadata alone reaches its checkout sessions, where the order pump reads it
   const onSessions = delivery === null ? tags : { ...tags, delivery };
-  try {
+  const created = await answeringStripe("payment link", async () => {
     const price = Created.parse(
       await post("/v1/prices", {
         currency: "usd",
@@ -158,27 +172,21 @@ export const stripePaymentLink: PaymentLinker = async ({
         unit_amount: String(cents),
       }),
     );
-    const link = LinkWithId.parse(
-      await post(
-        "/v1/payment_links",
-        {
-          "line_items[0][price]": price.id,
-          "line_items[0][quantity]": "1",
-          ...afterCompletion(afterPayment),
-          // the charge the app counts copies its payment's metadata, never the link's;
-          // the link's own tags are how the founder finds it in Stripe
-          ...underKey("metadata", onSessions),
-          ...underKey("payment_intent_data[metadata]", tags),
-        },
-        switchedOffSince(key),
-      ),
+    return await post(
+      "/v1/payment_links",
+      {
+        "line_items[0][price]": price.id,
+        "line_items[0][quantity]": "1",
+        ...afterCompletion(afterPayment),
+        // the charge the app counts copies its payment's metadata, never the link's;
+        // the link's own tags are how the founder finds it in Stripe
+        ...underKey("metadata", onSessions),
+        ...underKey("payment_intent_data[metadata]", tags),
+      },
+      switchedOffSince(key),
     );
-    return { id: link.id, kind: "made", url: link.url };
-  } catch (error) {
-    return error instanceof HttpError
-      ? turnedDown(error)
-      : { error: errorMessage(error), kind: "failed" };
-  }
+  });
+  return await linkOf(created, "payment link");
 };
 
 /** A physical item sold once per payment, shipped at a fixed rate to a US address the link collects. */
@@ -223,20 +231,17 @@ export type StripeAccess =
 
 /** Whether `key` may make each read, as the founder is told to fix it. */
 const accessTo = async (key: string, reads: readonly string[]): Promise<StripeAccess> => {
-  try {
+  const asked = await answeringStripe("access", async () => {
     for (const read of reads) {
       await getJson(`${STRIPE_API}${read}`, stripeHeaders(key));
     }
+  });
+  if (asked.kind === "ok") {
     return { kind: "granted" };
-  } catch (error) {
-    if (error instanceof HttpError && error.refused) {
-      return { kind: "refused", said: stripeSays(error) };
-    }
-    return {
-      kind: "unreachable",
-      reason: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
-    };
   }
+  return asked.kind === "refused"
+    ? { kind: "refused", said: asked.reason }
+    : { kind: "unreachable", reason: asked.reason };
 };
 
 const CHECKOUTS = "/v1/checkout/sessions?limit=1";
@@ -273,7 +278,7 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
   const tags: Record<string, string> =
     bet === null ? { listing, product } : { bet, listing, product };
   const post = idempotentPost(key, [product, listing]);
-  try {
+  const created = await answeringStripe("print payment link", async () => {
     const price = Created.parse(
       await post("/v1/prices", {
         currency: "usd",
@@ -289,67 +294,64 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
         type: "fixed_amount",
       }),
     );
-    const link = LinkWithId.parse(
-      await post(
-        "/v1/payment_links",
-        {
-          "line_items[0][price]": price.id,
-          "line_items[0][quantity]": "1",
-          // the price floor counts on a card's fee; Klarna's or Affirm's is dearer, and Stripe
-          // offers any method the account has on unless the link names its own
-          "payment_method_types[0]": "card",
-          "shipping_address_collection[allowed_countries][0]": "US",
-          "shipping_options[0][shipping_rate]": rate.id,
-          ...variantChoice(variants),
-          ...underKey("metadata", tags),
-          ...underKey("payment_intent_data[metadata]", tags),
-        },
-        switchedOffSince(key),
-      ),
+    return await post(
+      "/v1/payment_links",
+      {
+        "line_items[0][price]": price.id,
+        "line_items[0][quantity]": "1",
+        // the price floor counts on a card's fee; Klarna's or Affirm's is dearer, and Stripe
+        // offers any method the account has on unless the link names its own
+        "payment_method_types[0]": "card",
+        "shipping_address_collection[allowed_countries][0]": "US",
+        "shipping_options[0][shipping_rate]": rate.id,
+        ...variantChoice(variants),
+        ...underKey("metadata", tags),
+        ...underKey("payment_intent_data[metadata]", tags),
+      },
+      switchedOffSince(key),
     );
-    return { id: link.id, kind: "made", url: link.url };
-  } catch (error) {
-    return error instanceof HttpError
-      ? turnedDown(error)
-      : { error: errorMessage(error), kind: "failed" };
-  }
+  });
+  return await linkOf(created, "print payment link");
 };
 
 /**
  * `refused` when Stripe answered no, which asking again would answer the same; `unanswered` when
- * it was busy (429), failing (5xx) or out of reach, which the next ask may get past. `error` is
- * why, in Stripe's words when it gave any.
+ * it was busy (429), failing (5xx), out of reach or answered in a shape IdleBiz does not read,
+ * which the next ask may get past. `error` is why, in Stripe's words when it gave any.
  */
 export type SwitchOffResult =
   | { kind: "off" }
   | { kind: "refused"; error: string }
   | { kind: "unanswered"; error: string };
 
-/** Stripe asks for a 429 (a rate limit, a lock timeout) to be retried, and a 5xx is its own fault. */
-const passing = (error: HttpError): boolean => error.status === 429 || error.status >= 500;
-
 /**
  * Switch a payment link off with the founder's key, here in main: its URL then shows the buyer
  * that it is deactivated. Asking again of a link already off answers the same.
  */
 export const switchOffPaymentLink = async (key: string, id: string): Promise<SwitchOffResult> => {
-  try {
-    const link = Switched.parse(
+  const answer = await answeringStripe("payment link switch-off", async () =>
+    Switched.parse(
       await postForm(
         `${STRIPE_API}/v1/payment_links/${encodeURIComponent(id)}`,
         stripeHeaders(key),
-        {
-          active: "false",
-        },
+        { active: "false" },
       ),
-    );
-    return link.active
-      ? { error: "Stripe still lists it as active", kind: "refused" }
-      : { kind: "off" };
-  } catch (error) {
-    if (error instanceof HttpError) {
-      return { error: stripeSays(error), kind: passing(error) ? "unanswered" : "refused" };
+    ),
+  );
+  switch (answer.kind) {
+    case "ok": {
+      return answer.value.active
+        ? { error: "Stripe still lists it as active", kind: "refused" }
+        : { kind: "off" };
     }
-    return { error: errorMessage(error), kind: "unanswered" };
+    case "down": {
+      return { error: answer.reason, kind: "unanswered" };
+    }
+    case "refused":
+    case "missing":
+    case "rejected": {
+      return { error: answer.reason, kind: "refused" };
+    }
+    // no default
   }
 };

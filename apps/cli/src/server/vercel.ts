@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getJson, HttpError } from "./lib/http";
 import type { JsonValue } from "@repo/domain/json";
-import { getSecret } from "./secrets";
+import { VERCEL_TOKEN, getSecret } from "./secrets";
 import type { VercelBinding } from "@repo/domain/domain";
 import { errorMessage } from "@repo/domain/errors";
 import type { DeployRead, VercelProject } from "@repo/domain/integrations";
@@ -194,7 +194,7 @@ export const webAnalyticsVisitors = async (
   project: { projectId: string; teamId: string | null },
   window: VisitWindow = {},
 ): Promise<number | null> => {
-  const token = getSecret("VERCEL_TOKEN");
+  const token = getSecret(VERCEL_TOKEN);
   if (!token) {
     return null;
   }
@@ -232,7 +232,7 @@ const deployCache = new Map<string, { at: number; token: string; read: DeployRea
 
 /** The latest production deployment — the product panel's "LIVE" state. */
 export const latestDeployment = async (projectId: string, teamId?: string): Promise<DeployRead> => {
-  const token = getSecret("VERCEL_TOKEN");
+  const token = getSecret(VERCEL_TOKEN);
   if (!token) {
     return { kind: "none" };
   }

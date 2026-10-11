@@ -206,9 +206,6 @@ importers:
       '@repo/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.1
@@ -305,9 +302,6 @@ importers:
       '@repo/px-kit':
         specifier: workspace:*
         version: link:../../packages/px-kit
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       cn:
         specifier: 'catalog:'
         version: 0.4.0
@@ -398,22 +392,6 @@ importers:
         version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
 
   packages/px-kit: {}
-
-  packages/stripe-connect-protocol:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.5
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.19.1
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
 
   tools/e2e:
     devDependencies:

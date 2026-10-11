@@ -49,7 +49,7 @@ const askLine = (ask: BlockedAsk): string => {
       return `needs you to: ${ask.action}`;
     }
     case "integration": {
-      return ask.integration === "stripe-key"
+      return ask.integration === "stripe"
         ? "needs a Stripe key"
         : `needs ${INTEGRATION_LABELS[ask.integration]} connected`;
     }

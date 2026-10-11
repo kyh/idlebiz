@@ -36,7 +36,7 @@ const OpenOverlay = ({
       return <Ships onOpen={onOpen} onClose={onClose} />;
     }
     case "inbox": {
-      // Stripe connect lives in the budget modal; a Vercel ask binds a product
+      // the Stripe and Printful keys live in the budget modal; a Vercel ask binds a product
       return <Inbox onClose={onClose} onOpen={onOpen} />;
     }
     case "teams": {

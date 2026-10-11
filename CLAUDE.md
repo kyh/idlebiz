@@ -103,8 +103,8 @@ apps/
                  `dev:browser` and e2e. resources/: the skills and the employee sheets main reads.
                  The build is dist/index.js with its chunks flat beside it, and the page staged
                  as dist/page.
-  web/           @repo/web — the landing page (Next.js on Vercel): the download and the Stripe
-                 Connect OAuth hop.
+  web/           @repo/web — the landing page (Next.js on Vercel): the download and the trust
+                 pages. The app sends it nothing.
 packages/
   domain/        @repo/domain — the vocabulary both sides share, pure: the company and its
                  people, the runners' ids and names, the bets and their judge, the activity
@@ -119,9 +119,6 @@ packages/
                  or codex-acp, the runners' registry, tool asks, rate limits and pricing, tested
                  on its own against stand-in agents. The page never imports it.
   px-kit/        @repo/px-kit — the pixel UI kit both apps draw with (see the px-kit trap below).
-  stripe-connect-protocol/
-                 @repo/stripe-connect-protocol — the Stripe Connect handshake between
-                 idlebiz.com and the app, typed once.
 tools/
   e2e/           @repo/e2e — Playwright over the built page and main, through the dev host.
 ```
@@ -383,17 +380,17 @@ third boundary.
     link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks every session
     but the first out.
 - **Keys stay in main; what spends them runs there.** The keys IdleBiz holds live in
-  `secrets.json`, which the seal keeps from every run, each value also sealed with the macOS
-  Keychain, which a claude run can still reach: Chromium's OSCrypt, as Electron's `safeStorage`
-  sealed it, over the "IdleBiz Safe Storage" password the shell reads and hands main at hello
-  (`server/lib/os-crypt.ts`); dev seals with the mock keychain's, and nothing on the real save, so
-  it strands none. Main reads each where it uses it.
+  `secrets.json`, which the seal keeps from every run, each value also sealed with a key kept in
+  the macOS Keychain, which a claude run can still reach: AES-256-GCM bound to the key's name,
+  under the 32 random bytes the shell reads and hands main at hello (`sealerFor` in
+  `server/secrets.ts`); dev seals with `DEV_SECRETS_KEY`, and nothing on the real save, so it
+  strands none. Main reads each where it uses it.
   A run starts from the founder's env less every credential-shaped name and every URL with a
   login in it, but its runner's own login (`runEnv` in `server/agents/run-env.ts`). An outward
   step that needs a key is a signed tool main runs: `deploy` uploads the product's folder
   through Vercel's API with the founder's token, and Vercel builds it on its own machines
   (`server/deploy.ts`); `create_payment_link` prices in USD and makes a Stripe payment link with
-  the founder's own key (`server/payment-links.ts`; a Connect grant is read-only), tagging each
+  the founder's own key (`server/stripe-links.ts`), tagging each
   payment for its product and a named revenue bet on it, open or measuring, and the link alone with the
   `delivery` its buyers are owed, which Stripe copies onto each checkout (a link with one is
   refused before the sign-off while the key cannot read checkout sessions, since that read is
@@ -424,7 +421,9 @@ third boundary.
   its link is live. Agents find variant ids, placements and techniques with `printful_catalog`,
   which main reads with the token (v2 serves the catalog only to a signed-in caller). The
   Printful token and its one store are the founder's, pasted in the Budget panel
-  (`server/printful-token.ts`), and a token Printful turns away asks for a new one, pasted over it
+  (`server/printful-token.ts`; the store, no secret, in `printful-store.json` beside
+  `secrets.json`, written first and put back if the token can't be kept, so neither is kept
+  alone), and a token Printful turns away asks for a new one, pasted over it
   there. Each paid order then goes to Printful unsigned, run by main on the metrics pulse
   (`server/order-pump.ts`), since the founder signed the listing and its price floor: while a
   Stripe key is saved, every 30 minutes one account-wide read of Stripe's checkout sessions
@@ -454,14 +453,16 @@ third boundary.
   live one whose link names a `delivery` is carded to the founder with the buyer's email and
   that text: nothing else reaches a buyer. One tagged with a listing this save no longer holds
   is kept as an unreadable order and carded. A card is raised before its order is kept, since
-  cards dedupe by title and the kept order is what stops the next read retrying. Waiting orders
+  cards dedupe by subject and the kept order is what stops the next read retrying. Waiting orders
   are sent and sent ones' Printful status read every 10 minutes. What the pump cannot settle (a
   draft dearer than the payment less the fee, a refunded or disputed payment, a changed design,
   a refusal, a status of failed, canceled or onhold the first time any call reads it, a refused
-  key once anything is sold) is an order card: a blocked task of origin `order`, no assignee, no
-  product, so no bet stalls, no retirement drops it and no teammate can claim it. The founder's
-  Done or Can't closes it with no run, as `settled` history (`settleOrderCard` in `server/company-actions.ts`), and goes
-  to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
+  key once anything is sold) is an order card: a blocked task of origin `order` naming its
+  subject (`OrderCardSubject` in `@repo/domain/domain`: an order and its trouble, a link left on,
+  or what stops the pump), which dedupes it and settles it, its title only copy rendered from it;
+  no assignee, no product, so no bet stalls, no retirement drops it and no teammate can claim it.
+  The founder's Done or Can't closes it with no run, as `settled` history (`settleOrderCard` in
+  `server/company-actions.ts`), and goes to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
   so. A menu-bar-only launch counts what waits on the founder in the tray and notifies each new
   order card. Retiring a product switches off, in main with the founder's key, every payment
   link it sells through, a listing's and each `create_payment_link` link, whose record main

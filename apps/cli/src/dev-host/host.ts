@@ -1,8 +1,8 @@
 // The dev host: main as the desktop shell runs it, with a browser where the shell's window would be.
-// It runs the built server (`idlebiz serve`, `dist/index.js`) on this node, says hello as the shell
-// does (with the mock keychain's password a development build seals with), and answers main's asks
-// of a native app itself: a message box, a notification and the menu-bar icon are logged, the login
-// item is unavailable, a relaunch starts main again.
+// It runs the built server (`idlebiz serve`, `dist/index.js`) on this node, says hello as a
+// development shell does (with no sealing key: main seals a dev save with its own), and answers
+// main's asks of a native app itself: a message box, a notification and the menu-bar icon are
+// logged, the login item is unavailable, a relaunch starts main again.
 //
 // A browser reaches main as the shell's window does: on main's own page (../server/page-server.ts),
 // signed in by a link `handoff` asks main for. Nothing of this ships.
@@ -16,7 +16,7 @@ import type { Readable, Writable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { handoffSchema } from "../server/host";
-import { MOCK_KEYCHAIN_PASSWORD } from "../server/lib/os-crypt";
+import type { LaunchHello } from "../server/host";
 import { createPeer } from "../server/relay/rpc";
 import type { Peer } from "../server/relay/rpc";
 import { errorMessage } from "@repo/domain/errors";
@@ -43,12 +43,6 @@ export interface DevHostOptions {
   pageDevUrl?: string;
 }
 
-/** What main asked the system to open: a URL in the browser, a file or folder in Finder. */
-export interface Opening {
-  kind: "path" | "reveal" | "url";
-  target: string;
-}
-
 export interface DevHost {
   /** A link that signs a browser in to main's page, once, within five minutes, as the window is. */
   handoff: () => Promise<string>;
@@ -58,8 +52,6 @@ export interface DevHost {
   stop: () => Promise<void>;
   /** What main asked to be copied to the clipboard, oldest first. */
   copied: readonly string[];
-  /** What main asked the system to open, oldest first: the dev host opens nothing. */
-  opened: readonly Opening[];
 }
 
 type MainChild = ChildProcessByStdio<Writable, Readable, Readable>;
@@ -103,7 +95,6 @@ const linesOf = (stream: Readable) =>
 export const startDevHost = async (options: DevHostOptions): Promise<DevHost> => {
   const { log } = options;
   const copied: string[] = [];
-  const opened: Opening[] = [];
   // main's own ask to restart it, heard once the restart below exists
   const asks = new EventTarget();
   let main: Main | null = null;
@@ -121,7 +112,6 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       return null;
     });
     peer.handle("host.open", openingSchema, (opening) => {
-      opened.push(opening);
       log(`[host] main asked to open (${opening.kind}) ${opening.target}`);
       return null;
     });
@@ -211,8 +201,8 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
           openedAtLogin: false,
           packaged: false,
           pageDevUrl: options.pageDevUrl ?? null,
-          safeStoragePassword: MOCK_KEYCHAIN_PASSWORD,
-        },
+          sealingKey: null,
+        } satisfies LaunchHello,
         z.null(),
       );
     } catch (error) {
@@ -274,5 +264,5 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
   };
 
   main = await startMain();
-  return { copied, handoff, opened, restartMain, stop };
+  return { copied, handoff, restartMain, stop };
 };

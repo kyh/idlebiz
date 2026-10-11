@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { BlockedAskSchema, TASK_ORIGINS } from "@repo/domain/domain";
-import type { BlockedAsk, Task, TaskState } from "@repo/domain/domain";
+import type { BlockedAsk, Task, TaskProvenance, TaskState } from "@repo/domain/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
-const base: Omit<Task, "state"> = {
+const base = {
   answers: null,
   assigneeId: "priya",
   attempts: 2,
@@ -17,7 +17,7 @@ const base: Omit<Task, "state"> = {
   priority: "high",
   productId: "widget",
   title: "Ship the thing",
-};
+} satisfies Omit<Task, "state">;
 
 /** The task's TASK.md, as boot reads it back. */
 const written = (t: Task) => parseDoc(serializeDoc(taskToDoc(t)));
@@ -47,8 +47,14 @@ describe("task codec", () => {
     expect(roundTrip(task)).toEqual(task);
   });
 
-  it.each(TASK_ORIGINS)("round-trips why a %s task exists", (origin) => {
-    const task: Task = { ...base, origin, state: { kind: "todo" } };
+  it.each<TaskProvenance>([
+    ...TASK_ORIGINS.flatMap((origin) => (origin === "order" ? [] : [{ origin }])),
+    { origin: "order", subject: { kind: "order", orderId: "abc", trouble: "deliver it" } },
+    { origin: "order", subject: { kind: "link-left-on", linkId: "plink_1" } },
+    { origin: "order", subject: { kind: "unrecorded-links", productId: "widget" } },
+    { origin: "order", subject: { kind: "pump", reason: "missed" } },
+  ])("round-trips why a task exists: %j", (provenance) => {
+    const task: Task = { ...base, ...provenance, state: { kind: "todo" } };
     expect(roundTrip(task)).toEqual(task);
   });
 
@@ -61,6 +67,15 @@ describe("task codec", () => {
     const doc = written({ ...base, state: { by: "next", kind: "superseded" } });
     const { supersededBy: _, ...metadata } = doc.metadata;
     expect(() => docToTask({ ...doc, metadata })).toThrow("supersededBy");
+  });
+
+  it("reads no order card that names nothing it is about", () => {
+    const subject = { kind: "pump", reason: "missed" } as const;
+    const doc = written({ ...base, origin: "order", state: { kind: "todo" }, subject });
+    const { subject: _lost, ...unnamed } = doc.metadata;
+    expect(() => docToTask({ ...doc, metadata: unnamed })).toThrow("subject");
+    const garbled = { ...doc.metadata, subject: JSON.stringify({ kind: "pump", reason: "hunch" }) };
+    expect(() => docToTask({ ...doc, metadata: garbled })).toThrow("reason");
   });
 
   it("writes the state as the status line and that state's fields only", () => {
@@ -109,7 +124,7 @@ describe("a blocked task's ask in TASK.md", () => {
     { integration: "vercel", productId: "widget", reason: "need hosting", type: "integration" },
     { integration: "vercel", productId: null, reason: "any product will do", type: "integration" },
     { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
-    { integration: "stripe-key", productId: null, reason: "to sell a plan", type: "integration" },
+    { integration: "stripe", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
     {
       action: "Post the launch thread on r/SideProject",

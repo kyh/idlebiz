@@ -15,7 +15,6 @@ import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
 import { z } from "zod";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { RPC_PREFIX } from "@repo/contract/routes";
-import type { IntegrationNeed } from "@repo/domain/domain";
 import { packageFile } from "../paths";
 import { activityEvents } from "./activity";
 import { writeAgentLauncher } from "./agent-launcher";
@@ -28,7 +27,6 @@ import { keepAwake } from "./keep-awake";
 import { broadcast, setEventSink } from "./lib/broadcast";
 import { suspendWrites } from "./lib/fs";
 import { initLog } from "./lib/log";
-import { osCryptSealer } from "./lib/os-crypt";
 import { guarded, report } from "./lib/report";
 import { adoptShellPath } from "./lib/shell-path";
 import { openedAtLogin } from "./login-item";
@@ -39,9 +37,8 @@ import type { PageServer, PageSource } from "./page-server";
 import { ON_REAL_SAVE, ROOT_DIR, RUN_BIN_DIR } from "./paths";
 import { stdioPeer } from "./relay/stdio";
 import { createScheduler } from "./scheduler";
-import { checkSecrets, setSealer } from "./secrets";
+import { DEV_SECRETS_KEY, checkSecrets, sealerFor, setSealer } from "./secrets";
 import * as store from "./store/store";
-import { initStripeConnect, revokeBeforeReset } from "./stripe-connect";
 import { appTray } from "./tray";
 import { initVercelConnect } from "./vercel-connect";
 
@@ -75,19 +72,8 @@ const resetGame = async (): Promise<void> => {
   metricsPulse.stop();
   suspendWrites();
   try {
-    const [, stripeLeft, linksLeft] = await Promise.all([
-      stopAgents(),
-      revokeBeforeReset(),
-      switchOffBeforeReset(),
-    ]);
+    const [, linksLeft] = await Promise.all([stopAgents(), switchOffBeforeReset()]);
     await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
-    if (stripeLeft) {
-      await host().messageBox({
-        detail: stripeLeft,
-        kind: "warning",
-        message: "Stripe did not confirm it revoked IdleBiz's access",
-      });
-    }
     if (linksLeft) {
       await host().messageBox({
         detail: linksLeft,
@@ -103,10 +89,10 @@ const resetGame = async (): Promise<void> => {
   }
 };
 
-/** Stripe reads revenue now: read it at once, and resume the work that waited on it. */
-const stripeReady = (...needs: IntegrationNeed[]): void => {
+/** A Stripe key was saved: read revenue with it at once, and resume the work that waited on it. */
+const stripeReady = (): void => {
   metricsPulse.now();
-  scheduler.resumeIntegrationAsks(...needs);
+  scheduler.resumeIntegrationAsks("stripe");
 };
 
 /** "Seen" is the last moment the founder had the office in front of them; the
@@ -141,15 +127,17 @@ const windowChanged = ({ state }: z.infer<typeof windowSchema>): void => {
   }
 };
 
-// The app can't open what the mock key seals, so on the real save dev seals nothing:
+// The app can't open what dev's key seals, so on the real save dev seals nothing:
 // a key dev entered or found plain stays plain for the app to seal, never stranded.
 const sealSecrets = (launch: Launch): void => {
   if (!launch.packaged && ON_REAL_SAVE) {
     report("secrets", "dev on the real save keeps secrets.json's keys as it finds them");
-  } else if (launch.safeStoragePassword === null) {
+  } else if (!launch.packaged) {
+    setSealer(sealerFor(DEV_SECRETS_KEY));
+  } else if (launch.sealingKey === null) {
     report("secrets", "the Keychain is unavailable, so secrets.json keeps its keys as plain text");
   } else {
-    setSealer(osCryptSealer(launch.safeStoragePassword));
+    setSealer(sealerFor(launch.sealingKey));
   }
 };
 
@@ -250,16 +238,6 @@ const boot = async (launch: Launch): Promise<void> => {
 
   metricsPulse.start();
 
-  initStripeConnect({
-    notify: (status) => {
-      broadcast("stripe", status);
-    },
-    // a Stripe connection only reads revenue: work waiting on a key to charge with waits on
-    onConnected: () => stripeReady("stripe"),
-    openExternal: async (url) => {
-      await host().open({ kind: "url", target: url });
-    },
-  });
   initVercelConnect({
     onConnected: (connection) => {
       metricsPulse.now();

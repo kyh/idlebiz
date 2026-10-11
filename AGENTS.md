@@ -5,8 +5,8 @@ coding CLIs. The app is two programs, laid out as kyh/inteligir's are: `apps/des
 shell around the office page, and `apps/cli`, the `idlebiz` binary, whose `idlebiz serve` is
 main, the node process that spawns real `claude` / `codex` sessions and saves the whole company
 as human-readable markdown under `~/.idlebiz/`. Every other verb of `idlebiz` is a company tool
-the employees call. A small Next.js landing page (`apps/web`) ships the download and the Stripe
-Connect OAuth hop. This is the tool-agnostic guide for coding agents — meant to be run, not just
+the employees call. A small Next.js landing page (`apps/web`) ships the download; the app sends
+it nothing. This is the tool-agnostic guide for coding agents — meant to be run, not just
 read. Claude also reads `CLAUDE.md`; both point back here.
 
 Paths below are short, as in CLAUDE.md: `server/…` and `commands/…` are under `apps/cli/src/`,
@@ -100,7 +100,7 @@ secrets.json being sealed, a held command denied from #team, an action card answ
 held into a window let go of when it closes, #team kept on its newest line and shown again when
 its window reopens, a long ask kept on screen, a typed answer kept while the dialogue's menu is
 hovered, the dialogue's cursor kept on Talk… as rows come ahead of it, Start refused while out of
-budget, a Stripe sign-in left in the browser started over, retiring the selected product, a file
+budget, retiring the selected product, a file
 boot skipped named in full, and a save a newer build wrote asking for an update. It is local only, not part
 of `pnpm verify` or CI:
 
@@ -164,7 +164,7 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 
 | Surface                                | How to reach it                       | CLI needed? |
 | -------------------------------------- | ------------------------------------- | ----------- |
-| `apps/web` landing + `/api/stripe/*`   | `pnpm dev:web`                        | no          |
+| `apps/web` landing                     | `pnpm dev:web`                        | no          |
 | Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
@@ -189,35 +189,39 @@ that runs main differs (the dev host, or the shell).
 Nothing is required to run. Every key is optional and its absence disables one feature
 rather than crashing boot.
 
-- `apps/web` — `STRIPE_CLIENT_ID`, `STRIPE_SECRET_KEY` (see `.env.example`, read through
-  `src/lib/env.ts`). Missing ⇒ `/api/stripe/*` refuses the flow with a clear message.
 - Desktop runtime secrets live in `~/.idlebiz/secrets.json`, not a `.env`. They are
   IdleBiz's own: main reads each where it uses it (`getSecret` in `server/secrets.ts`) and
-  exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`.
+  exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or `VERCEL_TOKEN`. A key
+  is named only by its constant there, or by a set_env value's `ENV/` name, so a misspelt
+  name fails typecheck rather than reading as no key.
   Employees run as the founder's OS user: every run's seal (below) keeps it from the file,
-  and each value is also sealed with the macOS Keychain as Electron's `safeStorage` sealed it
-  (Chromium's OSCrypt over the "IdleBiz Safe Storage" item, which the shell reads and hands
-  main at hello; `server/lib/os-crypt.ts`, `setSealer` at boot) as `sealed:v1:<base64>`, since a
-  claude run can still reach the Keychain. Enter
+  and each value is also sealed with a key the macOS Keychain keeps for IdleBiz (service
+  "IdleBiz", account "sealing-key": 32 random bytes, which the shell reads and hands main at
+  hello as `sealingKey`): AES-256-GCM with a random nonce and the key's name as associated data,
+  as `sealed:v2:<base64 of nonce, ciphertext and tag>` (`sealerFor` in `server/secrets.ts`,
+  `setSealer` at boot), since a claude run can still reach the Keychain. Enter
   keys in the app: `VERCEL_TOKEN` through a product's Vercel button (under users), Stripe in
   the Budget panel (under revenue). A key pasted into the file as plain text is sealed the
-  next time main reads it. One the Keychain can't open (another build sealed it, or access
-  was denied) reads as absent, is named in Settings and stays as it is: enter it again.
-  Dev (any unpackaged launch, e2e too) seals with Chromium's mock keychain's password: a
+  next time main reads it. One main can't open (another build or another scheme sealed it, a
+  byte of it changed, it was moved under another name, or access was denied) reads as absent,
+  is named in Settings and stays as it is: enter it again.
+  Dev (any unpackaged launch, e2e too) seals with a fixed key, `DEV_SECRETS_KEY`: a
   development shell is ad-hoc signed, so the real Keychain would ask again after every rebuild
-  and stall automation. It never touches the Keychain, and it seals with a fixed key: a key dev
-  sealed is no secret and only dev opens it. On the
+  and stall automation. It never touches the Keychain: a key dev sealed is no secret and only
+  dev opens it. On the
   real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so the packaged app's keys read as
   absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
   Employees charge through the `create_payment_link` tool, which makes the link with
-  `STRIPE_SECRET_KEY` in main (`server/payment-links.ts`) once the founder signs off; with no
+  `STRIPE_SECRET_KEY` in main (`server/stripe-links.ts`) once the founder signs off; with no
   key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key row
   saves a key only once Stripe has taken it (`server/stripe-key.ts`) and resumes the work that
-  waited on it. A new key is pasted over the saved one, never after removing it: a pulse
+  waited on it: every Stripe card is one `stripe` ask, a key to charge with or to count revenue
+  with alike, and none resumes on a test-mode key, which counts no money unless
+  `IDLEBIZ_COUNT_TEST_MONEY=1`. A new key is pasted over the saved one, never after removing it: a pulse
   between the two finds no key and hands each retiring link to the founder to switch off by hand. A restricted key needs Write on Payment Links, Prices and Products to charge,
-  and Read on Charges for the revenue read below (without Connect) and for each paid print,
-  whose payment the order pump reads before Printful is paid (with Connect too), Read on
+  and Read on Charges for the revenue read below and for each paid print,
+  whose payment the order pump reads before Printful is paid, Read on
   Checkout Sessions for the order pump, and Write on Shipping Rates to sell a print, which
   `sell_print` checks with a read of all three (`stripeListingAccess`) before it asks for the
   sign-off. A link's optional
@@ -237,7 +241,7 @@ rather than crashing boot.
   `server/vercel.ts`) and hashes each (`readPrintFile`), prices it with Printful's estimates
   (`server/printful.ts`, polled every 3s and backing off on a 429), refuses a price under the
   floor, and once signed off makes the shipped payment link (`stripeShippedLink` in
-  `server/payment-links.ts`, each POST with an idempotency key) and saves the listing under
+  `server/stripe-links.ts`, each POST with an idempotency key) and saves the listing under
   `listings/`. Paid orders reach Printful through the order pump (`server/order-pump.ts`),
   which the metrics pulse runs: while a Stripe key is saved it reads Stripe's checkouts
   (`server/stripe-checkouts.ts`) every 30 minutes, keeps each paid one on the company's links
@@ -255,17 +259,16 @@ rather than crashing boot.
   still making and refuses a new one (`makingPaymentLink`), then switches off every live link
   (`switchOffBeforeReset`) and warns of what it could not, with each paid print Printful never
   confirmed (but a held one whose card the founder settled) and each paid order whose card still waits on the founder. The Printful token is pasted in the Budget panel, kept only once Printful shows it can
-  place orders in exactly one store (`server/printful-token.ts`); with none, or one Printful
+  place orders in exactly one store (`server/printful-token.ts`). That store is no secret, so
+  it sits beside `secrets.json` in `printful-store.json`, written before the token and put back
+  as it was if the token can't be kept: neither is kept without the other. With no token, or one Printful
   refuses, the tool leaves a Printful card that opens that panel, where a new token replaces the
-  saved one. Metrics reads revenue with the Stripe key
-  whenever one is saved, since every payment link and so every tagged charge is on its
-  account; only with no key does the company whose `metrics.json` holds the connected
-  account read through `STRIPE_CONNECT_TOKEN` (`stripeCredential` in `server/metrics.ts`), so
-  a grant on another account, or one revoked, never stands between a bet and its money. The
-  Connect token is read-only. A key Stripe
-  refuses shows in the Budget panel — a Connect token as revoked, with Disconnect beside Reconnect
-  while main still holds its grant, the own key as the charging key — until a pulse finds Stripe taking a key again, or no key left (`noteStripeRead` in
-  `server/stripe-connect.ts`). One `VERCEL_TOKEN` serves every product:
+  saved one. Metrics reads revenue with the same Stripe key (`stripeCredential` in
+  `server/metrics.ts`), since every payment link and so every tagged charge is on its account;
+  with no key saved nothing reads revenue. A key Stripe turns away on that read stays saved and
+  shows in the Budget panel as refused (`noteStripeRead` and `stripeKeyStatus` in
+  `server/stripe-key.ts`, asked again on each pulse) until a read Stripe takes, or a key pasted
+  over it. One `VERCEL_TOKEN` serves every product:
   binding another reuses it unless the founder pastes a new one. Each product binds a project
   of its own (a project another product holds is refused). The first token saved, through
   any product, resumes every Vercel ask, since it is what each product's deploy lacked; after
@@ -273,7 +276,7 @@ rather than crashing boot.
   (`productId`, saved as the task's `askProduct`), which a run may name other than its own,
   and its Inbox card opens that product's binding. A refused token shows on
   each bound product as "vercel refused". One that fails to parse is listed in Settings and never rewritten
-  (`readJsonFileForUpdate` in `server/lib/fs.ts`; `metrics.json` too). Employees deploy
+  (`readJsonFileForUpdate` in `server/lib/fs.ts`). Employees deploy
   through the `deploy` tool, which uploads the product's folder through Vercel's API with
   `VERCEL_TOKEN` in main (`server/deploy.ts`) once the founder signs off. Before the sign-off is
   asked, and before `set_env` sets anything, Vercel is asked whether it still takes the token
@@ -334,14 +337,11 @@ rather than crashing boot.
   and codex runs in `external-sandbox`, a mode
   `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own, and
   it asks before every command and patch. A codex-acp upgrade must carry that patch.
-- `IDLEBIZ_WEB_URL` points the Stripe Connect hop at a local `apps/web`
-  (`server/stripe-connect.ts`); `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths
-  (`packages/agent-driver/src/detect.ts`).
+- `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths (`packages/agent-driver/src/detect.ts`).
 - `IDLEBIZ_COUNT_TEST_MONEY=1` counts test-mode Stripe charges toward revenue and bets, for
   an end-to-end run of a revenue bet on a test key. Without it only live-mode money counts:
   a test-mode key reads as "Stripe is in test mode — no charge counts" in the brief and
-  `measure_bet` refuses a revenue bet on it (`server/metrics.ts`), even beside a live Connect
-  grant, since the key IdleBiz charges with makes every link.
+  `measure_bet` refuses a revenue bet on it (`server/metrics.ts`).
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
@@ -429,7 +429,7 @@ rather than crashing boot.
   shell draws it, `src-tauri/src/tray.rs`), a notification, the login item (`SMAppService`), the
   Mac kept awake while a run is in flight, a relaunch. The shell says hello first, with what only
   it knows: whether it is the packaged app, the dev server's address in dev, whether the login
-  item launched it, the Keychain's password.
+  item launched it, the Keychain's sealing key.
   Main's stdin is its lifeline: the shell closes it only after main answers `quit`, so a shell
   that crashed or was killed ends main too, after its runs.
 - **Main keeps a log file.** Main's console is its stderr, which the shell appends, stamped, to
@@ -438,6 +438,10 @@ rather than crashing boot.
   `IDLEBIZ_ROOT_DIR`), never under the save root, which a reset deletes; `server/lib/log.ts` sends
   uncaught errors there too. A catch that carries on past an unexpected error calls
   `report` (`server/lib/report.ts`); a boot that throws says where the log is and exits.
+  Stripe's and Printful's calls run through `answering` (`server/lib/vendor-call.ts`), all but
+  the revenue read (`metrics.ts`, which settles each read apart) and the Printful token's
+  check: it sorts how a call failed and reports an answer its schema refuses once, under the
+  call's name, and each caller folds that into its own result.
 - **Everything main says happened goes through `server/activity.ts`.** `publishActivity`
   stamps, persists and fans out one `ActivityEvent` (`@repo/domain/activity`, a discriminated
   union on `kind` with typed payloads). Consumers switch on `kind`; nobody re-parses a
@@ -454,7 +458,7 @@ rather than crashing boot.
   the renderer, whose activity ring starts empty every launch; #team reads the room back from
   main's copy of `chat.jsonl` instead. Company-level running state goes in
   `company/state/` (path helpers in `server/paths.ts`); what the founder configured
-  (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
+  (`approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
   so there is nothing to keep in sync.
@@ -526,25 +530,29 @@ rather than crashing boot.
   `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:
   its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
-  (every write, atomic and behind the reset gate), `stripe-connect.ts` / `vercel-connect.ts`
-  (the two OAuth connections, same shape), `stripe-api.ts` (what every Stripe call shares),
-  `stripe-key.ts` (the charging key the founder enters),
+  (every write, atomic and behind the reset gate), `lib/vendor-call.ts` (how a Stripe or
+  Printful call failed, sorted once), `vercel-connect.ts` (the Vercel token the
+  founder pastes and each product's project binding), `stripe-api.ts` (what every Stripe call
+  shares), `stripe-key.ts` (the Stripe key the founder enters, which charges and reads revenue),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),
-  `payment-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
-  switch-off of a retired product's links),
-  `printful.ts` (Printful's API: the saved token, its catalog, and pricing a print),
+  `stripe-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
+  switch-off of a retired product's links), `link-record.ts` (a payment link as the save keeps
+  it: a `create_payment_link` link on its own, a listing's inside the listing),
+  `printful.ts` (Printful's API: its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
   checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful, each link sale's
   delivery, and the founder's order cards),
-  `printful-token.ts` (the Printful token the founder enters), `print-listing.ts` (what
+  `printful-token.ts` (the Printful token the founder enters and the one store it sells
+  through, kept as one credential), `print-listing.ts` (what
   `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only
   record, only a packaged app registers one, and a launch at login starts in the menu bar).
 - `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`) and the
   employee sheets (`employee-sheets/`).
-- `apps/web` — landing page plus the three Stripe Connect route handlers.
+- `apps/web` — the landing page, its trust pages and their Markdown for agents; it holds no
+  secret and the app calls none of it.
 - `packages/domain` — the vocabulary both sides share, pure, importing no other package of the
   repo's: `domain.ts` (the company, its people, products and tasks), `runners.ts` (the runners'
   ids and the names the founder knows them by), `bets.ts` (the bets, their judge and the allocator),
@@ -560,8 +568,6 @@ rather than crashing boot.
   with when a usage limit said it lifts; what each costs the runner (a sign-out, a rest) is the
   server's `heed`. Over domain, never imported by the page. Source-only, no build step; its
   suites (`pnpm --filter @repo/agent-driver test`) drive a turn against stand-in agents.
-- `packages/stripe-connect-protocol` — the handshake between the desktop's loopback server
-  and the web's Stripe routes: paths, the state codec, the callback outcome. Both ends import it.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,
   VG5000, every `.px-*` class), imported by both apps after Tailwind.
 - `tools/e2e` — the Playwright suite over the built page and main (`src/harness.ts` launches them

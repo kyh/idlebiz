@@ -8,7 +8,7 @@ import {
   writeSecrets,
 } from "./harness";
 
-const SEALED = /^sealed:v1:/u;
+const SEALED = /^sealed:v2:/u;
 
 test("a Vercel token Vercel takes binds the product's project and is kept sealed", async ({
   launch,

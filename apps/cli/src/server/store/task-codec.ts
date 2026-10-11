@@ -1,11 +1,12 @@
 import { z } from "zod";
 import {
   ActionAskSchema,
-  INTEGRATION_NEEDS,
+  INTEGRATION_KINDS,
+  OrderCardSubjectSchema,
   TASK_ORIGINS,
   TASK_PRIORITIES,
 } from "@repo/domain/domain";
-import type { BlockedAsk, Task, TaskState } from "@repo/domain/domain";
+import type { BlockedAsk, Task, TaskProvenance, TaskState } from "@repo/domain/domain";
 import { parseJson } from "@repo/domain/json";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
@@ -56,7 +57,7 @@ const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
     return { command: approval.command.trim(), rule: approval.rule, type: "approval" };
   }
   const connect = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s)?.groups;
-  const integration = INTEGRATION_NEEDS.find((k) => k === connect?.kind);
+  const integration = INTEGRATION_KINDS.find((k) => k === connect?.kind);
   if (integration === undefined || connect?.reason === undefined) {
     throw new Error(`an ask this build does not write: ${JSON.stringify(s)}`);
   }
@@ -71,7 +72,6 @@ const TaskFieldsSchema = z.object({
   betId: z.string().optional(),
   completedAt: z.number().optional(),
   createdAt: z.number(),
-  origin: z.enum(TASK_ORIGINS),
   priority: z.enum(TASK_PRIORITIES),
   productId: z.string().optional(),
 });
@@ -98,10 +98,19 @@ const TaskStatusSchema = z.discriminatedUnion("status", [
   z.object({ lastError: z.string(), status: z.literal("dead") }),
 ]);
 
+/** Why a task exists; an order card also names what it is about, as JSON, which dedupe and Done both go by. */
+const TaskProvenanceSchema = z.discriminatedUnion("origin", [
+  z.object({ origin: z.enum(TASK_ORIGINS).exclude(["order"]) }),
+  z.object({
+    origin: z.literal("order"),
+    subject: z.string().transform(parseJson).pipe(OrderCardSubjectSchema),
+  }),
+]);
+
 const TaskDocSchema = z.object({
   body: z.string(),
   fields: packageFields("task"),
-  metadata: z.intersection(TaskFieldsSchema, TaskStatusSchema),
+  metadata: TaskFieldsSchema.and(TaskStatusSchema).and(TaskProvenanceSchema),
 });
 
 const statusFields = (st: TaskState): z.input<typeof TaskStatusSchema> => {
@@ -145,6 +154,14 @@ const statusFields = (st: TaskState): z.input<typeof TaskStatusSchema> => {
     // no default
   }
 };
+
+const provenanceFields = (t: Task): z.input<typeof TaskProvenanceSchema> =>
+  t.origin === "order"
+    ? { origin: t.origin, subject: JSON.stringify(t.subject) }
+    : { origin: t.origin };
+
+const taskProvenance = (m: z.output<typeof TaskProvenanceSchema>): TaskProvenance =>
+  m.origin === "order" ? { origin: m.origin, subject: m.subject } : { origin: m.origin };
 
 const taskState = (m: z.output<typeof TaskStatusSchema>): TaskState => {
   switch (m.status) {
@@ -197,10 +214,10 @@ export const taskToDoc = (t: Task): z.input<typeof TaskDocSchema> => ({
     betId: t.betId ?? undefined,
     completedAt: t.completedAt ?? undefined,
     createdAt: t.createdAt,
-    origin: t.origin,
     priority: t.priority,
     productId: t.productId ?? undefined,
     ...statusFields(t.state),
+    ...provenanceFields(t),
   },
 });
 
@@ -216,10 +233,10 @@ export const docToTask = (doc: FrontmatterDoc): Task => {
     createdAt: m.createdAt,
     description: description === "" ? null : description,
     id: fields.slug,
-    origin: m.origin,
     priority: m.priority,
     productId: m.productId ?? null,
     state: taskState(m),
     title: fields.name,
+    ...taskProvenance(m),
   };
 };

@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { Peer } from "./relay/rpc";
+import { sealingKeySchema } from "./secrets";
 import type { LaunchAtLogin } from "@repo/domain/domain";
 
 export const launchSchema = z.object({
@@ -14,10 +15,13 @@ export const launchSchema = z.object({
   // Vite's dev server, whose files main hands the page in place of the built ones, so it reloads in
   // place: `tauri dev`'s and `pnpm dev:browser`'s. Null in a packaged app, which serves what it ships
   pageDevUrl: z.string().nullable(),
-  // the Keychain's Safe Storage password, which seals secrets.json; null when it would not answer
-  safeStoragePassword: z.string().nullable(),
+  // the key the Keychain keeps for sealing secrets.json; null in dev, which seals with its own, or
+  // when the Keychain would not answer
+  sealingKey: sealingKeySchema.nullable(),
 });
 export type Launch = z.infer<typeof launchSchema>;
+/** The hello as the shell writes it. */
+export type LaunchHello = z.input<typeof launchSchema>;
 
 /** What main answers the shell's `handoff`: a link into its page, and the origin it is on. */
 export const handoffSchema = z.object({ handoffUrl: z.string(), origin: z.string() });

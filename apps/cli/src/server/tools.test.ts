@@ -8,7 +8,7 @@ import type { ActivityEvent } from "@repo/domain/activity";
 import type { BlockedAsk, TaskOrigin } from "@repo/domain/domain";
 import type { RunnerId } from "@repo/domain/runners";
 import type { JsonValue } from "@repo/domain/json";
-import type { ChargeLink } from "./payment-link";
+import type { ChargeLink } from "./link-record";
 import { BadRequestError } from "@repo/domain/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
 import type { CatalogQuery, CatalogRead } from "./printful";
@@ -22,7 +22,7 @@ process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
 const { callTool: outcomeOf } = await import("./tools");
-const { stripeLinkAccess, stripePaymentLink } = await import("./payment-links");
+const { stripeLinkAccess, stripePaymentLink } = await import("./stripe-links");
 const { printListing } = await import("./print-listing");
 const { productionHosts } = await import("./vercel");
 const { fetchRealMetrics } = await import("./metrics");
@@ -259,7 +259,7 @@ describe("company tools", () => {
     const measure = (slug: string) => callTool(ctx, "measure_bet", { slug });
 
     expect(await measure(money.id)).toBe(
-      'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.',
+      'No source reads revenue yet — request_integration "stripe" for the founder to add the Stripe key IdleBiz charges with in the Budget panel. Then measure_bet again.',
     );
     expect(await measure(visits.id)).toContain("No source reads users of");
     expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
@@ -318,11 +318,7 @@ describe("company tools", () => {
       Promise.resolve(Response.json({ data: [testCharge], total_count: 1 })),
     );
 
-    const snap = await fetchRealMetrics(
-      { key: "sk_test_1", via: "own" },
-      store.listProducts(),
-      store.listBets(),
-    );
+    const snap = await fetchRealMetrics("sk_test_1", store.listProducts(), store.listBets());
     for (const [betId, { reading, at }] of snap.betReadings) {
       store.setBetReading(betId, reading, at);
     }
@@ -1539,7 +1535,7 @@ describe("create_payment_link", () => {
     expect(await call()).toContain("https://buy.stripe.com/1");
 
     expect(links).toBe(1);
-    expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_1"]);
+    expect(store.paymentLinks().map((l) => l.link.id)).toEqual(["plink_1"]);
   });
 
   it("makes the link when signed for again after Stripe answered the create with a failure", async () => {
@@ -1562,7 +1558,24 @@ describe("create_payment_link", () => {
 
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
     expect(await call()).toContain(PAID_URL);
-    expect(store.paymentLinks().map((l) => l.id)).toEqual(["plink_pro"]);
+    expect(store.paymentLinks().map((l) => l.link.id)).toEqual(["plink_pro"]);
+  });
+
+  it("says the link may stand on Stripe when Stripe took the create but answered in a shape IdleBiz does not read, and reports it", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = chargingRun();
+    replayingStripe((endpoint): StripeAnswer =>
+      endpoint === "/v1/prices"
+        ? { body: { id: "price_1" }, status: 200 }
+        : { body: { id: "plink_pro", link: PAID_URL }, status: 200 },
+    );
+    store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
+    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
+      "Stripe may have made the payment link",
+    );
+    expect(logged).toHaveBeenCalledExactlyOnceWith("[Stripe payment link]", expect.any(z.ZodError));
+    expect(store.paymentLinks()).toEqual([]);
   });
 
   it("makes a new link rather than record one Stripe replays that is switched off since", async () => {
@@ -1607,7 +1620,9 @@ describe("create_payment_link", () => {
     expect(await make()).toContain(
       'Created a payment link for "Pro plan" at $9.00 on Acme: https://buy.stripe.com/2',
     );
-    expect(store.paymentLinks().map((l) => [l.id, l.state.kind])).toEqual([["plink_2", "selling"]]);
+    expect(store.paymentLinks().map(({ link }) => [link.id, link.state.kind])).toEqual([
+      ["plink_2", "selling"],
+    ]);
   });
 
   it("tags the product alone when no bet is named, charging whole cents", async () => {
@@ -1689,7 +1704,7 @@ describe("create_payment_link", () => {
     });
 
     expect(answer).toContain("Stripe won't let IdleBiz's key read checkouts");
-    expect(run.asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+    expect(run.asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
     expect(run.stripe).toEqual([]);
   });
 
@@ -1715,7 +1730,7 @@ describe("create_payment_link", () => {
     expect(asked).toEqual(["/v1/payment_links"]);
     expect(run.asked).toEqual([
       {
-        integration: "stripe-key",
+        integration: "stripe",
         productId: null,
         reason:
           "Stripe won't let IdleBiz's key make payment links, which charging through one needs (Expired API Key provided: rk_live_*****y123): in the Budget panel, paste over it a key whose restricted permissions include Write on Payment Links, Prices and Products, or your secret key",
@@ -1740,7 +1755,7 @@ describe("create_payment_link", () => {
     expect(await callTool(ctx, "create_payment_link", LINK)).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
-    expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+    expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
     expect(JSON.stringify(asked)).toContain(
       "(The provided key does not have the required permissions)",
     );
@@ -1783,7 +1798,7 @@ describe("create_payment_link", () => {
     expect(answer).toContain("this task resumes automatically once the key is saved");
     expect(asked).toEqual([
       {
-        integration: "stripe-key",
+        integration: "stripe",
         productId: null,
         reason: 'to sell "Pro plan" at $9.00 through a payment link',
         type: "integration",
@@ -2181,8 +2196,11 @@ const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[
     secrets.set("VERCEL_TOKEN", TOKEN);
   }
   if (!missing.printful) {
-    secrets.set("PRINTFUL_STORE", JSON.stringify({ id: 42, name: "Acme Prints" }));
     secrets.set("PRINTFUL_TOKEN", "pf_founder_token");
+    writeFileSync(
+      path.join(root, "printful-store.json"),
+      JSON.stringify({ id: 42, name: "Acme Prints" }),
+    );
   }
   writeFileSync(path.join(root, "secrets.json"), JSON.stringify(Object.fromEntries(secrets)));
   const run = runAs("priya");
@@ -2344,7 +2362,6 @@ describe("sell_print", () => {
     writeFileSync(
       path.join(root, "secrets.json"),
       JSON.stringify({
-        PRINTFUL_STORE: JSON.stringify({ id: 42, name: "Acme Prints" }),
         PRINTFUL_TOKEN: "pf_founder_token",
         STRIPE_SECRET_KEY: "rk_live_founder",
         VERCEL_TOKEN: TOKEN,
@@ -2372,7 +2389,7 @@ describe("sell_print", () => {
       expect(await callTool(ctx, "sell_print", PRINT)).toContain(
         "Stripe won't let IdleBiz's key make shipping rates or read checkouts and charges: the founder has a Stripe card waiting",
       );
-      expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
+      expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
       expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
     },
   );
@@ -2444,6 +2461,28 @@ describe("sell_print", () => {
     expect(store.listListings().map((l) => l.paymentLink.id)).toEqual(["plink_1"]);
   });
 
+  it("lists nothing, saying the link may stand on Stripe, when Stripe answered the link's create in a shape IdleBiz does not read", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = sellingRun();
+    const sellers = globalThis.fetch;
+    replayingStripe((endpoint): StripeAnswer => {
+      if (endpoint !== "/v1/payment_links") {
+        return { body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" }, status: 200 };
+      }
+      return { body: { id: "plink_1" }, status: 200 };
+    }, sellers);
+    store.grantApproval(ctx.run.taskId, PRINT_ACTION);
+
+    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      "Stripe may have made the payment link",
+    );
+    expect(logged).toHaveBeenCalledExactlyOnceWith(
+      "[Stripe print payment link]",
+      expect.any(z.ZodError),
+    );
+    expect(store.listListings()).toEqual([]);
+  });
+
   it.each([
     {
       said: "http://acme-site.vercel.app/print/tee-1.png is not https",
@@ -2490,7 +2529,7 @@ describe("sell_print", () => {
     },
     {
       ask: {
-        integration: "stripe-key",
+        integration: "stripe",
         productId: null,
         reason: 'to sell "Launch tee" at $28.00 through a payment link',
         type: "integration",
@@ -2742,7 +2781,8 @@ describe("read_orders", () => {
   it("says which of a retired product's links no longer sell", async () => {
     const { ctx } = runAs("priya");
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    const sideLink = { ...PRO_LINK, productId: side.id };
+    store.recordChargeLink(sideLink);
     store.recordOrder({
       ...paid,
       collectedCents: 900,
@@ -2755,11 +2795,14 @@ describe("read_orders", () => {
       sessionId: "cs_cy",
     });
     store.killProduct(side.id, "dud", null);
-    store.setLinkState(PRO_LINK.id, {
-      at: Date.UTC(2026, 8, 23),
-      by: "idlebiz",
-      kind: "switched-off",
-    });
+    store.setLinkState(
+      { kind: "charge", link: sideLink },
+      {
+        at: Date.UTC(2026, 8, 23),
+        by: "idlebiz",
+        kind: "switched-off",
+      },
+    );
 
     expect(await callTool(ctx, "read_orders", { product: side.id })).toBe(
       [
@@ -2775,7 +2818,8 @@ describe("read_orders", () => {
   it("says where a retired product's links stand though it sold nothing, the founder's own switch-off too", async () => {
     const { ctx } = runAs("priya");
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    store.recordChargeLink({ ...PRO_LINK, productId: side.id });
+    const sideLink = { ...PRO_LINK, productId: side.id };
+    store.recordChargeLink(sideLink);
     store.recordChargeLink({
       ...PRO_LINK,
       id: "plink_next",
@@ -2784,11 +2828,14 @@ describe("read_orders", () => {
       url: "https://buy.stripe.com/next",
     });
     store.killProduct(side.id, "dud", null);
-    store.setLinkState(PRO_LINK.id, {
-      at: Date.UTC(2026, 8, 23),
-      by: "founder",
-      kind: "switched-off",
-    });
+    store.setLinkState(
+      { kind: "charge", link: sideLink },
+      {
+        at: Date.UTC(2026, 8, 23),
+        by: "founder",
+        kind: "switched-off",
+      },
+    );
 
     expect(await callTool(ctx, "read_orders", { product: side.id })).toBe(
       [

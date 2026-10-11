@@ -240,11 +240,11 @@ const fakeWorld = ({
 const saveSecrets = (stripeKey = "rk_live_founder") => {
   writeFileSync(
     path.join(root, "secrets.json"),
-    JSON.stringify({
-      PRINTFUL_STORE: JSON.stringify({ id: 42, name: "Acme Prints" }),
-      PRINTFUL_TOKEN: "pf_founder_token",
-      STRIPE_SECRET_KEY: stripeKey,
-    }),
+    JSON.stringify({ PRINTFUL_TOKEN: "pf_founder_token", STRIPE_SECRET_KEY: stripeKey }),
+  );
+  writeFileSync(
+    path.join(root, "printful-store.json"),
+    JSON.stringify({ id: 42, name: "Acme Prints" }),
   );
 };
 
@@ -742,7 +742,9 @@ describe("the order pump", () => {
 
   it("raises no key card once every live link that could owe a buyer is switched off", async () => {
     openShop();
-    store.setLinkState(LINK, { at: NOW, by: "idlebiz", kind: "switched-off" });
+    for (const held of store.paymentLinks()) {
+      store.setLinkState(held, { at: NOW, by: "idlebiz", kind: "switched-off" });
+    }
     writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
     fakeWorld();
 

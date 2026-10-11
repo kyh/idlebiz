@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HttpError, fetchOk } from "./lib/http";
 import { ENV_PREFIX, hasSecret, secretsUnder, setSecret } from "./secrets";
+import type { EnvSecretName } from "./secrets";
 import { VERCEL_API } from "./vercel";
 import type { Product, VercelBinding } from "@repo/domain/domain";
 import { isPublicEnvName } from "./env-name";
@@ -36,7 +37,7 @@ type ProductRef = Pick<Product, "id">;
 
 // Kept per project, not per product: the founder may rebind the product to a live project of
 // theirs, whose variable of the same name set_env never set.
-const keptKey = ({ id }: ProductRef, projectId: string, name: string): string =>
+const keptKey = ({ id }: ProductRef, projectId: string, name: string): EnvSecretName =>
   `${ENV_PREFIX}${id}/${encodeURIComponent(projectId)}/${name}`;
 
 /** Whether set_env set `name` on the product's project before, even a value this launch cannot open. */

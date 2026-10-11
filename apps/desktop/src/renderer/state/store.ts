@@ -18,7 +18,7 @@ import type {
 import type { RunnerId } from "@repo/domain/runners";
 import type { Digest } from "@repo/domain/digest";
 import { errorMessage } from "@repo/domain/errors";
-import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
+import type { ProductStatus, StripeKeyStatus } from "@repo/domain/integrations";
 import { api, listen } from "@/renderer/api";
 import { hear, tell } from "@/renderer/game/office-port";
 import type { Office } from "@/renderer/game/office-port";
@@ -37,8 +37,7 @@ interface State {
   authed: boolean | null;
   /** Runners not signed in, a login a turn found refused included: everyone on one waits on a sign-in. */
   signedOut: RunnerId[];
-  stripeStatus: StripeStatus;
-  /** The key the team charges with; unset until main answers. */
+  /** The key the team charges with and revenue is read with; unset until main answers. */
   stripeKey: StripeKeyStatus;
   /** Everything the company builds, oldest first, and where each one really is. */
   products: Product[];
@@ -82,7 +81,6 @@ let state: State = {
   saveIssues: [],
   signedOut: [],
   stripeKey: { state: "unset" },
-  stripeStatus: { state: "disconnected" },
   stuckTasks: [],
   talkingTo: null,
 };
@@ -168,7 +166,15 @@ const loadProductStatus = async (
 };
 
 /** What a fetch can answer. Not `Slice`, which is what an event can move, "all" included. */
-type Held = "company" | "employees" | "resting" | "tasks" | "bets" | "products" | "productStatus";
+type Held =
+  | "company"
+  | "employees"
+  | "resting"
+  | "tasks"
+  | "bets"
+  | "products"
+  | "productStatus"
+  | "stripeKey";
 
 const order = latestWins<Held>();
 
@@ -375,18 +381,13 @@ export const digest = (): Promise<Digest | null> =>
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
   updateCompany(() => api().company.setMaxAgents({ maxAgents }));
 
-export const connectStripe = (): Promise<void> =>
-  withCompany(async () => {
-    await api().stripe.connect();
-  });
-
-export const disconnectStripe = (): Promise<void> =>
-  withCompany(async () => {
-    await api().stripe.disconnect();
-  });
-
+/** Ticketed as a slice is, but asked with no company too: the key is the founder's, not a company's. */
 const loadStripeKey = async (): Promise<void> => {
-  set({ stripeKey: await api().stripe.keyStatus() });
+  const ticket = order.ticket();
+  const stripeKey = await api().stripe.keyStatus();
+  if (order.accepts("stripeKey", ticket)) {
+    set({ stripeKey });
+  }
 };
 
 export const saveStripeKey = async (key: string): Promise<void> => {
@@ -478,6 +479,7 @@ const RELOAD = {
   employees: reloadEmployees,
   products: reloadProducts,
   resting: reloadResting,
+  stripeKey: loadStripeKey,
   tasks: reloadTasks,
 } satisfies Record<Slice, () => Promise<void>>;
 
@@ -560,10 +562,6 @@ const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
 
 // ---- lifecycle -------------------------------------------------------------
 
-const loadStripeStatus = async (): Promise<void> => {
-  set({ stripeStatus: await api().stripe.status() });
-};
-
 let initialized = false;
 export const initStore = (): void => {
   if (initialized) {
@@ -572,12 +570,10 @@ export const initStore = (): void => {
   initialized = true;
   void refreshInBackground();
   void loadAuth();
-  void loadStripeStatus();
   void loadStripeKey();
   listen("activity", (e) => {
     void onActivityInBackground(e);
   });
-  listen("stripe", (s: StripeStatus) => set({ stripeStatus: s }));
   listen("auth", (e: AuthFlowEvent) => {
     if (e.type === "done") {
       set({ authed: true });

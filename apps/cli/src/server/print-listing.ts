@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { printfulCatalog, printfulQuote } from "./printful";
 import type { CatalogReader, PrintQuote, PrintQuoter } from "./printful";
-import { stripeShippedLink, stripeListingAccess } from "./payment-links";
-import type { ShippedLinker, StripeAccess } from "./payment-links";
+import { stripeShippedLink, stripeListingAccess } from "./stripe-links";
+import type { ShippedLinker, StripeAccess } from "./stripe-links";
 import { errorMessage } from "@repo/domain/errors";
 import { formatCents } from "@repo/domain/format";
 
