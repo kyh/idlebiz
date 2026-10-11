@@ -155,8 +155,8 @@ ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1`).
 
 ## What is deliberately not here
 
-- **No updater.** The Electron builds shipped none either; a feed is Tauri's updater plugin and a
-  signing key of its own, as kyh/inteligir's.
+- **No updater.** A feed is Tauri's updater plugin and a signing key of its own, as
+  kyh/inteligir's.
 - **No WebDriver of the window.** The page and main are driven in Chromium (`tools/e2e`, the dev host);
   the shell is held by `cargo test`, booted packaged by `pnpm smoke:desktop`, and looked at by hand.
 - **No restart of main.** A main that dies says so in a box and the app quits: main owns the save.

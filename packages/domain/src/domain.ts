@@ -426,7 +426,7 @@ export type TaskState =
   | { kind: "dropped"; reason: string }
   | { kind: "dead"; lastError: string };
 
-// the state kinds and the status vocabulary (TASK.md, the IPC filter, status events) are one set
+// the state kinds and the status vocabulary (TASK.md, tasks.list's filter, status events) are one set
 type _AssertStatesAreStatuses = TaskState["kind"] extends TaskStatus ? true : never;
 type _AssertStatusesAreStates = TaskStatus extends TaskState["kind"] ? true : never;
 const statesAreStatuses: _AssertStatesAreStatuses = true;

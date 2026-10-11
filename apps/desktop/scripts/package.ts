@@ -27,9 +27,9 @@ const { version } = z
   .object({ version: z.string() })
   .parse(JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf-8")));
 
-// the name electron-builder gave it, which the site's download link finds by its `.dmg`
+// the release's one asset the site's download link finds, by its `.dmg`
 const DMG_NAME = `IdleBiz-${version}-arm64.dmg`;
-// node 24's own floor (its binary's LC_BUILD_VERSION), which the Electron builds ran below
+// node 24's own floor (its binary's LC_BUILD_VERSION): below it the sidecar cannot start
 const MINIMUM_MACOS = "13.5";
 
 const log = (line: string): void => {
@@ -53,10 +53,10 @@ interface Notary {
 // from every run (`LOGINS` in apps/cli/src/server/agents/seal.ts): no path is configurable,
 // since a key anywhere else, the checkout included, is one any run can read
 const NOTARY_KEYS = path.join(homedir(), ".appstoreconnect", "private_keys");
-const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY_ID"]);
+const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY"]);
 
-// apps/desktop/.env names the key, its .p8 under NOTARY_KEYS by the name Apple downloads it as;
-// Tauri reads the id as APPLE_API_KEY
+// apps/desktop/.env names the key by Tauri's own names, its .p8 under NOTARY_KEYS by the name Apple
+// downloads it as
 const notaryEnv = (): Notary | null => {
   const file = path.join(packageRoot, ".env");
   if (!existsSync(file)) {
@@ -76,7 +76,7 @@ const notaryEnv = (): Notary | null => {
     );
   }
   const issuer = values.get("APPLE_API_ISSUER");
-  const keyId = values.get("APPLE_API_KEY_ID");
+  const keyId = values.get("APPLE_API_KEY");
   if (issuer === undefined || keyId === undefined) {
     return null;
   }

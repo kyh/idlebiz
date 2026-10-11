@@ -139,8 +139,8 @@ const markSeen = (throttled: boolean): void => {
 };
 
 const windowChanged = ({ state }: WindowChange): void => {
-  // leaving the office marks it seen, as the Electron window's blur, hide and minimize did; coming
-  // back must not, or the next digest would start at the return and miss what happened while away
+  // leaving the office (a blur, a hide, a minimize) marks it seen; coming back must not, or the
+  // next digest would start at the return and miss what happened while away
   if (state !== "shown") {
     markSeen(state === "blurred");
   }

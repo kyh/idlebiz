@@ -26,8 +26,8 @@ import { RefusalError } from "./refusal";
 
 // A change to the company that everyone should hear about: the store mutation,
 // the activity event and the team-room line, together. The scheduler, the
-// agents' tools and the founder's IPC all come through here, so a change reads
-// the same whoever made it.
+// agents' tools and the founder's calls from the page all come through here, so
+// a change reads the same whoever made it.
 
 /**
  * A line in the team room, the only way one is written, so the room agents read

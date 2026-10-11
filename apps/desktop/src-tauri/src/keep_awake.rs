@@ -1,7 +1,6 @@
 //! Holds the Mac out of idle sleep while main asks (a run is in flight): a user-initiated activity
-//! on the process, which is what Electron's `prevent-app-suspension` held. It stops idle sleep and
-//! App Nap, never the display's sleep and never past a closed lid. The activity is begun and ended
-//! on the main thread, which keeps it.
+//! on the process. It stops idle sleep and App Nap, never the display's sleep and never past a
+//! closed lid. The activity is begun and ended on the main thread, which keeps it.
 
 use tauri::{AppHandle, Runtime};
 
