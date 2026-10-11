@@ -77,7 +77,7 @@ export const openingSchema = z.strictObject({
   kind: z.enum(["path", "reveal", "url"]),
   target: z.string(),
 });
-export type Opening = z.infer<typeof openingSchema>;
+type Opening = z.infer<typeof openingSchema>;
 
 // reads the login item, or sets it first
 export const loginItemSchema = z.strictObject({ on: z.boolean().nullable() });

@@ -15,7 +15,6 @@ import {
 import type { DataTag, QueryExecuteOptions, QueryKey } from "@tanstack/react-query";
 import { taskIn } from "@repo/domain/domain";
 import type {
-  AgentRunner,
   Company,
   Employee,
   LoadSkip,
@@ -25,9 +24,10 @@ import type {
   TaskIn,
   TeamMessage,
 } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import type { Bet } from "@repo/domain/bets";
 import { errorMessage } from "@repo/domain/errors";
-import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
+import type { ProductStatus, StripeKeyStatus } from "@repo/domain/integrations";
 import { orpc } from "@/renderer/api";
 import { FEED_LINES } from "@/renderer/state/activity-reducer";
 import { bootOf } from "@/renderer/state/boot";
@@ -68,7 +68,6 @@ export const openTasksQuery = orpc.tasks.list.queryOptions({
 const productsQuery = orpc.products.list.queryOptions();
 const betsQuery = orpc.bets.list.queryOptions();
 const roomQuery = orpc.team.messages.queryOptions({ input: { limit: FEED_LINES } });
-export const stripeStatusQuery = orpc.stripe.status.queryOptions();
 export const stripeKeyQuery = orpc.stripe.keyStatus.queryOptions();
 /** A character's sheets: composed once per seed for the whole window. */
 export const characterQuery = (seed: string) =>
@@ -155,7 +154,6 @@ export const patchAnswer = async <T>(
 
 const NOTHING: never[] = [];
 const NO_REST: RestingRunners = {};
-const DISCONNECTED: StripeStatus = { state: "disconnected" };
 const UNSET: StripeKeyStatus = { state: "unset" };
 
 export const useCompany = (): Company | null => useQuery(companyQuery).data ?? null;
@@ -224,7 +222,7 @@ interface SignIn {
   /** A coding CLI is signed in; null until main's probe answers. */
   authed: boolean | null;
   /** Runners not signed in, a login a turn found refused included: everyone on one waits on a sign-in. */
-  signedOut: AgentRunner[];
+  signedOut: RunnerId[];
 }
 
 export const useAuth = (): SignIn => {
@@ -236,9 +234,7 @@ export const useAuth = (): SignIn => {
   return { authed: isError ? false : null, signedOut: NOTHING };
 };
 
-export const useStripeStatus = (): StripeStatus => useQuery(stripeStatusQuery).data ?? DISCONNECTED;
-
-/** The key the team charges with; unset until main answers. */
+/** The key the team charges with and revenue is read with; unset until main answers. */
 export const useStripeKey = (): StripeKeyStatus => useQuery(stripeKeyQuery).data ?? UNSET;
 
 /** Packages boot could not read. A skipped company blocks the office (see Boot). */

@@ -4,7 +4,7 @@
     "openedAtLogin": false,
     "packaged": true,
     "pageDevUrl": null,
-    "safeStoragePassword": "the-keychain-password"
+    "sealingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
   },
   "result": null
 }
