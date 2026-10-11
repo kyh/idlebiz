@@ -5,7 +5,7 @@ import { rmSync } from "node:fs";
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { ROOT_DIR } from "./paths";
+import { rootDir } from "./paths";
 import { RefusalError } from "./refusal";
 import { MAX_REQUEST_BYTES, toolAt } from "./tool-specs";
 import type { ToolAnswer, ToolName, ToolOutcome } from "./tool-specs";
@@ -165,12 +165,13 @@ const handle = async (run: Run, req: IncomingMessage, res: ServerResponse): Prom
 
 export class ControlPlane {
   private started = false;
-  private readonly root: string;
+  /** The save whose runs it serves, read as it is used: main makes its plane before it opens a save. */
+  private readonly root: () => string;
   private readonly home: string;
   /** Every live run's server, by its socket. */
   private readonly servers = new Map<string, { run: Run; server: Server }>();
 
-  constructor(root: string = ROOT_DIR, home: string = homedir()) {
+  constructor(root: () => string = rootDir, home: string = homedir()) {
     this.root = root;
     this.home = home;
   }
@@ -180,7 +181,7 @@ export class ControlPlane {
     if (this.started) {
       return;
     }
-    const { inSave, aside } = socketDirs(this.root, this.home);
+    const { inSave, aside } = socketDirs(this.root(), this.home);
     await Promise.all([inSave, aside].map((dir) => rm(dir, { force: true, recursive: true })));
     this.started = true;
   }
@@ -199,7 +200,7 @@ export class ControlPlane {
     if (!this.started) {
       throw new Error("control plane not started");
     }
-    const socket = runSocketPath(this.root, this.home, randomBytes(6).toString("hex"));
+    const socket = runSocketPath(this.root(), this.home, randomBytes(6).toString("hex"));
     const token = randomBytes(24).toString("base64url");
     const run: Run = { caller, token: Buffer.from(token) };
     await mkdir(path.dirname(socket), { mode: 0o700, recursive: true });

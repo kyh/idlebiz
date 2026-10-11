@@ -11,7 +11,7 @@ import type { ToolOutcome } from "./tool-specs";
 const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-cp-"));
 const root = path.join(box, "save");
 const home = path.join(box, "home");
-const controlPlane = new ControlPlane(root, home);
+const controlPlane = new ControlPlane(() => root, home);
 
 beforeAll(() => controlPlane.start());
 afterAll(() => {

@@ -1,16 +1,18 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RefusalError } from "./refusal";
 import type { Sealer } from "./secrets";
+import { getSecret, heldKeyIn, heldKeys, setSealer, setSecret } from "./secrets";
+import {
+  printfulCredential,
+  printfulTokenStatus,
+  removePrintfulToken,
+  savePrintfulToken,
+} from "./printful-token";
+import { tempSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-printful-token-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { getSecret, heldKeyIn, heldKeys, setSealer, setSecret } = await import("./secrets");
-const { printfulCredential, printfulTokenStatus, removePrintfulToken, savePrintfulToken } =
-  await import("./printful-token");
+const root = tempSave();
 
 const secretsFile = path.join(root, "secrets.json");
 const storeFile = path.join(root, "printful-store.json");
@@ -30,15 +32,6 @@ beforeEach(() => {
 afterEach(() => {
   setSealer(null);
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 const ORDERS = { data: [{ name: "View and manage orders", value: "orders" }] };

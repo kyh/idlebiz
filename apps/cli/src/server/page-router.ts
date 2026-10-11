@@ -23,7 +23,7 @@ import { answerOf } from "./lib/answers";
 import { broadcast, pageEvents } from "./lib/broadcast";
 import { launchAtLogin, setLaunchAtLogin } from "./login-item";
 import { metricsPulse } from "./metrics-pulse";
-import { ROOT_DIR } from "./paths";
+import { rootDir } from "./paths";
 import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "./printful-token";
 import { openProduct, openWorkspacePath, productStatus } from "./product";
 import { chatOptions } from "./prompts/chat-options";
@@ -160,7 +160,7 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
     },
     save: {
       openFolder: os.save.openFolder.handler(async () => {
-        await host().open({ kind: "path", target: ROOT_DIR });
+        await host().open({ kind: "path", target: rootDir() });
       }),
       // the first report waits on the seal's check, so a refusal is in it
       report: os.save.report.handler(async () => {

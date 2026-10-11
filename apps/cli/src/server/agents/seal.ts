@@ -16,8 +16,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { runnerBin } from "@repo/agent-driver/detect";
 import { z } from "zod";
-import { ROOT_DIR } from "../paths";
-import { SECRETS_PATH } from "../secrets";
+import { rootDir } from "../paths";
+import { secretsPath } from "../secrets";
 import { pagePorts } from "../page-server";
 import { DEV_PORT } from "@repo/contract/routes";
 import type { LoadReport } from "@repo/domain/domain";
@@ -866,9 +866,9 @@ export const machineSeal = async (
     closedPorts: [...CLOSED_PORTS, ...pagePorts()],
     env: process.env,
     home: homedir(),
-    mainOnly: [SECRETS_PATH],
+    mainOnly: [secretsPath()],
     pathDirs: (process.env.PATH ?? "").split(path.delimiter),
-    save: ROOT_DIR,
+    save: rootDir(),
     scratch: [...temps, cache, "/private/tmp"],
     shims: temps.flatMap((temp) => TERMINAL_SHIMS.map((name) => path.join(temp, name))),
     sshAgent: agent === undefined || agent === "" ? null : agent,

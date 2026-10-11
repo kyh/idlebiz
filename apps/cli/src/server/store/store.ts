@@ -4,42 +4,42 @@ import { isDeepStrictEqual } from "node:util";
 import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
 import { report } from "../lib/report";
 import {
-  ROOT_DIR,
+  rootDir,
   ensureAppDirs,
-  COMPANY_DIR,
-  COMPANY_FILE,
-  SHARED_DIR,
-  ACTIVITY_FILE,
-  RECENT_SHIPS_FILE,
-  SINCE_LAST_LOOK_FILE,
-  AGENTS_DIR,
-  APPROVALS_FILE,
-  ALUMNI_DIR,
+  companyDir,
+  companyFile,
+  sharedDir,
+  activityFile,
+  recentShipsFile,
+  sinceLastLookFile,
+  agentsDir,
+  approvalsFile,
+  alumniDir,
   employeeAgentDir,
   employeeFile,
   employeeRunStateFile,
   employeeMemoryDir,
-  TASKS_DIR,
+  tasksDir,
   taskFile,
-  SHIPPED_DIR,
+  shippedDir,
   shippedTaskFile,
-  PRODUCTS_DIR,
+  productsDir,
   productFile,
   productWorkspace,
   linkFile,
-  LINKS_DIR,
-  LISTINGS_DIR,
+  linksDir,
+  listingsDir,
   listingFile,
-  ORDERS_DIR,
+  ordersDir,
   orderFile,
-  ORDERS_CURSOR_FILE,
-  RETIRED_DIR,
-  BETS_DIR,
+  ordersCursorFile,
+  retiredDir,
+  betsDir,
   betFile,
-  POLICY_FILE,
-  ROUTINES_DIR,
+  policyFile,
+  routinesDir,
   routineFile,
-  CHAT_FILE,
+  chatFile,
 } from "../paths";
 import { parseDoc, serializeDoc, slugify } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
@@ -301,7 +301,7 @@ const readTextIfPresent = (file: string): string | null => {
 };
 
 const saveCompany = (co: Company): void => {
-  atomicWrite(COMPANY_FILE, serializeDoc(companyToDoc(co)));
+  atomicWrite(companyFile(), serializeDoc(companyToDoc(co)));
 };
 
 const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void => {
@@ -331,7 +331,7 @@ const saveRoutine = (r: Routine): void => {
 };
 
 const shelve = (t: Task): void => {
-  moveDir(path.join(TASKS_DIR, t.id), path.join(SHIPPED_DIR, t.id));
+  moveDir(path.join(tasksDir(), t.id), path.join(shippedDir(), t.id));
 };
 
 /** Shipped work, answered asks, settled order cards and dropped work: shelved in shipped/, never acted on again. */
@@ -479,7 +479,7 @@ const PersistedTeamMessageSchema = z.object({
 });
 
 const loadRecentChat = (active: ActiveCompany): void => {
-  const rows = readJsonlTail(CHAT_FILE, PersistedTeamMessageSchema, TEAM_CHAT_RING);
+  const rows = readJsonlTail(chatFile(), PersistedTeamMessageSchema, TEAM_CHAT_RING);
   active.chat = rows.map((row) => ({ ...row, id: nextId("nextTeamMessageId") }));
 };
 
@@ -523,7 +523,7 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
-  atomicWrite(APPROVALS_FILE, JSON.stringify(grants, null, 2));
+  atomicWrite(approvalsFile(), JSON.stringify(grants, null, 2));
   active.grants = grants;
 };
 
@@ -688,7 +688,7 @@ export const createEmployee = (hire: EmployeeInput): Employee => {
   const id = uniqueSlug(
     hire.name,
     list.map((e) => e.id),
-    heldIn(AGENTS_DIR, ALUMNI_DIR),
+    heldIn(agentsDir(), alumniDir()),
   );
   const employee = employeeRecord(hire, id);
   mkdirSync(employeeMemoryDir(id), { recursive: true });
@@ -740,7 +740,7 @@ const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
 /** Everything the company shelved as history. Read from disk the first time it is asked for. */
 const shippedOf = (active: ActiveCompany): Task[] => {
-  active.shipped ??= loadPackages("task", SHIPPED_DIR, shippedTaskFile, docToTask);
+  active.shipped ??= loadPackages("task", shippedDir(), shippedTaskFile, docToTask);
   return active.shipped;
 };
 
@@ -824,7 +824,7 @@ export const archiveEmployee = (
   if (!emp) {
     return null;
   }
-  moveDir(employeeAgentDir(employeeId), archiveTo(ALUMNI_DIR, employeeId));
+  moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const active = current();
   const idx = active.employees.findIndex((e) => e.id === employeeId);
   if (idx !== -1) {
@@ -854,7 +854,7 @@ const newProduct = (
 });
 
 const firstProduct = (co: Company): Product =>
-  newProduct(uniqueSlug(co.name, [], heldIn(PRODUCTS_DIR, RETIRED_DIR)), {
+  newProduct(uniqueSlug(co.name, [], heldIn(productsDir(), retiredDir())), {
     createdAt: co.createdAt,
     description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
     name: co.name,
@@ -879,7 +879,7 @@ export const listProducts = (): Product[] => [...(current().products ?? [])];
  */
 export const madeProduct = (id: string): boolean =>
   current().products.some((product) => product.id === id) ||
-  [PRODUCTS_DIR, RETIRED_DIR].some((dir) => safeReaddir(dir).includes(id));
+  [productsDir(), retiredDir()].some((dir) => safeReaddir(dir).includes(id));
 
 /**
  * Whether `id` was retired: its package sits under retired/ and none under products/. A product
@@ -887,7 +887,7 @@ export const madeProduct = (id: string): boolean =>
  * as retired, and its payment links are never switched off for it.
  */
 export const isRetiredProduct = (id: string): boolean =>
-  heldIn(RETIRED_DIR)(id) && !heldIn(PRODUCTS_DIR)(id);
+  heldIn(retiredDir())(id) && !heldIn(productsDir())(id);
 
 /** A product's payment links outlive it: Stripe may make one while its product retires. */
 const requireMadeProduct = (id: string): void => {
@@ -910,7 +910,7 @@ export const createProduct = (named: ProductDraft): Product => {
   const id = uniqueSlug(
     named.name,
     list.map((p) => p.id),
-    heldIn(PRODUCTS_DIR, RETIRED_DIR),
+    heldIn(productsDir(), retiredDir()),
   );
   const product = newProduct(id, {
     createdAt: Date.now(),
@@ -1151,11 +1151,11 @@ export type OrdersCursor = z.infer<typeof OrdersCursorSchema>;
 
 /** Null before the first read. */
 export const ordersCursor = (): OrdersCursor | null =>
-  readJsonFile(ORDERS_CURSOR_FILE, OrdersCursorSchema);
+  readJsonFile(ordersCursorFile(), OrdersCursorSchema);
 
 export const setOrdersCursor = (cursor: OrdersCursor): void => {
   current();
-  atomicWrite(ORDERS_CURSOR_FILE, JSON.stringify(OrdersCursorSchema.parse(cursor)));
+  atomicWrite(ordersCursorFile(), JSON.stringify(OrdersCursorSchema.parse(cursor)));
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
@@ -1212,7 +1212,7 @@ export const openBet = (
   const id = uniqueSlug(
     input.title,
     active.bets.map((b) => b.id),
-    heldIn(BETS_DIR),
+    heldIn(betsDir()),
   );
   const bet: Bet = {
     budgetUsd: input.budgetUsd,
@@ -1342,7 +1342,7 @@ const stoppedWorkReason = (t: Task): string | null =>
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
-    atomicWrite(POLICY_FILE, JSON.stringify(next, null, 2));
+    atomicWrite(policyFile(), JSON.stringify(next, null, 2));
     active.policy = next;
   }
 };
@@ -1451,7 +1451,7 @@ export const recordShip = (productId: string | null, summary: string): void => {
   // the counters are the record; the brief's list follows them
   const ships = [...active.recentShips, summary].slice(-RECENT_SHIPS);
   try {
-    atomicWrite(RECENT_SHIPS_FILE, JSON.stringify(ships, null, 2));
+    atomicWrite(recentShipsFile(), JSON.stringify(ships, null, 2));
   } finally {
     active.recentShips = ships;
   }
@@ -1471,7 +1471,7 @@ export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   if (ring.length > TEAM_CHAT_RING) {
     ring.splice(0, ring.length - TEAM_CHAT_RING);
   }
-  appendJsonl(CHAT_FILE, msg);
+  appendJsonl(chatFile(), msg);
   return stored;
 };
 
@@ -1503,7 +1503,7 @@ const addTask = (
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
-    heldIn(TASKS_DIR, SHIPPED_DIR),
+    heldIn(tasksDir(), shippedDir()),
   );
   const task: Task = {
     answers,
@@ -1893,7 +1893,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
       `${runner?.name ?? "A teammate"} is mid-run on ${product.name} — kill its bets so no new work lands there, then retire it once they're idle.`,
     );
   }
-  moveDir(path.join(PRODUCTS_DIR, productId), archiveTo(RETIRED_DIR, productId));
+  moveDir(path.join(productsDir(), productId), archiveTo(retiredDir(), productId));
   const now = Date.now();
   const killed = active.bets
     .filter((b) => b.productId === productId && !isClosed(b))
@@ -1923,7 +1923,7 @@ export const foundCompany = (input: {
   if (c().active) {
     throw new RefusalError("a company is already active");
   }
-  if (existsSync(COMPANY_DIR)) {
+  if (existsSync(companyDir())) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
   const co: Company = {
@@ -1942,7 +1942,7 @@ export const foundCompany = (input: {
     ships: 0,
     spentUsd: 0,
     users: null,
-    workspaceDir: SHARED_DIR,
+    workspaceDir: sharedDir(),
   };
   const active = emptyCompany(co);
   active.shipped = [];
@@ -1966,13 +1966,13 @@ export const foundCompany = (input: {
     active.routines.push(routineRecord(routine, routineId));
   }
 
-  const staging = mkdtempSync(path.join(ROOT_DIR, ".founding-"));
+  const staging = mkdtempSync(path.join(rootDir(), ".founding-"));
   // Only disk destinations change; persisted workspace paths refer to the final company.
-  const staged = (file: string): string => path.join(staging, path.relative(COMPANY_DIR, file));
+  const staged = (file: string): string => path.join(staging, path.relative(companyDir(), file));
   try {
-    mkdirSync(staged(SHARED_DIR), { recursive: true });
-    mkdirSync(staged(TASKS_DIR), { recursive: true });
-    mkdirSync(staged(AGENTS_DIR), { recursive: true });
+    mkdirSync(staged(sharedDir()), { recursive: true });
+    mkdirSync(staged(tasksDir()), { recursive: true });
+    mkdirSync(staged(agentsDir()), { recursive: true });
     for (const product of active.products) {
       mkdirSync(staged(product.workspaceDir), { recursive: true });
       atomicWrite(staged(productFile(product.id)), serializeDoc(productToDoc(product)));
@@ -1987,8 +1987,8 @@ export const foundCompany = (input: {
     for (const routine of active.routines) {
       atomicWrite(staged(routineFile(routine.id)), serializeDoc(routineToDoc(routine)));
     }
-    atomicWrite(staged(COMPANY_FILE), serializeDoc(companyToDoc(co)));
-    moveDir(staging, COMPANY_DIR);
+    atomicWrite(staged(companyFile()), serializeDoc(companyToDoc(co)));
+    moveDir(staging, companyDir());
   } catch (error) {
     rmSync(staging, { force: true, recursive: true });
     throw error;
@@ -1999,13 +1999,13 @@ export const foundCompany = (input: {
 
 /** The root's one company, or null when it holds none or one that does not read, which the load report names. */
 const readCompany = (): Company | null => {
-  if (!existsSync(COMPANY_DIR)) {
+  if (!existsSync(companyDir())) {
     return null;
   }
   try {
-    return docToCompany(parseDoc(readFileSync(COMPANY_FILE, "utf-8")));
+    return docToCompany(parseDoc(readFileSync(companyFile(), "utf-8")));
   } catch (error) {
-    skip("company", COMPANY_FILE, error);
+    skip("company", companyFile(), error);
     return null;
   }
 };
@@ -2070,32 +2070,32 @@ const recoverInterruptedRuns = (active: ActiveCompany): void => {
 
 const loadActiveCompany = (company: Company): ActiveCompany => {
   const active = emptyCompany(company);
-  active.employees = loadPackages("employee", AGENTS_DIR, employeeFile, docToEmployee)
+  active.employees = loadPackages("employee", agentsDir(), employeeFile, docToEmployee)
     .map(withRunState)
     .toSorted(byAge);
-  active.bets = loadPackages("bet", BETS_DIR, betFile, docToBet).toSorted(byAge);
-  const tasks = loadPackages("task", TASKS_DIR, taskFile, (doc) =>
+  active.bets = loadPackages("bet", betsDir(), betFile, docToBet).toSorted(byAge);
+  const tasks = loadPackages("task", tasksDir(), taskFile, (doc) =>
     docToTask(relockLost(doc)),
   ).toSorted(byAge);
   active.tasks = shelveLoadedHistory(active, tasks);
-  active.products = loadPackages("product", PRODUCTS_DIR, productFile, docToProduct).toSorted(
+  active.products = loadPackages("product", productsDir(), productFile, docToProduct).toSorted(
     byAge,
   );
-  active.listings = loadRecords("listing", LISTINGS_DIR, ListingSchema);
-  active.links = loadRecords("link", LINKS_DIR, ChargeLinkSchema);
-  active.orders = loadRecords("order", ORDERS_DIR, OrderSchema);
-  active.policy = readJsonFile(POLICY_FILE, PolicyParamsSchema) ?? DEFAULT_POLICY;
-  active.grants = readJsonFile(APPROVALS_FILE, z.array(GrantSchema)) ?? [];
-  active.routines = loadPackages("routine", ROUTINES_DIR, routineFile, docToRoutine);
+  active.listings = loadRecords("listing", listingsDir(), ListingSchema);
+  active.links = loadRecords("link", linksDir(), ChargeLinkSchema);
+  active.orders = loadRecords("order", ordersDir(), OrderSchema);
+  active.policy = readJsonFile(policyFile(), PolicyParamsSchema) ?? DEFAULT_POLICY;
+  active.grants = readJsonFile(approvalsFile(), z.array(GrantSchema)) ?? [];
+  active.routines = loadPackages("routine", routinesDir(), routineFile, docToRoutine);
   loadRecentChat(active);
-  active.sinceLastLook = readJsonFile(SINCE_LAST_LOOK_FILE, DigestSchema);
-  active.recentShips = readJsonFile(RECENT_SHIPS_FILE, RecentShipsSchema) ?? [];
+  active.sinceLastLook = readJsonFile(sinceLastLookFile(), DigestSchema);
+  active.recentShips = readJsonFile(recentShipsFile(), RecentShipsSchema) ?? [];
   return active;
 };
 
 /** Whether the company lost its last product; one boot could not read is still its own. */
 const lacksProduct = (active: ActiveCompany): boolean =>
-  active.products.length === 0 && !holdsPackage(PRODUCTS_DIR, productFile);
+  active.products.length === 0 && !holdsPackage(productsDir(), productFile);
 
 /** Whether the save named no lead on the roster and one was elected; unsaved. */
 const electMissingLead = (active: ActiveCompany): boolean => {
@@ -2125,7 +2125,7 @@ const ensureFirstProduct = (active: ActiveCompany): void => {
  */
 const releaseOrphanedTasks = (active: ActiveCompany): void => {
   const roster = new Set(active.employees.map((e) => e.id));
-  const unread = heldIn(AGENTS_DIR);
+  const unread = heldIn(agentsDir());
   const leavers = new Set(
     active.tasks.flatMap((t) =>
       t.assigneeId === null || roster.has(t.assigneeId) || unread(t.assigneeId)
@@ -2157,7 +2157,7 @@ export const initStore = (): LoadReport => {
       saveCompany(active.company);
     }
     releaseOrphanedTasks(active);
-    if (!holdsPackage(ROUTINES_DIR, routineFile)) {
+    if (!holdsPackage(routinesDir(), routineFile)) {
       seedDefaultRoutines(company.businessType);
     }
     for (const employee of active.employees) {
@@ -2169,14 +2169,14 @@ export const initStore = (): LoadReport => {
     }
   } catch (error) {
     cache.active = null;
-    skip("company", COMPANY_FILE, error);
+    skip("company", companyFile(), error);
   }
   return lastLoad;
 };
 
 // ---- activity log ----------------------------------------------------------
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  atomicWrite(SINCE_LAST_LOOK_FILE, JSON.stringify(next, null, 2));
+  atomicWrite(sinceLastLookFile(), JSON.stringify(next, null, 2));
   active.sinceLastLook = next;
 };
 
@@ -2191,7 +2191,7 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
   if (!persist || !active) {
     return entry;
   }
-  appendJsonl(ACTIVITY_FILE, row);
+  appendJsonl(activityFile(), row);
   const folded = active.sinceLastLook && foldDigest(active.sinceLastLook, row);
   if (folded) {
     saveSinceLastLook(active, folded);

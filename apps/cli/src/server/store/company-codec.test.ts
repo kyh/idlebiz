@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { SHARED_DIR } from "../paths";
+import { sharedDir } from "../paths";
 import type { Company } from "@repo/domain/domain";
 import { SAVE_FORMAT, SaveFormatError, companyToDoc, docToCompany } from "./company-codec";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
+import { tempSave } from "../test-support/save";
+
+tempSave();
 
 const acme: Company = {
   autopilot: true,
@@ -21,7 +24,7 @@ const acme: Company = {
   ships: 0,
   spentUsd: 0,
   users: null,
-  workspaceDir: SHARED_DIR,
+  workspaceDir: sharedDir(),
 };
 
 const written = (co: Company): string => serializeDoc(companyToDoc(co));

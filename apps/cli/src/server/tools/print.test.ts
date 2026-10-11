@@ -5,8 +5,7 @@ import { z } from "zod";
 import type { CatalogQuery, CatalogRead } from "../printful";
 import type { RunContext } from "./define";
 import type { StripeAnswer } from "./fixtures";
-
-const {
+import {
   DESIGN,
   DESIGN_SHA,
   LISTED_URL,
@@ -17,11 +16,11 @@ const {
   revenueBet,
   root,
   runAs,
-} = await import("./fixtures");
-const store = await import("../store/store");
-const { callTool: outcomeOf } = await import("./index");
-const { printListing } = await import("../print-listing");
-const { productionHosts } = await import("../vercel");
+} from "./fixtures";
+import * as store from "../store/store";
+import { callTool as outcomeOf } from "./index";
+import { printListing } from "../print-listing";
+import { productionHosts } from "../vercel";
 
 const PRINT = {
   name: "Launch tee",

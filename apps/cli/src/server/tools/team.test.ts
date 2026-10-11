@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TaskOrigin } from "@repo/domain/domain";
 import type { RunContext } from "./define";
-
-const { BET, HANDOFF, callTool, hire, openBet, runAs } = await import("./fixtures");
-const store = await import("../store/store");
+import { hire } from "../test-support/save";
+import { BET, HANDOFF, callTool, openBet, runAs } from "./fixtures";
+import * as store from "../store/store";
 
 describe("team tools", () => {
   it("turns a hire away at the seat cap as an answer, not a fault", async () => {
@@ -89,7 +89,7 @@ describe("team tools", () => {
   });
 
   it("fans same-role work out across the teammates who have the least of it", async () => {
-    const { ctx } = runAs("mae", [hire("Sam", "Engineer"), hire("Ana", "Engineer")]);
+    const { ctx } = runAs("mae", [hire("Sam"), hire("Ana")]);
     for (const title of ["Page A", "Page B", "Page C", "Page D"]) {
       await callTool(ctx, "delegate", { ...HANDOFF, title });
     }

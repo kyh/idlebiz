@@ -1,42 +1,26 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import type { BlockedAsk } from "@repo/domain/domain";
 import type { JsonValue } from "@repo/domain/json";
-import type { RunnerId } from "@repo/domain/runners";
 import type { DeployRequest, DeployResult } from "../deploy";
 import type { ChargeLink } from "../link-record";
+import * as store from "../store/store";
+import type { FoundingHire } from "../store/store";
+import { askBox } from "../agents/ask-box";
+import { foundAcme, freshSave, hire } from "../test-support/save";
 import type { ToolName } from "../tool-specs";
 import type { RunContext } from "./define";
+import { callTool as outcomeOf } from "./index";
 
-// What the tools' tests share. Importing this points the save at a root of the importing test
-// file's own before anything reads server/paths, and empties it before each test.
-export const root = mkdtempSync(path.join(tmpdir(), "idlebiz-tools-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("../store/store");
-const { askBox } = await import("../agents/ask-box");
-const { callTool: outcomeOf } = await import("./index");
-
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
+// What the tools' tests share. Importing this gives the importing test file a save of its own,
+// emptied before each test.
+export const root = freshSave();
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 /** What a call answers the agent, however it ended. */
@@ -49,27 +33,9 @@ export const callTool = async (
   return text;
 };
 
-export const hire = (name: string, title: string, runner: RunnerId = "claude") =>
-  ({
-    name,
-    persona: "ships",
-    role: "engineer",
-    runner,
-    spriteSeed: name,
-    title,
-  }) as const;
-
 /** A run by `employeeId` in a fresh company led by Mae, of two unless `more` join them. */
-export const runAs = (employeeId: string, more: readonly ReturnType<typeof hire>[] = []) => {
-  const company = store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [hire("Mae", "General Manager"), hire("Priya", "Engineer"), ...more],
-    mission: "ship",
-    name: "Acme",
-  });
+export const runAs = (employeeId: string, more: readonly FoundingHire[] = []) => {
+  const company = foundAcme([hire("Mae", "General Manager"), hire("Priya"), ...more]);
   const employee = store.getEmployee(employeeId);
   if (!employee) {
     throw new Error(`no ${employeeId}`);

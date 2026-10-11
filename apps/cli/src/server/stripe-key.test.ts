@@ -1,16 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RefusalError } from "./refusal";
+import { getSecret, setSealer, setSecret } from "./secrets";
+import { noteStripeRead, removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
+import { fetchRealMetrics, stripeCredential } from "./metrics";
+import { tempSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-stripe-key-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { getSecret, setSealer, setSecret } = await import("./secrets");
-const { noteStripeRead, removeStripeKey, saveStripeKey, stripeKeyStatus } =
-  await import("./stripe-key");
-const { fetchRealMetrics, stripeCredential } = await import("./metrics");
+const root = tempSave();
 
 const secretsFile = path.join(root, "secrets.json");
 
@@ -26,15 +23,6 @@ beforeEach(() => {
 afterEach(() => {
   setSealer(null);
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 /** Stripe answering every call with `answer`; keeps what each call asked for, and with which key. */

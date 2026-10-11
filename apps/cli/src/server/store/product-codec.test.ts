@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ROOT_DIR, productWorkspace } from "../paths";
+import { rootDir, productWorkspace } from "../paths";
 import type { Product } from "@repo/domain/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToProduct, productToDoc } from "./product-codec";
+import { tempSave } from "../test-support/save";
+
+tempSave();
 
 const roundTrip = (p: Product): Product => docToProduct(parseDoc(serializeDoc(productToDoc(p))));
 
@@ -55,6 +58,6 @@ describe("product codec", () => {
   it("writes no workspace, which its slug alone places", () => {
     const written = serializeDoc(productToDoc(widget));
     expect(written).not.toContain("workspace");
-    expect(written).not.toContain(ROOT_DIR);
+    expect(written).not.toContain(rootDir());
   });
 });

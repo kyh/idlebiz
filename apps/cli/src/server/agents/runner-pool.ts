@@ -26,14 +26,14 @@ import { controlPlane } from "../control-plane";
 import type { ToolCaller } from "../control-plane";
 import { atomicWrite, readJsonFile } from "../lib/fs";
 import { report } from "../lib/report";
-import { RUNNER_REST_FILE, RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
+import { runnerRestFile, runBinDir, toolCacheDir, employeeMemoryDir } from "../paths";
 import { livePageOf } from "../policy/browser";
 import { RefusalError } from "../refusal";
 import * as store from "../store/store";
 import type { AskBox } from "./ask-box";
 import { bundledSkillsDir } from "./bundled-skills";
 import { refuseDeniedTools } from "./claude-denies";
-import { RUN_TMPDIR, TOOL_CACHE_ENV, ensureRepository, gitIdentity } from "./run-workspace";
+import { runTmpdir, toolCacheEnv, ensureRepository, gitIdentity } from "./run-workspace";
 import {
   machineSeal,
   namespaceUnder,
@@ -513,7 +513,7 @@ class AgentDriver {
     // for what is shared across products
     const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
     const memory = employeeMemoryDir(emp.id);
-    const addDirs = [...shared, memory, TOOL_CACHE_DIR];
+    const addDirs = [...shared, memory, toolCacheDir()];
     const confinement = {
       cwd: run.workspace,
       real: realPathOf,
@@ -521,7 +521,7 @@ class AgentDriver {
     };
     // a run cannot make its own folders, only write in them
     mkdirSync(memory, { recursive: true });
-    mkdirSync(RUN_TMPDIR, { recursive: true });
+    mkdirSync(runTmpdir(), { recursive: true });
     // the run's own socket, which its seal alone lets it connect to: the boundary between runs
     const handle = await controlPlane.registerRun(tools.call);
     const leases = new Set<string>();
@@ -550,10 +550,10 @@ class AgentDriver {
         cwd: run.workspace,
         env: {
           ...handle.env,
-          ...TOOL_CACHE_ENV,
+          ...toolCacheEnv(),
           ...gitIdentity(emp, company),
           // the company's tools are the `idlebiz` command, main's own whatever else PATH holds
-          PATH: pathWithLauncher(RUN_BIN_DIR, agent.env.PATH),
+          PATH: pathWithLauncher(runBinDir(), agent.env.PATH),
         },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
         instructionsChanged: run.instructionsChanged,
@@ -597,7 +597,7 @@ class AgentDriver {
 }
 
 /** Where the company keeps its runners' rests; null before one is founded. */
-const activeRestFile = (): string | null => (store.getCompany() === null ? null : RUNNER_REST_FILE);
+const activeRestFile = (): string | null => (store.getCompany() === null ? null : runnerRestFile());
 
 /**
  * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal

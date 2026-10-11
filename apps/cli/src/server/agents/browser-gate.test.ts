@@ -1,21 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Seal } from "./seal";
+import { acpAgentFor } from "./session";
+import { machineSeal, sealedCommand } from "./seal";
+import { toolCacheDir } from "../paths";
+import { tempSave } from "../test-support/save";
 
 // The real agent-browser, driven as a run drives it: under the run's seal, in its env, from its
 // working directory. It proves a screenshot named no path lands where a run writes, and that a
 // daemon a run left idling never serves a run with other folders, where it would write into the
 // first run's workspace.
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-browser-gate-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { acpAgentFor } = await import("./session");
-const { machineSeal, sealedCommand } = await import("./seal");
-const { TOOL_CACHE_DIR } = await import("../paths");
+const root = tempSave();
 
 const browserRuns =
   process.platform === "darwin" && spawnSync("agent-browser", ["--version"]).status === 0;
@@ -46,8 +44,8 @@ const browse = (seal: Seal, cwd: string, ...args: string[]) => {
 const runIn = async (name: string) => {
   const workspace = path.join(root, name);
   mkdirSync(workspace, { recursive: true });
-  mkdirSync(path.join(TOOL_CACHE_DIR, "tmp"), { recursive: true });
-  const seal = await machineSeal([workspace, TOOL_CACHE_DIR]);
+  mkdirSync(path.join(toolCacheDir(), "tmp"), { recursive: true });
+  const seal = await machineSeal([workspace, toolCacheDir()]);
   mkdirSync(seal.namespaces.claude.path, { recursive: true });
   opened.push({ cwd: workspace, seal });
   return { seal, workspace };
@@ -63,12 +61,6 @@ describe.skipIf(!browserRuns)("agent-browser inside the seal", () => {
     for (const { seal } of opened) {
       rmSync(seal.namespaces.claude.path, { force: true, recursive: true });
     }
-    rmSync(root, { force: true, recursive: true });
-    if (previousRoot === undefined) {
-      delete process.env.IDLEBIZ_ROOT_DIR;
-    } else {
-      process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-    }
   }, 90_000);
 
   it(
@@ -80,7 +72,7 @@ describe.skipIf(!browserRuns)("agent-browser inside the seal", () => {
       const shot = browse(seal, workspace, "screenshot");
       expect(shot.output).not.toMatch(/not permitted/iu);
       expect(shot.status).toBe(0);
-      expect(readdirSync(path.join(TOOL_CACHE_DIR, "tmp", "screenshots"))).toHaveLength(1);
+      expect(readdirSync(path.join(toolCacheDir(), "tmp", "screenshots"))).toHaveLength(1);
     },
   );
 

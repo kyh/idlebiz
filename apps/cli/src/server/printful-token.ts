@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { atomicWrite, readJsonFile } from "./lib/fs";
 import { HttpError } from "./lib/http";
-import { ROOT_DIR } from "./paths";
+import { rootDir } from "./paths";
 import { printfulGet, printfulSays } from "./printful";
 import type { PrintfulCredential } from "./printful";
 import { PRINTFUL_TOKEN, deleteSecret, getSecret, setSecret } from "./secrets";
@@ -15,7 +15,7 @@ import { RefusalError } from "./refusal";
 // places orders with it, and the renderer is told only which token and store are saved.
 
 /** The one store the token sells through: no secret, so it is kept beside secrets.json, never in it. */
-const STORE_PATH = path.join(ROOT_DIR, "printful-store.json");
+const storePath = (): string => path.join(rootDir(), "printful-store.json");
 
 /** Printable ASCII with no space: anything else would fail in the Authorization header, and fetch's refusal quotes the token. */
 const PRIVATE_TOKEN = /^[!-~]{16,512}$/u;
@@ -29,13 +29,13 @@ const StoresSchema = z.object({
   paging: z.object({ total: z.number() }).optional(),
 });
 
-const savedStore = (): PrintfulStore | null => readJsonFile(STORE_PATH, StoreSchema);
+const savedStore = (): PrintfulStore | null => readJsonFile(storePath(), StoreSchema);
 
 const keepStore = (store: PrintfulStore | null): void => {
   if (store === null) {
-    rmSync(STORE_PATH, { force: true });
+    rmSync(storePath(), { force: true });
   } else {
-    atomicWrite(STORE_PATH, `${JSON.stringify(store, null, 2)}\n`);
+    atomicWrite(storePath(), `${JSON.stringify(store, null, 2)}\n`);
   }
 };
 

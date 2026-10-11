@@ -23,6 +23,9 @@ import { holdFor } from "../policy";
 import type { Hold } from "../policy";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
+import { sessionAgent } from "./session";
+import { machineSeal, realPathOf, sealRuns } from "./seal";
+import { tempSave } from "../test-support/save";
 
 // The real claude, driven through the app's claude-agent-acp inside the seal, by a stand-in
 // model on loopback: nothing is billed, and claude's config dir is a scratch one whose settings
@@ -36,11 +39,7 @@ import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 // cannot rewrite the settings or account file the founder's own claude loads, and still runs and
 // keeps its transcript.
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { sessionAgent } = await import("./session");
-const { machineSeal, realPathOf, sealRuns } = await import("./seal");
+const root = tempSave();
 
 const claudeRuns =
   process.platform === "darwin" && spawnSync(runnerBin("claude"), ["--version"]).status === 0;
@@ -280,12 +279,6 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
 
   afterAll(() => {
     model?.close();
-    rmSync(root, { force: true, recursive: true });
-    if (previousRoot === undefined) {
-      delete process.env.IDLEBIZ_ROOT_DIR;
-    } else {
-      process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-    }
   });
 
   beforeEach(() => {

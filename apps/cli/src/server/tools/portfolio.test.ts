@@ -3,11 +3,10 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { BadRequestError } from "@repo/domain/errors";
-
-const { BET, PAID_URL, PRO_LINK, callTool, openBet, root, runAs } = await import("./fixtures");
-const store = await import("../store/store");
-const { fetchRealMetrics } = await import("../metrics");
-const { activityEvents } = await import("../activity");
+import { BET, PAID_URL, PRO_LINK, callTool, openBet, root, runAs } from "./fixtures";
+import * as store from "../store/store";
+import { fetchRealMetrics } from "../metrics";
+import { activityEvents } from "../activity";
 
 describe("portfolio tools", () => {
   it("opens a bet for the lead and says how it is counted", async () => {

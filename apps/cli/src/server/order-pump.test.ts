@@ -1,20 +1,18 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 import type { CheckoutSession } from "./stripe-checkouts";
+import * as store from "./store/store";
+import { ordersDir } from "./paths";
+import { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } from "./order-pump";
+import { retireProduct, settleOrderCard } from "./company-actions";
+import { foundAcme, freshSave, hire } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-orders-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { ORDERS_DIR } = await import("./paths");
-const { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } = await import("./order-pump");
-const { retireProduct, settleOrderCard } = await import("./company-actions");
+const root = freshSave();
 
 const NOW = 1_800_000_000_000;
 const NOW_S = NOW / 1000;
@@ -250,24 +248,7 @@ const saveSecrets = (stripeKey = "rk_live_founder") => {
 
 /** Acme, selling a tee in black S and M at $28 plus $7.99 shipping through `LINK`. */
 const openShop = (livemode = true) => {
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "ecommerce",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [
-      {
-        name: "Priya",
-        persona: "ships",
-        role: "engineer",
-        runner: "claude",
-        spriteSeed: "Priya",
-        title: "Engineer",
-      },
-    ],
-    mission: "sell tees",
-    name: "Acme",
-  });
+  foundAcme([hire("Priya")], { businessType: "ecommerce", mission: "sell tees" });
   const productId = store.listProducts()[0]?.id ?? "";
   store.recordListing({
     betId: null,
@@ -312,22 +293,8 @@ const pumpUntilSettled = async (pulses = 3) => {
   }
 };
 
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 describe("the order pump", () => {
@@ -754,15 +721,7 @@ describe("the order pump", () => {
   });
 
   it("keeps each paid checkout on a create_payment_link link, and cards the founder only for a live one with a delivery", async () => {
-    store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "vc",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [],
-      mission: "sell deal memos",
-      name: "Acme",
-    });
+    foundAcme([], { businessType: "vc", mission: "sell deal memos" });
     saveSecrets();
     const productId = store.listProducts()[0]?.id ?? "";
     const memo = (id: string, over: Partial<CheckoutSession> = {}) =>
@@ -921,12 +880,12 @@ describe("the order pump", () => {
     const productId = openShop();
     fakeWorld({ sessions: [checkout("cs_nowhere", { collected_information: null })] });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    mkdirSync(ORDERS_DIR, { recursive: true });
-    chmodSync(ORDERS_DIR, 0o555);
+    mkdirSync(ordersDir(), { recursive: true });
+    chmodSync(ordersDir(), 0o555);
     try {
       await pumpOrders(NOW, "read");
     } finally {
-      chmodSync(ORDERS_DIR, 0o755);
+      chmodSync(ordersDir(), 0o755);
       logged.mockRestore();
     }
     expect(store.listOrders()).toEqual([]);
@@ -952,15 +911,7 @@ describe("the order pump", () => {
   });
 
   it("raises no card for a key that cannot read checkouts while nothing is sold", async () => {
-    store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "vc",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [],
-      mission: "sell deal memos",
-      name: "Acme",
-    });
+    foundAcme([], { businessType: "vc", mission: "sell deal memos" });
     saveSecrets();
     vi.stubGlobal("fetch", () =>
       Promise.resolve(Response.json({ error: { message: "no checkout read" } }, { status: 403 })),
@@ -972,15 +923,7 @@ describe("the order pump", () => {
   });
 
   it("cards the founder when a key that cannot read checkouts leaves a link's buyers owed a delivery unread", async () => {
-    store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "vc",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [],
-      mission: "sell deal memos",
-      name: "Acme",
-    });
+    foundAcme([], { businessType: "vc", mission: "sell deal memos" });
     store.recordChargeLink({
       betId: null,
       cents: 500,

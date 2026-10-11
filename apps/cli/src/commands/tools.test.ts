@@ -11,7 +11,7 @@ import { callTool } from "./tools";
 
 // short, so a socket's path under it fits macOS's limit wherever TMPDIR is
 const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-tools-"));
-const controlPlane = new ControlPlane(path.join(box, "save"), path.join(box, "home"));
+const controlPlane = new ControlPlane(() => path.join(box, "save"), path.join(box, "home"));
 
 beforeAll(() => controlPlane.start());
 afterAll(() => {

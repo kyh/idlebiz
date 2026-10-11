@@ -38,7 +38,7 @@ import { metricsPulse } from "./metrics-pulse";
 import { createPageRouter } from "./page-router";
 import { devPageOrigin, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
-import { ON_REAL_SAVE, ROOT_DIR, RUN_BIN_DIR } from "./paths";
+import { launchRoot, onRealSave, openSave, rootDir, runBinDir } from "./paths";
 import { printListing } from "./print-listing";
 import { stdioPeer } from "./relay/stdio";
 import { claimSave } from "./save-claim";
@@ -54,6 +54,7 @@ import { initVercelConnect } from "./vercel-connect";
 import { setVercelEnv } from "./vercel-env";
 
 initLog();
+openSave(launchRoot(process.env));
 
 const integrations: Integrations = {
   checkVercelToken: validateToken,
@@ -98,7 +99,7 @@ const resetGame = async (): Promise<void> => {
   suspendWrites();
   try {
     const [, linksLeft] = await Promise.all([stopAgents(), switchOffBeforeReset()]);
-    await rm(ROOT_DIR, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
+    await rm(rootDir(), { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
     if (linksLeft) {
       await host().messageBox({
         detail: linksLeft,
@@ -151,7 +152,7 @@ const windowChanged = ({ state }: WindowChange): void => {
 // The app can't open what dev's key seals, so on the real save dev seals nothing:
 // a key dev entered or found plain stays plain for the app to seal, never stranded.
 const sealSecrets = (launch: Launch): void => {
-  if (!launch.packaged && ON_REAL_SAVE) {
+  if (!launch.packaged && onRealSave()) {
     report("secrets", "dev on the real save keeps secrets.json's keys as it finds them");
   } else if (!launch.packaged) {
     setSealer(sealerFor(DEV_SECRETS_KEY));
@@ -231,7 +232,7 @@ const pageSourceOf = (launch: Launch): PageSource => {
 
 const boot = async (launch: Launch): Promise<void> => {
   setHost(hostOver(peer), launch);
-  claim = await claimSave(ROOT_DIR, homedir());
+  claim = await claimSave(rootDir(), homedir());
   sealSecrets(launch);
   store.initStore();
   const unreadableSecrets = checkSecrets();
@@ -242,7 +243,7 @@ const boot = async (launch: Launch): Promise<void> => {
   // the window does not
   agentDriver.init(adoptShellPath(launch.packaged));
   // the command the runs call the company's tools with: this node, on the CLI it was started from
-  writeAgentLauncher(RUN_BIN_DIR, process.execPath, packageFile("dist/index.js"));
+  writeAgentLauncher(runBinDir(), process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
   // the largest call a page makes: a pasted key, a long answer to a question
   const rpc = new RPCHandler(createPageRouter({ founder, resetGame, stripeReady }), {

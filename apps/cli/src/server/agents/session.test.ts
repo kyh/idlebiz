@@ -19,13 +19,11 @@ import { RefusalError } from "../refusal";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
-
-const { SEAL, SKILLS, found, root } = await import("./fixtures");
-const store = await import("../store/store");
-const { acpAgentFor, codexSessionConfig, codexSessionEnv, decidePermission } =
-  await import("./session");
-const { createAgentDriver } = await import("./runner-pool");
-const { browserNamespace, realPathOf, sealedCommand } = await import("./seal");
+import { SEAL, SKILLS, found, root } from "./fixtures";
+import * as store from "../store/store";
+import { acpAgentFor, codexSessionConfig, codexSessionEnv, decidePermission } from "./session";
+import { createAgentDriver } from "./runner-pool";
+import { browserNamespace, realPathOf, sealedCommand } from "./seal";
 
 const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 

@@ -32,38 +32,59 @@ import { mkdirSync } from "node:fs";
 // Agents run on the player's own coding CLIs (claude / codex), which manage
 // their own credentials — IdleBiz stores no model-provider auth.
 const DEFAULT_ROOT_DIR = path.join(homedir(), ".idlebiz");
-export const ROOT_DIR = path.resolve(process.env.IDLEBIZ_ROOT_DIR ?? DEFAULT_ROOT_DIR);
+
+/** The save a launch opens: IDLEBIZ_ROOT_DIR's, or the founder's own. */
+export const launchRoot = (env: NodeJS.ProcessEnv): string =>
+  path.resolve(env.IDLEBIZ_ROOT_DIR ?? DEFAULT_ROOT_DIR);
+
+let openedRoot: string | null = null;
+
+/** Points every path below at the save at `root`: serve's first step, or a test's own save. */
+export const openSave = (root: string): void => {
+  openedRoot = path.resolve(root);
+};
+
+// Read at every call and never at import, and refused until a save is open: a module that read
+// it at import, or a test that opened no save, would otherwise land in the founder's.
+export const rootDir = (): string => {
+  if (openedRoot === null) {
+    throw new Error(
+      "no save is open: serve opens its launch's, a test its own (test-support/save.ts)",
+    );
+  }
+  return openedRoot;
+};
 /** Whether this launch runs on the founder's own save rather than an isolated root. */
-export const ON_REAL_SAVE = ROOT_DIR === DEFAULT_ROOT_DIR;
+export const onRealSave = (): boolean => rootDir() === DEFAULT_ROOT_DIR;
 
 /** The save: a folder of its own, so founding publishes the whole company with one rename. */
-export const COMPANY_DIR = path.join(ROOT_DIR, "company");
+export const companyDir = (): string => path.join(rootDir(), "company");
 /** The cache every run may write, beside the save. */
-export const TOOL_CACHE_DIR = path.join(ROOT_DIR, "cache");
+export const toolCacheDir = (): string => path.join(rootDir(), "cache");
 /** Where main writes the `idlebiz` command each run finds first on its PATH (agent-launcher.ts), which no run writes. */
-export const RUN_BIN_DIR = path.join(ROOT_DIR, "bin");
-export const COMPANY_FILE = path.join(COMPANY_DIR, "COMPANY.md");
+export const runBinDir = (): string => path.join(rootDir(), "bin");
+export const companyFile = (): string => path.join(companyDir(), "COMPANY.md");
 /** What teammates share across products, and the working directory of work no product owns. */
-export const SHARED_DIR = path.join(COMPANY_DIR, "shared");
+export const sharedDir = (): string => path.join(companyDir(), "shared");
 /** Running state main keeps for itself: small JSON written as things happen, safe to delete.
  *  What the founder configured (approvals.json) is not state and stays beside COMPANY.md. */
-const STATE_DIR = path.join(COMPANY_DIR, "state");
+const stateDir = (): string => path.join(companyDir(), "state");
 /** The latest ship summaries, for the brief's "recently shipped" lines. */
-export const RECENT_SHIPS_FILE = path.join(STATE_DIR, "recent-ships.json");
+export const recentShipsFile = (): string => path.join(stateDir(), "recent-ships.json");
 /** The founder's digest-in-progress: what has happened since they last looked. */
-export const SINCE_LAST_LOOK_FILE = path.join(STATE_DIR, "since-last-look.json");
+export const sinceLastLookFile = (): string => path.join(stateDir(), "since-last-look.json");
 /** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
-export const ORDERS_CURSOR_FILE = path.join(STATE_DIR, "orders-cursor.json");
+export const ordersCursorFile = (): string => path.join(stateDir(), "orders-cursor.json");
 /** Until when each runner rests on a usage limit, an overload or a refusal of access; deleted, each task waiting on one spawns once more to be refused. */
-export const RUNNER_REST_FILE = path.join(STATE_DIR, "runner-rest.json");
-export const ACTIVITY_FILE = path.join(COMPANY_DIR, "activity.jsonl");
+export const runnerRestFile = (): string => path.join(stateDir(), "runner-rest.json");
+export const activityFile = (): string => path.join(companyDir(), "activity.jsonl");
 
-export const AGENTS_DIR = path.join(COMPANY_DIR, "agents");
+export const agentsDir = (): string => path.join(companyDir(), "agents");
 /** Released employees are archived here (package preserved, never deleted). */
-export const ALUMNI_DIR = path.join(COMPANY_DIR, "alumni");
+export const alumniDir = (): string => path.join(companyDir(), "alumni");
 /** Per-employee package dir (AGENTS.md lives here). */
 export const employeeAgentDir = (employeeSlug: string): string =>
-  path.join(AGENTS_DIR, employeeSlug);
+  path.join(agentsDir(), employeeSlug);
 export const employeeFile = (employeeSlug: string): string =>
   path.join(employeeAgentDir(employeeSlug), "AGENTS.md");
 /** What a run leaves behind for the next one: the session to resume, where the numbers stood.
@@ -74,53 +95,53 @@ export const employeeRunStateFile = (employeeSlug: string): string =>
 export const employeeMemoryDir = (employeeSlug: string): string =>
   path.join(employeeAgentDir(employeeSlug), "memory");
 
-export const TASKS_DIR = path.join(COMPANY_DIR, "tasks");
-export const taskFile = (taskSlug: string): string => path.join(TASKS_DIR, taskSlug, "TASK.md");
+export const tasksDir = (): string => path.join(companyDir(), "tasks");
+export const taskFile = (taskSlug: string): string => path.join(tasksDir(), taskSlug, "TASK.md");
 /**
  * Closed tasks move here: ships, answered asks and dropped work. The open queue is
  * what boot reads and the scheduler scans; history grows without bound and is read
  * when a panel asks.
  */
-export const SHIPPED_DIR = path.join(COMPANY_DIR, "shipped");
+export const shippedDir = (): string => path.join(companyDir(), "shipped");
 export const shippedTaskFile = (taskSlug: string): string =>
-  path.join(SHIPPED_DIR, taskSlug, "TASK.md");
+  path.join(shippedDir(), taskSlug, "TASK.md");
 
-export const PRODUCTS_DIR = path.join(COMPANY_DIR, "products");
+export const productsDir = (): string => path.join(companyDir(), "products");
 export const productFile = (productSlug: string): string =>
-  path.join(PRODUCTS_DIR, productSlug, "PRODUCT.md");
+  path.join(productsDir(), productSlug, "PRODUCT.md");
 /** A product's code, inside its package so the two retire in one move. */
 export const productWorkspace = (productSlug: string): string =>
-  path.join(PRODUCTS_DIR, productSlug, "workspace");
+  path.join(productsDir(), productSlug, "workspace");
 // Listings, links and orders sit outside every product's package: a retired product's payment
 // links are switched off from them, and each order they took must still ship and be tracked.
 // Outside every workspace too, so a run can read them, buyers' addresses included, but never
 // write one.
-export const LISTINGS_DIR = path.join(COMPANY_DIR, "listings");
+export const listingsDir = (): string => path.join(companyDir(), "listings");
 export const listingFile = (listingId: string): string =>
-  path.join(LISTINGS_DIR, `${listingId}.json`);
-export const LINKS_DIR = path.join(COMPANY_DIR, "links");
-export const linkFile = (linkId: string): string => path.join(LINKS_DIR, `${linkId}.json`);
-export const ORDERS_DIR = path.join(COMPANY_DIR, "orders");
-export const orderFile = (orderId: string): string => path.join(ORDERS_DIR, `${orderId}.json`);
+  path.join(listingsDir(), `${listingId}.json`);
+export const linksDir = (): string => path.join(companyDir(), "links");
+export const linkFile = (linkId: string): string => path.join(linksDir(), `${linkId}.json`);
+export const ordersDir = (): string => path.join(companyDir(), "orders");
+export const orderFile = (orderId: string): string => path.join(ordersDir(), `${orderId}.json`);
 
 /** Killed products are archived here (package and workspace preserved, never deleted). */
-export const RETIRED_DIR = path.join(COMPANY_DIR, "retired");
+export const retiredDir = (): string => path.join(companyDir(), "retired");
 
-export const BETS_DIR = path.join(COMPANY_DIR, "bets");
-export const betFile = (betSlug: string): string => path.join(BETS_DIR, betSlug, "BET.md");
+export const betsDir = (): string => path.join(companyDir(), "bets");
+export const betFile = (betSlug: string): string => path.join(betsDir(), betSlug, "BET.md");
 /** The allocator's tuned parameters; deleting it falls back to the defaults. */
-export const POLICY_FILE = path.join(STATE_DIR, "policy.json");
+export const policyFile = (): string => path.join(stateDir(), "policy.json");
 
 /** Commands the founder has signed off but the agent has not run yet. */
-export const APPROVALS_FILE = path.join(COMPANY_DIR, "approvals.json");
+export const approvalsFile = (): string => path.join(companyDir(), "approvals.json");
 
-export const ROUTINES_DIR = path.join(COMPANY_DIR, "routines");
+export const routinesDir = (): string => path.join(companyDir(), "routines");
 export const routineFile = (routineSlug: string): string =>
-  path.join(ROUTINES_DIR, routineSlug, "ROUTINE.md");
+  path.join(routinesDir(), routineSlug, "ROUTINE.md");
 
 /** Append-only company chat room (the room agents read + post to during runs). */
-export const CHAT_FILE = path.join(COMPANY_DIR, "chat.jsonl");
+export const chatFile = (): string => path.join(companyDir(), "chat.jsonl");
 
 export const ensureAppDirs = (): void => {
-  mkdirSync(ROOT_DIR, { recursive: true });
+  mkdirSync(rootDir(), { recursive: true });
 };

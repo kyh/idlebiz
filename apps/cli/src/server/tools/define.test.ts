@@ -4,8 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BadRequestError } from "@repo/domain/errors";
 import type { RunContext } from "./define";
-
-const {
+import {
   BET,
   BOUND_ACTION,
   DEPLOYED,
@@ -15,11 +14,11 @@ const {
   connectVercel,
   deployingRun,
   runAs,
-} = await import("./fixtures");
-const store = await import("../store/store");
-const { callTool: outcomeOf } = await import("./index");
-const { ControlPlane } = await import("../control-plane");
-const { runCli } = await import("../../program");
+} from "./fixtures";
+import * as store from "../store/store";
+import { callTool as outcomeOf } from "./index";
+import { ControlPlane } from "../control-plane";
+import { runCli } from "../../program";
 
 describe("company tools", () => {
   it("turns the lead's tools away from anyone else, before looking at the body", async () => {
@@ -102,7 +101,7 @@ describe("company tools", () => {
 describe("an idlebiz verb, through the control plane to the tools", () => {
   // short, so a socket's path under it fits macOS's limit wherever TMPDIR is
   const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-verb-"));
-  const plane = new ControlPlane(path.join(box, "save"), path.join(box, "home"));
+  const plane = new ControlPlane(() => path.join(box, "save"), path.join(box, "home"));
 
   beforeAll(() => plane.start());
   afterAll(() => {

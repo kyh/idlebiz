@@ -6,8 +6,7 @@ import { BadRequestError } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import type { RunContext } from "./define";
 import type { StripeAnswer } from "./fixtures";
-
-const {
+import {
   BET,
   DESIGN_SHA,
   LISTED_URL,
@@ -20,10 +19,10 @@ const {
   revenueBet,
   root,
   runAs,
-} = await import("./fixtures");
-const store = await import("../store/store");
-const { callTool: outcomeOf } = await import("./index");
-const { stripeLinkAccess, stripePaymentLink } = await import("../stripe-links");
+} from "./fixtures";
+import * as store from "../store/store";
+import { callTool as outcomeOf } from "./index";
+import { stripeLinkAccess, stripePaymentLink } from "../stripe-links";
 
 const LINK = { amountUsd: 9, name: "Pro plan" };
 

@@ -1,27 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
+import { tempSave } from "./test-support/save";
+import { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } from "./vercel-env";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-env-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } =
-  await import("./vercel-env");
+tempSave();
 
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 const TOKEN = "vercel-token";

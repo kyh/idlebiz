@@ -1,37 +1,24 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as store from "./store/store";
+import { PULSE_MS } from "./metrics";
+import { companyDir } from "./paths";
+import { metricsPulse } from "./metrics-pulse";
+import { foundAcme, freshSave, hire } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-pulse-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { PULSE_MS } = await import("./metrics");
-const { COMPANY_DIR } = await import("./paths");
-const { metricsPulse } = await import("./metrics-pulse");
+const root = freshSave();
 
 const BOOT = 1_000_000;
 const HOUR = 3_600_000;
 
 beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
   vi.useFakeTimers({ now: BOOT });
 });
 
 afterEach(() => {
   metricsPulse.stop();
   vi.useRealTimers();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 describe("metricsPulse.pulsingSince", () => {
@@ -66,24 +53,7 @@ describe("a pulse", () => {
       path.join(root, "secrets.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_pulse" }),
     );
-    store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "software",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [
-        {
-          name: "Priya",
-          persona: "ships",
-          role: "engineer",
-          runner: "claude",
-          spriteSeed: "Priya",
-          title: "Engineer",
-        },
-      ],
-      mission: "ship",
-      name: "Acme",
-    });
+    foundAcme([hire("Priya")]);
     const productId = store.listProducts()[0]?.id ?? "";
     const bet = store.openBet({
       budgetUsd: 5,
@@ -111,13 +81,13 @@ describe("a pulse", () => {
       ),
     );
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    chmodSync(COMPANY_DIR, 0o555);
+    chmodSync(companyDir(), 0o555);
     try {
       metricsPulse.now();
       await vi.waitFor(() => expect(store.getBet(bet.id)?.reading).toBe(7));
       expect(logged).toHaveBeenCalledWith("[company metrics]", expect.anything());
     } finally {
-      chmodSync(COMPANY_DIR, 0o755);
+      chmodSync(companyDir(), 0o755);
       logged.mockRestore();
     }
     expect(store.getProduct(productId)?.revenueUsd).toBe(7);

@@ -24,7 +24,7 @@ import * as store from "../store/store";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
-import { RUN_TMPDIR } from "./run-workspace";
+import { runTmpdir } from "./run-workspace";
 import { browserSocketDir, namespaceUnder, SANDBOX_EXEC, sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
@@ -47,7 +47,7 @@ export const runnerEnv = (runner: RunnerId): Record<string, string> =>
 const browserEnv = (seal: Seal, runner: RunnerId) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
   AGENT_BROWSER_NAMESPACE: namespaceUnder(seal, runner),
-  AGENT_BROWSER_SCREENSHOT_DIR: path.join(RUN_TMPDIR, "screenshots"),
+  AGENT_BROWSER_SCREENSHOT_DIR: path.join(runTmpdir(), "screenshots"),
   AGENT_BROWSER_SOCKET_DIR: browserSocketDir(),
 });
 

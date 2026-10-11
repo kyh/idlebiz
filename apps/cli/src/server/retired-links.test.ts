@@ -1,24 +1,22 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OrderCard } from "@repo/domain/domain";
 import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
 import type { Sale } from "./order";
-
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-retired-links-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { taskFile } = await import("./paths");
-const {
+import * as store from "./store/store";
+import { taskFile } from "./paths";
+import {
   raiseOrderCard,
   retireProduct,
   settleOrderCard,
   switchOffBeforeReset,
   switchOffRetiredLinks,
-} = await import("./company-actions");
+} from "./company-actions";
+import { foundAcme, freshSave } from "./test-support/save";
+
+const root = freshSave();
 
 const TEE = "plink_tee";
 const PRO = "plink_pro";
@@ -114,15 +112,7 @@ const chargeLinkOn = (productId: string, id: string, livemode = true): ChargeLin
 
 /** Acme with a side product selling a print and a plan, and the founder's live key saved. */
 const openShop = () => {
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "ecommerce",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "sell tees",
-    name: "Acme",
-  });
+  foundAcme([], { businessType: "ecommerce", mission: "sell tees" });
   const side = store.createProduct({ description: "a side bet", name: "Side" });
   store.recordListing(listingOn(side.id));
   store.recordChargeLink(chargeLinkOn(side.id, PRO));
@@ -147,27 +137,19 @@ const cardAbout = (orderId: string): OrderCard => {
 
 const SETTLE = { action: "Settle it", draft: null, instructions: "", type: "action" } as const;
 
+/** The checkout of an order whose card for `trouble` waits on the founder. */
+const owed = (id: string, trouble: string) => {
+  store.raiseOrderCard({ kind: "order", orderId: id, trouble }, `Order ${id}: ${trouble}`, SETTLE);
+  return `cs_${id}`;
+};
+
 const statesOf = () =>
   Object.fromEntries(store.paymentLinks().map(({ link }) => [link.id, link.state.kind]));
 
 const roomSays = () => store.recentTeamMessages(50).map((m) => m.text);
 
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 describe("retiring a product", () => {
@@ -431,14 +413,6 @@ describe("resetting the company", () => {
       livemode: true,
       paymentIntent: null,
       productId: side.id,
-    };
-    const owed = (id: string, trouble: string) => {
-      store.raiseOrderCard(
-        { kind: "order", orderId: id, trouble },
-        `Order ${id}: ${trouble}`,
-        SETTLE,
-      );
-      return `cs_${id}`;
     };
     const delivery = "Email the buyer the PDF";
     store.recordOrder({

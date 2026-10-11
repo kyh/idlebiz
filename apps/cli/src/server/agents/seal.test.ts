@@ -15,16 +15,12 @@ import type { Server } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { LoadReport } from "@repo/domain/domain";
 import { parseJson } from "@repo/domain/json";
 import type { Seal, SealProbe } from "./seal";
-
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-seal-root-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const {
+import {
   browserNamespace,
   checkSeal,
   machineSeal,
@@ -34,16 +30,11 @@ const {
   sealRuns,
   sealedCommand,
   signInCommand,
-} = await import("./seal");
+} from "./seal";
+import { startPageServer } from "../page-server";
+import { tempSave } from "../test-support/save";
 
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-});
+const root = tempSave();
 
 const SEAL: Seal = {
   apiSocket: [],
@@ -1479,7 +1470,6 @@ describe.skipIf(!onMac)("sealRuns", () => {
   });
 
   it("closes the port main serves the window's page on, while it answers", async () => {
-    const { startPageServer } = await import("../page-server");
     const page = await startPageServer({
       handleRpc: () => Promise.resolve(false),
       page: { kind: "dev", origin: "http://localhost:1" },

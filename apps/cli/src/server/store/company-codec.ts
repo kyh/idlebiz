@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Budget, Company } from "@repo/domain/domain";
 import { BUSINESS_TYPE_IDS } from "@repo/domain/domain";
-import { SHARED_DIR } from "../paths";
+import { sharedDir } from "../paths";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
@@ -123,6 +123,6 @@ export const docToCompany = (doc: FrontmatterDoc): Company => {
     ships: m.ships,
     spentUsd: m.spentUsd,
     users: m.users ?? null,
-    workspaceDir: SHARED_DIR,
+    workspaceDir: sharedDir(),
   };
 };

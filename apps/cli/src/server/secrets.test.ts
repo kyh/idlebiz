@@ -1,22 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord } from "@repo/domain/json";
 import type { Sealer } from "./secrets";
-
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-secrets-"));
-const secretsFile = path.join(root, "secrets.json");
-const previous = {
-  IDLEBIZ_ROOT_DIR: process.env.IDLEBIZ_ROOT_DIR,
-  PRINTFUL_TOKEN: process.env.PRINTFUL_TOKEN,
-  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
-  VERCEL_TOKEN: process.env.VERCEL_TOKEN,
-};
-process.env.IDLEBIZ_ROOT_DIR = root;
-const {
+import { tempSave } from "./test-support/save";
+import {
   checkSecrets,
   deleteSecret,
   getSecret,
@@ -26,7 +16,14 @@ const {
   secretsUnder,
   setSealer,
   setSecret,
-} = await import("./secrets");
+} from "./secrets";
+
+const secretsFile = path.join(tempSave(), "secrets.json");
+const previous = {
+  PRINTFUL_TOKEN: process.env.PRINTFUL_TOKEN,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+  VERCEL_TOKEN: process.env.VERCEL_TOKEN,
+};
 
 const raw = (): JsonRecord => jsonRecordSchema.parse(parseJson(readFileSync(secretsFile, "utf-8")));
 
@@ -72,9 +69,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
   restoreSecrets();
-  restore("IDLEBIZ_ROOT_DIR");
 });
 
 describe("a secrets.json the founder broke by hand", () => {

@@ -5,8 +5,7 @@ import { BadRequestError } from "@repo/domain/errors";
 import type { DeployRequest } from "../deploy";
 import type { EnvRequest, EnvResult } from "../vercel-env";
 import type { RunContext } from "./define";
-
-const {
+import {
   BOUND_ACTION,
   DEPLOYED,
   TOKEN,
@@ -16,9 +15,9 @@ const {
   deployingRun,
   root,
   runAs,
-} = await import("./fixtures");
-const store = await import("../store/store");
-const { callTool: outcomeOf } = await import("./index");
+} from "./fixtures";
+import * as store from "../store/store";
+import { callTool as outcomeOf } from "./index";
 
 const NEW_ACTION = "deploy acme to production on a new Vercel project named acme";
 const NEW_PROJECT = { projectId: "prj_new", projectName: "acme", teamId: null };

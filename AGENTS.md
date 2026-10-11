@@ -340,7 +340,7 @@ rather than crashing boot.
   debug port (9222, 9229), the dev server's (31100) or the one main serves the window's page on, and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
-  `TOOL_CACHE_ENV` in `server/agents/run-workspace.ts` moves TMPDIR and toolchain caches into
+  `toolCacheEnv` in `server/agents/run-workspace.ts` moves TMPDIR and toolchain caches into
   `cache/`, so a tool that writes elsewhere in HOME fails with `EPERM` until its cache is
   moved there too. A git dependency fails as well: npm and pnpm clone it into a `.git` no run
   may make, and so do `git clone` and `git init`; the standing instructions say so and point
@@ -402,7 +402,10 @@ rather than crashing boot.
   (`walkGridOf` in `renderer/game/office-grid.ts`).
 - **Tests need no window or Phaser.** `pnpm --filter idlebiz test` covers main: schemas, codecs,
   store/integration behavior under temporary save roots, real loopback and socket requests, the page's
-  router and the `idlebiz` verbs against a live control plane. `pnpm --filter @repo/agent-driver test`
+  router and the `idlebiz` verbs against a live control plane. A test file opens its save with
+  `tempSave` or `freshSave` and founds Kai's Acme with `foundAcme` (`server/test-support/save.ts`):
+  `server/paths.ts` reads the root when a path is asked for and refuses one before any save is
+  open, so a test that opens none fails rather than writing the founder's. `pnpm --filter @repo/agent-driver test`
   covers an ACP turn against stand-in agents (permissions, resume, teardown, how a turn ends,
   usage) and the failure classes. `pnpm --filter @repo/desktop test` covers the page's geometry
   and state, and its `test:rust` runs `cargo test` over the shell (the relay's framing and its

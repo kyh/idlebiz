@@ -1,29 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, beforeEach } from "vitest";
+import { foundAcme, freshSave, hire } from "../test-support/save";
 import type { Seal } from "./seal";
 
-// What the runs' tests share. Importing this points the save at a root of the importing test
-// file's own before anything reads server/paths, and empties it before each test.
-export const root = mkdtempSync(path.join(tmpdir(), "idlebiz-driver-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("../store/store");
-
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-});
+// What the runs' tests share. Importing this gives the importing test file a save of its own,
+// emptied before each test.
+export const root = freshSave();
 
 export const SEAL: Seal = {
   apiSocket: [],
@@ -63,22 +43,5 @@ export const SEAL: Seal = {
 
 export const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
 
-export const found = () =>
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [
-      {
-        name: "Mae",
-        persona: "ships",
-        role: "engineer",
-        runner: "claude",
-        spriteSeed: "Mae",
-        title: "General Manager",
-      },
-    ],
-    mission: "ship",
-    name: "Acme",
-  });
+/** Acme, founded with Mae alone. */
+export const found = () => foundAcme([hire("Mae", "General Manager")]);

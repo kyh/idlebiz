@@ -38,7 +38,9 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   or running work nobody holds is to do. A frontmatter key the app does not know is still
   dropped on the next write of that file.
 - A root holds one save or none: `company/`, a fixed folder founding publishes with one rename
-  and boot reads alone (`server/paths.ts`), so no record carries a company id. Founding refuses
+  and boot reads alone (`server/paths.ts`), so no record carries a company id. Its paths are read
+  when asked for, never at import, and refused until a save is open: serve opens its launch's
+  (`IDLEBIZ_ROOT_DIR`, or `~/.idlebiz`) first, a test its own (`server/test-support/save.ts`). Founding refuses
   while it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks the
   office like a save of another format. A reset deletes the whole root, `secrets.json` included.
 - A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone
@@ -315,7 +317,7 @@ third boundary.
     (`state` in `RUNNER_HOMES`: sessions, logs, caches, databases, codex's refreshed login;
     claude's transcripts and memory of the run's own folder only), TMPDIR, macOS's per-user temp and cache folders,
     `/private/tmp`, the agent-browser namespace of its runner and folders, node CLIs'
-    `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `TOOL_CACHE_ENV`
+    `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `toolCacheEnv`
     (`agents/run-workspace.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
     and turns CLI updaters off.
   - The rest of the runner's home is what the founder's own CLI and desktop app load and run:

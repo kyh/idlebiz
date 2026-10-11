@@ -23,6 +23,9 @@ import { holdFor } from "../policy";
 import type { Hold } from "../policy";
 import { parseJson } from "@repo/domain/json";
 import { readTeamNotes } from "./team-notes";
+import { acpAgentFor, codexSessionEnv } from "./session";
+import { machineSeal, realPathOf, sealRuns } from "./seal";
+import { tempSave } from "../test-support/save";
 
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
 // loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
@@ -32,11 +35,7 @@ import { readTeamNotes } from "./team-notes";
 // the workspace's AGENTS.md once, whole, and picked as main picks it for a claude run, leaves no skill for a later run, and runs, but cannot rewrite,
 // the config their own codex loads.
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-gate-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { acpAgentFor, codexSessionEnv } = await import("./session");
-const { machineSeal, realPathOf, sealRuns } = await import("./seal");
+const root = tempSave();
 
 const codexRuns =
   process.platform === "darwin" && spawnSync(runnerBin("codex"), ["--version"]).status === 0;
@@ -166,12 +165,6 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
 
   afterAll(() => {
     model?.close();
-    rmSync(root, { force: true, recursive: true });
-    if (previousRoot === undefined) {
-      delete process.env.IDLEBIZ_ROOT_DIR;
-    } else {
-      process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-    }
   });
 
   beforeEach(() => {

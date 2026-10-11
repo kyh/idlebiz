@@ -4,31 +4,31 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { Company, Employee } from "@repo/domain/domain";
 import { report } from "../lib/report";
-import { TOOL_CACHE_DIR } from "../paths";
+import { toolCacheDir } from "../paths";
 
 const execFileAsync = promisify(execFile);
 
-/** One temp folder the runs share, outside their working trees: see TOOL_CACHE_ENV. */
-export const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
+/** One temp folder the runs share, outside their working trees: see toolCacheEnv(). */
+export const runTmpdir = (): string => path.join(toolCacheDir(), "tmp");
 
 // One cache the runs share, outside their working trees and apart from the founder's: a package
 // a run installs never lands in a store the founder's own projects link from. A run writes only
 // its own folders, so every cache a toolchain would keep in HOME is moved here, and updaters that
 // would rewrite a CLI the founder runs are off. TMPDIR is moved too: a run connects only to
 // sockets in its own folders, and the founder's TMPDIR is full of theirs.
-export const TOOL_CACHE_ENV = {
-  BUN_INSTALL_CACHE_DIR: path.join(TOOL_CACHE_DIR, "bun"),
-  COREPACK_HOME: path.join(TOOL_CACHE_DIR, "corepack"),
+export const toolCacheEnv = () => ({
+  BUN_INSTALL_CACHE_DIR: path.join(toolCacheDir(), "bun"),
+  COREPACK_HOME: path.join(toolCacheDir(), "corepack"),
   DISABLE_AUTOUPDATER: "1",
   NEXT_TELEMETRY_DISABLED: "1",
-  PLAYWRIGHT_BROWSERS_PATH: path.join(TOOL_CACHE_DIR, "ms-playwright"),
-  TMPDIR: RUN_TMPDIR,
-  XDG_CACHE_HOME: TOOL_CACHE_DIR,
-  npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
-  npm_config_devdir: path.join(TOOL_CACHE_DIR, "node-gyp"),
+  PLAYWRIGHT_BROWSERS_PATH: path.join(toolCacheDir(), "ms-playwright"),
+  TMPDIR: runTmpdir(),
+  XDG_CACHE_HOME: toolCacheDir(),
+  npm_config_cache: path.join(toolCacheDir(), "npm"),
+  npm_config_devdir: path.join(toolCacheDir(), "node-gyp"),
   npm_config_update_notifier: "false",
-  pnpm_config_store_dir: path.join(TOOL_CACHE_DIR, "pnpm-store"),
-};
+  pnpm_config_store_dir: path.join(toolCacheDir(), "pnpm-store"),
+});
 
 /**
  * A product's workspace as a repository, made by main when it is none yet: a run cannot write a

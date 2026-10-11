@@ -4,10 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-
-const { found, root } = await import("./fixtures");
-const store = await import("../store/store");
-const { ensureRepository, gitIdentity } = await import("./run-workspace");
+import { found, root } from "./fixtures";
+import * as store from "../store/store";
+import { ensureRepository, gitIdentity } from "./run-workspace";
 
 const execFileAsync = promisify(execFile);
 

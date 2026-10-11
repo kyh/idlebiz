@@ -5,15 +5,13 @@ import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthFlowEvent, RunOutcome } from "@repo/domain/domain";
 import type { Seal, SealState } from "./seal";
-
-const { SEAL, SKILLS, found, root } = await import("./fixtures");
-const store = await import("../store/store");
-const { agentDriver, createAgentDriver, memoryAfter, outcomeOf, resumeIn } =
-  await import("./runner-pool");
-const { askBox } = await import("./ask-box");
-const { signInCommand } = await import("./seal");
-const { controlPlane } = await import("../control-plane");
-const { startLogin } = await import("./onboarding");
+import { SEAL, SKILLS, found, root } from "./fixtures";
+import * as store from "../store/store";
+import { agentDriver, createAgentDriver, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
+import { askBox } from "./ask-box";
+import { signInCommand } from "./seal";
+import { controlPlane } from "../control-plane";
+import { startLogin } from "./onboarding";
 
 const failed = {
   class: "other",

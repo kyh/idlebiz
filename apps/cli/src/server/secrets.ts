@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { atomicWrite, readJsonFile, readJsonFileForUpdate } from "./lib/fs";
 import { guarded } from "./lib/report";
-import { ROOT_DIR } from "./paths";
+import { rootDir } from "./paths";
 import { jsonRecordSchema } from "@repo/domain/json";
 import type { JsonRecord } from "@repo/domain/json";
 
@@ -12,7 +12,7 @@ import type { JsonRecord } from "@repo/domain/json";
 // sandbox keeps them from the file, and each value is also sealed with a key the Keychain keeps
 // for this app, since a claude run can still reach the Keychain.
 
-export const SECRETS_PATH = path.join(ROOT_DIR, "secrets.json");
+export const secretsPath = (): string => path.join(rootDir(), "secrets.json");
 
 export const STRIPE_SECRET_KEY = "STRIPE_SECRET_KEY";
 export const VERCEL_TOKEN = "VERCEL_TOKEN";
@@ -145,14 +145,14 @@ const stored = (name: string, held: Held): string =>
     : held.text;
 
 const readSecretsForUpdate = (): Secrets | null =>
-  readJsonFileForUpdate(SECRETS_PATH, secretsSchema);
+  readJsonFileForUpdate(secretsPath(), secretsSchema);
 
 const writeSecretsFile = ({ keys, rest }: Secrets): void => {
   const file = {
     ...rest,
     ...Object.fromEntries([...keys].map(([name, held]) => [name, stored(name, held)])),
   };
-  atomicWrite(SECRETS_PATH, JSON.stringify(file, null, 2), { mode: 0o600 });
+  atomicWrite(secretsPath(), JSON.stringify(file, null, 2), { mode: 0o600 });
 };
 
 /** Seal what the founder pasted by hand; only a file that parsed gets here, so none is lost. */
@@ -172,7 +172,7 @@ export const checkSecrets = (): { file: string; cause: unknown } | null => {
   try {
     secrets = readSecretsForUpdate();
   } catch (error) {
-    return { cause: error, file: SECRETS_PATH };
+    return { cause: error, file: secretsPath() };
   }
   if (secrets === null) {
     try {
@@ -199,12 +199,12 @@ export const checkSecrets = (): { file: string; cause: unknown } | null => {
     cause: new Error(
       `IdleBiz can't open ${shut.join(", ")} (${why}). Enter each again in the app, or paste it into this file as plain text.${teamSet}`,
     ),
-    file: SECRETS_PATH,
+    file: secretsPath(),
   };
 };
 
 export const getSecret = (key: SecretKey): string | null => {
-  const secrets = readJsonFile(SECRETS_PATH, secretsSchema);
+  const secrets = readJsonFile(secretsPath(), secretsSchema);
   if (secrets === null) {
     return null;
   }
@@ -215,11 +215,11 @@ export const getSecret = (key: SecretKey): string | null => {
 
 /** Whether the file holds `key` at all, opened or not. */
 export const hasSecret = (key: SecretKey): boolean =>
-  readJsonFile(SECRETS_PATH, secretsSchema)?.keys.has(key) ?? false;
+  readJsonFile(secretsPath(), secretsSchema)?.keys.has(key) ?? false;
 
 /** Every value this app can open under a name starting with `prefix`, keyed by the rest of the name. */
 export const secretsUnder = (prefix: string): Map<string, string> => {
-  const secrets = readJsonFile(SECRETS_PATH, secretsSchema);
+  const secrets = readJsonFile(secretsPath(), secretsSchema);
   const out = new Map<string, string>();
   for (const [name, held] of secrets?.keys ?? []) {
     const value = name.startsWith(prefix) ? opened(name, held) : null;

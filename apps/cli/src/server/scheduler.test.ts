@@ -1,9 +1,8 @@
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { zeroUsage } from "@repo/agent-driver/events";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { MAX_TASK_ATTEMPTS } from "@repo/domain/domain";
@@ -14,30 +13,15 @@ import { keepAwake } from "./keep-awake";
 import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
 import type { Integrations } from "./tools/define";
+import * as store from "./store/store";
+import { activityFile, companyDir, tasksDir, betFile, routineFile } from "./paths";
+import { activityEvents } from "./activity";
+import { createScheduler, loggedToolName } from "./scheduler";
+import { founderActions } from "./founder-actions";
+import { setAutopilot } from "./company-actions";
+import { foundAcme, freshSave, hire } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { ACTIVITY_FILE, COMPANY_DIR, TASKS_DIR, betFile, routineFile } = await import("./paths");
-const { activityEvents } = await import("./activity");
-const { createScheduler, loggedToolName } = await import("./scheduler");
-const { founderActions } = await import("./founder-actions");
-const { setAutopilot } = await import("./company-actions");
-
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-});
+const root = freshSave();
 
 const NAMES = ["Priya", "Mae", "Sam", "Ana"];
 
@@ -82,22 +66,10 @@ const fakeBlocker = () => {
 const UNCAPPED: Budget = { mode: "infinite" };
 
 const found = (budget: Budget = UNCAPPED, businessType: BusinessTypeId = "software") =>
-  store.foundCompany({
-    budget,
-    businessType,
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: NAMES.map((name) => ({
-      name,
-      persona: "ships",
-      role: "engineer",
-      runner: name === "Ana" ? "codex" : "claude",
-      spriteSeed: name,
-      title: "Engineer",
-    })),
-    mission: "ship",
-    name: "Acme",
-  });
+  foundAcme(
+    NAMES.map((name) => hire(name, "Engineer", name === "Ana" ? "codex" : "claude")),
+    { budget, businessType },
+  );
 
 const done = (costUsd = 0): RunResult => ({
   instructionsDigest: null,
@@ -318,7 +290,7 @@ describe("draining the queue", () => {
     const drain = createScheduler(scripted().driver, asleep, integrations);
     const stuck = queue("priya", "high");
     const next = queue("mae");
-    const taskDir = path.join(TASKS_DIR, stuck.id);
+    const taskDir = path.join(tasksDir(), stuck.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(taskDir, 0o555);
     try {
@@ -501,7 +473,7 @@ describe("settling a run", () => {
     const { driver, running } = scripted();
     const task = queue("priya");
     createScheduler(driver, asleep, integrations).tick();
-    const taskDir = path.join(TASKS_DIR, task.id);
+    const taskDir = path.join(tasksDir(), task.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const runs = runEnds();
     chmodSync(taskDir, 0o555);
@@ -525,13 +497,13 @@ describe("settling a run", () => {
     const task = queue("priya");
     createScheduler(driver, asleep, integrations).tick();
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    chmodSync(COMPANY_DIR, 0o555);
+    chmodSync(companyDir(), 0o555);
     try {
       running.get("priya")?.(done(0.5));
       await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
       expect(logged).toHaveBeenCalledWith(expect.stringContaining("book run"), expect.anything());
     } finally {
-      chmodSync(COMPANY_DIR, 0o755);
+      chmodSync(companyDir(), 0o755);
       logged.mockRestore();
     }
     expect(kindOf(task)).not.toBe("running");
@@ -1492,7 +1464,7 @@ describe("a tool call's title in the activity log", () => {
     createScheduler(announcing, asleep, integrations).tick();
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
 
-    const log = readFileSync(ACTIVITY_FILE, "utf-8");
+    const log = readFileSync(activityFile(), "utf-8");
     expect(log.match(/"message":"set_env"/gu)).toHaveLength(setEnvTitles.length);
     expect(log).not.toContain("Zq7");
   });
