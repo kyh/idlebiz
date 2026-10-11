@@ -309,7 +309,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       );
       expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
         {
-          held: { key: "git push origin main", leasable: false, rule: "git-push" },
+          held: { key: "git push origin main", rule: "git-push" },
           tool: { command: "git push origin main", kind: "shell" },
         },
       ]);

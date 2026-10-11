@@ -208,45 +208,29 @@ describe("answering a permission ask", () => {
 });
 
 describe("a tool call the agent announces", () => {
-  const body = `${"API_TOKEN=hunter2\n".repeat(300)}EOF`;
-  const longLine = `printf '%s' ${"x".repeat(200)} > big.txt && cat > notes.md <<'EOF'`;
-
-  it.each([
-    {
-      name: `${longLine.slice(0, 160)}…`,
-      title: `${longLine}\n${body}`,
-      what: "capped at 160 chars",
-    },
-    {
-      name: "cat > .env <<'EOF'",
-      title: `cat > .env <<'EOF'\n${body}`,
-      what: "the heredoc body left out",
-    },
-  ])(
-    "is named by its title's first line ($what), yet judged by the whole title",
-    async ({ name, title }) => {
-      const names: string[] = [];
-      const asks: PermissionRequest[] = [];
-      const { end } = await turn(
-        scriptedAgent({
-          announced: title,
-          options: JSON.stringify([option("allow_once", "once")]),
-        }),
-        {
-          onEvent: (event) => {
-            if (event.type === "tool_start") {
-              names.push(event.toolName);
-            }
-          },
-          onPermission: (request) => {
-            asks.push(request);
-            return Promise.resolve({ allow: true });
-          },
+  it("reaches the listener and the permission policy with its whole title", async () => {
+    const title = `cat > .env <<'EOF'\n${"API_TOKEN=hunter2\n".repeat(300)}EOF`;
+    const titles: string[] = [];
+    const asks: PermissionRequest[] = [];
+    const { end } = await turn(
+      scriptedAgent({
+        announced: title,
+        options: JSON.stringify([option("allow_once", "once")]),
+      }),
+      {
+        onEvent: (event) => {
+          if (event.type === "tool_start") {
+            titles.push(event.title);
+          }
         },
-      );
-      expect(end.kind).toBe("completed");
-      expect(names).toEqual([name]);
-      expect(asks.map((ask) => ask.tool)).toEqual([{ kind: "unknown", title }]);
-    },
-  );
+        onPermission: (request) => {
+          asks.push(request);
+          return Promise.resolve({ allow: true });
+        },
+      },
+    );
+    expect(end.kind).toBe("completed");
+    expect(titles).toEqual([title]);
+    expect(asks.map((ask) => ask.tool)).toEqual([{ kind: "unknown", title }]);
+  });
 });

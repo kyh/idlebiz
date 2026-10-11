@@ -7,6 +7,7 @@ import {
   TASK_PRIORITIES,
 } from "@repo/domain/domain";
 import type { BlockedAsk, Task, TaskProvenance, TaskState } from "@repo/domain/domain";
+import { HOLD_RULE_IDS } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
@@ -53,8 +54,9 @@ const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
     };
   }
   const approval = /^\[approve:(?<rule>[a-z-]+)\]\s*(?<command>[\s\S]*)$/u.exec(s)?.groups;
-  if (approval?.rule !== undefined && approval.command !== undefined) {
-    return { command: approval.command.trim(), rule: approval.rule, type: "approval" };
+  const rule = HOLD_RULE_IDS.find((id) => id === approval?.rule);
+  if (rule !== undefined && approval?.command !== undefined) {
+    return { command: approval.command.trim(), rule, type: "approval" };
   }
   const connect = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s)?.groups;
   const integration = INTEGRATION_KINDS.find((k) => k === connect?.kind);

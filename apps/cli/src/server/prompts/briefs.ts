@@ -26,6 +26,8 @@ import type {
   TeamMessage,
 } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
+import { isLeased } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 
 export interface TaskBrief {
   title: string;
@@ -431,7 +433,26 @@ export const actionAnswer = (reply: ActionReply): string => {
   return reply.note === "" ? "Done." : `Done. They sent back: ${reply.note}`;
 };
 
-export const approvalAnswer = (approved: boolean, command: string): string =>
-  approved
-    ? `Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:\n\n\`\`\`\n${command}\n\`\`\`\n\nIt covers one run of it (or, for a site or a connected tool, the rest of this run). Anything else outward-facing needs a fresh approval.`
-    : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
+/** What the run reads once the founder decides `ask`: if signed, exactly what the sign-off covers. */
+export const approvalAnswer = (
+  approved: boolean,
+  ask: { command: string; rule: HoldRuleId },
+): string => {
+  if (!approved) {
+    return "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
+  }
+  const signed = ["", ...fenced(ask.command), ""];
+  return (
+    isLeased(ask.rule)
+      ? [
+          "Approved, in this task only, for the rest of this run:",
+          ...signed,
+          "Anything else outward-facing needs a fresh approval.",
+        ]
+      : [
+          "Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:",
+          ...signed,
+          "It covers one run of it. Anything else outward-facing needs a fresh approval.",
+        ]
+  ).join("\n");
+};

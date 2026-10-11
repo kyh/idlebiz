@@ -296,8 +296,9 @@ third boundary.
   run, every path a `-D` parameter. Each run resolves its own (`machineSeal`), so a path that
   became a symlink since boot is sealed where it leads from the next run on.
   - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
-    credentials, cloud and deploy CLIs, browser and chat-app profiles, agent-browser's saved
-    logins), `secrets.json` with every name that starts with it, the other runner's home, and,
+    credentials, cloud and deploy CLIs, App Store Connect's notary keys, browser and chat-app
+    profiles, agent-browser's saved logins), `secrets.json` with every name that starts with it,
+    the other runner's home, and,
     for a codex run, what of the founder's own it would load (`personal` in `RUNNER_HOMES`):
     their skills (`$CODEX_HOME/skills`, codex's own `.system` ones in it, and
     `~/.agents/skills`), since codex loads every skill it can read and no setting leaves them
@@ -540,7 +541,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   deploy guard skips a public name's value (`unshippableEnvValues`), which the build ships
   anyway; that trusts the name, not the framework, so a prefix the product's framework does not
   read (`VITE_` in a Next.js app) leaves a value server-only and unguarded. A set_env call's
-  title, its command line, is logged as `set_env` alone.
+  title, its command line, is logged as `set_env` alone, judged on the whole title before the
+  log cuts any title to one short line (`loggedToolName`, `scheduler.ts`): a command may put the
+  value before the verb.
   - A sign-off pins an action, not the tree a deploy ships, and runs on one product share its
     workspace, so a run carrying one has that workspace to itself: the scheduler's `tick`
     starts it only once no other run is live there, and starts nobody new there while it waits
@@ -640,7 +643,8 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
   may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
   payments, sends, remote copies, pipe-to-shell, credential reads) is signed for once,
-  exactly, with the same grant a signed tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
+  exactly as sent, newlines and all (the card marks each with `⏎`), with the same grant a signed
+  tool takes. It is not a boundary: what a script runs goes unseen (`npm run deploy`, a file on disk). codex
   would run a command the founder's `~/.codex/rules` allow without asking, so its runs find no
   rules there (above).
   - An `idlebiz <tool>` line runs unasked: its request is data the game reads, and the tool
@@ -671,9 +675,14 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     `cat` does; an ask IdleBiz cannot recognise is held once, exactly. A signature
     only ever picks the runner's one-time option. Both runners' wire formats end in
     `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
+  - Whether a sign-off leases is its rule's alone (`LEASED` in `@repo/domain/hold-rules`, which
+    every rule must fill), never the hold's. A saved ask names its rule, so retiring a hold rule
+    is a breaking store change (bump `SAVE_FORMAT`): a TASK.md still asking under it is refused.
 - **What stays open**, on purpose or for want of a rule:
   - the network: a run can send what it reads anywhere;
-  - reads across HOME outside the login stores (another project's `.env`, transcripts);
+  - reads across HOME outside the login stores (another project's `.env`, transcripts), this
+    checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which
+    sign nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`;
   - to claude runs, which share the founder's login, the Keychain: claude reads its login
     there, so a token the founder's `gh` or git keeps there is guarded only by the tripwire's
     `read-credentials` and `git-push` holds;
@@ -812,8 +821,9 @@ signed-in CLI under the macOS seal and skips without one, never spends, not part
 CI (see `AGENTS.md`).
 `pnpm -F @repo/desktop package` packs the app on a Mac (`scripts/package.ts`), signed with the
 keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack)
-and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
-that is not both. `pnpm smoke:desktop` packs and boots the .app on a scratch save
+and notarized when `apps/desktop/.env` names the notary key, whose `.p8` sits in
+`~/.appstoreconnect/private_keys`; `release:publish` refuses a pack that is not both.
+`pnpm smoke:desktop` packs and boots the .app on a scratch save
 (`apps/desktop/scripts/smoke-packaged.ts`): every resource the server ships is in it, hello
 boots main on the pack's node, the window loads main's page, a second launch hands over, and a
 quit leaves nothing main started running. It refuses where an IdleBiz runs or the Keychain holds

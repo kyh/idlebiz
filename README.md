@@ -47,10 +47,11 @@ IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop  # an ad-hoc pack, booted on a scratc
 
 On a Mac with Xcode's command line tools and the Rust toolchain
 (`apps/desktop/rust-toolchain.toml`). Signs with the Developer ID in the keychain (none stops
-it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack); notarizes with
-`apps/desktop/.env` (Apple notarization creds) and the `AuthKey_*.p8` at the repo root — both
-gitignored. Bump `version` in `apps/desktop/package.json` and `apps/cli/package.json` together
-before publishing; the release is tagged `v<version>`.
+it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack); notarizes with the App Store
+Connect key `apps/desktop/.env` names (its id and issuer, gitignored; see `.env.example`), whose
+`AuthKey_<id>.p8` sits in `~/.appstoreconnect/private_keys/`, never in the checkout: employee
+runs read the rest of HOME, but not there. Bump `version` in `apps/desktop/package.json` and
+`apps/cli/package.json` together before publishing; the release is tagged `v<version>`.
 
 Game state lives at `~/.idlebiz/company/` as human-readable
 agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, shared/).

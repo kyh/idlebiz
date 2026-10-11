@@ -11,6 +11,7 @@ import { INTEGRATION_LABELS } from "@repo/domain/domain";
 import type { BlockedAsk } from "@repo/domain/domain";
 import { formatTime } from "@repo/domain/format";
 import { describeRule, shownKey } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { cn } from "cn";
 
 // The teammate says in the room that a command waits on the founder, so the answer sits beside it.
@@ -23,7 +24,7 @@ const HeldCommand = ({
   taskId: string;
   by: string;
   command: string;
-  rule: string;
+  rule: HoldRuleId;
 }) => {
   const { submission, decided, decide } = useApproval(taskId);
   return (

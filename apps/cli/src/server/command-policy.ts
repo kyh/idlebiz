@@ -1356,11 +1356,7 @@ const opensOutside = async (word: string, room: Confinement): Promise<boolean> =
   return !roots.some((root) => within(opened, root));
 };
 
-const unseen = (command: string): Hold => ({
-  key: command,
-  leasable: false,
-  rule: "browser-unseen",
-});
+const unseen = (command: string): Hold => ({ key: command, rule: "browser-unseen" });
 
 /** What acting on the page at `url` waits on, or null when it may run. A null `url` is a page nobody knows. */
 const actHold = (url: string | null, leases: ReadonlySet<string>, command: string): Hold | null => {
@@ -1372,7 +1368,7 @@ const actHold = (url: string | null, leases: ReadonlySet<string>, command: strin
     return unseen(command);
   }
   const key = `agent-browser: act on ${host}`;
-  return leases.has(key) ? null : { key, leasable: true, rule: "browser-act" };
+  return leases.has(key) ? null : { key, rule: "browser-act" };
 };
 
 /**
@@ -1410,7 +1406,7 @@ const heldBrowserAct = async (
     calls.flatMap((call) => call.args).map((word) => opensOutside(word, room)),
   );
   if (opened.includes(true)) {
-    return { key, leasable: false, rule: "browser-file" };
+    return { key, rule: "browser-file" };
   }
   for (const step of calls.flatMap(browserSteps)) {
     switch (step.does) {
@@ -1456,20 +1452,11 @@ export const classifyCommand = (command: string): CommandVerdict => {
   return rule === undefined ? { decision: "allow" } : { decision: "ask", rule };
 };
 
-/** Remove CLI reporting suffixes and normalize the key used to reuse founder approvals. */
-export const normalizeCommand = (command: string): string =>
-  command
-    .replaceAll(/\s*2>&1/gu, "")
-    .replace(/\s*;\s*echo\s+["']?exit=\$\?["']?\s*$/u, "")
-    .trim()
-    .replaceAll(/\s+/gu, " ");
-
-/** What a tool call waits on: the approval the founder signs, and whether signing covers the rest of the run. */
+/** What a tool call waits on: the approval the founder signs, under the rule that says whether signing covers the rest of the run. */
 export interface Hold {
   /** The approval key, and the text on the founder's card. */
   key: string;
   rule: HoldRuleId;
-  leasable: boolean;
 }
 
 /** The run's own folders, which a page opened from disk is judged against. Absolute paths. */
@@ -1504,10 +1491,10 @@ export const holdFor = async (
   if (tool.kind === "mcp") {
     if (tool.server === null) {
       // signed for call by call: a lease on "unknown" would cover every such server
-      return { key: "mcp: use a tool nothing could name", leasable: false, rule: "unknown-ask" };
+      return { key: "mcp: use a tool nothing could name", rule: "unknown-ask" };
     }
     const key = `mcp: use ${tool.server}`;
-    return leases.has(key) ? null : { key, leasable: true, rule: "external-tool" };
+    return leases.has(key) ? null : { key, rule: "external-tool" };
   }
   if (tool.kind === "edit") {
     // the seal refuses a write outside the run's own folders, whichever tool makes it
@@ -1516,7 +1503,7 @@ export const holdFor = async (
   if (tool.kind === "network") {
     // the command behind it goes unseen, so nothing tells a read from a send
     const key = `network: reach ${tool.host ?? "a host nobody named"}`;
-    return { key, leasable: false, rule: "http-write" };
+    return { key, rule: "http-write" };
   }
   if (tool.kind === "fetch") {
     // a read, as a bare `curl <url>` is: the shell rules hold only what sends
@@ -1528,13 +1515,14 @@ export const holdFor = async (
   }
   if (tool.kind === "unknown") {
     const key = oneLine(`ask: ${tool.title || "a tool call nothing named"}`);
-    return { key, leasable: false, rule: "unknown-ask" };
+    return { key, rule: "unknown-ask" };
   }
-  // Judged as sent: normalizing folds the newlines that separate commands into spaces.
-  const key = normalizeCommand(tool.command);
+  // Keyed as sent, so the card shows the program that runs, newlines and all; trimmed, as the
+  // task's saved ask reads back.
+  const key = tool.command.trim();
   const verdict = classifyCommand(tool.command);
   if (verdict.decision === "ask") {
-    return { key, leasable: false, rule: verdict.rule.id };
+    return { key, rule: verdict.rule.id };
   }
   return await heldBrowserAct(tool.command, key, leases, livePage, confinement);
 };

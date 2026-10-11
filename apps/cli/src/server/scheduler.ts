@@ -49,9 +49,22 @@ const empName = (id: string): string => store.getEmployee(id)?.name ?? "someone"
 /** What names set_env in a call's title: its name or its verb. */
 const SET_ENV_MARKS = ["set_env", verbOf("set_env")];
 
-/** A set_env call is titled with its command line, value and all, and activity.jsonl keeps a title for good. */
+const TITLE_LINE_MAX = 160;
+
+/** A tool call's title as one short line: the heredoc bodies a command title carries left out. */
+const titleLine = (title: string): string => {
+  const [first = ""] = title.trim().split(/[\r\n]/u, 1);
+  const line = first.trimEnd();
+  return line.length > TITLE_LINE_MAX ? `${line.slice(0, TITLE_LINE_MAX)}…` : line;
+};
+
+/**
+ * What activity.jsonl keeps, for good, of a tool call's title, which codex makes the command line
+ * itself, inlined secrets and all. A set_env call is named alone, judged on the whole title: its
+ * value may sit before the verb, on an earlier line or past the cut.
+ */
 export const loggedToolName = (title: string): string =>
-  SET_ENV_MARKS.some((mark) => title.includes(mark)) ? "set_env" : title;
+  SET_ENV_MARKS.some((mark) => title.includes(mark)) ? "set_env" : titleLine(title);
 
 const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent): void => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
@@ -60,7 +73,7 @@ const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent):
       publishActivity({
         ...at,
         kind: "tool_call",
-        message: loggedToolName(ev.toolName),
+        message: loggedToolName(ev.title) || (ev.kind ?? "tool"),
         payload: { kind: ev.kind },
       });
       break;

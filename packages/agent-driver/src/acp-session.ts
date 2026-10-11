@@ -204,19 +204,6 @@ const turnText = (opts: AcpTurnOptions, resumed: boolean): string => {
   return `${lead}${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`;
 };
 
-const TITLE_LINE_MAX = 160;
-
-/**
- * A tool call's title as one short line. codex titles a command with the command itself, heredoc
- * bodies and inlined secrets included, and the caller logs the name for good; the permission
- * policy still judges the whole title.
- */
-const titleLine = (title: string): string => {
-  const [first = ""] = title.trim().split(/[\r\n]/u, 1);
-  const line = first.trimEnd();
-  return line.length > TITLE_LINE_MAX ? `${line.slice(0, TITLE_LINE_MAX)}…` : line;
-};
-
 /**
  * How a turn ends on a failure of class `failure`: a usage limit with when the provider said it
  * lifts, on the rate limit it `reported` or in its `error`'s words.
@@ -490,7 +477,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           flushMessage();
           opts.onEvent({
             kind: update.kind ?? undefined,
-            toolName: titleLine(update.title) || (update.kind ?? "tool"),
+            title: update.title,
             type: "tool_start",
           });
           return;

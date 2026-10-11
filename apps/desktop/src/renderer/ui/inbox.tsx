@@ -17,6 +17,7 @@ import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { approvalScope, describeRule, shownKey } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { INTEGRATION_LABELS } from "@repo/domain/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationAsk, IntegrationKind, Task, TaskIn } from "@repo/domain/domain";
@@ -70,7 +71,7 @@ const ApprovalRow = ({
   t: Task;
   by: string;
   command: string;
-  rule: string;
+  rule: HoldRuleId;
 }) => {
   const { submission, decided, decide } = useApproval(t.id);
   return (
