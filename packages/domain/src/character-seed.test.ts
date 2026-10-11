@@ -3,7 +3,7 @@ import { DEFAULT_FOUNDER_SEED } from "./domain";
 import { founderChoices, SHEET_COUNT, sheetForSeed } from "./character-seed";
 
 describe("sheetForSeed", () => {
-  // Saved seeds keep their sheet: these are the sheets each wore when main composed them.
+  // A save keeps seeds, not sheets, so each case pins the sheet a saved seed wears.
   it.each([
     [DEFAULT_FOUNDER_SEED, 19],
     ["e2e-founder", 11],
