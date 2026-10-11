@@ -1489,7 +1489,7 @@ describe("a tool call's title in the activity log", () => {
       },
     };
     queue("priya");
-    createScheduler(announcing, asleep).tick();
+    createScheduler(announcing, asleep, integrations).tick();
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
 
     const log = readFileSync(ACTIVITY_FILE, "utf-8");

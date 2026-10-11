@@ -104,15 +104,15 @@ export const founderActions = (queue: Queue) => {
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval") {
       throw new RefusalError("task is not awaiting an approval");
     }
-    const { command } = task.state.ask;
-    const continuation = store.resolveBlockedWithAnswer(taskId, approvalAnswer(approved, command));
+    const { ask } = task.state;
+    const continuation = store.resolveBlockedWithAnswer(taskId, approvalAnswer(approved, ask));
     if (!continuation?.assigneeId) {
       throw new RefusalError("could not resume the task");
     }
-    // Record before the continuation can start: its retry hits the hook again,
-    // and must find the sign-off already there.
+    // Record before the continuation can start: its retry is held again, and must find the
+    // sign-off already there.
     if (approved) {
-      store.grantApproval(continuation.id, command);
+      store.grantApproval(continuation.id, ask.command);
     }
     return assign(continuation.id, continuation.assigneeId);
   };
