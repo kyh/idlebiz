@@ -17,6 +17,7 @@ import type { Budget } from "@repo/domain/domain";
 import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
 import type { Listing } from "../listing";
 import { RefusalError } from "../refusal";
+import type { Integrations } from "../tools";
 import { runPreamble } from "../prompts/briefs";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
@@ -28,8 +29,26 @@ const store = await import("./store");
 const { createScheduler } = await import("../scheduler");
 const { agentDriver } = await import("../agents/agent-driver");
 const asleep = { hold: () => {} };
+const unasked = () => Promise.reject(new Error("no run here calls out"));
+/** No run here starts, so none calls out with a founder's key. */
+const integrations: Integrations = {
+  checkVercelToken: unasked,
+  checkoutAccess: unasked,
+  createPaymentLink: unasked,
+  deploy: unasked,
+  linkAccess: unasked,
+  printListing: {
+    catalog: unasked,
+    publish: unasked,
+    quote: unasked,
+    readFile: unasked,
+    stripeAccess: unasked,
+  },
+  productionHosts: unasked,
+  setEnv: unasked,
+};
 /** The app's own runner, whose seal no test has checked: its ticks start nothing. */
-const scheduler = createScheduler(agentDriver, asleep);
+const scheduler = createScheduler(agentDriver, asleep, integrations);
 const {
   ALUMNI_DIR,
   COMPANY_DIR,
@@ -301,6 +320,7 @@ describe("scheduler queue admission", () => {
       signedIn: () => true,
     },
     asleep,
+    integrations,
   );
 
   it("leaves capped work queued without spinning on its first task", () => {

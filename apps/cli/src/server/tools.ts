@@ -59,21 +59,8 @@ import type { LinkCore, LinkState } from "./link-record";
 import { TOOL_SPECS } from "./tool-specs";
 import type { ToolName, ToolOutcome, ToolSpec } from "./tool-specs";
 
-/** What a tool call acts on behalf of: who is running, for what, and what only main can do for it. */
-export interface RunContext {
-  employee: Employee;
-  company: Company;
-  run: {
-    runId: string;
-    taskId: string;
-    productId: string | null;
-    betId: string | null;
-    origin: TaskOrigin;
-  };
-  asks: AskBox;
-  driver: Pick<typeof agentDriver, "pickRunner" | "restingRunner" | "signedIn">;
-  /** Queue a task for a teammate; a busy one picks it up on a later tick. */
-  assign: (taskId: string, employeeId: string) => void;
+/** What only main can do for a tool call: every outward call made with one of the founder's keys. Boot makes the real ones; tests hand in fakes. */
+export interface Integrations {
   /** Deploy with the founder's Vercel key, which the run itself never holds. */
   deploy: Deployer;
   /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
@@ -90,6 +77,23 @@ export interface RunContext {
   printListing: PrintListing;
   /** Read where a product's production deploys are served with the founder's Vercel key, which the run itself never holds. */
   productionHosts: typeof productionHosts;
+}
+
+/** What a tool call acts on behalf of: who is running, for what, and what only main can do for it. */
+export interface RunContext extends Integrations {
+  employee: Employee;
+  company: Company;
+  run: {
+    runId: string;
+    taskId: string;
+    productId: string | null;
+    betId: string | null;
+    origin: TaskOrigin;
+  };
+  asks: AskBox;
+  driver: Pick<typeof agentDriver, "pickRunner" | "restingRunner" | "signedIn">;
+  /** Queue a task for a teammate; a busy one picks it up on a later tick. */
+  assign: (taskId: string, employeeId: string) => void;
 }
 
 /** A tool ready to be called, by its name, with whatever the agent sent. */

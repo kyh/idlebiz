@@ -131,7 +131,7 @@ const RELOAD_FOR = {
   "product.named": ["products"],
   // An ask exists the moment it is raised, and a dead letter the moment it dies.
   // Every way back out (answered, approved, retried, resumed on connect) goes
-  // through the scheduler's assign, which says `status: queued`. The inbox must
+  // through the scheduler's enqueue, which says `status: queued`. The inbox must
   // not wait for the run to end to agree with the office.
   "run.ask": ["tasks"],
   "run.end": ["all"],

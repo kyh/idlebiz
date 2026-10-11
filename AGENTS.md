@@ -140,7 +140,9 @@ so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at
 > launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root
 > (`server/paths.ts`). The whole shell env reaches main, and the employees' CLIs less its
 > credential-shaped names, as in a terminal launch. Isolation protects the real save, but
-> onboarding and employee runs still bill the signed-in CLI.
+> onboarding and employee runs still bill the signed-in CLI. One main holds a save at a time:
+> boot claims it first (`server/save-claim.ts`), so a dev launch on `~/.idlebiz` while the
+> installed IdleBiz has it open refuses to boot, saying so, rather than run each task twice.
 
 ```sh
 IDLEBIZ_ROOT_DIR="$(mktemp -d)" pnpm dev:browser   # serves http://localhost:31100/
@@ -511,6 +513,8 @@ rather than crashing boot.
   `dev-host/host.ts` (main as the shell runs it, for `pnpm dev:browser` and the e2e suite, which
   ask it for the handoff the shell's window opens on).
 - `apps/cli/src/server` — main. `serve.ts` (boot on the shell's hello, the relay, quit),
+  `save-claim.ts` (boot's claim on the save: a socket main listens on while it runs, which a
+  second main on that save finds answering and refuses to boot on),
   `host.ts` (what main asks of the app that runs it), `relay/` (its end of the stdio channel),
   `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
   `page-session.ts` the sign-in), `page-router.ts` (the page's
@@ -520,7 +524,9 @@ rather than crashing boot.
   owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
-  never past a closed lid), `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only
+  never past a closed lid), `founder-actions.ts` (what the founder hands the team, filed and
+  queued through the scheduler), `company-actions.ts` (a change everyone hears about),
+  `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only
   that run's seal reaches, that the agents' `idlebiz` command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools.ts` (each bound to its
   implementation), `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a line

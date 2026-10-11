@@ -54,6 +54,7 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
   bets,
   busy: new Map<string, number>(),
   products,
+  proposalIdle: false,
   proposalPending: false,
   runCostUsd: 1,
   stalled: new Set<string>(),
@@ -259,6 +260,12 @@ describe("allocate", () => {
 
   it("does not ask a lead already waiting on the founder to open another", () => {
     expect(allocate({ ...ledger([]), proposalPending: true }, DEFAULT_POLICY)).toEqual({
+      kind: "wait",
+    });
+  });
+
+  it("does not ask a lead whose last proposal came to nothing to open another", () => {
+    expect(allocate({ ...ledger([]), proposalIdle: true }, DEFAULT_POLICY)).toEqual({
       kind: "wait",
     });
   });

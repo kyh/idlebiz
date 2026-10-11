@@ -43,7 +43,7 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
   lifeline: a shell that crashed or was killed ends main too, after its runs. Main leads a process
   group of its own, so a Ctrl-C under `tauri dev` reaches the shell alone, which stops main once.
   There is no restart: main owns the save, and a second one under a first that has not let go
-  would race it.
+  would be refused it (`apps/cli/src/server/save-claim.ts`).
 
 ## The window is main's own page
 

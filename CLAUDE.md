@@ -151,7 +151,9 @@ allocator and the replay.
   still be waiting on the founder and a window over nothing shipped is a false verdict. Nor
   does it start one over a number no source reads (`measureRefusal`: the company's Stripe
   key, live unless test money counts, and the product's Vercel project). A spent-out bet
-  gets the lead a "settle" run: measure or kill. No tool lets an agent declare a win.
+  gets the lead a "settle" run: measure or kill. One that ends done with neither closes the
+  bet unmeasured (`closeUnsettledBet`): no window ran, and briefing the lead again would bill
+  the bet a run every tick. No tool lets an agent declare a win.
 - **A bet counts only what carries its mark** (`Bet.claim`). A users bet owns a landing path
   (`/b/<slug>` unless it names one) and reads visitors under it since it opened; a revenue
   bet reads captured live-mode USD charges tagged `metadata[bet]=<slug>`, the tag
@@ -198,7 +200,10 @@ allocator and the replay.
   too, since `claimTask` refuses anything else a run would bill. "Waiting on the
   founder" is modelled in `allocate` once: a bet with a blocked task gets no hands — settle
   runs carry their bet, so that covers them — and a lead whose last proposal is blocked is
-  not asked again.
+  not asked again. Nor is one whose last proposal ended done with no news on the ledger since
+  it was briefed (`proposalIdle`: no bet opened or closed, no product started), the same brief
+  getting the same answer, until it is `PROPOSAL_RETRY_MS` (15 minutes) old, since the room or
+  a connection may have moved meanwhile.
   Routines and founder pings are the only unfunded work, and a routine is only work that
   recurs by nature (a playtest, a store audit): reviewing or marketing the business is a
   bet's job.
@@ -227,7 +232,12 @@ allocator and the replay.
   `server/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's page.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
   or employee), so the room agents read and the #team feed hold the same lines and no
-  office news reads as the founder's word.
+  office news reads as the founder's word. What the founder hands the team (a room message,
+  a direct request, an answer, a sign-off, an assignment, a connection resuming the asks it
+  answers) is `server/founder-actions.ts`, which files and queues through the scheduler's
+  `file` and `enqueue`. The scheduler keeps the tick, admission, autopilot and the runs, and
+  is handed at boot the integrations a run's tools call out with (`Integrations` in
+  `server/tools.ts`), so tests fake them.
 - **Five businesses, one way to earn.** `BUSINESS_MODELS` in `server/prompts/instructions.ts`
   tells each run how its type makes money with the tools there are: software sells once
   through `create_payment_link`, a game studio a web game's paid unlock, ecommerce prints
@@ -262,12 +272,12 @@ allocator and the replay.
   action, an approval or a connect ask.
 - **The policy is data, retuned by replay.** `dream` replays a fixed set of `explore`
   weights against the measured verdicts and swaps only to a strictly better scorer, so the
-  incumbent never loses to a tie. A bet killed before any source reported its number
-  (`moved === null`) says nothing about its hypothesis, so neither the replay nor `allocate`
-  (product yield, the plateau's run of losses) counts it. The replay scores only work picks
-  and floors a pick's cost at one run's, so a win nothing paid for cannot price itself at
-  zero; the plateau (three straight losses) only shapes a proposal, so it is a constant, not
-  policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
+  incumbent never loses to a tie. A bet closed unmeasured (`moved === null`: killed before any
+  source reported its number, or left unsettled) says nothing about its hypothesis, so neither
+  the replay nor `allocate` (product yield, the plateau's run of losses) counts it. The replay
+  scores only work picks and floors a pick's cost at one run's, so a win nothing paid for
+  cannot price itself at zero; the plateau (three straight losses) only shapes a proposal, so
+  it is a constant, not policy. It never retunes below eight measured verdicts. Steering changes go in the policy, not into prompts as advice: briefs carry the
   ledger as facts only. The game is single-player: the replay only ever sees this company's
   bets, and no ledger leaves the machine.
 
@@ -769,6 +779,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   than `NODE_ENV`, which the shell drops so none loads code into main (`scrubbed_env`).
 - **Desktop boot drains queued work immediately**. Use a fresh `IDLEBIZ_ROOT_DIR` to protect
   the real save; see the fixture recipe in `AGENTS.md`. Employee runs still cost money.
+- **One main per save.** Boot claims the save before it reads it (`server/save-claim.ts`): a
+  main on a save another holds (`pnpm dev:desktop` while the installed app has `~/.idlebiz`
+  open) refuses to boot and says so; one a crash left holds nothing.
 
 Commands: `pnpm verify` · `pnpm dev:browser` · `pnpm dev:desktop` · `pnpm dev:web` · `pnpm knip`
 · `pnpm e2e` · `pnpm -F @repo/desktop package`

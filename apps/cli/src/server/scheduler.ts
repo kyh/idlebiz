@@ -6,39 +6,17 @@ import { publishActivity } from "./activity";
 import { guarded, report } from "./lib/report";
 import { askBox } from "./agents/agent-driver";
 import type { RunResult, RunTools, agentDriver } from "./agents/agent-driver";
-import {
-  announceBet,
-  haltForBudget,
-  postToRoom,
-  refuseHeldKey,
-  settleOrderCard,
-  ship,
-} from "./company-actions";
+import { announceBet, haltForBudget, ship } from "./company-actions";
 import { stripeInTestMode } from "./metrics";
 import { metricsPulse } from "./metrics-pulse";
-import { deployToVercel } from "./deploy";
-import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./stripe-links";
-import { printListing } from "./print-listing";
-import { productionHosts, validateToken } from "./vercel";
-import { setVercelEnv } from "./vercel-env";
-import type { VercelConnection } from "./vercel-connect";
 import type { KeepAwake } from "./keep-awake";
 import { callTool } from "./tools";
-import type { RunContext } from "./tools";
-import { RUN_COST_ESTIMATE_USD, allocate } from "@repo/domain/bets";
-import type { Allocation } from "@repo/domain/bets";
+import type { Integrations, RunContext } from "./tools";
+import { RUN_COST_ESTIMATE_USD, allocate, isClosed } from "@repo/domain/bets";
+import type { Allocation, Bet } from "@repo/domain/bets";
 import { errorMessage } from "@repo/domain/errors";
-import { RefusalError } from "./refusal";
 import { verbOf } from "./tool-specs";
-import {
-  actionAnswer,
-  approvalAnswer,
-  autonomousBrief,
-  founderPing,
-  integrationConnectedAnswer,
-  routineBrief,
-  runPreamble,
-} from "./prompts/briefs";
+import { autonomousBrief, routineBrief, runPreamble } from "./prompts/briefs";
 import type { Assignment, TaskBrief } from "./prompts/briefs";
 import {
   MAX_TASK_ATTEMPTS,
@@ -46,18 +24,8 @@ import {
   isLead,
   isOutOfBudget,
   isRoutineDue,
-  resolveMentions,
 } from "@repo/domain/domain";
-import type {
-  ActionReply,
-  Company,
-  Employee,
-  IntegrationAsk,
-  IntegrationKind,
-  RunOrigin,
-  Task,
-  TaskStatus,
-} from "@repo/domain/domain";
+import type { Company, Employee, RunOrigin, Task, TaskStatus } from "@repo/domain/domain";
 
 const GLOBAL_CONCURRENCY_CAP = 3;
 
@@ -66,6 +34,9 @@ const FOUNDER_RESERVED_SLOTS = 1;
 const BACKGROUND_CAPACITY = GLOBAL_CONCURRENCY_CAP - FOUNDER_RESERVED_SLOTS;
 
 const AUTOPILOT_TICK_MS = 10_000;
+
+/** How long a proposal that came to nothing holds the lead back: the ledger is not all a brief reads, and the room or a connection may have moved meanwhile. */
+const PROPOSAL_RETRY_MS = 15 * 60_000;
 
 /** An aborted turn settles at once; a shutdown must not hang on a run that never does. */
 const SHUTDOWN_GRACE_MS = 2000;
@@ -130,6 +101,28 @@ const heartbeatBrief = (
     stripeTestMode: stripeInTestMode(),
   });
 
+/**
+ * The lead's latest proposal ended done under `PROPOSAL_RETRY_MS` ago, and the ledger has had no
+ * news since it was briefed: no bet opened or closed, no product started. The same brief would
+ * get the same answer, billed again.
+ */
+const lastProposalIdle = (leaderId: string, now: number): boolean => {
+  const last = store.lastProposalOf(leaderId);
+  if (
+    last?.state.kind !== "done" ||
+    last.completedAt === null ||
+    now >= last.completedAt + PROPOSAL_RETRY_MS
+  ) {
+    return false;
+  }
+  const briefed = last.createdAt;
+  const betNews = (bet: Bet): boolean =>
+    bet.createdAt > briefed || (isClosed(bet) && bet.state.closedAt > briefed);
+  return (
+    !store.listBets().some(betNews) && !store.listProducts().some((p) => p.createdAt > briefed)
+  );
+};
+
 /** Where the next idle employee goes, by the company's current policy. */
 const nextAllocation = (company: Company): Allocation => {
   const stalled = new Set<string>();
@@ -138,12 +131,14 @@ const nextAllocation = (company: Company): Allocation => {
       stalled.add(t.betId);
     }
   }
-  const leadTasks = company.leaderId === null ? [] : store.openTasksFor(company.leaderId);
+  const { leaderId } = company;
+  const leadTasks = leaderId === null ? [] : store.openTasksFor(leaderId);
   return allocate(
     {
       bets: store.listBets(),
       busy: store.runsInFlight(),
       products: store.listProducts().map((p) => p.id),
+      proposalIdle: leaderId !== null && lastProposalIdle(leaderId, Date.now()),
       proposalPending: leadTasks.some((t) => t.origin === "propose" && t.state.kind === "blocked"),
       runCostUsd: RUN_COST_ESTIMATE_USD,
       stalled,
@@ -181,7 +176,8 @@ const park = (task: Task, runId: string, until: number, why: string): TaskStatus
 /**
  * Usage limits, a refused login and the app quitting park the task without consuming a retry.
  * A task whose bet stopped taking work while it ran is neither retried nor parked: it is
- * dropped, and so is its ask to the founder once that bet has closed.
+ * dropped, and so is its ask to the founder once that bet has closed. A settle run that ends
+ * done without the call it was for closes its bet unmeasured.
  */
 const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskStatus => {
   const at = { employeeId: emp.id, runId, taskId: task.id };
@@ -201,6 +197,13 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
       status = "done";
       store.settleTask(task.id, runId, { kind: "done", summary: r.summary || null });
       ship(task, at, r.summary);
+      const unsettled =
+        task.origin === "settle" && task.betId !== null
+          ? store.closeUnsettledBet(task.betId, Date.now())
+          : null;
+      if (unsettled) {
+        announceBet(unsettled);
+      }
       break;
     }
     case "resting": {
@@ -267,6 +270,10 @@ export type EmployeeRunner = Pick<
   "runTask" | "restingRunner" | "signedIn" | "pickRunner" | "runsSealed"
 >;
 
+/** What a task is filed with beside its brief and its assignee. */
+type Filing = { origin: RunOrigin } & Pick<Task, "productId"> &
+  Partial<Pick<Task, "betId" | "priority">>;
+
 /** Every run on a product shares its workspace; the company's own work runs in the company's. */
 const workspaceOf = (task: Task, company: Company): string => {
   const product = task.productId === null ? null : store.getProduct(task.productId);
@@ -291,10 +298,12 @@ class Scheduler {
   private stopped = false;
   private readonly driver: EmployeeRunner;
   private readonly awake: KeepAwake;
+  private readonly integrations: Integrations;
 
-  constructor(driver: EmployeeRunner, awake: KeepAwake) {
+  constructor(driver: EmployeeRunner, awake: KeepAwake, integrations: Integrations) {
     this.driver = driver;
     this.awake = awake;
+    this.integrations = integrations;
   }
 
   start(): void {
@@ -372,7 +381,7 @@ class Scheduler {
       }
       // a routine is about the company, but its work lands on a product:
       // the one waited on longest, like autopilot's own turn
-      this.brief(assignee, routineBrief(r), {
+      this.file(assignee, routineBrief(r), {
         origin: "routine",
         productId: store.attentionProduct()?.id ?? null,
       });
@@ -382,17 +391,6 @@ class Scheduler {
   /** Whether the employee's runner could start a run now: signed in and not resting. */
   private canStart(emp: Employee): boolean {
     return this.driver.signedIn(emp.runner) && this.driver.restingRunner(emp.runner) === null;
-  }
-
-  private brief(
-    emp: Employee,
-    brief: TaskBrief,
-    filed: { origin: RunOrigin } & Pick<Task, "productId"> &
-      Partial<Pick<Task, "betId" | "priority">>,
-  ): Task {
-    const task = store.createTask({ ...filed, ...brief, assigneeId: emp.id });
-    this.queue(task.id, emp.id);
-    return task;
   }
 
   private tickAutopilot(): void {
@@ -439,7 +437,7 @@ class Scheduler {
         product,
         widen: allocation.widen,
       };
-      this.brief(emp, heartbeatBrief(company, emp, employees, assignment), {
+      this.file(emp, heartbeatBrief(company, emp, employees, assignment), {
         origin: "propose",
         productId: product?.id ?? null,
       });
@@ -450,7 +448,7 @@ class Scheduler {
     const bet = store.getBet(allocation.betId);
     if (bet) {
       const brief = heartbeatBrief(company, emp, employees, { bet, kind: allocation.kind });
-      this.brief(emp, brief, { betId: bet.id, origin: allocation.kind, productId: bet.productId });
+      this.file(emp, brief, { betId: bet.id, origin: allocation.kind, productId: bet.productId });
     }
   }
 
@@ -467,165 +465,31 @@ class Scheduler {
       });
     });
     const ctx: RunContext = {
+      ...this.integrations,
       asks,
       assign: (taskId, employeeId) => {
-        this.queue(taskId, employeeId);
+        this.enqueue(taskId, employeeId);
       },
-      checkVercelToken: validateToken,
-      checkoutAccess: stripeCheckoutAccess,
       company,
-      createPaymentLink: stripePaymentLink,
-      deploy: deployToVercel,
       driver: this.driver,
       employee,
-      linkAccess: stripeLinkAccess,
-      printListing,
-      productionHosts,
       run,
-      setEnv: setVercelEnv,
     };
     return { asks, call: (name, raw) => callTool(ctx, name, raw) };
   }
 
-  /** Whole-token @slug or @first-name mentions wake the addressed employees. */
-  founderMessage(text: string): void {
-    refuseHeldKey(text);
-    postToRoom({ kind: "founder" }, text);
-    for (const employeeId of resolveMentions(text, store.listEmployees())) {
-      this.wakeEmployee(employeeId, founderPing(text));
-    }
-  }
-
-  /** Direct requests wake the employee without relying on mention parsing. */
-  directEmployee(employeeId: string, instruction: string): void {
-    const emp = store.getEmployee(employeeId);
-    if (!emp) {
-      throw new RefusalError(`no employee ${employeeId}`);
-    }
-    refuseHeldKey(instruction);
-    postToRoom({ kind: "founder" }, `@${emp.id} ${instruction}`, emp.id);
-    this.wakeEmployee(employeeId, founderPing(instruction));
-  }
-
-  private resumeBlocked(taskId: string, answer: string, whenNotBlocked: string): Task {
-    refuseHeldKey(answer);
-    const continuation = store.resolveBlockedWithAnswer(taskId, answer);
-    if (!continuation || !continuation.assigneeId) {
-      throw new RefusalError(whenNotBlocked);
-    }
-    return this.assign(continuation.id, continuation.assigneeId);
-  }
-
-  answerQuestion(taskId: string, answer: string): Task {
-    return this.resumeBlocked(taskId, answer, "task is not awaiting an answer");
-  }
-
-  resolveAction(taskId: string, reply: ActionReply): Task {
-    const task = store.getTask(taskId);
-    if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "action") {
-      throw new RefusalError("task is not awaiting an action");
-    }
-    if (task.origin === "order") {
-      return settleOrderCard(taskId, reply);
-    }
-    return this.resumeBlocked(taskId, actionAnswer(reply), "could not resume the task");
-  }
-
-  resolveApproval(taskId: string, approved: boolean): Task {
-    const task = store.getTask(taskId);
-    if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval") {
-      throw new RefusalError("task is not awaiting an approval");
-    }
-    const { command } = task.state.ask;
-    const continuation = store.resolveBlockedWithAnswer(taskId, approvalAnswer(approved, command));
-    if (!continuation?.assigneeId) {
-      throw new RefusalError("could not resume the task");
-    }
-    // Record before the continuation can start: its retry hits the hook again,
-    // and must find the sign-off already there.
-    if (approved) {
-      store.grantApproval(continuation.id, command);
-    }
-    return this.assign(continuation.id, continuation.assigneeId);
-  }
-
-  /** Resume every ask waiting on `kind`, which the founder has just connected. */
-  resumeIntegrationAsks(kind: Exclude<IntegrationKind, "vercel">): void {
-    // A test-mode key counts no money: a run resumed on it for revenue finds the same test mode
-    // and asks again.
-    if (kind === "stripe" && stripeInTestMode()) {
-      return;
-    }
-    this.resumeAsks((ask) => ask.integration === kind);
-  }
-
-  /**
-   * Resume the Vercel asks `connection` answers: every one for the first token, else those about
-   * its product and any that named none. Another product's ask waits on that product's binding.
-   */
-  resumeVercelAsks(connection: VercelConnection): void {
-    this.resumeAsks(
-      (ask) =>
-        ask.integration === "vercel" &&
-        (connection.kind === "token" ||
-          ask.productId === null ||
-          ask.productId === connection.productId),
-    );
-  }
-
-  private resumeAsks(answers: (ask: IntegrationAsk) => boolean): void {
-    if (!store.getCompany()) {
-      return;
-    }
-    for (const task of store.listOpenTasks()) {
-      const st = task.state;
-      if (st.kind !== "blocked" || st.ask.type !== "integration") {
-        continue;
-      }
-      if (!answers(st.ask)) {
-        continue;
-      }
-      const continuation = store.resolveBlockedWithAnswer(
-        task.id,
-        integrationConnectedAnswer(st.ask.integration),
-      );
-      if (continuation?.assigneeId) {
-        this.queue(continuation.id, continuation.assigneeId);
-      }
-    }
-  }
-
-  /**
-   * Coalesce identical requests still waiting for the same employee. Filed even at the budget
-   * cap, as `queue` claims: the founder's word waits for the cap to be raised, never lost.
-   */
-  wakeEmployee(employeeId: string, brief: TaskBrief): Task | null {
-    const emp = store.getEmployee(employeeId);
-    if (!emp) {
-      return null;
-    }
-    const waiting = store
-      .openTasksFor(employeeId)
-      .find(
-        (t) =>
-          t.description === brief.description &&
-          (t.state.kind === "queued" || t.state.kind === "todo"),
-      );
-    return (
-      waiting ??
-      this.brief(emp, brief, {
-        origin: "founder",
-        priority: "high",
-        productId: store.productOfEmployee(emp.id)?.id ?? null,
-      })
-    );
+  /** File `brief` for `emp` and queue it, as `enqueue` does. */
+  file(emp: Employee, brief: TaskBrief, filing: Filing): Task {
+    const task = store.createTask({ ...filing, ...brief, assigneeId: emp.id });
+    this.enqueue(task.id, emp.id);
+    return task;
   }
 
   /**
    * Claim even at the budget cap so answered continuations remain queued; a
    * busy assignee picks it up on a later tick. Null only when the claim was lost.
    */
-  private queue(taskId: string, employeeId: string): Task | null {
+  enqueue(taskId: string, employeeId: string): Task | null {
     const claimed = store.claimTask(taskId, employeeId);
     if (!claimed) {
       return null;
@@ -633,14 +497,6 @@ class Scheduler {
     publishActivity({ employeeId, kind: "status", message: "queued", taskId });
     this.tick();
     return store.getTask(taskId) ?? claimed;
-  }
-
-  assign(taskId: string, employeeId: string): Task {
-    const queued = this.queue(taskId, employeeId);
-    if (!queued) {
-      throw new RefusalError("task is not assignable");
-    }
-    return queued;
   }
 
   /**
@@ -825,8 +681,12 @@ class Scheduler {
 }
 
 /**
- * A scheduler over any runner: tests script the runs, the app hands it the CLIs. It holds the Mac
- * awake exactly while a run is in flight, so it is the blocker's only owner.
+ * A scheduler over any runner and integrations: tests script the runs and fake the keys' calls, the
+ * app hands it the CLIs and the real ones. It holds the Mac awake exactly while a run is in flight,
+ * so it is the blocker's only owner.
  */
-export const createScheduler = (driver: EmployeeRunner, awake: KeepAwake): Scheduler =>
-  new Scheduler(driver, awake);
+export const createScheduler = (
+  driver: EmployeeRunner,
+  awake: KeepAwake,
+  integrations: Integrations,
+): Scheduler => new Scheduler(driver, awake, integrations);
