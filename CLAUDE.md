@@ -44,9 +44,11 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   prices, what the runs would cost billed per token, not what a subscription bills: the tray
   and HUD label it `usage` (`usageLabel`), never spend, and the Budget panel, the digest,
   onboarding and the HUD's tooltip say it is at API prices.
-- Employee character sheets are bundled at `apps/cli/resources/employee-sheets`
-  as curated runtime assets. Source workspace lives outside the repo at
-  `/Users/kyh/Desktop/vg/office`.
+- Employee character sheets and their busts are the page's own files, curated and served as
+  they are, at `apps/desktop/public/characters`: the office cuts its anims from each sheet by
+  `@repo/domain/character-frame`, and `@repo/domain/character-seed` maps a saved sprite seed to
+  its sheet, so changing either changes every saved face. Source workspace lives outside the
+  repo at `/Users/kyh/Desktop/vg/office`.
 - Employee runs load IdleBiz's own skills and none of the founder's. They live at
   `apps/cli/resources/skills/.agents/skills/<name>/SKILL.md` (Agent Skills format:
   frontmatter `name` and `description`, then the body), shipped in the .app with the server
@@ -95,7 +97,7 @@ apps/
                  lib/broadcast.ts feeds). Every other verb is a company tool
                  (src/commands/tools.ts) that runs type through the launcher main writes them
                  (server/agent-launcher.ts). src/dev-host/ runs main as the shell would, for
-                 `dev:browser` and e2e. resources/: the skills and the employee sheets main reads.
+                 `dev:browser` and e2e. resources/: the skills main reads.
                  The build is dist/index.js with its chunks flat beside it, and the page staged
                  as dist/page.
   web/           @repo/web — the landing page (Next.js on Vercel): the download and the Stripe

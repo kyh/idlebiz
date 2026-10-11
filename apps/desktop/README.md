@@ -30,10 +30,10 @@ library writes there is moved to stderr, which the shell appends, stamped, to `m
 
 - The shell says `hello` first, with what only it knows: whether it is the packaged app, under
   `tauri dev` the dev server's address, whether the login item launched it, and the Keychain's
-  password. Main finds its own files beside itself (the skills and the employee sheets in
-  `resources/`, the built page in `dist/page`). Main boots on the hello; one that fails says where
-  the log is, in a box, and the app quits. So does one that has not booted within a minute,
-  killed with its process group first: its quit would wait the stuck boot out.
+  password. Main finds its own files beside itself (the skills in `resources/`, the built page in
+  `dist/page`). Main boots on the hello; one that fails says where the log is, in a box, and the
+  app quits. So does one that has not booted within a minute, killed with its process group
+  first: its quit would wait the stuck boot out.
 - The shell asks main for a `handoff` each time it makes the window, and waits ten seconds for
   it: a one-time link into main's page (below).
 - Main asks the shell (`apps/cli/src/server/host.ts`, answered in `src-tauri/src/host.rs`): a message box, the
@@ -123,7 +123,7 @@ appindicator for its menu-bar icon (`libayatana-appindicator3-dev`).
    `src-tauri/binaries/` (`bundle.externalBin`, beside the shell in `Contents/MacOS`) with its
    licence for `Contents/Resources/notices/node`;
 2. builds the page and the server, and stages the `idlebiz` package — its bundle with the page
-   inside it, its `resources/` and its production dependencies (the ACP adapters, sharp) — by
+   inside it, its `resources/` and its production dependencies (the ACP adapters) — by
    `pnpm deploy`, the workspace's patches applied (`scripts/stage-server.ts`), into
    `Contents/Resources/server`;
 3. signs every Mach-O those dependencies carry with the hardened runtime and the app's

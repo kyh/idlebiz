@@ -2,12 +2,10 @@ import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
 import { listen } from "@/renderer/page-events";
 import {
-  characterQuery,
   companyQuery,
   employeesQuery,
   openTasksQuery,
   read,
-  warm,
   watch,
 } from "@/renderer/state/queries";
 import {
@@ -282,9 +280,8 @@ export class OfficeScene extends Scene {
     // the founder and the roster are independent fetches; the colleagues wait on both,
     // because Phaser's loader is single-batch and the founder's sheet must land first
     const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
-    const playerKey = `player-${seed}`;
-    const [, employees, tasks] = await Promise.all([
-      loadCharacter(this, playerKey, seed),
+    const [playerKey, employees, tasks] = await Promise.all([
+      loadCharacter(this, seed),
       company ? read(employeesQuery) : [],
       company ? read(openTasksQuery) : [],
     ]);
@@ -304,15 +301,7 @@ export class OfficeScene extends Scene {
       this.talkTo(id),
     );
 
-    // the office is already staffed when it opens: nobody parades in on boot.
-    // Spawns serialise on Phaser's loader, but composing the sheets need not:
-    // main caches by seed, so warming them all at once makes the chain read hits.
-    // Only a warm-up: a sheet that fails here fails again in its own spawn, which
-    // lets everyone else in.
-    await Promise.all(employees.map((emp) => warm(characterQuery(emp.spriteSeed))));
-    if (generation !== this.generation) {
-      return;
-    }
+    // the office is already staffed when it opens: nobody parades in on boot
     for (const emp of employees) {
       await npcs.spawn(emp, "settled");
     }

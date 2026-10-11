@@ -25,7 +25,6 @@ catalog:
 
 allowBuilds:
   esbuild: true
-  sharp: true
 
 updateConfig:
   ignoreDependencies:

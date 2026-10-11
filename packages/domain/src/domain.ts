@@ -13,10 +13,10 @@ export const MAX_AGENTS = 64;
 /** A team size cap the founder may set; the settings form checks the same rule main does. */
 export const MaxAgentsSchema = z.number().int().min(1).max(MAX_AGENTS);
 
-/** The founder's look when none was chosen: pins a bundled sheet (see compositor). */
+/** The founder's look when none was chosen, a seed like any other (character-seed.ts). */
 export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 
-/** A new employee's look: a seed the compositor maps to a bundled sheet, unique per hire. */
+/** A new employee's look: a seed character-seed.ts maps to a bundled sheet, unique per hire. */
 export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
@@ -549,12 +549,4 @@ export type LaunchAtLogin = "on" | "off" | "requires-approval" | "not-found" | "
 export interface ChatOption {
   label: string;
   instruction: string;
-}
-
-/** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
-export interface CharacterAssets {
-  /** 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right */
-  walkSheetDataUrl: string;
-  /** 44x44 PNG: the drawn head-and-shoulders bust */
-  bustDataUrl: string;
 }

@@ -485,10 +485,9 @@ rather than crashing boot.
   package with `pnpm deploy` (`apps/desktop/scripts/stage-server.ts`) into
   `Contents/Resources/server`: its bundle (the page staged inside it), its `resources/`, and the
   dependencies it does not bundle — the ACP adapters main spawns (they bring their own zod and
-  ACP sdk) and sharp (native, kept out of the bundle in `apps/cli/vite.config.ts`). Everything
-  Vite bundles — zod, oRPC, citty, the ACP sdk, `@repo/*` — goes in `devDependencies`, or the
-  app ships it for nothing; `apps/desktop` has no `dependencies` at all, since the page is
-  bundled whole. `pnpm add` defaults to `dependencies`.
+  ACP sdk). Everything Vite bundles — zod, oRPC, citty, the ACP sdk, `@repo/*` — goes in
+  `devDependencies`, or the app ships it for nothing; `apps/desktop` has no `dependencies` at
+  all, since the page is bundled whole. `pnpm add` defaults to `dependencies`.
 
 ## Map
 
@@ -551,14 +550,15 @@ rather than crashing boot.
   `sell_print` checks before it lists), `secrets.ts`,
   `metrics.ts`, `tray.ts`, `login-item.ts` (open at login: the macOS login item is its only
   record, only a packaged app registers one, and a launch at login starts in the menu bar).
-- `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`) and the
-  employee sheets (`employee-sheets/`).
+- `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`).
 - `apps/web` — landing page plus the three Stripe Connect route handlers.
 - `packages/domain` — the vocabulary both sides share, pure: `domain.ts` (the company, its
   people, products and tasks), `bets.ts` (the bets, their judge and the allocator),
   `activity.ts` (the event grammar), `digest.ts`, `hire.ts`, `integrations.ts`, `hold-rules.ts`
   (what an approval card says each rule holds; data only, for the page), `format.ts`,
-  `errors.ts`, `json.ts`, and `character-frame.ts` (the sprite box every process slices by).
+  `errors.ts`, `json.ts`, `character-frame.ts` (a sheet's frames: the box, the walk and sit
+  strips, the origin and soles) and `character-seed.ts` (which sheet a sprite seed wears, which
+  the save keeps, and the founder's looks).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`) and the schemas of its event stream (`events.ts`).
 - `packages/agent-driver` — spawns the `claude` / `codex` ACP adapters, normalizes events,

@@ -1,6 +1,6 @@
-// Every Mach-O the .app carries in Contents/Resources, signed before Tauri copies it there: main's
-// native addons and the vendor binaries its dependencies ship (sharp and libvips, the claude and
-// codex runtimes the ACP adapters run, their ripgrep). Tauri signs the shell, the node beside it and
+// Every Mach-O the .app carries in Contents/Resources, signed before Tauri copies it there: the
+// vendor binaries main's dependencies ship (the claude and codex runtimes the ACP adapters run,
+// their ripgrep), and any native addon one brings. Tauri signs the shell, the node beside it and
 // the bundle, and its seal covers each resource's bytes, but notarization refuses any Mach-O inside
 // that is not itself signed with the hardened runtime and a timestamp. Each takes the app's
 // entitlements, as electron-builder's pass gave every binary it signed: node runs JIT, and the

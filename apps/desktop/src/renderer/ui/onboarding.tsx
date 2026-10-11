@@ -1,12 +1,12 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { preload } from "react-dom";
 import { useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useKeyedState } from "@/renderer/hooks/use-keyed-state";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
-import { api, orpc } from "@/renderer/api";
-import { characterQuery, warm } from "@/renderer/state/queries";
+import { api } from "@/renderer/api";
+import { sheetUrl } from "@/renderer/character-art";
 import { companyFounded } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
@@ -30,6 +30,7 @@ import {
   missionFromPitch,
 } from "@repo/domain/domain";
 import type { Budget, BusinessTypeId } from "@repo/domain/domain";
+import { founderChoices } from "@repo/domain/character-seed";
 import { errorMessage } from "@repo/domain/errors";
 import type { HireProposal } from "@repo/domain/hire";
 
@@ -226,7 +227,7 @@ const useScript = (key: string, pages: readonly string[]) => {
   return { advance, done: writer.done, last, promptOpen, shown: writer.shown, skip };
 };
 
-const NO_CHOICES: string[] = [];
+const LOOKS = founderChoices(6);
 
 const TitleScreen = ({ onStart }: { onStart: () => void }) => (
   <div className="ob-title-screen">
@@ -538,7 +539,6 @@ const Encounter = ({
 export const Onboarding = () => {
   const [step, setStep] = useState<Step>("title");
   const [founderName, setFounderName] = useState("");
-  const choices = useQuery(orpc.characters.founders.queryOptions()).data ?? NO_CHOICES;
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
@@ -558,12 +558,10 @@ export const Onboarding = () => {
 
   useModal();
 
-  // each look warmed as soon as it is on offer, so browsing them is instant
-  useEffect(() => {
-    for (const seed of choices) {
-      void warm(characterQuery(seed));
-    }
-  }, [choices]);
+  // each look fetched as soon as it is on offer, so browsing them is instant
+  for (const seed of LOOKS) {
+    preload(sheetUrl(seed), { as: "image" });
+  }
 
   // a beat on "Connected ✓" before the founder's own step
   const { auth, login } = useAuthFlow(() => window.setTimeout(() => setStep("founder"), 700));
@@ -609,7 +607,7 @@ export const Onboarding = () => {
         budget,
         businessType: biz ?? "custom",
         founderName: founderName.trim(),
-        founderSpriteSeed: choices[look] ?? DEFAULT_FOUNDER_SEED,
+        founderSpriteSeed: LOOKS[look] ?? DEFAULT_FOUNDER_SEED,
         hires: team.hires,
         mission,
         name: companyName.trim(),
@@ -622,9 +620,9 @@ export const Onboarding = () => {
     opening.submit();
   };
 
-  const looks = choices.length;
-  const nextLook = () => setLook((i) => (looks === 0 ? 0 : (i + 1) % looks));
-  const prevLook = () => setLook((i) => (looks === 0 ? 0 : (i + looks - 1) % looks));
+  const looks = LOOKS.length;
+  const nextLook = () => setLook((i) => (i + 1) % looks);
+  const prevLook = () => setLook((i) => (i + looks - 1) % looks);
 
   /** The choice window under the current step, if it has one. */
   const menuFor = (): Menu | null => {
@@ -825,7 +823,7 @@ export const Onboarding = () => {
     step === "intro" && auth.phase === "checking"
       ? "Checking your CLI…"
       : hintFor(step, look, looks, capUsd);
-  const seed = choices[look] ?? DEFAULT_FOUNDER_SEED;
+  const seed = LOOKS[look] ?? DEFAULT_FOUNDER_SEED;
   const prompt = promptFor(step, {
     biz,
     companyName,
