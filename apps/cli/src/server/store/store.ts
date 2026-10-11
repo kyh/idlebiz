@@ -83,7 +83,6 @@ import { DigestSchema } from "@repo/domain/digest";
 import type { Digest } from "@repo/domain/digest";
 import type {
   ActionAsk,
-  AgentRunner,
   Budget,
   BusinessTypeId,
   Company,
@@ -106,6 +105,7 @@ import type {
   TeamMessage,
   VercelBinding,
 } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import {
   DEFAULT_MAX_AGENTS,
   LastShipSchema,
@@ -653,7 +653,7 @@ export interface FoundingHire {
   role: string;
   title: string;
   persona: string;
-  runner: AgentRunner;
+  runner: RunnerId;
   spriteSeed: string;
 }
 

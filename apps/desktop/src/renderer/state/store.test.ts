@@ -4,13 +4,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
 import type {
-  AgentRunner,
   AuthFlowEvent,
   Company,
   Employee,
   RestingRunners,
   TeamMessage,
 } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import type { PageEvent, PageEvents } from "@repo/contract/events";
 import type { Api, Listen } from "@/renderer/api";
 import type { Office } from "@/renderer/game/office-port";
@@ -113,7 +113,7 @@ interface FakeApi {
 
 interface MainHolds {
   authed: boolean;
-  signedOut: AgentRunner[];
+  signedOut: RunnerId[];
   employees: Employee[];
   resting: RestingRunners;
   room: TeamMessage[];

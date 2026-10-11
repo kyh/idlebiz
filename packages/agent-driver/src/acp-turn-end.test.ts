@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runAcpTurn } from "@repo/agent-driver/acp-session";
+import { runAcpTurn } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { CLAUDE_RATE_LIMITED_UPDATE } from "./claude-rate-limit.fixture";
 
 /** An ACP agent that opens a session, then answers the prompt with `answer` (JSON), or never. */
 const scriptedAgent = (answer: string | null, stderr = ""): string => `
@@ -103,43 +104,57 @@ const turn = (agentScript: string, maxSessionMs = 0) =>
     teardownGraceMs: 100,
   });
 
+/** When a turn's usage limit lifts, as it reported it; 0 for any other end. */
+const resetOf = (end: Awaited<ReturnType<typeof turn>>["end"]): number =>
+  end.kind === "failed" && end.class === "usage-limit" ? (end.reportedReset ?? 0) : 0;
+
+const CLAUDE_LIMIT = "You've hit your limit · try again in 2 hours";
+
+/** claude refusing the prompt for a usage limit, its text naming `message`. */
+const claudeLimited = (message = CLAUDE_LIMIT): string =>
+  `send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: ${JSON.stringify(message)} } });`;
+
 describe("how a turn ends", () => {
-  it("is limited when the agent refuses the prompt for a usage limit", async () => {
-    const refusal = JSON.stringify({
-      error: {
-        code: -32_603,
-        data: { errorKind: "rate_limit" },
-        message: "You've hit your limit · try again in 2 hours",
+  it("fails on a usage limit when the agent refuses the prompt for one, with the reset its text names", async () => {
+    const before = Date.now();
+    const { end } = await turn(agentThat(claudeLimited()));
+    expect(end).toMatchObject({ class: "usage-limit", error: CLAUDE_LIMIT, kind: "failed" });
+    expect(resetOf(end)).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
+    expect(resetOf(end)).toBeLessThan(before + 3 * 3_600_000);
+  });
+
+  it("reports the reset claude's usage update named, over what its text names", async () => {
+    const lifts = Math.floor((Date.now() + 45 * 60_000) / 1000);
+    const { update } = CLAUDE_RATE_LIMITED_UPDATE.params;
+    const rateLimit = { ...update._meta["_claude/rateLimit"], resetsAt: lifts };
+    const line = JSON.stringify({
+      ...CLAUDE_RATE_LIMITED_UPDATE,
+      params: {
+        sessionId: "s1",
+        update: { ...update, _meta: { ...update._meta, "_claude/rateLimit": rateLimit } },
       },
     });
-    const before = Date.now();
-    const { end } = await turn(scriptedAgent(refusal));
-    expect(end).toMatchObject({
-      cause: "usage-limit",
-      error: "You've hit your limit · try again in 2 hours",
-      kind: "limited",
-    });
-    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
-    expect(resetsAt).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
-  });
-
-  it("rests until the reset claude reported on its usage updates, over what its text names", async () => {
-    const lifts = Math.floor((Date.now() + 45 * 60_000) / 1000);
-    const rateLimit = { resetsAt: lifts, status: "rejected" };
-    const update = {
-      _meta: { "_claude/rateLimit": rateLimit },
-      sessionUpdate: "usage_update",
-      size: 200_000,
-      used: 10,
-    };
     const { end } = await turn(
-      agentThat(`send({ method: "session/update", params: { sessionId: "s1", update: ${JSON.stringify(update)} } });
-send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: "You've hit your limit · try again in 2 hours" } });`),
+      agentThat(`process.stdout.write(${JSON.stringify(`${line}\n`)});\n${claudeLimited()}`),
     );
-    expect(end).toMatchObject({ cause: "usage-limit", kind: "limited", resetsAt: lifts * 1000 });
+    expect(end).toMatchObject({
+      class: "usage-limit",
+      kind: "failed",
+      reportedReset: lifts * 1000,
+    });
   });
 
-  it("rests only a short first backoff when claude says its provider is overloaded", async () => {
+  it("reports no reset when the turn was refused before claude named one, nor its text", async () => {
+    const { end } = await turn(agentThat(claudeLimited("You've hit your usage limit")));
+    expect(end).toEqual({
+      class: "usage-limit",
+      error: "You've hit your usage limit",
+      kind: "failed",
+      reportedReset: null,
+    });
+  });
+
+  it("fails on an overload, naming no rest, when claude says its provider is overloaded", async () => {
     const refusal = JSON.stringify({
       error: {
         code: -32_603,
@@ -147,33 +162,26 @@ send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: "Y
         message: "API Error: 529 Overloaded",
       },
     });
-    const before = Date.now();
     const { end } = await turn(scriptedAgent(refusal));
-    expect(end).toMatchObject({ cause: "overloaded", kind: "limited" });
-    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
-    expect(resetsAt).toBeGreaterThanOrEqual(before + 60_000);
-    expect(resetsAt).toBeLessThan(before + 5 * 60_000);
-  });
-
-  it("rests only a short first backoff, never signing out, when claude's provider refuses access", async () => {
-    const refusal = JSON.stringify({
-      error: {
-        code: -32_603,
-        data: { errorKind: "verification_required" },
-        message: "Your organization must verify before using the API.",
-      },
+    expect(end).toEqual({
+      class: "overloaded",
+      error: "API Error: 529 Overloaded",
+      kind: "failed",
     });
-    const before = Date.now();
-    const { end } = await turn(scriptedAgent(refusal));
-    expect(end).toMatchObject({ cause: "access-denied", kind: "limited" });
-    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
-    expect(resetsAt).toBeGreaterThanOrEqual(before + 60_000);
-    expect(resetsAt).toBeLessThan(before + 5 * 60_000);
   });
 
-  it("fails, never rests, when the watchdog ends it, though its text names a session limit", async () => {
+  it("fails on a refusal of access, never a sign-in, when claude's provider refuses access", async () => {
+    const message = "Your organization must verify before using the API.";
+    const refusal = JSON.stringify({
+      error: { code: -32_603, data: { errorKind: "verification_required" }, message },
+    });
+    const { end } = await turn(scriptedAgent(refusal));
+    expect(end).toEqual({ class: "access-denied", error: message, kind: "failed" });
+  });
+
+  it("fails as the task's own when the watchdog ends it, though its text names a session limit", async () => {
     const { end } = await turn(scriptedAgent(null), 200);
-    expect(end.kind).toBe("failed");
+    expect(end).toMatchObject({ class: "other", kind: "failed" });
     expect(end.kind === "failed" ? end.error : end.kind).toContain("session limit");
   });
 
@@ -181,6 +189,7 @@ send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: "Y
     const stopped = JSON.stringify({ result: { stopReason: "refusal" } });
     const { end } = await turn(scriptedAgent(stopped, "You've hit your usage limit"));
     expect(end).toEqual({
+      class: "other",
       error: "agent stopped: refusal\nYou've hit your usage limit",
       kind: "failed",
     });
@@ -188,39 +197,39 @@ send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: "Y
 });
 
 describe("a turn whose runner's login was refused", () => {
-  it("signs the runner out when the agent asks for a sign-in", async () => {
+  it("fails on auth when the agent asks for a sign-in", async () => {
     const refusal = JSON.stringify({
       error: { code: -32_000, message: "Authentication required" },
     });
     const { end } = await turn(scriptedAgent(refusal));
-    expect(end).toEqual({ error: "Authentication required", kind: "signedOut" });
+    expect(end).toEqual({ class: "auth", error: "Authentication required", kind: "failed" });
   });
 
-  it("signs it out when the provider refused the login claude sent", async () => {
+  it("fails on auth when the provider refused the login claude sent", async () => {
     const message = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
     const refusal = JSON.stringify({
       error: { code: -32_603, data: { errorKind: "authentication_failed" }, message },
     });
     const { end } = await turn(scriptedAgent(refusal));
-    expect(end).toEqual({ error: message, kind: "signedOut" });
+    expect(end).toEqual({ class: "auth", error: message, kind: "failed" });
   });
 
-  it("signs it out on codex's typed failure that only a login clears", async () => {
+  it("fails on auth on codex's typed failure that only a login clears", async () => {
     const title = "unexpected status 401 Unauthorized";
     const { end } = await turn(failingAgent(typedError("access", ["login"], title)));
-    expect(end).toEqual({ error: title, kind: "signedOut" });
+    expect(end).toEqual({ class: "auth", error: title, kind: "failed" });
   });
 });
 
 describe("a turn whose agent dies mid-prompt", () => {
   it("fails with what the agent said on stderr, not the connection it dropped", async () => {
     const { end } = await turn(agentThat(panics));
-    expect(end).toEqual({ error: PANIC, kind: "failed" });
+    expect(end).toEqual({ class: "other", error: PANIC, kind: "failed" });
   });
 
   it("fails on the agent's exit though a child of its own holds its pipes open", async () => {
     const { end } = await turn(agentThat(`${orphans}\n${panics}`));
-    expect(end).toEqual({ error: PANIC, kind: "failed" });
+    expect(end).toEqual({ class: "other", error: PANIC, kind: "failed" });
   });
 
   it("fails at once with the agent's own error when it answers the prompt with one", async () => {
@@ -228,67 +237,68 @@ describe("a turn whose agent dies mid-prompt", () => {
 process.stderr.write("shutting down");
 setTimeout(() => process.exit(1), 200);`;
     const { end } = await turn(agentThat(answers));
-    expect(end).toEqual({ error: "Internal error", kind: "failed" });
+    expect(end).toEqual({ class: "other", error: "Internal error", kind: "failed" });
   });
 });
 
 describe("a turn the agent ended on a typed failure", () => {
-  it("rests on a usage or rate limit until the time it names", async () => {
+  it("fails on a usage or rate limit, with the time it names", async () => {
     const title = "You've hit your usage limit. Try again in 2 hours.";
     const before = Date.now();
     const { end } = await turn(failingAgent(typedError("limit", [], title)));
-    expect(end).toMatchObject({ cause: "usage-limit", error: title, kind: "limited" });
-    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
-    expect(resetsAt).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
+    expect(end).toMatchObject({ class: "usage-limit", error: title, kind: "failed" });
+    expect(resetOf(end)).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
 
     const rate = await turn(failingAgent(typedError("limit", ["retry"], "Rate limit reached")));
-    expect(rate.end.kind).toBe("limited");
+    expect(rate.end).toEqual({
+      class: "usage-limit",
+      error: "Rate limit reached",
+      kind: "failed",
+      reportedReset: null,
+    });
   });
 
-  it("rests on an overloaded service for a short first backoff, not a usage limit's park", async () => {
+  it("fails on an overloaded service, apart from a usage limit", async () => {
     const title = "Selected model is at capacity. Please try a different model.";
-    const before = Date.now();
     const { end } = await turn(failingAgent(typedError("service", ["retry"], title)));
-    expect(end).toMatchObject({ cause: "overloaded", error: title, kind: "limited" });
-    const resetsAt = end.kind === "limited" ? end.resetsAt : 0;
-    expect(resetsAt).toBeGreaterThanOrEqual(before + 60_000);
-    expect(resetsAt).toBeLessThan(before + 5 * 60_000);
+    expect(end).toEqual({ class: "overloaded", error: title, kind: "failed" });
   });
 
-  it("fails, never rests, on a service fault typed exactly as an overload but not one", async () => {
+  it("fails as the task's own on a service fault typed exactly as an overload but not one", async () => {
     const { end } = await turn(failingAgent(typedError("service", ["retry"], "Turn failed")));
-    expect(end).toEqual({ error: "Turn failed", kind: "failed" });
+    expect(end).toEqual({ class: "other", error: "Turn failed", kind: "failed" });
   });
 
-  it("fails, never rests, on an internal error, with what the agent said on stderr", async () => {
+  it("fails as the task's own on an internal error, with what the agent said on stderr", async () => {
     const title = "Codex encountered an internal error.";
     const internal = typedError("service", ["retry", "new_session"], title);
     const { end } = await turn(failingAgent(internal));
-    expect(end).toEqual({ error: title, kind: "failed" });
+    expect(end).toEqual({ class: "other", error: title, kind: "failed" });
 
     const logged = await turn(failingAgent(internal, "ResponseError: turn/start failed"));
     expect(logged.end).toEqual({
+      class: "other",
       error: `${title}\nResponseError: turn/start failed`,
       kind: "failed",
     });
   });
 
-  it("fails and spends the session when only a new one can go on", async () => {
+  it("fails on the session's context when only a new one can go on", async () => {
     const title = "Codex ran out of room in the model's context window.";
     const { end, sessionId } = await turn(
       failingAgent(typedError("limit", ["new_session"], title)),
     );
-    expect(end).toEqual({ error: title, kind: "failed", sessionSpent: true });
+    expect(end).toEqual({ class: "context", error: title, kind: "failed" });
     expect(sessionId).toBe("s1");
   });
 
   it("fails, keeping the session, on any other error", async () => {
     const refused = await turn(failingAgent(typedError("request", [], "Bad request")));
-    expect(refused.end).toEqual({ error: "Bad request", kind: "failed" });
+    expect(refused.end).toEqual({ class: "other", error: "Bad request", kind: "failed" });
     const lost = await turn(
       failingAgent(typedError("connection", ["retry", "new_session"], "Connection lost")),
     );
-    expect(lost.end).toEqual({ error: "Connection lost", kind: "failed" });
+    expect(lost.end).toEqual({ class: "other", error: "Connection lost", kind: "failed" });
   });
 
   it("completes when the agent reports no failure, or only a warning the turn got past", async () => {

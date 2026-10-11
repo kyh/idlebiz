@@ -95,7 +95,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
     const link = { amountUsd: 9, name: "Pro plan" };
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');
 
-    const making = callTool(ctx, "POST /v1/payment-link", link);
+    const making = callTool(ctx, "create_payment_link", link);
     await vi.waitFor(() => expect(links).toBe(1));
     const reset = switchOffBeforeReset();
     stripe.resolve({ id: "plink_late", kind: "made", url: "https://buy.stripe.com/late" });
@@ -105,7 +105,9 @@ describe("a reset while Stripe makes a signed payment link", () => {
     expect(switchedOff).toEqual(["plink_late"]);
 
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "POST /v1/payment-link", link)).toContain("resetting");
+    const refused = await callTool(ctx, "create_payment_link", link);
+    expect(refused?.kind).toBe("refused");
+    expect(refused?.text).toContain("resetting");
     expect(links).toBe(1);
     expect(asked).toEqual([]);
   });

@@ -2,15 +2,17 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ActivityEvent } from "@repo/domain/activity";
-import type { AgentRunner, BlockedAsk, TaskOrigin } from "@repo/domain/domain";
+import type { BlockedAsk, TaskOrigin } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import type { JsonValue } from "@repo/domain/json";
 import type { ChargeLink } from "./payment-link";
 import { BadRequestError } from "@repo/domain/errors";
 import type { DeployRequest, DeployResult } from "./deploy";
 import type { CatalogQuery, CatalogRead } from "./printful";
+import type { ToolName } from "./tool-specs";
 import type { RunContext } from "./tools";
 import type { EnvRequest, EnvResult } from "./vercel-env";
 
@@ -19,12 +21,14 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
 const { askBox } = await import("./agents/agent-driver");
-const { callTool } = await import("./tools");
+const { callTool: outcomeOf } = await import("./tools");
 const { stripeLinkAccess, stripePaymentLink } = await import("./payment-links");
 const { printListing } = await import("./print-listing");
 const { productionHosts } = await import("./vercel");
 const { fetchRealMetrics } = await import("./metrics");
 const { activityEvents } = await import("./activity");
+const { ControlPlane } = await import("./control-plane");
+const { runCli } = await import("../program");
 
 beforeEach(() => {
   rmSync(root, { force: true, recursive: true });
@@ -45,7 +49,13 @@ afterAll(() => {
   }
 });
 
-const hire = (name: string, title: string, runner: AgentRunner = "claude") =>
+/** What a call answers the agent, however it ended. */
+const callTool = async (ctx: RunContext, name: ToolName, raw: JsonValue): Promise<string> => {
+  const { text } = await outcomeOf(ctx, name, raw);
+  return text;
+};
+
+const hire = (name: string, title: string, runner: RunnerId = "claude") =>
   ({
     name,
     persona: "ships",
@@ -119,7 +129,7 @@ const BET = {
 };
 
 const openBet = async (ctx: RunContext) => {
-  await callTool(ctx, "POST /v1/open-bet", BET);
+  await callTool(ctx, "open_bet", BET);
   const [bet] = store.listBets();
   if (!bet) {
     throw new Error("no bet opened");
@@ -130,19 +140,26 @@ const openBet = async (ctx: RunContext) => {
 const HANDOFF = { description: "write it", role: "engineer", title: "Draft the post" };
 
 describe("company tools", () => {
-  it("answers null for a route no tool serves", async () => {
-    expect(await callTool(runAs("mae").ctx, "POST /v1/nope", {})).toBeNull();
-  });
-
   it("turns the lead's tools away from anyone else, before looking at the body", async () => {
     const { ctx } = runAs("priya");
-    expect(await callTool(ctx, "POST /v1/open-bet", {})).toContain("Only the team lead");
+    expect(await outcomeOf(ctx, "open_bet", {})).toEqual({
+      kind: "refused",
+      text: "Only the team lead opens bets — pitch it in the team room.",
+    });
     expect(store.listBets()).toEqual([]);
+  });
+
+  it("answers what a tool did as done", async () => {
+    const { ctx } = runAs("priya");
+    expect(await outcomeOf(ctx, "message_team", { text: "on it" })).toEqual({
+      kind: "done",
+      text: "Posted to the team room.",
+    });
   });
 
   it("opens a bet for the lead and says how it is counted", async () => {
     const { ctx } = runAs("mae");
-    const answer = await callTool(ctx, "POST /v1/open-bet", BET);
+    const answer = await callTool(ctx, "open_bet", BET);
     const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ landingPath: `/b/${bet?.id}`, metric: "users" });
     expect(answer).toContain(`/b/${bet?.id}`);
@@ -150,19 +167,28 @@ describe("company tools", () => {
 
   it("opens a revenue bet counted by the money tagged with it", async () => {
     const { ctx } = runAs("mae");
-    const answer = await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue" });
+    const answer = await callTool(ctx, "open_bet", { ...BET, metric: "revenue" });
     const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ metric: "revenue" });
     expect(answer).toContain(`metadata[bet]=${bet?.id}`);
   });
 
-  it("answers with the store's refusal rather than failing the call", async () => {
+  it("answers with the store's refusal, as refused, rather than failing the call", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
-    expect(
-      await callTool(ctx, "POST /v1/kill-bet", { reason: "dud", slug: "no-such-bet" }),
-    ).toContain("no live bet");
+    expect(await outcomeOf(ctx, "kill_bet", { reason: "dud", slug: "no-such-bet" })).toEqual({
+      kind: "refused",
+      text: 'no live bet "no-such-bet"',
+    });
     expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("answers what a tool turns down by its own check as refused", async () => {
+    const { ctx } = runAs("mae");
+    expect(await outcomeOf(ctx, "release", { slug: "mae" })).toEqual({
+      kind: "refused",
+      text: "You can't release yourself.",
+    });
   });
 
   it("answers a fault too, so the run goes on, and reports it", async () => {
@@ -175,15 +201,18 @@ describe("company tools", () => {
         throw fault;
       },
     };
-    expect(await callTool(broken, "POST /v1/delegate", HANDOFF)).toBe(fault.message);
-    expect(logged).toHaveBeenCalledExactlyOnceWith("[tool /v1/delegate]", fault);
+    expect(await outcomeOf(broken, "delegate", HANDOFF)).toEqual({
+      kind: "fault",
+      text: fault.message,
+    });
+    expect(logged).toHaveBeenCalledExactlyOnceWith("[tool delegate]", fault);
   });
 
   it("turns a hire away at the seat cap as an answer, not a fault", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     store.setMaxAgents(2);
-    expect(await callTool(ctx, "POST /v1/hire", { role: "engineer", title: "Engineer" })).toContain(
+    expect(await callTool(ctx, "hire", { role: "engineer", title: "Engineer" })).toContain(
       "Couldn't hire: the office is at its 2-seat cap",
     );
     expect(store.listEmployees()).toHaveLength(2);
@@ -194,15 +223,15 @@ describe("company tools", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     for (const name of ["Two", "Three", "Four", "Five"]) {
-      await callTool(ctx, "POST /v1/create-product", { description: name, name });
+      await callTool(ctx, "create_product", { description: name, name });
     }
-    expect(await callTool(ctx, "POST /v1/create-product", { description: "x", name: "Six" })).toBe(
+    expect(await callTool(ctx, "create_product", { description: "x", name: "Six" })).toBe(
       "The company already runs 5 products; kill_product one before starting another.",
     );
     for (const title of ["One", "Two", "Three"]) {
-      await callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme", title });
+      await callTool(ctx, "open_bet", { ...BET, product: "acme", title });
     }
-    expect(await callTool(ctx, "POST /v1/open-bet", { ...BET, product: "acme" })).toBe(
+    expect(await callTool(ctx, "open_bet", { ...BET, product: "acme" })).toBe(
       "Acme already carries 3 live bets; wait for a verdict or kill one first.",
     );
     expect(store.listProducts()).toHaveLength(5);
@@ -212,24 +241,22 @@ describe("company tools", () => {
 
   it("calls a body that does not parse the caller's error", async () => {
     const { ctx } = runAs("mae");
-    await expect(callTool(ctx, "POST /v1/open-bet", { ...BET, target: -1 })).rejects.toThrow(
+    await expect(callTool(ctx, "open_bet", { ...BET, target: -1 })).rejects.toThrow(
       BadRequestError,
     );
-    await expect(callTool(ctx, "POST /v1/open-bet", { ...BET, target: 1 })).rejects.toThrow(
-      "at least 10",
-    );
+    await expect(callTool(ctx, "open_bet", { ...BET, target: 1 })).rejects.toThrow("at least 10");
     expect(store.listBets()).toEqual([]);
   });
 
   it("starts no clock over a number nothing could read, and starts it once a source can", async () => {
     const { ctx } = runAs("mae");
     const visits = await openBet(ctx);
-    await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await callTool(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const money = store.listBets().find((b) => b.claim.metric === "revenue");
     if (!money) {
       throw new Error("no revenue bet opened");
     }
-    const measure = (slug: string) => callTool(ctx, "POST /v1/measure-bet", { slug });
+    const measure = (slug: string) => callTool(ctx, "measure_bet", { slug });
 
     expect(await measure(money.id)).toBe(
       'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.',
@@ -254,12 +281,12 @@ describe("company tools", () => {
 
   it("starts no clock on revenue while Stripe is in test mode", async () => {
     const { ctx } = runAs("mae");
-    await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await callTool(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
     if (!money) {
       throw new Error("no revenue bet opened");
     }
-    const measure = () => callTool(ctx, "POST /v1/measure-bet", { slug: money.id });
+    const measure = () => callTool(ctx, "measure_bet", { slug: money.id });
     const secrets = path.join(root, "secrets.json");
 
     writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
@@ -272,7 +299,7 @@ describe("company tools", () => {
 
   it("kills a revenue bet a test key read as unmeasured, so nothing learns from it", async () => {
     const { ctx } = runAs("mae");
-    await callTool(ctx, "POST /v1/open-bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await callTool(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
     if (!money) {
       throw new Error("no revenue bet opened");
@@ -299,7 +326,7 @@ describe("company tools", () => {
     for (const [betId, { reading, at }] of snap.betReadings) {
       store.setBetReading(betId, reading, at);
     }
-    await callTool(ctx, "POST /v1/kill-bet", {
+    await callTool(ctx, "kill_bet", {
       reason: "no live Stripe to count it",
       slug: money.id,
     });
@@ -310,7 +337,7 @@ describe("company tools", () => {
   it("refuses a kill reason too long for a line in the room", async () => {
     const { ctx } = runAs("mae");
     const bet = await openBet(ctx);
-    const kill = (reason: string) => callTool(ctx, "POST /v1/kill-bet", { reason, slug: bet.id });
+    const kill = (reason: string) => callTool(ctx, "kill_bet", { reason, slug: bet.id });
     await expect(kill("x".repeat(201))).rejects.toThrow(BadRequestError);
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
     expect(await kill("x".repeat(200))).toContain("Killed");
@@ -323,8 +350,7 @@ describe("company tools", () => {
   ])("refuses a hire whose $field is too long for every brief", async ({ cap, field }) => {
     const { ctx } = runAs("mae");
     const newHire = { name: "Mara", persona: "ships", role: "designer", title: "Designer" };
-    const hireWith = (text: string) =>
-      callTool(ctx, "POST /v1/hire", { ...newHire, [field]: text });
+    const hireWith = (text: string) => callTool(ctx, "hire", { ...newHire, [field]: text });
     await expect(hireWith("x".repeat(cap + 1))).rejects.toThrow(`at ${field}`);
     expect(store.listEmployees()).toHaveLength(2);
     expect(await hireWith("x".repeat(cap))).toContain("Hired");
@@ -332,29 +358,34 @@ describe("company tools", () => {
 
   it("refuses a delegated title too long for the lead's brief", async () => {
     const { ctx } = runAs("mae");
-    const delegate = (title: string) => callTool(ctx, "POST /v1/delegate", { ...HANDOFF, title });
+    const delegate = (title: string) => callTool(ctx, "delegate", { ...HANDOFF, title });
     await expect(delegate("x".repeat(81))).rejects.toThrow("at title");
     expect(store.listOpenTasks()).toEqual([]);
     expect(await delegate("x".repeat(80))).toContain("Delegated");
   });
 
-  it("keeps the first thing a run asks the founder", async () => {
+  it("keeps the first thing a run asks the founder, refusing the next", async () => {
     const { ctx, asked } = runAs("priya");
-    await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
-    expect(
-      await callTool(ctx, "POST /v1/request-integration", { kind: "vercel", reason: "to deploy" }),
-    ).toContain("The founder was not asked");
+    expect(await outcomeOf(ctx, "ask_boss", { question: "Ship it?" })).toMatchObject({
+      kind: "done",
+    });
+    const unsent = await outcomeOf(ctx, "request_integration", {
+      kind: "vercel",
+      reason: "to deploy",
+    });
+    expect(unsent?.kind).toBe("refused");
+    expect(unsent?.text).toContain("The founder was not asked");
     expect(asked).toEqual([{ question: "Ship it?", type: "question" }]);
     expect(ctx.asks.current()).toEqual({ question: "Ship it?", type: "question" });
   });
 
   it("hands the founder an action, and says when a second ask of the run went nowhere", async () => {
     const { ctx, asked } = runAs("priya");
-    const card = await callTool(ctx, "POST /v1/ask-boss", {
+    const card = await callTool(ctx, "ask_boss", {
       action: "Post the launch thread",
       instructions: "Post it on r/SideProject and send me its URL.",
     });
-    const second = await callTool(ctx, "POST /v1/ask-boss", { question: "Ship it?" });
+    const second = await callTool(ctx, "ask_boss", { question: "Ship it?" });
     expect(card).toContain("action card");
     expect(second).toContain("The founder was not asked");
     expect(asked).toEqual([
@@ -369,7 +400,7 @@ describe("company tools", () => {
 
   it.each([null, "", "  "])("takes a draft of %j as none", async (draft) => {
     const { ctx, asked } = runAs("priya");
-    await callTool(ctx, "POST /v1/ask-boss", {
+    await callTool(ctx, "ask_boss", {
       action: "Buy acme.dev",
       draft,
       instructions: "...",
@@ -379,10 +410,10 @@ describe("company tools", () => {
 
   it("delegates to a teammate by role, against the run's bet", async () => {
     const { ctx, assigned } = runAs("mae");
-    await callTool(ctx, "POST /v1/open-bet", BET);
+    await callTool(ctx, "open_bet", BET);
     const [bet] = store.listBets();
     const working = { ...ctx, run: { ...ctx.run, betId: bet?.id ?? null } };
-    const answer = await callTool(working, "POST /v1/delegate", {
+    const answer = await callTool(working, "delegate", {
       description: "write it",
       role: "engineer",
       title: "Draft the post",
@@ -401,7 +432,7 @@ describe("company tools", () => {
   it("fans same-role work out across the teammates who have the least of it", async () => {
     const { ctx } = runAs("mae", [hire("Sam", "Engineer"), hire("Ana", "Engineer")]);
     for (const title of ["Page A", "Page B", "Page C", "Page D"]) {
-      await callTool(ctx, "POST /v1/delegate", { ...HANDOFF, title });
+      await callTool(ctx, "delegate", { ...HANDOFF, title });
     }
     const holders = new Map(store.listOpenTasks().map((t) => [t.title, t.assigneeId]));
     expect(["Page A", "Page B", "Page C", "Page D"].map((t) => holders.get(t))).toEqual([
@@ -421,14 +452,14 @@ describe("company tools", () => {
         restingRunner: (r) => (r === "claude" ? Date.now() + 60_000 : null),
       },
     };
-    expect(await callTool(resting, "POST /v1/delegate", HANDOFF)).toContain("to Ana");
+    expect(await callTool(resting, "delegate", HANDOFF)).toContain("to Ana");
     const signedOut: RunContext = {
       ...ctx,
       driver: { ...ctx.driver, signedIn: (r) => r !== "claude" },
     };
-    expect(await callTool(signedOut, "POST /v1/delegate", HANDOFF)).toContain("to Ana");
+    expect(await callTool(signedOut, "delegate", HANDOFF)).toContain("to Ana");
     const nobody: RunContext = { ...ctx, driver: { ...ctx.driver, signedIn: () => false } };
-    expect(await callTool(nobody, "POST /v1/delegate", HANDOFF)).toContain("to Priya");
+    expect(await callTool(nobody, "delegate", HANDOFF)).toContain("to Priya");
   });
 
   it("refuses work a bet's runs in flight would already spend", async () => {
@@ -436,8 +467,8 @@ describe("company tools", () => {
     const bet = await openBet(ctx);
     store.recordBetSpend(bet.id, 2);
     const named = { ...HANDOFF, bet: bet.id };
-    expect(await callTool(ctx, "POST /v1/delegate", named)).toContain("Delegated");
-    expect(await callTool(ctx, "POST /v1/delegate", named)).toContain(
+    expect(await callTool(ctx, "delegate", named)).toContain("Delegated");
+    expect(await callTool(ctx, "delegate", named)).toContain(
       "no room for another run: $2.00 of $3.00 spent and 1 in flight",
     );
     expect(store.listOpenTasks()).toHaveLength(1);
@@ -448,11 +479,9 @@ describe("company tools", () => {
     const bet = await openBet(ctx);
     const settling = { ...ctx, run: { ...ctx.run, betId: bet.id, productId: bet.productId } };
     store.recordBetSpend(bet.id, 3);
-    expect(await callTool(settling, "POST /v1/delegate", HANDOFF)).toContain("is spent out");
+    expect(await callTool(settling, "delegate", HANDOFF)).toContain("is spent out");
     store.measureBet(bet.id, 0);
-    expect(await callTool(settling, "POST /v1/delegate", HANDOFF)).toContain(
-      "its clock is running",
-    );
+    expect(await callTool(settling, "delegate", HANDOFF)).toContain("its clock is running");
     expect(store.listOpenTasks()).toEqual([]);
   });
 
@@ -462,10 +491,8 @@ describe("company tools", () => {
     const side = store.createProduct({ description: "a side project", name: "Side" });
     const working = { ...ctx, run: { ...ctx.run, betId: bet.id } };
     const elsewhere = { ...HANDOFF, product: side.id };
-    expect(await callTool(working, "POST /v1/delegate", elsewhere)).toContain(
-      `Name a bet on ${side.id}`,
-    );
-    expect(await callTool(ctx, "POST /v1/delegate", elsewhere)).toContain("Delegated");
+    expect(await callTool(working, "delegate", elsewhere)).toContain(`Name a bet on ${side.id}`);
+    expect(await callTool(ctx, "delegate", elsewhere)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: null, productId: side.id }]);
   });
 
@@ -473,12 +500,12 @@ describe("company tools", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     const proposing: RunContext = { ...ctx, run: { ...ctx.run, origin: "propose" } };
-    expect(await callTool(proposing, "POST /v1/delegate", HANDOFF)).toContain("open_bet first");
+    expect(await callTool(proposing, "delegate", HANDOFF)).toContain("open_bet first");
     expect(logged).not.toHaveBeenCalled();
     expect(store.listOpenTasks()).toEqual([]);
     const bet = await openBet(proposing);
     const named = { ...HANDOFF, bet: bet.id };
-    expect(await callTool(proposing, "POST /v1/delegate", named)).toContain("Delegated");
+    expect(await callTool(proposing, "delegate", named)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: bet.id, origin: "delegated" }]);
   });
 
@@ -487,14 +514,14 @@ describe("company tools", () => {
     async (origin) => {
       const { ctx } = runAs("mae");
       const unfunded: RunContext = { ...ctx, run: { ...ctx.run, origin } };
-      expect(await callTool(unfunded, "POST /v1/delegate", HANDOFF)).toContain("Delegated");
+      expect(await callTool(unfunded, "delegate", HANDOFF)).toContain("Delegated");
       expect(store.listOpenTasks()).toMatchObject([{ betId: null, origin: "delegated" }]);
     },
   );
 
   it("tells the lead which of a released teammate's open work is now theirs, and what was dropped", async () => {
     const { ctx } = runAs("mae");
-    await callTool(ctx, "POST /v1/delegate", HANDOFF);
+    await callTool(ctx, "delegate", HANDOFF);
     const bet = await openBet(ctx);
     const ask = store.createTask({
       assigneeId: "priya",
@@ -509,7 +536,7 @@ describe("company tools", () => {
       kind: "blocked",
       summary: null,
     });
-    const answer = await callTool(ctx, "POST /v1/release", { slug: "priya" });
+    const answer = await callTool(ctx, "release", { slug: "priya" });
     expect(answer).toContain("Their open work is yours now: 1 task,");
     expect(answer).toContain("Dropped 1 task of theirs");
     expect(store.openTasksFor("mae")).toMatchObject([{ id: ask.id }]);
@@ -517,7 +544,7 @@ describe("company tools", () => {
 
   it("names no inherited work when the teammate left none", async () => {
     const { ctx } = runAs("mae");
-    const answer = await callTool(ctx, "POST /v1/release", { slug: "priya" });
+    const answer = await callTool(ctx, "release", { slug: "priya" });
     expect(answer).not.toContain("open work");
     expect(answer).toContain("Released Priya.");
   });
@@ -533,7 +560,7 @@ describe("company tools", () => {
     activityEvents.on("activity", listen);
     try {
       await openBet(ctx);
-      await callTool(ctx, "POST /v1/message-team", { text: "on it" });
+      await callTool(ctx, "message_team", { text: "on it" });
     } finally {
       activityEvents.off("activity", listen);
     }
@@ -557,8 +584,8 @@ describe("company tools", () => {
     };
     activityEvents.on("activity", listen);
     try {
-      await callTool(ctx, "POST /v1/open-bet", { ...BET, hypothesis });
-      await callTool(ctx, "POST /v1/message-team", { text: "m".repeat(500) });
+      await callTool(ctx, "open_bet", { ...BET, hypothesis });
+      await callTool(ctx, "message_team", { text: "m".repeat(500) });
     } finally {
       activityEvents.off("activity", listen);
     }
@@ -604,9 +631,10 @@ describe("deploy", () => {
     connectVercel();
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
-      `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
-    );
+    expect(await outcomeOf(ctx, "deploy", {})).toEqual({
+      kind: "held",
+      text: `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
+    });
     expect(asked).toEqual([{ command: BOUND_ACTION, rule: "deploy", type: "approval" }]);
     expect(deploys).toEqual([]);
   });
@@ -617,7 +645,7 @@ describe("deploy", () => {
     const product = store.setProductVercel("acme", VERCEL);
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
     expect(deploys).toEqual([
@@ -628,7 +656,7 @@ describe("deploy", () => {
         unshippable: [{ kind: "held", name: "VERCEL_TOKEN", value: TOKEN }],
       },
     ]);
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Held for the founder's sign-off");
+    expect(await callTool(ctx, "deploy", {})).toContain("Held for the founder's sign-off");
     expect(deploys).toHaveLength(1);
   });
 
@@ -638,7 +666,7 @@ describe("deploy", () => {
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme.vercel.app (this deployment: https://acme-1.vercel.app)",
     );
   });
@@ -646,11 +674,11 @@ describe("deploy", () => {
   it("puts a product bound to nothing into a project named for it, and binds it there", async () => {
     connectVercel();
     const { ctx, asked, deploys } = deployingRun({ ...DEPLOYED, project: NEW_PROJECT });
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain(`sign-off on "${NEW_ACTION}"`);
+    expect(await callTool(ctx, "deploy", {})).toContain(`sign-off on "${NEW_ACTION}"`);
     expect(asked).toEqual([{ command: NEW_ACTION, rule: "deploy", type: "approval" }]);
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app\nAcme is now bound to the new Vercel project acme, which counts its visitors.",
     );
     expect(deploys.map((d) => d.target)).toEqual([{ kind: "new", name: "acme" }]);
@@ -663,7 +691,7 @@ describe("deploy", () => {
     const { ctx } = deployingRun({ kind: "failed", project: NEW_PROJECT, reason });
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       `The deploy of Acme failed: ${reason}\nAcme is now bound to the new Vercel project acme, which counts its visitors.`,
     );
     expect(store.getProduct("acme")?.vercel).toEqual(NEW_PROJECT);
@@ -681,7 +709,7 @@ describe("deploy", () => {
     };
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
     expect(store.getProduct("acme")?.vercel).toEqual(VERCEL);
@@ -692,7 +720,7 @@ describe("deploy", () => {
     const { ctx, asked } = deployingRun({ kind: "name-taken", name: "acme" });
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain(
+    expect(await callTool(ctx, "deploy", {})).toContain(
       'Vercel already has a project named "acme"',
     );
     expect(asked).toEqual([
@@ -715,7 +743,7 @@ describe("deploy", () => {
       `deploy ${side.id} to production on a new Vercel project named ${side.id}`,
     );
 
-    await expect(callTool(ctx, "POST /v1/deploy", { product: side.id })).rejects.toThrow(
+    await expect(callTool(ctx, "deploy", { product: side.id })).rejects.toThrow(
       'Unrecognized key: "product"',
     );
     expect(asked).toEqual([]);
@@ -729,7 +757,7 @@ describe("deploy", () => {
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(companyRun, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(companyRun, "deploy", {})).toBe(
       "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.",
     );
     expect(asked).toEqual([]);
@@ -750,7 +778,7 @@ describe("deploy", () => {
     );
     writeFileSync(path.join(product.workspaceDir, "ai.js"), `const key = "${key}";`);
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       "Nothing was deployed: ai.js holds the value set_env set as OPENAI_API_KEY on acme, and a deploy would publish it. Take it out of the folder, read it from process.env.OPENAI_API_KEY instead, then deploy again.",
     );
     expect(asked).toEqual([]);
@@ -766,7 +794,7 @@ describe("deploy", () => {
     );
     writeFileSync(path.join(product.workspaceDir, "pay.js"), 'const key = "sk_live_founders_own";');
 
-    const answer = await callTool(ctx, "POST /v1/deploy", {});
+    const answer = await callTool(ctx, "deploy", {});
 
     expect(answer).toContain("pay.js holds IdleBiz's own STRIPE_SECRET_KEY");
     expect(answer).not.toContain("sk_live_founders_own");
@@ -776,7 +804,7 @@ describe("deploy", () => {
 
   it("asks for Vercel, not a sign-off, while no key is saved", async () => {
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain("Vercel is not connected");
+    expect(await callTool(ctx, "deploy", {})).toContain("Vercel is not connected");
     expect(asked).toEqual([
       { integration: "vercel", productId: "acme", reason: "to deploy Acme", type: "integration" },
     ]);
@@ -796,7 +824,7 @@ describe("deploy", () => {
       },
     };
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toContain(
+    expect(await callTool(ctx, "deploy", {})).toContain(
       "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting",
     );
     expect(checked).toEqual([TOKEN]);
@@ -809,7 +837,7 @@ describe("deploy", () => {
       },
     ]);
     expect(run.deploys).toEqual([]);
-    expect(await callTool(run.ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(run.ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
   });
@@ -825,12 +853,114 @@ describe("deploy", () => {
       checkVercelToken: () => Promise.reject(new TypeError("fetch failed")),
     };
 
-    expect(await callTool(ctx, "POST /v1/deploy", {})).toBe(
+    expect(await callTool(ctx, "deploy", {})).toBe(
       "Vercel could not be asked whether IdleBiz's token still works (fetch failed); try again.",
     );
     expect(run.asked).toEqual([]);
     expect(logged).not.toHaveBeenCalled();
-    expect(await callTool(run.ctx, "POST /v1/deploy", {})).toContain("Deployed Acme");
+    expect(await callTool(run.ctx, "deploy", {})).toContain("Deployed Acme");
+  });
+});
+
+describe("an idlebiz verb, through the control plane to the tools", () => {
+  // short, so a socket's path under it fits macOS's limit wherever TMPDIR is
+  const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-verb-"));
+  const plane = new ControlPlane(path.join(box, "save"), path.join(box, "home"));
+
+  beforeAll(() => plane.start());
+  afterAll(() => {
+    plane.stop();
+    rmSync(box, { force: true, recursive: true });
+  });
+
+  /** `argv` typed in `ctx`'s run: the exit code it left, and what it wrote to stdout and stderr. */
+  const typed = async (ctx: RunContext, argv: readonly string[]) => {
+    const handle = await plane.registerRun((name, raw) => outcomeOf(ctx, name, raw));
+    vi.stubEnv("IDLEBIZ_API_SOCKET", handle.env.IDLEBIZ_API_SOCKET);
+    vi.stubEnv("IDLEBIZ_RUN_TOKEN", handle.env.IDLEBIZ_RUN_TOKEN);
+    const out: string[] = [];
+    const err: string[] = [];
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      out.push(String(chunk));
+      return true;
+    });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      err.push(String(chunk));
+      return true;
+    });
+    try {
+      const code = await runCli(argv);
+      return { code, err: err.join(""), out: out.join("") };
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+      vi.unstubAllEnvs();
+      handle.release();
+    }
+  };
+
+  it("exits 0 on a call done, printing what it did", async () => {
+    const { ctx } = runAs("priya");
+    expect(await typed(ctx, ["message-team", '{"text":"on it"}'])).toEqual({
+      code: 0,
+      err: "",
+      out: "Posted to the team room.\n",
+    });
+  });
+
+  it.each([
+    [
+      "the lead's tool, typed by anyone else",
+      "priya",
+      ["open-bet", JSON.stringify(BET)],
+      "Only the team lead opens bets — pitch it in the team room.",
+    ],
+    [
+      "the store's refusal",
+      "mae",
+      ["kill-bet", '{"reason":"dud","slug":"no-such-bet"}'],
+      'no live bet "no-such-bet"',
+    ],
+  ])("exits 1 on %s, printing why", async (_, who, argv, why) => {
+    const { ctx } = runAs(who);
+    expect(await typed(ctx, argv)).toEqual({ code: 1, err: "", out: `${why}\n` });
+  });
+
+  it("exits 1 on a request its tool does not take, with the server's why on stderr", async () => {
+    const { ctx } = runAs("priya");
+    const answered = await typed(ctx, ["read-team-chat", '{"limit":5}']);
+    expect(answered).toMatchObject({ code: 1, out: "" });
+    expect(answered.err).toContain('Unrecognized key: "limit"');
+  });
+
+  it("exits 4 on a deploy held for the founder's sign-off, so a chain after it stops", async () => {
+    connectVercel();
+    const { ctx, deploys } = deployingRun(DEPLOYED);
+    store.setProductVercel("acme", VERCEL);
+    expect(await typed(ctx, ["deploy"])).toEqual({
+      code: 4,
+      err: "",
+      out: `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.\n`,
+    });
+    expect(deploys).toEqual([]);
+  });
+
+  it("exits 2 on a fault, printing it, and reports it", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctx } = runAs("mae");
+    const fault = new TypeError("cannot read the queue");
+    const broken: RunContext = {
+      ...ctx,
+      assign: () => {
+        throw fault;
+      },
+    };
+    expect(await typed(broken, ["delegate", JSON.stringify(HANDOFF)])).toEqual({
+      code: 2,
+      err: "",
+      out: `${fault.message}\n`,
+    });
+    expect(logged).toHaveBeenCalledExactlyOnceWith("[tool delegate]", fault);
   });
 });
 
@@ -863,7 +993,7 @@ describe("set_env", () => {
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    const answer = await callTool(ctx, "POST /v1/set-env", {
+    const answer = await callTool(ctx, "set_env", {
       name: "STRIPE_KEY",
       value: "sk_live_founders_own",
     });
@@ -880,7 +1010,7 @@ describe("set_env", () => {
       const { ctx, sets } = settingRun();
       store.setProductVercel("acme", VERCEL);
 
-      const answer = await callTool(ctx, "POST /v1/set-env", { name: "STRIPE_KEY", value });
+      const answer = await callTool(ctx, "set_env", { name: "STRIPE_KEY", value });
 
       expect(answer).toBe(
         "STRIPE_KEY was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see \"Checking who paid\").",
@@ -896,7 +1026,7 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
 
     expect(
-      await callTool(ctx, "POST /v1/set-env", {
+      await callTool(ctx, "set_env", {
         name: "STRIPE_CHECKOUT_READ_KEY",
         value: "rk_live_checkoutReadOnly1",
       }),
@@ -911,7 +1041,7 @@ describe("set_env", () => {
     const publishable = "pk_live_acmePublishable1";
 
     expect(
-      await callTool(ctx, "POST /v1/set-env", {
+      await callTool(ctx, "set_env", {
         name: "NEXT_PUBLIC_STRIPE_KEY",
         value: publishable,
       }),
@@ -931,7 +1061,7 @@ describe("set_env", () => {
     };
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    expect(await callTool(deploying, "POST /v1/deploy", {})).toContain("Deployed Acme");
+    expect(await callTool(deploying, "deploy", {})).toContain("Deployed Acme");
     expect(deploys[0]?.unshippable).toEqual([{ kind: "held", name: "VERCEL_TOKEN", value: TOKEN }]);
   });
 
@@ -940,7 +1070,7 @@ describe("set_env", () => {
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    const answer = await callTool(ctx, "POST /v1/set-env", {
+    const answer = await callTool(ctx, "set_env", {
       name: "VITE_STRIPE_KEY",
       value: "rk_live_checkoutReadOnly1",
     });
@@ -958,7 +1088,7 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
 
     expect(
-      await callTool(ctx, "POST /v1/set-env", {
+      await callTool(ctx, "set_env", {
         name: "NEXT_PUBLIC_STRIPE_KEY",
         value: "sk_live_foundersUnrestricted1",
       }),
@@ -972,9 +1102,9 @@ describe("set_env", () => {
       connectVercel();
       const { ctx, sets } = settingRun();
       store.setProductVercel("acme", VERCEL);
-      await callTool(ctx, "POST /v1/set-env", { name: "DB_KEY", value: "opaqueServerOnly1234" });
+      await callTool(ctx, "set_env", { name: "DB_KEY", value: "opaqueServerOnly1234" });
 
-      const answer = await callTool(ctx, "POST /v1/set-env", { name: "NEXT_PUBLIC_DB_KEY", value });
+      const answer = await callTool(ctx, "set_env", { name: "NEXT_PUBLIC_DB_KEY", value });
 
       expect(answer).toBe(
         "NEXT_PUBLIC_DB_KEY was not set: that value is the one set_env keeps as DB_KEY on acme, server-only, and a NEXT_PUBLIC_ name would build it into the page, where every visitor reads it. Server code reads it as process.env.DB_KEY; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).",
@@ -990,7 +1120,7 @@ describe("set_env", () => {
     const { ctx, asked, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    const answer = await callTool(ctx, "POST /v1/set-env", OPENAI);
+    const answer = await callTool(ctx, "set_env", OPENAI);
     expect(answer).toBe(
       "Set OPENAI_API_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy; server code reads it as process.env.OPENAI_API_KEY. Never write its value into a file: deploy refuses a folder that holds it.",
     );
@@ -1013,7 +1143,7 @@ describe("set_env", () => {
     connectVercel();
     const { ctx } = settingRun();
     store.setProductVercel("acme", VERCEL);
-    await callTool(ctx, "POST /v1/set-env", OPENAI);
+    await callTool(ctx, "set_env", OPENAI);
     const deploys: DeployRequest[] = [];
     const deploying: RunContext = {
       ...ctx,
@@ -1024,7 +1154,7 @@ describe("set_env", () => {
     };
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    await callTool(deploying, "POST /v1/deploy", {});
+    await callTool(deploying, "deploy", {});
     expect(deploys[0]?.unshippable).toEqual([
       { ...OPENAI, kind: "env", product: "acme" },
       { kind: "held", name: "VERCEL_TOKEN", value: TOKEN },
@@ -1048,7 +1178,7 @@ describe("set_env", () => {
     });
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(refused.ctx, "POST /v1/set-env", OPENAI)).toBe(
+    expect(await callTool(refused.ctx, "set_env", OPENAI)).toBe(
       "OPENAI_API_KEY was not set on Acme: Vercel turned it down (403): A variable with this name already exists\nset_env only replaces a variable the team set: if acme-site already has OPENAI_API_KEY, it is the founder's, so hand them an ask_boss action to change it.",
     );
     expect(store.recentTeamMessages()).toEqual([]);
@@ -1061,8 +1191,8 @@ describe("set_env", () => {
         return Promise.resolve(SET);
       },
     };
-    await callTool(ctx, "POST /v1/set-env", OPENAI);
-    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    await callTool(ctx, "set_env", OPENAI);
+    await callTool(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
     expect([...refused.sets, ...sets].map((req) => req.replaces)).toEqual([false, false, true]);
   });
 
@@ -1070,13 +1200,13 @@ describe("set_env", () => {
     connectVercel();
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
-    await callTool(ctx, "POST /v1/set-env", OPENAI);
+    await callTool(ctx, "set_env", OPENAI);
 
     const founders = { projectId: "prj_live", projectName: "founder-live", teamId: null };
     store.setProductVercel("acme", founders);
-    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    await callTool(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
     store.setProductVercel("acme", VERCEL);
-    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    await callTool(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
 
     expect(sets.map(({ binding, replaces }) => [binding.projectId, replaces])).toEqual([
       ["prj_1", false],
@@ -1090,7 +1220,7 @@ describe("set_env", () => {
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    await callTool(ctx, "POST /v1/set-env", { ...OPENAI, value: ` ${OPENAI.value}\n` });
+    await callTool(ctx, "set_env", { ...OPENAI, value: ` ${OPENAI.value}\n` });
     expect(sets[0]?.value).toBe(OPENAI.value);
   });
 
@@ -1098,7 +1228,7 @@ describe("set_env", () => {
     connectVercel();
     const { ctx, sets } = settingRun();
 
-    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toBe(
+    expect(await callTool(ctx, "set_env", OPENAI)).toBe(
       "Acme has no Vercel project yet: deploy it first, which makes one, then set OPENAI_API_KEY.",
     );
     expect(sets).toEqual([]);
@@ -1108,7 +1238,7 @@ describe("set_env", () => {
     const { ctx, asked, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toContain("Vercel is not connected");
+    expect(await callTool(ctx, "set_env", OPENAI)).toContain("Vercel is not connected");
     expect(asked).toEqual([
       {
         integration: "vercel",
@@ -1129,7 +1259,7 @@ describe("set_env", () => {
       checkVercelToken: () => Promise.resolve({ kind: "rejected" }),
     };
 
-    expect(await callTool(ctx, "POST /v1/set-env", OPENAI)).toContain(
+    expect(await callTool(ctx, "set_env", OPENAI)).toContain(
       "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting",
     );
     expect(run.asked).toEqual([
@@ -1149,9 +1279,7 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
 
     for (const name of ["VERCEL_URL", "NODE_ENV", "openai_key"]) {
-      await expect(callTool(ctx, "POST /v1/set-env", { ...OPENAI, name })).rejects.toThrow(
-        BadRequestError,
-      );
+      await expect(callTool(ctx, "set_env", { ...OPENAI, name })).rejects.toThrow(BadRequestError);
     }
     expect(sets).toEqual([]);
   });
@@ -1280,21 +1408,23 @@ describe("create_payment_link", () => {
     const bet = revenueBet();
     const action = `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`;
 
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
       `Held for the founder's sign-off on "${action}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
     expect(stripe).toEqual([]);
   });
 
-  it("says a sign-off was never asked for when the run already asked the founder something", async () => {
+  it("refuses a sign-off never asked for when the run already asked the founder something", async () => {
     const { ctx, asked, stripe } = chargingRun();
-    await callTool(ctx, "POST /v1/ask-boss", { action: "Verify the email", instructions: "..." });
+    await callTool(ctx, "ask_boss", { action: "Verify the email", instructions: "..." });
 
-    const held = await callTool(ctx, "POST /v1/payment-link", LINK);
-    expect(held).toContain(`Held for the founder's sign-off on "payment link`);
-    expect(held).toContain("The founder was not asked");
-    expect(held).not.toContain("the task resumes on their answer");
+    const unsent = await outcomeOf(ctx, "create_payment_link", LINK);
+    expect(unsent?.kind).toBe("refused");
+    const said = unsent?.text;
+    expect(said).toContain(`Held for the founder's sign-off on "payment link`);
+    expect(said).toContain("The founder was not asked");
+    expect(said).not.toContain("the task resumes on their answer");
     expect(asked).toMatchObject([{ type: "action" }]);
     expect(stripe).toEqual([]);
   });
@@ -1307,7 +1437,7 @@ describe("create_payment_link", () => {
       `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`,
     );
 
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
       `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt.`,
     );
     expect(stripe).toEqual([
@@ -1333,7 +1463,7 @@ describe("create_payment_link", () => {
       ...PRO_LINK,
       betId: bet.id,
     });
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toContain(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toContain(
       "Held for the founder's sign-off",
     );
     expect(stripe).toHaveLength(2);
@@ -1352,7 +1482,7 @@ describe("create_payment_link", () => {
       },
     };
 
-    const answer = await callTool(retiring, "POST /v1/payment-link", {
+    const answer = await callTool(retiring, "create_payment_link", {
       ...LINK,
       product: side.id,
     });
@@ -1401,7 +1531,7 @@ describe("create_payment_link", () => {
     });
     const call = () => {
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "POST /v1/payment-link", LINK);
+      return callTool(ctx, "create_payment_link", LINK);
     };
 
     expect(await call()).toContain("Stripe made no payment link");
@@ -1427,7 +1557,7 @@ describe("create_payment_link", () => {
     });
     const call = () => {
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "POST /v1/payment-link", LINK);
+      return callTool(ctx, "create_payment_link", LINK);
     };
 
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
@@ -1466,7 +1596,7 @@ describe("create_payment_link", () => {
       const { ctx } = chargingRun();
       vi.stubGlobal("fetch", stripe);
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "POST /v1/payment-link", LINK);
+      return callTool(ctx, "create_payment_link", LINK);
     };
     expect(await make()).toContain("https://buy.stripe.com/1");
     // the founder resets, which switches the link off, and founds Acme again
@@ -1485,7 +1615,7 @@ describe("create_payment_link", () => {
     const side = store.createProduct({ description: "a side project", name: "Side" });
     store.grantApproval(ctx.run.taskId, `payment link "Pro plan" at $12.50 on ${side.id}`);
 
-    const answer = await callTool(ctx, "POST /v1/payment-link", {
+    const answer = await callTool(ctx, "create_payment_link", {
       amountUsd: 12.499,
       name: "  Pro plan ",
       product: side.id,
@@ -1506,7 +1636,7 @@ describe("create_payment_link", () => {
       'payment link "Pro plan" at $9.00 on acme delivering "Email the licence key from keys.txt"',
     );
 
-    const answer = await callTool(ctx, "POST /v1/payment-link", {
+    const answer = await callTool(ctx, "create_payment_link", {
       ...LINK,
       delivery: " Email the licence key from keys.txt ",
     });
@@ -1525,7 +1655,7 @@ describe("create_payment_link", () => {
     const { ctx, asked, stripe } = chargingRun();
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    const held = await callTool(ctx, "POST /v1/payment-link", {
+    const held = await callTool(ctx, "create_payment_link", {
       ...LINK,
       delivery: "Mail each buyer a signed print",
     });
@@ -1553,7 +1683,7 @@ describe("create_payment_link", () => {
         }),
     };
 
-    const answer = await callTool(ctx, "POST /v1/payment-link", {
+    const answer = await callTool(ctx, "create_payment_link", {
       ...LINK,
       delivery: "Email the PDF",
     });
@@ -1579,7 +1709,7 @@ describe("create_payment_link", () => {
     });
     const ctx: RunContext = { ...run.ctx, linkAccess: stripeLinkAccess };
 
-    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
+    expect(await callTool(ctx, "create_payment_link", LINK)).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
     expect(asked).toEqual(["/v1/payment_links"]);
@@ -1607,7 +1737,7 @@ describe("create_payment_link", () => {
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
+    expect(await callTool(ctx, "create_payment_link", LINK)).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
     expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
@@ -1619,7 +1749,7 @@ describe("create_payment_link", () => {
 
   it("quotes the name in what the founder signs, so it cannot pose as the price", async () => {
     const { ctx, asked } = chargingRun();
-    await callTool(ctx, "POST /v1/payment-link", { amountUsd: 500, name: 'Tip" at $1.00 on acme' });
+    await callTool(ctx, "create_payment_link", { amountUsd: 500, name: 'Tip" at $1.00 on acme' });
     expect(asked).toEqual([
       {
         command: String.raw`payment link "Tip\" at $1.00 on acme" at $500.00 on acme`,
@@ -1638,9 +1768,9 @@ describe("create_payment_link", () => {
     async ({ hidden }) => {
       const { ctx, asked, stripe } = chargingRun();
       const name = `Tip ${hidden}emca no 00.1$ ta `;
-      await expect(
-        callTool(ctx, "POST /v1/payment-link", { amountUsd: 500, name }),
-      ).rejects.toThrow(BadRequestError);
+      await expect(callTool(ctx, "create_payment_link", { amountUsd: 500, name })).rejects.toThrow(
+        BadRequestError,
+      );
       expect(asked).toEqual([]);
       expect(stripe).toEqual([]);
     },
@@ -1648,7 +1778,7 @@ describe("create_payment_link", () => {
 
   it("leaves the founder a Stripe card, not a sign-off, while IdleBiz has no key", async () => {
     const { ctx, asked, stripe } = chargingRun(null);
-    const answer = await callTool(ctx, "POST /v1/payment-link", LINK);
+    const answer = await callTool(ctx, "create_payment_link", LINK);
     expect(answer).toContain("a Stripe card waiting that takes them to the Budget panel");
     expect(answer).toContain("this task resumes automatically once the key is saved");
     expect(asked).toEqual([
@@ -1664,7 +1794,7 @@ describe("create_payment_link", () => {
 
   it("raises no card for a link it could not make anyway", async () => {
     const { ctx, asked } = chargingRun(null);
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: "no-such-bet" })).toContain(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: "no-such-bet" })).toContain(
       "is not a revenue bet on acme",
     );
     expect(asked).toEqual([]);
@@ -1684,7 +1814,7 @@ describe("create_payment_link", () => {
     store.killBet(killed.id, "dud", Date.now());
 
     for (const bet of [elsewhere, visitors, killed, { id: "no-such-bet" }]) {
-      expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toBe(
+      expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
         `"${bet.id}" is not a revenue bet on acme that is open or measuring — read_bets lists every live bet, what it counts and its product.`,
       );
     }
@@ -1701,7 +1831,7 @@ describe("create_payment_link", () => {
     );
     store.measureBet(bet.id, Date.now());
 
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, bet: bet.id })).toContain(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toContain(
       "Created a payment link",
     );
     expect(stripe).not.toEqual([]);
@@ -1710,7 +1840,7 @@ describe("create_payment_link", () => {
   it("says a test key's link takes no real money", async () => {
     const { ctx } = chargingRun("sk_test_founder");
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toBe(
+    expect(await callTool(ctx, "create_payment_link", LINK)).toBe(
       `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
     );
   });
@@ -1719,7 +1849,7 @@ describe("create_payment_link", () => {
     const { ctx, asked, hostsAsked, stripe } = landingRun();
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
       `Held for the founder's sign-off on "${UNLOCK_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: UNLOCK_ACTION, rule: "payments", type: "approval" }]);
@@ -1746,7 +1876,7 @@ describe("create_payment_link", () => {
         `payment link "Pro plan" at $9.00 on acme then send buyers to ${signed}`,
       );
 
-      const answer = await callTool(ctx, "POST /v1/payment-link", {
+      const answer = await callTool(ctx, "create_payment_link", {
         ...LINK,
         afterPaymentUrl: page,
       });
@@ -1797,7 +1927,7 @@ describe("create_payment_link", () => {
   ])("refuses a landing page the product does not serve: $page", async ({ page, said }) => {
     const { ctx, asked, stripe } = landingRun();
     expect(
-      await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: page }),
+      await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: page }),
     ).toContain(said);
     expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
@@ -1806,7 +1936,7 @@ describe("create_payment_link", () => {
   it("refuses a landing page that is no URL as the caller's error", async () => {
     const { ctx, stripe } = landingRun();
     await expect(
-      callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: "/unlock" }),
+      callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: "/unlock" }),
     ).rejects.toThrow(BadRequestError);
     expect(stripe).toEqual([]);
   });
@@ -1814,7 +1944,7 @@ describe("create_payment_link", () => {
   it("tells a product with no Vercel project to deploy its landing page first", async () => {
     const { ctx, hostsAsked, stripe } = landingRun();
     store.setProductVercel("acme", null);
-    expect(await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
+    expect(await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
       "Acme has no Vercel project yet: deploy the page buyers land on, which makes one, then make the link.",
     );
     expect(hostsAsked).toEqual([]);
@@ -1828,7 +1958,7 @@ describe("create_payment_link", () => {
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder" }),
     );
     expect(
-      await callTool(ctx, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK }),
+      await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
     ).toContain("Vercel is not connected");
     expect(asked).toEqual([
       {
@@ -1848,14 +1978,14 @@ describe("create_payment_link", () => {
     const action = `payment link "Pro plan" at $9.00 on acme for bet ${bet.id} delivering "A thank-you email" then send buyers to ${UNLOCK}`;
     const call = { ...LINK, afterPaymentUrl: UNLOCK, bet: bet.id, delivery: "A thank-you email" };
 
-    expect(await callTool(ctx, "POST /v1/payment-link", call)).toContain(
+    expect(await callTool(ctx, "create_payment_link", call)).toContain(
       `Held for the founder's sign-off on "${action}".`,
     );
     expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
     expect(stripe).toEqual([]);
 
     store.grantApproval(ctx.run.taskId, action);
-    expect(await callTool(ctx, "POST /v1/payment-link", call)).toContain(
+    expect(await callTool(ctx, "create_payment_link", call)).toContain(
       "The founder gets a card for each paid checkout, with the buyer's email and your delivery.",
     );
     expect(stripe[1]?.form).toMatchObject({
@@ -1874,7 +2004,7 @@ describe("create_payment_link", () => {
     };
 
     expect(
-      await callTool(refused, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK }),
+      await callTool(refused, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
     ).toContain("Vercel turned IdleBiz's token away");
     expect(asked).toEqual([
       {
@@ -1895,7 +2025,7 @@ describe("create_payment_link", () => {
     };
 
     expect(
-      await callTool(unreachable, "POST /v1/payment-link", { ...LINK, afterPaymentUrl: UNLOCK }),
+      await callTool(unreachable, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
     ).toBe("Vercel could not say where Acme is served (timed out); try again.");
     expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
@@ -1912,7 +2042,7 @@ describe("create_payment_link", () => {
       ),
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toBe(
+    expect(await callTool(ctx, "create_payment_link", LINK)).toBe(
       "Stripe made no payment link: Your account cannot currently make live charges.",
     );
   });
@@ -2073,7 +2203,7 @@ describe("sell_print", () => {
   it("prices it with Printful, then holds it for the founder's sign-off before Stripe is asked", async () => {
     const { ctx, asked, sent } = sellingRun();
 
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toBe(
+    expect(await callTool(ctx, "sell_print", PRINT)).toBe(
       `Held for the founder's sign-off on "${PRINT_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
@@ -2090,7 +2220,7 @@ describe("sell_print", () => {
     const action = `${PRINT_ACTION} for bet ${bet.id}`;
     store.grantApproval(ctx.run.taskId, action);
 
-    const answer = await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id });
+    const answer = await callTool(ctx, "sell_print", { ...PRINT, bet: bet.id });
 
     expect(answer).toBe(
       `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
@@ -2164,7 +2294,7 @@ describe("sell_print", () => {
     expect(store.listListings()).toMatchObject([listing]);
     store.initStore();
     expect(store.listListings()).toMatchObject([listing]);
-    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id })).toContain(
+    expect(await callTool(ctx, "sell_print", { ...PRINT, bet: bet.id })).toContain(
       "Held for the founder's sign-off",
     );
   });
@@ -2176,7 +2306,7 @@ describe("sell_print", () => {
       PRINT_ACTION.replace("variants 4012, 4013", "variants 4012"),
     );
 
-    await callTool(ctx, "POST /v1/sell-print", { ...PRINT, variantIds: [4012] });
+    await callTool(ctx, "sell_print", { ...PRINT, variantIds: [4012] });
 
     const link = sent.find((s) => s.path === "/v1/payment_links");
     expect(Object.keys(link?.form ?? {}).filter((k) => k.startsWith("custom_fields"))).toEqual([]);
@@ -2189,7 +2319,7 @@ describe("sell_print", () => {
       const { ctx, asked, sent } = sellingRun();
 
       // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
-      expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd })).toBe(
+      expect(await callTool(ctx, "sell_print", { ...PRINT, priceUsd })).toBe(
         `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. Every price under $11.37 loses money: price it above that, with the margin the bet needs.`,
       );
       expect(asked).toEqual([]);
@@ -2199,7 +2329,7 @@ describe("sell_print", () => {
 
   it("takes a price exactly at the floor to the founder", async () => {
     const { ctx, asked } = sellingRun();
-    await callTool(ctx, "POST /v1/sell-print", { ...PRINT, priceUsd: 11.37 });
+    await callTool(ctx, "sell_print", { ...PRINT, priceUsd: 11.37 });
     expect(asked).toEqual([
       {
         command: PRINT_ACTION.replace("$28.00", "$11.37"),
@@ -2223,7 +2353,7 @@ describe("sell_print", () => {
     fakeSellers();
     store.grantApproval(ctx.run.taskId, PRINT_ACTION);
 
-    const answer = await callTool(ctx, "POST /v1/sell-print", PRINT);
+    const answer = await callTool(ctx, "sell_print", PRINT);
 
     expect(answer).toContain(`Listed "Launch tee" on Acme at $28.00`);
     expect(answer).not.toContain("test mode");
@@ -2239,7 +2369,7 @@ describe("sell_print", () => {
     async ({ grants }) => {
       const { ctx, asked, sent } = sellingRun({}, grants);
 
-      expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+      expect(await callTool(ctx, "sell_print", PRINT)).toContain(
         "Stripe won't let IdleBiz's key make shipping rates or read checkouts and charges: the founder has a Stripe card waiting",
       );
       expect(asked).toMatchObject([{ integration: "stripe-key", type: "integration" }]);
@@ -2251,9 +2381,7 @@ describe("sell_print", () => {
     const { ctx, asked, sent } = sellingRun();
     store.grantApproval(ctx.run.taskId, PRINT_ACTION.replace(DESIGN_SHA, "0".repeat(64)));
 
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
-      "Held for the founder's sign-off",
-    );
+    expect(await callTool(ctx, "sell_print", PRINT)).toContain("Held for the founder's sign-off");
     expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
     expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
   });
@@ -2266,7 +2394,7 @@ describe("sell_print", () => {
     }
 
     const answers = await Promise.all(
-      [ctx, other].map((run) => callTool(run, "POST /v1/sell-print", PRINT)),
+      [ctx, other].map((run) => callTool(run, "sell_print", PRINT)),
     );
 
     for (const answer of answers) {
@@ -2280,9 +2408,7 @@ describe("sell_print", () => {
     const keysOf = async () => {
       const sent = fakeSellers({ linkTimesOut: true });
       store.grantApproval(ctx.run.taskId, PRINT_ACTION);
-      expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
-        "Stripe made no payment link",
-      );
+      expect(await callTool(ctx, "sell_print", PRINT)).toContain("Stripe made no payment link");
       return outward(sent)
         .filter((s) => s.host === "api.stripe.com")
         .map((s) => s.idempotencyKey);
@@ -2310,7 +2436,7 @@ describe("sell_print", () => {
     }, sellers);
     const call = () => {
       store.grantApproval(ctx.run.taskId, PRINT_ACTION);
-      return callTool(ctx, "POST /v1/sell-print", PRINT);
+      return callTool(ctx, "sell_print", PRINT);
     };
 
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
@@ -2338,14 +2464,14 @@ describe("sell_print", () => {
   ])("refuses a print file Printful should not fetch: $said", async ({ said, url }) => {
     const { ctx, asked, sent } = sellingRun();
     const placements = [{ ...PRINT.placements[0], fileUrl: url }];
-    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, placements })).toContain(said);
+    expect(await callTool(ctx, "sell_print", { ...PRINT, placements })).toContain(said);
     expect(asked).toEqual([]);
     expect(outward(sent)).toEqual([]);
   });
 
   it("refuses a file the site answers with its page rather than an image", async () => {
     const { ctx, sent } = sellingRun({}, { fileType: "text/html" });
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toBe(
+    expect(await callTool(ctx, "sell_print", PRINT)).toBe(
       "Printful could not fetch https://acme-site.vercel.app/print/tee-1.png: it serves text/html, not an image. Deploy the print file first, and check it loads as an image.",
     );
     expect(outward(sent)).toEqual([]);
@@ -2386,7 +2512,7 @@ describe("sell_print", () => {
     "leaves the founder a $ask.integration card for a missing key",
     async ({ ask, missing, said }) => {
       const { ctx, asked, sent } = sellingRun(missing);
-      expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(said);
+      expect(await callTool(ctx, "sell_print", PRINT)).toContain(said);
       expect(asked).toEqual([ask]);
       expect(sent).toEqual([]);
     },
@@ -2409,7 +2535,7 @@ describe("sell_print", () => {
       Promise.resolve(answers.get(new URL(url).host)?.() ?? new Response(null, { status: 404 })),
     );
 
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
+    expect(await callTool(ctx, "sell_print", PRINT)).toContain(
       "Printful turned IdleBiz's token away, which happens when it expires",
     );
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
@@ -2417,7 +2543,7 @@ describe("sell_print", () => {
 
   it("refuses a bet whose money the listing could not be counted for", async () => {
     const { ctx, sent } = sellingRun();
-    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: "no-such-bet" })).toContain(
+    expect(await callTool(ctx, "sell_print", { ...PRINT, bet: "no-such-bet" })).toContain(
       '"no-such-bet" is not a revenue bet on acme',
     );
     expect(sent).toEqual([]);
@@ -2429,7 +2555,7 @@ describe("sell_print", () => {
     store.grantApproval(ctx.run.taskId, `${PRINT_ACTION} for bet ${bet.id}`);
     store.measureBet(bet.id, Date.now());
 
-    expect(await callTool(ctx, "POST /v1/sell-print", { ...PRINT, bet: bet.id })).toContain(
+    expect(await callTool(ctx, "sell_print", { ...PRINT, bet: bet.id })).toContain(
       'Listed "Launch tee" on Acme',
     );
     expect(outward(sent).filter((s) => s.host === "api.stripe.com")).not.toEqual([]);
@@ -2438,7 +2564,7 @@ describe("sell_print", () => {
   it("tells a product with no Vercel project to deploy the file first", async () => {
     const { ctx, sent } = sellingRun();
     store.setProductVercel("acme", null);
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toBe(
+    expect(await callTool(ctx, "sell_print", PRINT)).toBe(
       "Acme has no Vercel project yet: deploy it with the print file, which makes one, then list it.",
     );
     expect(sent).toEqual([]);
@@ -2481,7 +2607,7 @@ describe("printful_catalog", () => {
       products: [CATALOG_TEE],
       total: 120,
     });
-    expect(await callTool(ctx, "POST /v1/printful-catalog", {})).toBe(
+    expect(await callTool(ctx, "printful_catalog", {})).toBe(
       `Printful's catalog, from product 1 of 120 that ship to the US (id: name — techniques; discontinued ones left out). Pass "product":<id> for its placements and variants. Pass "offset":50 for the next page.\n71: Unisex Staple T-Shirt (Bella + Canvas 3001) — dtg`,
     );
     expect(queries).toEqual([{ offset: 0 }]);
@@ -2496,7 +2622,7 @@ describe("printful_catalog", () => {
         { id: 4013, label: "Black / M" },
       ],
     });
-    expect(await callTool(ctx, "POST /v1/printful-catalog", { product: 71 })).toBe(
+    expect(await callTool(ctx, "printful_catalog", { product: 71 })).toBe(
       "71: Unisex Staple T-Shirt\nPlacements, as sell_print's placement (technique): front (dtg)\nVariants, as sell_print's variantIds (id: colour / size):\n4012: Black / S\n4013: Black / M",
     );
     expect(queries).toEqual([{ product: 71 }]);
@@ -2504,16 +2630,14 @@ describe("printful_catalog", () => {
 
   it("leaves the founder a Printful card with no token", async () => {
     const { asked, ctx, queries } = catalogRun({ kind: "refused" }, { printful: true });
-    expect(await callTool(ctx, "POST /v1/printful-catalog", {})).toContain(
-      "IdleBiz has no Printful token",
-    );
+    expect(await callTool(ctx, "printful_catalog", {})).toContain("IdleBiz has no Printful token");
     expect(queries).toEqual([]);
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
   });
 
   it("asks for a new token once Printful turns the saved one away", async () => {
     const { asked, ctx } = catalogRun({ kind: "refused" });
-    expect(await callTool(ctx, "POST /v1/printful-catalog", {})).toContain(
+    expect(await callTool(ctx, "printful_catalog", {})).toContain(
       "Printful turned IdleBiz's token away",
     );
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
@@ -2593,7 +2717,7 @@ describe("read_orders", () => {
     });
 
     expect(
-      await callTool({ ...ctx, run: { ...ctx.run, productId: "acme" } }, "POST /v1/orders", {}),
+      await callTool({ ...ctx, run: { ...ctx.run, productId: "acme" } }, "read_orders", {}),
     ).toBe(
       [
         "Acme's paid orders, newest first (3 of 3):",
@@ -2610,7 +2734,7 @@ describe("read_orders", () => {
 
   it("says when a product has sold nothing yet", async () => {
     const { ctx } = runAs("priya");
-    expect(await callTool(ctx, "POST /v1/orders", { product: "acme" })).toBe(
+    expect(await callTool(ctx, "read_orders", { product: "acme" })).toBe(
       "Acme has no paid orders yet.",
     );
   });
@@ -2637,7 +2761,7 @@ describe("read_orders", () => {
       kind: "switched-off",
     });
 
-    expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
+    expect(await callTool(ctx, "read_orders", { product: side.id })).toBe(
       [
         `${side.id}'s paid orders, newest first (1 of 1):`,
         "- 2026-09-22 · Pro plan · paid $9.00 · paid through a payment link that names no delivery",
@@ -2666,7 +2790,7 @@ describe("read_orders", () => {
       kind: "switched-off",
     });
 
-    expect(await callTool(ctx, "POST /v1/orders", { product: side.id })).toBe(
+    expect(await callTool(ctx, "read_orders", { product: side.id })).toBe(
       [
         `${side.id} has no paid orders yet.`,
         "Its payment links:",
@@ -2689,11 +2813,10 @@ describe("name_product", () => {
     activityEvents.on("activity", listen);
     let answer: string | null = null;
     try {
-      answer = await callTool(
-        { ...ctx, run: { ...ctx.run, productId: id } },
-        "POST /v1/name-product",
-        { description: "Invoices that chase themselves.", name: "Ledgerly" },
-      );
+      answer = await callTool({ ...ctx, run: { ...ctx.run, productId: id } }, "name_product", {
+        description: "Invoices that chase themselves.",
+        name: "Ledgerly",
+      });
     } finally {
       activityEvents.off("activity", listen);
     }
@@ -2716,9 +2839,9 @@ describe("name_product", () => {
     const { ctx } = runAs("mae");
     const gadget = store.createProduct({ description: "x", name: "Gadget" });
     const draft = { description: "A thing.", name: "Widget" };
-    await callTool(ctx, "POST /v1/name-product", { ...draft, product: gadget.id });
+    await callTool(ctx, "name_product", { ...draft, product: gadget.id });
     expect(store.getProduct(gadget.id)?.name).toBe("Widget");
-    expect(await callTool(ctx, "POST /v1/name-product", { ...draft, product: "nope" })).toContain(
+    expect(await callTool(ctx, "name_product", { ...draft, product: "nope" })).toContain(
       'No product "nope" here',
     );
   });
@@ -2726,9 +2849,9 @@ describe("name_product", () => {
   it("turns anyone but the lead away", async () => {
     const { ctx } = runAs("priya");
     const before = store.listProducts()[0]?.name;
-    expect(
-      await callTool(ctx, "POST /v1/name-product", { description: "x", name: "Mine" }),
-    ).toContain("Only the team lead names a product");
+    expect(await callTool(ctx, "name_product", { description: "x", name: "Mine" })).toContain(
+      "Only the team lead names a product",
+    );
     expect(store.listProducts()[0]?.name).toBe(before);
   });
 });
@@ -2757,7 +2880,7 @@ describe("kill_product", () => {
       ),
     );
 
-    const answer = await callTool(ctx, "POST /v1/kill-product", { reason: "dud", slug: side.id });
+    const answer = await callTool(ctx, "kill_product", { reason: "dud", slug: side.id });
 
     expect(store.getProduct(side.id)).toBeNull();
     expect(answer).toContain(

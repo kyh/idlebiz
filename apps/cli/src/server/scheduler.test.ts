@@ -838,9 +838,9 @@ describe("asking the lead for the next bet", () => {
 
     expect(proposing()).toHaveLength(1);
     const handoff = { description: "write it", role: "engineer", title: "Draft the post" };
-    expect(await tools.get("priya")?.call("POST /v1/delegate", handoff)).toContain(
-      "open_bet first",
-    );
+    const refused = await tools.get("priya")?.call("delegate", handoff);
+    expect(refused?.kind).toBe("refused");
+    expect(refused?.text).toContain("open_bet first");
   });
 
   it("waits while the lead's last proposal does", () => {
@@ -1330,7 +1330,6 @@ describe("a tool call's title in the activity log", () => {
   it.each([
     `idlebiz set-env '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
     `idlebiz set_env - <<'EOF'\n{"name":"OPENAI_API_KEY","value":"sk-proj-1"}\nEOF`,
-    `curl -s -X POST "$IDLEBIZ_API_URL/v1/set-env" -d '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
   ])("keeps none of the value set_env was given: %s", (title) => {
     expect(loggedToolName(title)).toBe("set_env");
   });

@@ -107,14 +107,17 @@ apps/
                  Connect OAuth hop.
 packages/
   domain/        @repo/domain — the vocabulary both sides share, pure: the company and its
-                 people, the bets and their judge, the activity grammar, money's formatting, the
-                 hold rules' display, and the JSON and error helpers. Zod only.
+                 people, the runners' ids and names, the bets and their judge, the activity
+                 grammar, money's formatting, the hold rules' display, and the JSON and error
+                 helpers. Zod only, and no other package of the repo's.
   contract/      @repo/contract — the page's API, contract-first: an oRPC contract with one folder
                  per domain (`<domain>-contract.ts` + `<domain>-schema.ts`), the routes (`/rpc`,
-                 `/events`) and the event stream's names. The page compiles against it and
-                 page-router.ts implements it; both ship in one app, so it may break freely.
-  agent-driver/  @repo/agent-driver — the ACP runtime: a turn over claude-agent-acp or codex-acp,
-                 the runners' registry, tool asks, rate limits and pricing.
+                 `/events`), the page's content security policy and the event stream's names.
+                 The page compiles against it and page-router.ts implements it; both ship in one
+                 app, so it may break freely.
+  agent-driver/  @repo/agent-driver — the ACP runtime, over domain: a turn over claude-agent-acp
+                 or codex-acp, the runners' registry, tool asks, rate limits and pricing, tested
+                 on its own against stand-in agents. The page never imports it.
   px-kit/        @repo/px-kit — the pixel UI kit both apps draw with (see the px-kit trap below).
   stripe-connect-protocol/
                  @repo/stripe-connect-protocol — the Stripe Connect handshake between
@@ -207,15 +210,23 @@ allocator and the replay.
   company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
   Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only
   that a claim or lock race was lost. It refuses with a `RefusalError` (`server/refusal.ts`)
-  worded as the sentence the agent should read; a tool turns that into its answer, the page's
-  API into the founder's note. Anything else thrown is a fault: answered the same way, but reported to
-  main's log. Don't split it by entity or make it async: its synchronous check-and-set is
-  what makes the task lock correct.
-- **A company tool is described once**, in `server/tool-specs.ts`: route, body, lead-only
-  refusal, doc and example. The agents' instructions are rendered from it, `server/tools.ts`
-  binds each implementation to its spec, `idlebiz <tool>` is the client a run types it with
-  (`commands/tools.ts`), and `control-plane.ts` is only transport. A change
-  everyone should hear about (a bet, a product, autopilot) goes through
+  worded as the sentence the agent should read; a tool turns that into its answer, refused, the
+  page's API into the founder's note. Anything else thrown is a fault: answered the same way, as
+  a fault, but reported to main's log. Don't split it by entity or make it async: its
+  synchronous check-and-set is what makes the task lock correct.
+- **A company tool is described once**, in `server/tool-specs.ts`: body, lead-only refusal,
+  doc and example. The agents' instructions are rendered from it, `server/tools.ts` binds each
+  implementation to its spec, `idlebiz <tool>` is the client a run types it with
+  (`commands/tools.ts`), and `control-plane.ts` is only transport, which serves each tool at its
+  name alone (`toolPath`: posted to `/v1/<tool_name>` on the run's socket), so `callTool` takes
+  a `ToolName` and what it answers is shaped once (`ToolAnswerSchema`) for both ends. Every call
+  ends in one of `TOOL_OUTCOMES`, the verb's exit code: done (0) is what the implementation
+  returns, refused (1) a `RefusalError` or the lead-only refusal, a fault (2) anything else
+  thrown, and held (4) a call waiting on the founder (a sign-off, an integration: `holdFor` in
+  `server/tools.ts`). An ask that did not reach the founder is refused; `ask_boss` and
+  `request_integration`, whose call is the ask, are done once it does. The verb prints the
+  answer on stdout whichever it is, so `idlebiz deploy && …` stops at a deploy awaiting
+  sign-off. A change everyone should hear about (a bet, a product, autopilot) goes through
   `server/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's page.
   Its `postToRoom` is the team room's only writer, and names the speaker (founder, office
   or employee), so the room agents read and the #team feed hold the same lines and no
@@ -351,7 +362,10 @@ third boundary.
     teammate call lead-only tools as the lead. So a run's seal lets it connect to its own socket
     (`Seal.apiSocket`) and names no other run's, in folders no run writes (the save, HOME), and
     each socket's server binds the run it was made for: a token presented on another run's socket
-    is refused. The bearer stays as a second check. The env carries `IDLEBIZ_API_SOCKET` and
+    is refused. The bearer stays as a second check. Without the seal neither isolates a run: a
+    socket's mode admits every process of the founder's user, which every run is, and any run can
+    read another's token, so the seal is what makes a socket one run's, and no run starts
+    unsealed. The env carries `IDLEBIZ_API_SOCKET` and
     `IDLEBIZ_RUN_TOKEN`, which the `idlebiz` command a run types reads (`commands/tools.ts`): it
     calls on that socket alone, never on a relative path, which would reach whatever listens in
     the run's own folders; no loopback port answers for the company. A socket closes as its run
@@ -588,17 +602,22 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   signed-out runner someone works on and who waits on it, the lead's steering included, beside
   a Sign in button. A failed turn is classed by what its adapter says before its prose
   (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
-  category and actions; claude's kinds mirror claude-agent-acp's `providerFailureCategory`):
+  category and actions; claude's kinds mirror claude-agent-acp's `providerFailureCategory`). The
+  package reports only the class and, for a usage limit, when the provider said it lifts; what
+  each costs the runner is decided in one place, `heed` in `server/agents/agent-driver.ts`:
   `auth` signs the runner out as above; `usage-limit` (a rate limit, billing, an account on hold)
-  rests it until the reset the provider reported (claude's `_claude/rateLimit` on usage updates;
-  codex-acp keeps its rate limits to itself, so its text) or else the time its text names;
-  `overloaded` rests it 1m, doubling with each one in a row up to 15m (`overloadBackoffMs`) and
-  starting over once a turn ends any other way, since a busy provider clears in minutes;
-  `access-denied` (an organization yet to verify, a Bedrock/Vertex/Foundry credential claude
-  could not load) neither signs it out nor spends the session, since signing in again cannot
-  repair it, but rests it on the same backoff, so a credential blip clears and a standing refusal
-  is not hammered, and #team tells the founder what the provider said; `context` spends the
-  session.
+  rests it until the reset the provider reported (claude's `_claude/rateLimit` on usage updates,
+  in epoch seconds; codex-acp keeps its rate limits to itself, so its text) or else the time its
+  text names, never past 12h. claude-agent-acp forwards that rate limit only once the turn has had
+  a model response, so a turn refused on its first request, as a retried task's usually is, names
+  a reset only in its text; one naming none rests the runner 30m, since a retry refused again
+  costs one spawn and no tokens. `overloaded` rests it 1m, doubling with each one in a row up to
+  15m (`backoffMs`) and starting over once a turn ends any other way, since a busy provider clears
+  in minutes; `access-denied` (an organization yet to verify, a Bedrock/Vertex/Foundry credential
+  claude could not load) neither signs it out nor spends the session, since signing in again
+  cannot repair it, but rests it on the same backoff, so a credential blip clears and a standing
+  refusal is not hammered, and #team tells the founder what the provider said; `context` spends
+  the session.
   A rest never shortens one holding, and is kept in `state/runner-rest.json`, so a restart does not
   spawn each parked task once to be refused; it is not critical: lost, that is all it costs.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
@@ -762,6 +781,7 @@ keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks fo
 and notarized when `apps/desktop/.env` holds the notary key; `release:publish` refuses a pack
 that is not both.
 Tests: `pnpm --filter idlebiz test` (main: schemas, the command policy, temporary saves, real
-loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate) and
-`pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
+loopback and socket requests, the `idlebiz` verbs and, on macOS, the seal and any installed CLI's gate),
+`pnpm --filter @repo/agent-driver test` (an ACP turn against stand-in agents, and the failure
+classes) and `pnpm --filter @repo/desktop test` (the page's geometry and state, no window or Phaser, then
 `cargo test` over the shell)

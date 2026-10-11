@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Company, Employee, Product } from "@repo/domain/domain";
-import { RUNNER_IDS } from "@repo/agent-driver/runner";
+import { RUNNER_IDS } from "@repo/domain/runners";
 import { employeeMemoryDir } from "../paths";
 import { standingInstructions } from "../prompts/instructions";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";

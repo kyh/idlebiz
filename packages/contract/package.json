@@ -2,7 +2,7 @@
   "name": "@repo/contract",
   "version": "0.1.0",
   "private": true,
-  "description": "The page's API: what the window calls of the server and the events the server sends it, which the page compiles against and `idlebiz serve` implements. Both ends ship in one app, so it may break freely.",
+  "description": "The page's API: what the window calls of the server, the events the server sends it and the content security policy it serves the page under, which the page compiles against and `idlebiz serve` implements. Both ends ship in one app, so it may break freely.",
   "type": "module",
   "exports": {
     "./*": "./src/*.ts"

@@ -14,12 +14,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { runInNewContext } from "node:vm";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
-import type { AcpTurnEnd } from "@repo/agent-driver/acp-session";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { LivePage } from "../command-policy";
-import type { AuthFlowEvent, BlockedAsk } from "@repo/domain/domain";
+import type { AuthFlowEvent, BlockedAsk, RunOutcome } from "@repo/domain/domain";
 import { parseJson } from "@repo/domain/json";
 import { RefusalError } from "../refusal";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
@@ -106,25 +105,31 @@ const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
 
 const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 
-const failed = { error: "exceeded the 45m session limit — killed", kind: "failed" } as const;
+const failed = {
+  class: "other",
+  error: "exceeded the 45m session limit — killed",
+  kind: "failed",
+} as const;
 const limited = {
-  cause: "usage-limit",
+  class: "usage-limit",
   error: "You've hit your session limit",
-  kind: "limited",
-  resetsAt: 99,
+  kind: "failed",
+  reportedReset: null,
 } as const;
 const overloaded = {
-  cause: "overloaded",
+  class: "overloaded",
   error: "API Error: 529 Overloaded",
-  kind: "limited",
-  resetsAt: 0,
+  kind: "failed",
 } as const;
 const accessRefused = {
-  cause: "access-denied",
+  class: "access-denied",
   error: "Your organization must verify before using the API.",
-  kind: "limited",
-  resetsAt: 0,
+  kind: "failed",
 } as const;
+const refusedLogin = { class: "auth", error: "Failed to authenticate", kind: "failed" } as const;
+
+/** Until when an outcome rests its runner; 0 when it does not. */
+const untilOf = (outcome: RunOutcome): number => (outcome.kind === "resting" ? outcome.until : 0);
 
 describe("addUsage", () => {
   it("counts both attempts of a retried turn, dollars as already priced", () => {
@@ -141,38 +146,32 @@ describe("addUsage", () => {
 });
 
 describe("outcomeOf", () => {
-  it("is done when the turn completed with nothing asked", () => {
-    expect(outcomeOf({ kind: "completed" }, null, false)).toEqual({ kind: "done" });
+  const resting = {
+    cause: "usage-limit",
+    error: limited.error,
+    kind: "resting",
+    until: 99,
+  } as const;
+  const failure = { error: failed.error, kind: "failed" } as const;
+  const signedOut = { error: refusedLogin.error, kind: "signedOut" } as const;
+
+  it("is how the turn left its runner when nothing was asked", () => {
+    expect(outcomeOf({ kind: "done" }, null, false)).toEqual({ kind: "done" });
+    expect(outcomeOf(resting, null, false)).toEqual(resting);
+    expect(outcomeOf(failure, null, false)).toEqual(failure);
+    expect(outcomeOf(signedOut, null, false)).toEqual(signedOut);
   });
 
   it("waits on the founder whenever something was asked, however the turn ended", () => {
     const ask = { question: "Ship it?", type: "question" } as const;
-    expect(outcomeOf(limited, ask, false)).toEqual({ ask, kind: "blocked" });
-    expect(outcomeOf(failed, ask, true)).toEqual({ ask, kind: "blocked" });
-  });
-
-  it("rests only when the agent refused the turn for a limit, whatever a failure says", () => {
-    expect(outcomeOf(limited, null, false)).toEqual({
-      cause: "usage-limit",
-      error: limited.error,
-      kind: "resting",
-      until: 99,
-    });
-    expect(outcomeOf(failed, null, false)).toEqual({ error: failed.error, kind: "failed" });
-  });
-
-  it("parks the task, burning no attempt, when the runner's login was refused", () => {
-    const signedOut = { error: "Failed to authenticate", kind: "signedOut" } as const;
-    expect(outcomeOf(signedOut, null, false)).toEqual({
-      error: "Failed to authenticate",
-      kind: "signedOut",
-    });
-    expect(outcomeOf(signedOut, null, true)).toEqual({ kind: "interrupted" });
+    expect(outcomeOf(resting, ask, false)).toEqual({ ask, kind: "blocked" });
+    expect(outcomeOf(failure, ask, true)).toEqual({ ask, kind: "blocked" });
   });
 
   it("does not hold the task to a turn the app stopped, unless it finished anyway", () => {
-    expect(outcomeOf(failed, null, true)).toEqual({ kind: "interrupted" });
-    expect(outcomeOf({ kind: "completed" }, null, true)).toEqual({ kind: "done" });
+    expect(outcomeOf(failure, null, true)).toEqual({ kind: "interrupted" });
+    expect(outcomeOf(signedOut, null, true)).toEqual({ kind: "interrupted" });
+    expect(outcomeOf({ kind: "done" }, null, true)).toEqual({ kind: "done" });
   });
 });
 
@@ -268,19 +267,57 @@ describe("PAGE_URLS", () => {
   });
 });
 
+/** A driver whose check holds, keeping its runners' rests in `rest`. */
+const driverOn = (rest: string | null) =>
+  createAgentDriver(
+    () => Promise.resolve({ kind: "sealed" }),
+    () => Promise.resolve(SEAL),
+    () => SKILLS,
+    () => rest,
+  );
+
 describe("a limit a turn hit", () => {
-  it("parks a runner until its limit lifts, and only that runner", () => {
+  const hour = 3_600_000;
+
+  it("parks a runner until the reset its provider reported, and only that runner", () => {
     const until = Date.now() + 60_000;
-    agentDriver.heed("claude", { ...limited, resetsAt: until });
+    agentDriver.heed("claude", { ...limited, reportedReset: until });
     expect(agentDriver.restingRunner("claude")).toBe(until);
     expect(agentDriver.restingRunner("codex")).toBeNull();
     expect(agentDriver.restingRunners()).toEqual({ claude: until });
   });
 
   it("wakes a runner once its limit has lifted", () => {
-    agentDriver.heed("codex", { ...limited, resetsAt: Date.now() - 1 });
+    agentDriver.heed("codex", { ...limited, reportedReset: Date.now() - 1 });
     expect(agentDriver.restingRunner("codex")).toBeNull();
     expect(agentDriver.restingRunners()).not.toHaveProperty("codex");
+  });
+
+  it("rests a runner half an hour when its provider named no reset", () => {
+    const driver = driverOn(null);
+    const before = Date.now();
+    const outcome = driver.heed("claude", limited);
+    expect(outcome).toMatchObject({ cause: "usage-limit", error: limited.error, kind: "resting" });
+    expect(untilOf(outcome)).toBeGreaterThanOrEqual(before + hour / 2);
+    expect(untilOf(outcome)).toBeLessThanOrEqual(Date.now() + hour / 2);
+    expect(driver.restingRunner("claude")).toBe(untilOf(outcome));
+  });
+
+  it("never rests a runner past 12 hours, whatever reset was named", () => {
+    const driver = driverOn(null);
+    const before = Date.now();
+    const outcome = driver.heed("claude", { ...limited, reportedReset: before + 72 * hour });
+    expect(untilOf(outcome)).toBeGreaterThanOrEqual(before + 12 * hour);
+    expect(untilOf(outcome)).toBeLessThanOrEqual(Date.now() + 12 * hour);
+  });
+
+  it("fails the task, resting no runner, on any failure that is not the runner's", () => {
+    const driver = driverOn(null);
+    expect(driver.heed("codex", failed)).toEqual({ error: failed.error, kind: "failed" });
+    const spent = { class: "context", error: "context window exceeded", kind: "failed" } as const;
+    expect(driver.heed("codex", spent)).toEqual({ error: spent.error, kind: "failed" });
+    expect(driver.restingRunners()).toEqual({});
+    expect(driver.heed("codex", { kind: "completed" })).toEqual({ kind: "done" });
   });
 });
 
@@ -293,11 +330,10 @@ describe("an overloaded provider", () => {
     () => null,
   );
 
-  /** How long the next overload rests codex, by the end heed hands back. */
+  /** How long the next overload rests codex, by the outcome heed hands back. */
   const restAfterOverload = (): number => {
     const before = Date.now();
-    const end = driver.heed("codex", overloaded);
-    const until = end.kind === "limited" ? end.resetsAt : 0;
+    const until = untilOf(driver.heed("codex", overloaded));
     expect(driver.restingRunner("codex")).toBe(until);
     return Math.round((until - before) / minute);
   };
@@ -315,16 +351,14 @@ describe("an overloaded provider", () => {
     );
     const rest = (): number => {
       const before = Date.now();
-      const end = fresh.heed("claude", overloaded);
-      return Math.round(((end.kind === "limited" ? end.resetsAt : 0) - before) / minute);
+      return Math.round((untilOf(fresh.heed("claude", overloaded)) - before) / minute);
     };
     expect(rest()).toBe(1);
     expect(rest()).toBe(2);
     const held = fresh.restingRunner("claude");
     fresh.heed("claude", failed);
     // the next asks a minute, so the 2m rest still holding stands
-    const end = fresh.heed("claude", overloaded);
-    expect(end.kind === "limited" ? end.resetsAt : 0).toBe(held);
+    expect(untilOf(fresh.heed("claude", overloaded))).toBe(held);
     // and the one after asks 2m, not the 8m a streak never broken would
     expect(rest()).toBe(2);
   });
@@ -337,8 +371,8 @@ describe("an overloaded provider", () => {
       () => null,
     );
     const lifts = Date.now() + 3 * 3_600_000;
-    fresh.heed("claude", { ...limited, resetsAt: lifts });
-    expect(fresh.heed("claude", overloaded)).toMatchObject({ resetsAt: lifts });
+    fresh.heed("claude", { ...limited, reportedReset: lifts });
+    expect(fresh.heed("claude", overloaded)).toMatchObject({ until: lifts });
     expect(outcomeOf(fresh.heed("claude", overloaded), null, false)).toMatchObject({
       kind: "resting",
       until: lifts,
@@ -346,19 +380,10 @@ describe("an overloaded provider", () => {
   });
 });
 
-/** A driver whose check holds, keeping its runners' rests in `rest`. */
-const driverOn = (rest: string | null) =>
-  createAgentDriver(
-    () => Promise.resolve({ kind: "sealed" }),
-    () => Promise.resolve(SEAL),
-    () => SKILLS,
-    () => rest,
-  );
-
 describe("a provider refusing access no sign-in repairs", () => {
   const minute = 60_000;
-  const restOf = (end: AcpTurnEnd, before: number): number =>
-    Math.round(((end.kind === "limited" ? end.resetsAt : 0) - before) / minute);
+  const restOf = (outcome: RunOutcome, before: number): number =>
+    Math.round((untilOf(outcome) - before) / minute);
 
   it("rests the runner on an overload's backoff, never signing it out or spending the session", () => {
     const driver = driverOn(null);
@@ -388,7 +413,7 @@ describe("a provider refusing access no sign-in repairs", () => {
     driver.heed("codex", failed);
     const held = driver.restingRunner("codex");
     // a minute asked: the 2m rest still holding stands
-    expect(driver.heed("codex", accessRefused)).toMatchObject({ resetsAt: held });
+    expect(driver.heed("codex", accessRefused)).toMatchObject({ until: held });
   });
 });
 
@@ -399,7 +424,7 @@ describe("a rest the last launch left", () => {
 
   it("holds after a restart, so no parked task spawns once to be refused", async () => {
     const lifts = Date.now() + 3_600_000;
-    driverOn(file).heed("claude", { ...limited, resetsAt: lifts });
+    driverOn(file).heed("claude", { ...limited, reportedReset: lifts });
     expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ claude: lifts });
 
     const restarted = driverOn(file);
@@ -427,7 +452,9 @@ describe("a rest the last launch left", () => {
     const none = driverOn(null);
     none.init();
     expect(none.restingRunners()).toEqual({});
-    expect(none.heed("codex", { ...limited, resetsAt: Date.now() + 60_000 }).kind).toBe("limited");
+    expect(none.heed("codex", { ...limited, reportedReset: Date.now() + 60_000 }).kind).toBe(
+      "resting",
+    );
   });
 });
 
@@ -451,7 +478,7 @@ describe("memoryAfter", () => {
   });
 
   it("forgets a session only a new one can follow", () => {
-    const spent = { error: "context window exceeded", kind: "failed", sessionSpent: true } as const;
+    const spent = { class: "context", error: "context window exceeded", kind: "failed" } as const;
     expect(memoryAfter({ end: spent, sessionId: "kept" }, stored, "new", kept.workspace)).toEqual({
       instructionsDigest: null,
       session: null,
@@ -969,7 +996,7 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     expect(await driver.hasAnyRunner()).toBe(true);
     expect(await driver.signedOut()).toEqual(["codex"]);
 
-    driver.heed("claude", { error: "Failed to authenticate", kind: "signedOut" });
+    driver.heed("claude", refusedLogin);
 
     expect(driver.signedIn("claude")).toBe(false);
     expect(await driver.hasAnyRunner()).toBe(false);
@@ -984,7 +1011,7 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     );
     storedLoginClaude(1);
     driver.init();
-    driver.heed("claude", { error: "Failed to authenticate", kind: "signedOut" });
+    driver.heed("claude", refusedLogin);
     const heard: AuthFlowEvent[] = [];
     await startLogin(driver, (e) => heard.push(e));
     expect(heard).toContainEqual(signingIn);
@@ -1019,7 +1046,10 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
       throw new Error("founded without a hire or a product");
     }
     const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
-    const tools = { asks: askBox(() => {}), call: () => Promise.resolve(null) };
+    const tools = {
+      asks: askBox(() => {}),
+      call: () => Promise.reject(new Error("called a tool without a test asking for it")),
+    };
     await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal");
     // as at boot: a task's run opens its socket first, since its seal names it
     await controlPlane.start();

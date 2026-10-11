@@ -4,8 +4,8 @@
  * thrown is a fault, and whoever catches it reports it.
  */
 export class RefusalError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "RefusalError";
   }
 }

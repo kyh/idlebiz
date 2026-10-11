@@ -10,14 +10,9 @@ import type {
   PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import { errorMessage } from "@repo/domain/errors";
 import { zeroUsage } from "./events";
-import {
-  OVERLOAD_BACKOFF_MS,
-  classOfRequestError,
-  classOfTypedFailure,
-  liftsAt,
-  rateLimitResetIn,
-} from "./rate-limit";
+import { classOfRequestError, classOfTypedFailure, liftsAt, rateLimitResetIn } from "./rate-limit";
 import type { FailureClass } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
@@ -166,29 +161,26 @@ export interface AcpTurnOptions {
 }
 
 /**
- * How a turn ended: the agent finished it, hit a usage limit, an overload or a refusal of access
- * no sign-in repairs, found its runner's login refused, or something stopped it.
+ * How a turn ended: the agent finished it, or it failed, with what the failure says of its runner
+ * (`class`) and the agent's words. The caller decides what a class costs the runner: a sign-in, a
+ * rest, a spent session or only the task's attempt.
  */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
   | {
-      readonly kind: "limited";
-      /**
-       * A usage limit lifts at `resetsAt`; an overload's or a refusal of access's is its first
-       * backoff, which the caller may lengthen.
-       */
-      readonly cause: "usage-limit" | "overloaded" | "access-denied";
-      readonly resetsAt: number;
+      readonly kind: "failed";
+      readonly class: "usage-limit";
       readonly error: string;
+      /** When the provider said the limit lifts, epoch ms; null when it named no time. */
+      readonly reportedReset: number | null;
     }
-  /** No turn on this runner can go on until the founder signs it in again. */
-  | { readonly kind: "signedOut"; readonly error: string }
   | {
       readonly kind: "failed";
+      readonly class: Exclude<FailureClass, "usage-limit">;
       readonly error: string;
-      /** The session is out of context or budget: only a new one can go on. */
-      readonly sessionSpent?: true;
     };
+
+type TurnFailure = Extract<AcpTurnEnd, { kind: "failed" }>;
 
 export interface AcpTurnResult {
   end: AcpTurnEnd;
@@ -224,48 +216,19 @@ const titleLine = (title: string): string => {
 };
 
 /**
- * How a turn ends on a failure of class `failure`: a refused login signs its runner out, a usage
- * limit rests it until the reset the provider `reported` or the `error` names, an overload or a
- * refusal of access no sign-in repairs rests it for a first short backoff, a session out of room
- * is spent, and anything else fails the task, which is bounded by attempts.
+ * How a turn ends on a failure of class `failure`: a usage limit with when the provider said it
+ * lifts, on the rate limit it `reported` or in its `error`'s words.
  */
-const endOf = (failure: FailureClass, error: string, reported: number | null): AcpTurnEnd => {
-  switch (failure) {
-    case "auth": {
-      return { error, kind: "signedOut" };
-    }
-    case "usage-limit": {
-      return {
-        cause: "usage-limit",
-        error,
-        kind: "limited",
-        resetsAt: liftsAt(error, new Date(), reported),
-      };
-    }
-    case "overloaded":
-    case "access-denied": {
-      return {
-        cause: failure,
-        error,
-        kind: "limited",
-        resetsAt: Date.now() + OVERLOAD_BACKOFF_MS,
-      };
-    }
-    case "context": {
-      return { error, kind: "failed", sessionSpent: true };
-    }
-    case "other": {
-      return { error, kind: "failed" };
-    }
-    // no default
-  }
-};
+const endOf = (failure: FailureClass, error: string, reported: number | null): TurnFailure =>
+  failure === "usage-limit"
+    ? { class: failure, error, kind: "failed", reportedReset: liftsAt(error, reported) }
+    : { class: failure, error, kind: "failed" };
 
 /**
  * How a turn ends on the typed failure its agent reported, or null when it reported none. A
  * warning is one the turn got past.
  */
-const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): AcpTurnEnd | null => {
+const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): TurnFailure | null => {
   const parsed = SessionFailureMeta.safeParse(meta);
   if (!parsed.success || parsed.data.jetbrains.air.sessionFailure.severity !== "error") {
     return null;
@@ -274,9 +237,6 @@ const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): Acp
   const error = details === undefined ? title : `${title}\n${details}`;
   return endOf(classOfTypedFailure({ actions, category, text: error }), error, reported);
 };
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
-const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /** Every agent spawned whose process group has not been killed yet, its leader alive or not. */
 const unkilled = new Set<ChildProcess>();
@@ -353,7 +313,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     let reportedTokens = 0;
     let lastRequestTokens: number | undefined;
     // when the provider said its rate limit lifts, while it refuses requests (claude's usage updates)
-    let reportedReset: number | null = null;
+    let rateLimitReset: number | null = null;
 
     // ACP has no message-end marker. Flush prose before a tool call or at turn end.
     const flushMessage = (): void => {
@@ -411,7 +371,9 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       summary: lastMessage,
       usage: total,
     });
-    const failed = (error: string): AcpTurnResult => result({ error, kind: "failed" });
+    /** A failure no agent reported (a watchdog, a crash, a refused spawn): only the task's. */
+    const failed = (error: string): AcpTurnResult =>
+      result({ class: "other", error, kind: "failed" });
 
     const pokeIdle = (): void => {
       if (opts.idleTimeoutMs <= 0 || settled) {
@@ -534,7 +496,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         if (update.sessionUpdate === "usage_update") {
           const reset = rateLimitResetIn(update._meta);
           if (reset !== undefined) {
-            reportedReset = reset;
+            rateLimitReset = reset;
           }
         }
         if (update.sessionUpdate === "usage_update" && prompted) {
@@ -631,16 +593,13 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             outputTokens: scaled(u.outputTokens ?? 0),
           };
         }
-        return { failure: failureEnd(res._meta, reportedReset), stopReason: res.stopReason };
+        return { failure: failureEnd(res._meta, rateLimitReset), stopReason: res.stopReason };
       });
-      // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr
-      if (failure?.kind === "failed") {
-        const tail = stderrTail();
+      if (failure !== null) {
+        // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr. A
+        // failure of the runner's keeps only the provider's words, which the founder is shown.
+        const tail = failure.class === "other" || failure.class === "context" ? stderrTail() : "";
         settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
-        return;
-      }
-      if (failure) {
-        settle(result(failure));
         return;
       }
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
@@ -658,7 +617,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       } catch (error) {
         if (error instanceof RequestError) {
           // only the agent's own rejection is read: a watchdog's or a crash's text never is
-          settle(result(endOf(classOfRequestError(error), error.message, reportedReset)));
+          settle(result(endOf(classOfRequestError(error), error.message, rateLimitReset)));
           return;
         }
         // Anything else is the connection dropping, and a dying agent drops it before its exit

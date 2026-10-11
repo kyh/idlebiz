@@ -1,19 +1,29 @@
 // Each company tool as a verb an employee types in its shell: `idlebiz <tool> '<json>'`. A client of
 // the control plane its run was handed (IDLEBIZ_API_SOCKET, IDLEBIZ_RUN_TOKEN) and of nothing else:
 // it sends the request as it is, and the server parses it against the tool's spec, so a refusal
-// reads the same whoever asks. The answer is the server's prose on stdout; a call that never
-// reached it, or that it could not take, exits 1 with why on stderr.
+// reads the same whoever asks. The answer is the server's prose on stdout, however the call ended,
+// and the exit code says how (TOOL_OUTCOMES): 0 done, 1 refused, 2 a fault of main's, 4 held for
+// the founder. A call that never reached the server, or that it could not take, exits 1 with why
+// on stderr.
 
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { text } from "node:stream/consumers";
 import { parseJson } from "@repo/domain/json";
-import type { JsonValue } from "@repo/domain/json";
 import { defineCommand } from "citty";
-import { z } from "zod";
-import { TOOL_NAMES, TOOL_SPECS, commandOf, verbOf } from "../server/tool-specs";
-import type { ToolName } from "../server/tool-specs";
+import type { CommandDef } from "citty";
+import {
+  EXIT_CODES_DOC,
+  TOOL_NAMES,
+  TOOL_OUTCOMES,
+  TOOL_SPECS,
+  ToolAnswerSchema,
+  commandOf,
+  toolPath,
+  verbOf,
+} from "../server/tool-specs";
+import type { ToolAnswer, ToolName, ToolOutcome } from "../server/tool-specs";
 
 /** The verbs, each naming its tool. */
 export const TOOL_VERBS: ReadonlyMap<string, ToolName> = new Map(
@@ -31,14 +41,8 @@ const HOW_TO_SEND = `The request is one JSON argument, single-quoted, or ${STDIN
 export const toolHelp = (name: ToolName): string => {
   const { doc, leadOnly } = TOOL_SPECS[name];
   const lead = leadOnly === null ? "" : "\n\nOnly the team lead's runs may call it.";
-  return `idlebiz ${verbOf(name)}: ${doc}${lead}\n\n  ${commandOf(name)}\n\n${HOW_TO_SEND}\n`;
+  return `idlebiz ${verbOf(name)}: ${doc}${lead}\n\n  ${commandOf(name)}\n\n${HOW_TO_SEND}\n\nIt prints the answer and exits ${EXIT_CODES_DOC}.\n`;
 };
-
-// what the control plane serves (control-plane.ts)
-const Answer = z.discriminatedUnion("ok", [
-  z.object({ message: z.string(), ok: z.literal(true) }),
-  z.object({ error: z.string(), ok: z.literal(false) }),
-]);
 
 interface ControlPlane {
   socket: string;
@@ -71,32 +75,23 @@ interface CallIo {
 
 const PROCESS_IO: CallIo = { env: process.env, stdin: () => text(process.stdin) };
 
-const NO_REQUEST = z.strictObject({});
-
-interface Request {
-  body: string;
-  /** Whether it asks nothing: `{}`, as a tool that reads takes. */
-  empty: boolean;
-}
-
 /** The request a call sends: its argument, stdin for `-`, or none; refused unless it is JSON. */
 const requestOf = async (
   verb: string,
   argument: string | undefined,
   io: CallIo,
-): Promise<Request> => {
+): Promise<string> => {
   if (argument === undefined) {
-    return { body: "{}", empty: true };
+    return "{}";
   }
   const body = argument === STDIN ? await io.stdin() : argument;
-  let value: JsonValue;
   try {
-    value = parseJson(body);
+    parseJson(body);
   } catch (error) {
     const why = error instanceof SyntaxError ? ` (${error.message})` : "";
     throw new Error(`${verb}'s request is not JSON${why}. ${HOW_TO_SEND}`, { cause: error });
   }
-  return { body, empty: NO_REQUEST.safeParse(value).success };
+  return body;
 };
 
 interface Reply {
@@ -111,8 +106,7 @@ interface Reply {
  */
 const send = async (
   socket: string,
-  route: string,
-  method: "GET" | "POST",
+  name: ToolName,
   token: string,
   body: string,
 ): Promise<Reply> => {
@@ -122,23 +116,23 @@ const send = async (
       {
         agent: false,
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        method,
-        path: route,
+        method: "POST",
+        path: toolPath(name),
         socketPath: socket,
       },
       resolve,
     );
     req.on("error", reject);
-    req.end(method === "POST" ? body : undefined);
+    req.end(body);
   });
   return { body: await text(res), status: res.statusCode ?? 0 };
 };
 
-/** What a call answered: the server's prose, or its refusal as an error. */
-const answerOf = ({ body, status }: Reply): string => {
-  let parsed: z.infer<typeof Answer>;
+/** What a call answered: how it ended and the server's prose, or the call's refusal as an error. */
+const answerOf = ({ body, status }: Reply): ToolOutcome => {
+  let parsed: ToolAnswer;
   try {
-    parsed = Answer.parse(parseJson(body));
+    parsed = ToolAnswerSchema.parse(parseJson(body));
   } catch (error) {
     throw new Error(`the company answered ${status} in a shape this idlebiz does not read`, {
       cause: error,
@@ -147,25 +141,20 @@ const answerOf = ({ body, status }: Reply): string => {
   if (!parsed.ok) {
     throw new Error(parsed.error);
   }
-  return parsed.message;
+  return { kind: parsed.kind, text: parsed.text };
 };
 
-/** Calls `name` with `argument`, answering the server's prose. */
+/** Calls `name` with `argument`, answering how the call ended and the server's prose. */
 export const callTool = async (
   name: ToolName,
   argument: string | undefined,
   io: CallIo = PROCESS_IO,
-): Promise<string> => {
-  const { method, path: route } = TOOL_SPECS[name];
-  const verb = verbOf(name);
+): Promise<ToolOutcome> => {
   const { socket, token } = controlPlaneOf(io.env);
-  const { body, empty } = await requestOf(verb, argument, io);
-  if (method === "GET" && !empty) {
-    throw new Error(`${verb} takes no request`);
-  }
+  const body = await requestOf(verbOf(name), argument, io);
   let reply: Reply;
   try {
-    reply = await send(socket, route, method, token, body);
+    reply = await send(socket, name, token, body);
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -176,32 +165,29 @@ export const callTool = async (
   return answerOf(reply);
 };
 
-// no return type: CommandDef<T> is contravariant in T through `run`, so a leaf with args is not a
-// bare CommandDef (citty's own SubCommandsDef takes any)
-const toolCommand = (name: ToolName) =>
-  defineCommand({
-    args: {
-      request: {
-        description: `the request, as JSON, or ${STDIN} to read it from stdin`,
-        required: false,
-        type: "positional",
-      },
-    },
-    meta: { description: summaryOf(TOOL_SPECS[name].doc), name: verbOf(name) },
-    run: async ({ args, rawArgs }) => {
-      const verb = verbOf(name);
-      const flag = rawArgs.find((word) => word.startsWith("-") && word !== STDIN);
-      if (flag !== undefined) {
-        throw new Error(`${verb} takes its request as one JSON argument, not ${flag}`);
-      }
-      if (args._.length > 1) {
-        throw new Error(`${verb} takes one request: quote the JSON as a single argument`);
-      }
-      const [argument] = args._;
-      process.stdout.write(`${await callTool(name, argument)}\n`);
-    },
-  });
+/**
+ * Runs `name`'s verb on the words typed after it: the server's prose on stdout, answering the exit
+ * code its outcome leaves. Not a citty `run`, whose answer citty drops.
+ */
+export const runTool = async (name: ToolName, words: readonly string[]): Promise<number> => {
+  const verb = verbOf(name);
+  const flag = words.find((word) => word.startsWith("-") && word !== STDIN);
+  if (flag !== undefined) {
+    throw new Error(`${verb} takes its request as one JSON argument, not ${flag}`);
+  }
+  if (words.length > 1) {
+    throw new Error(`${verb} takes one request: quote the JSON as a single argument`);
+  }
+  const outcome = await callTool(name, words[0]);
+  process.stdout.write(`${outcome.text}\n`);
+  return TOOL_OUTCOMES[outcome.kind].exit;
+};
 
-/** Every tool's verb, for the program's command list. */
-export const toolCommands = () =>
-  Object.fromEntries(TOOL_NAMES.map((name) => [verbOf(name), toolCommand(name)]));
+/** Every tool's verb, for the program's command list; `runTool` runs them. */
+export const toolCommands = (): Record<string, CommandDef> =>
+  Object.fromEntries(
+    TOOL_NAMES.map((name) => [
+      verbOf(name),
+      defineCommand({ meta: { description: summaryOf(TOOL_SPECS[name].doc), name: verbOf(name) } }),
+    ]),
+  );

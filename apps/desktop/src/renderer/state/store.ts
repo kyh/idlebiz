@@ -4,7 +4,6 @@ import type { Bet } from "@repo/domain/bets";
 import { taskIn } from "@repo/domain/domain";
 import type {
   ActionReply,
-  AgentRunner,
   AuthFlowEvent,
   Budget,
   Company,
@@ -16,6 +15,7 @@ import type {
   TaskIn,
   TeamMessage,
 } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import type { Digest } from "@repo/domain/digest";
 import { errorMessage } from "@repo/domain/errors";
 import type { ProductStatus, StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
@@ -36,7 +36,7 @@ interface State {
   /** A coding CLI is signed in, by main's probe or a login since; null until the probe answers. */
   authed: boolean | null;
   /** Runners not signed in, a login a turn found refused included: everyone on one waits on a sign-in. */
-  signedOut: AgentRunner[];
+  signedOut: RunnerId[];
   stripeStatus: StripeStatus;
   /** The key the team charges with; unset until main answers. */
   stripeKey: StripeKeyStatus;

@@ -14,8 +14,7 @@
   ],
   "type": "module",
   "exports": {
-    "./dev-host": "./src/dev-host/host.ts",
-    "./server/page-policy": "./src/server/page-policy.ts"
+    "./dev-host": "./src/dev-host/host.ts"
   },
   "scripts": {
     "build": "vite build && node scripts/stage-page.ts",
@@ -29,7 +28,6 @@
     "sharp": "^0.35.5"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
     "@repo/agent-driver": "workspace:*",

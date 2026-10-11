@@ -1,8 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runAcpTurn } from "@repo/agent-driver/acp-session";
-import type { AcpAgent, AcpTurnOptions, PermissionRequest } from "@repo/agent-driver/acp-session";
+import { runAcpTurn } from "./acp-session";
+import type { AcpAgent, AcpTurnOptions, PermissionRequest } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
@@ -129,6 +129,7 @@ describe("the session mode", () => {
     });
     const { end } = await turn(scriptedAgent({ setMode: refusal }));
     expect(end).toEqual({
+      class: "other",
       error: "Mode default is not available in this session",
       kind: "failed",
     });

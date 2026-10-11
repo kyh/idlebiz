@@ -25,8 +25,10 @@ its spec in `src/server/tool-specs.ts`, so the instructions a run is given, the 
 server's parse cannot disagree (`src/commands/tools.ts`). It is a client of the control plane its
 run was handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`, both run-scoped): it sends the request
 as it is, over the run's own unix socket, which main opens for that run alone and only that
-run's seal reaches, prints the answer, and exits 1 with why when the call is refused or never
-arrives. Outside a run there is nothing to call, and it says so.
+run's seal reaches, and prints the answer on stdout however the call ended. Its exit code says
+how: 0 done, 1 refused, 2 a fault of the server's, 4 held for the founder; a call that never
+arrives, or that the server cannot take, exits 1 with why on stderr. Outside a run there is
+nothing to call, and it says so.
 
 ## How a run finds it
 

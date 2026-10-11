@@ -191,9 +191,6 @@ importers:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@24.19.1)
     devDependencies:
-      '@agentclientprotocol/sdk':
-        specifier: 'catalog:'
-        version: 1.7.0(zod@4.6.5)
       '@orpc/contract':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
@@ -229,7 +226,7 @@ importers:
         version: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
       vitest:
         specifier: 'catalog:'
-        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
+        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -245,9 +242,6 @@ importers:
       '@orpc/contract':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
-      '@repo/agent-driver':
-        specifier: workspace:*
-        version: link:../../packages/agent-driver
       '@repo/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -301,7 +295,7 @@ importers:
         version: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
       vitest:
         specifier: 'catalog:'
-        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
+        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -357,6 +351,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 'catalog:'
         version: 1.7.0(zod@4.6.5)
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../domain
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -367,6 +364,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
 
   packages/contract:
     dependencies:
@@ -386,9 +386,6 @@ importers:
 
   packages/domain:
     dependencies:
-      '@repo/agent-driver':
-        specifier: workspace:*
-        version: link:../agent-driver
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -398,7 +395,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 'catalog:'
-        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
+        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
 
   packages/px-kit: {}
 
@@ -4728,6 +4725,15 @@ snapshots:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
 
+  '@vitest/mocker@5.0.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))':
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      '@vitest/spy': 5.0.3
+      estree-walker: 3.0.3
+      magic-string: 1.4.1
+    optionalDependencies:
+      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+
   '@vitest/mocker@5.0.3(vite@8.3.2(@types/node@24.19.1))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
@@ -6004,6 +6010,27 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
       yaml: 2.9.1
+
+  vitest@5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
+    dependencies:
+      '@types/chai': 5.2.3
+      '@vitest/mocker': 5.0.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      chai: 6.2.2
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 1.4.1
+      obug: 2.2.1
+      picomatch: 4.0.7
+      std-env: 4.2.0
+      tinybench: 6.1.4
+      tinyexec: 1.3.1
+      tinyglobby: 0.2.17
+      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      why-is-node-running: 3.2.1
+    optionalDependencies:
+      '@types/node': 24.19.1
+    transitivePeerDependencies:
+      - msw
 
   vitest@5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1)):
     dependencies:

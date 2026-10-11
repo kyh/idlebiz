@@ -3,11 +3,7 @@ import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import type { RunnerAdapter, SessionSetup } from "@repo/agent-driver/registry";
-import {
-  DEFAULT_IDLE_TIMEOUT_MS,
-  DEFAULT_MAX_SESSION_MS,
-  RUNNER_IDS,
-} from "@repo/agent-driver/runner";
+import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_SESSION_MS } from "@repo/agent-driver/runner";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import type {
   AcpAgent,
@@ -17,7 +13,6 @@ import type {
   PermissionRequest,
 } from "@repo/agent-driver/acp-session";
 import { addUsage } from "@repo/agent-driver/events";
-import { overloadBackoffMs } from "@repo/agent-driver/rate-limit";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -50,7 +45,6 @@ import type { Seal, SealState } from "./seal";
 import { report } from "../lib/report";
 import type { ToolCaller } from "../control-plane";
 import type {
-  AgentRunner,
   BlockedAsk,
   Company,
   Employee,
@@ -58,6 +52,8 @@ import type {
   RunOutcome,
   RunSession,
 } from "@repo/domain/domain";
+import { RUNNER_IDS } from "@repo/domain/runners";
+import type { RunnerId } from "@repo/domain/runners";
 import * as store from "../store/store";
 import { RUNNER_REST_FILE, RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
 import { pathWithLauncher } from "../agent-launcher";
@@ -71,7 +67,7 @@ import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 const resolveFromApp = createRequire(import.meta.url);
 
 /** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
-const runnerEnv = (runner: AgentRunner): Record<string, string> =>
+const runnerEnv = (runner: RunnerId): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
 
 // One temp folder the runs share, outside their working trees: see TOOL_CACHE_ENV.
@@ -85,7 +81,7 @@ const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
  * or a read made the way one of them would make it, ever start one there. A screenshot named no
  * path lands in the runs' temp folder, not agent-browser's own in HOME, which no run writes.
  */
-const browserEnv = (seal: Seal, runner: AgentRunner) => ({
+const browserEnv = (seal: Seal, runner: RunnerId) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
   AGENT_BROWSER_NAMESPACE: namespaceUnder(seal, runner),
   AGENT_BROWSER_SCREENSHOT_DIR: path.join(RUN_TMPDIR, "screenshots"),
@@ -93,7 +89,7 @@ const browserEnv = (seal: Seal, runner: AgentRunner) => ({
 });
 
 /** The folder the daemons of `runner`'s runs under `seal` listen in, which a run cannot make: only write inside it. */
-const makeBrowserNamespace = (seal: Seal, runner: AgentRunner): void => {
+const makeBrowserNamespace = (seal: Seal, runner: RunnerId): void => {
   mkdirSync(seal.namespaces[runner].path, { recursive: true });
 };
 
@@ -106,7 +102,7 @@ const makeBrowserNamespace = (seal: Seal, runner: AgentRunner): void => {
  * session config `codexSessionEnv` makes; for claude, the env of their user settings.
  */
 export const acpAgentFor = (
-  runner: AgentRunner,
+  runner: RunnerId,
   seal: Seal,
   setup: SessionSetup,
   more: Record<string, string> = {},
@@ -140,7 +136,7 @@ export const acpAgentFor = (
   };
 };
 
-const acpAgentInstalled = (runner: AgentRunner): boolean => {
+const acpAgentInstalled = (runner: RunnerId): boolean => {
   try {
     resolveFromApp.resolve(RUNNERS[runner].acpEntry);
     return true;
@@ -228,7 +224,7 @@ export const codexSessionEnv = async (
  * in `workspace`, where it works on a product.
  */
 export const sessionAgent = async (
-  runner: AgentRunner,
+  runner: RunnerId,
   seal: Seal,
   skills: string,
   workspace: string | null,
@@ -288,7 +284,7 @@ export type BrowserCli = (args: readonly string[]) => Promise<string>;
 
 /** agent-browser as a `runner` run starts it: under its seal, in its env. */
 const sealedBrowser =
-  (seal: Seal, runner: AgentRunner): BrowserCli =>
+  (seal: Seal, runner: RunnerId): BrowserCli =>
   async (args) => {
     const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
     const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
@@ -435,37 +431,24 @@ export const gitIdentity = (emp: Employee, company: Company) => {
   };
 };
 
+/** How a turn ended, as its runner now stands (`heed`). */
+type TurnOutcome = Extract<RunOutcome, { kind: "done" | "resting" | "signedOut" | "failed" }>;
+type Resting = Extract<TurnOutcome, { kind: "resting" }>;
+
 /**
- * How a turn ended, as the scheduler settles it. An ask outranks everything: the
+ * How a run ended, as the scheduler settles it. An ask outranks everything: the
  * founder's answer is what the task waits on. A turn the app stopped failed only
  * because it was stopped, so it is not the task's failure.
  */
 export const outcomeOf = (
-  end: AcpTurnResult["end"],
+  turn: TurnOutcome,
   ask: BlockedAsk | null,
   interrupted: boolean,
 ): RunOutcome => {
   if (ask) {
     return { ask, kind: "blocked" };
   }
-  if (end.kind === "completed") {
-    return { kind: "done" };
-  }
-  if (interrupted) {
-    return { kind: "interrupted" };
-  }
-  switch (end.kind) {
-    case "limited": {
-      return { cause: end.cause, error: end.error, kind: "resting", until: end.resetsAt };
-    }
-    case "signedOut": {
-      return { error: end.error, kind: "signedOut" };
-    }
-    case "failed": {
-      return { error: end.error, kind: "failed" };
-    }
-    // no default
-  }
+  return interrupted && turn.kind !== "done" ? { kind: "interrupted" } : turn;
 };
 
 /** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
@@ -518,7 +501,7 @@ export const memoryAfter = (
   digest: string,
   workspace: string,
 ): Memory => {
-  if (turn.end.kind === "failed" && turn.end.sessionSpent) {
+  if (turn.end.kind === "failed" && turn.end.class === "context") {
     return { instructionsDigest: null, session: null };
   }
   return turn.sessionId === undefined
@@ -534,6 +517,34 @@ export const memoryAfter = (
 export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
   session?.workspace === workspace ? session.id : undefined;
 
+/** The first rest an overload or a refusal of access earns; each one after it in a row doubles it. */
+const BACKOFF_MS = 60_000;
+
+/** The longest an overload or a refusal of access rests a runner: a busy provider, or a credential blip, clears in minutes. */
+const MAX_BACKOFF_MS = 15 * 60_000;
+
+/** How long the `streak`-th overload or refusal of access in a row rests its runner: 1m, 2m, 4m… up to 15m. */
+const backoffMs = (streak: number): number =>
+  Math.min(BACKOFF_MS * 2 ** Math.max(0, streak - 1), MAX_BACKOFF_MS);
+
+/**
+ * How long a usage limit rests its runner when the provider named no reset. claude names one on
+ * its rate limit only once the turn has had a model response, so a turn refused on its first
+ * request, as a retried task's usually is, has only its text, which may name none either. Half
+ * an hour: a retry refused again costs one spawn and no tokens, and finds a lifted limit at most
+ * that late.
+ */
+const UNNAMED_RESET_REST_MS = 30 * 60_000;
+
+/** The longest a usage limit rests its runner, whatever it named: a parse or a clock gone wrong would park it for days. */
+const MAX_USAGE_REST_MS = 12 * 3_600_000;
+
+/** Until when a usage limit rests its runner, by the reset the provider reported, if it did. */
+const usageRestUntil = (reportedReset: number | null): number =>
+  reportedReset === null
+    ? Date.now() + UNNAMED_RESET_REST_MS
+    : Math.min(reportedReset, Date.now() + MAX_USAGE_REST_MS);
+
 class AgentDriver {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
@@ -545,12 +556,12 @@ class AgentDriver {
   /** What the latest settled check found; null before the first settles. */
   private sealed: SealState | null = null;
   // runner -> epoch its limit lifts
-  private readonly restingUntil = new Map<AgentRunner, number>();
+  private readonly restingUntil = new Map<RunnerId, number>();
   // runner -> overloads and refusals of access in a row, each resting it twice as long as the one before
-  private readonly backoffs = new Map<AgentRunner, number>();
+  private readonly backoffs = new Map<RunnerId, number>();
   // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
   // the stored login, which a revoked token still is
-  private readonly refusedLogins = new Set<AgentRunner>();
+  private readonly refusedLogins = new Set<RunnerId>();
   private readonly checkSeal: () => Promise<SealState>;
   private readonly resolveSeal: (
     writable: readonly string[],
@@ -637,7 +648,7 @@ class AgentDriver {
   }
 
   /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a seal of no folders, free to open the browser. */
-  async sealedSignIn(runner: AgentRunner, argv: readonly string[]): Promise<string[]> {
+  async sealedSignIn(runner: RunnerId, argv: readonly string[]): Promise<string[]> {
     return signInCommand(await this.seal([]), runner, argv);
   }
 
@@ -683,11 +694,11 @@ class AgentDriver {
    * is not (a codex login in the Keychain, which the seal closes to codex runs, reads so) would
    * only fail each attempt, so its employees' work waits until a sign-in finds it again.
    */
-  signedIn(runner: AgentRunner): boolean {
+  signedIn(runner: RunnerId): boolean {
     return this.availableRunners().includes(runner);
   }
 
-  availableRunners(): AgentRunner[] {
+  availableRunners(): RunnerId[] {
     // A signed-in CLI still needs its separately packaged ACP adapter.
     return this.probes
       .filter((p) => isReady(p) && acpAgentInstalled(p.id) && !this.refusedLogins.has(p.id))
@@ -695,7 +706,7 @@ class AgentDriver {
   }
 
   /** The runners not signed in, once the latest look for the CLIs settles: whoever runs on one waits. */
-  async signedOut(): Promise<AgentRunner[]> {
+  async signedOut(): Promise<RunnerId[]> {
     await this.probing;
     return RUNNER_IDS.filter((runner) => !this.signedIn(runner));
   }
@@ -706,12 +717,12 @@ class AgentDriver {
   }
 
   /** The founder signed `runner` in again, so its turns may try the login anew. */
-  signedInAgain(runner: AgentRunner): void {
+  signedInAgain(runner: RunnerId): void {
     this.refusedLogins.delete(runner);
   }
 
   /** Round-robin across ready runners, preferring those without a usage limit. */
-  pickRunner(index: number): AgentRunner {
+  pickRunner(index: number): RunnerId {
     const available = this.availableRunners();
     const awake = available.filter((r) => this.restingRunner(r) === null);
     const pool = awake.length > 0 ? awake : available;
@@ -734,7 +745,7 @@ class AgentDriver {
   }
 
   /** Epoch until which this runner's usage limit holds, or null if it's awake. */
-  restingRunner(runner: AgentRunner): number | null {
+  restingRunner(runner: RunnerId): number | null {
     const until = this.restingUntil.get(runner);
     if (until === undefined) {
       return null;
@@ -747,29 +758,49 @@ class AgentDriver {
   }
 
   /**
-   * What a turn's end says of its runner, whatever else the run says, and the end as the runner
-   * now stands: a usage limit rests it until it lifts; an overload, or a refusal of access no
-   * sign-in repairs, for a backoff that doubles with each one in a row (1m, 2m, 4m… up to 15m) and
-   * starts over once a turn ends any other way, so a credential blip clears soon and a standing
-   * refusal is not hammered; and a refused login reads as signed out until the founder signs it in
-   * again. A rest never shortens one already holding, which a turn still in flight may end under.
+   * What a turn's end says of its runner, whatever else the run says, and how the turn ended as
+   * the runner now stands. Every rest is decided here: a usage limit rests it until the reset the
+   * provider reported, or half an hour when it named none, never past 12 hours; an overload, or a
+   * refusal of access no sign-in repairs, for a backoff that doubles with each one in a row (1m,
+   * 2m, 4m… up to 15m) and starts over once a turn ends any other way, so a credential blip clears
+   * soon and a standing refusal is not hammered. A refused login reads as signed out until the
+   * founder signs it in again. A rest never shortens one already holding, which a turn still in
+   * flight may end under.
    */
-  heed(runner: AgentRunner, end: AcpTurnEnd): AcpTurnEnd {
+  heed(runner: RunnerId, end: AcpTurnEnd): TurnOutcome {
     const backsOff =
-      end.kind === "limited" && (end.cause === "overloaded" || end.cause === "access-denied");
+      end.kind === "failed" && (end.class === "overloaded" || end.class === "access-denied");
     const streak = backsOff ? (this.backoffs.get(runner) ?? 0) + 1 : 0;
     this.backoffs.set(runner, streak);
-    if (end.kind === "signedOut") {
-      this.refusedLogins.add(runner);
+    if (end.kind === "completed") {
+      return { kind: "done" };
     }
-    if (end.kind !== "limited") {
-      return end;
+    switch (end.class) {
+      case "auth": {
+        this.refusedLogins.add(runner);
+        return { error: end.error, kind: "signedOut" };
+      }
+      case "usage-limit": {
+        return this.rest(runner, end.class, end.error, usageRestUntil(end.reportedReset));
+      }
+      case "overloaded":
+      case "access-denied": {
+        return this.rest(runner, end.class, end.error, Date.now() + backoffMs(streak));
+      }
+      case "context":
+      case "other": {
+        return { error: end.error, kind: "failed" };
+      }
+      // no default
     }
-    const asked = backsOff ? Date.now() + overloadBackoffMs(streak) : end.resetsAt;
-    const resetsAt = Math.max(asked, this.restingRunner(runner) ?? 0);
-    this.restingUntil.set(runner, resetsAt);
+  }
+
+  /** Rests `runner` until `asked`, or the rest already holding should that lift later, and keeps it for the next launch. */
+  private rest(runner: RunnerId, cause: Resting["cause"], error: string, asked: number): Resting {
+    const until = Math.max(asked, this.restingRunner(runner) ?? 0);
+    this.restingUntil.set(runner, until);
     this.saveRest();
-    return { ...end, resetsAt };
+    return { cause, error, kind: "resting", until };
   }
 
   /** One turn with no tools, files or memory: its final message, or a throw with why it ended short. */
@@ -787,9 +818,9 @@ class AgentDriver {
       prompt,
       systemPrompt: "",
     });
-    const end = this.heed(runner, res.end);
-    if (end.kind !== "completed") {
-      throw new Error(end.error);
+    const outcome = this.heed(runner, res.end);
+    if (outcome.kind !== "done") {
+      throw new Error(outcome.error);
     }
     return res.summary;
   }
@@ -931,8 +962,11 @@ class AgentDriver {
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // an ask raised before the limit hit or the login was refused must not hide it
-      const end = this.heed(emp.runner, res.end);
-      const outcome = outcomeOf(end, tools.asks.current(), signal.aborted);
+      const outcome = outcomeOf(
+        this.heed(emp.runner, res.end),
+        tools.asks.current(),
+        signal.aborted,
+      );
       return { result: { outcome, summary: res.summary, usage }, sawOutput, turn: res };
     } finally {
       handle.release();

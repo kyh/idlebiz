@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runAcpTurn } from "@repo/agent-driver/acp-session";
+import { runAcpTurn } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**

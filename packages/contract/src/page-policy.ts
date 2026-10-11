@@ -1,5 +1,6 @@
 // The page's content security policy: main stamps it on the page it serves the window
-// (page-server.ts), and the dev server writes it into the page Vite answers in its place.
+// (apps/cli/src/server/page-server.ts), and the dev server writes it into the page Vite answers in
+// its place (apps/desktop/vite.config.ts).
 // The page loads nothing but its own files and calls nothing but main on its own origin.
 
 const DIRECTIVES: readonly (readonly [string, string])[] = [
