@@ -13,7 +13,7 @@ import type { Seal } from "./seal";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-browser-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { acpAgentFor } = await import("./agent-driver");
+const { acpAgentFor } = await import("./session");
 const { machineSeal, sealedCommand } = await import("./seal");
 const { TOOL_CACHE_DIR } = await import("../paths");
 

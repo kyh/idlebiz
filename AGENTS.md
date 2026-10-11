@@ -340,7 +340,7 @@ rather than crashing boot.
   debug port (9222, 9229), the dev server's (31100) or the one main serves the window's page on, and a codex run reaches no Keychain: a codex whose login is there
   reads as signed out, so its employees' work waits on the queue. Main makes a product's workspace a repository
   and claude's `projects/` before a run and sets the run's git identity by env;
-  `TOOL_CACHE_ENV` in `server/agents/agent-driver.ts` moves TMPDIR and toolchain caches into
+  `TOOL_CACHE_ENV` in `server/agents/run-workspace.ts` moves TMPDIR and toolchain caches into
   `cache/`, so a tool that writes elsewhere in HOME fails with `EPERM` until its cache is
   moved there too. A git dependency fails as well: npm and pnpm clone it into a `.git` no run
   may make, and so do `git clone` and `git init`; the standing instructions say so and point
@@ -561,11 +561,17 @@ rather than crashing boot.
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
   never past a closed lid), `founder-actions.ts` (what the founder hands the team, filed and
   queued through the scheduler), `company-actions.ts` (a change everyone hears about),
-  `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only
+  `agents/` (runs: `runner-pool.ts` the runners, their rests and each task's turn,
+  `session.ts` an ACP session under its seal and every permission ask it raises,
+  `run-workspace.ts` the folders and env main readies a run, `ask-box.ts` its one ask of the
+  founder), `control-plane.ts` (HTTP on a unix socket per run, which only
   that run's seal reaches, that the agents' `idlebiz` command calls back into; `agent-launcher.ts` writes that command at boot),
-  `tool-specs.ts` (every company tool, described once) and `tools.ts` (each bound to its
-  implementation), `command-policy.ts` (rules over the words `shell-lexer.ts` reads from a line
-  as bash would, read loosely as well where another shell may split it apart), `refusal.ts`,
+  `tool-specs.ts` (every company tool, described once) and `tools/` (each bound to its
+  implementation: `define.ts` the binding, the asks and the holds, then the team's, portfolio,
+  Vercel, money and print tools), `policy/` (the command policy: `reading.ts` the words
+  `shell-lexer.ts` reads from a line as bash would, read loosely as well where another shell may
+  split it apart, `shell-rules.ts` the rules over them, `browser.ts` the agent-browser gate and
+  the live page it reads, `index.ts` `holdFor`), `refusal.ts`,
   `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship, `apps/cli/resources/skills`),
   `agents/claude-user-settings.ts` (what of the founder's claude settings a run still carries:

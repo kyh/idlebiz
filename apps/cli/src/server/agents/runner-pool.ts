@@ -1,50 +1,16 @@
-import { isReady, probeRunners, runnerBin } from "@repo/agent-driver/detect";
+import { isReady, probeRunners } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import type { RunnerAdapter, SessionSetup } from "@repo/agent-driver/registry";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_SESSION_MS } from "@repo/agent-driver/runner";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
-import type {
-  AcpAgent,
-  AcpTurnEnd,
-  PermissionDecision,
-  AcpTurnResult,
-  PermissionRequest,
-} from "@repo/agent-driver/acp-session";
+import type { AcpTurnEnd, AcpTurnResult } from "@repo/agent-driver/acp-session";
 import { addUsage } from "@repo/agent-driver/events";
 import type { AgentEvent, AgentUsage } from "@repo/agent-driver/events";
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
 import { z } from "zod";
-import { parseJson } from "@repo/domain/json";
-import { isLeased } from "@repo/domain/hold-rules";
-import { createRequire } from "node:module";
-import { controlPlane } from "../control-plane";
-import { bundledSkillsDir } from "./bundled-skills";
-import { refuseDeniedTools } from "./claude-denies";
-import { claudeUserSettings } from "./claude-user-settings";
-import { runEnv } from "./run-env";
-import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
-import { teamNotesPrompt } from "../prompts/team-notes";
-import {
-  browserSocketDir,
-  machineSeal,
-  namespaceUnder,
-  realPathOf,
-  SANDBOX_EXEC,
-  sealedCommand,
-  sealRuns,
-  signInCommand,
-} from "./seal";
-import type { Seal, SealState } from "./seal";
-import { report } from "../lib/report";
-import type { ToolCaller } from "../control-plane";
 import type {
   BlockedAsk,
   Company,
@@ -55,313 +21,42 @@ import type {
 } from "@repo/domain/domain";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
-import * as store from "../store/store";
-import { RUNNER_REST_FILE, RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
 import { pathWithLauncher } from "../agent-launcher";
+import { controlPlane } from "../control-plane";
+import type { ToolCaller } from "../control-plane";
 import { atomicWrite, readJsonFile } from "../lib/fs";
-import { holdFor } from "../command-policy";
-import type { Confinement, LivePage } from "../command-policy";
+import { report } from "../lib/report";
+import { RUNNER_REST_FILE, RUN_BIN_DIR, TOOL_CACHE_DIR, employeeMemoryDir } from "../paths";
+import { livePageOf } from "../policy/browser";
 import { RefusalError } from "../refusal";
-import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
-
-// The desktop app ships the ACP binaries, so resolve them against its node_modules.
-const resolveFromApp = createRequire(import.meta.url);
-
-/** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
-const runnerEnv = (runner: RunnerId): Record<string, string> =>
-  runEnv(process.env, RUNNERS[runner].providerEnv);
-
-// One temp folder the runs share, outside their working trees: see TOOL_CACHE_ENV.
-const RUN_TMPDIR = path.join(TOOL_CACHE_DIR, "tmp");
-
-/**
- * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:
- * unset, each session's Chrome gets a fresh profile under TMPDIR, never the founder's, while one
- * fixed profile would keep every session but the first from starting, since Chrome locks it.
- * The namespace is that of the run's runner and folders, and so are its daemons: only such runs,
- * or a read made the way one of them would make it, ever start one there. A screenshot named no
- * path lands in the runs' temp folder, not agent-browser's own in HOME, which no run writes.
- */
-const browserEnv = (seal: Seal, runner: RunnerId) => ({
-  AGENT_BROWSER_ARGS: "--no-sandbox",
-  AGENT_BROWSER_NAMESPACE: namespaceUnder(seal, runner),
-  AGENT_BROWSER_SCREENSHOT_DIR: path.join(RUN_TMPDIR, "screenshots"),
-  AGENT_BROWSER_SOCKET_DIR: browserSocketDir(),
-});
-
-/** The folder the daemons of `runner`'s runs under `seal` listen in, which a run cannot make: only write inside it. */
-const makeBrowserNamespace = (seal: Seal, runner: RunnerId): void => {
-  mkdirSync(seal.namespaces[runner].path, { recursive: true });
-};
-
-/**
- * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
- * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
- * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails. `setup` is where IdleBiz's skills are, and how the founder's claude
- * signs in and which model it picks. `more` joins the adapter's env over main's: for codex, the
- * session config `codexSessionEnv` makes; for claude, the env of their user settings.
- */
-export const acpAgentFor = (
-  runner: RunnerId,
-  seal: Seal,
-  setup: SessionSetup,
-  more: Record<string, string> = {},
-): AcpAgent => {
-  const adapter: RunnerAdapter = RUNNERS[runner];
-  const session = adapter.session(setup);
-  const env: AcpAgent["env"] = {
-    ...runnerEnv(runner),
-    ...more,
-    ...browserEnv(seal, runner),
-  };
-  if (adapter.binEnvVar) {
-    env[adapter.binEnvVar] = runnerBin(runner);
-  }
-  if (runner === "claude") {
-    // claude kills a shell command after 2 minutes by default: `idlebiz deploy` would die before
-    // Vercel answers, with the founder's sign-off already spent on it
-    env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
-  }
-  return {
-    command: sealedCommand(seal, runner, [
-      process.execPath,
-      resolveFromApp.resolve(adapter.acpEntry),
-    ]),
-    env,
-    readDirs: session.readDirs,
-    sessionMeta: session.meta,
-    sessionModeId: adapter.sessionModeId,
-    typedFailures: adapter.typedFailures,
-    usagePerRequest: adapter.usagePerRequest,
-  };
-};
-
-const acpAgentInstalled = (runner: RunnerId): boolean => {
-  try {
-    resolveFromApp.resolve(RUNNERS[runner].acpEntry);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const execFileAsync = promisify(execFile);
-
-const CodexMcpServers = z.array(z.object({ name: z.string() }));
+import * as store from "../store/store";
+import type { AskBox } from "./ask-box";
+import { bundledSkillsDir } from "./bundled-skills";
+import { refuseDeniedTools } from "./claude-denies";
+import { RUN_TMPDIR, TOOL_CACHE_ENV, ensureRepository, gitIdentity } from "./run-workspace";
+import {
+  machineSeal,
+  namespaceUnder,
+  realPathOf,
+  sealedCommand,
+  sealRuns,
+  signInCommand,
+} from "./seal";
+import type { Seal, SealState } from "./seal";
+import {
+  acpAgentInstalled,
+  decidePermission,
+  makeBrowserNamespace,
+  runnerEnv,
+  sealedBrowser,
+  sessionAgent,
+} from "./session";
 
 /** The rests a launch keeps for the next: epoch ms per runner. */
 const RestingRunnersSchema = z.object({
   claude: z.number().optional(),
   codex: z.number().optional(),
 });
-
-const ExecFailure = z.object({ stderr: z.string() });
-
-/** Why codex could not list its servers, in words the founder can act on. */
-const unlisted = (why: string): RefusalError =>
-  new RefusalError(
-    `IdleBiz could not list your codex MCP servers to keep them out of the run (${why}), so it did not start.`,
-  );
-
-/**
- * The session config that turns off every server `listed` (what `codex mcp list --json` printed)
- * names; apps and plugins, which bring servers of their own, and skills the seal leaves a run to
- * read (plugins keep theirs in `plugins/cache`); and memories, which would put what the founder's
- * own sessions taught codex into the run's prompt. It reads a workspace's notes as a claude run is
- * handed them (`readTeamNotes`): `AGENTS.md` or its override, never another name their config
- * falls back to, and as much of it.
- */
-export const codexSessionConfig = (listed: string) => {
-  let servers: z.infer<typeof CodexMcpServers>;
-  try {
-    servers = CodexMcpServers.parse(parseJson(listed));
-  } catch {
-    throw unlisted("codex answered in a shape IdleBiz does not read");
-  }
-  const config = {
-    features: { apps: false, memories: false, plugins: false },
-    mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
-    project_doc_fallback_filenames: [],
-    project_doc_max_bytes: TEAM_NOTES_MAX_BYTES,
-  };
-  return { CODEX_CONFIG: JSON.stringify(config) };
-};
-
-/**
- * The adapter env whose session config keeps every MCP server of the founder's out of a codex run
- * (`codexSessionConfig`): they act as the founder, signed in as them. codex has no switch that
- * loads none, and a session's config is merged over theirs, so each is turned off by the name
- * `codex mcp list` gives it, listed as the run would load them (`env` is the run's own, a
- * CODEX_HOME in it included).
- */
-export const codexSessionEnv = async (
-  seal: Seal,
-  env: Record<string, string> = {},
-): Promise<Record<string, string>> => {
-  const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, "codex", [
-    runnerBin("codex"),
-    "mcp",
-    "list",
-    "--json",
-  ]);
-  let listed: string;
-  try {
-    ({ stdout: listed } = await execFileAsync(bin, rest, {
-      env: { ...runnerEnv("codex"), ...env },
-      timeout: 15_000,
-    }));
-  } catch (error) {
-    const failed = ExecFailure.safeParse(error);
-    const [said = ""] = failed.success ? failed.data.stderr.trim().split("\n", 1) : [];
-    throw unlisted(said === "" ? "codex did not answer" : said);
-  }
-  return codexSessionConfig(listed);
-};
-
-/**
- * `runner`'s session under `seal`, loading the skills in `skills` and none of the founder's, nor
- * any MCP server of theirs, but signing in as their CLI does, and handed the notes the team keeps
- * in `workspace`, where it works on a product.
- */
-export const sessionAgent = async (
-  runner: RunnerId,
-  seal: Seal,
-  skills: string,
-  workspace: string | null,
-): Promise<AcpAgent> => {
-  if (runner === "codex") {
-    const setup = { skills, teamNotes: null, userSettings: {} };
-    return acpAgentFor(runner, seal, setup, await codexSessionEnv(seal));
-  }
-  const { env, settings } = await claudeUserSettings(seal.runners.claude.folder);
-  const notes = workspace === null ? null : await readTeamNotes(workspace);
-  const setup = {
-    skills,
-    teamNotes: notes === null ? null : teamNotesPrompt(notes),
-    userSettings: settings,
-  };
-  return acpAgentFor(runner, seal, setup, env);
-};
-
-/**
- * The URL of the top page, then of every frame found under it; null where the
- * reading frame's origin may not look. `get url` names only the top page, while a
- * ref act can land in any frame. The walk starts at `top`, wherever the session is
- * switched. `window.frames` leaves out frames in shadow roots, and a page's own
- * `var length` hides the rest, so each readable document is searched as well, open
- * roots included; a frame in a closed root shows only in resource timing, once it
- * has loaded, by the URL it first asked for; frames inside it not at all.
- */
-export const PAGE_URLS = `(() => {
-  const urls = [];
-  const seen = new Set();
-  const walk = (w) => {
-    if (w == null || seen.has(w)) return;
-    seen.add(w);
-    let url = null;
-    let doc = null;
-    try { url = w.location.href; doc = w.document; } catch {}
-    urls.push(url);
-    for (let i = 0; i < w.length; i += 1) walk(w[i]);
-    if (doc === null) return;
-    const roots = [doc];
-    for (let root = roots.pop(); root !== undefined; root = roots.pop()) {
-      for (const el of root.querySelectorAll("*")) {
-        if (el.shadowRoot) roots.push(el.shadowRoot);
-        if (el.contentWindow) walk(el.contentWindow);
-      }
-    }
-    for (const entry of w.performance.getEntriesByType("resource")) {
-      if (["iframe", "frame", "object", "embed"].includes(entry.initiatorType)) urls.push(entry.name);
-    }
-  };
-  walk(window.top);
-  return urls;
-})()`;
-
-/** agent-browser's answer to these words: what it printed. */
-export type BrowserCli = (args: readonly string[]) => Promise<string>;
-
-/** agent-browser as a `runner` run starts it: under its seal, in its env. */
-const sealedBrowser =
-  (seal: Seal, runner: RunnerId): BrowserCli =>
-  async (args) => {
-    const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
-    const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
-    const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
-    return stdout;
-  };
-
-const SessionInfo = z.object({ data: z.object({ active: z.boolean() }) });
-
-const LivePageOutput = z.object({ data: z.object({ result: z.array(z.string().nullable()) }) });
-
-/** The page `session` in `namespace` shows, read through `browser`; null when nothing could say. */
-const readPage = async (
-  browser: BrowserCli,
-  namespace: string,
-  session: string,
-): ReturnType<LivePage> => {
-  const scope = ["--namespace", namespace, ...(session === "" ? [] : ["--session", session])];
-  try {
-    const info = SessionInfo.safeParse(
-      parseJson(await browser([...scope, "session", "info", "--json"])),
-    );
-    if (!info.success || !info.data.data.active) {
-      return null;
-    }
-    const page = LivePageOutput.safeParse(
-      parseJson(await browser([...scope, "eval", PAGE_URLS, "--json"])),
-    );
-    const [url = null, ...frames] = page.success ? page.data.data.result : [];
-    return url === null ? null : { frames, url };
-  } catch {
-    return null;
-  }
-};
-
-/**
- * Ask the browser itself: the session is the run's, but any process of this user can read it.
- * Only a daemon already running is read, since `eval` starts one where none runs: a session with
- * no daemon shows no page, so an act on it waits on the founder. `browser` is agent-browser as
- * the run starts it, so a daemon that stops between the two reads comes back sealed all the same.
- */
-export const livePageOf =
-  (browser: BrowserCli, namespace: string): LivePage =>
-  (session) =>
-    readPage(browser, namespace, session);
-
-/** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
-export const decidePermission = async (
-  taskId: string,
-  request: PermissionRequest,
-  leases: Set<string>,
-  livePage: LivePage,
-  confinement: Confinement,
-  hold: (ask: BlockedAsk) => void,
-  signal: AbortSignal,
-): Promise<PermissionDecision> => {
-  if (request.tool.kind === "sandbox") {
-    return { allow: false };
-  }
-  const held = await holdFor(request.tool, leases, livePage, confinement);
-  // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
-  if (signal.aborted) {
-    return { allow: false };
-  }
-  if (held === null) {
-    return { allow: true };
-  }
-  if (store.consumeApproval(taskId, held.key)) {
-    if (isLeased(held.rule)) {
-      leases.add(held.key);
-    }
-    return { allow: true };
-  }
-  hold({ command: held.key, rule: held.rule, type: "approval" });
-  return { allow: false };
-};
 
 /** Prefer reported dollars; otherwise price tokens at the runner's default model. */
 const priceRun = (emp: Employee, usage: AgentUsage): number => {
@@ -372,64 +67,6 @@ const priceRun = (emp: Employee, usage: AgentUsage): number => {
     return 0;
   }
   return priceUsage(RUNNERS[emp.runner].fallbackRates, usage);
-};
-
-// One cache the runs share, outside their working trees and apart from the founder's: a package
-// a run installs never lands in a store the founder's own projects link from. A run writes only
-// its own folders, so every cache a toolchain would keep in HOME is moved here, and updaters that
-// would rewrite a CLI the founder runs are off. TMPDIR is moved too: a run connects only to
-// sockets in its own folders, and the founder's TMPDIR is full of theirs.
-const TOOL_CACHE_ENV = {
-  BUN_INSTALL_CACHE_DIR: path.join(TOOL_CACHE_DIR, "bun"),
-  COREPACK_HOME: path.join(TOOL_CACHE_DIR, "corepack"),
-  DISABLE_AUTOUPDATER: "1",
-  NEXT_TELEMETRY_DISABLED: "1",
-  PLAYWRIGHT_BROWSERS_PATH: path.join(TOOL_CACHE_DIR, "ms-playwright"),
-  TMPDIR: RUN_TMPDIR,
-  XDG_CACHE_HOME: TOOL_CACHE_DIR,
-  npm_config_cache: path.join(TOOL_CACHE_DIR, "npm"),
-  npm_config_devdir: path.join(TOOL_CACHE_DIR, "node-gyp"),
-  npm_config_update_notifier: "false",
-  pnpm_config_store_dir: path.join(TOOL_CACHE_DIR, "pnpm-store"),
-};
-
-/**
- * A product's workspace as a repository, made by main when it is none yet: a run cannot write a
- * repository's config or hooks, which the founder's own git would run. macOS's git, whose `init`
- * runs nothing the folder holds. Without Apple's command line tools it has no git to run, and the
- * run goes on in a plain folder rather than fail every attempt.
- */
-export const ensureRepository = async (workspace: string): Promise<void> => {
-  const stats = await lstat(path.join(workspace, ".git")).catch(() => null);
-  if (stats === null) {
-    try {
-      await execFileAsync("/usr/bin/git", ["init", "--quiet"], { cwd: workspace });
-    } catch (error) {
-      report("repository", error);
-    }
-  }
-};
-
-/**
- * Who a run's commits name, since it cannot write git's config to say so. Nor do they sign:
- * the founder's global config may sign every commit and tag with keys the seal hides, which
- * would fail each one.
- */
-export const gitIdentity = (emp: Employee, company: Company) => {
-  const email = `${emp.id}@${company.id}.idlebiz.invalid`;
-  return {
-    GIT_AUTHOR_EMAIL: email,
-    GIT_AUTHOR_NAME: emp.name,
-    GIT_COMMITTER_EMAIL: email,
-    GIT_COMMITTER_NAME: emp.name,
-    GIT_CONFIG_COUNT: "3",
-    GIT_CONFIG_KEY_0: "commit.gpgSign",
-    GIT_CONFIG_KEY_1: "tag.gpgSign",
-    GIT_CONFIG_KEY_2: "tag.forceSignAnnotated",
-    GIT_CONFIG_VALUE_0: "false",
-    GIT_CONFIG_VALUE_1: "false",
-    GIT_CONFIG_VALUE_2: "false",
-  };
 };
 
 /** How a turn ended, as its runner now stands (`heed`). */
@@ -450,28 +87,6 @@ export const outcomeOf = (
     return { ask, kind: "blocked" };
   }
   return interrupted && turn.kind !== "done" ? { kind: "interrupted" } : turn;
-};
-
-/** The first thing a run asks the founder is the one they answer; later asks in the same run are dropped. */
-export interface AskBox {
-  /** False when the run had already asked, and this ask was dropped. */
-  raise: (ask: BlockedAsk) => boolean;
-  current: () => BlockedAsk | null;
-}
-
-export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
-  let first: BlockedAsk | null = null;
-  return {
-    current: () => first,
-    raise: (ask) => {
-      if (first !== null) {
-        return false;
-      }
-      first = ask;
-      onFirst(ask);
-      return true;
-    },
-  };
 };
 
 /** What a run can reach of the company: its tools over its own socket, and the one ask it may leave the founder. */

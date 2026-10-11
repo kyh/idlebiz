@@ -1,5 +1,5 @@
 import { activityEvents } from "./activity";
-import { agentDriver } from "./agents/agent-driver";
+import { agentDriver } from "./agents/runner-pool";
 import { host } from "./host";
 import type { TrayItem } from "./host";
 import * as store from "./store/store";

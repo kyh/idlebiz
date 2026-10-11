@@ -96,7 +96,7 @@ apps/
                  and released) and its smoke.
   cli/           idlebiz — THE SERVER AND THE BINARY. `idlebiz serve` is main (src/server/): the
                  save (store/), the scheduler, the runs and their seal (agents/), the company's
-                 tools (tools.ts over tool-specs.ts, behind control-plane.ts), the integrations,
+                 tools (tools/ over tool-specs.ts, behind control-plane.ts), the integrations,
                  and the window's page (page-server.ts: the handoff and the guards;
                  page-router.ts implements the contract, its event stream included, which
                  lib/broadcast.ts feeds). Every other verb is a company tool
@@ -219,15 +219,15 @@ allocator and the replay.
   a fault, but reported to main's log. Don't split it by entity or make it async: its
   synchronous check-and-set is what makes the task lock correct.
 - **A company tool is described once**, in `server/tool-specs.ts`: body, lead-only refusal,
-  doc and example. The agents' instructions are rendered from it, `server/tools.ts` binds each
-  implementation to its spec, `idlebiz <tool>` is the client a run types it with
+  doc and example. The agents' instructions are rendered from it, `server/tools/` binds each
+  implementation to its spec (`define`), `idlebiz <tool>` is the client a run types it with
   (`commands/tools.ts`), and `control-plane.ts` is only transport, which serves each tool at its
   name alone (`toolPath`: posted to `/v1/<tool_name>` on the run's socket), so `callTool` takes
   a `ToolName` and what it answers is shaped once (`ToolAnswerSchema`) for both ends. Every call
   ends in one of `TOOL_OUTCOMES`, the verb's exit code: done (0) is what the implementation
   returns, refused (1) a `RefusalError` or the lead-only refusal, a fault (2) anything else
   thrown, and held (4) a call waiting on the founder (a sign-off, an integration: `holdFor` in
-  `server/tools.ts`). An ask that did not reach the founder is refused; `ask_boss` and
+  `server/tools/define.ts`). An ask that did not reach the founder is refused; `ask_boss` and
   `request_integration`, whose call is the ask, are done once it does. The verb prints the
   answer on stdout whichever it is, so `idlebiz deploy && …` stops at a deploy awaiting
   sign-off. A change everyone should hear about (a bet, a product, autopilot) goes through
@@ -239,7 +239,7 @@ allocator and the replay.
   answers) is `server/founder-actions.ts`, which files and queues through the scheduler's
   `file` and `enqueue`. The scheduler keeps the tick, admission, autopilot and the runs, and
   is handed at boot the integrations a run's tools call out with (`Integrations` in
-  `server/tools.ts`), so tests fake them.
+  `server/tools/define.ts`), so tests fake them.
 - **Five businesses, one way to earn.** `BUSINESS_MODELS` in `server/prompts/instructions.ts`
   tells each run how its type makes money with the tools there are: software sells once
   through `create_payment_link`, a game studio a web game's paid unlock, ecommerce prints
@@ -316,7 +316,7 @@ third boundary.
     claude's transcripts and memory of the run's own folder only), TMPDIR, macOS's per-user temp and cache folders,
     `/private/tmp`, the agent-browser namespace of its runner and folders, node CLIs'
     `~/Library/Preferences/*-nodejs` and the `/dev` nodes a toolchain writes. `TOOL_CACHE_ENV`
-    (`agent-driver.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
+    (`agents/run-workspace.ts`) moves TMPDIR and every cache a toolchain keeps in HOME into `cache/`,
     and turns CLI updaters off.
   - The rest of the runner's home is what the founder's own CLI and desktop app load and run:
     settings, instructions, hooks, skills, plugins, and any script a setting names there (a
@@ -503,7 +503,7 @@ third boundary.
   print Printful never confirmed (but a held one whose card the founder settled), each paid order whose card still waits on the founder (a
   delivery, one IdleBiz cannot send). Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
-  is the approval's key (`requireSignOff` in `server/tools.ts`): `deploy <product> to production
+  is the approval's key (`requireSignOff` in `server/tools/define.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
   none), `payment link "<name>" at $<amount> on <product> for bet <slug> delivering "<delivery>"
 then send buyers to <url>` (the delivery is what the founder owes each buyer and the URL is
@@ -601,7 +601,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   follows. A codex
   session loads the founder's codex config with every MCP server turned off by the name
   `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
-  `server/agents/agent-driver.ts`): turning plugins off is also what keeps their plugins' skills
+  `server/agents/session.ts`): turning plugins off is also what keeps their plugins' skills
   out. One it cannot list refuses the run with codex's reason. No codex setting leaves all the
   founder's own skills out, nor their instructions or rules, so the seal keeps a codex run from
   reading them (their memories too), and IdleBiz's folder is handed to the session to read
@@ -612,7 +612,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   start, and says which rule (`refuseDeniedTools` in `server/agents/claude-denies.ts`). A runner is signed in only if its login probe, run sealed as its runs are,
   says so: a codex login kept in the Keychain reads as none, and onboarding's sign-in says to
   keep it in a file. The work of a runner not signed in waits on the queue, spending no attempt
-  (`signedIn` in the driver), until a sign-in finds it again. A turn whose login the provider
+  (`signedIn` in `server/agents/runner-pool.ts`), until a sign-in finds it again. A turn whose login the provider
   refused (a revoked token, `claude auth logout` mid-session) reads the runner as signed out
   the same way (`heed`) until the founder signs it in again, however often its probe, which
   reads only the login stored, says signed in: the sign-in runs its login for it anyway. With
@@ -622,7 +622,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
   category and actions; claude's kinds mirror claude-agent-acp's `providerFailureCategory`). The
   package reports only the class and, for a usage limit, when the provider said it lifts; what
-  each costs the runner is decided in one place, `heed` in `server/agents/agent-driver.ts`:
+  each costs the runner is decided in one place, `heed` in `server/agents/runner-pool.ts`:
   `auth` signs the runner out as above; `usage-limit` (a rate limit, billing, an account on hold)
   rests it until the reset the provider reported (claude's `_claude/rateLimit` on usage updates,
   in epoch seconds; codex-acp keeps its rate limits to itself, so its text) or else the time its
@@ -639,7 +639,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   A rest never shortens one holding, and is kept in `state/runner-rest.json`, so a restart does not
   spawn each parked task once to be refused; it is not critical: lost, that is all it costs.
 - **The command policy is a tripwire.** Every permission ask a runner raises meets one
-  judgement, `holdFor` in `server/command-policy.ts`; every turn sets the runner's asking mode
+  judgement, `holdFor` in `server/policy/index.ts`; every turn sets the runner's asking mode
   first (claude `default`, codex `external-sandbox`), since a session starts in a default that
   may not ask. A shell command matching a rule (deploy, publish, git push, GitHub writes,
   payments, sends, remote copies, pipe-to-shell, credential reads) is signed for once,

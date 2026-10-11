@@ -15,7 +15,7 @@ import type { JsonValue } from "@repo/domain/json";
 
 // Each run's own line back to the company: an HTTP server on a unix socket only that run's seal
 // lets it connect to (`apiSocket` in agents/seal.ts). What the tools are and do lives in
-// tool-specs.ts and tools.ts; this only carries the call.
+// tool-specs.ts and tools/; this only carries the call.
 //
 // The socket, not the bearer, is what says which run is calling. Runs are processes of the
 // founder's own user, so one run can read another's env (`ps -E`, or sysctl's KERN_PROCARGS2,

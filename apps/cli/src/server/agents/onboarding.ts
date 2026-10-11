@@ -4,7 +4,7 @@ import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
-import { agentDriver } from "./agent-driver";
+import { agentDriver } from "./runner-pool";
 import { SANDBOX_EXEC } from "./seal";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";

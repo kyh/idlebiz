@@ -19,8 +19,8 @@ import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
 import type { AcpAgent, PermissionRequest } from "@repo/agent-driver/acp-session";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { holdFor } from "../command-policy";
-import type { Hold } from "../command-policy";
+import { holdFor } from "../policy";
+import type { Hold } from "../policy";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 
@@ -39,7 +39,7 @@ import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-gate-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
-const { sessionAgent } = await import("./agent-driver");
+const { sessionAgent } = await import("./session");
 const { machineSeal, realPathOf, sealRuns } = await import("./seal");
 
 const claudeRuns =

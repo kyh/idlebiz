@@ -9,11 +9,11 @@ import type { ActivityEvent } from "@repo/domain/activity";
 import { MAX_TASK_ATTEMPTS } from "@repo/domain/domain";
 import type { BlockedAsk, Budget, BusinessTypeId, RunOrigin, Task } from "@repo/domain/domain";
 import { RefusalError } from "./refusal";
-import type { RunResult, RunTools } from "./agents/agent-driver";
+import type { RunResult, RunTools } from "./agents/runner-pool";
 import { keepAwake } from "./keep-awake";
 import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
-import type { Integrations } from "./tools";
+import type { Integrations } from "./tools/define";
 
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;

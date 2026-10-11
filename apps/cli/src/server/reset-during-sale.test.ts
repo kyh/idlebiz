@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { PaymentLinker } from "./stripe-links";
-import type { RunContext } from "./tools";
+import type { RunContext } from "./tools/define";
 
 // A file of its own: once a reset begins, this process makes no payment link again.
 const root = mkdtempSync(path.join(tmpdir(), "idlebiz-reset-during-sale-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { askBox } = await import("./agents/agent-driver");
+const { askBox } = await import("./agents/ask-box");
 const { callTool } = await import("./tools");
 const { switchOffBeforeReset } = await import("./company-actions");
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, holdFor } from "./command-policy";
-import type { Confinement, LivePage, RuleId } from "./command-policy";
-import { toolDocs } from "./tool-specs";
+import { toolDocs } from "../tool-specs";
+import type { Confinement, LivePage } from "./browser";
+import { classifyCommand, holdFor } from "./index";
+import type { RuleId } from "./shell-rules";
 
 const MUST_ASK = {
   deploy: [

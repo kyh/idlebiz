@@ -17,7 +17,7 @@ import type { Budget } from "@repo/domain/domain";
 import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
 import type { Listing } from "../listing";
 import { RefusalError } from "../refusal";
-import type { Integrations } from "../tools";
+import type { Integrations } from "../tools/define";
 import { runPreamble } from "../prompts/briefs";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
@@ -27,7 +27,7 @@ const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store");
 const { createScheduler } = await import("../scheduler");
-const { agentDriver } = await import("../agents/agent-driver");
+const { agentDriver } = await import("../agents/runner-pool");
 const asleep = { hold: () => {} };
 const unasked = () => Promise.reject(new Error("no run here calls out"));
 /** No run here starts, so none calls out with a founder's key. */

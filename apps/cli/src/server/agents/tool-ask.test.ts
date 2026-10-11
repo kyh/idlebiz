@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { toolAskOf } from "@repo/agent-driver/tool-ask";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
-import { holdFor } from "../command-policy";
-import type { Confinement } from "../command-policy";
+import { holdFor } from "../policy";
+import type { Confinement } from "../policy/browser";
 
 const ask = (request: {
   rawInput?: unknown;

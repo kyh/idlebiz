@@ -7,7 +7,7 @@
 import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
-import { agentDriver } from "./agents/agent-driver";
+import { agentDriver } from "./agents/runner-pool";
 import { generateCandidates, startLogin } from "./agents/onboarding";
 import { notingSeal } from "./agents/seal";
 import {
