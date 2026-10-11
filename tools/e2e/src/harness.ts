@@ -25,9 +25,12 @@ interface Launched {
   close: () => Promise<void>;
 }
 
+/** How the Stripe and Vercel main calls answer a key: they take any, or turn every one away. */
+type Keys = "taken" | "refused";
+
 interface LaunchOptions {
-  /** Answer main's calls to Stripe, Vercel and Printful from `CANNED_APIS`, from its first. */
-  stubServices?: boolean;
+  /** Taken unless a test says otherwise; main reaches no real service either way. */
+  keys?: Keys;
 }
 
 interface Fixtures {
@@ -58,14 +61,16 @@ const runsStarted = async (root: string): Promise<number> => {
 interface Canned {
   host: string;
   route: string;
+  status: number;
   /** The answer's JSON text. */
   body: string;
 }
 
-const canned = (host: string, route: string, body: JsonValue): Canned => ({
+const canned = (host: string, route: string, body: JsonValue, status = 200): Canned => ({
   body: JSON.stringify(body),
   host,
   route,
+  status,
 });
 
 const STRIPE = "api.stripe.com";
@@ -77,7 +82,7 @@ const NOTHING = { data: [], has_more: false, object: "list" };
  * The Stripe, Vercel and Printful of an account that takes any key: one project, no money, no
  * visitors, one store that may place orders.
  */
-const CANNED_APIS: Canned[] = [
+const TAKING: readonly Canned[] = [
   canned(STRIPE, "/v1/charges", NOTHING),
   canned(STRIPE, "/v1/payment_links", NOTHING),
   canned(PRINTFUL, "/v2/oauth-scopes", {
@@ -91,7 +96,26 @@ const CANNED_APIS: Canned[] = [
   canned(VERCEL, "/v9/projects", { projects: [{ id: "prj_e2e", name: "e2e-tip-jar" }] }),
 ];
 
-// loaded into main before its own code: it answers from CANNED_APIS
+/** What Stripe and Vercel answer a key they never issued, with a 401. */
+const STRIPE_REFUSAL = {
+  error: { message: "Invalid API Key provided", type: "invalid_request_error" },
+};
+const VERCEL_REFUSAL = { error: { code: "forbidden", message: "Not authorized" } };
+
+/** TAKING, but each Stripe and Vercel call turned away. */
+const REFUSING: readonly Canned[] = TAKING.map((answer) => {
+  if (answer.host === STRIPE) {
+    return canned(STRIPE, answer.route, STRIPE_REFUSAL, 401);
+  }
+  if (answer.host === VERCEL) {
+    return canned(VERCEL, answer.route, VERCEL_REFUSAL, 401);
+  }
+  return answer;
+});
+
+const ANSWERS: Record<Keys, readonly Canned[]> = { refused: REFUSING, taken: TAKING };
+
+// loaded into main before its own code, by every launch: it answers from ANSWERS
 const STUB_SERVICES = fileURLToPath(new URL("stub-services.ts", import.meta.url));
 
 const start = async (
@@ -101,9 +125,9 @@ const start = async (
   log: (line: string) => void,
 ): Promise<Launched> => {
   const host = await startDevHost({
-    env: options.stubServices ? { IDLEBIZ_E2E_CANNED: JSON.stringify(CANNED_APIS) } : {},
+    env: { IDLEBIZ_E2E_CANNED: JSON.stringify(ANSWERS[options.keys ?? "taken"]) },
     log,
-    nodeArgs: options.stubServices ? ["--import", STUB_SERVICES] : [],
+    nodeArgs: ["--import", STUB_SERVICES],
     root,
   });
   let context: BrowserContext | null = null;

@@ -119,10 +119,12 @@ of `pnpm verify` or CI:
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
   Stripe and Printful key entry, sealing) needs a signed-in `claude` or `codex` CLI under the
   macOS seal and skips without one, so off a Mac only the title screen and the newer save run.
-  The refusal tests send made-up keys to the real Vercel and Stripe APIs, so they need the
-  network; where a key is taken, main is started with `tools/e2e/src/stub-services.ts` preloaded, which
-  answers those APIs and Printful's from canned JSON (`launch({ stubServices: true })`), so no
-  real account or key is needed.
+- It needs no network and no real account. Every launch starts main with
+  `tools/e2e/src/stub-services.ts` preloaded, which answers Stripe, Vercel and Printful from
+  canned JSON: an account that takes any key, or, under `launch({ keys: "refused" })`, a Stripe
+  and Vercel that answer every key with a 401. No test sends a key to a vendor: what each
+  really answers a key it refuses is the unit fetch fakes' to hold (`stripe-key.test.ts`,
+  `vercel.test.ts`, `vercel-connect.test.ts`, `printful-token.test.ts`).
 - It runs beside `pnpm dev:desktop` and `pnpm dev:browser`: each launch serves its page on a port
   of its own, and opens an isolated root.
 - It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API,
@@ -622,5 +624,5 @@ rather than crashing boot.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,
   VG5000, every `.px-*` class), imported by both apps after Tailwind.
 - `tools/e2e` — the Playwright suite over the built page and main (`src/harness.ts` launches them
-  through the dev host; `src/stub-services.ts` answers Stripe, Vercel and Printful from canned
-  JSON).
+  through the dev host; `src/stub-services.ts` answers every launch's Stripe, Vercel and
+  Printful calls from canned JSON).
