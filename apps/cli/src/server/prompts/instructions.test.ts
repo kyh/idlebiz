@@ -22,7 +22,6 @@ const company = (businessType: BusinessTypeId): Company => ({
   workspaceDir: "/tmp/acme",
 });
 const employee: Employee = {
-  companyId: "acme",
   createdAt: 0,
   deskIndex: 0,
   id: "lead",

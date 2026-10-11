@@ -37,7 +37,7 @@ const stripe = await import("./stripe-connect");
 const store = await import("./store/store");
 const { getSecret } = await import("./secrets");
 store.initStore();
-const company = store.foundCompany({
+store.foundCompany({
   budget: { capUsd: 0, mode: "capped" },
   businessType: "software",
   founderName: "Fixture",
@@ -47,11 +47,13 @@ const company = store.foundCompany({
   name: "Stripe fixture",
 });
 const urls: string[] = [];
-const connected: string[] = [];
+let connections = 0;
 const notified: StripeStatus[] = [];
 stripe.initStripeConnect({
   notify: (status) => notified.push(status),
-  onConnected: (id) => connected.push(id),
+  onConnected: () => {
+    connections += 1;
+  },
   openExternal: (url) => {
     urls.push(url);
     return Promise.resolve();
@@ -60,12 +62,12 @@ stripe.initStripeConnect({
 beforeEach(() => {
   revocations.length = 0;
   urls.length = 0;
-  connected.length = 0;
+  connections = 0;
   notified.length = 0;
 });
 afterEach(async () => {
   holdRevocation = null;
-  await stripe.disconnectStripe(company.id);
+  await stripe.disconnectStripe();
 });
 afterAll(async () => {
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
@@ -102,29 +104,26 @@ const callbackUrl = async (state: OAuthState, token: string): Promise<string> =>
 };
 
 const connectThenDisconnect = async (answer: (res: ServerResponse) => void): Promise<void> => {
-  await stripe.beginConnect(company.id);
+  await stripe.beginConnect();
   const response = await fetch(await callbackUrl(latestState(), "token-connected"));
   await response.text();
   holdRevocation = answer;
-  await stripe.disconnectStripe(company.id);
+  await stripe.disconnectStripe();
 };
 
 describe("Stripe flow ownership", () => {
   it("opens only the latest startup and completes its real encrypted callback", async () => {
-    const results = await Promise.all([
-      stripe.beginConnect(company.id),
-      stripe.beginConnect(company.id),
-    ]);
+    const results = await Promise.all([stripe.beginConnect(), stripe.beginConnect()]);
     expect(results).toEqual([{ started: false }, { started: true }]);
     expect(urls).toHaveLength(1);
     const response = await fetch(await callbackUrl(latestState(), "token-latest"));
     expect(await response.text()).toContain("Stripe connected");
     expect(getSecret("STRIPE_CONNECT_TOKEN")).toBe("token-latest");
-    expect(connected).toEqual([company.id]);
+    expect(connections).toBe(1);
   });
 
   it("does not reconnect when cancelled during callback decryption", async () => {
-    await stripe.beginConnect(company.id);
+    await stripe.beginConnect();
     const url = new URL(await callbackUrl(latestState(), "token-cancelled"));
     const cancelled = Promise.withResolvers<null>();
     const requests = channel("http.server.request.start");
@@ -136,9 +135,7 @@ describe("Stripe flow ownership", () => {
       requests.unsubscribe(onRequest);
       // Run after the HTTP handler reaches its first WebCrypto await, before decryption resumes.
       queueMicrotask(() => {
-        void stripe
-          .disconnectStripe(company.id)
-          .then(() => cancelled.resolve(null), cancelled.reject);
+        void stripe.disconnectStripe().then(() => cancelled.resolve(null), cancelled.reject);
       });
     };
     requests.subscribe(onRequest);
@@ -147,8 +144,8 @@ describe("Stripe flow ownership", () => {
       expect(await response.text()).toContain("Stripe connection failed");
       await cancelled.promise;
       expect(getSecret("STRIPE_CONNECT_TOKEN")).toBeNull();
-      expect(stripe.getStripeStatus(company.id)).toEqual({ state: "disconnected" });
-      expect(connected).toEqual([]);
+      expect(stripe.getStripeStatus()).toEqual({ state: "disconnected" });
+      expect(connections).toBe(0);
     } finally {
       requests.unsubscribe(onRequest);
     }
@@ -157,26 +154,26 @@ describe("Stripe flow ownership", () => {
   it("waits out a founder who spends an hour creating their Stripe account", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      await stripe.beginConnect(company.id);
+      await stripe.beginConnect();
       vi.advanceTimersByTime(60 * 60_000);
     } finally {
       vi.useRealTimers();
     }
-    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "connecting" });
+    expect(stripe.getStripeStatus()).toEqual({ state: "connecting" });
     const response = await fetch(await callbackUrl(latestState(), "token-slow"));
     expect(await response.text()).toContain("Stripe connected");
     expect(getSecret("STRIPE_CONNECT_TOKEN")).toBe("token-slow");
   });
 
   it("waits for account revocation before opening a replacement authorization", async () => {
-    await stripe.beginConnect(company.id);
+    await stripe.beginConnect();
     const response = await fetch(await callbackUrl(latestState(), "token-old"));
     await response.text();
     const received = Promise.withResolvers<ServerResponse>();
     holdRevocation = received.resolve;
-    const disconnect = stripe.disconnectStripe(company.id);
+    const disconnect = stripe.disconnectStripe();
     const revocation = await received.promise;
-    const reconnect = stripe.beginConnect(company.id);
+    const reconnect = stripe.beginConnect();
     try {
       expect(getSecret("STRIPE_CONNECT_TOKEN")).toBeNull();
       expect(urls).toHaveLength(1);
@@ -199,20 +196,20 @@ describe("Stripe flow ownership", () => {
 describe("Stripe connect", () => {
   it("saves no token when the company's binding cannot be written", async () => {
     const secretsFile = path.join(root, "secrets.json");
-    const metricsFile = path.join(root, company.id, "metrics.json");
+    const metricsFile = path.join(root, "company", "metrics.json");
     const secrets = '{"STRIPE_SECRET_KEY":"own"}';
     writeFileSync(secretsFile, secrets);
     writeFileSync(metricsFile, '{"stripeAccount":');
     try {
-      await stripe.beginConnect(company.id);
+      await stripe.beginConnect();
       const response = await fetch(await callbackUrl(latestState(), "token-unbound"));
       expect(await response.text()).toContain("Stripe connection failed");
       expect(readFileSync(secretsFile, "utf-8")).toBe(secrets);
-      const status = stripe.getStripeStatus(company.id);
+      const status = stripe.getStripeStatus();
       expect(status.state === "error" ? status.message : status.state).toContain(
         "it will not be overwritten",
       );
-      expect(connected).toEqual([]);
+      expect(connections).toBe(0);
     } finally {
       rmSync(metricsFile, { force: true });
       rmSync(secretsFile, { force: true });
@@ -225,7 +222,7 @@ describe("Stripe disconnect", () => {
     for (const status of [200, 403]) {
       await connectThenDisconnect((res) => res.writeHead(status).end());
       expect(getSecret("STRIPE_CONNECT_TOKEN"), String(status)).toBeNull();
-      expect(stripe.getStripeStatus(company.id), String(status)).toEqual({
+      expect(stripe.getStripeStatus(), String(status)).toEqual({
         state: "disconnected",
       });
     }
@@ -234,7 +231,7 @@ describe("Stripe disconnect", () => {
   it("tells the founder when Stripe did not confirm the revocation", async () => {
     await connectThenDisconnect((res) => res.writeHead(502).end());
     expect(getSecret("STRIPE_CONNECT_TOKEN")).toBeNull();
-    expect(stripe.getStripeStatus(company.id)).toEqual({
+    expect(stripe.getStripeStatus()).toEqual({
       bound: false,
       message:
         "Disconnected here, but Stripe may still list IdleBiz (HTTP 502) — remove it under Installed apps in your Stripe Dashboard.",
@@ -245,14 +242,14 @@ describe("Stripe disconnect", () => {
   it("tells the founder when the revocation never reached Stripe", async () => {
     await connectThenDisconnect((res) => res.destroy());
     expect(getSecret("STRIPE_CONNECT_TOKEN")).toBeNull();
-    expect(stripe.getStripeStatus(company.id).state).toBe("error");
+    expect(stripe.getStripeStatus().state).toBe("error");
   });
 
   it("keeps quiet about an unconfirmed revocation once the founder reconnects", async () => {
     const received = Promise.withResolvers<ServerResponse>();
     const disconnect = connectThenDisconnect(received.resolve);
     const revocation = await received.promise;
-    const reconnect = stripe.beginConnect(company.id);
+    const reconnect = stripe.beginConnect();
     revocation.writeHead(502).end();
     await disconnect;
     expect(await reconnect).toEqual({ started: true });
@@ -272,17 +269,17 @@ describe("Stripe read health", () => {
     "Stripe access was revoked — reconnect or disconnect Stripe in the Budget panel.";
 
   it("names a refused own key until Stripe takes one again", () => {
-    stripe.noteStripeRead(company.id, { answer: "refused", via: "own" });
-    stripe.noteStripeRead(company.id, { answer: "refused", via: "own" });
-    expect(stripe.getStripeStatus(company.id)).toEqual({
+    stripe.noteStripeRead({ answer: "refused", via: "own" });
+    stripe.noteStripeRead({ answer: "refused", via: "own" });
+    expect(stripe.getStripeStatus()).toEqual({
       bound: false,
       message: ownKeyRefused,
       state: "error",
     });
-    stripe.noteStripeRead(company.id, { answer: "unanswered", via: "own" });
-    expect(stripe.getStripeStatus(company.id).state).toBe("error");
-    stripe.noteStripeRead(company.id, { answer: "accepted", via: "own" });
-    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "disconnected" });
+    stripe.noteStripeRead({ answer: "unanswered", via: "own" });
+    expect(stripe.getStripeStatus().state).toBe("error");
+    stripe.noteStripeRead({ answer: "accepted", via: "own" });
+    expect(stripe.getStripeStatus()).toEqual({ state: "disconnected" });
     expect(notified).toEqual([
       { bound: false, message: ownKeyRefused, state: "error" },
       { state: "disconnected" },
@@ -290,38 +287,38 @@ describe("Stripe read health", () => {
   });
 
   it("offers a disconnect beside a refused grant main still holds", async () => {
-    await stripe.beginConnect(company.id);
+    await stripe.beginConnect();
     const response = await fetch(await callbackUrl(latestState(), "token-connected"));
     await response.text();
-    stripe.noteStripeRead(company.id, { answer: "refused", via: "connect" });
-    expect(stripe.getStripeStatus(company.id)).toEqual({
+    stripe.noteStripeRead({ answer: "refused", via: "connect" });
+    expect(stripe.getStripeStatus()).toEqual({
       bound: true,
       message: connectRefused,
       state: "error",
     });
-    await stripe.disconnectStripe(company.id);
-    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "disconnected" });
+    await stripe.disconnectStripe();
+    expect(stripe.getStripeStatus()).toEqual({ state: "disconnected" });
   });
 
   it("drops a refusal once no key is left to refuse", () => {
-    stripe.noteStripeRead(company.id, { answer: "refused", via: "connect" });
-    expect(stripe.getStripeStatus(company.id)).toEqual({
+    stripe.noteStripeRead({ answer: "refused", via: "connect" });
+    expect(stripe.getStripeStatus()).toEqual({
       bound: false,
       message: connectRefused,
       state: "error",
     });
-    stripe.noteStripeRead(company.id, null);
-    expect(stripe.getStripeStatus(company.id)).toEqual({ state: "disconnected" });
+    stripe.noteStripeRead(null);
+    expect(stripe.getStripeStatus()).toEqual({ state: "disconnected" });
   });
 
   it("keeps a connection flow's error through a read Stripe took", async () => {
-    await stripe.beginConnect(company.id);
+    await stripe.beginConnect();
     const response = await fetch(
       loopbackUrl(latestState(), { error: "access_denied", kind: "failed" }),
     );
     expect(await response.text()).toContain("Stripe connection failed");
-    stripe.noteStripeRead(company.id, { answer: "accepted", via: "own" });
-    expect(stripe.getStripeStatus(company.id)).toEqual({
+    stripe.noteStripeRead({ answer: "accepted", via: "own" });
+    expect(stripe.getStripeStatus()).toEqual({
       bound: false,
       message: "Stripe connection cancelled.",
       state: "error",
@@ -331,7 +328,7 @@ describe("Stripe read health", () => {
 
 describe("a reset", () => {
   it("revokes the grant with the token it is about to delete", async () => {
-    await stripe.beginConnect(company.id);
+    await stripe.beginConnect();
     const response = await fetch(await callbackUrl(latestState(), "token-reset"));
     await response.text();
     expect(await stripe.revokeBeforeReset()).toBeNull();
@@ -341,7 +338,7 @@ describe("a reset", () => {
   });
 
   it("tells the founder to remove IdleBiz by hand when Stripe does not confirm", async () => {
-    await stripe.beginConnect(company.id);
+    await stripe.beginConnect();
     const response = await fetch(await callbackUrl(latestState(), "token-reset"));
     await response.text();
     holdRevocation = (res) => res.writeHead(502).end();

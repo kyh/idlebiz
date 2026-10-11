@@ -181,10 +181,10 @@ export interface StripeCredential {
 /**
  * The founder's own key reads whenever one is saved: it makes every payment link, so its
  * account is the one a bet's tagged money lands on, and a Connect grant, which may be
- * another account or revoked, never stands between them. Only with no key does the
- * company that connected Stripe read through its token: secrets.json is shared by every
- * company and the token outlives the company that connected it. A key left blank in the
- * file is no key.
+ * another account or revoked, never stands between them. Only with no key does the company
+ * read through its Connect token, and only beside the account metrics.json binds it to: the
+ * binding is written first, and disconnecting revokes nothing without it. A key left blank in
+ * the file is no key.
  */
 export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | null => {
   const own = getSecret(STRIPE_SECRET_KEY);
@@ -203,8 +203,8 @@ const countsNoMoney = (credential: StripeCredential): boolean =>
   !countsTestMoney() && isTestKey(credential.key);
 
 /** Whether the company reads Stripe with a key in test mode, whose charges count for nothing. */
-export const stripeInTestMode = (companyId: string): boolean => {
-  const credential = stripeCredential(readMetricsConfig(companyId));
+export const stripeInTestMode = (): boolean => {
+  const credential = stripeCredential(readMetricsConfig());
   return credential !== null && countsNoMoney(credential);
 };
 
@@ -216,7 +216,7 @@ export const stripeInTestMode = (companyId: string): boolean => {
  */
 export const measureRefusal = (bet: Bet, product: Product | null): string | null => {
   if (bet.claim.metric === "revenue") {
-    const credential = stripeCredential(readMetricsConfig(bet.companyId));
+    const credential = stripeCredential(readMetricsConfig());
     if (credential === null) {
       return 'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.';
     }

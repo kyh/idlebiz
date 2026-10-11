@@ -51,5 +51,5 @@ without one); notarizes with `apps/desktop/.env` (Apple notarization creds) and 
 `apps/desktop/package.json` and `apps/cli/package.json` together before publishing; the release
 is tagged `v<version>`.
 
-Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
-agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).
+Game state lives at `~/.idlebiz/company/` as human-readable
+agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, shared/).

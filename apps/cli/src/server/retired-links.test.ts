@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,8 +22,6 @@ type Answer = "off" | "refused" | "busy" | "down";
 interface StripeSetup {
   /** How Stripe answers a switch-off of each link; one not named is switched off. */
   answers?: Partial<Record<string, Answer>>;
-  /** The account's active links, as Stripe lists them. */
-  active?: { id: string; url: string; metadata: Record<string, string> }[];
 }
 
 interface SwitchOff {
@@ -33,15 +31,11 @@ interface SwitchOff {
 }
 
 /** Stripe's payment links, faked at fetch: every switch-off asked, with the key it came with. */
-const fakeStripe = ({ answers = {}, active = [] }: StripeSetup = {}) => {
+const fakeStripe = ({ answers = {} }: StripeSetup = {}) => {
   const switchOffs: SwitchOff[] = [];
-  const world = { lists: 0, switchOffs };
+  const world = { switchOffs };
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     const { host, pathname } = new URL(url);
-    if (host === "api.stripe.com" && pathname === "/v1/payment_links" && !init?.method) {
-      world.lists += 1;
-      return Promise.resolve(Response.json({ data: active, has_more: false }));
-    }
     const id = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
     if (host !== "api.stripe.com" || id === undefined || init?.method !== "POST") {
       return Promise.reject(new Error(`unexpected call to ${url}`));
@@ -274,8 +268,8 @@ describe("retiring a product", () => {
   });
 
   it("switches off nothing for a live product whose PRODUCT.md boot could not read", async () => {
-    const { company, side } = openShop();
-    writeFileSync(path.join(root, company.id, "products", side.id, "PRODUCT.md"), "not a product");
+    const { side } = openShop();
+    writeFileSync(path.join(root, "company", "products", side.id, "PRODUCT.md"), "not a product");
     store.initStore();
     const stripe = fakeStripe();
 
@@ -352,121 +346,6 @@ describe("retiring a product", () => {
     await Promise.all([retireProduct(side.id, "dud", null), switchOffRetiredLinks()]);
 
     expect(stripe.switchOffs.map((s) => s.id)).toEqual([TEE, PRO]);
-  });
-});
-
-/** Stamp the save as another build would have written it. */
-const restamp = (companyId: string, format: number): void => {
-  const file = path.join(root, companyId, "COMPANY.md");
-  writeFileSync(file, readFileSync(file, "utf-8").replace(/format: \d+/u, `format: ${format}`));
-};
-
-/** A format 6 save with a product it already retired and one still live, which made links nobody recorded. */
-const olderShop = () => {
-  const company = store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "ship",
-    name: "Acme",
-  });
-  const gone = store.createProduct({ description: "a dud", name: "Gone" });
-  const side = store.createProduct({ description: "a side bet", name: "Side" });
-  store.killProduct(gone.id, "dud", null);
-  restamp(company.id, 6);
-  store.initStore();
-  return { gone, side };
-};
-
-describe("an older save's links", () => {
-  it("hands the founder the unrecorded links Stripe lists for a retired product, and switches none off", async () => {
-    const { gone, side } = olderShop();
-    saveKey("rk_live_founder");
-    const stripe = fakeStripe({
-      active: [
-        { id: "plink_old", metadata: { product: gone.id }, url: "https://buy.stripe.com/old" },
-        { id: "plink_side", metadata: { product: side.id }, url: "https://buy.stripe.com/side" },
-        { id: "plink_mine", metadata: {}, url: "https://buy.stripe.com/mine" },
-      ],
-    });
-
-    await switchOffRetiredLinks();
-
-    expect(stripe.switchOffs).toEqual([]);
-    expect(cards().map((c) => c.title)).toEqual([`Switch off ${gone.id}'s older payment links`]);
-    const said = JSON.stringify(cards()[0]?.state);
-    expect(said).toContain("https://buy.stripe.com/old (plink_old)");
-    expect(said).not.toContain("plink_side");
-    expect(store.unrecordedLinkProducts()).not.toContain(gone.id);
-
-    await switchOffRetiredLinks();
-    expect(stripe.lists).toBe(1);
-
-    await retireProduct(side.id, "dud too", null);
-
-    expect(stripe.lists).toBe(2);
-    expect(cards().map((c) => c.title)).toContain(`Switch off ${side.id}'s older payment links`);
-    expect(store.unrecordedLinkProducts()).not.toContain(side.id);
-  });
-
-  it("looks for no live product's older links when its PRODUCT.md could not be read", async () => {
-    const { side } = olderShop();
-    const company = store.getCompany();
-    writeFileSync(
-      path.join(root, company?.id ?? "", "products", side.id, "PRODUCT.md"),
-      "not a product",
-    );
-    store.initStore();
-    saveKey("rk_live_founder");
-    fakeStripe({
-      active: [
-        { id: "plink_side", metadata: { product: side.id }, url: "https://buy.stripe.com/side" },
-      ],
-    });
-
-    await switchOffRetiredLinks();
-
-    expect(cards().map((c) => c.title)).not.toContain(
-      `Switch off ${side.id}'s older payment links`,
-    );
-    expect(store.unrecordedLinkProducts()).toContain(side.id);
-  });
-
-  it("raises nothing for a retired product Stripe lists no link for", async () => {
-    olderShop();
-    saveKey("rk_live_founder");
-    const stripe = fakeStripe();
-
-    await switchOffRetiredLinks();
-
-    expect(stripe.lists).toBe(1);
-    expect(cards()).toEqual([]);
-  });
-
-  it("waits for a live key before it looks, and looks again after a read that failed", async () => {
-    const { gone } = olderShop();
-    saveKey("rk_test_founder");
-    const stripe = fakeStripe();
-
-    await switchOffRetiredLinks();
-
-    expect(stripe.lists).toBe(0);
-    expect(store.unrecordedLinkProducts()).toContain(gone.id);
-
-    saveKey("rk_live_founder");
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
-    await switchOffRetiredLinks();
-
-    expect(store.unrecordedLinkProducts()).toContain(gone.id);
-    expect(cards()).toEqual([]);
-
-    const again = fakeStripe();
-    await switchOffRetiredLinks();
-
-    expect(again.lists).toBe(1);
-    expect(store.unrecordedLinkProducts()).not.toContain(gone.id);
   });
 });
 

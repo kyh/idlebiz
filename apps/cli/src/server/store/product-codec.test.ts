@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ROOT_DIR, companyWorkspace, productWorkspace } from "../paths";
+import { ROOT_DIR, productWorkspace } from "../paths";
 import type { Product } from "@repo/domain/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToProduct, productToDoc } from "./product-codec";
 
-const roundTrip = (p: Product): Product =>
-  docToProduct(parseDoc(serializeDoc(productToDoc(p))), p.companyId);
+const roundTrip = (p: Product): Product => docToProduct(parseDoc(serializeDoc(productToDoc(p))));
 
 const widget: Product = {
-  companyId: "acme",
   createdAt: 1_699_000_000_000,
   description: "A widget that widgets.",
   id: "widget",
@@ -18,11 +16,10 @@ const widget: Product = {
   ships: 3,
   users: 42,
   vercel: { projectId: "prj_1", projectName: "widget", teamId: "team_1" },
-  workspaceDir: companyWorkspace("acme"),
+  workspaceDir: productWorkspace("widget"),
 };
 
 const gadget: Product = {
-  companyId: "acme",
   createdAt: 1_699_000_000_000,
   description: "Not yet anything.",
   id: "gadget",
@@ -32,7 +29,7 @@ const gadget: Product = {
   ships: 0,
   users: null,
   vercel: null,
-  workspaceDir: productWorkspace("acme", "gadget"),
+  workspaceDir: productWorkspace("gadget"),
 };
 
 describe("product codec", () => {
@@ -40,7 +37,6 @@ describe("product codec", () => {
     widget,
     gadget,
     {
-      companyId: "acme",
       createdAt: 1_699_000_000_000,
       description: "On a personal Vercel account.",
       id: "personal-team",
@@ -50,21 +46,15 @@ describe("product codec", () => {
       ships: 1,
       users: 0,
       vercel: { projectId: "prj_2", projectName: "personal", teamId: null },
-      workspaceDir: productWorkspace("acme", "personal-team"),
+      workspaceDir: productWorkspace("personal-team"),
     },
   ])("round-trips $id", (product) => {
     expect(roundTrip(product)).toEqual(product);
   });
 
-  it("writes which workspace a product works in, never the path", () => {
-    expect(productToDoc(widget).metadata.workspace).toBe("company");
-    expect(productToDoc(gadget).metadata.workspace).toBe("own");
-    expect(serializeDoc(productToDoc(gadget))).not.toContain(ROOT_DIR);
-  });
-
-  it("reads a product that names no workspace as sharing the company's", () => {
-    const doc = productToDoc(gadget);
-    const { workspace: _, ...metadata } = doc.metadata;
-    expect(docToProduct({ ...doc, metadata }, "acme").workspaceDir).toBe(companyWorkspace("acme"));
+  it("writes no workspace, which its slug alone places", () => {
+    const written = serializeDoc(productToDoc(widget));
+    expect(written).not.toContain("workspace");
+    expect(written).not.toContain(ROOT_DIR);
   });
 });

@@ -277,7 +277,7 @@ export const TOOL_SPECS = {
   }),
   kill_product: tool({
     body: SLUG_AND_REASON,
-    doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. IdleBiz switches off its payment links at Stripe, sell_print's and create_payment_link's, so it takes no new money, and hands the founder any Stripe would not switch off, and any an older IdleBiz made without keeping a record, to switch off by hand; each order already paid still ships and still counts, and read_orders still reads its orders and says where each link stands, by its slug. The last product cannot be killed: start its successor first.",
+    doc: "retire a product whose bets keep dying. Its package and workspace are archived whole, its live bets die with it, and the budget goes to the others. IdleBiz switches off its payment links at Stripe, sell_print's and create_payment_link's, so it takes no new money, and hands the founder any Stripe would not switch off to switch off by hand; each order already paid still ships and still counts, and read_orders still reads its orders and says where each link stands, by its slug. The last product cannot be killed: start its successor first.",
     example: { reason: "...", slug: "product-slug" },
     leadOnly: "Only the team lead can retire a product — make the case in the team room.",
     method: "POST",

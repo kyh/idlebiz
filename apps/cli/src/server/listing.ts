@@ -46,8 +46,7 @@ export const ListingSchema = z.object({
   name: z.string().min(1),
   paymentLink: z.object({
     id: z.string().min(1),
-    // a listing written without one is still selling
-    state: LinkStateSchema.default({ kind: "selling" }),
+    state: LinkStateSchema,
     url: z.url(),
   }),
   placements: z.array(ListedPlacementSchema).min(1),

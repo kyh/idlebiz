@@ -18,7 +18,6 @@ const HOUR = 3_600_000;
 const bet = (patch: Partial<Bet> = {}): Bet => ({
   budgetUsd: 5,
   claim: { landingPath: "/b/bet", metric: "users" },
-  companyId: "co",
   createdAt: 0,
   hypothesis: "a launch post brings visitors",
   id: "bet",

@@ -84,7 +84,7 @@ it("rejects an unknown product before replacing the founder's credential", () =>
   expect(getSecret("VERCEL_TOKEN")).toBe("existing-token");
 });
 
-it("unbinds the active product without removing the credential shared with older saves", () => {
+it("unbinds the active product without removing the token every product deploys with", () => {
   const product = foundProduct();
   connectVercel({
     productId: product.id,

@@ -126,7 +126,7 @@ const heartbeatBrief = (
     products: store.listProducts(),
     room: store.recentTeamMessages(12),
     ships: store.recentShips(),
-    stripeTestMode: stripeInTestMode(company.id),
+    stripeTestMode: stripeInTestMode(),
   });
 
 /** Where the next idle employee goes, by the company's current policy. */
@@ -549,10 +549,9 @@ class Scheduler {
 
   /** Resume every ask waiting on one of `needs`, which the founder has just connected. */
   resumeIntegrationAsks(...needs: IntegrationNeed[]): void {
-    const company = store.getCompany();
     // A test-mode key counts no money whatever else is connected: a run resumed on it for
     // revenue finds the same test mode and asks again.
-    const countsNoMoney = company !== null && stripeInTestMode(company.id);
+    const countsNoMoney = store.getCompany() !== null && stripeInTestMode();
     this.resumeAsks(
       (ask) => needs.includes(ask.integration) && !(ask.integration === "stripe" && countsNoMoney),
     );

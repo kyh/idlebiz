@@ -2,8 +2,8 @@ import type { LoadSkip } from "@repo/domain/domain";
 
 /**
  * What the window shows: exactly one of these. A company boot could not read
- * stops everything (a fresh start here would stack a second company on it);
- * so does a first refresh that failed, until a retry lands; no company means
+ * stops everything (founding refuses while its folder is there); so does a
+ * first refresh that failed, until a retry lands; no company means
  * onboarding; a company means the office, or the sign-in gate when no CLI is
  * signed in.
  */

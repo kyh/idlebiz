@@ -12,12 +12,13 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
 (`packages/contract`). Every other verb is a company tool an employee types in its shell
 (`idlebiz message-team '{"text":"…"}'`), a client of the control plane its run was handed.
 
-- Game state on disk at `~/.idlebiz/<company-slug>/`, beside `cache/` (the runs' tool caches)
+- Game state on disk at `~/.idlebiz/company/`, beside `cache/` (the runs' tool caches)
   and `bin/` (the `idlebiz` command main writes the runs at boot) — agentcompanies/v1 markdown
   packages (COMPANY.md, agents/<slug>/AGENTS.md — its frontmatter is the employee, its body
-  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered or dropped,
-  products/<slug>/PRODUCT.md for each product (the first's code is workspace/, later ones
-  get products/<slug>/workspace/, whose root AGENTS.md is the team's notes on it), listings/<id>.json for each print a product sells through
+  a mirror of the instructions each run is given, rendered live and rewritten at boot, tasks/<slug>/TASK.md for open work, shipped/<slug>/TASK.md once done, answered, settled or dropped,
+  products/<slug>/PRODUCT.md for each product, the first included, with its code in
+  products/<slug>/workspace/ (placed by the slug alone, so retiring it moves one folder), whose
+  root AGENTS.md is the team's notes on it, listings/<id>.json for each print a product sells through
   Printful, links/<id>.json for each `create_payment_link` link (by Stripe's id), and
   orders/<id>.json for each paid checkout on one of the company's links, a listing's or
   `create_payment_link`'s (outside the product's package, so all outlive its retirement: its
@@ -25,15 +26,21 @@ page on loopback, signed in by a one-time handoff, and answers it over an oRPC c
   them, never write them), shared/ for what teammates share across products,
   bets/<slug>/BET.md, retired/<slug>/ for killed products with their code, routines/,
   activity.jsonl).
-- COMPANY.md carries `format`. A save stamped higher than this build writes is refused
-  (writers rebuild files from what they understand, so opening it would drop what a newer
-  build added); one stamped lower is adopted once in `adoptOlderSave` (its answers first, in
-  `adoptOlderAnswers`, before boot recovers the runs a quit cut off), the only home for
-  code that reads an old shape of a save, then stamped. Tolerant field reads in the codecs
-  are not migrations. A frontmatter key the app does not know is still dropped on the next
-  write of that file.
-- One active company per launch: newest `createdAt`, alphabetical slug on ties.
-  Only that company's entities load or migrate; older saves remain untouched.
+- COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a save stamped at
+  any other is refused (`SaveFormatError`): one stamped higher because writers rebuild files
+  from what they understand, so opening it would drop what a newer build added, and one stamped
+  lower or not at all because a pre-release build made it. Until there are users there is no
+  adoption code: a format bump resets every save, and the first migration is written once a
+  bump would strand someone's. Each codec reads its kind through one strict zod schema, the one
+  its encoder writes to: a package it refuses (a hand edit, a field missing) is skipped and
+  named in the load report, never read with a default. Boot alone repairs what a hand edit or a
+  release with no lead leaves (`initStore`): a run that names no lock is queued again, and queued
+  or running work nobody holds is to do. A frontmatter key the app does not know is still
+  dropped on the next write of that file.
+- A root holds one save or none: `company/`, a fixed folder founding publishes with one rename
+  and boot reads alone (`server/paths.ts`), so no record carries a company id. Founding refuses
+  while it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks the
+  office like a save of another format. A reset deletes the whole root, `secrets.json` included.
 - A session is check in, sign off, leave: autopilot is on from founding. The scheduler alone
   keeps the Mac out of idle sleep, and only while a run is in flight (`keepAwake`, a
   user-initiated activity the shell holds, `src-tauri/src/keep_awake.rs`, never past a closed
@@ -163,8 +170,6 @@ allocator and the replay.
   `stripe trigger`) is money nobody paid, so it counts nowhere unless
   `IDLEBIZ_COUNT_TEST_MONEY=1` (AGENTS.md). Without it a test-mode key gives a bet no
   reading, not a zero, so a bet only it could read closes unmeasured, never as a loss.
-  An unstamped save's live revenue bet closes unmeasured too when adopted: its links tagged
-  only the product, so it could read none of its own money.
 - **Idle hands only spend against a fundable bet.** `allocate` decides everything about
   where a run goes, and the scheduler only carries it out: work on the best open bet
   (product yield + exploration bonus − crowding, runs in flight counted against the budget
@@ -178,7 +183,10 @@ allocator and the replay.
   work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again, as is one that asks the founder once the bet has closed;
   measuring keeps what waits on the founder and the continuation carrying their answer, whose
-  run is dropped only when it fails, since that step may be what moves the number. Retiring a product drops its waiting work and switches
+  run is dropped only when it fails, since that step may be what moves the number. A
+  continuation names the ask it answers (`answers` in its TASK.md, set only by
+  `resolveBlockedWithAnswer`), so measuring, parking, a restart and a release read it there and
+  never load `shipped/`. Retiring a product drops its waiting work and switches
   off its payment links, and the retiring run's own task, on no bet, is dropped the same way when
   it fails, parks, asks or is cut off, since a retry would run in the company's folder. A release drops
   the leaver's unstarted work and any ask no bet funds; a funded ask, and the continuation
@@ -411,9 +419,8 @@ third boundary.
   `created[gt]` cursor in `state/orders-cursor.json`, one per key that has read (named by its
   mode and a digest, never the key), since a key of another mode or account lists none of this
   one's sessions: a key new to a mode already read starts from the oldest of that mode's
-  cursors, one of a mode never read from the floor (the founding; a save adopted from format 6
-  or older reads from the adoption). Each is held behind any checkout that may still be paid and re-reads the last 10
-  minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what
+  cursors, one of a mode never read from the founding. Each is held behind any checkout that
+  may still be paid and re-reads the last 10 minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what
   it read and cards the founder. A session on a listing's link with `payment_status` `paid`
   (complete alone is not paid) is kept as an order, on disk before Printful hears of it;
   its Printful `external_id` is the session id's hash, looked up (`/v2/orders/@<id>`) before a
@@ -439,7 +446,7 @@ third boundary.
   a refusal, a status of failed, canceled or onhold the first time any call reads it, a refused
   key once anything is sold) is an order card: a blocked task of origin `order`, no assignee, no
   product, so no bet stalls, no retirement drops it and no teammate can claim it. The founder's
-  Done or Can't closes it with no run (`settleOrderCard` in `server/company-actions.ts`) and goes
+  Done or Can't closes it with no run, as `settled` history (`settleOrderCard` in `server/company-actions.ts`), and goes
   to the room, where support reads it. Refunds are the founder's, in Stripe, and each card says
   so. A menu-bar-only launch counts what waits on the founder in the tray and notifies each new
   order card. Retiring a product switches off, in main with the founder's key, every payment
@@ -458,20 +465,13 @@ third boundary.
   launch leaves the links waiting for it. Every pulse sweeps again, one sweep at a time and one
   link at a time, so a quit before Stripe answered is finished at the next launch; switching off
   a link already off answers the same. A link Stripe makes while its product retires is still
-  kept, and switched off at once. Format 6 and older kept no record of `create_payment_link`
-  links, and Stripe's links carry no date, so an older save adopted lists its products in
-  `state/unrecorded-links.json`, one of the two files in `state/` whose loss costs something:
-  nothing writes it again, so deleted, those links are never looked for. The other is such a
-  save's `state/orders-cursor.json`, whose floor is the adoption: deleted, reads start from the
-  founding and take every sale made on its links before then as new. Once one retires and a live
-  key is saved, one read of the account's active links cards the founder with those tagged for it (none switched off by
-  IdleBiz, since another company's could carry the same tag). `read_orders` and `kill_product`
-  say where each of a retired product's links stands. A reset switches off every live link not
+  kept, and switched off at once. `read_orders` and `kill_product` say where each of a retired
+  product's links stands. A reset switches off every live link not
   yet off before it deletes the save (`switchOffBeforeReset`), once each signed link Stripe is
   still making is recorded, and refuses a new one (`makingPaymentLink`), since nothing is left after to
   ship its prints or record a buyer, and its warning names each link Stripe left on, each paid
   print Printful never confirmed (but a held one whose card the founder settled), each paid order whose card still waits on the founder (a
-  delivery, one IdleBiz cannot send) and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned
+  delivery, one IdleBiz cannot send). Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `server/tools.ts`): `deploy <product> to production
 on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
@@ -487,9 +487,9 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
   creates a name set_env never set there, and replaces only one it did: the founder may bind a
   live project whose variables are theirs, and a sensitive one cannot be read back. Nothing is
   retried as a readable type. Main keeps each value Vercel took in `secrets.json`
-  (`ENV/<company>/<product>/<project>/<NAME>`, per project, so a product rebound to a project of
+  (`ENV/<product>/<project>/<NAME>`, per project, so a product rebound to a project of
   the founder's replaces none of theirs; main's own copy never in the save, which runs read), and a
-  deploy refuses a folder any of whose uploaded files holds one, from any product or company, or
+  deploy refuses a folder any of whose uploaded files holds one, from any product, or
   any key IdleBiz itself holds (`heldKeys` in `server/secrets.ts`), naming the file and the
   variable or key, never the value: a key in source ships publicly. Those keys never reach a
   run by the founder's hand either: an action's reply, a question's answer, a room message

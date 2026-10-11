@@ -1,13 +1,13 @@
+import { z } from "zod";
 import {
   ActionAskSchema,
   INTEGRATION_NEEDS,
   TASK_ORIGINS,
   TASK_PRIORITIES,
-  TASK_STATUSES,
 } from "@repo/domain/domain";
-import type { BlockedAsk, Task, TaskOrigin, TaskState, TaskStatus } from "@repo/domain/domain";
+import type { BlockedAsk, Task, TaskState } from "@repo/domain/domain";
 import { parseJson } from "@repo/domain/json";
-import { PACKAGE_SCHEMA, nullableNum, optNum, optStr, reqStr, strArray } from "./frontmatter";
+import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
 const QUESTION_ESCAPE = "[ask] ";
@@ -15,15 +15,6 @@ const ACTION_PREFIX = "[action] ";
 
 /** An action's fields, kept as JSON behind its prefix: its instructions and draft are free text. */
 const ActionFieldsSchema = ActionAskSchema.omit({ type: true });
-
-const parseAction = (json: string): BlockedAsk | null => {
-  try {
-    const fields = ActionFieldsSchema.safeParse(parseJson(json));
-    return fields.success ? { ...fields.data, type: "action" } : null;
-  } catch {
-    return null;
-  }
-};
 
 // TASK.md stores a human-editable scalar. A question that starts with "[" is escaped so an
 // agent's text can never read back as an approval, a connect ask or an action.
@@ -46,203 +37,189 @@ const serializeBlockedAsk = (a: BlockedAsk): string => {
   }
 };
 
-/** `productId` is the product a Vercel ask is about. */
+/** An ask as `serializeBlockedAsk` wrote it; a bracketed line it never writes is refused, never read as a question. */
 const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
+  if (!s.startsWith("[")) {
+    return { question: s, type: "question" };
+  }
   if (s.startsWith(QUESTION_ESCAPE)) {
     return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
   }
   if (s.startsWith(ACTION_PREFIX)) {
-    return parseAction(s.slice(ACTION_PREFIX.length)) ?? { question: s, type: "question" };
+    return {
+      ...ActionFieldsSchema.parse(parseJson(s.slice(ACTION_PREFIX.length))),
+      type: "action",
+    };
   }
-  const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
-  if (approval) {
-    const command = (approval.groups?.command ?? "").trim();
-    const rule = approval.groups?.rule ?? "unknown-ask";
-    return { command, rule, type: "approval" };
+  const approval = /^\[approve:(?<rule>[a-z-]+)\]\s*(?<command>[\s\S]*)$/u.exec(s)?.groups;
+  if (approval?.rule !== undefined && approval.command !== undefined) {
+    return { command: approval.command.trim(), rule: approval.rule, type: "approval" };
   }
-  const m = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);
-  const integration = INTEGRATION_NEEDS.find((k) => k === m?.groups?.kind);
-  if (!integration) {
-    return { question: s, type: "question" };
+  const connect = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s)?.groups;
+  const integration = INTEGRATION_NEEDS.find((k) => k === connect?.kind);
+  if (integration === undefined || connect?.reason === undefined) {
+    throw new Error(`an ask this build does not write: ${JSON.stringify(s)}`);
   }
-  return {
-    integration,
-    productId: integration === "vercel" ? productId : null,
-    reason: (m?.groups?.reason ?? "").trim(),
-    type: "integration",
-  };
+  return { integration, productId, reason: connect.reason.trim(), type: "integration" };
 };
 
-/** A state's own fields, written flat beside the status line; a null one gets no line. */
-const stateFields = (st: TaskState): FrontmatterDoc["metadata"] => {
+/** The fields every task carries; a null one gets no line. */
+const TaskFieldsSchema = z.object({
+  answers: z.string().optional(),
+  assigneeId: z.string().optional(),
+  attempts: z.number().int().nonnegative(),
+  betId: z.string().optional(),
+  completedAt: z.number().optional(),
+  createdAt: z.number(),
+  origin: z.enum(TASK_ORIGINS),
+  priority: z.enum(TASK_PRIORITIES),
+  productId: z.string().optional(),
+});
+
+/** Each state's own fields, flat beside its status line so a TASK.md stays hand-editable. */
+const TaskStatusSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("todo") }),
+  z.object({
+    lastError: z.string().optional(),
+    nextAttemptAt: z.number().optional(),
+    status: z.literal("queued"),
+  }),
+  z.object({ runId: z.string(), status: z.literal("running") }),
+  z.object({
+    askProduct: z.string().optional(),
+    blockedQuestion: z.string(),
+    status: z.literal("blocked"),
+    summary: z.string().optional(),
+  }),
+  z.object({ status: z.literal("done"), summary: z.string().optional() }),
+  z.object({ status: z.literal("superseded"), supersededBy: z.string() }),
+  z.object({ status: z.literal("settled") }),
+  z.object({ dropReason: z.string(), status: z.literal("dropped") }),
+  z.object({ lastError: z.string(), status: z.literal("dead") }),
+]);
+
+const TaskDocSchema = z.object({
+  body: z.string(),
+  fields: packageFields("task"),
+  metadata: z.intersection(TaskFieldsSchema, TaskStatusSchema),
+});
+
+const statusFields = (st: TaskState): z.input<typeof TaskStatusSchema> => {
   switch (st.kind) {
     case "todo": {
-      return {};
+      return { status: "todo" };
     }
     case "queued": {
-      return { lastError: st.lastError, nextAttemptAt: st.nextAttemptAt };
+      return {
+        lastError: st.lastError ?? undefined,
+        nextAttemptAt: st.nextAttemptAt ?? undefined,
+        status: "queued",
+      };
     }
     case "running": {
-      return { runId: st.runId };
+      return { runId: st.runId, status: "running" };
     }
     case "blocked": {
       return {
-        askProduct: st.ask.type === "integration" ? st.ask.productId : null,
+        askProduct: st.ask.type === "integration" ? (st.ask.productId ?? undefined) : undefined,
         blockedQuestion: serializeBlockedAsk(st.ask),
-        summary: st.summary,
+        status: "blocked",
+        summary: st.summary ?? undefined,
       };
     }
     case "done": {
-      return { summary: st.summary };
+      return { status: "done", summary: st.summary ?? undefined };
     }
     case "superseded": {
-      return { supersededBy: st.by };
+      return { status: "superseded", supersededBy: st.by };
+    }
+    case "settled": {
+      return { status: "settled" };
     }
     case "dropped": {
-      return { dropReason: st.reason };
+      return { dropReason: st.reason, status: "dropped" };
     }
     case "dead": {
-      return { lastError: st.lastError };
+      return { lastError: st.lastError, status: "dead" };
     }
     // no default
   }
 };
 
-// Keep status and state-specific fields flat for compatibility with existing TASK.md files.
-export const taskToDoc = (t: Task): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = {
-    createdAt: t.createdAt,
-    origin: t.origin,
-    priority: t.priority,
-    status: t.state.kind,
-  };
-  if (t.assigneeId !== null) {
-    metadata.assigneeId = t.assigneeId;
-  }
-  if (t.productId !== null) {
-    metadata.productId = t.productId;
-  }
-  if (t.betId !== null) {
-    metadata.betId = t.betId;
-  }
-  for (const [key, value] of Object.entries(stateFields(t.state))) {
-    if (value !== null) {
-      metadata[key] = value;
-    }
-  }
-  if (t.artifacts.length > 0) {
-    metadata.artifacts = JSON.stringify(t.artifacts);
-  }
-  if (t.attempts > 0) {
-    metadata.attempts = t.attempts;
-  }
-  if (t.startedAt !== null) {
-    metadata.startedAt = t.startedAt;
-  }
-  if (t.completedAt !== null) {
-    metadata.completedAt = t.completedAt;
-  }
-  return {
-    body: t.description ? `${t.description}\n` : "",
-    fields: {
-      kind: "task",
-      name: t.title,
-      schema: PACKAGE_SCHEMA,
-      slug: t.id,
-    },
-    metadata,
-  };
-};
-
-/** Statuses older saves wrote that the queue no longer produces: both are terminal. */
-const LEGACY_TERMINAL_STATUSES = new Set(["failed", "cancelled"]);
-
-const parseTaskStatus = (raw: string | null): TaskStatus => {
-  if (raw !== null && LEGACY_TERMINAL_STATUSES.has(raw)) {
-    return "dead";
-  }
-  return TASK_STATUSES.find((s) => s === raw) ?? "todo";
-};
-
-const LOST_ASK: BlockedAsk = { question: "(question lost)", type: "question" };
-
-const parseTaskState = (m: FrontmatterDoc["metadata"]): TaskState => {
-  const status = parseTaskStatus(optStr(m, "status"));
-  const summary = optStr(m, "summary");
-  const lastError = optStr(m, "lastError");
-  switch (status) {
+const taskState = (m: z.output<typeof TaskStatusSchema>): TaskState => {
+  switch (m.status) {
     case "todo": {
       return { kind: "todo" };
     }
     case "queued": {
-      return { kind: "queued", lastError, nextAttemptAt: nullableNum(m, "nextAttemptAt") };
+      return {
+        kind: "queued",
+        lastError: m.lastError ?? null,
+        nextAttemptAt: m.nextAttemptAt ?? null,
+      };
     }
     case "running": {
-      const runId = optStr(m, "runId");
-      return runId === null
-        ? { kind: "queued", lastError: "run lock lost", nextAttemptAt: null }
-        : { kind: "running", runId };
+      return { kind: "running", runId: m.runId };
     }
     case "blocked": {
-      const asked = optStr(m, "blockedQuestion");
-      // absent: the task's own product; adoptVercelAskProducts names the one an older save's ask was about
-      const about = optStr(m, "askProduct") ?? optStr(m, "productId");
       return {
-        ask: asked === null ? LOST_ASK : parseBlockedAsk(asked, about),
+        ask: parseBlockedAsk(m.blockedQuestion, m.askProduct ?? null),
         kind: "blocked",
-        summary,
+        summary: m.summary ?? null,
       };
     }
     case "done": {
-      return { kind: "done", summary };
+      return { kind: "done", summary: m.summary ?? null };
     }
     case "superseded": {
-      return { by: optStr(m, "supersededBy"), kind: "superseded" };
+      return { by: m.supersededBy, kind: "superseded" };
+    }
+    case "settled": {
+      return { kind: "settled" };
     }
     case "dropped": {
-      return { kind: "dropped", reason: optStr(m, "dropReason") ?? "no reason kept" };
+      return { kind: "dropped", reason: m.dropReason };
     }
     case "dead": {
-      return { kind: "dead", lastError: lastError ?? summary ?? "unknown failure" };
+      return { kind: "dead", lastError: m.lastError };
     }
     // no default
   }
 };
 
-/** An origin the file lacks, or one this build does not know, reads as the bet's work or the founder's, never a proposal; an older save's proposals are named at adoption (`adoptProposalOrigins`). */
-const parseTaskOrigin = (raw: string | null, betId: string | null): TaskOrigin =>
-  TASK_ORIGINS.find((o) => o === raw) ?? (betId === null ? "founder" : "work");
+export const taskToDoc = (t: Task): z.input<typeof TaskDocSchema> => ({
+  body: t.description ? `${t.description}\n` : "",
+  fields: { kind: "task", name: t.title, schema: PACKAGE_SCHEMA, slug: t.id },
+  metadata: {
+    answers: t.answers ?? undefined,
+    assigneeId: t.assigneeId ?? undefined,
+    attempts: t.attempts,
+    betId: t.betId ?? undefined,
+    completedAt: t.completedAt ?? undefined,
+    createdAt: t.createdAt,
+    origin: t.origin,
+    priority: t.priority,
+    productId: t.productId ?? undefined,
+    ...statusFields(t.state),
+  },
+});
 
-/** Queued and running belong to someone; a file saying otherwise (a hand edit, a released assignee) is work nobody has. */
-const UNOWNED: TaskState = { kind: "todo" };
-
-export const docToTask = (doc: FrontmatterDoc, companyId: string): Task => {
-  const f = doc.fields;
-  const m = doc.metadata;
-  const prioRaw = optStr(m, "priority");
-  const priority = TASK_PRIORITIES.find((p) => p === prioRaw) ?? "medium";
-  const body = doc.body.trim();
-  const assigneeId = optStr(m, "assigneeId");
-  const betId = optStr(m, "betId");
-  const state = parseTaskState(m);
+export const docToTask = (doc: FrontmatterDoc): Task => {
+  const { body, fields, metadata: m } = decodeDoc(TaskDocSchema, doc);
+  const description = body.trim();
   return {
-    artifacts: strArray(m, "artifacts"),
-    assigneeId,
-    attempts: optNum(m, "attempts", 0),
-    betId,
-    companyId,
-    completedAt: nullableNum(m, "completedAt"),
-    createdAt: optNum(m, "createdAt", Date.now()),
-    description: body === "" ? null : body,
-    id: reqStr(f, "slug"),
-    origin: parseTaskOrigin(optStr(m, "origin"), betId),
-    priority,
-    productId: optStr(m, "productId"),
-    startedAt: nullableNum(m, "startedAt"),
-    state:
-      assigneeId === null && (state.kind === "queued" || state.kind === "running")
-        ? UNOWNED
-        : state,
-    title: reqStr(f, "name"),
+    answers: m.answers ?? null,
+    assigneeId: m.assigneeId ?? null,
+    attempts: m.attempts,
+    betId: m.betId ?? null,
+    completedAt: m.completedAt ?? null,
+    createdAt: m.createdAt,
+    description: description === "" ? null : description,
+    id: fields.slug,
+    origin: m.origin,
+    priority: m.priority,
+    productId: m.productId ?? null,
+    state: taskState(m),
+    title: fields.name,
   };
 };

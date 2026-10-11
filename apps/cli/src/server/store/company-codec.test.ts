@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { companySharedDir } from "../paths";
+import { SHARED_DIR } from "../paths";
 import type { Company } from "@repo/domain/domain";
-import { companyToDoc, docToCompany } from "./company-codec";
+import { SAVE_FORMAT, SaveFormatError, companyToDoc, docToCompany } from "./company-codec";
 import { parseDoc, serializeDoc } from "./frontmatter";
+import type { FrontmatterDoc } from "./frontmatter";
 
 const acme: Company = {
   autopilot: true,
@@ -20,10 +21,23 @@ const acme: Company = {
   ships: 0,
   spentUsd: 0,
   users: null,
-  workspaceDir: companySharedDir("acme"),
+  workspaceDir: SHARED_DIR,
 };
 
 const written = (co: Company): string => serializeDoc(companyToDoc(co));
+
+/** The refusal reading `doc` throws, or null when it reads. */
+const refusalOf = (doc: FrontmatterDoc): SaveFormatError | null => {
+  try {
+    docToCompany(doc);
+    return null;
+  } catch (error) {
+    if (error instanceof SaveFormatError) {
+      return error;
+    }
+    throw error;
+  }
+};
 
 describe("company codec", () => {
   it.each<Company>([acme, { ...acme, mission: null }])(
@@ -39,9 +53,18 @@ describe("company codec", () => {
     expect(text.trimEnd().endsWith("# Acme")).toBe(true);
   });
 
-  it("reads an empty description as no mission", () => {
-    const doc = companyToDoc(acme);
-    doc.fields.description = "";
-    expect(docToCompany(parseDoc(serializeDoc(doc))).mission).toBeNull();
+  it.each([
+    { format: SAVE_FORMAT - 1, writtenBy: "pre-release" },
+    { format: SAVE_FORMAT + 1, writtenBy: "newer" },
+  ])("refuses a save stamped format $format as a $writtenBy build's", ({ format, writtenBy }) => {
+    const doc = parseDoc(written(acme));
+    doc.metadata.format = format;
+    expect(refusalOf(doc)?.writtenBy).toBe(writtenBy);
+  });
+
+  it("refuses a save with no stamp as a pre-release build's", () => {
+    const doc = parseDoc(written(acme));
+    delete doc.metadata.format;
+    expect(refusalOf(doc)?.writtenBy).toBe("pre-release");
   });
 });

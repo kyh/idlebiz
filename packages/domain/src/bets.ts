@@ -63,7 +63,6 @@ export const claimsCollide = (a: Bet, b: Bet): boolean =>
 
 export interface Bet {
   id: string;
-  companyId: string;
   productId: string;
   title: string;
   hypothesis: string;

@@ -354,10 +354,6 @@ export const routineBrief = (r: Routine): TaskBrief => ({
   title: r.name,
 });
 
-/** Whether a brief is a routine's run, as every build has worded it. */
-export const isRoutineBrief = (description: string | null): boolean =>
-  description?.includes(ROUTINE_NOTE) ?? false;
-
 export const founderPing = (text: string): TaskBrief => ({
   description: [
     "The founder pinged you in the team room:",
@@ -404,7 +400,7 @@ const askInWords = (ask: BlockedAsk): string => {
   }
 };
 
-export const continuationTitle = (askTitle: string): string => `Continue: ${askTitle.slice(0, 60)}`;
+const continuationTitle = (askTitle: string): string => `Continue: ${askTitle.slice(0, 60)}`;
 
 /** Whoever runs it may not be who asked: a leaver's open asks pass to the lead. */
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({

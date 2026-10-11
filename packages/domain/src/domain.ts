@@ -116,10 +116,16 @@ export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
 /**
  * The open ones plus history, shelved in shipped/. superseded: an ask the founder answered.
- * dropped: work the steering loop took away — its bet stopped taking work, its product was
- * retired, or its assignee was released.
+ * settled: an order card the founder closed. dropped: work the steering loop took away — its
+ * bet stopped taking work, its product was retired, or its assignee was released.
  */
-export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded", "dropped"] as const;
+export const TASK_STATUSES = [
+  ...OPEN_TASK_STATUSES,
+  "done",
+  "superseded",
+  "settled",
+  "dropped",
+] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -294,7 +300,6 @@ export interface RunSession {
 
 export interface Employee {
   id: string;
-  companyId: string;
   name: string;
   role: string;
   title: string;
@@ -344,10 +349,9 @@ export interface VercelBinding {
   teamId: string | null;
 }
 
-/** The first product's code is the company's workspace/; later products have their own. */
+/** Each product's code is the workspace/ in its own package, which retires with it. */
 export interface Product {
   id: string;
-  companyId: string;
   name: string;
   description: string;
   workspaceDir: string;
@@ -387,7 +391,6 @@ export type Speaker = z.infer<typeof SpeakerSchema>;
 export interface TeamMessage {
   /** Stands for this launch only: main numbers the room anew each time it loads it. */
   id: number;
-  companyId: string;
   from: Speaker;
   text: string;
   createdAt: number;
@@ -405,8 +408,10 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
-  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for an order card, which no run carries on, or an older save's answer whose continuation is gone. */
-  | { kind: "superseded"; by: string | null }
+  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work. */
+  | { kind: "superseded"; by: string }
+  /** The founder closed an order card: history, which no run carries on. */
+  | { kind: "settled" }
   /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
   | { kind: "dropped"; reason: string }
   | { kind: "dead"; lastError: string };
@@ -419,22 +424,19 @@ const statusesAreStates: _AssertStatusesAreStates = true;
 void statesAreStatuses;
 void statusesAreStates;
 
-/** Entering a state, stamped: a run's start, or the moment it settled. Every change of state goes through here, so the timestamps cannot disagree with it. */
+/** Entering a state, stamped with the moment it settled, if it did. Every change of state goes through here, so the stamp cannot disagree with it. */
 export const entering = (
   state: TaskState,
   now: number,
-): Pick<Task, "state"> & Partial<Pick<Task, "startedAt" | "completedAt">> => {
-  if (state.kind === "running") {
-    return { startedAt: now, state };
-  }
-  return state.kind === "done" ||
-    state.kind === "superseded" ||
-    state.kind === "dropped" ||
-    state.kind === "blocked" ||
-    state.kind === "dead"
+): Pick<Task, "state"> & Partial<Pick<Task, "completedAt">> =>
+  state.kind === "done" ||
+  state.kind === "superseded" ||
+  state.kind === "settled" ||
+  state.kind === "dropped" ||
+  state.kind === "blocked" ||
+  state.kind === "dead"
     ? { completedAt: now, state }
     : { state };
-};
 
 /** A task known to be in one state, so its fields need no second check. */
 export type TaskIn<K extends TaskStatus> = Task & { state: Extract<TaskState, { kind: K }> };
@@ -447,7 +449,6 @@ export const taskIn =
 
 export interface Task {
   id: string;
-  companyId: string;
   /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
@@ -459,14 +460,12 @@ export interface Task {
   state: TaskState;
   priority: TaskPriority;
   assigneeId: string | null;
-  /** file paths the agent reported */
-  artifacts: string[];
   /** Failed runs so far — drives retry backoff and the dead letter, across states. */
   attempts: number;
+  /** The ask whose founder's answer this continuation carries; null for work no answer started. */
+  answers: string | null;
   createdAt: number;
-  /** When its latest run began. */
-  startedAt: number | null;
-  /** When it last reached done, superseded, dropped, blocked or dead. */
+  /** When it last reached done, superseded, settled, dropped, blocked or dead. */
   completedAt: number | null;
 }
 
@@ -483,7 +482,6 @@ export interface ShipLine {
 /** A recurring instruction that creates a task at each interval. */
 export interface Routine {
   id: string;
-  companyId: string;
   name: string;
   instruction: string;
   intervalHours: number;
@@ -522,7 +520,6 @@ export interface LoadSkip {
     | "link"
     | "order"
     | "bet"
-    | "team"
     | "secrets"
     | "seal";
   path: string;
@@ -531,9 +528,8 @@ export interface LoadSkip {
   newerBuild: boolean;
 }
 
-/** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
+/** What boot had to leave out of the save under ~/.idlebiz. */
 export interface LoadReport {
-  companies: number;
   skipped: LoadSkip[];
 }
 

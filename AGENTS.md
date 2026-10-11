@@ -14,7 +14,7 @@ Paths below are short, as in CLAUDE.md: `server/…` and `commands/…` are unde
 `@repo/<package>/<module>` is `packages/<package>/src/<module>.ts`.
 
 > Naming: this file is repo documentation. The `AGENTS.md` files under
-> `~/.idlebiz/<company>/agents/<slug>/` are game data — the in-game employee's own
+> `~/.idlebiz/company/agents/<slug>/` are game data — the in-game employee's own
 > instructions (`server/paths.ts`). Unrelated.
 
 ## Quickstart
@@ -285,7 +285,7 @@ rather than crashing boot.
   included, is CLAUDE.md's "What stays open". A product's own keys go on its bound project
   through `set_env`, unsigned: main sets the variable with `VERCEL_TOKEN`, sensitive for
   production and preview (`server/vercel-env.ts`), replacing only a name set_env set, and keeps
-  each value Vercel took in `secrets.json` under `ENV/<company>/<product>/<project>/<NAME>` (never the
+  each value Vercel took in `secrets.json` under `ENV/<product>/<project>/<NAME>` (never the
   save, which runs read) so `deploy` refuses a folder whose files hold any of them, before the
   sign-off is asked, naming the file and the variable, never the value. A public name
   (`NEXT_PUBLIC_`, `VITE_`…, `server/env-name.ts`) is the exception: its value is built into the
@@ -349,10 +349,10 @@ rather than crashing boot.
 
 ## Rules that matter
 
-- **One active company per launch.** Boot selects the newest company by `createdAt`
-  (alphabetical slug breaks ties), then loads and migrates only that save. Older saves
-  stay untouched. Unreadable company metadata blocks loading and founding; entity IDs
-  resolve only within the active company. There is no company switching during a launch.
+- **A root holds one save or none.** The company is `company/` under the root, so no record
+  carries its company's id and no path names one. A company stamped at any format but this
+  build's, like a COMPANY.md missing or unreadable, blocks loading and founding. A reset deletes
+  the root, keys and all; to start over otherwise, move `company/` out.
 - **No `any`, no non-null `!`, no `as` casts.** Kebab-case filenames. Make illegal states
   unrepresentable.
 - **Headless interactions are Base UI** (`@base-ui/react/<part>`), skinned with px-kit:
@@ -366,9 +366,9 @@ rather than crashing boot.
   ⚙ settings, 💼 company, and ☕ idle; ❗ attention and ⚠ warnings retain their color cues.
   These fallback glyphs are exceptions. Keep the vendored font unchanged.
 - **Only closed work is history.** `done` tasks move to `shipped/` and load on demand;
-  so does an ask the founder answered, `superseded` by its continuation, and work the
-  steering loop `dropped` (its bet stopped taking work, its product was retired, its
-  assignee released), neither ever a ship. `dead` tasks — runs that failed on their own —
+  so does an ask the founder answered, `superseded` by its continuation, an order card the
+  founder `settled`, and work the steering loop `dropped` (its bet stopped taking work, its
+  product was retired, its assignee released), none ever a ship. `dead` tasks — runs that failed on their own —
   stay in the active queue until their bet stops or their product retires, because the Inbox
   can retry them and employees use them to
   identify unresolved problems. `listTasks` answers open work only; the one
@@ -447,7 +447,7 @@ rather than crashing boot.
   ship. Nothing reads `activity.jsonl` back: main appends to it and pushes each event to
   the renderer, whose activity ring starts empty every launch; #team reads the room back from
   main's copy of `chat.jsonl` instead. Company-level running state goes in
-  `<company>/state/` (path helpers in `server/paths.ts`); what the founder configured
+  `company/state/` (path helpers in `server/paths.ts`); what the founder configured
   (`metrics.json`, `approvals.json`) stays beside COMPANY.md.
 - **Vocabularies are `as const` tuples** (`TASK_STATUSES`, `INTEGRATION_KINDS`,
   `BUSINESS_TYPE_IDS`, `RUNNER_IDS`): the type and the zod enum both derive from the tuple,
@@ -505,8 +505,9 @@ rather than crashing boot.
   `page-server.ts` (the window's page on loopback: the handoff, the guards, the event stream;
   `page-session.ts` the sign-in, `page-policy.ts` the page's CSP), `page-router.ts` (the page's
   contract implemented; `lib/answers.ts` words what does not return), `store/store.ts` (the one
-  company in memory, every command on it, and its writes), `store/*-codec.ts` (one pure markdown
-  package ⇄ domain object mapping per kind; `company-codec.ts` owns the save format stamp),
+  company in memory, every command on it, and its writes), `store/*-codec.ts` (one strict zod schema
+  per package kind, which its encoder is typed against and its decoder parses; `company-codec.ts`
+  owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop; it
   alone holds the Mac out of idle sleep, through `keep-awake.ts`, while a run is in flight —
   never past a closed lid), `agents/` (runs), `control-plane.ts` (HTTP on a unix socket per run, which only

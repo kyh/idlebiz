@@ -56,9 +56,9 @@ test("a file boot skipped is named in full, so the founder can find it", async (
   root,
 }) => {
   const founding = await launch();
-  const { company } = await foundCompany(founding.page);
+  await foundCompany(founding.page);
   await founding.close();
-  const taskDir = path.join(root, company.id, "tasks", "a-fairly-long-task-slug-the-lead-wrote");
+  const taskDir = path.join(root, "company", "tasks", "a-fairly-long-task-slug-the-lead-wrote");
   await mkdir(taskDir, { recursive: true });
   await writeFile(path.join(taskDir, "TASK.md"), "---\nbroken: [\n---\n");
 

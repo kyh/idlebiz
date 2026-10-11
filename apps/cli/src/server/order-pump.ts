@@ -775,9 +775,9 @@ const readerOf = (key: string): string =>
 /**
  * Where a key's read goes on from: its own last read. A key that never read, in a mode another
  * has (a rolled key, another account), starts from the oldest of that mode's reads; one of a
- * mode never read starts from the floor. Whichever key read last, no key skips what it never read.
+ * mode never read starts from `foundedAt`. Whichever key read last, no key skips what it never read.
  */
-const startOf = (cursor: OrdersCursor, reader: string): number => {
+const startOf = (cursor: OrdersCursor, reader: string, foundedAt: number): number => {
   const own = cursor.byKey[reader];
   if (own !== undefined) {
     return own;
@@ -786,7 +786,7 @@ const startOf = (cursor: OrdersCursor, reader: string): number => {
   const sameMode = Object.entries(cursor.byKey)
     .filter(([other]) => other.startsWith(mode))
     .map(([, at]) => at);
-  return sameMode.length > 0 ? Math.min(...sameMode) : cursor.floor;
+  return sameMode.length > 0 ? Math.min(...sameMode) : foundedAt;
 };
 
 const stillSelling = (state: LinkState): boolean => state.kind !== "switched-off";
@@ -826,12 +826,9 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
   if (key === null) {
     return;
   }
-  const cursor = store.ordersCursor() ?? {
-    byKey: {},
-    floor: Math.floor(store.requireCompany().createdAt / 1000) - 1,
-  };
+  const cursor = store.ordersCursor() ?? { byKey: {} };
   const reader = readerOf(key);
-  const from = startOf(cursor, reader);
+  const from = startOf(cursor, reader, Math.floor(store.requireCompany().createdAt / 1000) - 1);
   const moveTo = (next: number): void => {
     store.setOrdersCursor({
       ...cursor,
