@@ -1571,9 +1571,9 @@ describe("create_payment_link", () => {
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    expect(await callTool(ctx, "POST /v1/payment-link", LINK)).toContain(
-      "Stripe may have made the payment link",
-    );
+    const made = await outcomeOf(ctx, "create_payment_link", LINK);
+    expect(made.kind).toBe("refused");
+    expect(made.text).toContain("Stripe may have made the payment link");
     expect(logged).toHaveBeenCalledExactlyOnceWith("[Stripe payment link]", expect.any(z.ZodError));
     expect(store.paymentLinks()).toEqual([]);
   });
@@ -2473,9 +2473,9 @@ describe("sell_print", () => {
     }, sellers);
     store.grantApproval(ctx.run.taskId, PRINT_ACTION);
 
-    expect(await callTool(ctx, "POST /v1/sell-print", PRINT)).toContain(
-      "Stripe may have made the payment link",
-    );
+    const listed = await outcomeOf(ctx, "sell_print", PRINT);
+    expect(listed.kind).toBe("refused");
+    expect(listed.text).toContain("Stripe may have made the payment link");
     expect(logged).toHaveBeenCalledExactlyOnceWith(
       "[Stripe print payment link]",
       expect.any(z.ZodError),

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -114,7 +114,7 @@ const chargeLinkOn = (productId: string, id: string, livemode = true): ChargeLin
 
 /** Acme with a side product selling a print and a plan, and the founder's live key saved. */
 const openShop = () => {
-  const company = store.foundCompany({
+  store.foundCompany({
     budget: { mode: "infinite" },
     businessType: "ecommerce",
     founderName: "Kai",
@@ -127,7 +127,7 @@ const openShop = () => {
   store.recordListing(listingOn(side.id));
   store.recordChargeLink(chargeLinkOn(side.id, PRO));
   saveKey("rk_live_founder");
-  return { company, side };
+  return { side };
 };
 
 /** The founder's cards, by title: cards raised in one millisecond list in no fixed order. */
@@ -520,7 +520,7 @@ describe("resetting the company", () => {
 
 describe("an order card", () => {
   it("is known by what it is about, so a reworded title still records its Done and still warns a reset", async () => {
-    const { company, side } = openShop();
+    const { side } = openShop();
     fakeStripe({ answers: { [PRO]: "refused" } });
     await retireProduct(side.id, "dud", null);
     store.recordOrder({
@@ -541,7 +541,7 @@ describe("an order card", () => {
       { action: "Send the buyer the guide", draft: null, instructions: "" },
     );
     for (const card of cards()) {
-      const file = taskFile(company.id, card.id);
+      const file = taskFile(card.id);
       const named = `name: ${JSON.stringify(card.title)}`;
       writeFileSync(
         file,

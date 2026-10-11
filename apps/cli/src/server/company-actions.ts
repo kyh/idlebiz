@@ -142,9 +142,6 @@ const orderCardTitle = (subject: OrderCardSubject): string => {
     case "link-left-on": {
       return `Switch off payment link ${subject.linkId}`;
     }
-    case "unrecorded-links": {
-      return `Switch off ${subject.productId}'s older payment links`;
-    }
     case "pump": {
       return PUMP_CARD_TITLES[subject.reason];
     }

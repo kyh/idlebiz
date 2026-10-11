@@ -11,7 +11,7 @@ import type { FrontmatterDoc } from "./frontmatter";
  * drop whatever the newer build added. One stamped lower was written by a pre-release build whose
  * shapes nothing here reads. Both are refused, and a bump starts every save over.
  */
-export const SAVE_FORMAT = 15;
+export const SAVE_FORMAT = 16;
 
 /**
  * A save stamped at a format this build does not write, which nothing here touches: a newer

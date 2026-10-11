@@ -51,7 +51,6 @@ describe("task codec", () => {
     ...TASK_ORIGINS.flatMap((origin) => (origin === "order" ? [] : [{ origin }])),
     { origin: "order", subject: { kind: "order", orderId: "abc", trouble: "deliver it" } },
     { origin: "order", subject: { kind: "link-left-on", linkId: "plink_1" } },
-    { origin: "order", subject: { kind: "unrecorded-links", productId: "widget" } },
     { origin: "order", subject: { kind: "pump", reason: "missed" } },
   ])("round-trips why a task exists: %j", (provenance) => {
     const task: Task = { ...base, ...provenance, state: { kind: "todo" } };

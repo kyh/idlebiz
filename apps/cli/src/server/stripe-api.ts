@@ -21,7 +21,7 @@ export const stripeHeaders = (key: string) => ({
 const Refusal = z.object({ error: z.object({ message: z.string() }) });
 
 /** Why Stripe refused, in its words when it gave any. */
-export const stripeSays = (error: HttpError): string => {
+const stripeSays = (error: HttpError): string => {
   const said = Refusal.safeParse(error.answer);
   return said.success ? said.data.error.message : error.message;
 };

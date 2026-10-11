@@ -1064,7 +1064,7 @@ const TOOLS = {
           throw new RefusalError(`Stripe made no payment link: ${made.error}`);
         }
         if (made.kind === "unrecorded") {
-          return UNRECORDED_LINK;
+          throw new RefusalError(UNRECORDED_LINK);
         }
         if (store.getChargeLink(made.id) !== null) {
           return `Stripe gave back the payment link it made for this same request within the last day, so no second one was made: ${made.url}`;
@@ -1187,7 +1187,7 @@ const TOOLS = {
         throw new RefusalError(`Stripe made no payment link: ${made.error}`);
       }
       if (made.kind === "unrecorded") {
-        return UNRECORDED_LINK;
+        throw new RefusalError(UNRECORDED_LINK);
       }
       store.recordListing({
         betId: bet ?? null,

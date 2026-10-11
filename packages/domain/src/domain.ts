@@ -138,14 +138,12 @@ export type RunOrigin = Exclude<TaskOrigin, "order">;
 
 /**
  * What an order card is about, which is what tells one card from another: a paid order and what
- * stopped it, a retired product's link Stripe would not switch off, a retired product's links
- * older builds never recorded, or what keeps the order pump from every order at once. Its title
- * is copy rendered from this, which nothing reads back.
+ * stopped it, a retired product's link Stripe would not switch off, or what keeps the order pump
+ * from every order at once. Its title is copy rendered from this, which nothing reads back.
  */
 export const OrderCardSubjectSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("order"), orderId: z.string().min(1), trouble: z.string().min(1) }),
   z.object({ kind: z.literal("link-left-on"), linkId: z.string().min(1) }),
-  z.object({ kind: z.literal("unrecorded-links"), productId: z.string().min(1) }),
   z.object({
     kind: z.literal("pump"),
     reason: z.enum(["no-printful-token", "no-live-key", "unreadable-checkouts", "missed"]),
