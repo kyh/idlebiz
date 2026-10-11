@@ -111,7 +111,7 @@ export class OfficeScene extends Scene {
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;
   private activityUnsub?: () => void;
-  private stopWatchingAsks?: () => void;
+  private stopWatchingAsks?: (() => void) | undefined;
 
   constructor() {
     super("office");

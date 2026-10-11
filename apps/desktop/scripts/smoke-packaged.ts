@@ -50,10 +50,10 @@ const MAIN_EXITED_CLEANLY = "main exited (code 0)";
 // tauri-plugin-single-instance's machine-wide socket (`/tmp/<identifier>_si.sock`): an IdleBiz that
 // answers on it would take this launch over, and the smoke would watch the wrong app
 const SINGLE_INSTANCE_SOCKET = "/tmp/com_idlebiz_desktop_si.sock";
-// the item the shell reads the password that seals secrets.json from, or makes on a first launch
+// the item the shell reads the key that seals secrets.json from, or makes on a first launch
 // (src-tauri/src/keychain.rs)
-const KEYCHAIN_SERVICE = "IdleBiz Safe Storage";
-const KEYCHAIN_ACCOUNT = "IdleBiz";
+const KEYCHAIN_SERVICE = "IdleBiz";
+const KEYCHAIN_ACCOUNT = "sealing-key";
 
 // a cold WebKit and main's boot, its seal check and login-shell probe among it, on a CI runner
 const BOOT_TIMEOUT_MS = 120_000;
@@ -301,7 +301,7 @@ const keyHeld =
   }).status === 0;
 if (keyHeld) {
   throw new Error(
-    `the Keychain holds "${KEYCHAIN_SERVICE}", which this pack would wait on a prompt to read: smoke on a Mac without it, as CI's`,
+    `the Keychain holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), which this pack would wait on a prompt to read: smoke on a Mac without it, as CI's`,
   );
 }
 
